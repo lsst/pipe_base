@@ -129,10 +129,9 @@ class TaskTestCase(unittest.TestCase):
         policy = AddMultTask.getPolicy()
         addMultTask = AddMultTask(policy=policy)
         addMultTask.run(val=1.1)
-        metadata = addMultTask.getMetadata()
-        self.assert_(float(metadata["main.run_time"]) < 0.1)
-        self.assert_(float(metadata["main.add.run_time"]) < 0.1)
-        self.assert_(float(metadata["main.mult.run_time"]) < 0.1)
+        self.assert_(float(addMultTask.metadata.get("run_time")) < 0.1)
+        self.assert_(float(addMultTask.add.metadata.get("run_time")) < 0.1)
+        self.assert_(float(addMultTask.mult.metadata.get("run_time")) < 0.1)
  
 
 def suite():

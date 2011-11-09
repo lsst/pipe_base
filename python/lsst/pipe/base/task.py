@@ -23,6 +23,7 @@ import time
 
 import lsstDebug
 import lsst.pex.logging as pexLog
+import lsst.daf.base as dafBase
 
 __all__ = ["timeit", "Task"]
 
@@ -36,12 +37,19 @@ def timeit(func):
         t1 = time.time()
         res = func(self, *args, **keyArgs)
         t2 = time.time()
-        self.setMetadata(timeName, t2-t1)
+        self.metadata.set(timeName, t2-t1)
         return res
     return wrapper
 
 class Task(object):
     """A data processing task
+    
+    Useful attributes include:
+    * log: an lsst.pex.logging.Log; one log is shared among all tasks and subtasks
+    * policy: task-specific Policy
+    * metadata: an lsst.daf.data.PropertyList for collecting task-specific metadata,
+        e.g. data quality and performance metrics. This is data that is only meant to be
+        persisted, never to be used for data processing.
     
     Subclasses should create one or both of the following methods:
     * run: performs the main data processing. Takes appropriate task-specific arguments
@@ -49,7 +57,7 @@ class Task(object):
     * runButler: un-persists input data using a data butler (provided as the first argument
     of runButler), processes the data and persists the results using the butler.
     """
-    def __init__(self, policy=None, name=None, parentTask=None, log=None, metadata=None):
+    def __init__(self, policy=None, name=None, parentTask=None, log=None):
         """Create a Task
         
         @param policy: policy to configure this task
@@ -61,6 +69,8 @@ class Task(object):
         @param log: pexLog log
         @param metadata: a Python dict for metadata
         """
+        self.metadata = dafBase.PropertyList()
+
         if parentTask != None:
             self._name = name
             self._fullName = parentTask._computeFullName(name)
@@ -68,20 +78,18 @@ class Task(object):
                 policy = parentTask.policy.getPolicy(name)
             if log == None:
                 log = parentTask.log
-            if metadata == None:
-                metadata = parentTask._metadata
+            self._taskDict = parentTask._taskDict
         else:
             self._name = "main"
             self._fullName = self._name
             if log == None:
                 log = pexLog.Log()
-            if metadata == None:
-                metadata = dict()
+            self._taskDict = dict()
   
         self.policy = policy
         self.log = log
-        self._metadata = metadata
         self._display = lsstDebug.Info(__name__).display
+        self._taskDict[self._fullName] = self
     
     def _computeFullName(self, name):
         """Compute the full name of a subtask or metadata item, given its brief name
@@ -89,6 +97,29 @@ class Task(object):
         @param name: brief name of subtask or metadata item
         """
         return "%s.%s" % (self._fullName, name)
+    
+    def getFullName(self):
+        """Return the full name of the task.
+
+        The top level task is named "main" and subtasks use dotted notation.
+        Thus subtask "foo" of subtask "bar" of the top level task has the full name "main.foo.bar".
+        """
+        return self._fullname
+
+    def getName(self):
+        """Return the brief name of the task.
+        
+        The top level task is named "main". Subtasks are named as specified in makeSubtask.
+        """
+        return self._name
+    
+    def getTaskDict(self):
+        """Return a dictionary of tasks as a shallow copy.
+        
+        Keys are full task names. Values are Task objects.
+        The dictionary includes the top-level task and all subtasks, sub-subtasks, etc.
+        """
+        return self._taskDict.copy()
     
     def makeSubtask(self, name, taskClass, **keyArgs):
         """Create a subtask as a new instance self.<name>
@@ -98,22 +129,6 @@ class Task(object):
         """
         subtask = taskClass(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
-    
-    def getMetadata(self):
-        """Return the metadata dict (warning: not a copy)
-        """
-        return self._metadata
-    
-    def setMetadata(self, name, value, doCheck=False):
-        """Add an item of metadata, assigning a suitable name.
-        
-        Any existing item by the same name is silently overwritten.
-        """
-        fullName = self._computeFullName(name)
-        if doCheck:
-            if fullName in self._metadata:
-                raise KeyError("Item %s already exists" % (fullName,))
-        self._metadata[fullName] = value
     
     def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
         """Display image and/or sources
