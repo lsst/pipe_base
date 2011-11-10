@@ -27,7 +27,7 @@ import lsst.pex.policy as pexPolicy
 import lsst.pipe.base as pipeBase
 
 class AddTask(pipeBase.Task):
-    @pipeBase.timeit
+    @pipeBase.timeMethod
     def run(self, val):
         addend = self.policy.get("addend")
         return pipeBase.Struct(val = val + addend)
@@ -39,7 +39,7 @@ class AddTask(pipeBase.Task):
         return policy
 
 class MultTask(pipeBase.Task):
-    @pipeBase.timeit
+    @pipeBase.timeMethod
     def run(self, val):
         multiplicand = self.policy.get("multiplicand")
         return pipeBase.Struct(val = val * multiplicand)
@@ -57,11 +57,12 @@ class AddMultTask(pipeBase.Task):
         self.makeSubtask("add", AddTask)
         self.makeSubtask("mult", MultTask)
 
-    @pipeBase.timeit
+    @pipeBase.timeMethod
     def run(self, val):
-        addRet = self.add.run(val)
-        multRet = self.mult.run(addRet.val)
-        return pipeBase.Struct(val = multRet.val)
+        with pipeBase.timer(self.metadata, "contextDuration"):
+            addRet = self.add.run(val)
+            multRet = self.mult.run(addRet.val)
+            return pipeBase.Struct(val = multRet.val)
     
     @staticmethod
     def getPolicy(addend=3.1, multiplicand=2.5):
@@ -123,15 +124,16 @@ class TaskTestCase(unittest.TestCase):
         self.assertEquals(addMultTask.add._fullName, "main.add")
         self.assertEquals(addMultTask.mult._fullName, "main.mult")
     
-    def testTimeIt(self):
+    def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
         policy = AddMultTask.getPolicy()
         addMultTask = AddMultTask(policy=policy)
         addMultTask.run(val=1.1)
-        self.assert_(float(addMultTask.metadata.get("run_time")) < 0.1)
-        self.assert_(float(addMultTask.add.metadata.get("run_time")) < 0.1)
-        self.assert_(float(addMultTask.mult.metadata.get("run_time")) < 0.1)
+        self.assertLess(addMultTask.metadata.get("runDuration"), 0.1)
+        self.assertLess(addMultTask.metadata.get("contextDuration"), 0.1)
+        self.assertLess(addMultTask.add.metadata.get("runDuration"), 0.1)
+        self.assertLess(addMultTask.mult.metadata.get("runDuration"), 0.1)
  
 
 def suite():

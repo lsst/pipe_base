@@ -19,27 +19,11 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import time
-
 import lsstDebug
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 
-__all__ = ["timeit", "Task"]
-
-def timeit(func):
-    """Decorator to measure duration of a method
-    
-    @todo: consider gracefully combining data from multiple runs, e.g. by using an object
-    """
-    timeName = "%s_time" % (func.__name__,)
-    def wrapper(self, *args, **keyArgs):
-        t1 = time.time()
-        res = func(self, *args, **keyArgs)
-        t2 = time.time()
-        self.metadata.set(timeName, t2-t1)
-        return res
-    return wrapper
+__all__ = ["Task"]
 
 class Task(object):
     """A data processing task
