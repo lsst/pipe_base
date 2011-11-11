@@ -20,9 +20,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 """Utilities for measuring execution time.
-
-@todo: decide if measuring CPU is better than measuring wall-clock time. Note that time.clock() measures CPU
-time but can wrap around. os.time is another option that I have not investigated.
 """
 import time
 import contextlib
@@ -33,43 +30,43 @@ def timeMethod(func):
     """Decorator to measure duration of a task method
     
     To use:
-    @timeMethod
-    def run(self, ...): # or any other instance method of a task that you want to time
+    import lsst.pipe.base as pipeBase
+    class FooTask(pipeBase.Task):
         ...
+            
+        @timeMethod
+        def run(self, ...): # or any other instance method you want to time
+            ...
     
-    Writes the duration (in seconds) to the task's metadata using name <func name>Duration
+    Writes the duration (in CPU seconds) to the task's metadata using name <func name>Duration
     
-    @warning
-    * The timing will only be meaningful for long-running methods.
-    * This decorator only works with instance methods of Task (or any class with a metadata attribute
+    @warning This decorator only works with instance methods of Task (or any class with a metadata attribute
       that supports add(name, value)).
     """
     itemName = func.__name__ + "Duration"
     def wrapper(self, *args, **keyArgs):
-        t1 = time.time()
+        t1 = time.clock()
         res = func(self, *args, **keyArgs)
-        duration = time.time() - t1
+        duration = time.clock() - t1
         self.metadata.add(itemName, duration)
         return res
     return wrapper
 
 @contextlib.contextmanager
 def timer(metadata, name):
-    """Context to time the duration of an arbitrary block of code
+    """Context manager to time the duration of an arbitrary block of code
     
     @param[in] metadata: a PropertyList or PropertySet
     @param[in] name: name with which the data will be stored
     
     To use:
-    with timer(name):
+    import lsst.pipe.base as pipeBase
+    with pipeBase.timer(name):
         ...code to time...
     
-    The resulting duration is written to self.metadata with the specified name.
-
-    @warning
-    * The timing will only be meaningful for long-running methods.
+    Writes the duration (in CPU seconds) to metadata using the specified name.
     """
-    t1 = time.time()
+    t1 = time.clock()
     yield
-    duration = time.time() - t1
+    duration = time.clock() - t1
     metadata.add(name, duration)
