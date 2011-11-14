@@ -38,18 +38,22 @@ class ArgumentParser(argparse.ArgumentParser):
     - Use mapper or camera name to obtain the names of the camera ID elements
     @todo: adapt for new Policy
     """
-    def __init__(self, *args, **kwargs):
-        argparse.ArgumentParser.__init__(self, *args, **kwargs)
-        self.add_argument("camera", help="Name of camera (e.g. lsstSim or suprimecam)")
-        self.add_argument("dataPath", help="Path to data repository")
+    def __init__(self, **kwargs):
+        argparse.ArgumentParser.__init__(self,
+            fromfile_prefix_chars='@',
+            epilog="@file reads command-line options from the specified file (one option per line)",
+            **kwargs)
+        self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
+(WARNING: this must appear before any options)""")
+        self.add_argument("dataPath", help="path to data repository")
         self.add_argument("-p", "--policy", nargs="*", action=PolicyValueAction,
-                        help="Policy override; requires two values: name value")
-        self.add_argument("-O", "--override", nargs="*", action=PolicyFileAction,
-                        help="Policy override file(s)")
-        self.add_argument("--output", dest="outPath", help="Output root directory")
-        self.add_argument("--calib", dest="calibPath", help="Calibration root directory")
-        self.add_argument("--debug", action="store_true", help="Debugging output?")
-        self.add_argument("--log", help="Logging destination")
+                        help="policy overrides", metavar="NAME=VALUE")
+        self.add_argument("-o", "--override", dest="policyPath", nargs="*", action=PolicyFileAction,
+                        help="policy override files")
+        self.add_argument("--output", dest="outPath", help="output root directory")
+        self.add_argument("--calib", dest="calibPath", help="calibration root directory")
+        self.add_argument("--debug", action="store_true", help="enable debugging output?")
+        self.add_argument("--log", help="logging destination")
 
     def parse_args(self, policy, argv=None):
         """Parse arguments for a command-line-driven task
@@ -99,6 +103,8 @@ class ArgumentParser(argparse.ArgumentParser):
         This is a temporary hack; ditch it once we can get this info from a data repository/
         """
         if camera in ("-h", "--help"):
+            self.print_help()
+            print
             raise RuntimeError("For more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n")
         
         lowCamera = camera.lower()
@@ -129,7 +135,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 argList.append("-%s" % (idChar,))
             argList.append("--%s" % (idName,))
             self.add_argument(*argList, dest=idName, nargs="*", default=[],
-                help="%ss to run, space-delimited" % (idName,))
+                help="%ss to to process" % (idName,))
 
         self._camera = camera
 
@@ -139,12 +145,13 @@ class PolicyValueAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string):
         """Override one or more policy name value pairs
         """
-        if len(values) %2 != 0:
-            raise ValueError("%s %s requires an even number of values (name1 val1 name2 val2...)" % (option_string, values))
         policy = pexPolicy.Policy()
-        for name, val in ((values[i], values[i+1]) for i in range(len(values))[::2]):
-            policy.set(name, val)
-        namespace.policy.merge(policy)
+        for nameValue in values:
+            name, sep, value = nameValue.partition("=")
+            if not value:
+                raise ValueError("%s value %s must be in form name=value" % (option_string, nameValue))
+            policy.set(name, value)
+#        namespace.policy.merge(policy)
 
 # argparse callback to override configurations
 class PolicyFileAction(argparse.Action):
@@ -154,8 +161,3 @@ class PolicyFileAction(argparse.Action):
         for policyPath in values:
             policyFile = pexPolicy.Policy(policyPath)
             namespace.policy.merge(overrideFile)
-
-if __name__ == "__main__":
-    parser = ArgumentParser()
-    namespace = parser.parse_args(policy=pexPolicy.Policy())
-    print "namespace=", namespace
