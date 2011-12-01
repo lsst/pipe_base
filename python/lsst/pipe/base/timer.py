@@ -24,7 +24,7 @@
 import time
 import contextlib
 
-__all__ = ["timeMethod", "timer"]
+__all__ = ["timeMethod"]
 
 def timeMethod(func):
     """Decorator to measure duration of a task method
@@ -51,22 +51,3 @@ def timeMethod(func):
         self.metadata.add(itemName, duration)
         return res
     return wrapper
-
-@contextlib.contextmanager
-def timer(metadata, name):
-    """Context manager to time the duration of an arbitrary block of code
-    
-    @param[in] metadata: a PropertyList or PropertySet
-    @param[in] name: name with which the data will be stored
-    
-    To use:
-    import lsst.pipe.base as pipeBase
-    with pipeBase.timer(name):
-        ...code to time...
-    
-    Writes the duration (in CPU seconds) to metadata using the specified name.
-    """
-    t1 = time.clock()
-    yield
-    duration = time.clock() - t1
-    metadata.add(name, duration)

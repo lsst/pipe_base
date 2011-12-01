@@ -202,3 +202,19 @@ class Task(object):
                     import pdb; pdb.set_trace()
                 elif ans in ("h", ):
                     print "h[elp] c[ontinue] p[db]"
+
+    def timer(self, name):
+        """Context manager to time the duration of an arbitrary block of code
+        
+        @param[in] name: name with which the data will be stored in metadata
+        
+        To use:
+        self.timer(name):
+            ...code to time...
+        
+        Writes the duration (in CPU seconds) to metadata using the specified name.
+        """
+        t1 = time.clock()
+        yield
+        duration = time.clock() - t1
+        self.metadata.add(name, duration)
