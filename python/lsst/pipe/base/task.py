@@ -19,6 +19,9 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import contextlib
+import time
+
 import lsstDebug
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
@@ -203,6 +206,7 @@ class Task(object):
                 elif ans in ("h", ):
                     print "h[elp] c[ontinue] p[db]"
 
+    @contextlib.contextmanager
     def timer(self, name):
         """Context manager to time the duration of an arbitrary block of code
         
