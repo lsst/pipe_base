@@ -69,8 +69,8 @@ class AddMultTask(pipeBase.Task):
         policy = pexPolicy.Policy()
         addPolicy = AddTask.getPolicy(addend=addend)
         multPolicy = MultTask.getPolicy(multiplicand=multiplicand)
-        policy.set("add", addPolicy)
-        policy.set("mult", multPolicy)
+        policy.set("addPolicy", addPolicy)
+        policy.set("multPolicy", multPolicy)
         return policy
 
 class AddTwiceTask(AddTask):
