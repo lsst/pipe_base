@@ -59,7 +59,7 @@ class AddMultTask(pipeBase.Task):
 
     @pipeBase.timeMethod
     def run(self, val):
-        with self.timer("contextDuration"):
+        with self.timer("context"):
             addRet = self.add.run(val)
             multRet = self.mult.run(addRet.val)
             return pipeBase.Struct(val = multRet.val)

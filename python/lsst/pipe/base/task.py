@@ -43,47 +43,52 @@ class Task(object):
     and returns a pipeBase.Struct with a named field for each item of output
     * runButler: un-persists input data using a data butler (provided as the first argument
     of runButler), processes the data and persists the results using the butler.
+    
+    In addition subclasses must override getPolicyClass.
     """
     def __init__(self, policy=None, name=None, parentTask=None, log=None):
         """Create a Task
         
-        @param policy: policy to configure this task
+        @param policy: policy to configure this task;
+            If parentTask specified then defaults to parentTask.policy.getPolicy(name + "Policy")
         @param name: brief name of task; ignored if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
-            If None then you should specify butler and policy.
-            If not None then its fields are used as the defaults for all other arguments,
-            though policy defaults to parentTask.policy.getPolicy(name).
-        @param log: pexLog log
-        @param metadata: a Python dict for metadata
+            If None (a top-level task) then you must specify policy and name is ignored.
+            If not None (a subtask) then you must specify name
+        @param log: pexLog log; if None then a log is created using the full task name.
+        
+        @raise RuntimeError if parentTask is None and policy is None.
+        @raise RuntimeError if parentTask is not None and name is None.
         """
         self.metadata = dafBase.PropertyList()
 
         if parentTask != None:
+            if name == None:
+                raise RuntimeError("name is required for a subtask")
             self._name = name
             self._fullName = parentTask._computeFullName(name)
             if policy == None:
-                policy = parentTask.policy.getPolicy(name)
-            if log == None:
-                log = parentTask.log
+                policy = parentTask.policy.getPolicy(name + "Policy")
             self._taskDict = parentTask._taskDict
         else:
             self._name = "main"
             self._fullName = self._name
-            if log == None:
-                log = pexLog.Log()
+            if policy == None:
+                raise RuntimeError("policy is required for a top-level task")
             self._taskDict = dict()
   
         self.policy = policy
+        if log == None:
+            log = pexLog.Log.getDefaultLog().createChildLog(self._fullName)
         self.log = log
         self._display = lsstDebug.Info(__name__).display
         self._taskDict[self._fullName] = self
     
-    def _computeFullName(self, name):
-        """Compute the full name of a subtask or metadata item, given its brief name
-        
-        @param name: brief name of subtask or metadata item
+    @classmethod
+    def getPolicyClass(cls):
+        """Return the lsst.pex.policy.Policy class that configures this object
         """
-        return "%s.%s" % (self._fullName, name)
+        raise NotImplementedError("Subclasses must override")
     
     def getFullName(self):
         """Return the full name of the task.
@@ -116,6 +121,24 @@ class Task(object):
         """
         subtask = taskClass(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
+
+    @contextlib.contextmanager
+    def timer(self, name):
+        """Context manager to time the duration of an arbitrary block of code
+        
+        @param[in] name: name of code being timed;
+            data will be added to metadata using item name: <name>Duration
+        
+        To use:
+        self.timer(name):
+            ...code to time...
+        
+        Writes the duration (in CPU seconds) to metadata using the specified name.
+        """
+        t1 = time.clock()
+        yield
+        duration = time.clock() - t1
+        self.metadata.add(name + "Duration", duration)
     
     def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
         """Display image and/or sources
@@ -205,20 +228,10 @@ class Task(object):
                     import pdb; pdb.set_trace()
                 elif ans in ("h", ):
                     print "h[elp] c[ontinue] p[db]"
-
-    @contextlib.contextmanager
-    def timer(self, name):
-        """Context manager to time the duration of an arbitrary block of code
+    
+    def _computeFullName(self, name):
+        """Compute the full name of a subtask or metadata item, given its brief name
         
-        @param[in] name: name with which the data will be stored in metadata
-        
-        To use:
-        self.timer(name):
-            ...code to time...
-        
-        Writes the duration (in CPU seconds) to metadata using the specified name.
+        @param name: brief name of subtask or metadata item
         """
-        t1 = time.clock()
-        yield
-        duration = time.clock() - t1
-        self.metadata.add(name, duration)
+        return "%s.%s" % (self._fullName, name)
