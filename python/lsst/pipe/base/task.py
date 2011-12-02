@@ -79,7 +79,7 @@ class Task(object):
   
         self.policy = policy
         if log == None:
-            log = pexLog.Log.getDefaultLog().createChildLog(self._fullName)
+            log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
         self.log = log
         self._display = lsstDebug.Info(__name__).display
         self._taskDict[self._fullName] = self
