@@ -23,7 +23,7 @@
 import unittest
 
 import lsst.utils.tests as utilsTests
-import lsst.pex.config as pexPolicy
+import lsst.pex.policy as pexPolicy
 import lsst.pipe.base as pipeBase
 
 class classproperty(property):
