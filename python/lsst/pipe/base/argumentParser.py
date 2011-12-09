@@ -23,7 +23,7 @@ import argparse
 import os.path
 import sys
 import lsst.pex.logging as pexLog
-import lsst.pex.config as pexConfig
+import lsst.pex.policy as pexConfig
 
 __all__ = ["ArgumentParser"]
 

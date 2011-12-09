@@ -20,15 +20,21 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+"""
+@todo when converting from pexPolicy to new pexConfig:
+  change getConfig to ConfigClass (right now there's no way to return a class)
+  and of course change the configuration objects themselves.
+"""
 import unittest
 
 import lsst.utils.tests as utilsTests
 import lsst.pex.policy as pexPolicy
 import lsst.pipe.base as pipeBase
 
-class classproperty(property):
-    def __get__(self, cls, owner):
-        return classmethod(self.fget).__get__(None, owner)()
+# might be useful for new pexConfig, for defining ConfigClass
+# class classproperty(property):
+#     def __get__(self, cls, owner):
+#         return classmethod(self.fget).__get__(None, owner)()
 
 class AddTask(pipeBase.Task):
     @pipeBase.timeMethod
@@ -36,8 +42,8 @@ class AddTask(pipeBase.Task):
         addend = self.config.get("addend")
         return pipeBase.Struct(val = val + addend)
     
-    @classproperty
-    def ConfigClass(cls):
+    @classmethod
+    def getConfig(cls):
         config = pexPolicy.Policy()
         config.set("addend", 3.1)
         return config
@@ -48,8 +54,8 @@ class MultTask(pipeBase.Task):
         multiplicand = self.config.get("multiplicand")
         return pipeBase.Struct(val = val * multiplicand)
     
-    @classproperty
-    def ConfigClass(cls):
+    @classmethod
+    def getConfig(cls):
         config = pexPolicy.Policy()
         config.set("multiplicand", 2.5)
         return config
@@ -68,13 +74,13 @@ class AddMultTask(pipeBase.Task):
             multRet = self.mult.run(addRet.val)
             return pipeBase.Struct(val = multRet.val)
     
-    @classproperty
-    def ConfigClass(cls):
+    @classmethod
+    def getConfig(cls):
         config = pexPolicy.Policy()
-        addPolicy = AddTask.ConfigClass()
-        multPolicy = MultTask.ConfigClass()
-        config.set("addPolicy", addPolicy)
-        config.set("multPolicy", multPolicy)
+        addPolicy = AddTask.getConfig()
+        multPolicy = MultTask.getConfig()
+        config.set("addConfig", addPolicy)
+        config.set("multConfig", multPolicy)
         return config
 
 class AddTwiceTask(AddTask):
@@ -98,9 +104,9 @@ class TaskTestCase(unittest.TestCase):
         """
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
-                config = AddMultTask.ConfigClass()
-                config.getPolicy("addPolicy").set("addend", addend)
-                config.getPolicy("multPolicy").set("multiplicand", multiplicand)
+                config = AddMultTask.getConfig()
+                config.getPolicy("addConfig").set("addend", addend)
+                config.getPolicy("multConfig").set("multiplicand", multiplicand)
                 addMultTask = AddMultTask(config=config)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
@@ -111,9 +117,9 @@ class TaskTestCase(unittest.TestCase):
         """
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
-                config = AddMultTask.ConfigClass()
-                config.getPolicy("addPolicy").set("addend", addend)
-                config.getPolicy("multPolicy").set("multiplicand", multiplicand)
+                config = AddMultTask.getConfig()
+                config.getPolicy("addConfig").set("addend", addend)
+                config.getPolicy("multConfig").set("multiplicand", multiplicand)
                 addMultTask = AddMultTask(config=config)
                 addMultTask.makeSubtask("add", AddTwiceTask)
                 for val in (-1.0, 0.0, 17.5):
@@ -123,7 +129,7 @@ class TaskTestCase(unittest.TestCase):
     def testNames(self):
         """Test task names
         """
-        config = AddMultTask.ConfigClass()
+        config = AddMultTask.getConfig()
         addMultTask = AddMultTask(config=config)
         self.assertEquals(addMultTask._name, "main")
         self.assertEquals(addMultTask.add._name, "add")
@@ -135,7 +141,7 @@ class TaskTestCase(unittest.TestCase):
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
-        config = AddMultTask.ConfigClass()
+        config = AddMultTask.getConfig()
         addMultTask = AddMultTask(config=config)
         addMultTask.run(val=1.1)
         self.assertLess(addMultTask.metadata.get("runDuration"), 0.1)
