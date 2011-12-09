@@ -23,32 +23,36 @@
 import unittest
 
 import lsst.utils.tests as utilsTests
-import lsst.pex.policy as pexPolicy
+import lsst.pex.config as pexPolicy
 import lsst.pipe.base as pipeBase
+
+class classproperty(property):
+    def __get__(self, cls, owner):
+        return classmethod(self.fget).__get__(None, owner)()
 
 class AddTask(pipeBase.Task):
     @pipeBase.timeMethod
     def run(self, val):
-        addend = self.policy.get("addend")
+        addend = self.config.get("addend")
         return pipeBase.Struct(val = val + addend)
     
-    @staticmethod
-    def getPolicy(addend=3.1):
-        policy = pexPolicy.Policy()
-        policy.set("addend", addend)
-        return policy
+    @classproperty
+    def ConfigClass(cls):
+        config = pexPolicy.Policy()
+        config.set("addend", 3.1)
+        return config
 
 class MultTask(pipeBase.Task):
     @pipeBase.timeMethod
     def run(self, val):
-        multiplicand = self.policy.get("multiplicand")
+        multiplicand = self.config.get("multiplicand")
         return pipeBase.Struct(val = val * multiplicand)
     
-    @staticmethod
-    def getPolicy(multiplicand=2.5):
-        policy = pexPolicy.Policy()
-        policy.set("multiplicand", multiplicand)
-        return policy
+    @classproperty
+    def ConfigClass(cls):
+        config = pexPolicy.Policy()
+        config.set("multiplicand", 2.5)
+        return config
 
 class AddMultTask(pipeBase.Task):
     """First add, then multiply"""
@@ -64,19 +68,19 @@ class AddMultTask(pipeBase.Task):
             multRet = self.mult.run(addRet.val)
             return pipeBase.Struct(val = multRet.val)
     
-    @staticmethod
-    def getPolicy(addend=3.1, multiplicand=2.5):
-        policy = pexPolicy.Policy()
-        addPolicy = AddTask.getPolicy(addend=addend)
-        multPolicy = MultTask.getPolicy(multiplicand=multiplicand)
-        policy.set("addPolicy", addPolicy)
-        policy.set("multPolicy", multPolicy)
-        return policy
+    @classproperty
+    def ConfigClass(cls):
+        config = pexPolicy.Policy()
+        addPolicy = AddTask.ConfigClass()
+        multPolicy = MultTask.ConfigClass()
+        config.set("addPolicy", addPolicy)
+        config.set("multPolicy", multPolicy)
+        return config
 
 class AddTwiceTask(AddTask):
     """Variant of AddTask that adds twice the addend"""
     def run(self, val):
-        addend = self.policy.get("addend")
+        addend = self.config.get("addend")
         return pipeBase.Struct(val = val + (2 * addend))
 
 
@@ -94,8 +98,10 @@ class TaskTestCase(unittest.TestCase):
         """
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
-                policy = AddMultTask.getPolicy(addend=addend, multiplicand=multiplicand)
-                addMultTask = AddMultTask(policy=policy)
+                config = AddMultTask.ConfigClass()
+                config.getPolicy("addPolicy").set("addend", addend)
+                config.getPolicy("multPolicy").set("multiplicand", multiplicand)
+                addMultTask = AddMultTask(config=config)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + addend) * multiplicand)
@@ -105,8 +111,10 @@ class TaskTestCase(unittest.TestCase):
         """
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
-                policy = AddMultTask.getPolicy(addend=addend, multiplicand=multiplicand)
-                addMultTask = AddMultTask(policy=policy)
+                config = AddMultTask.ConfigClass()
+                config.getPolicy("addPolicy").set("addend", addend)
+                config.getPolicy("multPolicy").set("multiplicand", multiplicand)
+                addMultTask = AddMultTask(config=config)
                 addMultTask.makeSubtask("add", AddTwiceTask)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
@@ -115,8 +123,8 @@ class TaskTestCase(unittest.TestCase):
     def testNames(self):
         """Test task names
         """
-        policy = AddMultTask.getPolicy()
-        addMultTask = AddMultTask(policy=policy)
+        config = AddMultTask.ConfigClass()
+        addMultTask = AddMultTask(config=config)
         self.assertEquals(addMultTask._name, "main")
         self.assertEquals(addMultTask.add._name, "add")
         self.assertEquals(addMultTask.mult._name, "mult")
@@ -127,8 +135,8 @@ class TaskTestCase(unittest.TestCase):
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
-        policy = AddMultTask.getPolicy()
-        addMultTask = AddMultTask(policy=policy)
+        config = AddMultTask.ConfigClass()
+        addMultTask = AddMultTask(config=config)
         addMultTask.run(val=1.1)
         self.assertLess(addMultTask.metadata.get("runDuration"), 0.1)
         self.assertLess(addMultTask.metadata.get("contextDuration"), 0.1)

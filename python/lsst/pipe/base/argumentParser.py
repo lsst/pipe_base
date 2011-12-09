@@ -23,20 +23,20 @@ import argparse
 import os.path
 import sys
 import lsst.pex.logging as pexLog
-import lsst.pex.policy as pexPolicy
+import lsst.pex.config as pexConfig
 
 __all__ = ["ArgumentParser"]
 
 class ArgumentParser(argparse.ArgumentParser):
     """ArgumentParser is an argparse.ArgumentParser that provides standard arguments for pipe_tasks tasks.
 
-    These are used to populate butler, policy and idList attributes,
+    These are used to populate butler, config and idList attributes,
     in addition to standard argparse behavior.
     
     @todo: adapt for new butler:
     - Get camera name from data repository
     - Use mapper or camera name to obtain the names of the camera ID elements
-    @todo: adapt for new Policy
+    @todo: adapt for new Config
     """
     def __init__(self, **kwargs):
         argparse.ArgumentParser.__init__(self,
@@ -46,19 +46,19 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
 (WARNING: this must appear before any options)""")
         self.add_argument("dataPath", help="path to data repository")
-        self.add_argument("-p", "--policy", nargs="*", action=PolicyValueAction,
-                        help="policy overrides", metavar="NAME=VALUE")
-        self.add_argument("-o", "--override", dest="policyPath", nargs="*", action=PolicyFileAction,
-                        help="policy override files")
+        self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
+                        help="command-line config overrides", metavar="NAME=VALUE")
+        self.add_argument("-f", "--cfile", dest="configPath", nargs="*", action=ConfigFileAction,
+                        help="file of config overrides")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--log", help="logging destination")
 
-    def parse_args(self, policy, argv=None):
+    def parse_args(self, config, argv=None):
         """Parse arguments for a command-line-driven task
 
-        @params policy: default policy
+        @params config: default config
         @params argv: argv to parse; if None then sys.argv[1:] is used
         """
         if argv == None:
@@ -75,7 +75,7 @@ class ArgumentParser(argparse.ArgumentParser):
             sys.exit(1)
             
         inNamespace = argparse.Namespace
-        inNamespace.policy = policy
+        inNamespace.config = config
         namespace = argparse.ArgumentParser.parse_args(self, args=argv)
         
         if not os.path.isdir(namespace.dataPath):
@@ -141,23 +141,23 @@ class ArgumentParser(argparse.ArgumentParser):
 
 
 # argparse callback to set a configuration value
-class PolicyValueAction(argparse.Action):
+class ConfigValueAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string):
-        """Override one or more policy name value pairs
+        """Override one or more config name value pairs
         """
-        policy = pexPolicy.Policy()
+        config = pexConfig.Config()
         for nameValue in values:
             name, sep, value = nameValue.partition("=")
             if not value:
                 raise ValueError("%s value %s must be in form name=value" % (option_string, nameValue))
-            policy.set(name, value)
-#        namespace.policy.merge(policy)
+            config.set(name, value)
+#        namespace.config.merge(config)
 
 # argparse callback to override configurations
-class PolicyFileAction(argparse.Action):
+class ConfigFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        """Load one or more files of policy overrides
+        """Load one or more files of config overrides
         """
-        for policyPath in values:
-            policyFile = pexPolicy.Policy(policyPath)
-            namespace.policy.merge(overrideFile)
+        for configPath in values:
+            configFile = pexConfig.Config(configPath)
+            namespace.config.merge(overrideFile)

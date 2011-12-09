@@ -19,6 +19,14 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+"""The documentation is written as if using the new pexConfig
+but the implementation still uses pexPolicy
+
+Until we have the transition, where you see Config think Policy
+and where you see config.getPolicy(name) think config.name
+
+Search for pexPolicy to find all instances to change
+"""
 import contextlib
 import time
 
@@ -33,7 +41,7 @@ class Task(object):
     
     Useful attributes include:
     * log: an lsst.pex.logging.Log; one log is shared among all tasks and subtasks
-    * policy: task-specific Policy
+    * config: task-specific Config
     * metadata: an lsst.daf.data.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used for data processing.
@@ -44,20 +52,20 @@ class Task(object):
     * runButler: un-persists input data using a data butler (provided as the first argument
     of runButler), processes the data and persists the results using the butler.
     
-    In addition subclasses must override getPolicyClass.
+    In addition subclasses must override getConfigClass.
     """
-    def __init__(self, policy=None, name=None, parentTask=None, log=None):
+    def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
         
-        @param policy: policy to configure this task;
-            If parentTask specified then defaults to parentTask.policy.getPolicy(name + "Policy")
+        @param config: config to configure this task;
+            If parentTask specified then defaults to parentTask.config.<name>Config
         @param name: brief name of task; ignored if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
-            If None (a top-level task) then you must specify policy and name is ignored.
+            If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
         @param log: pexLog log; if None then a log is created using the full task name.
         
-        @raise RuntimeError if parentTask is None and policy is None.
+        @raise RuntimeError if parentTask is None and config is None.
         @raise RuntimeError if parentTask is not None and name is None.
         """
         self.metadata = dafBase.PropertyList()
@@ -67,17 +75,19 @@ class Task(object):
                 raise RuntimeError("name is required for a subtask")
             self._name = name
             self._fullName = parentTask._computeFullName(name)
-            if policy == None:
-                policy = parentTask.policy.getPolicy(name + "Policy")
+            if config == None:
+# Use getPolicy while using the old pexPolicy; switch to the following for pexConfig:
+#                config = getattr(parentTask.config, "%sConfig" % (name,))
+                config = parentTask.config.getPolicy(name + "Config")
             self._taskDict = parentTask._taskDict
         else:
             self._name = "main"
             self._fullName = self._name
-            if policy == None:
-                raise RuntimeError("policy is required for a top-level task")
+            if config == None:
+                raise RuntimeError("config is required for a top-level task")
             self._taskDict = dict()
   
-        self.policy = policy
+        self.config = config
         if log == None:
             log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
         self.log = log
@@ -85,8 +95,8 @@ class Task(object):
         self._taskDict[self._fullName] = self
     
     @classmethod
-    def getPolicyClass(cls):
-        """Return the lsst.pex.policy.Policy class that configures this object
+    def getConfigClass(cls):
+        """Return the lsst.pex.config.Config class that configures this object
         """
         raise NotImplementedError("Subclasses must override")
     
