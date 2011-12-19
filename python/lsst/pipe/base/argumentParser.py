@@ -23,7 +23,6 @@ import argparse
 import os.path
 import sys
 import lsst.pex.logging as pexLog
-import lsst.pex.policy as pexConfig
 
 __all__ = ["ArgumentParser"]
 
@@ -33,7 +32,13 @@ class ArgumentParser(argparse.ArgumentParser):
     These are used to populate butler, config and idList attributes,
     in addition to standard argparse behavior.
     
-    @todo: adapt for new butler:
+    @note:
+    * --cfile and --config both may be specified multiple times on the command line;
+      every instance is applied (in order left to right as it appears on the command line).
+    * Other command-line arguments are only applied once, using the right-most instance
+      (except I'm not yet sure about @file).
+    
+    @todo adapt for new butler:
     - Get camera name from data repository
     - Use mapper or camera name to obtain the names of the camera ID elements
     @todo: adapt for new Config
@@ -140,24 +145,25 @@ class ArgumentParser(argparse.ArgumentParser):
         self._camera = camera
 
 
-# argparse callback to set a configuration value
 class ConfigValueAction(argparse.Action):
+    """argparse action callback to override config parameters using name=value pairs from the command line
+    """
     def __call__(self, parser, namespace, values, option_string):
         """Override one or more config name value pairs
         """
-        config = pexConfig.Config()
         for nameValue in values:
             name, sep, value = nameValue.partition("=")
             if not value:
                 raise ValueError("%s value %s must be in form name=value" % (option_string, nameValue))
-            config.set(name, value)
-#        namespace.config.merge(config)
+            setattr(namespace.config, name, value)
+
 
 # argparse callback to override configurations
 class ConfigFileAction(argparse.Action):
+    """argparse action to load config overrides from one or more files
+    """
     def __call__(self, parser, namespace, values, option_string=None):
         """Load one or more files of config overrides
         """
         for configPath in values:
-            configFile = pexConfig.Config(configPath)
-            namespace.config.merge(overrideFile)
+            namespace.config.load(configPath)

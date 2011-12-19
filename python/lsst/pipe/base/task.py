@@ -58,7 +58,7 @@ class Task(object):
         """Create a Task
         
         @param config: config to configure this task;
-            If parentTask specified then defaults to parentTask.config.<name>Config
+            If parentTask specified then defaults to parentTask.config.<name>
         @param name: brief name of task; ignored if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
@@ -76,9 +76,13 @@ class Task(object):
             self._name = name
             self._fullName = parentTask._computeFullName(name)
             if config == None:
-# Use getPolicy while using the old pexPolicy; switch to the following for pexConfig:
-#                config = getattr(parentTask.config, "%sConfig" % (name,))
-                config = parentTask.config.getPolicy(name + "Config")
+# this is a temporary hack during the transition from Policy to Config
+                if hasattr(parentTask.config, "getPolicy"):
+                    # old Policy class
+                    config = parentTask.config.getPolicy(name)
+                else:
+                    # new Config class
+                    config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
         else:
             self._name = "main"
@@ -93,12 +97,6 @@ class Task(object):
         self.log = log
         self._display = lsstDebug.Info(__name__).display
         self._taskDict[self._fullName] = self
-    
-    @classmethod
-    def getConfigClass(cls):
-        """Return the lsst.pex.config.Config class that configures this object
-        """
-        raise NotImplementedError("Subclasses must override")
     
     def getFullName(self):
         """Return the full name of the task.
