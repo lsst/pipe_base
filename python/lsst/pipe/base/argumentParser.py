@@ -49,7 +49,7 @@ class ArgumentParser(argparse.ArgumentParser):
             epilog="@file reads command-line options from the specified file (one option per line)",
             **kwargs)
         self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
-(WARNING: this must appear before any options)""")
+            (WARNING: this must appear before any options)""")
         self.add_argument("dataPath", help="path to data repository")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
                         help="command-line config overrides", metavar="NAME=VALUE")
