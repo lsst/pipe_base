@@ -55,6 +55,8 @@ class ArgumentParser(argparse.ArgumentParser):
                         help="command-line config overrides", metavar="NAME=VALUE")
         self.add_argument("-f", "--cfile", dest="configPath", nargs="*", action=ConfigFileAction,
                         help="file of config overrides")
+        self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
+                        help="rerun name")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
@@ -63,7 +65,7 @@ class ArgumentParser(argparse.ArgumentParser):
     def parse_args(self, config, argv=None):
         """Parse arguments for a command-line-driven task
 
-        @params config: default config
+        @params config: config for the task being run
         @params argv: argv to parse; if None then sys.argv[1:] is used
         """
         if argv == None:
@@ -101,11 +103,12 @@ class ArgumentParser(argparse.ArgumentParser):
         return namespace
 
     def _handleCamera(self, camera):
-        """Set attributes based on self._camera
+        """Configure the command parser for the chosen camera.
         
-        Called by parse_args before the main parser is called
+        Called by parse_args before parsing the command (beyond getting the camera name).
         
-        This is a temporary hack; ditch it once we can get this info from a data repository/
+        This will be radically rewritten once I can get this information from the data repository,
+        but the subroutine must continue to live on to support things like camera-specific defaults.
         """
         if camera in ("-h", "--help"):
             self.print_help()
