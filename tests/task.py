@@ -20,13 +20,10 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-"""
-@warning this version requires lsst.pex.policy ticket 1831; this will probably be renamed to lsst.pex.config
-"""
 import unittest
 
 import lsst.utils.tests as utilsTests
-import lsst.pex.policy as pexConfig
+import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
 class AddConfig(pexConfig.Config):

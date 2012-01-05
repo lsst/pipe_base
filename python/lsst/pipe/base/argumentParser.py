@@ -113,12 +113,16 @@ class ArgumentParser(argparse.ArgumentParser):
         if camera in ("-h", "--help"):
             self.print_help()
             print
-            raise RuntimeError("For more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n")
+            raise RuntimeError(
+                "For more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n")
         
         lowCamera = camera.lower()
         if lowCamera == "lsstsim":
-#            import lsst.obs.lsstSim
-#            self._mappers = lsst.obs.lsstSim.LsstSimMapper
+            try:
+                import lsst.obs.lsstSim
+            except ImportError:
+                raise RuntimeError("Must setup obs_lsstSim to use lsstSim")
+            self._mappers = lsst.obs.lsstSim.LsstSimMapper
             self._idNameCharTypeList = (
                 ("visit",  "V", int),
                 ("filter", "f", str),
@@ -127,8 +131,11 @@ class ArgumentParser(argparse.ArgumentParser):
             )
             self._extraFileKeys = ["channel"]
         elif lowCamera == "suprimecam":
-#            import lsst.obs.suprimecam
-#            self._mappers = lsst.obs.suprimecam.SuprimecamMapper
+            try:
+                import lsst.obs.suprimecam
+            except ImportError:
+                raise RuntimeError("Must setup obs_suprimecam to use suprimecam")
+            self._mappers = lsst.obs.suprimecam.SuprimecamMapper
             self._idNameCharTypeList = (
                 ("visit",  "V", int),
                 ("ccd", "c", str),
@@ -147,7 +154,6 @@ class ArgumentParser(argparse.ArgumentParser):
 
         self._camera = camera
 
-
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
     """
@@ -160,8 +166,6 @@ class ConfigValueAction(argparse.Action):
                 raise ValueError("%s value %s must be in form name=value" % (option_string, nameValue))
             setattr(namespace.config, name, value)
 
-
-# argparse callback to override configurations
 class ConfigFileAction(argparse.Action):
     """argparse action to load config overrides from one or more files
     """

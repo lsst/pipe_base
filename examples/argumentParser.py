@@ -20,9 +20,32 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import lsst.pex.policy as pexPolicy
+import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
+class ExampleConfig(pexConfig.Config):
+    """Config for argument parser example
+    """
+    int = pexConfig.Field(
+        dtype = int,
+        doc = "Example integer value",
+        default = 1,
+        optional = False,
+    )
+    float = pexConfig.Field(
+        dtype = float,
+        doc = "Example float value",
+        default = 3.14159265358979,
+        optional = False,
+    )
+    intList = pexConfig.ListField(
+        dtype = int,
+        doc = "example list of integers",
+        default = [-1, 0, 1],
+        optional = False,
+    )
+
+
 parser = pipeBase.ArgumentParser()
-namespace = parser.parse_args(policy=pexPolicy.Policy())
+namespace = parser.parse_args(config=ExampleConfig())
 print "namespace=", namespace
