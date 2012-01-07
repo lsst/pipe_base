@@ -26,26 +26,28 @@ import lsst.pipe.base as pipeBase
 class ExampleConfig(pexConfig.Config):
     """Config for argument parser example
     """
-    int = pexConfig.Field(
+    oneInt = pexConfig.Field(
         dtype = int,
         doc = "Example integer value",
         default = 1,
-        optional = False,
     )
-    float = pexConfig.Field(
+    oneFloat = pexConfig.Field(
         dtype = float,
         doc = "Example float value",
         default = 3.14159265358979,
-        optional = False,
     )
     intList = pexConfig.ListField(
-        dtype = int,
+        itemType = int,
         doc = "example list of integers",
         default = [-1, 0, 1],
-        optional = False,
     )
 
 
 parser = pipeBase.ArgumentParser()
-namespace = parser.parse_args(config=ExampleConfig())
+config = ExampleConfig()
+namespace = parser.parse_args(config=config)
 print "namespace=", namespace
+print "config.oneInt=%r" % (config.oneInt,)
+print "config.oneFloat=%r" % (config.oneFloat,)
+print "config.intList=%r" % (config.intList,)
+

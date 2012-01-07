@@ -53,7 +53,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("dataPath", help="path to data repository")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
                         help="command-line config overrides", metavar="NAME=VALUE")
-        self.add_argument("-f", "--cfile", dest="configPath", nargs="*", action=ConfigFileAction,
+        self.add_argument("-C", "--cfile", nargs="*", action=ConfigFileAction,
                         help="file of config overrides")
         self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
                         help="rerun name")
@@ -112,16 +112,15 @@ class ArgumentParser(argparse.ArgumentParser):
         """
         if camera in ("-h", "--help"):
             self.print_help()
-            print
-            raise RuntimeError(
-                "For more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n")
+            print "\nFor more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n"
+            sys.exit(1)
         
         lowCamera = camera.lower()
         if lowCamera == "lsstsim":
             try:
                 import lsst.obs.lsstSim
             except ImportError:
-                raise RuntimeError("Must setup obs_lsstSim to use lsstSim")
+                self.error("Must setup obs_lsstSim to use lsstSim")
             self._mappers = lsst.obs.lsstSim.LsstSimMapper
             self._idNameCharTypeList = (
                 ("visit",  "V", int),
@@ -134,7 +133,7 @@ class ArgumentParser(argparse.ArgumentParser):
             try:
                 import lsst.obs.suprimecam
             except ImportError:
-                raise RuntimeError("Must setup obs_suprimecam to use suprimecam")
+                self.error("Must setup obs_suprimecam to use suprimecam")
             self._mappers = lsst.obs.suprimecam.SuprimecamMapper
             self._idNameCharTypeList = (
                 ("visit",  "V", int),
@@ -142,7 +141,7 @@ class ArgumentParser(argparse.ArgumentParser):
             )
             self._extraFileKeys = []
         else:
-            raise RuntimeError("Unsupported camera: %s" % camera)
+            self.error("Unsupported camera: %s" % camera)
 
         for idName, idChar, idType in self._idNameCharTypeList:
             argList = []
@@ -161,9 +160,13 @@ class ConfigValueAction(argparse.Action):
         """Override one or more config name value pairs
         """
         for nameValue in values:
-            name, sep, value = nameValue.partition("=")
-            if not value:
-                raise ValueError("%s value %s must be in form name=value" % (option_string, nameValue))
+            name, sep, valueStr = nameValue.partition("=")
+            if not valueStr:
+                parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
+            try:
+                value = eval(valueStr)
+            except Exception:
+                parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
             setattr(namespace.config, name, value)
 
 class ConfigFileAction(argparse.Action):
@@ -172,5 +175,5 @@ class ConfigFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         """Load one or more files of config overrides
         """
-        for configPath in values:
-            namespace.config.load(configPath)
+        for cfile in values:
+            namespace.config.load(cfile)
