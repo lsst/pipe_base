@@ -19,14 +19,6 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-"""The documentation is written as if using the new pexConfig
-but the implementation still uses pexPolicy
-
-Until we have the transition, where you see Config think Policy
-and where you see config.getPolicy(name) think config.name
-
-Search for pexPolicy to find all instances to change
-"""
 import contextlib
 import time
 
