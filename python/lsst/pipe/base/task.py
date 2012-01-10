@@ -57,7 +57,7 @@ class Task(object):
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
         
-        @param config: config to configure this task;
+        @param config: config to configure this task (task-specific subclass of pexConfig.Config);
             If parentTask specified then defaults to parentTask.config.<name>
         @param name: brief name of task; ignored if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
@@ -76,13 +76,7 @@ class Task(object):
             self._name = name
             self._fullName = parentTask._computeFullName(name)
             if config == None:
-# this is a temporary hack during the transition from Policy to Config
-                if hasattr(parentTask.config, "getPolicy"):
-                    # old Policy class
-                    config = parentTask.config.getPolicy(name)
-                else:
-                    # new Config class
-                    config = getattr(parentTask.config, name)
+                config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
         else:
             self._name = "main"

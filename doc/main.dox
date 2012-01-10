@@ -1,5 +1,5 @@
 /**
-\mainpage lsst::pipe::base;  Base package for pipeline tasks
+\mainpage lsst::pipe::base; Base package for pipeline tasks
 
 \section pipeBase_introduction Introduction
 
@@ -8,9 +8,9 @@ Classes to support pipeline tasks
 A data processing pipeline is implemented as a task that is a subclass of pipeBase.Task.
 Tasks often call subtasks, which are also instances of pipeBase.Task.
 
-Each Task is configured by a Policy object.
+Each Task is configured by a pex_config Config object accessible via the task's ConfigClass attribute.
 
-Task should implement a "run" method, "runButler" method, or both:
+Each task implements a "run" method, "runButler" method, or both:
  @li: "run" performs the primary data processing. It takes whatever arguments the author deems appropriate
  to the task and returns a pipeBase.Struct object with a named field for each returned value.
  "run" must not persist its output data and typically does not un-persist its input data.
