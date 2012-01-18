@@ -1,5 +1,6 @@
-setupRequired(utils)
+setupRequired(daf_persistence)
 setupRequired(pex_logging)
 setupRequired(pex_config)
+setupRequired(utils)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
