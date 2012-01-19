@@ -44,7 +44,8 @@ class Task(object):
     * runButler: un-persists input data using a data butler (provided as the first argument
     of runButler), processes the data and persists the results using the butler.
     
-    In addition subclasses must override getConfigClass.
+    Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
+    which configures this task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
