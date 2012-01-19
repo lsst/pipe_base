@@ -65,6 +65,9 @@ class ArgumentParser(argparse.ArgumentParser):
                         help="file of config overrides")
         self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
                         help="rerun name")
+        self.add_argument("-L", "--log-level", action=LogLevelAction, help="Set logging level")
+        self.add_argument("-T", "--trace", nargs=2, action=TraceLevelAction,
+                          help="Set trace level for component")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
@@ -239,3 +242,26 @@ class ConfigFileAction(argparse.Action):
         """
         for configFile in values:
             namespace.config.load(configFile)
+
+class LogLevelAction(argparse.Action):
+    """argparse action to set log level"""
+    def __call__(self, parser, namespace, value, option_string):
+        permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
+        if value.upper() in permitted:
+            value = getattr(pexLog.Log, value.upper())
+        else:
+            try:
+                value = int(value)
+            except ValueError:
+                parser.error("Cannot parse %s a logging level %s" % (value, permitted))
+        log = pexLog.getDefaultLog()
+        log.setThreshold(value)
+
+class TraceLevelAction(argparse.Action):
+    """argparse action to set trace level"""
+    def __call__(self, parser, namespace, values, option_string):
+        try:
+            component, level = values
+        except TypeError:
+            parser.error("Cannont parse %s as component and level" % values)
+        pexLog.Trace.setVerbosity(component, level)
