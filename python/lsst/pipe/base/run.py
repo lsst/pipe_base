@@ -23,16 +23,18 @@
 
 from lsst.pipe.base.argumentParser import ArgumentParser
 
-def runTask(TaskClass, ArgumentParserClass=ArgumentParser, argMap=['butler', 'idList']):
+def runTask(TaskClass, ArgumentParserClass=ArgumentParser, argList=['butler', 'idList'], argMap=None):
     """Run a Task after parsing the command-line arguments.
     This is intended to be used as a common front-end for scripts.
-    
-    The 'argMap' may be a dict with the mapping from ArgumentParser
-    instance variables to Task inputs (e.g., {'TaskArg': 'ParserVar'})
-    or a simple list when no mapping is required.    
+
+    Arguments to the TaskClass.run() method are pulled from the
+    argument parser.  These may be specified with either of both
+    of a list (for no translation required) or a dict (for when
+    translation is required, e.g., {'TaskArg': 'ParserVar'})/
 
     @param TaskClass             Class of the particular Task to be run
     @param ArgumentParserClass   Class of ArgumentParser for command-line parsing
+    @param argList               List of ArgumentParser instance variables to pass to Task
     @param argMap                Mapping from ArgumentParser instance variables to Task inputs
     @return Results of running the Task
     """
@@ -41,10 +43,11 @@ def runTask(TaskClass, ArgumentParserClass=ArgumentParser, argMap=['butler', 'id
     cmd = parser.parse_args(config=TaskClass.ConfigClass())
     task = TaskClass(cmd.config)
 
-    if isinstance(argMap, dict):
-        kwargs = dict([(argTarget, getattr(cmd, argSource)) for argTarget,argSource in argMap])
-    else:
-        kwargs = dict([(arg, getattr(cmd, arg)) for arg in argMap])
+    kwargs = dict()
+    if argList is not None:
+        kwargs.update([(arg, getattr(cmd, arg)) for arg in argList])
+    if argMap is not None:
+        kwargs.update([(argTarget, getattr(cmd, argSource)) for argTarget,argSource in argMap])
 
     return task.run(**kwargs)
 
