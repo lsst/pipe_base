@@ -19,14 +19,6 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-"""The documentation is written as if using the new pexConfig
-but the implementation still uses pexPolicy
-
-Until we have the transition, where you see Config think Policy
-and where you see config.getPolicy(name) think config.name
-
-Search for pexPolicy to find all instances to change
-"""
 import contextlib
 import time
 
@@ -52,12 +44,13 @@ class Task(object):
     * runButler: un-persists input data using a data butler (provided as the first argument
     of runButler), processes the data and persists the results using the butler.
     
-    In addition subclasses must override getConfigClass.
+    Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
+    which configures this task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
         
-        @param config: config to configure this task;
+        @param config: config to configure this task (task-specific subclass of pexConfig.Config);
             If parentTask specified then defaults to parentTask.config.<name>
         @param name: brief name of task; ignored if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
@@ -76,13 +69,7 @@ class Task(object):
             self._name = name
             self._fullName = parentTask._computeFullName(name)
             if config == None:
-# this is a temporary hack during the transition from Policy to Config
-                if hasattr(parentTask.config, "getPolicy"):
-                    # old Policy class
-                    config = parentTask.config.getPolicy(name)
-                else:
-                    # new Config class
-                    config = getattr(parentTask.config, name)
+                config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
         else:
             self._name = "main"

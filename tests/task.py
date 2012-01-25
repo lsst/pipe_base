@@ -20,17 +20,14 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-"""
-@warning this version requires lsst.pex.policy ticket 1831; this will probably be renamed to lsst.pex.config
-"""
 import unittest
 
 import lsst.utils.tests as utilsTests
-import lsst.pex.policy as pexConfig
+import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
 class AddConfig(pexConfig.Config):
-    addend = pexConfig.Field(float, doc="amount to add", default=3.1)
+    addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
 class AddTask(pipeBase.Task):
     ConfigClass = AddConfig
@@ -42,7 +39,7 @@ class AddTask(pipeBase.Task):
         )
 
 class MultConfig(pexConfig.Config):
-    multiplicand = pexConfig.Field(float, doc="amount by which to multiply", default=2.5)
+    multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
 
 class MultTask(pipeBase.Task):
     ConfigClass = MultConfig
@@ -54,8 +51,8 @@ class MultTask(pipeBase.Task):
         )
 
 class AddMultConfig(pexConfig.Config):
-    add = pexConfig.ConfigField(AddTask.ConfigClass, doc="", optional=False)
-    mult = pexConfig.ConfigField(MultTask.ConfigClass, doc="", optional=False)
+    add = pexConfig.ConfigField(doc="", dtype=AddTask.ConfigClass)
+    mult = pexConfig.ConfigField(doc="", dtype=MultTask.ConfigClass)
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
