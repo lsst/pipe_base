@@ -20,7 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import lsst.pex.policy as pexPolicy
+import lsst.pex.config as pexPolicy
 import lsst.pipe.base as pipeBase
 
 parser = pipeBase.ArgumentParser()
