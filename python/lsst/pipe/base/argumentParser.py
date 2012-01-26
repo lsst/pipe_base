@@ -202,7 +202,7 @@ class ArgumentParser(argparse.ArgumentParser):
             self._mapperClass = lsst.obs.suprimecam.SuprimecamMapper
             self._idNameCharTypeList = (
                 ("visit",  "V", int),
-                ("ccd", "c", str),
+                ("ccd", "s", str),
             )
             self._extraFileKeys = []
         else:
