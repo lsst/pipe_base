@@ -240,7 +240,6 @@ class ConfigFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         """Load one or more files of config overrides
         """
-        import pdb;pdb.set_trace()
         for configFile in values:
             # XXX This is wrong --- it replaces the config wholesale
             # Config doesn't seem to have the desired functionality yet
