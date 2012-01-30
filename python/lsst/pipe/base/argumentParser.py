@@ -90,12 +90,12 @@ class ArgumentParser(argparse.ArgumentParser):
         if argv == None:
             argv = sys.argv[1:]
 
-        if len(sys.argv) < 2:
+        if len(argv) < 1:
             sys.stderr.write("Error: must specify camera as first argument\n")
             self.print_usage()
             sys.exit(1)
         try:
-            self._handleCamera(sys.argv[1])
+            self._handleCamera(argv[0])
         except Exception, e:
             sys.stderr.write("%s\n" % e)
             sys.exit(1)
