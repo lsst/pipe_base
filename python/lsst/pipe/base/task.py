@@ -148,6 +148,8 @@ class Task(object):
                self._display in (False, None) or self._display[name] in (False, None):
             return
 
+        import lsst.afw.display.ds9 as ds9
+
         if isinstance(self._display, int):
             frame = self._display
         elif isinstance(self._display, dict):
