@@ -37,7 +37,7 @@ class ExampleConfig(pexConfig.Config):
         default = 3.14159265358979,
     )
     intList = pexConfig.ListField(
-        itemType = int,
+        dtype = int,
         doc = "example list of integers",
         default = [-1, 0, 1],
     )
@@ -46,8 +46,12 @@ class ExampleConfig(pexConfig.Config):
 parser = pipeBase.ArgumentParser()
 config = ExampleConfig()
 namespace = parser.parse_args(config=config)
-print "namespace=", namespace
 print "config.oneInt=%r" % (config.oneInt,)
 print "config.oneFloat=%r" % (config.oneFloat,)
 print "config.intList=%r" % (config.intList,)
+print "len(namespace.dataRefList)=%s" % (len(namespace.dataRefList),)
 
+for dataRef in namespace.dataRefList[:10]:
+    print "dataRef.dataId=", dataRef.dataId
+if len(namespace.dataRefList) > 10:
+    print "..."
