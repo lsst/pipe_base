@@ -82,7 +82,7 @@ class ArgumentParser(argparse.ArgumentParser):
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied
         - butler: a butler for the data
-        - dataRefList: a list of data references as specified by the user and found with the butler
+        - dataRefList: a list of butler data references as specified by the user
         - mapper: a mapper for the data
         - log: a log
         - an entry for each command-line argument, with a few exceptions such as configFile and logDest
