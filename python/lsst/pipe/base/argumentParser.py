@@ -158,7 +158,7 @@ class ArgumentParser(argparse.ArgumentParser):
             argList.append("%s=%sItem" % (idName, idName))
             iterList.append("for %sItem in idDict['%s']" % (idName, idName))
         queryIdListExpr = "[dict(%s) %s]" % (", ".join(argList), " ".join(iterList))
-        queryIdList = eval(queryIdListExpr)
+        queryIdList = eval(queryIdListExpr, {})
         
         namespace.dataRefList = [dataRef for queryId in queryIdList \
             for dataRef in namespace.butler.subset("raw", **queryId)]
@@ -224,7 +224,7 @@ class ConfigValueAction(argparse.Action):
             if not valueStr:
                 parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
             try:
-                value = eval(valueStr)
+                value = eval(valueStr, {})
             except Exception:
                 parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
             setattr(namespace.config, name, value)
