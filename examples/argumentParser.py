@@ -49,6 +49,7 @@ namespace = parser.parse_args(config=config)
 print "config.oneInt=%r" % (config.oneInt,)
 print "config.oneFloat=%r" % (config.oneFloat,)
 print "config.intList=%r" % (config.intList,)
+print "namespace.dataIdList=%s" % (namespace.dataIdList,)
 print "len(namespace.dataRefList)=%s" % (len(namespace.dataRefList),)
 
 for dataRef in namespace.dataRefList[:10]:
