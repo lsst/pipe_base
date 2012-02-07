@@ -22,6 +22,7 @@
 import argparse
 import itertools
 import os.path
+import shlex
 import sys
 
 import lsst.pex.logging as pexLog
@@ -48,8 +49,10 @@ class ArgumentParser(argparse.ArgumentParser):
             fromfile_prefix_chars='@',
             epilog="""Notes:
 * --id, --config, --configfile and @file may appear multiple times; all values are used
-* @file reads command-line options from the specified file, one option per line;
-    warning: spaces in values (even in double quotes or parenthesis) are not supported
+* @file reads command-line options from the specified file:
+    * data may be distributed among multiple lines
+    * data after # is treated as a comment and ignored
+    * blank lines and lines starting with # are ignored
 * To specify multiple values for an option, do not use = after the option name:
     * wrong: "--configfile=foo bar"
     * right: "--configfile foo bar"
@@ -206,10 +209,12 @@ class ArgumentParser(argparse.ArgumentParser):
         self._camera = camera
 
     def convert_arg_line_to_args(self, arg_line):
+        """Allow @file to contain multiple values on each line
+        """
         arg_line = arg_line.strip()
         if not arg_line or arg_line.startswith("#"):
             return
-        for arg in arg_line.split():
+        for arg in shlex.split(arg_line, comments=True, posix=True):
             if not arg.strip():
                 continue
             yield arg        
