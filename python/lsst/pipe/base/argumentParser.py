@@ -31,7 +31,7 @@ import lsst.daf.persistence as dafPersist
 __all__ = ["ArgumentParser"]
 
 class ArgumentParser(argparse.ArgumentParser):
-    """An argparse.ArgumentParser that provides standard arguments for pipe_tasks tasks.
+    """An argument parser for pipeline tasks that is based on argparse.ArgumentParser
     
     Users may wish to add additional arguments before calling parse_args.
     
@@ -43,12 +43,29 @@ class ArgumentParser(argparse.ArgumentParser):
       before I do this checking. Constructing a butler is slow, so I only want do it once,
       after parsing the command line.
     """
-    def __init__(self, usage="%(prog)s camera dataSource [options]", **kwargs):
+    def __init__(self,
+        usage = "%(prog)s camera dataSource [options]",
+        datasetType = "raw",
+        dataRefLevel = None,
+    **kwargs):
+        """Construct an ArgumentParser
+        
+        @param usage: usage string (will probably go away after camera no longer required)
+        @param datasetType: dataset type appropriate to the task at hand;
+            this affects which data ID keys are recognized
+            and also seems to affect the data ref level in mysterious ways.
+        @param dataRefLevel: the level of the data references returned in dataRefList;
+            None uses the data mapper's default, which is usually sensor.
+            Warning: any value other than None is likely to be repository-specific.
+        @param **kwargs: additional keyword arguments for argparse.ArgumentParser
+        """
+        self._datasetType = datasetType
+        self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
             usage = usage,
             fromfile_prefix_chars='@',
             epilog="""Notes:
-* --id, --config, --configfile and @file may appear multiple times; all values are used
+* --id, --config, --configfile, --trace and @file may appear multiple times; all values are used
 * @file reads command-line options from the specified file:
     * data may be distributed among multiple lines
     * data after # is treated as a comment and ignored
@@ -79,7 +96,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--log", dest="logDest", help="logging destination")
 
     def parse_args(self, config, argv=None):
-        """Parse arguments for a command-line-driven task
+        """Parse arguments for a pipeline task
 
         @params config: config for the task being run
         @params argv: argv to parse; if None then sys.argv[1:] is used
@@ -124,7 +141,6 @@ class ArgumentParser(argparse.ArgumentParser):
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
         # because it takes a long time to construct a butler
-        print "namespace.dataIdList before cast=", namespace.dataIdList
         for dataDict in namespace.dataIdList:
             for key, strVal in dataDict.iteritems():
                 try:
@@ -138,10 +154,12 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to correct type for data ID key %rr" % \
                             (strVal, key,))
                     dataDict[key] = castVal
-        print "namespace.dataIdList after cast=", namespace.dataIdList
 
         namespace.dataRefList = [dataRef for dataId in namespace.dataIdList \
-            for dataRef in namespace.butler.subset("raw", **dataId)]
+                                    for dataRef in namespace.butler.subset(
+                                        datasetType = self._datasetType,
+                                        level = self._dataRefLevel,
+                                        **dataId)]
 
         if namespace.debug:
             try:
@@ -165,7 +183,7 @@ class ArgumentParser(argparse.ArgumentParser):
         
         This is a temporary hack. It sets self._mapperClass and self._idKeyTypeDict;
         the latter will soon come from the butler and the former will be unnecessary in a few weeks.
-        Once those go away the whole "camera name first" bit can be ditched.
+        Once those go away the whole "camera name first" bit can be ditched and this will go away.
         """
         if camera in ("-h", "--help"):
             self.print_help()
@@ -183,10 +201,12 @@ class ArgumentParser(argparse.ArgumentParser):
             # this will soon come from the butler, but for now...
             self._idKeyTypeDict = dict(
                 visit   = int,
-                skytile = int,
-                ccd = str,
-                amp = str,
                 raft = str,
+                ccd = str,
+                sensor = str,
+                amp = str,
+                channel = str,
+                skytile = int,
             )
         elif lowCamera == "suprimecam":
             try:
@@ -198,10 +218,12 @@ class ArgumentParser(argparse.ArgumentParser):
             # this will soon come from the butler, but for now...
             self._idKeyTypeDict = dict(
                 visit   = int,
-                skytile = int,
-                ccd = str,
-                amp = str,
                 raft = str,
+                ccd = str,
+                sensor = str,
+                amp = str,
+                channel = str,
+                skytile = int,
             )
         else:
             self.error("Unsupported camera: %s" % camera)
@@ -209,7 +231,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self._camera = camera
 
     def convert_arg_line_to_args(self, arg_line):
-        """Allow @file to contain multiple values on each line
+        """Allow files of arguments referenced by @file to contain multiple values on each line
         """
         arg_line = arg_line.strip()
         if not arg_line or arg_line.startswith("#"):
