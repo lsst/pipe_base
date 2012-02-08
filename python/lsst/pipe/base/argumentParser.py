@@ -20,7 +20,9 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse
+import itertools
 import os.path
+import shlex
 import sys
 
 import lsst.pex.logging as pexLog
@@ -29,52 +31,70 @@ import lsst.daf.persistence as dafPersist
 __all__ = ["ArgumentParser"]
 
 class ArgumentParser(argparse.ArgumentParser):
-    """ArgumentParser is an argparse.ArgumentParser that provides standard arguments for pipe_tasks tasks.
-
-    These are used to populate butler, config and idList attributes,
-    in addition to standard argparse behavior.
+    """An argument parser for pipeline tasks that is based on argparse.ArgumentParser
     
-    @note:
-    * --configfile and --config both may be specified multiple times on the command line;
-      every instance is applied in order (left to right as it appears on the command line).
-    * Other command-line arguments are only applied once, using the right-most instance
-      (except I'm not yet sure about @file).
-    * To specify an option with multiple values do NOT use = (a limitation of argparse):
-        this is OK: --filter g r
-        this is NOT OK: --filter=g r
-    * The camera name must be specified before any options. (The need to specify a camera name
-        should go away with the new butler.)
+    Users may wish to add additional arguments before calling parse_args.
     
-    @todo adapt for new butler:
-    - Get camera name from data repository
-    - Use mapper or camera name to obtain the names of the camera ID elements
-    @todo: adapt for new Config
+    @notes
+    * The need to specify camera name will go away in a few weeks once the repository format allows
+      constructing a butler without knowing it.
+    * I would prefer to check data ID keys and values as they are parsed,
+      but the required information comes from the butler, so I have to construct a butler
+      before I do this checking. Constructing a butler is slow, so I only want do it once,
+      after parsing the command line.
     """
-    def __init__(self, usage="usage: %(prog)s camera dataSource [options]", **kwargs):
+    def __init__(self,
+        usage = "%(prog)s camera dataSource [options]",
+        datasetType = "raw",
+        dataRefLevel = None,
+    **kwargs):
+        """Construct an ArgumentParser
+        
+        @param usage: usage string (will probably go away after camera is no longer required)
+        @param datasetType: dataset type appropriate to the task at hand;
+            this affects which data ID keys are recognized.
+        @param dataRefLevel: the level of the data references returned in dataRefList;
+            None uses the data mapper's default, which is usually sensor.
+            Warning: any value other than None is likely to be repository-specific.
+        @param **kwargs: additional keyword arguments for argparse.ArgumentParser
+        """
+        self._datasetType = datasetType
+        self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
             usage = usage,
-            fromfile_prefix_chars='@',
-            epilog="@file reads command-line options from the specified file (one option per line)",
-            **kwargs)
-        self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
-            (WARNING: this must appear before any options)""")
+            fromfile_prefix_chars = '@',
+            epilog = """Notes:
+* --config, --configfile, --id, --trace and @file may appear multiple times;
+    all values are used, in order left to right
+* @file reads command-line options from the specified file:
+    * data may be distributed among multiple lines (e.g. one option per line)
+    * data after # is treated as a comment and ignored
+    * blank lines and lines starting with # are ignored
+* To specify multiple values for an option, do not use = after the option name:
+    * wrong: --configfile=foo bar
+    * right: --configfile foo bar
+* The need to specify camera is temporary
+""",
+            formatter_class = argparse.RawDescriptionHelpFormatter,
+        **kwargs)
+        self.add_argument("camera", help="name of camera (e.g. lsstSim or suprimecam)")
         self.add_argument("dataPath", help="path to data repository")
-        self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
-                        help="command-line config overrides", metavar="NAME=VALUE")
-        self.add_argument("-C", "--configfile", dest="configFile", nargs="*", action=ConfigFileAction,
-                        help="file of config overrides")
-        self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
-                        help="rerun name")
-        self.add_argument("-L", "--log-level", action=LogLevelAction, help="Set logging level")
-        self.add_argument("-T", "--trace", nargs=2, action=TraceLevelAction,
-                          help="Set trace level for component")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
+        self.add_argument("--id", nargs="*", action=IdValueAction,
+            help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
+            help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
+        self.add_argument("-C", "--configfile", dest="configFile", nargs="*", action=ConfigFileAction,
+            help="config override file(s)")
+        self.add_argument("-L", "--log-level", action=LogLevelAction, help="logging level")
+        self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
+            help="trace level for component", metavar="COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
     def parse_args(self, config, argv=None):
-        """Parse arguments for a command-line-driven task
+        """Parse arguments for a pipeline task
 
         @params config: config for the task being run
         @params argv: argv to parse; if None then sys.argv[1:] is used
@@ -82,7 +102,8 @@ class ArgumentParser(argparse.ArgumentParser):
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied
         - butler: a butler for the data
-        - idList: a list of data IDs as specified by the user and found with the butler
+        - dataIdList: a list of data ID dicts
+        - dataRefList: a list of butler data references
         - mapper: a mapper for the data
         - log: a log
         - an entry for each command-line argument, with a few exceptions such as configFile and logDest
@@ -90,30 +111,44 @@ class ArgumentParser(argparse.ArgumentParser):
         if argv == None:
             argv = sys.argv[1:]
 
-        if len(argv) < 1:
-            sys.stderr.write("Error: must specify camera as first argument\n")
-            self.print_usage()
-            sys.exit(1)
-        try:
-            self._handleCamera(argv[0])
-        except Exception, e:
-            sys.stderr.write("%s\n" % e)
-            sys.exit(1)
-            
-        inNamespace = argparse.Namespace
-        inNamespace.config = config
-        namespace = argparse.ArgumentParser.parse_args(self, args=argv)
+        _inNamespace = argparse.Namespace
+        _inNamespace.config = config
+        _inNamespace.dataIdList = []
+        namespace = argparse.ArgumentParser.parse_args(self, args=argv, namespace=_inNamespace)
         del namespace.configFile
+        del namespace.id
         
         if not os.path.isdir(namespace.dataPath):
             sys.stderr.write("Error: dataPath=%r not found\n" % (namespace.dataPath,))
             sys.exit(1)
-
-        namespace.mapper = self._mapperClass(root=namespace.dataPath, calibRoot=namespace.calibPath)
+        
+        self._createMapper(namespace)
         butlerFactory = dafPersist.ButlerFactory(mapper = namespace.mapper)
         namespace.butler = butlerFactory.create()
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
         
-        self._setIdList(namespace)
+        # convert data in namespace.dataIdList to proper types
+        # this is done after constructing the butler, hence after parsing the command line,
+        # because it takes a long time to construct a butler
+        for dataDict in namespace.dataIdList:
+            for key, strVal in dataDict.iteritems():
+                try:
+                    keyType = idKeyTypeDict[key]
+                except KeyError:
+                    validKeys = sorted(idKeyTypeDict.keys())
+                    self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
+                if keyType != str:
+                    try:
+                        castVal = keyType(strVal)
+                    except Exception:
+                        self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
+                    dataDict[key] = castVal
+
+        namespace.dataRefList = [dataRef for dataId in namespace.dataIdList \
+                                    for dataRef in namespace.butler.subset(
+                                        datasetType = self._datasetType,
+                                        level = self._dataRefLevel,
+                                        **dataId)]
 
         if namespace.debug:
             try:
@@ -129,94 +164,47 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.logDest
 
         return namespace
-    
-    def _setIdList(self, namespace):
-        """Determine the valid data IDs that match the user's specification
+
+    def _createMapper(self, namespace):
+        """Construct namespace.mapper based on namespace.camera, dataPath and calibPath.
         
-        @param[inout] namespace: must contain butler and may contain
-            entries and values for the data ID names in self._idNameCharTypeList
-            Sets a new attribute idList.
+        This is a temporary hack to set self._mapperClass; this will go away once the butler
+        renders it unnecessary, and the user will no longer have to supply the camera name.
         """
-        argList = list()
-        iterList = list()
-        idDict = dict()
-
-        idNameList = [item[0] for item in self._idNameCharTypeList]
-        
-        for idName, idChar, idType in self._idNameCharTypeList:
-            strValues = getattr(namespace, idName)
-            if not strValues:
-                continue
-            idDict[idName] = [idType(item) for item in strValues]
-            argList.append("%s=%sItem" % (idName, idName))
-            iterList.append("for %sItem in idDict['%s']" % (idName, idName))
-        queryIdListExpr = "[dict(%s) %s]" % (", ".join(argList), " ".join(iterList))
-        queryIdList = eval(queryIdListExpr)
-        
-        butler = namespace.butler
-
-        goodTupleSet = set() # use set to avoid duplicates but sets cannot contain ID dicts so store tuples
-        for queryId in queryIdList:
-            # queryMetadata finds all possible matches, even ones that don't exist
-            # (and it only works for raw, not calexp)
-            # so follow it with datasetExists to find the good data IDs
-            candidateTupleList = butler.queryMetadata("raw", None, idNameList, **queryId)
-            newGoodIdSet = set(candTup for candTup in candidateTupleList
-                if butler.datasetExists("calexp", dict(zip(idNameList, candTup))))
-            goodTupleSet |= newGoodIdSet
-            
-        namespace.idList = [dict(zip(idNameList, goodTup)) for goodTup in goodTupleSet]
-
-    def _handleCamera(self, camera):
-        """Configure the command parser for the chosen camera.
-        
-        Called by parse_args before parsing the command (beyond getting the camera name).
-        
-        This will be radically rewritten once I can get this information from the data repository,
-        but the subroutine must continue to live on to support things like camera-specific defaults.
-        """
-        if camera in ("-h", "--help"):
-            self.print_help()
-            print "\nFor more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n"
-            sys.exit(1)
-        
-        lowCamera = camera.lower()
+        lowCamera = namespace.camera.lower()
         if lowCamera == "lsstsim":
             try:
-                import lsst.obs.lsstSim
+                from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
-            self._mapperClass = lsst.obs.lsstSim.LsstSimMapper
-            self._idNameCharTypeList = (
-                ("visit",  "V", int),
-                ("filter", "f", str),
-                ("raft",   "r", str),
-                ("sensor", "s", str),
-            )
-            self._extraFileKeys = ["channel"]
         elif lowCamera == "suprimecam":
             try:
-                import lsst.obs.suprimecam
+                from lsst.obs.suprimecam import SuprimecamMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_suprimecam to use suprimecam")
-            self._mapperClass = lsst.obs.suprimecam.SuprimecamMapper
-            self._idNameCharTypeList = (
-                ("visit",  "V", int),
-                ("ccd", "s", str),
-            )
-            self._extraFileKeys = []
+        elif lowCamera == "cfht":
+            try:
+                from lsst.obs.cfht import CfhtMapper as Mapper
+            except ImportError:
+                self.error("Must setup obs_cfht to use CFHT")
         else:
-            self.error("Unsupported camera: %s" % camera)
+            self.error("Unsupported camera: %s" % namespace.camera)
+        namespace.mapper = Mapper(
+            root = namespace.dataPath,
+            calibRoot = namespace.calibPath,
+            outputRoot = namespace.outPath,
+        )
 
-        for idName, idChar, idType in self._idNameCharTypeList:
-            argList = []
-            if idChar:
-                argList.append("-%s" % (idChar,))
-            argList.append("--%s" % (idName,))
-            self.add_argument(*argList, dest=idName, nargs="*", default=[],
-                help="%ss to to process" % (idName,))
-
-        self._camera = camera
+    def convert_arg_line_to_args(self, arg_line):
+        """Allow files of arguments referenced by @file to contain multiple values on each line
+        """
+        arg_line = arg_line.strip()
+        if not arg_line or arg_line.startswith("#"):
+            return
+        for arg in shlex.split(arg_line, comments=True, posix=True):
+            if not arg.strip():
+                continue
+            yield arg        
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
@@ -229,7 +217,7 @@ class ConfigValueAction(argparse.Action):
             if not valueStr:
                 parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
             try:
-                value = eval(valueStr)
+                value = eval(valueStr, {})
             except Exception:
                 parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
             setattr(namespace.config, name, value)
@@ -242,6 +230,34 @@ class ConfigFileAction(argparse.Action):
         """
         for configFile in values:
             namespace.config.load(configFile)
+
+class IdValueAction(argparse.Action):
+    """argparse action callback to add one data ID dict to namespace.dataIdList
+    """
+    def __call__(self, parser, namespace, values, option_string):
+        """Parse --id data and append results to namespace.dataIdList
+        
+        The data format is:
+        key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
+        
+        The cross product is computed for keys with multiple values. For example:
+            --id visit 1^2 ccd 1,1^2,2
+        results in the following data ID dicts being appended to namespace.dataIdList:
+            {"visit":1, "ccd":"1,1"}
+            {"visit":2, "ccd":"1,1"}
+            {"visit":1, "ccd":"2,2"}
+            {"visit":2, "ccd":"2,2"}
+        """
+        idDict = dict()
+        for nameValue in values:
+            name, sep, valueStr = nameValue.partition("=")
+            idDict[name] = valueStr.split("^")
+
+        keyList = idDict.keys()
+        iterList = [idDict[key] for key in keyList]
+        idDictList = [dict(zip(keyList, valList)) for valList in itertools.product(*iterList)]
+
+        namespace.dataIdList += idDictList
 
 class LogLevelAction(argparse.Action):
     """argparse action to set log level"""
@@ -260,8 +276,12 @@ class LogLevelAction(argparse.Action):
 class TraceLevelAction(argparse.Action):
     """argparse action to set trace level"""
     def __call__(self, parser, namespace, values, option_string):
-        try:
-            component, level = values
-        except TypeError:
-            parser.error("Cannont parse %s as component and level" % values)
-        pexLog.Trace.setVerbosity(component, level)
+        for componentLevel in values:
+            component, sep, levelStr = componentLevel.partition("=")
+            if not levelStr:
+                parser.error("%s level %s must be in form component=level" % (option_string, componentLevel))
+            try:
+                level = int(levelStr)
+            except Exception:
+                parser.error("Cannot parse %r as an integer level for %s" % (levelStr, component))
+            pexLog.Trace.setVerbosity(component, level)
