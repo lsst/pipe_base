@@ -64,8 +64,6 @@ class ArgumentParser(argparse.ArgumentParser):
             usage = usage,
             fromfile_prefix_chars = '@',
             epilog = """Notes:
-* --outpath is presently IGNORED; implementation is waiting for butler improvements
-* The need to specify camera is temporary
 * --config, --configfile, --id, --trace and @file may appear multiple times;
     all values are used, in order left to right
 * @file reads command-line options from the specified file:
@@ -75,6 +73,7 @@ class ArgumentParser(argparse.ArgumentParser):
 * To specify multiple values for an option, do not use = after the option name:
     * wrong: --configfile=foo bar
     * right: --configfile foo bar
+* The need to specify camera is temporary
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
@@ -88,8 +87,6 @@ class ArgumentParser(argparse.ArgumentParser):
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configFile", nargs="*", action=ConfigFileAction,
             help="config override file(s)")
-        self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
-            help="rerun name")
         self.add_argument("-L", "--log-level", action=LogLevelAction, help="logging level")
         self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
             help="trace level for component", metavar="COMPONENT=LEVEL")
@@ -192,7 +189,11 @@ class ArgumentParser(argparse.ArgumentParser):
                 self.error("Must setup obs_cfht to use CFHT")
         else:
             self.error("Unsupported camera: %s" % namespace.camera)
-        namespace.mapper = Mapper(root=namespace.dataPath, calibRoot=namespace.calibPath)
+        namespace.mapper = Mapper(
+            root = namespace.dataPath,
+            calibRoot = namespace.calibPath,
+            outputRoot = namespace.outPath,
+        )
 
     def convert_arg_line_to_args(self, arg_line):
         """Allow files of arguments referenced by @file to contain multiple values on each line
