@@ -62,8 +62,10 @@ class ArgumentParser(argparse.ArgumentParser):
         self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
             usage = usage,
-            fromfile_prefix_chars='@',
-            epilog="""Notes:
+            fromfile_prefix_chars = '@',
+            epilog = """Notes:
+* --outpath is presently IGNORED; implementation is waiting for butler improvements
+* The need to specify camera is temporary
 * --config, --configfile, --id, --trace and @file may appear multiple times;
     all values are used, in order left to right
 * @file reads command-line options from the specified file:
@@ -76,8 +78,7 @@ class ArgumentParser(argparse.ArgumentParser):
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
-        self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
-            (WARNING: this must appear before any options)""")
+        self.add_argument("camera", help="name of camera (e.g. lsstSim or suprimecam)")
         self.add_argument("dataPath", help="path to data repository")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
@@ -90,8 +91,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("-R", "--rerun", dest="rerun", default=os.getenv("USER", default="rerun"),
             help="rerun name")
         self.add_argument("-L", "--log-level", action=LogLevelAction, help="logging level")
-        self.add_argument("-T", "--trace", nargs=2, action=TraceLevelAction,
-            help="trace level for component")
+        self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
+            help="trace level for component", metavar="COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
@@ -113,16 +114,6 @@ class ArgumentParser(argparse.ArgumentParser):
         if argv == None:
             argv = sys.argv[1:]
 
-        if len(argv) < 1:
-            sys.stderr.write("Error: must specify camera as first argument\n")
-            self.print_usage()
-            sys.exit(1)
-        try:
-            self._handleCamera(argv[0])
-        except Exception, e:
-            sys.stderr.write("%s\n" % e)
-            sys.exit(1)
-            
         _inNamespace = argparse.Namespace
         _inNamespace.config = config
         _inNamespace.dataIdList = []
@@ -133,10 +124,11 @@ class ArgumentParser(argparse.ArgumentParser):
         if not os.path.isdir(namespace.dataPath):
             sys.stderr.write("Error: dataPath=%r not found\n" % (namespace.dataPath,))
             sys.exit(1)
-
-        namespace.mapper = self._mapperClass(root=namespace.dataPath, calibRoot=namespace.calibPath)
+        
+        self._createMapper(namespace)
         butlerFactory = dafPersist.ButlerFactory(mapper = namespace.mapper)
         namespace.butler = butlerFactory.create()
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
         
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -144,15 +136,15 @@ class ArgumentParser(argparse.ArgumentParser):
         for dataDict in namespace.dataIdList:
             for key, strVal in dataDict.iteritems():
                 try:
-                    typefunc = self._idKeyTypeDict[key]
+                    keyType = idKeyTypeDict[key]
                 except KeyError:
-                    self.error("Unrecognized data ID key %r" % (key,))
-                if typefunc != str:
+                    validKeys = sorted(idKeyTypeDict.keys())
+                    self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
+                if keyType != str:
                     try:
-                        castVal = typefunc(strVal)
+                        castVal = keyType(strVal)
                     except Exception:
-                        self.error("Cannot cast value %r to correct type for data ID key %rr" % \
-                            (strVal, key,))
+                        self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
         namespace.dataRefList = [dataRef for dataId in namespace.dataIdList \
@@ -176,59 +168,31 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
 
-    def _handleCamera(self, camera):
-        """Configure the command parser for the chosen camera.
+    def _createMapper(self, namespace):
+        """Construct namespace.mapper based on namespace.camera, dataPath and calibPath.
         
-        Called by parse_args before parsing the command (beyond getting the camera name).
-        
-        This is a temporary hack. It sets self._mapperClass and self._idKeyTypeDict;
-        the latter will soon come from the butler and the former will be unnecessary in a few weeks.
-        Once those go away the whole "camera name first" bit can be ditched and this will go away.
+        This is a temporary hack to set self._mapperClass; this will go away once the butler
+        renders it unnecessary, and the user will no longer have to supply the camera name.
         """
-        if camera in ("-h", "--help"):
-            self.print_help()
-            print "\nFor more complete help, specify camera (e.g. lsstSim or suprimecam) as first argument\n"
-            sys.exit(1)
-        
-        lowCamera = camera.lower()
+        lowCamera = namespace.camera.lower()
         if lowCamera == "lsstsim":
             try:
-                import lsst.obs.lsstSim
+                from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
-            self._mapperClass = lsst.obs.lsstSim.LsstSimMapper
-
-            # this will soon come from the butler, but for now...
-            self._idKeyTypeDict = dict(
-                visit   = int,
-                raft = str,
-                ccd = str,
-                sensor = str,
-                amp = str,
-                channel = str,
-                skytile = int,
-            )
         elif lowCamera == "suprimecam":
             try:
-                import lsst.obs.suprimecam
+                from lsst.obs.suprimecam import SuprimecamMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_suprimecam to use suprimecam")
-            self._mapperClass = lsst.obs.suprimecam.SuprimecamMapper
-
-            # this will soon come from the butler, but for now...
-            self._idKeyTypeDict = dict(
-                visit   = int,
-                raft = str,
-                ccd = str,
-                sensor = str,
-                amp = str,
-                channel = str,
-                skytile = int,
-            )
+        elif lowCamera == "cfht":
+            try:
+                from lsst.obs.cfht import CfhtMapper as Mapper
+            except ImportError:
+                self.error("Must setup obs_cfht to use CFHT")
         else:
-            self.error("Unsupported camera: %s" % camera)
-
-        self._camera = camera
+            self.error("Unsupported camera: %s" % namespace.camera)
+        namespace.mapper = Mapper(root=namespace.dataPath, calibRoot=namespace.calibPath)
 
     def convert_arg_line_to_args(self, arg_line):
         """Allow files of arguments referenced by @file to contain multiple values on each line
@@ -311,8 +275,12 @@ class LogLevelAction(argparse.Action):
 class TraceLevelAction(argparse.Action):
     """argparse action to set trace level"""
     def __call__(self, parser, namespace, values, option_string):
-        try:
-            component, level = values
-        except TypeError:
-            parser.error("Cannot parse %s as component and level" % values)
-        pexLog.Trace.setVerbosity(component, level)
+        for componentLevel in values:
+            component, sep, levelStr = componentLevel.partition("=")
+            if not levelStr:
+                parser.error("%s level %s must be in form component=level" % (option_string, componentLevel))
+            try:
+                level = int(levelStr)
+            except Exception:
+                parser.error("Cannot parse %r as an integer level for %s" % (levelStr, component))
+            pexLog.Trace.setVerbosity(component, level)
