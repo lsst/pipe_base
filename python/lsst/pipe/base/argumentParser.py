@@ -52,8 +52,7 @@ class ArgumentParser(argparse.ArgumentParser):
         
         @param usage: usage string (will probably go away after camera no longer required)
         @param datasetType: dataset type appropriate to the task at hand;
-            this affects which data ID keys are recognized
-            and also seems to affect the data ref level in mysterious ways.
+            this affects which data ID keys are recognized.
         @param dataRefLevel: the level of the data references returned in dataRefList;
             None uses the data mapper's default, which is usually sensor.
             Warning: any value other than None is likely to be repository-specific.
