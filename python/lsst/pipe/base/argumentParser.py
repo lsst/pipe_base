@@ -50,7 +50,7 @@ class ArgumentParser(argparse.ArgumentParser):
     **kwargs):
         """Construct an ArgumentParser
         
-        @param usage: usage string (will probably go away after camera no longer required)
+        @param usage: usage string (will probably go away after camera is no longer required)
         @param datasetType: dataset type appropriate to the task at hand;
             this affects which data ID keys are recognized.
         @param dataRefLevel: the level of the data references returned in dataRefList;
@@ -64,14 +64,15 @@ class ArgumentParser(argparse.ArgumentParser):
             usage = usage,
             fromfile_prefix_chars='@',
             epilog="""Notes:
-* --id, --config, --configfile, --trace and @file may appear multiple times; all values are used
+* --config, --configfile, --id, --trace and @file may appear multiple times;
+    all values are used, in order left to right
 * @file reads command-line options from the specified file:
-    * data may be distributed among multiple lines
+    * data may be distributed among multiple lines (e.g. one option per line)
     * data after # is treated as a comment and ignored
     * blank lines and lines starting with # are ignored
 * To specify multiple values for an option, do not use = after the option name:
-    * wrong: "--configfile=foo bar"
-    * right: "--configfile foo bar"
+    * wrong: --configfile=foo bar
+    * right: --configfile foo bar
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
