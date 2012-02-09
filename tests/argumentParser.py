@@ -167,7 +167,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         pexLog.Trace("something", 4, "You should see this message")
         pexLog.Trace("something", 6, "You should not see this message")
     
-    def xtestLogLevel(self):
+    def testLogLevel(self):
         """Test --log-level"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
             intLevel = getattr(pexLog.Log, logLevel.upper())
