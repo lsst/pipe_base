@@ -20,7 +20,7 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import os.path
+import os
 import unittest
 
 import eups
@@ -28,6 +28,8 @@ import lsst.utils.tests as utilsTests
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
+
+SkipMemoryTests = True # as of 2012-02-09 the memory tests fail
 
 try:
     from lsst.obs.lsstSim import LsstSimMapper
@@ -41,11 +43,23 @@ LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests/data")
 class SampleConfig(pexConfig.Config):
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
+    
+class ParseError(Exception):
+    pass
+    
+class TestArgumentParser(pipeBase.ArgumentParser):
+    """Variant of pipe_base ArgumentParser with more test-compatible error handling
+    
+    error(message) raises ParseError instead of printing to stderr/stdout and calling sys.exit;
+    this makes it more suitable for unit tests that intentionall induce errors
+    """
+    def error(self, message):
+        raise ParseError(message)
 
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
-        self.ap = pipeBase.ArgumentParser()
+        self.ap = TestArgumentParser()
         self.config = SampleConfig()
     
     def tearDown(self):
@@ -70,8 +84,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         
     def testIdCross(self):
         """Test --id cross product"""
-        ap = pipeBase.ArgumentParser()
-        config = SampleConfig()
         namespace = self.ap.parse_args(
             config = self.config,
             argv = ["lsstSim", DataPath, "--id", "raft=0,10^0,20^0,3", "sensor=10,0^1,1", "visit=85470982"],
@@ -99,7 +111,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "final value")
         
         # verify that incorrect names are caught
-        self.assertRaises(SystemExit, self.ap.parse_args,
+        self.assertRaises(ParseError, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--config", "missingItem=-67.1"],
         )
@@ -126,7 +138,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "value from cmd line")
 
         # verify that missing files are caught
-        self.assertRaises(SystemExit, self.ap.parse_args,
+        self.assertRaises(ParseError, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--configfile", "missingFile"],
         )
@@ -144,13 +156,14 @@ class ArgumentParserTestCase(unittest.TestCase):
     
     def testLog(self):
         """Test --log
-        
-        There does not seem to be any way to view log destinations, so just check that the command runs
         """
+        logFile = "tests_argumentParser_testLog_temp.txt"
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--log", "foo"],
+            argv = ["lsstSim", DataPath, "--log", logFile],
         )
+        self.assertTrue(os.path.isfile(logFile))
+        os.remove(logFile)
     
     def testTrace(self):
         """Test --trace
@@ -183,7 +196,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             )
             self.assertEqual(namespace.log.getThreshold(), intLevel)
         
-#         self.assertRaises(SystemExit, self.ap.parse_args,
+#         self.assertRaises(ParseError, self.ap.parse_args,
 #             config = self.config,
 #             argv = ["lsstSim", DataPath,
 #                 "--log-level", "INVALID_LEVEL",
@@ -196,8 +209,10 @@ def suite():
 
     suites = []
     suites += unittest.makeSuite(ArgumentParserTestCase)
-    print "WARNING: SKIPPING MEMORY TESTS FOR NOW"
-#     suites += unittest.makeSuite(utilsTests.MemoryTestCase)
+    if SkipMemoryTests:
+        print "WARNING: SKIPPING MEMORY TESTS"
+    else:
+        suites += unittest.makeSuite(utilsTests.MemoryTestCase)
     return unittest.TestSuite(suites)
 
 def run(shouldExit = False):
