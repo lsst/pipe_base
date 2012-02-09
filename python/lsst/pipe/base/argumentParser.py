@@ -87,7 +87,7 @@ class ArgumentParser(argparse.ArgumentParser):
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configFile", nargs="*", action=ConfigFileAction,
             help="config override file(s)")
-        self.add_argument("-L", "--log-level", action=LogLevelAction, help="logging level")
+        self.add_argument("-L", "--log-level", dest="logLevel", help="logging level")
         self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
             help="trace level for component", metavar="COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
@@ -114,6 +114,7 @@ class ArgumentParser(argparse.ArgumentParser):
         _inNamespace = argparse.Namespace
         _inNamespace.config = config
         _inNamespace.dataIdList = []
+        _inNamespace.log = pexLog.Log.getDefaultLog()
         namespace = argparse.ArgumentParser.parse_args(self, args=argv, namespace=_inNamespace)
         del namespace.configFile
         del namespace.id
@@ -157,11 +158,23 @@ class ArgumentParser(argparse.ArgumentParser):
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        log = pexLog.Log.getDefaultLog()
         if namespace.logDest:
-            log.addDestination(namespace.logDest)
-        namespace.log = log
+            namespace.log.addDestination(namespace.logDest)
         del namespace.logDest
+        
+        if namespace.logLevel:
+            permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
+            if namespace.logLevel.upper() in permitted:
+                value = getattr(pexLog.Log, namespace.logLevel.upper())
+            else:
+                try:
+                    value = int(namespace.logLevel)
+                except ValueError:
+                    self.error("log-level=%s not int or one of %s" % (namespace.logLevel, permitted))
+            namespace.log.setThreshold(value)
+        del namespace.logLevel
+        
+        namespace.config.validate()
 
         return namespace
 
@@ -214,13 +227,22 @@ class ConfigValueAction(argparse.Action):
         """
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
+            print "name=%r; valueStr=%r" % (name, valueStr)
             if not valueStr:
                 parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
+
+            # see if setting the string value works; if not, try eval
             try:
-                value = eval(valueStr, {})
+                setattr(namespace.config, name, valueStr)
             except Exception:
-                parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
-            setattr(namespace.config, name, value)
+                try:
+                    value = eval(valueStr, {})
+                except Exception:
+                    parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
+                try:
+                    setattr(namespace.config, name, value)
+                except Exception, e:
+                    parser.error("Cannot set config.%s=%r: %s" % (name, value, e))
 
 class ConfigFileAction(argparse.Action):
     """argparse action to load config overrides from one or more files
@@ -229,7 +251,11 @@ class ConfigFileAction(argparse.Action):
         """Load one or more files of config overrides
         """
         for configFile in values:
-            namespace.config.load(configFile)
+            try:
+                namespace.config.load(configFile)
+            except Exception, e:
+                parser.error("Cannot load config file %r: %s" % (configFile, e))
+                
 
 class IdValueAction(argparse.Action):
     """argparse action callback to add one data ID dict to namespace.dataIdList
@@ -258,20 +284,6 @@ class IdValueAction(argparse.Action):
         idDictList = [dict(zip(keyList, valList)) for valList in itertools.product(*iterList)]
 
         namespace.dataIdList += idDictList
-
-class LogLevelAction(argparse.Action):
-    """argparse action to set log level"""
-    def __call__(self, parser, namespace, value, option_string):
-        permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
-        if value.upper() in permitted:
-            value = getattr(pexLog.Log, value.upper())
-        else:
-            try:
-                value = int(value)
-            except ValueError:
-                parser.error("Cannot parse %s a logging level %s" % (value, permitted))
-        log = pexLog.getDefaultLog()
-        log.setThreshold(value)
 
 class TraceLevelAction(argparse.Action):
     """argparse action to set trace level"""

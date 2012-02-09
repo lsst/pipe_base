@@ -36,6 +36,11 @@ class ExampleConfig(pexConfig.Config):
         doc = "Example float value",
         default = 3.14159265358979,
     )
+    oneStr = pexConfig.Field(
+        dtype = str,
+        doc = "Example string value",
+        default = "default value",
+    )
     intList = pexConfig.ListField(
         dtype = int,
         doc = "example list of integers",
@@ -48,6 +53,7 @@ config = ExampleConfig()
 namespace = parser.parse_args(config=config)
 print "config.oneInt=%r" % (config.oneInt,)
 print "config.oneFloat=%r" % (config.oneFloat,)
+print "config.oneStr=%r" % (config.oneStr,)
 print "config.intList=%r" % (config.intList,)
 print "namespace.dataIdList=%s" % (namespace.dataIdList,)
 print "len(namespace.dataRefList)=%s" % (len(namespace.dataRefList),)
