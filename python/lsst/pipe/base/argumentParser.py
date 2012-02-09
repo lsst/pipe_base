@@ -192,9 +192,9 @@ class ArgumentParser(argparse.ArgumentParser):
                 self.error("Must setup obs_lsstSim to use lsstSim")
         elif lowCamera == "suprimecam":
             try:
-                from lsst.obs.suprimecam import SuprimecamMapper as Mapper
-            except ImportError:
-                self.error("Must setup obs_suprimecam to use suprimecam")
+                from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
+            except ImportError, e:
+                self.error("Must setup obs_subaru to use suprimecam: %s" % e)
         elif lowCamera == "cfht":
             try:
                 from lsst.obs.cfht import CfhtMapper as Mapper
