@@ -22,14 +22,13 @@
 #
 import os
 import unittest
+import warnings
 
 import eups
 import lsst.utils.tests as utilsTests
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
-
-SkipMemoryTests = True # as of 2012-02-09 the memory tests fail
 
 try:
     from lsst.obs.lsstSim import LsstSimMapper
@@ -44,22 +43,10 @@ class SampleConfig(pexConfig.Config):
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     
-class ParseError(Exception):
-    pass
-    
-class TestArgumentParser(pipeBase.ArgumentParser):
-    """Variant of pipe_base ArgumentParser with more test-compatible error handling
-    
-    error(message) raises ParseError instead of printing to stderr/stdout and calling sys.exit;
-    this makes it more suitable for unit tests that intentionall induce errors
-    """
-    def error(self, message):
-        raise ParseError(message)
-
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
-        self.ap = TestArgumentParser()
+        self.ap = pipeBase.ArgumentParser()
         self.config = SampleConfig()
     
     def tearDown(self):
@@ -111,7 +98,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "final value")
         
         # verify that incorrect names are caught
-        self.assertRaises(ParseError, self.ap.parse_args,
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--config", "missingItem=-67.1"],
         )
@@ -138,7 +125,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "value from cmd line")
 
         # verify that missing files are caught
-        self.assertRaises(ParseError, self.ap.parse_args,
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--configfile", "missingFile"],
         )
@@ -182,26 +169,26 @@ class ArgumentParserTestCase(unittest.TestCase):
     
     def testLogLevel(self):
         """Test --log-level"""
-        for logLevel in ("debug", "Info", "WARN", "fatal"):
-            intLevel = getattr(pexLog.Log, logLevel.upper())
-            namespace = self.ap.parse_args(
-                config = self.config,
-                argv = ["lsstSim", DataPath, "--log-level", logLevel],
-            )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
-
-            namespace = self.ap.parse_args(
-                config = self.config,
-                argv = ["lsstSim", DataPath, "--log-level", str(intLevel)],
-            )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
+#         for logLevel in ("debug", "Info", "WARN", "fatal"):
+#             intLevel = getattr(pexLog.Log, logLevel.upper())
+#             namespace = self.ap.parse_args(
+#                 config = self.config,
+#                 argv = ["lsstSim", DataPath, "--log-level", logLevel],
+#             )
+#             self.assertEqual(namespace.log.getThreshold(), intLevel)
+# 
+#             namespace = self.ap.parse_args(
+#                 config = self.config,
+#                 argv = ["lsstSim", DataPath, "--log-level", str(intLevel)],
+#             )
+#             self.assertEqual(namespace.log.getThreshold(), intLevel)
         
-#         self.assertRaises(ParseError, self.ap.parse_args,
-#             config = self.config,
-#             argv = ["lsstSim", DataPath,
-#                 "--log-level", "INVALID_LEVEL",
-#             ],
-#         )
+        self.assertRaises(SystemExit, self.ap.parse_args,
+            config = self.config,
+            argv = ["lsstSim", DataPath,
+                "--log-level", "INVALID_LEVEL",
+            ],
+        )
 
 
 def suite():
@@ -209,10 +196,7 @@ def suite():
 
     suites = []
     suites += unittest.makeSuite(ArgumentParserTestCase)
-    if SkipMemoryTests:
-        print "WARNING: SKIPPING MEMORY TESTS"
-    else:
-        suites += unittest.makeSuite(utilsTests.MemoryTestCase)
+    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
     return unittest.TestSuite(suites)
 
 def run(shouldExit = False):
