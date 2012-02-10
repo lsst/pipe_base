@@ -44,13 +44,11 @@ class ArgumentParser(argparse.ArgumentParser):
       after parsing the command line.
     """
     def __init__(self,
-        usage = "%(prog)s camera dataSource [options]",
         datasetType = "raw",
         dataRefLevel = None,
     **kwargs):
         """Construct an ArgumentParser
         
-        @param usage: usage string (will probably go away after camera is no longer required)
         @param datasetType: dataset type appropriate to the task at hand;
             this affects which data ID keys are recognized.
         @param dataRefLevel: the level of the data references returned in dataRefList;
@@ -61,7 +59,6 @@ class ArgumentParser(argparse.ArgumentParser):
         self._datasetType = datasetType
         self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
-            usage = usage,
             fromfile_prefix_chars = '@',
             epilog = """Notes:
 * --config, --configfile, --id, --trace and @file may appear multiple times;
@@ -111,7 +108,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if argv == None:
             argv = sys.argv[1:]
 
-        _inNamespace = argparse.Namespace
+        _inNamespace = argparse.Namespace()
         _inNamespace.config = config
         _inNamespace.dataIdList = []
         _inNamespace.log = pexLog.Log.getDefaultLog()

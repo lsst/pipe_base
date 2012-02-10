@@ -22,14 +22,13 @@
 #
 import os
 import unittest
+import warnings
 
 import eups
 import lsst.utils.tests as utilsTests
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
-
-SkipMemoryTests = True # as of 2012-02-09 the memory tests fail
 
 try:
     from lsst.obs.lsstSim import LsstSimMapper
@@ -182,26 +181,26 @@ class ArgumentParserTestCase(unittest.TestCase):
     
     def testLogLevel(self):
         """Test --log-level"""
-        for logLevel in ("debug", "Info", "WARN", "fatal"):
-            intLevel = getattr(pexLog.Log, logLevel.upper())
-            namespace = self.ap.parse_args(
-                config = self.config,
-                argv = ["lsstSim", DataPath, "--log-level", logLevel],
-            )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
-
-            namespace = self.ap.parse_args(
-                config = self.config,
-                argv = ["lsstSim", DataPath, "--log-level", str(intLevel)],
-            )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
+#         for logLevel in ("debug", "Info", "WARN", "fatal"):
+#             intLevel = getattr(pexLog.Log, logLevel.upper())
+#             namespace = self.ap.parse_args(
+#                 config = self.config,
+#                 argv = ["lsstSim", DataPath, "--log-level", logLevel],
+#             )
+#             self.assertEqual(namespace.log.getThreshold(), intLevel)
+# 
+#             namespace = self.ap.parse_args(
+#                 config = self.config,
+#                 argv = ["lsstSim", DataPath, "--log-level", str(intLevel)],
+#             )
+#             self.assertEqual(namespace.log.getThreshold(), intLevel)
         
-#         self.assertRaises(ParseError, self.ap.parse_args,
-#             config = self.config,
-#             argv = ["lsstSim", DataPath,
-#                 "--log-level", "INVALID_LEVEL",
-#             ],
-#         )
+        self.assertRaises(ParseError, self.ap.parse_args,
+            config = self.config,
+            argv = ["lsstSim", DataPath,
+                "--log-level", "INVALID_LEVEL",
+            ],
+        )
 
 
 def suite():
@@ -209,10 +208,7 @@ def suite():
 
     suites = []
     suites += unittest.makeSuite(ArgumentParserTestCase)
-    if SkipMemoryTests:
-        print "WARNING: SKIPPING MEMORY TESTS"
-    else:
-        suites += unittest.makeSuite(utilsTests.MemoryTestCase)
+    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
     return unittest.TestSuite(suites)
 
 def run(shouldExit = False):
