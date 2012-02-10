@@ -224,7 +224,6 @@ class ConfigValueAction(argparse.Action):
         """
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
-            print "name=%r; valueStr=%r" % (name, valueStr)
             if not valueStr:
                 parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
 

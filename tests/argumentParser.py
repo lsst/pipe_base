@@ -43,22 +43,10 @@ class SampleConfig(pexConfig.Config):
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     
-class ParseError(Exception):
-    pass
-    
-class TestArgumentParser(pipeBase.ArgumentParser):
-    """Variant of pipe_base ArgumentParser with more test-compatible error handling
-    
-    error(message) raises ParseError instead of printing to stderr/stdout and calling sys.exit;
-    this makes it more suitable for unit tests that intentionall induce errors
-    """
-    def error(self, message):
-        raise ParseError(message)
-
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
-        self.ap = TestArgumentParser()
+        self.ap = pipeBase.ArgumentParser()
         self.config = SampleConfig()
     
     def tearDown(self):
@@ -110,7 +98,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "final value")
         
         # verify that incorrect names are caught
-        self.assertRaises(ParseError, self.ap.parse_args,
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--config", "missingItem=-67.1"],
         )
@@ -137,7 +125,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "value from cmd line")
 
         # verify that missing files are caught
-        self.assertRaises(ParseError, self.ap.parse_args,
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath, "--configfile", "missingFile"],
         )
@@ -195,7 +183,7 @@ class ArgumentParserTestCase(unittest.TestCase):
 #             )
 #             self.assertEqual(namespace.log.getThreshold(), intLevel)
         
-        self.assertRaises(ParseError, self.ap.parse_args,
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             argv = ["lsstSim", DataPath,
                 "--log-level", "INVALID_LEVEL",
