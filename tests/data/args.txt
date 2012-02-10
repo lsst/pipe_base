@@ -1,0 +1,5 @@
+# test data for the argument parser
+--id raft=0,3 sensor=0,1 visit=85470982 # sample inline comment
+
+--config floatItem=4.7 strItem="new value"
+
