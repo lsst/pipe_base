@@ -128,8 +128,7 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.id
         
         if not os.path.isdir(namespace.dataPath):
-            sys.stderr.write("Error: dataPath=%r not found\n" % (namespace.dataPath,))
-            sys.exit(1)
+            self.error("Error: dataPath=%r not found" % (namespace.dataPath,))
         
         mapper = self._createMapper(namespace)
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
