@@ -21,10 +21,76 @@
 #
 """Utilities for measuring execution time.
 """
-import time
 import contextlib
+import functools
+import resource
+import time
+import datetime
 
-__all__ = ["timeMethod"]
+import lsst.pex.logging as pexLog
+
+__all__ = ["logInfo", "timeMethod"]
+
+def logPairs(obj, pairs, logLevel=pexLog.Log.INFO):
+    """Log (name, value) pairs to obj.metadata and obj.log
+    
+    @param obj: an object with two attributes:
+        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
+        * log: a pex_logging Log
+    @param pairs: a collection of (name, value) pairs
+    @param logLevel: one of the pexLog.Log level constants
+    """
+    strList = []
+    for name, value in pairs:
+        obj.metadata.add(name, value)
+        strList.append("%s=%s" % (name, value))
+    obj.log.log(logLevel, "; ".join(strList))
+
+def logInfo(obj, prefix, logLevel=pexLog.Log.INFO):
+    """Log timer information to obj.metadata and obj.log
+
+    @param obj: an object with two attributes:
+        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
+        * log: a pex_logging Log
+    @param prefix: name prefix, e.g. <funcName>Start
+    @param logLevel: one of the pexLog.Log level constants
+
+            
+    Logged items include:
+    * Utc:  UTC date in ISO format (only in metadata since log entries have timestamps)
+    * CpuTime: CPU time (seconds)
+    * MaxRss: maximum resident set size
+    All logged resource information is only for the current process; child processes are excluded
+    """
+    cpuTime = time.clock()
+    utcStr = datetime.datetime.utcnow().isoformat()
+    res = resource.getrusage(resource.RUSAGE_SELF)
+    obj.metadata.add(name = prefix + "Utc", value = utcStr) # log messages already have timestamps
+    logPairs(obj = obj,
+        pairs = [
+            (prefix + "CpuTime",  cpuTime),
+            (prefix + "UTime",    res.ru_utime),
+            (prefix + "STime",    res.ru_stime),
+        ],
+        logLevel = logLevel,
+    )
+    logPairs(obj = obj,
+        pairs = [
+            (prefix + "MaxRss",   res.ru_maxrss),
+            (prefix + "MinFlt",   res.ru_minflt),
+            (prefix + "MajFlt",   res.ru_majflt),
+        ],
+        logLevel = logLevel,
+    )
+    logPairs(obj = obj,
+        pairs = [
+            (prefix + "InBlock",  res.ru_inblock),
+            (prefix + "OuBlock",  res.ru_oublock),
+            (prefix + "NVCsw",    res.ru_nvcsw),
+            (prefix + "NIvCsw",   res.ru_nivcsw),
+        ],
+        logLevel = logLevel,
+    )
 
 def timeMethod(func):
     """Decorator to measure duration of a task method
@@ -38,16 +104,16 @@ def timeMethod(func):
         def run(self, ...): # or any other instance method you want to time
             ...
     
-    Writes the duration (in CPU seconds) to the task's metadata using name <func name>Duration
+    Writes various measures of time and possibly memory usage to the task's metadata;
+    all items are prefixed with the function name.
     
     @warning This decorator only works with instance methods of Task (or any class with a metadata attribute
       that supports add(name, value)).
     """
-    itemName = func.__name__ + "Duration"
+    @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):
-        t1 = time.clock()
+        logInfo(obj = self, prefix = func.__name__ + "Start")
         res = func(self, *args, **keyArgs)
-        duration = time.clock() - t1
-        self.metadata.add(itemName, duration)
+        logInfo(obj = self, prefix = func.__name__ + "End")
         return res
     return wrapper
