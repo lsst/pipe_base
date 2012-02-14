@@ -127,14 +127,16 @@ class Task(object):
         @param logLevel: one of the pexLog.Log level constants
         
         To use:
-        self.timer(name):
+        with self.timer(name):
             ...code to time...
 
         See timer.logInfo for the information logged            
         """
         logInfo(obj = self, prefix = name + "Start", logLevel = logLevel)
-        yield
-        logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
+        try:
+            yield
+        finally:
+            logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
     
     def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
         """Display image and/or sources

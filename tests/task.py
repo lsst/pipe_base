@@ -72,6 +72,18 @@ class AddMultTask(pipeBase.Task):
             return pipeBase.Struct(
                 val = multRet.val,
             )
+    
+    @pipeBase.timeMethod
+    def failDec(self):
+        """A method that fails with a decorator
+        """
+        raise RuntimeError("failDec intentional error")
+    
+    def failCtx(self):
+        """A method that fails inside a context manager
+        """
+        with self.timer("failCtx"):
+            raise RuntimeError("failCtx intentional error")
 
 class AddTwiceTask(AddTask):
     """Variant of AddTask that adds twice the addend"""
@@ -115,6 +127,23 @@ class TaskTestCase(unittest.TestCase):
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + (2 * addend)) * multiplicand)
+    
+    def testFail(self):
+        """Test timers when the code they are timing fails
+        """
+        config = AddMultTask.ConfigClass()
+        addMultTask = AddMultTask(config=config)
+        try:
+            addMultTask.failDec()
+            self.fail("Expected RuntimeError")
+        except RuntimeError:
+            self.assertIsNotNone(addMultTask.metadata.get("failDecEndCpuTime", None))
+        try:
+            addMultTask.failCtx()
+            self.fail("Expected RuntimeError")
+        except RuntimeError:
+            self.assertIsNotNone(addMultTask.metadata.get("failCtxEndCpuTime", None))
+        
     
     def testNames(self):
         """Test task names
