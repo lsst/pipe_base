@@ -113,7 +113,9 @@ def timeMethod(func):
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):
         logInfo(obj = self, prefix = func.__name__ + "Start")
-        res = func(self, *args, **keyArgs)
-        logInfo(obj = self, prefix = func.__name__ + "End")
+        try:
+            res = func(self, *args, **keyArgs)
+        finally:
+            logInfo(obj = self, prefix = func.__name__ + "End")
         return res
     return wrapper
