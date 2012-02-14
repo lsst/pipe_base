@@ -36,7 +36,7 @@ class ArgumentParser(argparse.ArgumentParser):
     Users may wish to add additional arguments before calling parse_args.
     
     @notes
-    * The need to specify camera name will go away in a few weeks once the repository format allows
+    * The need to specify camera name will go away once the repository format allows
       constructing a butler without knowing it.
     * I would prefer to check data ID keys and values as they are parsed,
       but the required information comes from the butler, so I have to construct a butler
@@ -44,11 +44,13 @@ class ArgumentParser(argparse.ArgumentParser):
       after parsing the command line.
     """
     def __init__(self,
+        usage = "%(prog)s camera dataSource [options]",
         datasetType = "raw",
         dataRefLevel = None,
     **kwargs):
         """Construct an ArgumentParser
         
+        @param usage: usage string
         @param datasetType: dataset type appropriate to the task at hand;
             this affects which data ID keys are recognized.
         @param dataRefLevel: the level of the data references returned in dataRefList;
@@ -59,6 +61,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self._datasetType = datasetType
         self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
+            usage = usage,
             fromfile_prefix_chars = '@',
             epilog = """Notes:
 * --config, --configfile, --id, --trace and @file may appear multiple times;
@@ -74,7 +77,8 @@ class ArgumentParser(argparse.ArgumentParser):
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
-        self.add_argument("camera", help="name of camera (e.g. lsstSim or suprimecam)")
+        self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
+            (WARNING: this must appear before any options or @file)""")
         self.add_argument("dataPath", help="path to data repository")
         self.add_argument("--output", dest="outPath", help="output root directory")
         self.add_argument("--calib", dest="calibPath", help="calibration root directory")
@@ -90,38 +94,44 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
-    def parse_args(self, config, argv=None):
+    def parse_args(self, config, args=None):
         """Parse arguments for a pipeline task
 
         @params config: config for the task being run
-        @params argv: argv to parse; if None then sys.argv[1:] is used
+        @params args: args to parse; if None then sys.argv[1:] is used
         
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied
         - butler: a butler for the data
         - dataIdList: a list of data ID dicts
         - dataRefList: a list of butler data references
-        - mapper: a mapper for the data
-        - log: a log
+        - log: a pex_logging log
         - an entry for each command-line argument, with a few exceptions such as configFile and logDest
         """
-        if argv == None:
-            argv = sys.argv[1:]
+        if args == None:
+            args = sys.argv[1:]
 
-        _inNamespace = argparse.Namespace()
-        _inNamespace.config = config
-        _inNamespace.dataIdList = []
-        _inNamespace.log = pexLog.Log.getDefaultLog()
-        namespace = argparse.ArgumentParser.parse_args(self, args=argv, namespace=_inNamespace)
+        if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
+            self.error("Must specify camera as first argument")
+
+        namespace = argparse.Namespace()
+        namespace.camera = args[0]
+        namespace.config = config
+        namespace.log = pexLog.Log.getDefaultLog()
+
+        self.handleCamera(namespace)
+
+        namespace.dataIdList = []
+        
+        namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configFile
         del namespace.id
         
         if not os.path.isdir(namespace.dataPath):
-            sys.stderr.write("Error: dataPath=%r not found\n" % (namespace.dataPath,))
-            sys.exit(1)
+            self.error("Error: dataPath=%r not found" % (namespace.dataPath,))
         
-        self._createMapper(namespace)
-        butlerFactory = dafPersist.ButlerFactory(mapper = namespace.mapper)
+        mapper = self._createMapper(namespace)
+        butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
         idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
         
@@ -174,6 +184,16 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.config.validate()
 
         return namespace
+    
+    def handleCamera(self, namespace):
+        """Perform camera-specific operations before parsing the command line.
+        
+        @param[inout] namespace: namespace object with the following fields:
+            - config: the config passed to parse_args, with no overrides applied
+            - camera: the camera name
+            - log: a pex_logging log
+        """
+        pass
 
     def _createMapper(self, namespace):
         """Construct namespace.mapper based on namespace.camera, dataPath and calibPath.
@@ -187,6 +207,11 @@ class ArgumentParser(argparse.ArgumentParser):
                 from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
+        elif lowCamera == "hscSim":
+            try:
+                from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
+            except ImportError, e:
+                self.error("Must setup obs_subaru to use hscSim: %s" % e)
         elif lowCamera == "suprimecam":
             try:
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
@@ -199,7 +224,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 self.error("Must setup obs_cfht to use CFHT")
         else:
             self.error("Unsupported camera: %s" % namespace.camera)
-        namespace.mapper = Mapper(
+        return Mapper(
             root = namespace.dataPath,
             calibRoot = namespace.calibPath,
             outputRoot = namespace.outPath,

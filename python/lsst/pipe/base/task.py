@@ -20,11 +20,11 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import contextlib
-import time
 
 import lsstDebug
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
+from .timer import logInfo
 
 __all__ = ["Task"]
 
@@ -52,7 +52,7 @@ class Task(object):
         
         @param config: config to configure this task (task-specific subclass of pexConfig.Config);
             If parentTask specified then defaults to parentTask.config.<name>
-        @param name: brief name of task; ignored if parentTask=None
+        @param name: brief name of task; defaults to the class name if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
@@ -72,7 +72,9 @@ class Task(object):
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
         else:
-            self._name = "main"
+            if name is None:
+                name = type(self).__name__
+            self._name = name
             self._fullName = self._name
             if config == None:
                 raise RuntimeError("config is required for a top-level task")
@@ -88,15 +90,14 @@ class Task(object):
     def getFullName(self):
         """Return the full name of the task.
 
-        The top level task is named "main" and subtasks use dotted notation.
-        Thus subtask "foo" of subtask "bar" of the top level task has the full name "main.foo.bar".
+        Subtasks use dotted notation. Thus subtask "foo" of subtask "bar" of the top level task
+        has the full name "<top>.foo.bar" where <top> is the name of the top-level task
+        (which defaults to the name of its class).
         """
         return self._fullname
 
     def getName(self):
-        """Return the brief name of the task.
-        
-        The top level task is named "main". Subtasks are named as specified in makeSubtask.
+        """Return the brief name of the task (the last field in the full name).
         """
         return self._name
     
@@ -118,22 +119,22 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name):
-        """Context manager to time the duration of an arbitrary block of code
+    def timer(self, name, logLevel = pexLog.Log.INFO):
+        """Context manager to log performance data for an arbitrary block of code
         
         @param[in] name: name of code being timed;
-            data will be added to metadata using item name: <name>Duration
+            data will be logged using item name: <name>Start<item> and <name>End<item>
+        @param logLevel: one of the pexLog.Log level constants
         
         To use:
         self.timer(name):
             ...code to time...
-        
-        Writes the duration (in CPU seconds) to metadata using the specified name.
+
+        See timer.logInfo for the information logged            
         """
-        t1 = time.clock()
+        logInfo(obj = self, prefix = name + "Start", logLevel = logLevel)
         yield
-        duration = time.clock() - t1
-        self.metadata.add(name + "Duration", duration)
+        logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
     
     def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
         """Display image and/or sources

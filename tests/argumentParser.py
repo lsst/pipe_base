@@ -57,14 +57,14 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id basics"""
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
         )
         self.assertEqual(len(namespace.dataIdList), 1)
         self.assertEqual(len(namespace.dataRefList), 1)
         
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=1"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=1"],
         )
         self.assertEqual(len(namespace.dataIdList), 1)
         self.assertEqual(len(namespace.dataRefList), 0) # no data for this ID
@@ -73,7 +73,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id cross product"""
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--id", "raft=0,10^0,20^0,3", "sensor=10,0^1,1", "visit=85470982"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,10^0,20^0,3", "sensor=10,0^1,1", "visit=85470982"],
         )
         self.assertEqual(len(namespace.dataIdList), 6)
         self.assertEqual(len(namespace.dataRefList), 1) # just one of the IDs has data
@@ -82,7 +82,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --config"""
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--config", "floatItem=-67.1", "strItem=overridden value"],
+            args = ["lsstSim", DataPath, "--config", "floatItem=-67.1", "strItem=overridden value"],
         )
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "overridden value")
@@ -90,7 +90,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         # verify that order of setting values is left to right
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath,
+            args = ["lsstSim", DataPath,
                 "--config", "floatItem=-67.1", "strItem=overridden value",
                 "--config", "strItem=final value"],
         )
@@ -100,7 +100,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         # verify that incorrect names are caught
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            argv = ["lsstSim", DataPath, "--config", "missingItem=-67.1"],
+            args = ["lsstSim", DataPath, "--config", "missingItem=-67.1"],
         )
     
     def testConfigFile(self):
@@ -108,7 +108,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--configfile", configFilePath],
+            args = ["lsstSim", DataPath, "--configfile", configFilePath],
         )
         self.assertEqual(namespace.config.floatItem, -9e9)
         self.assertEqual(namespace.config.strItem, "set in override file")
@@ -116,7 +116,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         # verify that order of setting values is left to right
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath,
+            args = ["lsstSim", DataPath,
                 "--config", "floatItem=5.5",
                 "--configfile", configFilePath,
                 "--config", "strItem=value from cmd line"],
@@ -127,7 +127,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         # verify that missing files are caught
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            argv = ["lsstSim", DataPath, "--configfile", "missingFile"],
+            args = ["lsstSim", DataPath, "--configfile", "missingFile"],
         )
     
     def testAtFile(self):
@@ -135,7 +135,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         argPath = os.path.join(LocalDataPath, "args.txt")
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "@%s" % (argPath,)],
+            args = ["lsstSim", DataPath, "@%s" % (argPath,)],
         )
         self.assertEqual(len(namespace.dataIdList), 1)
         self.assertEqual(namespace.config.floatItem, 4.7)
@@ -147,7 +147,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         logFile = "tests_argumentParser_testLog_temp.txt"
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath, "--log", logFile],
+            args = ["lsstSim", DataPath, "--log", logFile],
         )
         self.assertTrue(os.path.isfile(logFile))
         os.remove(logFile)
@@ -159,7 +159,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """
         namespace = self.ap.parse_args(
             config = self.config,
-            argv = ["lsstSim", DataPath,
+            args = ["lsstSim", DataPath,
                 "--trace", "afw.math=2", "meas.algorithms=3",
                 "--trace", "something=5",
             ],
@@ -169,23 +169,23 @@ class ArgumentParserTestCase(unittest.TestCase):
     
     def testLogLevel(self):
         """Test --log-level"""
-#         for logLevel in ("debug", "Info", "WARN", "fatal"):
-#             intLevel = getattr(pexLog.Log, logLevel.upper())
-#             namespace = self.ap.parse_args(
-#                 config = self.config,
-#                 argv = ["lsstSim", DataPath, "--log-level", logLevel],
-#             )
-#             self.assertEqual(namespace.log.getThreshold(), intLevel)
-# 
-#             namespace = self.ap.parse_args(
-#                 config = self.config,
-#                 argv = ["lsstSim", DataPath, "--log-level", str(intLevel)],
-#             )
-#             self.assertEqual(namespace.log.getThreshold(), intLevel)
+        for logLevel in ("debug", "Info", "WARN", "fatal"):
+            intLevel = getattr(pexLog.Log, logLevel.upper())
+            namespace = self.ap.parse_args(
+                config = self.config,
+                args = ["lsstSim", DataPath, "--log-level", logLevel],
+            )
+            self.assertEqual(namespace.log.getThreshold(), intLevel)
+
+            namespace = self.ap.parse_args(
+                config = self.config,
+                args = ["lsstSim", DataPath, "--log-level", str(intLevel)],
+            )
+            self.assertEqual(namespace.log.getThreshold(), intLevel)
         
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            argv = ["lsstSim", DataPath,
+            args = ["lsstSim", DataPath,
                 "--log-level", "INVALID_LEVEL",
             ],
         )

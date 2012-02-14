@@ -20,6 +20,7 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import time
 import unittest
 
 import lsst.utils.tests as utilsTests
@@ -120,12 +121,12 @@ class TaskTestCase(unittest.TestCase):
         """
         config = AddMultTask.ConfigClass()
         addMultTask = AddMultTask(config=config)
-        self.assertEquals(addMultTask._name, "main")
+        self.assertEquals(addMultTask._name, "AddMultTask")
         self.assertEquals(addMultTask.add._name, "add")
         self.assertEquals(addMultTask.mult._name, "mult")
-        self.assertEquals(addMultTask._fullName, "main")
-        self.assertEquals(addMultTask.add._fullName, "main.add")
-        self.assertEquals(addMultTask.mult._fullName, "main.mult")
+        self.assertEquals(addMultTask._fullName, "AddMultTask")
+        self.assertEquals(addMultTask.add._fullName, "AddMultTask.add")
+        self.assertEquals(addMultTask.mult._fullName, "AddMultTask.mult")
     
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
@@ -133,11 +134,23 @@ class TaskTestCase(unittest.TestCase):
         config = AddMultTask.ConfigClass()
         addMultTask = AddMultTask(config=config)
         addMultTask.run(val=1.1)
-        self.assertLess(addMultTask.metadata.get("runDuration"), 0.1)
-        self.assertLess(addMultTask.metadata.get("contextDuration"), 0.1)
-        self.assertLess(addMultTask.add.metadata.get("runDuration"), 0.1)
-        self.assertLess(addMultTask.mult.metadata.get("runDuration"), 0.1)
- 
+        currCpuTime = time.clock()
+        self.assertLessEqual(
+            addMultTask.metadata.get("runStartCpuTime"),
+            addMultTask.metadata.get("runEndCpuTime"),
+        )
+        self.assertLessEqual(addMultTask.metadata.get("runEndCpuTime"), currCpuTime)
+        self.assertLessEqual(
+            addMultTask.metadata.get("contextStartCpuTime"),
+            addMultTask.metadata.get("contextEndCpuTime"),
+        )
+        self.assertLessEqual(addMultTask.metadata.get("contextEndCpuTime"), currCpuTime)
+        self.assertLessEqual(
+            addMultTask.add.metadata.get("runStartCpuTime"),
+            addMultTask.metadata.get("runEndCpuTime"),
+        )
+        self.assertLessEqual(addMultTask.add.metadata.get("runEndCpuTime"), currCpuTime)
+
 
 def suite():
     """Return a suite containing all the test cases in this module.
