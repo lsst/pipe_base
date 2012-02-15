@@ -92,6 +92,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
             help="trace level for component", metavar="COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
+        self.add_argument("--doraise", dest="doRaise", action="store_true",
+            help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
     def parse_args(self, config, args=None):
@@ -254,14 +256,14 @@ class ConfigValueAction(argparse.Action):
 
             # see if setting the string value works; if not, try eval
             try:
-                setattr(namespace.config, name, valueStr)
+                setDottedAttr(namespace.config, name, valueStr)
             except Exception:
                 try:
                     value = eval(valueStr, {})
                 except Exception:
                     parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
                 try:
-                    setattr(namespace.config, name, value)
+                    setDottedAttr(namespace.config, name, value)
                 except Exception, e:
                     parser.error("Cannot set config.%s=%r: %s" % (name, value, e))
 
@@ -318,3 +320,20 @@ class TraceLevelAction(argparse.Action):
             except Exception:
                 parser.error("Cannot parse %r as an integer level for %s" % (levelStr, component))
             pexLog.Trace.setVerbosity(component, level)
+
+def setDottedAttr(item, name, value):
+    """Like setattr, but accepts hierarchical names, e.g. foo.bar.baz
+    """
+    subitem = item
+    subnameList = name.split(".")
+    for subname in subnameList[:-1]:
+        subitem = getattr(subitem, subname)
+    setattr(subitem, subnameList[-1], value)
+
+def getDottedAttr(item, name):
+    """Like getattr, but accepts hierarchical names, e.g. foo.bar.baz
+    """
+    subitem = item
+    for subname in name.split("."):
+        subitem = getattr(subitem, subname)
+    return subitem
