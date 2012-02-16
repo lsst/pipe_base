@@ -31,7 +31,7 @@ import lsst.pex.logging as pexLog
 
 __all__ = ["logInfo", "timeMethod"]
 
-def logPairs(obj, pairs, logLevel=pexLog.Log.INFO):
+def logPairs(obj, pairs, logLevel=pexLog.Log.DEBUG):
     """Log (name, value) pairs to obj.metadata and obj.log
     
     @param obj: an object with two attributes:
@@ -46,7 +46,7 @@ def logPairs(obj, pairs, logLevel=pexLog.Log.INFO):
         strList.append("%s=%s" % (name, value))
     obj.log.log(logLevel, "; ".join(strList))
 
-def logInfo(obj, prefix, logLevel=pexLog.Log.INFO):
+def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
     """Log timer information to obj.metadata and obj.log
 
     @param obj: an object with two attributes:
