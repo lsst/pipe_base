@@ -22,7 +22,7 @@ metrics that have no obvious object to which to belong. Use the addMetadata meth
 metadata. A task and all its subtasks share the same metadata dict.
 
 pipe_base is written purely in Python. Classes include:
-@li lsst.pipeBase.Source: object returned by the run method of a task
+@li lsst.pipeBase.Struct: object returned by the run method of a task
 @li lsst.pipeBase.Task: base class for a pipeline task
 */
 }}}
