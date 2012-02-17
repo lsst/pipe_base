@@ -32,17 +32,19 @@ class Task(object):
     """A data processing task
     
     Useful attributes include:
-    * log: an lsst.pex.logging.Log; one log is shared among all tasks and subtasks
-    * config: task-specific Config
+    * log: an lsst.pex.logging.Log
+    * config: task-specific configuration; an instance of ConfigClass (see below)
     * metadata: an lsst.daf.data.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
-        persisted, never to be used for data processing.
+        persisted, never to be used by the task.
     
-    Subclasses should create one or both of the following methods:
-    * run: performs the main data processing. Takes appropriate task-specific arguments
-    and returns a pipeBase.Struct with a named field for each item of output
-    * runButler: un-persists input data using a data butler (provided as the first argument
-    of runButler), processes the data and persists the results using the butler.
+    Subclasses should have a method named "run" to perform the main data processing. Details:
+    * run should process the minimum reasonable amount of data, typically a single CCD.
+      Iteration, if desired, is performed by a caller of the run method.
+    * If "run" can persist or unpersist data: "run" should accept a butler data reference
+      (or a collection of data references, if appropriate, e.g. coaddition).
+      The default level for data references is "sensor" (aka "ccd" for some cameras).
+    * If "run" can persist data then the task's config should offer a flag to disable persistence.
     
     Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
     which configures this task.
