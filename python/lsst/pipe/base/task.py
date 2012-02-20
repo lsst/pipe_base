@@ -86,7 +86,7 @@ class Task(object):
         if log == None:
             log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
         self.log = log
-        self._display = lsstDebug.Info(__name__).display
+        self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
     
     def getFullName(self):
