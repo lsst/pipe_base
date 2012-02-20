@@ -3,6 +3,4 @@ setupRequired(pex_logging)
 setupRequired(pex_config)
 setupRequired(utils)
 
-setupOptional(obs_lsstSim) # for unit tests
-
 envPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
