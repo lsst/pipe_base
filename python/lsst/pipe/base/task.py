@@ -183,41 +183,25 @@ class Task(object):
             
         ctypes = [ds9.GREEN, ds9.RED, ds9.BLUE]
         for i, ss in enumerate(sources):
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
-
-            for source in ss:
-                xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
-                ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
-                #try:
-                #    mag = 25-2.5*math.log10(source.getPsfFlux())
-                #    if mag > 15: continue
-                #except: continue
-                #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+            with ds9.Buffering():
+                for source in ss:
+                    xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
+                    ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
+                    #try:
+                    #    mag = 25-2.5*math.log10(source.getPsfFlux())
+                    #    if mag > 15: continue
+                    #except: continue
+                    #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
 
         if matches:
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
-
-            for match in matches:
-                first = match.first
-                x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
-                ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
-                second = match.second
-                x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
-                ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+            with ds9.Buffering():
+                for match in matches:
+                    first = match.first
+                    x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
+                    ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
+                    second = match.second
+                    x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
+                    ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
 
         if pause:
             if prompt is None:
