@@ -96,7 +96,7 @@ class ArgumentParser(argparse.ArgumentParser):
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
-    def parse_args(self, config, args=None):
+    def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
 
         @params config: config for the task being run
@@ -119,7 +119,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.Namespace()
         namespace.camera = args[0]
         namespace.config = config
-        namespace.log = pexLog.Log.getDefaultLog()
+        if log is None:
+            log = pexLog.Log.getDefaultLog()
+        namespace.log = log
 
         self.handleCamera(namespace)
 
