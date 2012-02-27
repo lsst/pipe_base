@@ -58,7 +58,8 @@ class Task(object):
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
-        @param log: pexLog log; if None then a log is created using the full task name.
+        @param log: pexLog log; if None then the default is used;
+            in either case a copy is made using the full task name.
         
         @raise RuntimeError if parentTask is None and config is None.
         @raise RuntimeError if parentTask is not None and name is None.
@@ -84,8 +85,8 @@ class Task(object):
   
         self.config = config
         if log == None:
-            log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
-        self.log = log
+            log = pexLog.getDefaultLog()
+        self.log = pexLog.Log(log, self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
     
