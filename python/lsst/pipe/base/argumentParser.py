@@ -156,11 +156,18 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-        namespace.dataRefList = [dataRef for dataId in namespace.dataIdList \
-                                    for dataRef in namespace.butler.subset(
-                                        datasetType = self._datasetType,
-                                        level = self._dataRefLevel,
-                                        **dataId)]
+        namespace.dataRefList = []
+        for dataId in namespace.dataIdList:
+            dataRefList = list(namespace.butler.subset(
+                datasetType = self._datasetType,
+                level = self._dataRefLevel,
+                **dataId))
+            if not dataRefList:
+                namespace.log.log(pexLog.Log.WARN, "No data references for dataId=%s" % (dataId,))
+                continue
+            namespace.dataRefList += dataRefList
+        if not namespace.dataRefList:
+            namespace.log.log(pexLog.Log.WARN, "No data references")
 
         if namespace.debug:
             try:
