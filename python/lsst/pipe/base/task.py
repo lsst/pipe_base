@@ -180,7 +180,7 @@ but the sizes are doubled
                 else:
                     exposure = ipIsr.assembleCcd(exposure, pipUtil.getCcd(exposure[0]))
             mi = exposure.getMaskedImage()
-            ds9.mtv(mi, frame=frame, title=name)
+            ds9.mtv(exposure, frame=frame, title=name)
             x0, y0 = mi.getX0(), mi.getY0()
         else:
             x0, y0 = 0, 0
