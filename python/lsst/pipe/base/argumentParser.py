@@ -209,7 +209,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
-        elif lowCamera == "hscSim":
+        elif lowCamera == "hscsim":
             try:
                 from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
             except ImportError, e:
