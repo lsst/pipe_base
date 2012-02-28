@@ -22,6 +22,8 @@
 import contextlib
 
 import lsstDebug
+
+import lsst.afw.display.ds9 as ds9
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
@@ -152,20 +154,29 @@ class Task(object):
         finally:
             logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
     
-    def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
+    def display(self, name, exposure=None, sources=[], matches=None,
+                ctypes=[ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE,], ptypes=["o", "+", "x", "*",],
+                sizes=[4,],
+                pause=None, prompt=None):
         """Display image and/or sources
 
         @param name Name of product to display
         @param exposure Exposure to display, or None
         @param sources list of sets of Sources to display, or []
         @param matches Matches to display, or None
+        @param ctypes Array of colours to use on ds9 (will be reused as necessary)
+        @param ptypes Array of ptypes to use on ds9 (will be reused as necessary)
+        @param sizes Array of sizes to use on ds9 (will be reused as necessary)
         @param pause Pause execution?
+        @param prompt Prompt for user
+
+N.b. the ds9 arrays (ctypes etc.) are used for the lists of the list of lists-of-sources (so the
+first ctype is used for the first SourceSet); the matches are interpreted as an extra pair of SourceSets
+but the sizes are doubled
         """
         if not self._display or not self._display.has_key(name) or self._display < 0 or \
                self._display in (False, None) or self._display[name] in (False, None):
             return
-
-        import lsst.afw.display.ds9 as ds9
 
         if isinstance(self._display, int):
             frame = self._display
@@ -181,7 +192,7 @@ class Task(object):
                 else:
                     exposure = ipIsr.assembleCcd(exposure, pipUtil.getCcd(exposure[0]))
             mi = exposure.getMaskedImage()
-            ds9.mtv(mi, frame=frame, title=name)
+            ds9.mtv(exposure, frame=frame, title=name)
             x0, y0 = mi.getX0(), mi.getY0()
         else:
             x0, y0 = 0, 0
@@ -193,27 +204,41 @@ class Task(object):
         except TypeError:               # not a list of sets of sources
             sources = [sources]
             
-        ctypes = [ds9.GREEN, ds9.RED, ds9.BLUE]
-        for i, ss in enumerate(sources):
-            with ds9.Buffering():
+        with ds9.Buffering():
+            for i, ss in enumerate(sources):
+                ctype = ctypes[i%len(ctypes)]
+                ptype = ptypes[i%len(ptypes)]
+                size = sizes[i%len(sizes)]
+
                 for source in ss:
                     xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
-                    ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
+                    ds9.dot(ptype, xc, yc, size=size, frame=frame, ctype=ctype)
                     #try:
                     #    mag = 25-2.5*math.log10(source.getPsfFlux())
                     #    if mag > 15: continue
                     #except: continue
                     #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
+            nSourceSet = i + 1
 
         if matches:
             with ds9.Buffering():
-                for match in matches:
-                    first = match.first
+                for first, second, d in matches:
+                    i = nSourceSet      # counter for ptypes/ctypes
+
                     x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
-                    ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
-                    second = match.second
+
+                    ctype = ctypes[i%len(ctypes)]
+                    ptype = ptypes[i%len(ptypes)]
+                    size  = 2*sizes[i%len(sizes)]
+                    ds9.dot(ptype, x1, y1, size=8, frame=frame, ctype=ctype)
+                    i += 1
+
+                    ctype = ctypes[i%len(ctypes)]
+                    ptype = ptypes[i%len(ptypes)]
+                    size  = 2*sizes[i%len(sizes)]
                     x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
-                    ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
+                    ds9.dot(ptype, x2, y2, size=8, frame=frame, ctype=ctype)
+                    i += 1
 
         if pause:
             if prompt is None:
