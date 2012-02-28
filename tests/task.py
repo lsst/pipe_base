@@ -135,8 +135,8 @@ class TaskTestCase(unittest.TestCase):
         addMultTask = AddMultTask(config=config)
         fullMetadata = addMultTask.getFullMetadata()
         self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask_add"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask_mult"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:add"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:mult"), dafBase.PropertySet))
             
     def testReplace(self):
         """Test replacing one subtask with another
