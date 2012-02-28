@@ -96,7 +96,7 @@ class ArgumentParser(argparse.ArgumentParser):
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--log", dest="logDest", help="logging destination")
 
-    def parse_args(self, config, args=None):
+    def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
 
         @params config: config for the task being run
@@ -119,7 +119,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.Namespace()
         namespace.camera = args[0]
         namespace.config = config
-        namespace.log = pexLog.Log.getDefaultLog()
+        if log is None:
+            log = pexLog.Log.getDefaultLog()
+        namespace.log = log
 
         self.handleCamera(namespace)
 
@@ -154,11 +156,18 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-        namespace.dataRefList = [dataRef for dataId in namespace.dataIdList \
-                                    for dataRef in namespace.butler.subset(
-                                        datasetType = self._datasetType,
-                                        level = self._dataRefLevel,
-                                        **dataId)]
+        namespace.dataRefList = []
+        for dataId in namespace.dataIdList:
+            dataRefList = list(namespace.butler.subset(
+                datasetType = self._datasetType,
+                level = self._dataRefLevel,
+                **dataId))
+            if not dataRefList:
+                namespace.log.log(pexLog.Log.WARN, "No data references for dataId=%s" % (dataId,))
+                continue
+            namespace.dataRefList += dataRefList
+        if not namespace.dataRefList:
+            namespace.log.log(pexLog.Log.WARN, "No data references")
 
         if namespace.debug:
             try:
@@ -209,7 +218,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
-        elif lowCamera == "hscSim":
+        elif lowCamera == "hscsim":
             try:
                 from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
             except ImportError, e:

@@ -24,6 +24,7 @@ import time
 import unittest
 
 import lsst.utils.tests as utilsTests
+import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -114,6 +115,29 @@ class TaskTestCase(unittest.TestCase):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + addend) * multiplicand)
     
+    def testNames(self):
+        """Test getName() and getFullName()
+        """
+        config = AddMultTask.ConfigClass()
+        addMultTask = AddMultTask(config=config)
+        self.assertEqual(addMultTask.getName(), "AddMultTask")
+        self.assertEqual(addMultTask.add.getName(), "add")
+        self.assertEqual(addMultTask.mult.getName(), "mult")
+
+        self.assertEqual(addMultTask.getFullName(), "AddMultTask")
+        self.assertEqual(addMultTask.add.getFullName(), "AddMultTask.add")
+        self.assertEqual(addMultTask.mult.getFullName(), "AddMultTask.mult")
+    
+    def testGetFullMetadata(self):
+        """Test getFullMetadata()
+        """
+        config = AddMultTask.ConfigClass()
+        addMultTask = AddMultTask(config=config)
+        fullMetadata = addMultTask.getFullMetadata()
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:add"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:mult"), dafBase.PropertySet))
+            
     def testReplace(self):
         """Test replacing one subtask with another
         """

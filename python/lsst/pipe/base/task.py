@@ -60,7 +60,8 @@ class Task(object):
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
-        @param log: pexLog log; if None then a log is created using the full task name.
+        @param log: pexLog log; if None then the default is used;
+            in either case a copy is made using the full task name.
         
         @raise RuntimeError if parentTask is None and config is None.
         @raise RuntimeError if parentTask is not None and name is None.
@@ -86,10 +87,21 @@ class Task(object):
   
         self.config = config
         if log == None:
-            log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
-        self.log = log
+            log = pexLog.getDefaultLog()
+        self.log = pexLog.Log(log, self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
+    
+    def getFullMetadata(self):
+        """Get metadata for all tasks
+        
+        @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
+            for the top-level task and all subtasks, sub-subtasks, etc.
+        """
+        fullMetadata = dafBase.PropertySet()
+        for fullName, task in self.getTaskDict().iteritems():
+            fullMetadata.set(fullName.replace(".", ":"), task.metadata)
+        return fullMetadata
     
     def getFullName(self):
         """Return the full name of the task.
@@ -98,7 +110,7 @@ class Task(object):
         has the full name "<top>.foo.bar" where <top> is the name of the top-level task
         (which defaults to the name of its class).
         """
-        return self._fullname
+        return self._fullName
 
     def getName(self):
         """Return the brief name of the task (the last field in the full name).
@@ -106,10 +118,10 @@ class Task(object):
         return self._name
     
     def getTaskDict(self):
-        """Return a dictionary of tasks as a shallow copy.
+        """Return a dictionary of all tasks as a shallow copy.
         
-        Keys are full task names. Values are Task objects.
-        The dictionary includes the top-level task and all subtasks, sub-subtasks, etc.
+        @return taskDict: a dict containing full task name: task object
+            for the top-level task and all subtasks, sub-subtasks, etc.
         """
         return self._taskDict.copy()
     
