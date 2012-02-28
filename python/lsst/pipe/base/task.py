@@ -91,10 +91,10 @@ class Task(object):
         self._taskDict[self._fullName] = self
     
     def getFullMetadata(self):
-        """Get metadata for this task and all subtasks
+        """Get metadata for all tasks
         
-        @return metadata: an lsst.daf.base.PropertySet containing
-            fullName:metadata for this task and all subtasks, sub-subtasks, etc.
+        @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
+            for the top-level task and all subtasks, sub-subtasks, etc.
         """
         fullMetadata = dafBase.PropertySet()
         for fullName, task in self.getTaskDict().iteritems():
@@ -116,10 +116,10 @@ class Task(object):
         return self._name
     
     def getTaskDict(self):
-        """Return a dictionary of tasks as a shallow copy.
+        """Return a dictionary of all tasks as a shallow copy.
         
-        Keys are full task names. Values are Task objects.
-        The dictionary includes the top-level task and all subtasks, sub-subtasks, etc.
+        @return taskDict: a dict containing full task name: task object
+            for the top-level task and all subtasks, sub-subtasks, etc.
         """
         return self._taskDict.copy()
     
