@@ -58,7 +58,8 @@ class Task(object):
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
-        @param log: pexLog log; if None then a log is created using the full task name.
+        @param log: pexLog log; if None then the default is used;
+            in either case a copy is made using the full task name.
         
         @raise RuntimeError if parentTask is None and config is None.
         @raise RuntimeError if parentTask is not None and name is None.
@@ -84,10 +85,21 @@ class Task(object):
   
         self.config = config
         if log == None:
-            log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
-        self.log = log
-        self._display = lsstDebug.Info(__name__).display
+            log = pexLog.getDefaultLog()
+        self.log = pexLog.Log(log, self._fullName)
+        self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
+    
+    def getFullMetadata(self):
+        """Get metadata for this task and all subtasks
+        
+        @return metadata: an lsst.daf.base.PropertySet containing
+            fullName:metadata for this task and all subtasks, sub-subtasks, etc.
+        """
+        fullMetadata = dafBase.PropertySet()
+        for fullName, task in self.getTaskDict().iteritems():
+            fullMetadata.set(fullName.replace(".", ":"), task.metadata)
+        return fullMetadata
     
     def getFullName(self):
         """Return the full name of the task.
@@ -96,7 +108,7 @@ class Task(object):
         has the full name "<top>.foo.bar" where <top> is the name of the top-level task
         (which defaults to the name of its class).
         """
-        return self._fullname
+        return self._fullName
 
     def getName(self):
         """Return the brief name of the task (the last field in the full name).
@@ -183,41 +195,25 @@ class Task(object):
             
         ctypes = [ds9.GREEN, ds9.RED, ds9.BLUE]
         for i, ss in enumerate(sources):
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
-
-            for source in ss:
-                xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
-                ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
-                #try:
-                #    mag = 25-2.5*math.log10(source.getPsfFlux())
-                #    if mag > 15: continue
-                #except: continue
-                #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+            with ds9.Buffering():
+                for source in ss:
+                    xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
+                    ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
+                    #try:
+                    #    mag = 25-2.5*math.log10(source.getPsfFlux())
+                    #    if mag > 15: continue
+                    #except: continue
+                    #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
 
         if matches:
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
-
-            for match in matches:
-                first = match.first
-                x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
-                ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
-                second = match.second
-                x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
-                ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+            with ds9.Buffering():
+                for match in matches:
+                    first = match.first
+                    x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
+                    ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
+                    second = match.second
+                    x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
+                    ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
 
         if pause:
             if prompt is None:
