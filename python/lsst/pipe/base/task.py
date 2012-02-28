@@ -90,6 +90,17 @@ class Task(object):
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
     
+    def getFullMetadata(self):
+        """Get metadata for this task and all subtasks
+        
+        @return metadata: an lsst.daf.base.PropertySet containing
+            fullName:metadata for this task and all subtasks, sub-subtasks, etc.
+        """
+        fullMetadata = dafBase.PropertySet()
+        for fullName, task in self.getTaskDict().iteritems():
+            fullMetadata.set(fullName.replace(".", "_"), task.metadata)
+        return fullMetadata
+    
     def getFullName(self):
         """Return the full name of the task.
 
@@ -97,7 +108,7 @@ class Task(object):
         has the full name "<top>.foo.bar" where <top> is the name of the top-level task
         (which defaults to the name of its class).
         """
-        return self._fullname
+        return self._fullName
 
     def getName(self):
         """Return the brief name of the task (the last field in the full name).
