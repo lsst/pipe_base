@@ -22,6 +22,8 @@
 import contextlib
 
 import lsstDebug
+
+import lsst.afw.display.ds9 as ds9
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
@@ -58,7 +60,8 @@ class Task(object):
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
             If not None (a subtask) then you must specify name
-        @param log: pexLog log; if None then a log is created using the full task name.
+        @param log: pexLog log; if None then the default is used;
+            in either case a copy is made using the full task name.
         
         @raise RuntimeError if parentTask is None and config is None.
         @raise RuntimeError if parentTask is not None and name is None.
@@ -84,10 +87,21 @@ class Task(object):
   
         self.config = config
         if log == None:
-            log = pexLog.Log(pexLog.getDefaultLog(), self._fullName)
-        self.log = log
-        self._display = lsstDebug.Info(__name__).display
+            log = pexLog.getDefaultLog()
+        self.log = pexLog.Log(log, self._fullName)
+        self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
+    
+    def getFullMetadata(self):
+        """Get metadata for all tasks
+        
+        @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
+            for the top-level task and all subtasks, sub-subtasks, etc.
+        """
+        fullMetadata = dafBase.PropertySet()
+        for fullName, task in self.getTaskDict().iteritems():
+            fullMetadata.set(fullName.replace(".", ":"), task.metadata)
+        return fullMetadata
     
     def getFullName(self):
         """Return the full name of the task.
@@ -96,7 +110,7 @@ class Task(object):
         has the full name "<top>.foo.bar" where <top> is the name of the top-level task
         (which defaults to the name of its class).
         """
-        return self._fullname
+        return self._fullName
 
     def getName(self):
         """Return the brief name of the task (the last field in the full name).
@@ -104,10 +118,10 @@ class Task(object):
         return self._name
     
     def getTaskDict(self):
-        """Return a dictionary of tasks as a shallow copy.
+        """Return a dictionary of all tasks as a shallow copy.
         
-        Keys are full task names. Values are Task objects.
-        The dictionary includes the top-level task and all subtasks, sub-subtasks, etc.
+        @return taskDict: a dict containing full task name: task object
+            for the top-level task and all subtasks, sub-subtasks, etc.
         """
         return self._taskDict.copy()
     
@@ -140,20 +154,29 @@ class Task(object):
         finally:
             logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
     
-    def display(self, name, exposure=None, sources=[], matches=None, pause=None, prompt=None):
+    def display(self, name, exposure=None, sources=[], matches=None,
+                ctypes=[ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE,], ptypes=["o", "+", "x", "*",],
+                sizes=[4,],
+                pause=None, prompt=None):
         """Display image and/or sources
 
         @param name Name of product to display
         @param exposure Exposure to display, or None
         @param sources list of sets of Sources to display, or []
         @param matches Matches to display, or None
+        @param ctypes Array of colours to use on ds9 (will be reused as necessary)
+        @param ptypes Array of ptypes to use on ds9 (will be reused as necessary)
+        @param sizes Array of sizes to use on ds9 (will be reused as necessary)
         @param pause Pause execution?
+        @param prompt Prompt for user
+
+N.b. the ds9 arrays (ctypes etc.) are used for the lists of the list of lists-of-sources (so the
+first ctype is used for the first SourceSet); the matches are interpreted as an extra pair of SourceSets
+but the sizes are doubled
         """
         if not self._display or not self._display.has_key(name) or self._display < 0 or \
                self._display in (False, None) or self._display[name] in (False, None):
             return
-
-        import lsst.afw.display.ds9 as ds9
 
         if isinstance(self._display, int):
             frame = self._display
@@ -169,7 +192,7 @@ class Task(object):
                 else:
                     exposure = ipIsr.assembleCcd(exposure, pipUtil.getCcd(exposure[0]))
             mi = exposure.getMaskedImage()
-            ds9.mtv(mi, frame=frame, title=name)
+            ds9.mtv(exposure, frame=frame, title=name)
             x0, y0 = mi.getX0(), mi.getY0()
         else:
             x0, y0 = 0, 0
@@ -181,43 +204,41 @@ class Task(object):
         except TypeError:               # not a list of sets of sources
             sources = [sources]
             
-        ctypes = [ds9.GREEN, ds9.RED, ds9.BLUE]
-        for i, ss in enumerate(sources):
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
+        with ds9.Buffering():
+            for i, ss in enumerate(sources):
+                ctype = ctypes[i%len(ctypes)]
+                ptype = ptypes[i%len(ptypes)]
+                size = sizes[i%len(sizes)]
 
-            for source in ss:
-                xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
-                ds9.dot("o", xc, yc, size=4, frame=frame, ctype=ctypes[i%len(ctypes)])
-                #try:
-                #    mag = 25-2.5*math.log10(source.getPsfFlux())
-                #    if mag > 15: continue
-                #except: continue
-                #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+                for source in ss:
+                    xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
+                    ds9.dot(ptype, xc, yc, size=size, frame=frame, ctype=ctype)
+                    #try:
+                    #    mag = 25-2.5*math.log10(source.getPsfFlux())
+                    #    if mag > 15: continue
+                    #except: continue
+                    #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
+            nSourceSet = i + 1
 
         if matches:
-            try:
-                ds9.buffer()
-            except AttributeError:
-                ds9.cmdBuffer.pushSize()
+            with ds9.Buffering():
+                for first, second, d in matches:
+                    i = nSourceSet      # counter for ptypes/ctypes
 
-            for match in matches:
-                first = match.first
-                x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
-                ds9.dot("+", x1, y1, size=8, frame=frame, ctype="yellow")
-                second = match.second
-                x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
-                ds9.dot("x", x2, y2, size=8, frame=frame, ctype="red")
-            try:
-                ds9.buffer(False)
-            except AttributeError:
-                ds9.cmdBuffer.popSize()
+                    x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
+
+                    ctype = ctypes[i%len(ctypes)]
+                    ptype = ptypes[i%len(ptypes)]
+                    size  = 2*sizes[i%len(sizes)]
+                    ds9.dot(ptype, x1, y1, size=8, frame=frame, ctype=ctype)
+                    i += 1
+
+                    ctype = ctypes[i%len(ctypes)]
+                    ptype = ptypes[i%len(ptypes)]
+                    size  = 2*sizes[i%len(sizes)]
+                    x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
+                    ds9.dot(ptype, x2, y2, size=8, frame=frame, ctype=ctype)
+                    i += 1
 
         if pause:
             if prompt is None:
