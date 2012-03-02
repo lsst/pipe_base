@@ -43,6 +43,7 @@ class SubConfig(pexConfig.Config):
     intItem = pexConfig.Field(doc="sample int field", dtype=int, default=8)
 
 class SampleConfig(pexConfig.Config):
+    boolItem = pexConfig.Field(doc="sample bool field", dtype=bool, default=True)
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     subItem = pexConfig.ConfigField(doc="sample subfield", dtype=SubConfig)
@@ -77,18 +78,19 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id cross product"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = ["lsstSim", DataPath, "--id", "raft=0,10^0,20^0,3", "sensor=10,0^1,1", "visit=85470982"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=1,0^1,1", "visit=85470982"],
         )
         self.assertEqual(len(namespace.dataIdList), 6)
-        self.assertEqual(len(namespace.dataRefList), 1) # just one of the IDs has data
+        self.assertEqual(len(namespace.dataRefList), 6)
     
     def testConfig(self):
         """Test --config"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = ["lsstSim", DataPath, "--config", "floatItem=-67.1", "strItem=overridden value",
-                "subItem.intItem=5"],
+            args = ["lsstSim", DataPath, "--config", "boolItem=False", "floatItem=-67.1",
+                "strItem=overridden value", "subItem.intItem=5"],
         )
+        self.assertEqual(namespace.config.boolItem, False)
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "overridden value")
         self.assertEqual(namespace.config.subItem.intItem, 5)
