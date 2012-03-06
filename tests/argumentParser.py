@@ -43,6 +43,7 @@ class SubConfig(pexConfig.Config):
     intItem = pexConfig.Field(doc="sample int field", dtype=int, default=8)
 
 class SampleConfig(pexConfig.Config):
+    boolItem = pexConfig.Field(doc="sample bool field", dtype=bool, default=True)
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     subItem = pexConfig.ConfigField(doc="sample subfield", dtype=SubConfig)
@@ -86,9 +87,10 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --config"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = ["lsstSim", DataPath, "--config", "floatItem=-67.1", "strItem=overridden value",
-                "subItem.intItem=5"],
+            args = ["lsstSim", DataPath, "--config", "boolItem=False", "floatItem=-67.1",
+                "strItem=overridden value", "subItem.intItem=5"],
         )
+        self.assertEqual(namespace.config.boolItem, False)
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "overridden value")
         self.assertEqual(namespace.config.subItem.intItem, 5)
