@@ -56,6 +56,7 @@ class Task(object):
         
         @param config: config to configure this task (task-specific subclass of pexConfig.Config);
             If parentTask specified then defaults to parentTask.config.<name>
+            If parentTask is None then defaults to self.ConfigClass()
         @param name: brief name of task; defaults to the class name if parentTask=None
         @param parentTask: the parent task of this subtask, if any.
             If None (a top-level task) then you must specify config and name is ignored.
@@ -82,7 +83,7 @@ class Task(object):
             self._name = name
             self._fullName = self._name
             if config == None:
-                raise RuntimeError("config is required for a top-level task")
+                config = self.ConfigClass()
             self._taskDict = dict()
   
         self.config = config
