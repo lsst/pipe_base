@@ -118,8 +118,7 @@ class TaskTestCase(unittest.TestCase):
     def testNames(self):
         """Test getName() and getFullName()
         """
-        config = AddMultTask.ConfigClass()
-        addMultTask = AddMultTask(config=config)
+        addMultTask = AddMultTask()
         self.assertEqual(addMultTask.getName(), "AddMultTask")
         self.assertEqual(addMultTask.add.getName(), "add")
         self.assertEqual(addMultTask.mult.getName(), "mult")
@@ -131,8 +130,7 @@ class TaskTestCase(unittest.TestCase):
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
-        config = AddMultTask.ConfigClass()
-        addMultTask = AddMultTask(config=config)
+        addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
         self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask"), dafBase.PropertySet))
         self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:add"), dafBase.PropertySet))
@@ -155,8 +153,7 @@ class TaskTestCase(unittest.TestCase):
     def testFail(self):
         """Test timers when the code they are timing fails
         """
-        config = AddMultTask.ConfigClass()
-        addMultTask = AddMultTask(config=config)
+        addMultTask = AddMultTask()
         try:
             addMultTask.failDec()
             self.fail("Expected RuntimeError")
@@ -172,8 +169,7 @@ class TaskTestCase(unittest.TestCase):
     def testNames(self):
         """Test task names
         """
-        config = AddMultTask.ConfigClass()
-        addMultTask = AddMultTask(config=config)
+        addMultTask = AddMultTask()
         self.assertEquals(addMultTask._name, "AddMultTask")
         self.assertEquals(addMultTask.add._name, "add")
         self.assertEquals(addMultTask.mult._name, "mult")
@@ -184,8 +180,7 @@ class TaskTestCase(unittest.TestCase):
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
-        config = AddMultTask.ConfigClass()
-        addMultTask = AddMultTask(config=config)
+        addMultTask = AddMultTask()
         addMultTask.run(val=1.1)
         currCpuTime = time.clock()
         self.assertLessEqual(
