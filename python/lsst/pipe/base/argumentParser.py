@@ -26,6 +26,7 @@ import re
 import shlex
 import sys
 
+import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
@@ -45,12 +46,14 @@ class ArgumentParser(argparse.ArgumentParser):
       after parsing the command line.
     """
     def __init__(self,
+        name,
         usage = "%(prog)s camera dataSource [options]",
         datasetType = "raw",
         dataRefLevel = None,
     **kwargs):
         """Construct an ArgumentParser
         
+        @param name: name of top-level task; used to identify camera-specific override files
         @param usage: usage string
         @param datasetType: dataset type appropriate to the task at hand;
             this affects which data ID keys are recognized.
@@ -59,6 +62,7 @@ class ArgumentParser(argparse.ArgumentParser):
             Warning: any value other than None is likely to be repository-specific.
         @param **kwargs: additional keyword arguments for argparse.ArgumentParser
         """
+        self._name = name
         self._datasetType = datasetType
         self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
@@ -110,6 +114,7 @@ class ArgumentParser(argparse.ArgumentParser):
         - dataRefList: a list of butler data references
         - log: a pex_logging log
         - an entry for each command-line argument, with a few exceptions such as configFile and logDest
+        - obsPkg: name of obs_ package for this camera
         """
         if args == None:
             args = sys.argv[1:]
@@ -124,7 +129,11 @@ class ArgumentParser(argparse.ArgumentParser):
             log = pexLog.Log.getDefaultLog()
         namespace.log = log
 
+        MapperClass = self._getMapper(namespace)
+
         self.handleCamera(namespace)
+
+        self._applyInitialOverrides(namespace)
 
         namespace.dataIdList = []
         
@@ -135,7 +144,11 @@ class ArgumentParser(argparse.ArgumentParser):
         if not os.path.isdir(namespace.dataPath):
             self.error("Error: dataPath=%r not found" % (namespace.dataPath,))
         
-        mapper = self._createMapper(namespace)
+        mapper = MapperClass(
+            root = namespace.dataPath,
+            calibRoot = namespace.calibPath,
+            outputRoot = namespace.outPath,
+        )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
         idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
@@ -197,50 +210,76 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+    def _applyInitialOverrides(self, namespace):
+        """Apply obs-package-specific and camera-specific config override files, if found
+        
+        Look in the package namespace.obs_pkg for files:
+        - config/<task_name>.py
+        - config/<camera_name>/<task_name>.py
+        and load if found
+        """
+        obsPkgDir = eups.productDir(namespace.obsPkg)
+        fileName = self._name + ".py"
+        if not obsPkgDir:
+            raise RuntimeError("Must set up %r" % (namespace.obsPkg,))
+        for filePath in (
+            os.path.join(obsPkgDir, "calib", fileName),
+            os.path.join(obsPkgDir, "calib", namespace.camera, fileName),
+        ):
+            if os.path.exists(filePath):
+                namespace.log.log(namespace.log.INFO, "Loading calib overrride file %r" % (filePath,))
+                namespace.config.load(filePath)
+            else:
+                namespace.log.log(namespace.log.INFO, "Calib override file does not exist: %r" % (filePath,))
+    
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
         
-        @param[inout] namespace: namespace object with the following fields:
+        @param[in] namespace: namespace object with the following fields:
             - config: the config passed to parse_args, with no overrides applied
             - camera: the camera name
+            - obsPkg: the obs_ package for this camera
             - log: a pex_logging log
         """
         pass
 
-    def _createMapper(self, namespace):
-        """Construct namespace.mapper based on namespace.camera, dataPath and calibPath.
+    def _getMapper(self, namespace):
+        """Get mapper class based on namespace.camera, dataPath and calibPath.
         
-        This is a temporary hack to set self._mapperClass; this will go away once the butler
-        renders it unnecessary, and the user will no longer have to supply the camera name.
+        Also set namespace.obsPkg
+        
+        This is a temporary hack; this will go away once the butler renders it unnecessary,
+        and the user will no longer have to supply the camera name.
         """
         lowCamera = namespace.camera.lower()
         if lowCamera == "lsstsim":
+            obsPkg = "obs_lsstSim"
             try:
                 from lsst.obs.lsstSim import LsstSimMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_lsstSim to use lsstSim")
         elif lowCamera == "hscsim":
+            obsPkg = "obs_subaru"
             try:
                 from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
             except ImportError, e:
                 self.error("Must setup obs_subaru to use hscSim: %s" % e)
         elif lowCamera == "suprimecam":
+            obsPkg = "obs_subaru"
             try:
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
             except ImportError, e:
                 self.error("Must setup obs_subaru to use suprimecam: %s" % e)
         elif lowCamera == "cfht":
+            obsPkg = "obs_cfht"
             try:
                 from lsst.obs.cfht import CfhtMapper as Mapper
             except ImportError:
                 self.error("Must setup obs_cfht to use CFHT")
         else:
             self.error("Unsupported camera: %s" % namespace.camera)
-        return Mapper(
-            root = namespace.dataPath,
-            calibRoot = namespace.calibPath,
-            outputRoot = namespace.outPath,
-        )
+        namespace.obsPkg = obsPkg
+        return Mapper
 
     def convert_arg_line_to_args(self, arg_line):
         """Allow files of arguments referenced by @file to contain multiple values on each line
@@ -259,6 +298,8 @@ class ConfigValueAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string):
         """Override one or more config name value pairs
         """
+        if namespace.config is None:
+            return
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
             if not valueStr:
@@ -283,6 +324,8 @@ class ConfigFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         """Load one or more files of config overrides
         """
+        if namespace.config is None:
+            return
         for configFile in values:
             try:
                 namespace.config.load(configFile)
@@ -311,6 +354,8 @@ class IdValueAction(argparse.Action):
             {"visit":1, "ccd":"2,2"}
             {"visit":2, "ccd":"2,2"}
         """
+        if namespace.config is None:
+            return
         idDict = dict()
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")

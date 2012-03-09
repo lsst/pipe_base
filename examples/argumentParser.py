@@ -48,7 +48,7 @@ class ExampleConfig(pexConfig.Config):
     )
 
 
-parser = pipeBase.ArgumentParser()
+parser = pipeBase.ArgumentParser(name="argumentParser")
 config = ExampleConfig()
 namespace = parser.parse_args(config=config)
 print "config.oneInt=%r" % (config.oneInt,)
