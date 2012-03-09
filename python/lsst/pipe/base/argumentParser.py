@@ -223,11 +223,11 @@ class ArgumentParser(argparse.ArgumentParser):
         if not obsPkgDir:
             raise RuntimeError("Must set up %r" % (namespace.obsPkg,))
         for filePath in (
-            os.path.join(obsPkgDir, "calib", fileName),
-            os.path.join(obsPkgDir, "calib", namespace.camera, fileName),
+            os.path.join(obsPkgDir, "config", fileName),
+            os.path.join(obsPkgDir, "config", namespace.camera, fileName),
         ):
             if os.path.exists(filePath):
-                namespace.log.log(namespace.log.INFO, "Loading calib overrride file %r" % (filePath,))
+                namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
                 namespace.config.load(filePath)
             else:
                 namespace.log.log(namespace.log.INFO, "Calib override file does not exist: %r" % (filePath,))
