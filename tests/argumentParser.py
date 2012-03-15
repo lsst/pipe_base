@@ -51,7 +51,7 @@ class SampleConfig(pexConfig.Config):
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
-        self.ap = pipeBase.ArgumentParser()
+        self.ap = pipeBase.ArgumentParser(name="argumentParser")
         self.config = SampleConfig()
     
     def tearDown(self):
