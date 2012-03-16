@@ -62,7 +62,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id basics"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85471048"],
         )
         self.assertEqual(len(namespace.dataIdList), 1)
         self.assertEqual(len(namespace.dataRefList), 1)
@@ -78,10 +78,10 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id cross product"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = ["lsstSim", DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=1,0^1,1", "visit=85470982"],
+            args = ["lsstSim", DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=0,1^1,1", "visit=85471048"],
         )
         self.assertEqual(len(namespace.dataIdList), 6)
-        self.assertEqual(len(namespace.dataRefList), 6)
+        self.assertEqual(len(namespace.dataRefList), 1) # only have data for one ID
     
     def testConfig(self):
         """Test --config"""

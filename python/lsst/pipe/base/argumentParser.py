@@ -111,7 +111,9 @@ class ArgumentParser(argparse.ArgumentParser):
         - config: the supplied config with all overrides applied
         - butler: a butler for the data
         - dataIdList: a list of data ID dicts
-        - dataRefList: a list of butler data references
+        - dataRefList: a list of butler data references; each data reference is guaranteed to contain
+            data for the specified datasetType (though perhaps at a lower level than the specified level,
+            and if so, valid data may not exist for all valid sub-dataIDs)
         - log: a pex_logging log
         - an entry for each command-line argument, with a few exceptions such as configFile and logDest
         - obsPkg: name of obs_ package for this camera
@@ -175,13 +177,21 @@ class ArgumentParser(argparse.ArgumentParser):
             dataRefList = list(namespace.butler.subset(
                 datasetType = self._datasetType,
                 level = self._dataRefLevel,
-                **dataId))
+                dataId = dataId,
+            ))
+            # exclude nonexistent data (why doesn't subset support this?);
+            # this is a recursive test, e.g. for the sake of "raw" data
+            dataRefList = [dr for dr in dataRefList if dataExists(
+                butler = namespace.butler,
+                datasetType = self._datasetType,
+                dataRef = dr,
+            )]
             if not dataRefList:
-                namespace.log.log(pexLog.Log.WARN, "No data references for dataId=%s" % (dataId,))
+                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
                 continue
             namespace.dataRefList += dataRefList
         if not namespace.dataRefList:
-            namespace.log.log(pexLog.Log.WARN, "No data references")
+            namespace.log.log(pexLog.Log.WARN, "No data found")
 
         if namespace.debug:
             try:
@@ -405,3 +415,15 @@ def getDottedAttr(item, name):
     for subname in name.split("."):
         subitem = getattr(subitem, subname)
     return subitem
+
+def dataExists(butler, datasetType, dataRef):
+    """Return True if data exists at the current level or any data exists at any level below
+    """
+    subDRList = dataRef.subItems()
+    if subDRList:
+        for subDR in subDRList:
+            if dataExists(butler, datasetType, subDR):
+                return True
+        return False
+    else:
+        return butler.datasetExists(datasetType = datasetType, dataId = dataRef.dataId)
