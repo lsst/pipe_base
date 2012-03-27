@@ -49,7 +49,9 @@ class Task(object):
     * If "run" can persist data then the task's config should offer a flag to disable persistence.
     
     Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
-    which configures this task.
+    which configures this task. Subclasses may also have an attribute _DefaultName, the default name
+    if there is no parent task; however, a task intended to be run as a top-level task
+    is usually a subclass of CmdLineTask, not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
@@ -70,7 +72,7 @@ class Task(object):
         self.metadata = dafBase.PropertyList()
 
         if parentTask != None:
-            if name == None:
+            if name is None:
                 raise RuntimeError("name is required for a subtask")
             self._name = name
             self._fullName = parentTask._computeFullName(name)
@@ -79,7 +81,10 @@ class Task(object):
             self._taskDict = parentTask._taskDict
         else:
             if name is None:
-                name = type(self).__name__
+                name = getattr(self, "_DefaultName", None)
+                if name is None:
+                    raise RuntimeError("name is required for a task unless it has attribute _DefaultName")
+                name = self._DefaultName
             self._name = name
             self._fullName = self._name
             if config == None:

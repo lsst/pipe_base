@@ -58,6 +58,7 @@ class AddMultConfig(pexConfig.Config):
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
+    _DefaultName = "addMult"
 
     """First add, then multiply"""
     def __init__(self, **keyArgs):
@@ -170,12 +171,12 @@ class TaskTestCase(unittest.TestCase):
         """Test task names
         """
         addMultTask = AddMultTask()
-        self.assertEquals(addMultTask._name, "AddMultTask")
+        self.assertEquals(addMultTask._name, "addMult")
         self.assertEquals(addMultTask.add._name, "add")
         self.assertEquals(addMultTask.mult._name, "mult")
-        self.assertEquals(addMultTask._fullName, "AddMultTask")
-        self.assertEquals(addMultTask.add._fullName, "AddMultTask.add")
-        self.assertEquals(addMultTask.mult._fullName, "AddMultTask.mult")
+        self.assertEquals(addMultTask._fullName, "addMult")
+        self.assertEquals(addMultTask.add._fullName, "addMult.add")
+        self.assertEquals(addMultTask.mult._fullName, "addMult.mult")
     
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata

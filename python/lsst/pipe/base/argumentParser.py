@@ -98,15 +98,15 @@ class ArgumentParser(argparse.ArgumentParser):
             help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
-        self.add_argument("-C", "--configfile", dest="configFile", nargs="*", action=ConfigFileAction,
+        self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
             help="config override file(s)")
-        self.add_argument("-L", "--log-level", dest="logLevel", help="logging level")
+        self.add_argument("-L", "--loglevel", help="logging level")
         self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
             help="trace level for component", metavar="COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
-        self.add_argument("--doraise", dest="doRaise", action="store_true",
+        self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
-        self.add_argument("--log", dest="logDest", help="logging destination")
+        self.add_argument("--logdest", help="logging destination")
 
     def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
@@ -122,7 +122,9 @@ class ArgumentParser(argparse.ArgumentParser):
             data for the specified datasetType (though perhaps at a lower level than the specified level,
             and if so, valid data may not exist for all valid sub-dataIDs)
         - log: a pex_logging log
-        - an entry for each command-line argument, with a few exceptions such as configFile and logDest
+        - an entry for each command-line argument, with the following exceptions:
+          - config is Config, not an override
+          - configfile, id, logdest, loglevel are all missing
         - obsPkg: name of obs_ package for this camera
         """
         if args == None:
@@ -147,7 +149,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.dataIdList = []
         
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
-        del namespace.configFile
+        del namespace.configfile
         del namespace.id
         
         def fixPath(defName, path):
@@ -232,21 +234,21 @@ class ArgumentParser(argparse.ArgumentParser):
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        if namespace.logDest:
-            namespace.log.addDestination(namespace.logDest)
-        del namespace.logDest
+        if namespace.logdest:
+            namespace.log.addDestination(namespace.logdest)
+        del namespace.logdest
         
-        if namespace.logLevel:
+        if namespace.loglevel:
             permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
-            if namespace.logLevel.upper() in permitted:
-                value = getattr(pexLog.Log, namespace.logLevel.upper())
+            if namespace.loglevel.upper() in permitted:
+                value = getattr(pexLog.Log, namespace.loglevel.upper())
             else:
                 try:
-                    value = int(namespace.logLevel)
+                    value = int(namespace.loglevel)
                 except ValueError:
-                    self.error("log-level=%s not int or one of %s" % (namespace.logLevel, permitted))
+                    self.error("log-level=%s not int or one of %s" % (namespace.loglevel, permitted))
             namespace.log.setThreshold(value)
-        del namespace.logLevel
+        del namespace.loglevel
         
         namespace.config.validate()
 
@@ -294,32 +296,30 @@ class ArgumentParser(argparse.ArgumentParser):
         and the user will no longer have to supply the camera name.
         """
         lowCamera = namespace.camera.lower()
-        if lowCamera == "lsstsim":
-            obsPkg = "obs_lsstSim"
-            try:
+        try:
+            obsPkg = None
+            if lowCamera == "lsstsim":
+                obsPkg = "obs_lsstSim"
                 from lsst.obs.lsstSim import LsstSimMapper as Mapper
-            except ImportError:
-                self.error("Must setup obs_lsstSim to use lsstSim")
-        elif lowCamera == "hscsim":
-            obsPkg = "obs_subaru"
-            try:
+            elif lowCamera == "hscsim":
+                obsPkg = "obs_subaru"
                 from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
-            except ImportError, e:
-                self.error("Must setup obs_subaru to use hscSim: %s" % e)
-        elif lowCamera == "suprimecam":
-            obsPkg = "obs_subaru"
-            try:
+            elif lowCamera == "suprimecam":
+                obsPkg = "obs_subaru"
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
-            except ImportError, e:
-                self.error("Must setup obs_subaru to use suprimecam: %s" % e)
-        elif lowCamera == "cfht":
-            obsPkg = "obs_cfht"
-            try:
+            elif lowCamera == "test":
+                obsPkg = "obs_test"
+                from lsst.obs.test import TestMapper as Mapper
+            elif lowCamera == "sdss":
+                obsPkg = "obs_sdss"
+                from lsst.obs.sdss import SdssMapper as Mapper
+            elif lowCamera == "cfht":
+                obsPkg = "obs_cfht"
                 from lsst.obs.cfht import CfhtMapper as Mapper
-            except ImportError:
-                self.error("Must setup obs_cfht to use CFHT")
-        else:
-            self.error("Unsupported camera: %s" % namespace.camera)
+            else:
+                self.error("Unsupported camera: %s" % namespace.camera)
+        except ImportError, e:
+            self.error("Must setup %s to use camera %s: %s" % (obsPkg, namespace.camera, e))
         namespace.obsPkg = obsPkg
         return Mapper
 
@@ -368,11 +368,11 @@ class ConfigFileAction(argparse.Action):
         """
         if namespace.config is None:
             return
-        for configFile in values:
+        for configfile in values:
             try:
-                namespace.config.load(configFile)
+                namespace.config.load(configfile)
             except Exception, e:
-                parser.error("Cannot load config file %r: %s" % (configFile, e))
+                parser.error("Cannot load config file %r: %s" % (configfile, e))
                 
 
 class IdValueAction(argparse.Action):
