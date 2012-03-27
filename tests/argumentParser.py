@@ -53,6 +53,9 @@ class ArgumentParserTestCase(unittest.TestCase):
     def setUp(self):
         self.ap = pipeBase.ArgumentParser(name="argumentParser")
         self.config = SampleConfig()
+        os.environ.pop("PIPE_INPUT_ROOT", None)
+        os.environ.pop("PIPE_CALIB_ROOT", None)
+        os.environ.pop("PIPE_OUTPUT_ROOT", None)
     
     def tearDown(self):
         del self.ap
@@ -197,6 +200,37 @@ class ArgumentParserTestCase(unittest.TestCase):
                 "--log-level", "INVALID_LEVEL",
             ],
         )
+    
+    def testPipeVars(self):
+        """Test handling of $PIPE_x_ROOT environment variables, where x is INPUT, CALIB or OUTPUT
+        """
+        os.environ["PIPE_INPUT_ROOT"] = DataPath
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = ["lsstSim", "."],
+        )
+        self.assertEqual(namespace.input, os.path.abspath(DataPath))
+        self.assertEqual(namespace.calib, None)
+        self.assertEqual(namespace.output, None)
+
+        os.environ["PIPE_CALIB_ROOT"] = DataPath
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = ["lsstSim", "."],
+        )
+        self.assertEqual(namespace.input, os.path.abspath(DataPath))
+        self.assertEqual(namespace.calib, os.path.abspath(DataPath))
+        self.assertEqual(namespace.output, None)
+        
+        os.environ.pop("PIPE_CALIB_ROOT", None)
+        os.environ["PIPE_OUTPUT_ROOT"] = DataPath
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = ["lsstSim", "."],
+        )
+        self.assertEqual(namespace.input, os.path.abspath(DataPath))
+        self.assertEqual(namespace.calib, None)
+        self.assertEqual(namespace.output, os.path.abspath(DataPath))
 
 
 def suite():

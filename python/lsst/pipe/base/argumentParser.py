@@ -21,7 +21,7 @@
 #
 import argparse
 import itertools
-import os.path
+import os
 import re
 import shlex
 import sys
@@ -31,6 +31,10 @@ import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
 __all__ = ["ArgumentParser"]
+
+DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
+DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
+DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
 
 class ArgumentParser(argparse.ArgumentParser):
     """An argument parser for pipeline tasks that is based on argparse.ArgumentParser
@@ -84,9 +88,12 @@ class ArgumentParser(argparse.ArgumentParser):
         **kwargs)
         self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
             (WARNING: this must appear before any options or @file)""")
-        self.add_argument("dataPath", help="path to data repository")
-        self.add_argument("--output", dest="outPath", help="output root directory")
-        self.add_argument("--calib", dest="calibPath", help="calibration root directory")
+        self.add_argument("input",
+            help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
+        self.add_argument("--calib",
+            help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
+        self.add_argument("--output",
+            help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--id", nargs="*", action=IdValueAction,
             help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
@@ -143,13 +150,38 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.configFile
         del namespace.id
         
-        if not os.path.isdir(namespace.dataPath):
-            self.error("Error: dataPath=%r not found" % (namespace.dataPath,))
+        def fixPath(defName, path):
+            """Apply environment variable as default root, if present, and abspath
+            
+            @param defName: name of environment variable containing default root path;
+                if the environment variable does not exist then the path is relative
+                to the current working directory
+            @param path: path relative to default root path
+            @return abspath: path that has been expanded, or None if the environment variable does not exist
+                and path is None
+            """
+            defRoot = os.environ.get(defName)
+            if defRoot is None:
+                if path is None:
+                    return None
+                return os.path.abspath(path)
+            return os.path.abspath(os.path.join(defRoot, path or ""))
+            
+        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
+        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
+        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        
+        if not os.path.isdir(namespace.input):
+            self.error("Error: input=%r not found" % (namespace.input,))
+        
+        namespace.log.log(namespace.log.INFO, "input=%s" % (namespace.input,))
+        namespace.log.log(namespace.log.INFO, "calib=%s" % (namespace.calib,))
+        namespace.log.log(namespace.log.INFO, "output=%s" % (namespace.output,))
         
         mapper = MapperClass(
-            root = namespace.dataPath,
-            calibRoot = namespace.calibPath,
-            outputRoot = namespace.outPath,
+            root = namespace.input,
+            calibRoot = namespace.calib,
+            outputRoot = namespace.output,
         )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
@@ -254,7 +286,7 @@ class ArgumentParser(argparse.ArgumentParser):
         pass
 
     def _getMapper(self, namespace):
-        """Get mapper class based on namespace.camera, dataPath and calibPath.
+        """Get mapper class based on namespace.camera, input and calib.
         
         Also set namespace.obsPkg
         
