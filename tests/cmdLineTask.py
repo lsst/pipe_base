@@ -21,7 +21,9 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import os
+import shutil
 import unittest
+import tempfile
 
 import eups
 import lsst.utils.tests as utilsTests
@@ -34,7 +36,6 @@ if not ObsTestDir:
     print "Warning: you must setup obs_test to run these tests"
 else:
     DataPath = os.path.join(ObsTestDir, "tests/data/input")
-LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests/data")
 
 class TestConfig(pexConfig.Config):
     f = pexConfig.Field(doc="test field", dtype=float, default=3.1)
@@ -44,10 +45,13 @@ class TestTask(pipeBase.CmdLineTask):
     _DefaultName = "processCcd"
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
-        self.idList = []
+        self.dataRefList = []
+        self.numProcessed = 0
 
     def run(self, sensorRef):
-        self.idList.append(sensorRef.dataId)
+        self.dataRefList.append(sensorRef)
+        self.numProcessed += 1
+        self.metadata.set("numProcessed", self.numProcessed)
         
 class CmdLineTaskTestCase(unittest.TestCase):
     """A test case for CmdLineTask
@@ -56,18 +60,34 @@ class CmdLineTaskTestCase(unittest.TestCase):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ.pop("PIPE_OUTPUT_ROOT", None)
+        self.outPath = tempfile.mkdtemp()
+    
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.outPath)
+        except Exception:
+            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+        del self.outPath
 
     def testBasics(self):
         """Test basic construction and use of a command-line task
         """
-        retVal = TestTask.parseAndRun(args=["test", DataPath, "--output", LocalDataPath, 
+        retVal = TestTask.parseAndRun(args=["test", DataPath, "--output", self.outPath, 
             "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
         task = retVal.task
-        self.assertEqual(len(task.idList), 1)
-        dataId = task.idList[0]
+        parsedCmd = retVal.parsedCmd
+        self.assertEqual(task.dataRefList, parsedCmd.dataRefList)
+        self.assertEqual(len(task.dataRefList), 1)
+        dataRef = task.dataRefList[0]
+        dataId = dataRef.dataId
         self.assertEqual(dataId["raft"], "0,3")
         self.assertEqual(dataId["sensor"], "1,1")
         self.assertEqual(dataId["visit"], 85470982)
+        name = task.getName()
+#        config = dataRef.get("processCcd_config")
+        metadata = dataRef.get("processCcd_metadata")
+        self.assertEqual(metadata.get("processCcd.numProcessed"), 1)
+        
     
     def testOverrides(self):
         """Test config and log override
@@ -75,9 +95,9 @@ class CmdLineTaskTestCase(unittest.TestCase):
         config = TestTask.ConfigClass()
         config.f = -99.9
         defLog = pexLog.getDefaultLog()
-        log = pexLog.Log(defLog, "newname")
+        log = pexLog.Log(defLog, "cmdLineTask")
         retVal = TestTask.parseAndRun(
-            args=["test", DataPath, "--output", LocalDataPath, 
+            args=["test", DataPath, "--output", self.outPath, 
                 "--id", "raft=0,3", "sensor=1,1", "visit=85470982"],
             config = config,
             log = log

@@ -112,7 +112,8 @@ class ArgumentParser(argparse.ArgumentParser):
         """Parse arguments for a pipeline task
 
         @params config: config for the task being run
-        @params args: args to parse; if None then sys.argv[1:] is used
+        @params args: argument list; if None use sys.argv[1:]
+        @params log: log (instance pex_logging Log); if None use the default log
         
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied
