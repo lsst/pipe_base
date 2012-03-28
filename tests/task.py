@@ -58,6 +58,7 @@ class AddMultConfig(pexConfig.Config):
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
+    _DefaultName = "addMult"
 
     """First add, then multiply"""
     def __init__(self, **keyArgs):
@@ -119,22 +120,22 @@ class TaskTestCase(unittest.TestCase):
         """Test getName() and getFullName()
         """
         addMultTask = AddMultTask()
-        self.assertEqual(addMultTask.getName(), "AddMultTask")
+        self.assertEqual(addMultTask.getName(), "addMult")
         self.assertEqual(addMultTask.add.getName(), "add")
         self.assertEqual(addMultTask.mult.getName(), "mult")
 
-        self.assertEqual(addMultTask.getFullName(), "AddMultTask")
-        self.assertEqual(addMultTask.add.getFullName(), "AddMultTask.add")
-        self.assertEqual(addMultTask.mult.getFullName(), "AddMultTask.mult")
+        self.assertEqual(addMultTask.getFullName(), "addMult")
+        self.assertEqual(addMultTask.add.getFullName(), "addMult.add")
+        self.assertEqual(addMultTask.mult.getFullName(), "addMult.mult")
     
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
         addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:add"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:mult"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet))
             
     def testReplace(self):
         """Test replacing one subtask with another
@@ -170,12 +171,12 @@ class TaskTestCase(unittest.TestCase):
         """Test task names
         """
         addMultTask = AddMultTask()
-        self.assertEquals(addMultTask._name, "AddMultTask")
+        self.assertEquals(addMultTask._name, "addMult")
         self.assertEquals(addMultTask.add._name, "add")
         self.assertEquals(addMultTask.mult._name, "mult")
-        self.assertEquals(addMultTask._fullName, "AddMultTask")
-        self.assertEquals(addMultTask.add._fullName, "AddMultTask.add")
-        self.assertEquals(addMultTask.mult._fullName, "AddMultTask.mult")
+        self.assertEquals(addMultTask._fullName, "addMult")
+        self.assertEquals(addMultTask.add._fullName, "addMult.add")
+        self.assertEquals(addMultTask.mult._fullName, "addMult.mult")
     
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
