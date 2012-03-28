@@ -84,7 +84,11 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(dataId["sensor"], "1,1")
         self.assertEqual(dataId["visit"], 85470982)
         name = task.getName()
-#        config = dataRef.get("processCcd_config")
+        # config unpersistence is not yet supported by the butler;
+        # when it is, uncomment these lines
+        print "WARNING: cannot check config: the butler does not yet support config unpersistence"
+#         config = dataRef.get("processCcd_config")
+#         self.assertEqual(config, task.config)
         metadata = dataRef.get("processCcd_metadata")
         self.assertEqual(metadata.get("processCcd.numProcessed"), 1)
         

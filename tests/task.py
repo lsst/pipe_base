@@ -120,22 +120,22 @@ class TaskTestCase(unittest.TestCase):
         """Test getName() and getFullName()
         """
         addMultTask = AddMultTask()
-        self.assertEqual(addMultTask.getName(), "AddMultTask")
+        self.assertEqual(addMultTask.getName(), "addMult")
         self.assertEqual(addMultTask.add.getName(), "add")
         self.assertEqual(addMultTask.mult.getName(), "mult")
 
-        self.assertEqual(addMultTask.getFullName(), "AddMultTask")
-        self.assertEqual(addMultTask.add.getFullName(), "AddMultTask.add")
-        self.assertEqual(addMultTask.mult.getFullName(), "AddMultTask.mult")
+        self.assertEqual(addMultTask.getFullName(), "addMult")
+        self.assertEqual(addMultTask.add.getFullName(), "addMult.add")
+        self.assertEqual(addMultTask.mult.getFullName(), "addMult.mult")
     
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
         addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:add"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("AddMultTask:mult"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet))
+        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet))
             
     def testReplace(self):
         """Test replacing one subtask with another
