@@ -53,8 +53,8 @@ class MultTask(pipeBase.Task):
         )
 
 class AddMultConfig(pexConfig.Config):
-    add = pexConfig.ConfigField(doc="", dtype=AddTask.ConfigClass)
-    mult = pexConfig.ConfigField(doc="", dtype=MultTask.ConfigClass)
+    add = pexConfig.ConfigurableField(doc="", target=AddTask)
+    mult = pexConfig.ConfigurableField(doc="", target=MultTask)
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
@@ -63,8 +63,8 @@ class AddMultTask(pipeBase.Task):
     """First add, then multiply"""
     def __init__(self, **keyArgs):
         pipeBase.Task.__init__(self, **keyArgs)
-        self.makeSubtask("add", AddTask)
-        self.makeSubtask("mult", MultTask)
+        self.makeSubtask("add")
+        self.makeSubtask("mult")
 
     @pipeBase.timeMethod
     def run(self, val):
@@ -143,10 +143,10 @@ class TaskTestCase(unittest.TestCase):
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
+                config.add.retarget(AddTwiceTask)
                 config.add.addend = addend
                 config.mult.multiplicand = multiplicand
                 addMultTask = AddMultTask(config=config)
-                addMultTask.makeSubtask("add", AddTwiceTask)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + (2 * addend)) * multiplicand)

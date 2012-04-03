@@ -131,13 +131,20 @@ class Task(object):
         """
         return self._taskDict.copy()
     
-    def makeSubtask(self, name, taskClass, **keyArgs):
+    def makeSubtask(self, name, **keyArgs):
         """Create a subtask as a new instance self.<name>
         
+        The subtask must be defined by self.config.<name>, an instance of pex_config ConfigurableField.
+        
         @param name: brief name of subtask
-        @param taskClass: class to use for the task
+        @param **kwargs: extra keyword arguments used to construct the task.
+            The following arguments are automatically provided and cannot be overridden:
+            config, name and parentTask.
         """
-        subtask = taskClass(name=name, parentTask=self, **keyArgs)
+        configurableField = getattr(self.config, name, None)
+        if configurableField is None:
+            raise KeyError("%s's config does not have field %r" % (self.getFullName, name))
+        subtask = configurableField.apply(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
