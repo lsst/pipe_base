@@ -49,9 +49,11 @@ class Task(object):
     * If "run" can persist data then the task's config should offer a flag to disable persistence.
     
     Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
-    which configures this task. Subclasses may also have an attribute _DefaultName, the default name
-    if there is no parent task; however, a task intended to be run as a top-level task
-    is usually a subclass of CmdLineTask, not Task.
+    which configures this task. Subclasses should also have an attribute _DefaultName:
+    the default name if there is no parent task. _DefaultName is required for subclasses of CmdLineTask
+    and recommended for subclasses of Task because it simplifies construction (e.g. for unit tests).
+    
+    Pipeline tasks intended to be run as top-level tasks should be subclasses of CmdLineTask, not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
