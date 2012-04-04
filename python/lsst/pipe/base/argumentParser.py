@@ -116,7 +116,7 @@ class ArgumentParser(argparse.ArgumentParser):
         @params log: log (instance pex_logging Log); if None use the default log
         
         @return namespace: a struct containing many useful fields including:
-        - config: the supplied config with all overrides applied
+        - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
         - dataIdList: a list of data ID dicts
         - dataRefList: a list of butler data references; each data reference is guaranteed to contain
@@ -252,6 +252,7 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.loglevel
         
         namespace.config.validate()
+        namespace.config.freeze()
 
         return namespace
     

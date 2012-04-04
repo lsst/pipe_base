@@ -84,7 +84,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(len(namespace.dataIdList), 6)
         self.assertEqual(len(namespace.dataRefList), 2) # only have data for two of these
     
-    def testConfig(self):
+    def testConfigBasics(self):
         """Test --config"""
         namespace = self.ap.parse_args(
             config = self.config,
@@ -96,7 +96,8 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.strItem, "overridden value")
         self.assertEqual(namespace.config.subItem.intItem, 5)
 
-        # verify that order of setting values is left to right
+    def testConfigLeftToRight(self):
+        """Verify that order of overriding config values is left to right"""
         namespace = self.ap.parse_args(
             config = self.config,
             args = ["test", DataPath,
@@ -105,14 +106,15 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "final value")
-        
-        # verify that incorrect names are caught
+    
+    def testConfigWrongNames(self):
+        """Verify that incorrect names for config fields are caught"""
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = ["test", DataPath, "--config", "missingItem=-67.1"],
         )
     
-    def testConfigFile(self):
+    def testConfigFileBasics(self):
         """Test --configfile"""
         configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
         namespace = self.ap.parse_args(
@@ -122,7 +124,9 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.floatItem, -9e9)
         self.assertEqual(namespace.config.strItem, "set in override file")
        
-        # verify that order of setting values is left to right
+    def testConfigFileLeftRight(self):
+        """verify that order of setting values is with a mix of config file and config is left to right"""
+        configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
         namespace = self.ap.parse_args(
             config = self.config,
             args = ["test", DataPath,
@@ -133,7 +137,8 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.config.floatItem, -9e9)
         self.assertEqual(namespace.config.strItem, "value from cmd line")
 
-        # verify that missing files are caught
+    def testConfigFileMissingFiles(self):
+        """Verify that missing config override files are caught"""
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = ["test", DataPath, "--configfile", "missingFile"],
