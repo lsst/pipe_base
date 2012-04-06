@@ -250,6 +250,7 @@ but the sizes are doubled
             sources = [sources]
             
         with ds9.Buffering():
+            i = 0
             for i, ss in enumerate(sources):
                 ctype = ctypes[i%len(ctypes)]
                 ptype = ptypes[i%len(ptypes)]
