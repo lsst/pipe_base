@@ -46,7 +46,7 @@ class CmdLineTask(Task):
     def parseAndRun(cls, args=None, config=None, log=None):
         """Parse an argument list and run the command
 
-        @param args: list of command-line arguments; if None use sys.arv
+        @param args: list of command-line arguments; if None use sys.argv
         @param config: config for task (instance of pex_config Config); if None use cls.ConfigClass()
         @param log: log (instance of pex_logging Log); if None use the default log
         
