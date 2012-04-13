@@ -72,26 +72,26 @@ def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
     obj.metadata.add(name = prefix + "Utc", value = utcStr) # log messages already have timestamps
     logPairs(obj = obj,
         pairs = [
-            (prefix + "CpuTime",  cpuTime),
-            (prefix + "UTime",    res.ru_utime),
-            (prefix + "STime",    res.ru_stime),
+            (prefix + "CpuTime",  long(cpuTime)),
+            (prefix + "UTime",    long(res.ru_utime)),
+            (prefix + "STime",    long(res.ru_stime)),
         ],
         logLevel = logLevel,
     )
     logPairs(obj = obj,
         pairs = [
-            (prefix + "MaxRss",   res.ru_maxrss),
-            (prefix + "MinFlt",   res.ru_minflt),
-            (prefix + "MajFlt",   res.ru_majflt),
+            (prefix + "MaxRss",   long(res.ru_maxrss)),
+            (prefix + "MinFlt",   long(res.ru_minflt)),
+            (prefix + "MajFlt",   long(res.ru_majflt)),
         ],
         logLevel = logLevel,
     )
     logPairs(obj = obj,
         pairs = [
-            (prefix + "InBlock",  res.ru_inblock),
-            (prefix + "OuBlock",  res.ru_oublock),
-            (prefix + "NVCsw",    res.ru_nvcsw),
-            (prefix + "NIvCsw",   res.ru_nivcsw),
+            (prefix + "InBlock",  long(res.ru_inblock)),
+            (prefix + "OuBlock",  long(res.ru_oublock)),
+            (prefix + "NVCsw",    long(res.ru_nvcsw)),
+            (prefix + "NIvCsw",   long(res.ru_nivcsw)),
         ],
         logLevel = logLevel,
     )

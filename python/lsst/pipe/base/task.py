@@ -49,9 +49,11 @@ class Task(object):
     * If "run" can persist data then the task's config should offer a flag to disable persistence.
     
     Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
-    which configures this task. Subclasses may also have an attribute _DefaultName, the default name
-    if there is no parent task; however, a task intended to be run as a top-level task
-    is usually a subclass of CmdLineTask, not Task.
+    which configures this task. Subclasses should also have an attribute _DefaultName:
+    the default name if there is no parent task. _DefaultName is required for subclasses of CmdLineTask
+    and recommended for subclasses of Task because it simplifies construction (e.g. for unit tests).
+    
+    Pipeline tasks intended to be run as top-level tasks should be subclasses of CmdLineTask, not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
@@ -131,13 +133,20 @@ class Task(object):
         """
         return self._taskDict.copy()
     
-    def makeSubtask(self, name, taskClass, **keyArgs):
+    def makeSubtask(self, name, **keyArgs):
         """Create a subtask as a new instance self.<name>
         
+        The subtask must be defined by self.config.<name>, an instance of pex_config ConfigurableField.
+        
         @param name: brief name of subtask
-        @param taskClass: class to use for the task
+        @param **kwargs: extra keyword arguments used to construct the task.
+            The following arguments are automatically provided and cannot be overridden:
+            config, name and parentTask.
         """
-        subtask = taskClass(name=name, parentTask=self, **keyArgs)
+        configurableField = getattr(self.config, name, None)
+        if configurableField is None:
+            raise KeyError("%s's config does not have field %r" % (self.getFullName, name))
+        subtask = configurableField.apply(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
