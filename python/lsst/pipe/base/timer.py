@@ -104,7 +104,7 @@ def timeMethod(func):
     class FooTask(pipeBase.Task):
         ...
             
-        @timeMethod
+        @pipeBase.timeMethod
         def run(self, ...): # or any other instance method you want to time
             ...
     
