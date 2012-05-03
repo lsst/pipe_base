@@ -63,7 +63,11 @@ class CmdLineTask(Task):
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
         task = cls(name = name, config = parsedCmd.config, log = parsedCmd.log)
         for dataRef in parsedCmd.dataRefList:
-            dataRef.put(parsedCmd.config, name + "_config")
+            try:
+                dataRef.put(parsedCmd.config, name + "_config")
+            except Exception, e:
+                task.log.log(task.log.WARN, "Could not persist config for dataId=%s: %s" % \
+                    (dataRef.dataId, e,))
             if parsedCmd.doraise:
                 task.run(dataRef)
             else:
@@ -72,7 +76,11 @@ class CmdLineTask(Task):
                 except Exception, e:
                     task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     traceback.print_exc(file=sys.stderr)
-            dataRef.put(task.getFullMetadata(), name + "_metadata")
+            try:
+                dataRef.put(task.getFullMetadata(), name + "_metadata")
+            except Exception, e:
+                task.log.log(task.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
+                    (dataRef.dataId, e,))
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
