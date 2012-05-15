@@ -188,7 +188,7 @@ class ArgumentParser(argparse.ArgumentParser):
         )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -207,24 +207,7 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-        namespace.dataRefList = []
-        for dataId in namespace.dataIdList:
-            dataRefList = list(namespace.butler.subset(
-                datasetType = self._datasetType,
-                level = self._dataRefLevel,
-                dataId = dataId,
-            ))
-            # exclude nonexistent data (why doesn't subset support this?);
-            # this is a recursive test, e.g. for the sake of "raw" data
-            dataRefList = [dr for dr in dataRefList if dataExists(
-                butler = namespace.butler,
-                datasetType = self._datasetType,
-                dataRef = dr,
-            )]
-            if not dataRefList:
-                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
-                continue
-            namespace.dataRefList += dataRefList
+        self._makeDataRefList(namespace)
         if not namespace.dataRefList:
             namespace.log.log(pexLog.Log.WARN, "No data found")
 
@@ -256,6 +239,30 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+    def _makeDataRefList(self, namespace):
+        """Make namespace.dataRefList from namespace.dataIdList
+        
+        useful because butler.subset is quite limited in what it supports
+        """
+        namespace.dataRefList = []
+        for dataId in namespace.dataIdList:
+            dataRefList = list(namespace.butler.subset(
+                datasetType = self._datasetType,
+                level = self._dataRefLevel,
+                dataId = dataId,
+            ))
+            # exclude nonexistent data (why doesn't subset support this?);
+            # this is a recursive test, e.g. for the sake of "raw" data
+            dataRefList = [dr for dr in dataRefList if dataExists(
+                butler = namespace.butler,
+                datasetType = self._datasetType,
+                dataRef = dr,
+            )]
+            if not dataRefList:
+                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
+                continue
+            namespace.dataRefList += dataRefList
+        
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
         
@@ -334,7 +341,7 @@ class ArgumentParser(argparse.ArgumentParser):
         for arg in shlex.split(arg_line, comments=True, posix=True):
             if not arg.strip():
                 continue
-            yield arg        
+            yield arg
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
