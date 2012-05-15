@@ -188,7 +188,7 @@ class ArgumentParser(argparse.ArgumentParser):
         )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -276,7 +276,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
                 namespace.config.load(filePath)
             else:
-                namespace.log.log(namespace.log.INFO, "Calib override file does not exist: %r" % (filePath,))
+                namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
@@ -334,7 +334,7 @@ class ArgumentParser(argparse.ArgumentParser):
         for arg in shlex.split(arg_line, comments=True, posix=True):
             if not arg.strip():
                 continue
-            yield arg        
+            yield arg
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
