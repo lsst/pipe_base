@@ -283,7 +283,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
                 namespace.config.load(filePath)
             else:
-                namespace.log.log(namespace.log.INFO, "Calib override file does not exist: %r" % (filePath,))
+                namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
