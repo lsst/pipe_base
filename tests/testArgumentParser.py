@@ -114,6 +114,17 @@ class ArgumentParserTestCase(unittest.TestCase):
             args = ["test", DataPath, "--config", "missingItem=-67.1"],
         )
     
+    def testShow(self):
+        """Make sure that show doesn't crash"""
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = ["test", DataPath, "--show", "config", "data"],
+        )
+        self.assertRaises(SystemExit, self.ap.parse_args,
+            config = self.config,
+            args = ["test", DataPath, "--show", "badname"],
+        )
+        
     def testConfigFileBasics(self):
         """Test --configfile"""
         configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
