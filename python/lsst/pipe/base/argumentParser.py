@@ -156,15 +156,7 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.id
         
         if "config" in namespace.show:
-            # config.save is the right way to implement this, but save closes the file object
-            # until ticket #2118 is addressed; meanwhile use config internals
-#             namespace.config.save(sys.stdout, "config")
-            tmp = namespace.config._name
-            namespace.config._rename("config")
-            try:
-                namespace.config._save(sys.stdout)
-            finally:
-                namespace.config._rename(tmp)
+            namespace.config.saveToStream(sys.stdout, "config")
         
         def fixPath(defName, path):
             """Apply environment variable as default root, if present, and abspath
