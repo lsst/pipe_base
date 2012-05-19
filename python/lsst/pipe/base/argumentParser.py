@@ -107,6 +107,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
+        self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
+            help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
 
     def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
@@ -152,6 +154,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
         del namespace.id
+        
+        if "config" in namespace.show:
+            namespace.config.saveToStream(sys.stdout, "config")
         
         def fixPath(defName, path):
             """Apply environment variable as default root, if present, and abspath
@@ -210,6 +215,13 @@ class ArgumentParser(argparse.ArgumentParser):
         self._makeDataRefList(namespace)
         if not namespace.dataRefList:
             namespace.log.log(pexLog.Log.WARN, "No data found")
+        
+        if "data" in namespace.show:
+            for dataRef in namespace.dataRefList:
+                print "dataRef.dataId =", dataRef.dataId
+        
+        if "exit" in namespace.show:
+            sys.exit(0)
 
         if namespace.debug:
             try:

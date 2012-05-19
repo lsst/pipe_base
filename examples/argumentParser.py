@@ -20,6 +20,12 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+"""Example showing use of the argument parser
+
+@note
+- to select data you must specify --id
+- you may wish to display the config and data using --show config data
+"""
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -47,18 +53,8 @@ class ExampleConfig(pexConfig.Config):
         default = [-1, 0, 1],
     )
 
-
 parser = pipeBase.ArgumentParser(name="argumentParser")
 config = ExampleConfig()
 namespace = parser.parse_args(config=config)
-print "config.oneInt=%r" % (config.oneInt,)
-print "config.oneFloat=%r" % (config.oneFloat,)
-print "config.oneStr=%r" % (config.oneStr,)
-print "config.intList=%r" % (config.intList,)
 print "namespace.dataIdList=%s" % (namespace.dataIdList,)
 print "len(namespace.dataRefList)=%s" % (len(namespace.dataRefList),)
-
-for dataRef in namespace.dataRefList[:10]:
-    print "dataRef.dataId=", dataRef.dataId
-if len(namespace.dataRefList) > 10:
-    print "..."
