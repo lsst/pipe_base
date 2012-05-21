@@ -376,15 +376,17 @@ class ConfigValueAction(argparse.Action):
             # see if setting the string value works; if not, try eval
             try:
                 setDottedAttr(namespace.config, name, valueStr)
+            except AttributeError:
+                parser.error("no config field: %s" % (name,))
             except Exception:
                 try:
                     value = eval(valueStr, {})
                 except Exception:
-                    parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
+                    parser.error("cannot parse %r as a value for %s" % (valueStr, name))
                 try:
                     setDottedAttr(namespace.config, name, value)
                 except Exception, e:
-                    parser.error("Cannot set config.%s=%r: %s" % (name, value, e))
+                    parser.error("cannot set config.%s=%r: %s" % (name, value, e))
 
 class ConfigFileAction(argparse.Action):
     """argparse action to load config overrides from one or more files
@@ -398,7 +400,7 @@ class ConfigFileAction(argparse.Action):
             try:
                 namespace.config.load(configfile)
             except Exception, e:
-                parser.error("Cannot load config file %r: %s" % (configfile, e))
+                parser.error("cannot load config file %r: %s" % (configfile, e))
                 
 
 class IdValueAction(argparse.Action):
@@ -454,7 +456,7 @@ class TraceLevelAction(argparse.Action):
             try:
                 level = int(levelStr)
             except Exception:
-                parser.error("Cannot parse %r as an integer level for %s" % (levelStr, component))
+                parser.error("cannot parse %r as an integer level for %s" % (levelStr, component))
             pexLog.Trace.setVerbosity(component, level)
 
 def setDottedAttr(item, name, value):
