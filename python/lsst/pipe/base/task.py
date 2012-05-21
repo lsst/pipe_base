@@ -223,7 +223,7 @@ but the sizes are doubled
                 size = sizes[i%len(sizes)]
 
                 for source in ss:
-                    xc, yc = source.getXAstrom() - x0, source.getYAstrom() - y0
+                    xc, yc = source.getX() - x0, source.getY() - y0
                     ds9.dot(ptype, xc, yc, size=size, frame=frame, ctype=ctype)
                     #try:
                     #    mag = 25-2.5*math.log10(source.getPsfFlux())
@@ -236,7 +236,7 @@ but the sizes are doubled
                 for first, second, d in matches:
                     i = len(sources)    # counter for ptypes/ctypes
 
-                    x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
+                    x1, y1 = first.getX() - x0, first.getY() - y0
 
                     ctype = ctypes[i%len(ctypes)]
                     ptype = ptypes[i%len(ptypes)]
@@ -247,7 +247,7 @@ but the sizes are doubled
                     ctype = ctypes[i%len(ctypes)]
                     ptype = ptypes[i%len(ptypes)]
                     size  = 2*sizes[i%len(sizes)]
-                    x2, y2 = second.getXAstrom() - x0, second.getYAstrom() - y0
+                    x2, y2 = second.getX() - x0, second.getY() - y0
                     ds9.dot(ptype, x2, y2, size=8, frame=frame, ctype=ctype)
                     i += 1
 
