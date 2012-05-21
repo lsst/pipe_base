@@ -30,7 +30,7 @@ import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
-__all__ = ["ArgumentParser"]
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -107,6 +107,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
+        self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
+            help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
 
     def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
@@ -153,6 +155,9 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.configfile
         del namespace.id
         
+        if "config" in namespace.show:
+            namespace.config.saveToStream(sys.stdout, "config")
+        
         def fixPath(defName, path):
             """Apply environment variable as default root, if present, and abspath
             
@@ -188,7 +193,7 @@ class ArgumentParser(argparse.ArgumentParser):
         )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)       
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -207,26 +212,16 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-        namespace.dataRefList = []
-        for dataId in namespace.dataIdList:
-            dataRefList = list(namespace.butler.subset(
-                datasetType = self._datasetType,
-                level = self._dataRefLevel,
-                dataId = dataId,
-            ))
-            # exclude nonexistent data (why doesn't subset support this?);
-            # this is a recursive test, e.g. for the sake of "raw" data
-            dataRefList = [dr for dr in dataRefList if dataExists(
-                butler = namespace.butler,
-                datasetType = self._datasetType,
-                dataRef = dr,
-            )]
-            if not dataRefList:
-                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
-                continue
-            namespace.dataRefList += dataRefList
+        self._makeDataRefList(namespace)
         if not namespace.dataRefList:
             namespace.log.log(pexLog.Log.WARN, "No data found")
+        
+        if "data" in namespace.show:
+            for dataRef in namespace.dataRefList:
+                print "dataRef.dataId =", dataRef.dataId
+        
+        if "exit" in namespace.show:
+            sys.exit(0)
 
         if namespace.debug:
             try:
@@ -256,6 +251,30 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+    def _makeDataRefList(self, namespace):
+        """Make namespace.dataRefList from namespace.dataIdList
+        
+        useful because butler.subset is quite limited in what it supports
+        """
+        namespace.dataRefList = []
+        for dataId in namespace.dataIdList:
+            dataRefList = list(namespace.butler.subset(
+                datasetType = self._datasetType,
+                level = self._dataRefLevel,
+                dataId = dataId,
+            ))
+            # exclude nonexistent data (why doesn't subset support this?);
+            # this is a recursive test, e.g. for the sake of "raw" data
+            dataRefList = [dr for dr in dataRefList if dataExists(
+                butler = namespace.butler,
+                datasetType = self._datasetType,
+                dataRef = dr,
+            )]
+            if not dataRefList:
+                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
+                continue
+            namespace.dataRefList += dataRefList
+        
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
         
@@ -276,7 +295,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
                 namespace.config.load(filePath)
             else:
-                namespace.log.log(namespace.log.INFO, "Calib override file does not exist: %r" % (filePath,))
+                namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
@@ -334,7 +353,7 @@ class ArgumentParser(argparse.ArgumentParser):
         for arg in shlex.split(arg_line, comments=True, posix=True):
             if not arg.strip():
                 continue
-            yield arg        
+            yield arg
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
@@ -352,15 +371,17 @@ class ConfigValueAction(argparse.Action):
             # see if setting the string value works; if not, try eval
             try:
                 setDottedAttr(namespace.config, name, valueStr)
+            except AttributeError:
+                parser.error("no config field: %s" % (name,))
             except Exception:
                 try:
                     value = eval(valueStr, {})
                 except Exception:
-                    parser.error("Cannot parse %r as a value for %s" % (valueStr, name))
+                    parser.error("cannot parse %r as a value for %s" % (valueStr, name))
                 try:
                     setDottedAttr(namespace.config, name, value)
                 except Exception, e:
-                    parser.error("Cannot set config.%s=%r: %s" % (name, value, e))
+                    parser.error("cannot set config.%s=%r: %s" % (name, value, e))
 
 class ConfigFileAction(argparse.Action):
     """argparse action to load config overrides from one or more files
@@ -374,7 +395,7 @@ class ConfigFileAction(argparse.Action):
             try:
                 namespace.config.load(configfile)
             except Exception, e:
-                parser.error("Cannot load config file %r: %s" % (configfile, e))
+                parser.error("cannot load config file %r: %s" % (configfile, e))
                 
 
 class IdValueAction(argparse.Action):
@@ -430,7 +451,7 @@ class TraceLevelAction(argparse.Action):
             try:
                 level = int(levelStr)
             except Exception:
-                parser.error("Cannot parse %r as an integer level for %s" % (levelStr, component))
+                parser.error("cannot parse %r as an integer level for %s" % (levelStr, component))
             pexLog.Trace.setVerbosity(component, level)
 
 def setDottedAttr(item, name, value):

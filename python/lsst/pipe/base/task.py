@@ -169,9 +169,9 @@ class Task(object):
         finally:
             logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
     
-    def display(self, name, exposure=None, sources=[], matches=None,
-                ctypes=[ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE,], ptypes=["o", "+", "x", "*",],
-                sizes=[4,],
+    def display(self, name, exposure=None, sources=(), matches=None,
+                ctypes=(ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE,), ptypes=("o", "+", "x", "*",),
+                sizes=(4,),
                 pause=None, prompt=None):
         """Display image and/or sources
 
@@ -202,10 +202,7 @@ but the sizes are doubled
 
         if exposure:
             if isinstance(exposure, list):
-                if len(exposure) == 1:
-                    exposure = exposure[0]
-                else:
-                    exposure = ipIsr.assembleCcd(exposure, pipUtil.getCcd(exposure[0]))
+                raise runtimeError("exposure may not be a list")
             mi = exposure.getMaskedImage()
             ds9.mtv(exposure, frame=frame, title=name)
             x0, y0 = mi.getX0(), mi.getY0()
@@ -233,12 +230,11 @@ but the sizes are doubled
                     #    if mag > 15: continue
                     #except: continue
                     #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
-            nSourceSet = i + 1
 
         if matches:
             with ds9.Buffering():
                 for first, second, d in matches:
-                    i = nSourceSet      # counter for ptypes/ctypes
+                    i = len(sources)    # counter for ptypes/ctypes
 
                     x1, y1 = first.getXAstrom() - x0, first.getYAstrom() - y0
 
