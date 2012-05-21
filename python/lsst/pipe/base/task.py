@@ -216,7 +216,7 @@ but the sizes are doubled
             sources[0][0]
         except IndexError:              # empty list
             pass
-        except TypeError:               # not a list of sets of sources
+        except (TypeError, NotImplementedError): # not a list of sets of sources
             sources = [sources]
             
         with ds9.Buffering():
