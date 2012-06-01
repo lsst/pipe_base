@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import sys
+import collections
 
 import eups
 import lsst.pex.logging as pexLog
@@ -35,6 +36,13 @@ __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction"]
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
 DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
+
+# Specification for a data identifier
+#
+# idList: Attribute of namespace to receive the list of data identifiers
+# refList: Attribute of namespace to receive the list of data references; None for no dataRef construction
+# level: Data level, for generating data references
+IdentifierSpec = collections.namedtuple("IdentifierSpec", ['idList', 'refList', 'level'])
 
 class ArgumentParser(argparse.ArgumentParser):
     """An argument parser for pipeline tasks that is based on argparse.ArgumentParser
@@ -69,6 +77,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self._name = name
         self._datasetType = datasetType
         self._dataRefLevel = dataRefLevel
+        self._identifiers = {} # Dict of data identifier specifications, by argument name
         argparse.ArgumentParser.__init__(self,
             usage = usage,
             fromfile_prefix_chars = '@',
@@ -94,8 +103,8 @@ class ArgumentParser(argparse.ArgumentParser):
             help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
         self.add_argument("--output",
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
-        self.add_argument("--id", nargs="*", action=IdValueAction,
-            help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        self.add_id_argument("--id", "dataIdList", refListName="dataRefList",
+                             help="data ID, e.g. --id visit=12345 ccd=1,2")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -110,6 +119,26 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
 
+    def add_id_argument(self, name, idListName, refListName=None, level=None,
+                        help="data ID, e.g. --id visit=12345 ccd=1,2"):
+        """Add an argument to specify identifiers
+
+        The data identifier list will be in the attribute of the parse result
+        'namespace' specified by 'idList'.  If refListName is not None, then
+        the data reference list will be in the attribute of 'namespace'
+        specified by 'refListName'.
+
+        @param name: Name of the argument (typically prefixed with two dashes, e.g., "--id")
+        @param idListName: Name of dataId list on namespace
+        @param refListName: Name of dataRef list on namespace; None for no dataRef list construction
+        @param level: Level for data reference; None to use dataRefLevel
+        @param help: Help text
+        """
+        self.add_argument(name, nargs="*", action=IdValueAction, help=help,
+                          metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        self._identifiers[name.lstrip("-")] = IdentifierSpec(idListName, refListName,
+                                                             self._dataRefLevel if level is None else level)
+
     def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
 
@@ -120,7 +149,7 @@ class ArgumentParser(argparse.ArgumentParser):
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
-        - dataIdList: a list of data ID dicts
+        - id: a list of data ID dicts
         - dataRefList: a list of butler data references; each data reference is guaranteed to contain
             data for the specified datasetType (though perhaps at a lower level than the specified level,
             and if so, valid data may not exist for all valid sub-dataIDs)
@@ -149,7 +178,8 @@ class ArgumentParser(argparse.ArgumentParser):
 
         self._applyInitialOverrides(namespace)
 
-        namespace.dataIdList = []
+        for listName in [idSpec.idList for idSpec in self._identifiers.values()]:
+            setattr(namespace, listName, [])
         
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
@@ -193,32 +223,34 @@ class ArgumentParser(argparse.ArgumentParser):
         )
         butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
         namespace.butler = butlerFactory.create()
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
-        # convert data in namespace.dataIdList to proper types
+        # convert data in each of the identifier lists to proper types
         # this is done after constructing the butler, hence after parsing the command line,
         # because it takes a long time to construct a butler
-        for dataDict in namespace.dataIdList:
-            for key, strVal in dataDict.iteritems():
-                try:
-                    keyType = idKeyTypeDict[key]
-                except KeyError:
-                    validKeys = sorted(idKeyTypeDict.keys())
-                    self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
-                if keyType != str:
+        for ident, idSpec in self._identifiers.items():
+            idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=idSpec.level)
+            for dataDict in getattr(namespace, idSpec.idList):
+                for key, strVal in dataDict.iteritems():
                     try:
-                        castVal = keyType(strVal)
-                    except Exception:
-                        self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
-                    dataDict[key] = castVal
+                        keyType = idKeyTypeDict[key]
+                    except KeyError:
+                        validKeys = sorted(idKeyTypeDict.keys())
+                        self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
+                    if keyType != str:
+                        try:
+                            castVal = keyType(strVal)
+                        except Exception:
+                            self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
+                        dataDict[key] = castVal
 
         self._makeDataRefList(namespace)
         if not namespace.dataRefList:
             namespace.log.log(pexLog.Log.WARN, "No data found")
         
         if "data" in namespace.show:
-            for dataRef in namespace.dataRefList:
-                print "dataRef.dataId =", dataRef.dataId
+            for ident, idSpec in self._identifiers.items():
+                for dataRef in getattr(namespace, idSpec.refList):
+                    print ident + " dataRef.dataId =", dataRef.dataId
         
         if "exit" in namespace.show:
             sys.exit(0)
@@ -252,28 +284,33 @@ class ArgumentParser(argparse.ArgumentParser):
         return namespace
     
     def _makeDataRefList(self, namespace):
-        """Make namespace.dataRefList from namespace.dataIdList
+        """Make dataRef lists from the dataId lists
         
         useful because butler.subset is quite limited in what it supports
         """
-        namespace.dataRefList = []
-        for dataId in namespace.dataIdList:
-            dataRefList = list(namespace.butler.subset(
-                datasetType = self._datasetType,
-                level = self._dataRefLevel,
-                dataId = dataId,
-            ))
-            # exclude nonexistent data (why doesn't subset support this?);
-            # this is a recursive test, e.g. for the sake of "raw" data
-            dataRefList = [dr for dr in dataRefList if dataExists(
-                butler = namespace.butler,
-                datasetType = self._datasetType,
-                dataRef = dr,
-            )]
-            if not dataRefList:
-                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
+        for ident, idSpec in self._identifiers.items():
+            if idSpec.refList is None:
+                # No data reference construction is desired
                 continue
-            namespace.dataRefList += dataRefList
+            dataRefList = getattr(namespace, idSpec.refList, [])
+            setattr(namespace, idSpec.refList, dataRefList)
+            for dataId in getattr(namespace, idSpec.idList):
+                subset = list(namespace.butler.subset(
+                    datasetType = self._datasetType,
+                    level = idSpec.level,
+                    dataId = dataId,
+                ))
+                # exclude nonexistent data (why doesn't subset support this?);
+                # this is a recursive test, e.g. for the sake of "raw" data
+                subset = [dr for dr in subset if dataExists(
+                    butler = namespace.butler,
+                    datasetType = self._datasetType,
+                    dataRef = dr,
+                )]
+                if not subset:
+                    namespace.log.log(pexLog.Log.WARN, "No %s data found for dataId=%s" % (ident, dataId))
+                    continue
+                dataRefList += subset
         
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
@@ -399,10 +436,11 @@ class ConfigFileAction(argparse.Action):
                 
 
 class IdValueAction(argparse.Action):
-    """argparse action callback to add one data ID dict to namespace.dataIdList
+    """argparse action callback to add one data ID dict to the list in the
+    namespace specified by the option_string
     """
     def __call__(self, parser, namespace, values, option_string):
-        """Parse --id data and append results to namespace.dataIdList
+        """Parse --id data and append results to the argument's nominated idList in namespace
         
         The data format is:
         key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
@@ -413,7 +451,7 @@ class IdValueAction(argparse.Action):
         
         The cross product is computed for keys with multiple values. For example:
             --id visit 1^2 ccd 1,1^2,2
-        results in the following data ID dicts being appended to namespace.dataIdList:
+        results in the following data ID dicts being appended to the nominated idList:
             {"visit":1, "ccd":"1,1"}
             {"visit":2, "ccd":"1,1"}
             {"visit":1, "ccd":"2,2"}
@@ -439,7 +477,9 @@ class IdValueAction(argparse.Action):
         iterList = [idDict[key] for key in keyList]
         idDictList = [dict(zip(keyList, valList)) for valList in itertools.product(*iterList)]
 
-        namespace.dataIdList += idDictList
+        idListName = parser._identifiers[option_string.lstrip("-")].idList
+        idList = getattr(namespace, idListName)
+        idList += idDictList
 
 class TraceLevelAction(argparse.Action):
     """argparse action to set trace level"""
