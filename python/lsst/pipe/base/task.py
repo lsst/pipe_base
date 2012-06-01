@@ -23,7 +23,30 @@ import contextlib
 
 import lsstDebug
 
-import lsst.afw.display.ds9 as ds9
+try:
+    import lsst.afw.display.ds9 as ds9
+except ImportError:
+    # afw is above pipe_base in the class hierarchy, so we have to cope without it.
+    # We'll warn on first use that it's unavailable, and then quietly swallow all
+    # references to it.
+    class Ds9Warning(object):
+        """A null pattern which warns once that ds9 is not available"""
+        def __init__(self):
+            super(Ds9Warning, self).__setattr__("_warned", False)
+        def __getattr__(self, name):
+            if name in ("GREEN", "YELLOW", "RED", "BLUE"):
+                # These are used in the Task.display definition, so don't warn when we use them
+                return self
+            if not super(Ds9Warning, self).__getattribute__("_warned"):
+                print "WARNING: afw's ds9 is not available"
+                super(Ds9Warning, self).__setattr__("_warned", True)
+            return self
+        def __setattr__(self, name, value):
+            return self
+        def __call__(self, *args, **kwargs):
+            return self
+    ds9 = Ds9Warning()
+
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
