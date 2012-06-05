@@ -50,7 +50,8 @@ class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
         self.ap = pipeBase.ArgumentParser(name="argumentParser")
-        self.ap.add_id_argument("--other", "otherIdList", "otherRefList")
+        self.ap.add_id_argument("--id", "help text")
+        self.ap.add_id_argument("--otherId", "more help")
         self.config = SampleConfig()
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -66,15 +67,15 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = ["test", DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
-        self.assertEqual(len(namespace.dataRefList), 1)
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 1)
         
         namespace = self.ap.parse_args(
             config = self.config,
             args = ["test", DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
-        self.assertEqual(len(namespace.dataRefList), 0) # no data for this ID
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 0) # no data for this ID
         
     def testOtherId(self):
         """Test --other"""
@@ -83,8 +84,8 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = ["test", DataPath, "--other", "raft=0,3", "sensor=1,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.otherIdList), 1)
-        self.assertEqual(len(namespace.otherRefList), 1)
+        self.assertEqual(len(namespace.otherId.idList), 1)
+        self.assertEqual(len(namespace.otherId.refList), 1)
         
         # And together
         namespace = self.ap.parse_args(
@@ -92,10 +93,10 @@ class ArgumentParserTestCase(unittest.TestCase):
             args = ["test", DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
                     "--other", "raft=0,3", "sensor=0,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
-        self.assertEqual(len(namespace.dataRefList), 1)
-        self.assertEqual(len(namespace.otherIdList), 1)
-        self.assertEqual(len(namespace.otherRefList), 0) # no data for this ID
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 1)
+        self.assertEqual(len(namespace.otherId.idList), 1)
+        self.assertEqual(len(namespace.otherId.refList), 0) # no data for this ID
         
     def testIdCross(self):
         """Test --id cross product"""
@@ -103,8 +104,8 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = ["test", DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=0,0^0,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 6)
-        self.assertEqual(len(namespace.dataRefList), 2) # only have data for two of these
+        self.assertEqual(len(namespace.id.idList), 6)
+        self.assertEqual(len(namespace.id.refList), 2) # only have data for two of these
     
     def testConfigBasics(self):
         """Test --config"""
@@ -184,7 +185,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = ["test", DataPath, "@%s" % (argPath,)],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
+        self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(namespace.config.floatItem, 4.7)
         self.assertEqual(namespace.config.strItem, "new value")
     
