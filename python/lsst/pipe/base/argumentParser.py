@@ -65,11 +65,11 @@ class DataIdContainer(object):
         self.idList = []
         self.refList = []
 
-    def copy(self):
+    def _copy(self):
         return DataIdContainer(self._name, datasetType=self._datasetType, level=self._level,
                                doMakeDataRefList=self._doMakeDataRefList)
 
-    def parse(self, butler, argParser):
+    def _parse(self, butler, argParser):
         """Parse the data identifiers so values have the correct types
 
         @param butler
@@ -90,7 +90,7 @@ class DataIdContainer(object):
                         argParser.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-    def makeDataRefList(self, butler, log):
+    def _makeDataRefList(self, butler, log):
         """Make the list of data references from the list of data identifiers
 
         @param butler
@@ -240,7 +240,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self._applyInitialOverrides(namespace)
 
         for idName, ident in self._identifiers.items():
-            setattr(namespace, idName, ident.copy())
+            setattr(namespace, idName, ident._copy())
         
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
@@ -289,8 +289,8 @@ class ArgumentParser(argparse.ArgumentParser):
         # because it takes a long time to construct a butler
         for identName in self._identifiers.keys():
             ident = getattr(namespace, identName)
-            ident.parse(namespace.butler, self)
-            ident.makeDataRefList(namespace.butler, namespace.log)
+            ident._parse(namespace.butler, self)
+            ident._makeDataRefList(namespace.butler, namespace.log)
             if "data" in namespace.show:
                 for dataRef in ident.refList:
                     print identName + " dataRef.dataId =", dataRef.dataId
