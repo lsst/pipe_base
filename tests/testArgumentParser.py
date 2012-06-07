@@ -50,8 +50,8 @@ class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
         self.ap = pipeBase.ArgumentParser(name="argumentParser")
-        self.ap.add_id_argument("--id", "help text")
-        self.ap.add_id_argument("--otherId", "more help")
+        self.ap.add_id_argument("--id", "raw", "help text")
+        self.ap.add_id_argument("--otherId", "raw", "more help")
         self.config = SampleConfig()
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
