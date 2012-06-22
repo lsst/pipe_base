@@ -22,7 +22,7 @@
 import sys
 import traceback
 
-from .task import Task
+from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
 
@@ -34,14 +34,6 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Create an argument parser
-
-        Subclasses may wish to override, e.g. to change the dataset type or data ref level
-        """
-        return ArgumentParser(name=cls._DefaultName)
-    
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None):
         """Parse an argument list and run the command
@@ -56,15 +48,35 @@ class CmdLineTask(Task):
         - task: the instantiated task
         The return values are primarily for testing and debugging
         """
-        name = cls._DefaultName
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
-        task = cls(name = name, config = parsedCmd.config, log = parsedCmd.log)
+        task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
+        task._runParsedCmd(parsedCmd)
+        return Struct(
+            argumentParser = argumentParser,
+            parsedCmd = parsedCmd,
+            task = task,
+        )
+
+    @classmethod
+    def _makeArgumentParser(cls):
+        """Create an argument parser
+
+        Subclasses may wish to override, e.g. to change the dataset type or data ref level
+        """
+        return ArgumentParser(name=cls._DefaultName)
+    
+    def _runParsedCmd(self, parsedCmd):
+        """Execute the parsed command
+        """
+        name = self._DefaultName
         for dataRef in parsedCmd.dataRefList:
             try:
-                dataRef.put(parsedCmd.config, name + "_config")
+                configName = self._getConfigName()
+                if configName is not None:
+                    dataRef.put(parsedCmd.config, configName)
             except Exception, e:
                 task.log.log(task.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
@@ -75,14 +87,22 @@ class CmdLineTask(Task):
                     task.run(dataRef)
                 except Exception, e:
                     task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
-                    traceback.print_exc(file=sys.stderr)
+                    if not isinstance(e, TaskError):
+                        traceback.print_exc(file=sys.stderr)
             try:
-                dataRef.put(task.getFullMetadata(), name + "_metadata")
+                metadataName = self._getMetadataName()
+                if metadataName is not None:
+                    dataRef.put(task.getFullMetadata(), metadataName)
             except Exception, e:
                 task.log.log(task.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
-        return Struct(
-            argumentParser = argumentParser,
-            parsedCmd = parsedCmd,
-            task = task,
-        )
+    
+    def _getConfigName(self):
+        """Return the name of the config dataset, or None if config is not persisted
+        """
+        return self._DefaultName + "_config"
+    
+    def _getMetadataName(self):
+        """Return the name of the metadata dataset, or None if metadata is not persisted
+        """
+        return self._DefaultName + "_metadata"

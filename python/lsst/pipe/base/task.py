@@ -51,7 +51,12 @@ import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
 
-__all__ = ["Task"]
+__all__ = ["Task", "TaskError"]
+
+class TaskError(Exception):
+    """Use to report expected errors that do not require a traceback
+    """
+    pass
 
 class Task(object):
     """A data processing task
