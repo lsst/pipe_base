@@ -51,7 +51,16 @@ import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
 
-__all__ = ["Task"]
+__all__ = ["Task", "TaskError"]
+
+class TaskError(Exception):
+    """Use to report errors for which a traceback is not useful.
+    
+    Examples of such errors:
+    - processCcd is asked to run detection, but not calibration, and no calexp is found.
+    - coadd finds no valid images in the specified patch.
+    """
+    pass
 
 class Task(object):
     """A data processing task
