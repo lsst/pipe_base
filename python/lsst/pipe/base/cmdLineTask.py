@@ -78,23 +78,23 @@ class CmdLineTask(Task):
                 if configName is not None:
                     dataRef.put(parsedCmd.config, configName)
             except Exception, e:
-                task.log.log(task.log.WARN, "Could not persist config for dataId=%s: %s" % \
+                self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
             if parsedCmd.doraise:
-                task.run(dataRef)
+                self.run(dataRef)
             else:
                 try:
-                    task.run(dataRef)
+                    self.run(dataRef)
                 except Exception, e:
-                    task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                    self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):
                         traceback.print_exc(file=sys.stderr)
             try:
                 metadataName = self._getMetadataName()
                 if metadataName is not None:
-                    dataRef.put(task.getFullMetadata(), metadataName)
+                    dataRef.put(self.getFullMetadata(), metadataName)
             except Exception, e:
-                task.log.log(task.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
+                self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
     
     def _getConfigName(self):
