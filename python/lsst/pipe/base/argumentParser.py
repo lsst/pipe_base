@@ -213,6 +213,7 @@ class ArgumentParser(argparse.ArgumentParser):
         This is a temporary hack to set self._mapperClass; this will go away once the butler
         renders it unnecessary, and the user will no longer have to supply the camera name.
         """
+        kwargs = {}
         lowCamera = namespace.camera.lower()
         if lowCamera == "lsstsim":
             try:
@@ -224,9 +225,11 @@ class ArgumentParser(argparse.ArgumentParser):
                 from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
             except ImportError, e:
                 self.error("Must setup obs_subaru to use hscSim: %s" % e)
-        elif lowCamera == "suprimecam":
+        elif lowCamera in ("suprimecam", "sc", "suprimecam-mit", "sc-mit"):
             try:
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
+                if lowCamera.endswith("mit"):
+                    kwargs['mit'] = True
             except ImportError, e:
                 self.error("Must setup obs_subaru to use suprimecam: %s" % e)
         elif lowCamera == "cfht":
@@ -240,6 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
             root = namespace.dataPath,
             calibRoot = namespace.calibPath,
             outputRoot = namespace.outPath,
+            **kwargs
         )
 
     def convert_arg_line_to_args(self, arg_line):
