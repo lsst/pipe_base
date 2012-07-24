@@ -316,6 +316,7 @@ class ArgumentParser(argparse.ArgumentParser):
         This is a temporary hack; this will go away once the butler renders it unnecessary,
         and the user will no longer have to supply the camera name.
         """
+        kwargs = {}
         lowCamera = namespace.camera.lower()
         try:
             obsPkg = None
