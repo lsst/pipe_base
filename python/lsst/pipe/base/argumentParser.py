@@ -158,26 +158,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
         
-        def fixPath(defName, path):
-            """Apply environment variable as default root, if present, and abspath
-            
-            @param defName: name of environment variable containing default root path;
-                if the environment variable does not exist then the path is relative
-                to the current working directory
-            @param path: path relative to default root path
-            @return abspath: path that has been expanded, or None if the environment variable does not exist
-                and path is None
-            """
-            defRoot = os.environ.get(defName)
-            if defRoot is None:
-                if path is None:
-                    return None
-                return os.path.abspath(path)
-            return os.path.abspath(os.path.join(defRoot, path or ""))
-            
-        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
-        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
-        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        self._fixPaths(namespace)
         
         if not os.path.isdir(namespace.input):
             self.error("Error: input=%r not found" % (namespace.input,))
@@ -251,6 +232,36 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+
+    def _fixPaths(self, namespace):
+        """
+        Adjust paths using environment variables or custom options.
+        
+        This has been refactored into a separate method to allow subclasses to
+        override before the mapper is created.
+        """
+        def fixPath(defName, path):
+            """Apply environment variable as default root, if present, and abspath
+            
+            @param defName: name of environment variable containing default root path;
+                if the environment variable does not exist then the path is relative
+                to the current working directory
+            @param path: path relative to default root path
+            @return abspath: path that has been expanded, or None if the environment variable does not exist
+                and path is None
+            """
+            defRoot = os.environ.get(defName)
+            if defRoot is None:
+                if path is None:
+                    return None
+                return os.path.abspath(path)
+            return os.path.abspath(os.path.join(defRoot, path or ""))
+            
+        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
+        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
+        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        
+
     def _makeDataRefList(self, namespace):
         """Make namespace.dataRefList from namespace.dataIdList
         
