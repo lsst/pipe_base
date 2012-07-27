@@ -22,11 +22,24 @@
 import sys
 import traceback
 
+from lsst.pex.config import Config, ConfigurableField
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
 
 __all__ = ["CmdLineTask"]
+
+class PostprocessConfig(Config):
+    pass
+
+class PostprocessTask(Task):
+    ConfigClass = PostprocessConfig
+
+    def run(self, dataRef, results):
+        pass
+
+class CmdLineConfig(Config):
+    postprocess = ConfigurableField(target = PostprocessTask, doc = "config-pluggable post-task operations")
 
 class CmdLineTask(Task):
     """A task that can be executed from the command line
@@ -34,6 +47,13 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
+
+    ConfigClass = CmdLineConfig
+
+    def __init__(self, **kwargs):
+        Task.__init__(self, **kwargs)
+        self.makeSubtask("postprocess")
+
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None):
         """Parse an argument list and run the command
@@ -81,10 +101,12 @@ class CmdLineTask(Task):
                 self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
             if parsedCmd.doraise:
-                self.run(dataRef)
+                results = self.run(dataRef)
+                self.postprocess.run(dataRef, results)
             else:
                 try:
-                    self.run(dataRef)
+                    results = self.run(dataRef)
+                    self.postprocess.run(dataRef, results)
                 except Exception, e:
                     self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):

@@ -329,6 +329,9 @@ class ArgumentParser(argparse.ArgumentParser):
             elif lowCamera == "suprimecam":
                 obsPkg = "obs_subaru"
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
+            elif lowCamera == "suprimecam-mit":
+                obsPkg = "obs_subaru"
+                from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapperMit as Mapper
             elif lowCamera == "test":
                 obsPkg = "obs_test"
                 from lsst.obs.test import TestMapper as Mapper
