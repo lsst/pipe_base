@@ -36,6 +36,9 @@ class PostprocessTask(Task):
     ConfigClass = PostprocessConfig
 
     def run(self, dataRef, results):
+        """A pluggable  subtask that is caleld after run(), and is
+        given the butler dataref and the return value of run().
+        """
         pass
 
 class CmdLineConfig(Config):
@@ -67,12 +70,15 @@ class CmdLineTask(Task):
         - parsedCmd: the parsed command returned by argumentParser.parse_args
         - task: the instantiated task
         The return values are primarily for testing and debugging
+        
+        The parsedCmd object is also attached as an instance variable of the task.
         """
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
+        task.parsedCmd = parsedCmd
         task._runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
