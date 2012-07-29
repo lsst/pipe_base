@@ -33,7 +33,14 @@ class CmdLineTask(Task):
     
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
+
+    Subclasses may also define:
+    overrides:  a list of config overrides (files or functions) to be applied after camera-specific
+                overrides but before command-line overrides (see also ArgumentParser.parse_args).
     """
+
+    overrides = ()
+
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None):
         """Parse an argument list and run the command
@@ -41,7 +48,7 @@ class CmdLineTask(Task):
         @param args: list of command-line arguments; if None use sys.argv
         @param config: config for task (instance of pex_config Config); if None use cls.ConfigClass()
         @param log: log (instance of pex_logging Log); if None use the default log
-        
+
         @return a Struct containing:
         - argumentParser: the argument parser
         - parsedCmd: the parsed command returned by argumentParser.parse_args
@@ -53,7 +60,7 @@ class CmdLineTask(Task):
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
-        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
+        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, overrides=cls.overrides)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
         task.parsedCmd = parsedCmd
         task._runParsedCmd(parsedCmd)
