@@ -110,13 +110,13 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
 
-    def parse_args(self, config, args=None, log=None):
+    def parse_args(self, config, args=None, log=None, overrides=()):
         """Parse arguments for a pipeline task
 
         @params config: config for the task being run
         @params args: argument list; if None use sys.argv[1:]
-        @params log: log (instance pex_logging Log); if None use the default log
-        
+        @params log: log (instance pex_logging Log); if None use the default log        
+
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
@@ -124,6 +124,10 @@ class ArgumentParser(argparse.ArgumentParser):
         - dataRefList: a list of butler data references; each data reference is guaranteed to contain
             data for the specified datasetType (though perhaps at a lower level than the specified level,
             and if so, valid data may not exist for all valid sub-dataIDs)
+        @param overrides: a sequence of additional config overrides to be applied after
+            camera-specific overrides files but before any command-line config overrides.
+            Each element must be the path to a config override file or a function that
+            takes the root config as its only argument.
         - log: a pex_logging log
         - an entry for each command-line argument, with the following exceptions:
           - config is Config, not an override
@@ -148,6 +152,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.handleCamera(namespace)
 
         self._applyInitialOverrides(namespace)
+        self._applyTaskOverrides(namespace, overrides)
 
         namespace.dataIdList = []
         
@@ -287,7 +292,8 @@ class ArgumentParser(argparse.ArgumentParser):
             namespace.dataRefList += dataRefList
         
     def _applyInitialOverrides(self, namespace):
-        """Apply obs-package-specific and camera-specific config override files, if found
+        """Apply obs-package-specific and camera-specific config override files, if found,
+        as well as additional overrides passed to the ArgumentParser constructor.
         
         Look in the package namespace.obs_pkg for files:
         - config/<task_name>.py
@@ -307,6 +313,18 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.config.load(filePath)
             else:
                 namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
+
+    def _applyTaskOverrides(self, namespace, overrides):
+        for item in overrides:
+            if isinstance(item, basestring):
+                filePath = item
+                if os.path.exists(filePath):
+                    namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
+                    namespace.config.load(filePath)
+                else:
+                    raise RuntimeError("Could not find task-defined override file: %r" % (filePath,))
+            else:
+                item(namespace.config)
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
