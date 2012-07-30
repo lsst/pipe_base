@@ -63,7 +63,7 @@ class CmdLineTask(Task):
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, overrides=cls.overrides)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
         task.parsedCmd = parsedCmd
-        task._runParsedCmd(parsedCmd)
+        task.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
@@ -78,23 +78,25 @@ class CmdLineTask(Task):
         """
         return ArgumentParser(name=cls._DefaultName)
     
-    def _runParsedCmd(self, parsedCmd):
-        """Execute the parsed command
+    def runDataRefList(self, dataRefList, doRaise=False):
+        """Execute the parsed command on a sequence of dataRefs,
+        including writing the config and metadata.
         """
         name = self._DefaultName
-        for dataRef in parsedCmd.dataRefList:
+        result = []
+        for dataRef in dataRefList:
             try:
                 configName = self._getConfigName()
                 if configName is not None:
-                    dataRef.put(parsedCmd.config, configName)
+                    dataRef.put(self.config, configName)
             except Exception, e:
                 self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
-            if parsedCmd.doraise:
-                self.run(dataRef)
+            if doRaise:
+                result.append(self.run(dataRef))
             else:
                 try:
-                    self.run(dataRef)
+                    result.append(self.run(dataRef))
                 except Exception, e:
                     self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):
@@ -106,6 +108,8 @@ class CmdLineTask(Task):
             except Exception, e:
                 self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
+        return result
+            
     
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
