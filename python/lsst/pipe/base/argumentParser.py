@@ -109,6 +109,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
+        self.add_argument("--tasks", default=False, action="store_true", help="Display task hierarchy only?")
 
     def parse_args(self, config, args=None, log=None):
         """Parse arguments for a pipeline task
@@ -215,7 +216,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self._makeDataRefList(namespace)
         if not namespace.dataRefList:
             namespace.log.log(pexLog.Log.WARN, "No data found")
-        
+
         if "data" in namespace.show:
             for dataRef in namespace.dataRefList:
                 print "dataRef.dataId =", dataRef.dataId

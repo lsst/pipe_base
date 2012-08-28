@@ -112,7 +112,6 @@ class Task(object):
             self._fullName = parentTask._computeFullName(name)
             if config == None:
                 config = getattr(parentTask.config, name)
-            self._taskDict = parentTask._taskDict
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -123,14 +122,13 @@ class Task(object):
             self._fullName = self._name
             if config == None:
                 config = self.ConfigClass()
-            self._taskDict = dict()
-  
+
+        self._taskDict = dict()
         self.config = config
         if log == None:
             log = pexLog.getDefaultLog()
         self.log = pexLog.Log(log, self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
-        self._taskDict[self._fullName] = self
     
     def getFullMetadata(self):
         """Get metadata for all tasks
@@ -179,6 +177,7 @@ class Task(object):
         if configurableField is None:
             raise KeyError("%s's config does not have field %r" % (self.getFullName, name))
         subtask = configurableField.apply(name=name, parentTask=self, **keyArgs)
+        self._taskDict[subtask._fullName] = subtask
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
@@ -301,3 +300,23 @@ but the sizes are doubled
         @param name: brief name of subtask or metadata item
         """
         return "%s.%s" % (self._fullName, name)
+
+    def printTask(self):
+        """Print the task hierarchy.
+
+        Note that the subtasks will be printed in random order (i.e.,
+        not in the order they were defined, nor in the order they are
+        used in the processing; this is a listing only).
+        """
+        # Colorization categories from lsst.pex.config.history don't exactly correspond, but this makes
+        # things easily readable.
+        from lsst.pex.config.history import _colorize
+        out = []
+        out.append(_colorize(self.getFullName(), "NAME"))
+        out.append(_colorize(": ", "TEXT"))
+        out.append(_colorize(str(self.__class__), "VALUE"))
+        out.append(_colorize(" from ", "TEXT"))
+        out.append(_colorize(str(self.ConfigClass), "FILE"))
+        print "".join(out)
+        for task in self.getTaskDict().itervalues():
+            task.printTask()

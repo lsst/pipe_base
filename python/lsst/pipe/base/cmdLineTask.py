@@ -53,6 +53,11 @@ class CmdLineTask(Task):
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
+
+        if parsedCmd.tasks:
+            task.printTask()
+            return
+
         task._runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
