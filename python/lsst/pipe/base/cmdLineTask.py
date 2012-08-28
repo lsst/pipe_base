@@ -52,12 +52,35 @@ class CmdLineTask(Task):
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
-        task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-        task._runParsedCmd(parsedCmd)
+        
+        threading = hasattr(parsedCmd, 'threads') and parsedCmd.threads > 1
+        if threading:
+            try:
+                import multiprocessing
+            except ImportError, e:
+                parsedCmd.log.warn("Unable to import multiprocessing: %s" % e)
+                threading = False
+        if threading:
+            pool = multiprocessing.Pool(processes=parsedCmd.threads, maxtasksperchild=1)
+            mapFunc = pool.map
+        else:
+            mapFunc = map
+
+        def runTask(dataRef):
+            task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
+            return task._runDataRef(dataRef, doraise=parsedCmd.doraise)
+
+        results = mapFunc(runTask, parsedCmd.dataRefList)
+
+        if threading:
+            pool.close()
+            pool.join()
+
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
             task = task,
+            results = results
         )
 
     @classmethod
@@ -68,35 +91,33 @@ class CmdLineTask(Task):
         """
         return ArgumentParser(name=cls._DefaultName)
     
-    def _runParsedCmd(self, parsedCmd):
+    def _runDataRef(self, dataRef, doraise=False):
         """Execute the parsed command
         """
-        name = self._DefaultName
-        for dataRef in parsedCmd.dataRefList:
+        try:
+            configName = self._getConfigName()
+            if configName is not None:
+                dataRef.put(parsedCmd.config, configName)
+        except Exception, e:
+            self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
+                (dataRef.dataId, e,))
+        if doraise:
+            self.run(dataRef)
+        else:
             try:
-                configName = self._getConfigName()
-                if configName is not None:
-                    dataRef.put(parsedCmd.config, configName)
-            except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
-            if parsedCmd.doraise:
                 self.run(dataRef)
-            else:
-                try:
-                    self.run(dataRef)
-                except Exception, e:
-                    self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
-                    if not isinstance(e, TaskError):
-                        traceback.print_exc(file=sys.stderr)
-            try:
-                metadataName = self._getMetadataName()
-                if metadataName is not None:
-                    dataRef.put(self.getFullMetadata(), metadataName)
             except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
-    
+                self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                if not isinstance(e, TaskError):
+                    traceback.print_exc(file=sys.stderr)
+        try:
+            metadataName = self._getMetadataName()
+            if metadataName is not None:
+                dataRef.put(self.getFullMetadata(), metadataName)
+        except Exception, e:
+            self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
+                (dataRef.dataId, e,))
+
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
         """
@@ -106,3 +127,8 @@ class CmdLineTask(Task):
         """Return the name of the metadata dataset, or None if metadata is not persisted
         """
         return self._DefaultName + "_metadata"
+
+
+def runTask(args):
+    cls = args.cls
+    args = args.args
