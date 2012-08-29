@@ -52,8 +52,9 @@ class CmdLineTask(Task):
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
+        task = cls(name=cls._DefaultName, config=parsedCmd.config, log=parsedCmd.log)
         
-        threading = hasattr(parsedCmd, 'threads') and parsedCmd.threads > 1
+        threading = isThreaded(parsedCmd)
         if threading:
             try:
                 import multiprocessing
@@ -66,11 +67,8 @@ class CmdLineTask(Task):
         else:
             mapFunc = map
 
-        def runTask(dataRef):
-            task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-            return task._runDataRef(dataRef, doraise=parsedCmd.doraise)
-
-        results = mapFunc(runTask, parsedCmd.dataRefList)
+        runInfo = cls._getRunInfo(parsedCmd)
+        mapFunc(runInfo.func, runInfo.inputs)
 
         if threading:
             pool.close()
@@ -80,7 +78,6 @@ class CmdLineTask(Task):
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
             task = task,
-            results = results
         )
 
     @classmethod
@@ -90,14 +87,38 @@ class CmdLineTask(Task):
         Subclasses may wish to override, e.g. to change the dataset type or data ref level
         """
         return ArgumentParser(name=cls._DefaultName)
+
+    @classmethod
+    def _getRunInfo(cls, parsedCmd):
+        """Construct information necessary to run the task from the command-line arguments
+
+        For multiprocessing to work, the 'func' returned must be picklable
+        (i.e., typically a named function rather than anonymous function or
+        method).  Thus, an extra level of indirection is typically required,
+        so that the 'func' will create the Task from the 'inputs', and run.
+        Because the 'func' is executed using 'map', it should not return any
+        large data structures (which will require transmission between
+        processes, and long-term memory storage).
+
+        @param parsedCmd   Results of the argument parser
+        @return Struct(func: Function to receive 'inputs';
+                       inputs: List of Structs to be passed to the 'func')
+        """
+        log = parsedCmd.log if not isThreaded(parsedCmd) else None # XXX pexLogging is not yet picklable
+        inputs = [Struct(cls=cls, config=parsedCmd.config, log=log, doraise=parsedCmd.doraise, dataRef=dataRef)
+                  for dataRef in parsedCmd.dataRefList]
+        return Struct(func=runTask, inputs=inputs)
     
     def _runDataRef(self, dataRef, doraise=False):
-        """Execute the parsed command
+        """Execute the task on the data reference
+
+        @param dataRef   Data reference to process
+        @param doraise   Allow exceptions to float up?
         """
         try:
             configName = self._getConfigName()
             if configName is not None:
-                dataRef.put(parsedCmd.config, configName)
+                dataRef.put(self.config, configName)
         except Exception, e:
             self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                 (dataRef.dataId, e,))
@@ -129,6 +150,16 @@ class CmdLineTask(Task):
         return self._DefaultName + "_metadata"
 
 
+isThreaded = lambda args: hasattr(args, 'threads') and args.threads > 1
+
 def runTask(args):
-    cls = args.cls
-    args = args.args
+    """Run task, by forwarding to CmdLineTask._runDataRef.
+
+    This forwarding is necessary because multiprocessing requires
+    that the function used is picklable, which means it must be a
+    named function, rather than an anonymous function (lambda) or
+    method.
+    """
+    task = args.cls(name = args.cls._DefaultName, config=args.config, log=args.log)
+    task._runDataRef(args.dataRef, doraise=args.doraise)
+
