@@ -111,8 +111,9 @@ def timeMethod(func):
     Writes various measures of time and possibly memory usage to the task's metadata;
     all items are prefixed with the function name.
     
-    @warning This decorator only works with instance methods of Task (or any class with a metadata attribute
-      that supports add(name, value)).
+    @warning This decorator only works with instance methods of Task, or any class with these attributes:
+        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
+        * log: a pex_logging Log
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):
