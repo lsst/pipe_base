@@ -36,6 +36,7 @@ class AddTask(pipeBase.Task):
 
     @pipeBase.timeMethod
     def run(self, val):
+        self.metadata.add("add", self.config.addend)
         return pipeBase.Struct(
             val = val + self.config.addend,
         )
@@ -48,6 +49,7 @@ class MultTask(pipeBase.Task):
 
     @pipeBase.timeMethod
     def run(self, val):
+        self.metadata.add("mult", self.config.multiplicand)
         return pipeBase.Struct(
             val = val * self.config.multiplicand,
         )
@@ -71,6 +73,7 @@ class AddMultTask(pipeBase.Task):
         with self.timer("context"):
             addRet = self.add.run(val)
             multRet = self.mult.run(addRet.val)
+            self.metadata.add("addmult", multRet.val)
             return pipeBase.Struct(
                 val = multRet.val,
             )
@@ -136,6 +139,15 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet))
         self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet))
         self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet))
+
+    def testEmptyMetadata(self):
+        task = AddMultTask()
+        task.run(val=1.2345)
+        task.emptyMetadata()
+        fullMetadata = task.getFullMetadata()
+        self.assertEqual(fullMetadata.getPropertySet("addMult").nameCount(), 0)
+        self.assertEqual(fullMetadata.getPropertySet("addMult:add").nameCount(), 0)
+        self.assertEqual(fullMetadata.getPropertySet("addMult:mult").nameCount(), 0)
             
     def testReplace(self):
         """Test replacing one subtask with another

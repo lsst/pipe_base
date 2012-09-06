@@ -69,34 +69,45 @@ class CmdLineTask(Task):
         return ArgumentParser(name=cls._DefaultName)
     
     def _runParsedCmd(self, parsedCmd):
-        """Execute the parsed command
+        """Execute the parsed command, iterating over the provided data.
         """
         name = self._DefaultName
         for dataRef in parsedCmd.dataRefList:
-            try:
-                configName = self._getConfigName()
-                if configName is not None:
-                    dataRef.put(parsedCmd.config, configName)
-            except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
             if parsedCmd.doraise:
-                self.run(dataRef)
+                self._runDataRef(dataRef)
             else:
                 try:
-                    self.run(dataRef)
+                    self._runDataRef(dataRef)
                 except Exception, e:
                     self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):
                         traceback.print_exc(file=sys.stderr)
-            try:
-                metadataName = self._getMetadataName()
-                if metadataName is not None:
-                    dataRef.put(self.getFullMetadata(), metadataName)
-            except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
-    
+
+    def _runDataRef(self, dataRef):
+        """Run a single data reference"""
+        self.writeConfig(dataRef)
+        self.emptyMetadata()
+        self.run(dataRef)
+        self.writeMetadata(dataRef)
+
+    def writeConfig(self, dataRef):
+        """Write the configuration used for processing the data"""
+        try:
+            configName = self._getConfigName()
+            if configName is not None:
+                dataRef.put(self.config, configName)
+        except Exception, e:
+            self.log.warn("Could not persist config for dataId=%s: %s" % (dataRef.dataId, e,))
+
+    def writeMetadata(self, dataRef):
+        """Write the metadata produced from processing the data"""
+        try:
+            metadataName = self._getMetadataName()
+            if metadataName is not None:
+                dataRef.put(self.getFullMetadata(), metadataName)
+        except Exception, e:
+            self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
+
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
         """
