@@ -63,7 +63,7 @@ class CmdLineTask(Task):
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, overrides=cls.overrides)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
         task.parsedCmd = parsedCmd
-        task.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
+        task.runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
@@ -77,6 +77,10 @@ class CmdLineTask(Task):
         Subclasses may wish to override, e.g. to change the dataset type or data ref level
         """
         return ArgumentParser(name=cls._DefaultName)
+
+    def runParsedCmd(self, parsedCmd):
+        """Run the task, given the results of parsing a command line."""
+        self.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
     
     def runDataRefList(self, dataRefList, doRaise=False):
         """Execute the parsed command on a sequence of dataRefs,
