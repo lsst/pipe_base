@@ -60,15 +60,12 @@ class CmdLineTask(Task):
         - parsedCmd: the parsed command returned by argumentParser.parse_args
         - task: the instantiated task
         The return values are primarily for testing and debugging
-        
-        The parsedCmd object is also attached as an instance variable of the task.
         """
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-        task.parsedCmd = parsedCmd
         task.runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
