@@ -221,8 +221,9 @@ N.b. the ds9 arrays (ctypes etc.) are used for the lists of the list of lists-of
 first ctype is used for the first SourceSet); the matches are interpreted as an extra pair of SourceSets
 but the sizes are doubled
         """
-        if not self._display or not self._display.has_key(name) or self._display < 0 or \
-               self._display in (False, None) or self._display[name] in (False, None):
+        if not self._display or not self._display.has_key(name) or \
+                self._display < 0 or self._display in (False, None) or \
+                self._display[name] < 0 or self._display[name] in (False, None):
             return
 
         if isinstance(self._display, int):
@@ -249,6 +250,7 @@ but the sizes are doubled
             sources = [sources]
             
         with ds9.Buffering():
+            i = 0
             for i, ss in enumerate(sources):
                 ctype = ctypes[i%len(ctypes)]
                 ptype = ptypes[i%len(ptypes)]

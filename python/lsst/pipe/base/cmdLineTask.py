@@ -34,6 +34,19 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """A hook to allow a task to change the values of its config *after* the camera-specific
+        overrides are loaded but before any command-line overrides are applied.  This is invoked
+        only when parseAndRun is used; other ways of constructing a config will not apply these
+        overrides.
+
+        This is necessary in some cases because the camera-specific overrides may retarget subtasks,
+        wiping out changes made in ConfigClass.setDefaults.  See LSST ticket #2282 for more discussion.
+        """
+        pass
+
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None):
         """Parse an argument list and run the command
@@ -41,7 +54,7 @@ class CmdLineTask(Task):
         @param args: list of command-line arguments; if None use sys.argv
         @param config: config for task (instance of pex_config Config); if None use cls.ConfigClass()
         @param log: log (instance of pex_logging Log); if None use the default log
-        
+
         @return a Struct containing:
         - argumentParser: the argument parser
         - parsedCmd: the parsed command returned by argumentParser.parse_args
@@ -51,9 +64,9 @@ class CmdLineTask(Task):
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
-        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
+        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
         task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-        task._runParsedCmd(parsedCmd)
+        task.runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
@@ -67,24 +80,30 @@ class CmdLineTask(Task):
         Subclasses may wish to override, e.g. to change the dataset type or data ref level
         """
         return ArgumentParser(name=cls._DefaultName)
+
+    def runParsedCmd(self, parsedCmd):
+        """Run the task, given the results of parsing a command line."""
+        self.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
     
-    def _runParsedCmd(self, parsedCmd):
-        """Execute the parsed command
+    def runDataRefList(self, dataRefList, doRaise=False):
+        """Execute the parsed command on a sequence of dataRefs,
+        including writing the config and metadata.
         """
         name = self._DefaultName
-        for dataRef in parsedCmd.dataRefList:
+        result = []
+        for dataRef in dataRefList:
             try:
                 configName = self._getConfigName()
                 if configName is not None:
-                    dataRef.put(parsedCmd.config, configName)
+                    dataRef.put(self.config, configName)
             except Exception, e:
                 self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
-            if parsedCmd.doraise:
-                self.run(dataRef)
+            if doRaise:
+                result.append(self.run(dataRef))
             else:
                 try:
-                    self.run(dataRef)
+                    result.append(self.run(dataRef))
                 except Exception, e:
                     self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):
@@ -96,6 +115,8 @@ class CmdLineTask(Task):
             except Exception, e:
                 self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
+        return result
+            
     
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
