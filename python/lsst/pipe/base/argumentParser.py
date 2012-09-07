@@ -110,16 +110,15 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
 
-    def parse_args(self, config, args=None, log=None, overrides=()):
+    def parse_args(self, config, args=None, log=None, override=None):
         """Parse arguments for a pipeline task
 
         @param config: config for the task being run
         @param args: argument list; if None use sys.argv[1:]
-        @param log: log (instance pex_logging Log); if None use the default log        
-        @param overrides: a sequence of additional config overrides to be applied after
-            camera-specific overrides files but before any command-line config overrides.
-            Each element must be the path to a config override file or a function that
-            takes the root config as its only argument.
+        @param log: log (instance pex_logging Log); if None use the default log
+        @param override: a config override callable, to be applied after camera-specific overrides
+            files but before any command-line config overrides.  It should take the root config
+            object as its only argument.
 
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied, validated and frozen
@@ -152,7 +151,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.handleCamera(namespace)
 
         self._applyInitialOverrides(namespace)
-        self._applyTaskOverrides(namespace, overrides)
+        if override is not None:
+            override(namespace.config)
 
         namespace.dataIdList = []
         
@@ -312,18 +312,6 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.config.load(filePath)
             else:
                 namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
-
-    def _applyTaskOverrides(self, namespace, overrides):
-        for item in overrides:
-            if isinstance(item, basestring):
-                filePath = item
-                if os.path.exists(filePath):
-                    namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
-                    namespace.config.load(filePath)
-                else:
-                    raise RuntimeError("Could not find task-defined override file: %r" % (filePath,))
-            else:
-                item(namespace.config)
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
