@@ -52,6 +52,16 @@ class ExampleConfig(pexConfig.Config):
         doc = "example list of integers",
         default = [-1, 0, 1],
     )
+    floatList = pexConfig.ListField(
+        dtype = float,
+        doc = "example list of floats",
+        default = [-2.7, 0, 3.7e42],
+    )
+    strList = pexConfig.ListField(
+        dtype = str,
+        doc = "example list of strings",
+        default = ["a", "bb", "ccc"],
+    )
 
 parser = pipeBase.ArgumentParser(name="argumentParser")
 config = ExampleConfig()
