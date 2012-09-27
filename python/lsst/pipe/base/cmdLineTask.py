@@ -65,8 +65,15 @@ class CmdLineTask(Task):
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
-        task = cls(name=cls._DefaultName, config=parsedCmd.config, log=parsedCmd.log)
-        
+        cls.runParsedCmd(parsedCmd)
+
+        return Struct(
+            argumentParser = argumentParser,
+            parsedCmd = parsedCmd,
+            )
+
+    @classmethod
+    def runParsedCmd(cls, parsedCmd):
         useMP = useMultiProcessing(parsedCmd)
         if useMP:
             try:
@@ -80,18 +87,12 @@ class CmdLineTask(Task):
         else:
             mapFunc = map
 
-        runInfo = cls._getRunInfo(parsedCmd)
+        runInfo = cls.getRunInfo(parsedCmd)
         mapFunc(runInfo.func, runInfo.inputs)
 
         if useMP:
             pool.close()
             pool.join()
-
-        return Struct(
-            argumentParser = argumentParser,
-            parsedCmd = parsedCmd,
-            task = task,
-        )
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -102,7 +103,7 @@ class CmdLineTask(Task):
         return ArgumentParser(name=cls._DefaultName)
 
     @classmethod
-    def _getRunInfo(cls, parsedCmd):
+    def getRunInfo(cls, parsedCmd):
         """Construct information necessary to run the task from the command-line arguments
 
         For multiprocessing to work, the 'func' returned must be picklable
@@ -122,7 +123,7 @@ class CmdLineTask(Task):
                   for dataRef in parsedCmd.dataRefList]
         return Struct(func=runTask, inputs=inputs)
     
-    def _runDataRef(self, dataRef, doraise=False):
+    def runDataRef(self, dataRef, doraise=False):
         """Execute the task on the data reference
 
         @param dataRef   Data reference to process
@@ -177,5 +178,5 @@ def runTask(args):
     method.
     """
     task = args.cls(name = args.cls._DefaultName, config=args.config, log=args.log)
-    task._runDataRef(args.dataRef, doraise=args.doraise)
+    task.runDataRef(args.dataRef, doraise=args.doraise)
 
