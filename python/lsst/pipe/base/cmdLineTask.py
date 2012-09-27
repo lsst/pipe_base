@@ -65,13 +65,33 @@ class CmdLineTask(Task):
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
-        task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-        task.runParsedCmd(parsedCmd)
+        cls.runParsedCmd(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
-            task = task,
-        )
+            )
+
+    @classmethod
+    def runParsedCmd(cls, parsedCmd):
+        useMP = useMultiProcessing(parsedCmd)
+        if useMP:
+            try:
+                import multiprocessing
+            except ImportError, e:
+                parsedCmd.log.warn("Unable to import multiprocessing: %s" % e)
+                useMP = False
+        if useMP:
+            pool = multiprocessing.Pool(processes=parsedCmd.processes, maxtasksperchild=1)
+            mapFunc = pool.map
+        else:
+            mapFunc = map
+
+        runInfo = cls.getRunInfo(parsedCmd)
+        mapFunc(runInfo.func, runInfo.inputs)
+
+        if useMP:
+            pool.close()
+            pool.join()
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -81,43 +101,65 @@ class CmdLineTask(Task):
         """
         return ArgumentParser(name=cls._DefaultName)
 
-    def runParsedCmd(self, parsedCmd):
-        """Run the task, given the results of parsing a command line."""
-        self.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
-    
-    def runDataRefList(self, dataRefList, doRaise=False):
-        """Execute the parsed command on a sequence of dataRefs,
-        including writing the config and metadata.
+    @classmethod
+    def getRunInfo(cls, parsedCmd):
+        """Construct information necessary to run the task from the command-line arguments
+
+        For multiprocessing to work, the 'func' returned must be picklable
+        (i.e., typically a named function rather than anonymous function or
+        method).  Thus, an extra level of indirection is typically required,
+        so that the 'func' will create the Task from the 'inputs', and run.
+        Because the 'func' is executed using 'map', it should not return any
+        large data structures (which will require transmission between
+        processes, and long-term memory storage).
+
+        @param parsedCmd   Results of the argument parser
+        @return Struct(func: Function to receive 'inputs';
+                       inputs: List of Structs to be passed to the 'func')
         """
-        name = self._DefaultName
-        result = []
-        for dataRef in dataRefList:
-            try:
-                configName = self._getConfigName()
-                if configName is not None:
-                    dataRef.put(self.config, configName)
-            except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
-            if doRaise:
-                result.append(self.run(dataRef))
-            else:
-                try:
-                    result.append(self.run(dataRef))
-                except Exception, e:
-                    self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
-                    if not isinstance(e, TaskError):
-                        traceback.print_exc(file=sys.stderr)
-            try:
-                metadataName = self._getMetadataName()
-                if metadataName is not None:
-                    dataRef.put(self.getFullMetadata(), metadataName)
-            except Exception, e:
-                self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
-                    (dataRef.dataId, e,))
-        return result
-            
+        log = parsedCmd.log if not useMultiProcessing(parsedCmd) else None# XXX pexLogging is not yet picklable
+        inputs = [Struct(cls=cls, config=parsedCmd.config, log=log, doraise=parsedCmd.doraise, dataRef=dataRef)
+                  for dataRef in parsedCmd.dataRefList]
+        return Struct(func=runTask, inputs=inputs)
     
+    def runDataRef(self, dataRef, doraise=False):
+        """Execute the task on the data reference
+
+        If you want to override this method with different inputs, you're
+        also going to want to override getRunInfo and also have that provide
+        a different 'func' that calls into this method.  That's three
+        different places to override this one method: one for the
+        functionality (runDataRef), one to provide different input
+        (getRunInfo) and an (unfortunate) extra layer of indirection
+        required for multiprocessing support (runTask).
+
+        @param dataRef   Data reference to process
+        @param doraise   Allow exceptions to float up?
+        """
+        try:
+            configName = self._getConfigName()
+            if configName is not None:
+                dataRef.put(self.config, configName)
+        except Exception, e:
+            self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
+                (dataRef.dataId, e,))
+        if doraise:
+            self.run(dataRef)
+        else:
+            try:
+                self.run(dataRef)
+            except Exception, e:
+                self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                if not isinstance(e, TaskError):
+                    traceback.print_exc(file=sys.stderr)
+        try:
+            metadataName = self._getMetadataName()
+            if metadataName is not None:
+                dataRef.put(self.getFullMetadata(), metadataName)
+        except Exception, e:
+            self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
+                (dataRef.dataId, e,))
+
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
         """
@@ -127,3 +169,21 @@ class CmdLineTask(Task):
         """Return the name of the metadata dataset, or None if metadata is not persisted
         """
         return self._DefaultName + "_metadata"
+
+
+def useMultiProcessing(args):
+    """Determine whether we're using multiprocessing,
+    based on the parsed command-line arguments."""
+    return hasattr(args, 'processes') and args.processes > 1
+
+def runTask(args):
+    """Run task, by forwarding to CmdLineTask._runDataRef.
+
+    This forwarding is necessary because multiprocessing requires
+    that the function used is picklable, which means it must be a
+    named function, rather than an anonymous function (lambda) or
+    method.
+    """
+    task = args.cls(name = args.cls._DefaultName, config=args.config, log=args.log)
+    task.runDataRef(args.dataRef, doraise=args.doraise)
+

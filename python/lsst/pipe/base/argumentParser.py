@@ -109,6 +109,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
+        self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
 
     def parse_args(self, config, args=None, log=None, override=None):
         """Parse arguments for a pipeline task
