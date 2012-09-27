@@ -74,11 +74,10 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """
         retVal = TestTask.parseAndRun(args=["test", DataPath, "--output", self.outPath, 
             "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
-        task = retVal.task
+        task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
-        self.assertEqual(task.dataRefList, parsedCmd.dataRefList)
-        self.assertEqual(len(task.dataRefList), 1)
-        dataRef = task.dataRefList[0]
+        self.assertEqual(len(parsedCmd.dataRefList), 1)
+        dataRef = parsedCmd.dataRefList[0]
         dataId = dataRef.dataId
         self.assertEqual(dataId["raft"], "0,3")
         self.assertEqual(dataId["sensor"], "1,1")
@@ -106,7 +105,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
             config = config,
             log = log
         )
-        self.assertEquals(retVal.task.config.f, -99.9)
+        self.assertEquals(retVal.parsedCmd.config.f, -99.9)
         self.assertTrue(retVal.parsedCmd.log is log)
 
 def suite():
