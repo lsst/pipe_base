@@ -126,6 +126,14 @@ class CmdLineTask(Task):
     def runDataRef(self, dataRef, doraise=False):
         """Execute the task on the data reference
 
+        If you want to override this method with different inputs, you're
+        also going to want to override getRunInfo and also have that provide
+        a different 'func' that calls into this method.  That's three
+        different places to override this one method: one for the
+        functionality (runDataRef), one to provide different input
+        (getRunInfo) and an (unfortunate) extra layer of indirection
+        required for multiprocessing support (runTask).
+
         @param dataRef   Data reference to process
         @param doraise   Allow exceptions to float up?
         """
