@@ -54,15 +54,15 @@ class CmdLineTask(Task):
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log)
         task = cls(name=cls._DefaultName, config=parsedCmd.config, log=parsedCmd.log)
         
-        threading = isThreaded(parsedCmd)
-        if threading:
+        useMP = useMultiProcessing(parsedCmd)
+        if useMP:
             try:
                 import multiprocessing
             except ImportError, e:
                 parsedCmd.log.warn("Unable to import multiprocessing: %s" % e)
-                threading = False
-        if threading:
-            pool = multiprocessing.Pool(processes=parsedCmd.threads, maxtasksperchild=1)
+                useMP = False
+        if useMP:
+            pool = multiprocessing.Pool(processes=parsedCmd.processes, maxtasksperchild=1)
             mapFunc = pool.map
         else:
             mapFunc = map
@@ -70,7 +70,7 @@ class CmdLineTask(Task):
         runInfo = cls._getRunInfo(parsedCmd)
         mapFunc(runInfo.func, runInfo.inputs)
 
-        if threading:
+        if useMP:
             pool.close()
             pool.join()
 
@@ -104,7 +104,7 @@ class CmdLineTask(Task):
         @return Struct(func: Function to receive 'inputs';
                        inputs: List of Structs to be passed to the 'func')
         """
-        log = parsedCmd.log if not isThreaded(parsedCmd) else None # XXX pexLogging is not yet picklable
+        log = parsedCmd.log if not useMultiProcessing(parsedCmd) else None# XXX pexLogging is not yet picklable
         inputs = [Struct(cls=cls, config=parsedCmd.config, log=log, doraise=parsedCmd.doraise, dataRef=dataRef)
                   for dataRef in parsedCmd.dataRefList]
         return Struct(func=runTask, inputs=inputs)
@@ -150,7 +150,10 @@ class CmdLineTask(Task):
         return self._DefaultName + "_metadata"
 
 
-isThreaded = lambda args: hasattr(args, 'threads') and args.threads > 1
+def useMultiProcessing(args):
+    """Determine whether we're using multiprocessing,
+    based on the parsed command-line arguments."""
+    return hasattr(args, 'processes') and args.processes > 1
 
 def runTask(args):
     """Run task, by forwarding to CmdLineTask._runDataRef.
