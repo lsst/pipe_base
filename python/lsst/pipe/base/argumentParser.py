@@ -111,13 +111,16 @@ class ArgumentParser(argparse.ArgumentParser):
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
 
-    def parse_args(self, config, args=None, log=None):
+    def parse_args(self, config, args=None, log=None, override=None):
         """Parse arguments for a pipeline task
 
-        @params config: config for the task being run
-        @params args: argument list; if None use sys.argv[1:]
-        @params log: log (instance pex_logging Log); if None use the default log
-        
+        @param config: config for the task being run
+        @param args: argument list; if None use sys.argv[1:]
+        @param log: log (instance pex_logging Log); if None use the default log
+        @param override: a config override callable, to be applied after camera-specific overrides
+            files but before any command-line config overrides.  It should take the root config
+            object as its only argument.
+
         @return namespace: a struct containing many useful fields including:
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
@@ -149,6 +152,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.handleCamera(namespace)
 
         self._applyInitialOverrides(namespace)
+        if override is not None:
+            override(namespace.config)
 
         namespace.dataIdList = []
         
@@ -159,26 +164,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
         
-        def fixPath(defName, path):
-            """Apply environment variable as default root, if present, and abspath
-            
-            @param defName: name of environment variable containing default root path;
-                if the environment variable does not exist then the path is relative
-                to the current working directory
-            @param path: path relative to default root path
-            @return abspath: path that has been expanded, or None if the environment variable does not exist
-                and path is None
-            """
-            defRoot = os.environ.get(defName)
-            if defRoot is None:
-                if path is None:
-                    return None
-                return os.path.abspath(path)
-            return os.path.abspath(os.path.join(defRoot, path or ""))
-            
-        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
-        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
-        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        self._fixPaths(namespace)
         
         if not os.path.isdir(namespace.input):
             self.error("Error: input=%r not found" % (namespace.input,))
@@ -252,6 +238,36 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+
+    def _fixPaths(self, namespace):
+        """
+        Adjust paths using environment variables or custom options.
+        
+        This has been refactored into a separate method to allow subclasses to
+        override before the mapper is created.
+        """
+        def fixPath(defName, path):
+            """Apply environment variable as default root, if present, and abspath
+            
+            @param defName: name of environment variable containing default root path;
+                if the environment variable does not exist then the path is relative
+                to the current working directory
+            @param path: path relative to default root path
+            @return abspath: path that has been expanded, or None if the environment variable does not exist
+                and path is None
+            """
+            defRoot = os.environ.get(defName)
+            if defRoot is None:
+                if path is None:
+                    return None
+                return os.path.abspath(path)
+            return os.path.abspath(os.path.join(defRoot, path or ""))
+            
+        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
+        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
+        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        
+
     def _makeDataRefList(self, namespace):
         """Make namespace.dataRefList from namespace.dataIdList
         
@@ -329,6 +345,9 @@ class ArgumentParser(argparse.ArgumentParser):
             elif lowCamera == "suprimecam":
                 obsPkg = "obs_subaru"
                 from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
+            elif lowCamera == "suprimecam-mit":
+                obsPkg = "obs_subaru"
+                from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapperMit as Mapper
             elif lowCamera == "sst":
                 obsPkg = "obs_sst"
                 from lsst.obs.sst.sstMapper import SstMapper as Mapper
