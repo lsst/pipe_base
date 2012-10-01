@@ -182,7 +182,7 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel = pexLog.Log.INFO):
+    def timer(self, name, logLevel = pexLog.Log.DEBUG):
         """Context manager to log performance data for an arbitrary block of code
         
         @param[in] name: name of code being timed;
