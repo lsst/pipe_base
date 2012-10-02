@@ -360,6 +360,9 @@ class ArgumentParser(argparse.ArgumentParser):
             elif lowCamera == "cfht":
                 obsPkg = "obs_cfht"
                 from lsst.obs.cfht import CfhtMapper as Mapper
+            elif lowCamera == "decam":
+                obsPkg = "obs_decam"
+                from lsst.obs.decam import DecamMapper as Mapper
             else:
                 self.error("Unsupported camera: %s" % namespace.camera)
         except ImportError, e:
