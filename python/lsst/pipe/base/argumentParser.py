@@ -138,7 +138,8 @@ class ArgumentParser(argparse.ArgumentParser):
             args = sys.argv[1:]
 
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
-            self.error("Must specify camera as first argument")
+            self.print_help()
+            self.exit("%s: error: Must specify camera as first argument" % self.prog)
 
         namespace = argparse.Namespace()
         namespace.camera = args[0]
