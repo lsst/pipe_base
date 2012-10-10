@@ -35,7 +35,42 @@ pipe_base is written purely in Python. Contents include:
 - lsst.pipe.base.ArgumentParser: command line parser for pipeline tasks.
 - lsst.pipe.base.timeMethod: decorator to log performance information about a Task method.
 
-\section pipeBase_configOverrideFiles Config Override Files
+\section pipeBase_argumentParser Argument Parser Hints
+
+To shorten input, calib and output paths see \ref pipeBase_environmentVariables.
+
+For long or repetetive command lines you may wish to put some arguments into one or more files.
+The format is the same as the command line itself, except that if you specify the data on multiple lines
+do not use \\ to indicate line continuation. Specify such files using @@path.
+
+\subsection pipeBase_argumentParser_configOverride Overriding Config
+
+The argument parser automatically loads specific config override files based on
+the camera name and its obs package. See \ref pipeBase_configOverrideFiles.
+
+In addition, you can specify config override files on the command line using --configfile
+and override some (but not all) config parameters by specifying values on the command line using --config.
+
+Examples:
+-  --config str1=foo str2="fancier string" int1=5 intList=2,4,-87 float1=1.53 floatList=3.14,-5.6e7
+-  --configfile %config.py # where %config.py contains root.strList = "first string", "second string"
+
+There are important limitations on using --config; use a config override file to get around these issues:
+- You cannot specify values for items in registries
+- You cannot specify values for lists of strings
+- You cannot specify a subset of list; you must specify all values at once
+
+\section pipeBase_environmentVariables Environment Variables
+
+The command parser uses environment variables PIPE_INPUT_ROOT, PIPE_CALIB_ROOT, and PIPE_OUTPUT_ROOT,
+if available, to make it easier to specify the input, calib and output data repositories.
+Each environment variable is used as a root directory for relative paths and ignored for absolute paths.
+The default value for each of these environment variables is the current working directory. For example:
+- mytask cameraname foo # use $PIPE_INPUT_ROOT/foo as the input repository (or ./foo if $PIPE_INPUT_ROOT is undefined)
+- mytask cameraname . # use $PIPE_INPUT_ROOT (= $PIPE_INPUT_ROOT/.) as the input repository
+- mytask cameraname /a/b # use /a/b as the input repository ($PIPE_INPUT_ROOT is ignored for absolute paths)
+
+\section pipeBase_configOverrideFiles Automatically Loaded Config Override Files
 
 When a pipeline task is run, two camera-specific configuration overrides are loaded, if found;
 first one for the obs package then one for the camera. (There are two because in some cases
@@ -49,15 +84,5 @@ where the path elements are:
 - <em>task_name</em>: the name of the pipeline task, e.g. "processCcd"
 - <em>camera_name</em>: the name of the camera, e.g. "lsstSim"
 - <em>obs_path</em>: the path to the obs package for the camera, e.g. "obs_lsstSim"
-
-\section pipeBase_environmentVariables Environment Variables
-
-The command parser uses environment variables PIPE_INPUT_ROOT, PIPE_CALIB_ROOT, and PIPE_OUTPUT_ROOT,
-if available, to make it easier to specify the input, calib and output data repositories.
-Each environment variable is used as a root directory for relative paths and ignored for absolute paths.
-The default value for each of these environment variables is the current working directory. For example:
-- mytask cameraname foo # use $PIPE_INPUT_ROOT/foo as the input repository (or ./foo if $PIPE_INPUT_ROOT is undefined)
-- mytask cameraname . # use $PIPE_INPUT_ROOT (= $PIPE_INPUT_ROOT/.) as the input repository
-- mytask cameraname /a/b # use /a/b as the input repository ($PIPE_INPUT_ROOT is ignored for absolute paths)
 */
 }}}
