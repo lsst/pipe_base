@@ -72,7 +72,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testBasics(self):
         """Test basic construction and use of a command-line task
         """
-        retVal = TestTask.parseAndRun(args=["test", DataPath, "--output", self.outPath, 
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
             "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
         task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
@@ -100,7 +100,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         defLog = pexLog.getDefaultLog()
         log = pexLog.Log(defLog, "cmdLineTask")
         retVal = TestTask.parseAndRun(
-            args=["test", DataPath, "--output", self.outPath, 
+            args=[DataPath, "--output", self.outPath, 
                 "--id", "raft=0,3", "sensor=1,1", "visit=85470982"],
             config = config,
             log = log

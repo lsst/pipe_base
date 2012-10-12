@@ -36,22 +36,38 @@ DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
 DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
 
+def _fixPath(defName, path):
+    """Apply environment variable as default root, if present, and abspath
+    
+    @param defName: name of environment variable containing default root path;
+        if the environment variable does not exist then the path is relative
+        to the current working directory
+    @param path: path relative to default root path
+    @return abspath: path that has been expanded, or None if the environment variable does not exist
+        and path is None
+    """
+    defRoot = os.environ.get(defName)
+    if defRoot is None:
+        if path is None:
+            return None
+        return os.path.abspath(path)
+    return os.path.abspath(os.path.join(defRoot, path or ""))
+
+
 class ArgumentParser(argparse.ArgumentParser):
     """An argument parser for pipeline tasks that is based on argparse.ArgumentParser
     
     Users may wish to add additional arguments before calling parse_args.
     
     @notes
-    * The need to specify camera name will go away once the repository format allows
-      constructing a butler without knowing it.
     * I would prefer to check data ID keys and values as they are parsed,
       but the required information comes from the butler, so I have to construct a butler
       before I do this checking. Constructing a butler is slow, so I only want do it once,
-      after parsing the command line.
+      after parsing the command line, so as to catch syntax errors quickly.
     """
     def __init__(self,
         name,
-        usage = "%(prog)s camera dataSource [options]",
+        usage = "%(prog)s input [options]",
         datasetType = "raw",
         dataRefLevel = None,
     **kwargs):
@@ -86,8 +102,6 @@ class ArgumentParser(argparse.ArgumentParser):
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
-        self.add_argument("camera", help="""name of camera (e.g. lsstSim or suprimecam)
-            (WARNING: this must appear before any options or @file)""")
         self.add_argument("input",
             help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
         self.add_argument("--calib",
@@ -122,6 +136,7 @@ class ArgumentParser(argparse.ArgumentParser):
             object as its only argument.
 
         @return namespace: a struct containing many useful fields including:
+        - camera: camera name
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
         - dataIdList: a list of data ID dicts
@@ -139,16 +154,20 @@ class ArgumentParser(argparse.ArgumentParser):
 
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
             self.print_help()
-            self.exit("%s: error: Must specify camera as first argument" % self.prog)
-
+            self.exit("%s: error: Must specify input as first argument" % self.prog)
+        
         namespace = argparse.Namespace()
-        namespace.camera = args[0]
+        namespace.input = _fixPath(DEFAULT_INPUT_NAME, args[0])
+        if not os.path.isdir(namespace.input):
+            self.error("Error: input=%r not found" % (namespace.input,))
+        namespace.butler = dafPersist.Butler(root=namespace.input)
+        namespace.camera = namespace.butler.mapper.getCameraName()
+        namespace.obsPkg = namespace.butler.mapper.getEupsPackageName()
         namespace.config = config
         if log is None:
             log = pexLog.Log.getDefaultLog()
         namespace.log = log
 
-        MapperClass = self._getMapper(namespace)
 
         self.handleCamera(namespace)
 
@@ -165,22 +184,13 @@ class ArgumentParser(argparse.ArgumentParser):
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
         
-        self._fixPaths(namespace)
-        
-        if not os.path.isdir(namespace.input):
-            self.error("Error: input=%r not found" % (namespace.input,))
+        namespace.calib = _fixPath(DEFAULT_CALIB_NAME, namespace.calib)
+        namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
         namespace.log.log(namespace.log.INFO, "input=%s" % (namespace.input,))
         namespace.log.log(namespace.log.INFO, "calib=%s" % (namespace.calib,))
         namespace.log.log(namespace.log.INFO, "output=%s" % (namespace.output,))
-        
-        mapper = MapperClass(
-            root = namespace.input,
-            calibRoot = namespace.calib,
-            outputRoot = namespace.output,
-        )
-        butlerFactory = dafPersist.ButlerFactory(mapper = mapper)
-        namespace.butler = butlerFactory.create()
+
         idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
         # convert data in namespace.dataIdList to proper types
@@ -239,36 +249,6 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
-
-    def _fixPaths(self, namespace):
-        """
-        Adjust paths using environment variables or custom options.
-        
-        This has been refactored into a separate method to allow subclasses to
-        override before the mapper is created.
-        """
-        def fixPath(defName, path):
-            """Apply environment variable as default root, if present, and abspath
-            
-            @param defName: name of environment variable containing default root path;
-                if the environment variable does not exist then the path is relative
-                to the current working directory
-            @param path: path relative to default root path
-            @return abspath: path that has been expanded, or None if the environment variable does not exist
-                and path is None
-            """
-            defRoot = os.environ.get(defName)
-            if defRoot is None:
-                if path is None:
-                    return None
-                return os.path.abspath(path)
-            return os.path.abspath(os.path.join(defRoot, path or ""))
-            
-        namespace.input = fixPath(DEFAULT_INPUT_NAME, namespace.input)
-        namespace.calib = fixPath(DEFAULT_CALIB_NAME, namespace.calib)
-        namespace.output = fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
-        
-
     def _makeDataRefList(self, namespace):
         """Make namespace.dataRefList from namespace.dataIdList
         
@@ -319,57 +299,13 @@ class ArgumentParser(argparse.ArgumentParser):
         """Perform camera-specific operations before parsing the command line.
         
         @param[in] namespace: namespace object with the following fields:
-            - config: the config passed to parse_args, with no overrides applied
+            - butler: the butler
             - camera: the camera name
+            - config: the config passed to parse_args, with no overrides applied
             - obsPkg: the obs_ package for this camera
             - log: a pex_logging log
         """
         pass
-
-    def _getMapper(self, namespace):
-        """Get mapper class based on namespace.camera, input and calib.
-        
-        Also set namespace.obsPkg
-        
-        This is a temporary hack; this will go away once the butler renders it unnecessary,
-        and the user will no longer have to supply the camera name.
-        """
-        lowCamera = namespace.camera.lower()
-        try:
-            obsPkg = None
-            if lowCamera == "lsstsim":
-                obsPkg = "obs_lsstSim"
-                from lsst.obs.lsstSim import LsstSimMapper as Mapper
-            elif lowCamera == "hscsim":
-                obsPkg = "obs_subaru"
-                from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
-            elif lowCamera == "suprimecam":
-                obsPkg = "obs_subaru"
-                from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapper as Mapper
-            elif lowCamera == "suprimecam-mit":
-                obsPkg = "obs_subaru"
-                from lsst.obs.suprimecam.suprimecamMapper import SuprimecamMapperMit as Mapper
-            elif lowCamera == "sst":
-                obsPkg = "obs_sst"
-                from lsst.obs.sst.sstMapper import SstMapper as Mapper
-            elif lowCamera == "test":
-                obsPkg = "obs_test"
-                from lsst.obs.test import TestMapper as Mapper
-            elif lowCamera == "sdss":
-                obsPkg = "obs_sdss"
-                from lsst.obs.sdss import SdssMapper as Mapper
-            elif lowCamera == "cfht":
-                obsPkg = "obs_cfht"
-                from lsst.obs.cfht import CfhtMapper as Mapper
-            elif lowCamera == "decam":
-                obsPkg = "obs_decam"
-                from lsst.obs.decam import DecamMapper as Mapper
-            else:
-                self.error("Unsupported camera: %s" % namespace.camera)
-        except ImportError, e:
-            self.error("Must setup %s to use camera %s: %s" % (obsPkg, namespace.camera, e))
-        namespace.obsPkg = obsPkg
-        return Mapper
 
     def convert_arg_line_to_args(self, arg_line):
         """Allow files of arguments referenced by @file to contain multiple values on each line
