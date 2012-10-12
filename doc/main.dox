@@ -100,7 +100,7 @@ Examples:
 - <code>--configfile %config.py # where %config.py contains root.strList = "first string", "second string"</code>
 
 There are important limitations on using <code>--config</code>; use a config override file to get around these issues:
-- You cannot specify values for items in registries
+- For items in registries you can only specify values for the active (current) item
 - You cannot specify values for lists of strings
 - You cannot specify a subset of list; you must specify all values at once
 
