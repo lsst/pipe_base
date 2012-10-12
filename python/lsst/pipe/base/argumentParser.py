@@ -155,19 +155,18 @@ class ArgumentParser(argparse.ArgumentParser):
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
             self.print_help()
             self.exit("%s: error: Must specify input as first argument" % self.prog)
+
+        # note: don't set namespace.input until after running parse_args, else it will get overwritten
+        inputRoot = _fixPath(DEFAULT_INPUT_NAME, args[0])
+        if not os.path.isdir(inputRoot):
+            self.error("Error: input=%r not found" % (inputRoot,))
         
         namespace = argparse.Namespace()
-        namespace.input = _fixPath(DEFAULT_INPUT_NAME, args[0])
-        if not os.path.isdir(namespace.input):
-            self.error("Error: input=%r not found" % (namespace.input,))
-        namespace.butler = dafPersist.Butler(root=namespace.input)
-        namespace.camera = namespace.butler.mapper.getCameraName()
-        namespace.obsPkg = namespace.butler.mapper.getEupsPackageName()
         namespace.config = config
-        if log is None:
-            log = pexLog.Log.getDefaultLog()
-        namespace.log = log
-
+        namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
+        mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
+        namespace.camera = mapperClass.getCameraName()
+        namespace.obsPkg = mapperClass.getEupsPackageName()
 
         self.handleCamera(namespace)
 
@@ -178,18 +177,25 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.dataIdList = []
         
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
+        namespace.input = inputRoot
         del namespace.configfile
         del namespace.id
         
-        if "config" in namespace.show:
-            namespace.config.saveToStream(sys.stdout, "config")
-        
-        namespace.calib = _fixPath(DEFAULT_CALIB_NAME, namespace.calib)
+        namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
-        namespace.log.log(namespace.log.INFO, "input=%s" % (namespace.input,))
-        namespace.log.log(namespace.log.INFO, "calib=%s" % (namespace.calib,))
+        namespace.log.log(namespace.log.INFO, "input=%s"  % (namespace.input,))
+        namespace.log.log(namespace.log.INFO, "calib=%s"  % (namespace.calib,))
         namespace.log.log(namespace.log.INFO, "output=%s" % (namespace.output,))
+        
+        if "config" in namespace.show:
+            namespace.config.saveToStream(sys.stdout, "config")
+
+        namespace.butler = dafPersist.Butler(
+            root = namespace.input,
+            calibRoot = namespace.calib,
+            outputRoot = namespace.output,
+        )
 
         idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
@@ -299,7 +305,6 @@ class ArgumentParser(argparse.ArgumentParser):
         """Perform camera-specific operations before parsing the command line.
         
         @param[in] namespace: namespace object with the following fields:
-            - butler: the butler
             - camera: the camera name
             - config: the config passed to parse_args, with no overrides applied
             - obsPkg: the obs_ package for this camera
