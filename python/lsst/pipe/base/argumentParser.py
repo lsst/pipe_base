@@ -167,7 +167,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.dataIdList = []
         mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
         namespace.camera = mapperClass.getCameraName()
-        namespace.obsPkg = mapperClass.getEupsPackageName()
+        namespace.obsPkg = mapperClass.getEupsProductName()
 
         self.handleCamera(namespace)
 
