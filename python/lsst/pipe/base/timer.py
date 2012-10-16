@@ -45,7 +45,7 @@ def logPairs(obj, pairs, logLevel=pexLog.Log.DEBUG):
         try:
             obj.metadata.add(name, value)
         except Exception, e:
-            obj.log.log(obj.log.FATAL, "%s.metadata.add(name=%r, value=%r) failed with error=%s" % \
+            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" % \
                 (type(obj).__name__, name, value, e))
         strList.append("%s=%s" % (name, value))
     obj.log.log(logLevel, "; ".join(strList))
