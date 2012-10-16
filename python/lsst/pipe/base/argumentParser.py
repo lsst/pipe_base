@@ -164,6 +164,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.Namespace()
         namespace.config = config
         namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
+        namespace.dataIdList = []
         mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getEupsPackageName()
@@ -173,8 +174,6 @@ class ArgumentParser(argparse.ArgumentParser):
         self._applyInitialOverrides(namespace)
         if override is not None:
             override(namespace.config)
-
-        namespace.dataIdList = []
         
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         namespace.input = inputRoot
@@ -184,9 +183,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
-        namespace.log.log(namespace.log.INFO, "input=%s"  % (namespace.input,))
-        namespace.log.log(namespace.log.INFO, "calib=%s"  % (namespace.calib,))
-        namespace.log.log(namespace.log.INFO, "output=%s" % (namespace.output,))
+        namespace.log.info("input=%s"  % (namespace.input,))
+        namespace.log.info("calib=%s"  % (namespace.calib,))
+        namespace.log.info("output=%s" % (namespace.output,))
         
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
@@ -196,29 +195,12 @@ class ArgumentParser(argparse.ArgumentParser):
             calibRoot = namespace.calib,
             outputRoot = namespace.output,
         )
-
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
         
-        # convert data in namespace.dataIdList to proper types
-        # this is done after constructing the butler, hence after parsing the command line,
-        # because it takes a long time to construct a butler
-        for dataDict in namespace.dataIdList:
-            for key, strVal in dataDict.iteritems():
-                try:
-                    keyType = idKeyTypeDict[key]
-                except KeyError:
-                    validKeys = sorted(idKeyTypeDict.keys())
-                    self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
-                if keyType != str:
-                    try:
-                        castVal = keyType(strVal)
-                    except Exception:
-                        self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
-                    dataDict[key] = castVal
+        self._castDataIds(namespace)
 
         self._makeDataRefList(namespace)
         if not namespace.dataRefList:
-            namespace.log.log(pexLog.Log.WARN, "No data found")
+            namespace.log.warn("No data found")
         
         if "data" in namespace.show:
             for dataRef in namespace.dataRefList:
@@ -255,6 +237,28 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
+    def _castDataIds(self, namespace):
+        """Validate data IDs and cast them to the correct type
+        """
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
+        
+        # convert data in namespace.dataIdList to proper types
+        # this is done after constructing the butler, hence after parsing the command line,
+        # because it takes a long time to construct a butler
+        for dataDict in namespace.dataIdList:
+            for key, strVal in dataDict.iteritems():
+                try:
+                    keyType = idKeyTypeDict[key]
+                except KeyError:
+                    validKeys = sorted(idKeyTypeDict.keys())
+                    self.error("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
+                if keyType != str:
+                    try:
+                        castVal = keyType(strVal)
+                    except Exception:
+                        self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
+                    dataDict[key] = castVal
+    
     def _makeDataRefList(self, namespace):
         """Make namespace.dataRefList from namespace.dataIdList
         
@@ -275,7 +279,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 dataRef = dr,
             )]
             if not dataRefList:
-                namespace.log.log(pexLog.Log.WARN, "No data found for dataId=%s" % (dataId,))
+                namespace.log.warn("No data found for dataId=%s" % (dataId,))
                 continue
             namespace.dataRefList += dataRefList
         
@@ -296,10 +300,10 @@ class ArgumentParser(argparse.ArgumentParser):
             os.path.join(obsPkgDir, "config", namespace.camera, fileName),
         ):
             if os.path.exists(filePath):
-                namespace.log.log(namespace.log.INFO, "Loading config overrride file %r" % (filePath,))
+                namespace.log.info("Loading config overrride file %r" % (filePath,))
                 namespace.config.load(filePath)
             else:
-                namespace.log.log(namespace.log.INFO, "Config override file does not exist: %r" % (filePath,))
+                namespace.log.info("Config override file does not exist: %r" % (filePath,))
     
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
