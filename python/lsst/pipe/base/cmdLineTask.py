@@ -160,7 +160,7 @@ class CmdLineTask(Task):
             try:
                 self.run(dataRef)
             except Exception, e:
-                self.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                self.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
 
