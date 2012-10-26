@@ -110,6 +110,10 @@ class ArgumentParser(argparse.ArgumentParser):
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--id", nargs="*", action=IdValueAction,
             help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        if self._datasetType is None:
+            self.add_argument("-d", "--dataset-type", dest="datasetType",
+                required=True,
+                help="dataset type to process from input data repository")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -196,6 +200,9 @@ class ArgumentParser(argparse.ArgumentParser):
             outputRoot = namespace.output,
         )
         
+        if self._datasetType is None:
+            self._datasetType = namespace.datasetType
+
         self._castDataIds(namespace)
 
         self._makeDataRefList(namespace)
