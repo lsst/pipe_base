@@ -30,7 +30,8 @@ import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction"]
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction",
+        "DatasetArgument"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
