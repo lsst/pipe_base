@@ -195,6 +195,25 @@ class TaskTestCase(unittest.TestCase):
         """
         addMultTask = AddMultTask()
         addMultTask.run(val=1.1)
+        # Check existence and type
+        for key, keyType in (("Utc", basestring),
+                             ("CpuTime", float),
+                             ("UserTime", float),
+                             ("SystemTime", float),
+                             ("MaxResidentSetSize", int),
+                             ("MinorPageFaults", int),
+                             ("MajorPageFaults", int),
+                             ("BlockInputs", int),
+                             ("BlockOutputs", int),
+                             ("VoluntaryContextSwitches", int),
+                             ("InvoluntaryContextSwitches", int),
+                             ):
+            for when in ("Start", "End"):
+                for method in ("run", "context"):
+                    name = method + when + key
+                    self.assertTrue(name in addMultTask.metadata.names())
+                    self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType))
+        # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
             addMultTask.metadata.get("runStartCpuTime"),
