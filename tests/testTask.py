@@ -22,6 +22,7 @@
 #
 import time
 import unittest
+import numbers
 
 import lsst.utils.tests as utilsTests
 import lsst.daf.base as dafBase
@@ -200,19 +201,20 @@ class TaskTestCase(unittest.TestCase):
                              ("CpuTime", float),
                              ("UserTime", float),
                              ("SystemTime", float),
-                             ("MaxResidentSetSize", long),
-                             ("MinorPageFaults", long),
-                             ("MajorPageFaults", long),
-                             ("BlockInputs", long),
-                             ("BlockOutputs", long),
-                             ("VoluntaryContextSwitches", long),
-                             ("InvoluntaryContextSwitches", long),
+                             ("MaxResidentSetSize", numbers.Integral),
+                             ("MinorPageFaults", numbers.Integral),
+                             ("MajorPageFaults", numbers.Integral),
+                             ("BlockInputs", numbers.Integral),
+                             ("BlockOutputs", numbers.Integral),
+                             ("VoluntaryContextSwitches", numbers.Integral),
+                             ("InvoluntaryContextSwitches", numbers.Integral),
                              ):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertTrue(name in addMultTask.metadata.names())
-                    self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType))
+                    self.assertTrue(name in addMultTask.metadata.names(), name + " is missing from task metadata")
+                    self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType),
+                                    "%s is not of the right type (%s vs %s)" % (name, keyType, type(addMultTask.metadata.get(name))))
         # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
