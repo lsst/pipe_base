@@ -77,7 +77,7 @@ def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
             (prefix + "SystemTime", res.ru_stime),
             (prefix + "MaxResidentSetSize", res.ru_maxrss),
             (prefix + "MinorPageFaults", res.ru_minflt),
-            (prefix + "MajorPageFauls", res.ru_majflt),
+            (prefix + "MajorPageFaults", res.ru_majflt),
             (prefix + "BlockInputs", res.ru_inblock),
             (prefix + "BlockOutputs", res.ru_oublock),
             (prefix + "VoluntaryContextSwitches", res.ru_nvcsw),
