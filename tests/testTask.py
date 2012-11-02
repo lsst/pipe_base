@@ -200,13 +200,13 @@ class TaskTestCase(unittest.TestCase):
                              ("CpuTime", float),
                              ("UserTime", float),
                              ("SystemTime", float),
-                             ("MaxResidentSetSize", int),
-                             ("MinorPageFaults", int),
-                             ("MajorPageFaults", int),
-                             ("BlockInputs", int),
-                             ("BlockOutputs", int),
-                             ("VoluntaryContextSwitches", int),
-                             ("InvoluntaryContextSwitches", int),
+                             ("MaxResidentSetSize", long),
+                             ("MinorPageFaults", long),
+                             ("MajorPageFaults", long),
+                             ("BlockInputs", long),
+                             ("BlockOutputs", long),
+                             ("VoluntaryContextSwitches", long),
+                             ("InvoluntaryContextSwitches", long),
                              ):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
