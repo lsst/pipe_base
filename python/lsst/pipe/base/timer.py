@@ -72,26 +72,16 @@ def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
     obj.metadata.add(name = prefix + "Utc", value = utcStr) # log messages already have timestamps
     logPairs(obj = obj,
         pairs = [
-            (prefix + "CpuTime",  long(cpuTime)),
-            (prefix + "UTime",    long(res.ru_utime)),
-            (prefix + "STime",    long(res.ru_stime)),
-        ],
-        logLevel = logLevel,
-    )
-    logPairs(obj = obj,
-        pairs = [
-            (prefix + "MaxRss",   long(res.ru_maxrss)),
-            (prefix + "MinFlt",   long(res.ru_minflt)),
-            (prefix + "MajFlt",   long(res.ru_majflt)),
-        ],
-        logLevel = logLevel,
-    )
-    logPairs(obj = obj,
-        pairs = [
-            (prefix + "InBlock",  long(res.ru_inblock)),
-            (prefix + "OuBlock",  long(res.ru_oublock)),
-            (prefix + "NVCsw",    long(res.ru_nvcsw)),
-            (prefix + "NIvCsw",   long(res.ru_nivcsw)),
+            (prefix + "CpuTime", cpuTime),
+            (prefix + "UserTime", res.ru_utime),
+            (prefix + "SystemTime", res.ru_stime),
+            (prefix + "MaxResidentSetSize", long(res.ru_maxrss)),
+            (prefix + "MinorPageFaults", long(res.ru_minflt)),
+            (prefix + "MajorPageFaults", long(res.ru_majflt)),
+            (prefix + "BlockInputs", long(res.ru_inblock)),
+            (prefix + "BlockOutputs", long(res.ru_oublock)),
+            (prefix + "VoluntaryContextSwitches", long(res.ru_nvcsw)),
+            (prefix + "InvoluntaryContextSwitches", long(res.ru_nivcsw)),
         ],
         logLevel = logLevel,
     )

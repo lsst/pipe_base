@@ -22,6 +22,7 @@
 #
 import time
 import unittest
+import numbers
 
 import lsst.utils.tests as utilsTests
 import lsst.daf.base as dafBase
@@ -195,6 +196,26 @@ class TaskTestCase(unittest.TestCase):
         """
         addMultTask = AddMultTask()
         addMultTask.run(val=1.1)
+        # Check existence and type
+        for key, keyType in (("Utc", basestring),
+                             ("CpuTime", float),
+                             ("UserTime", float),
+                             ("SystemTime", float),
+                             ("MaxResidentSetSize", numbers.Integral),
+                             ("MinorPageFaults", numbers.Integral),
+                             ("MajorPageFaults", numbers.Integral),
+                             ("BlockInputs", numbers.Integral),
+                             ("BlockOutputs", numbers.Integral),
+                             ("VoluntaryContextSwitches", numbers.Integral),
+                             ("InvoluntaryContextSwitches", numbers.Integral),
+                             ):
+            for when in ("Start", "End"):
+                for method in ("run", "context"):
+                    name = method + when + key
+                    self.assertTrue(name in addMultTask.metadata.names(), name + " is missing from task metadata")
+                    self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType),
+                                    "%s is not of the right type (%s vs %s)" % (name, keyType, type(addMultTask.metadata.get(name))))
+        # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
             addMultTask.metadata.get("runStartCpuTime"),
