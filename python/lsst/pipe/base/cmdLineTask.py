@@ -78,12 +78,15 @@ class CmdLineTask(Task):
         """
         return ArgumentParser(name=cls._DefaultName)
     
-    def runDataRefList(self, dataRefList, doRaise=False):
+    def runDataRefList(self, dataRefList, doRaise=False, aggregateResults=False):
         """Execute the parsed command on a sequence of dataRefs,
         including writing the config and metadata.
         """
         name = self._DefaultName
-        result = []
+        if aggregateResults:
+            results = []
+        else:
+            results = None
         for dataRef in dataRefList:
             try:
                 configName = self._getConfigName()
@@ -93,14 +96,16 @@ class CmdLineTask(Task):
                 self.log.log(self.log.WARN, "Could not persist config for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
             if doRaise:
-                result.append(self.run(dataRef))
+                result = self.run(dataRef)
             else:
                 try:
-                    result.append(self.run(dataRef))
+                    result = self.run(dataRef)
                 except Exception, e:
                     self.log.log(self.log.FATAL, "Failed on dataId=%s: %s" % (dataRef.dataId, e))
                     if not isinstance(e, TaskError):
                         traceback.print_exc(file=sys.stderr)
+            if aggregateResults:
+                results.append(result)
             try:
                 metadataName = self._getMetadataName()
                 if metadataName is not None:
@@ -108,8 +113,7 @@ class CmdLineTask(Task):
             except Exception, e:
                 self.log.log(self.log.WARN, "Could not persist metadata for dataId=%s: %s" % \
                     (dataRef.dataId, e,))
-        return result
-            
+        return results
     
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
