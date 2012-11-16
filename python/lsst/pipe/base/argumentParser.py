@@ -123,7 +123,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest",
-                help="logging destination URL ([file:]path or pexlog://host/[topic]?runid=x&workerid=y)")
+                help="logging destination URL ([file:]path or pexlog://host/?runid=x&workerid=y)")
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
@@ -203,11 +203,8 @@ class ArgumentParser(argparse.ArgumentParser):
                 # Configure the EventLog
                 import lsst.ctrl.events as events
                 eventSystem = events.EventSystem.getDefaultEventSystem()
-                if path.startswith("/"):
-                    path = path[1:]
-                if path == "":
-                    path = events.EventLog.LOGGING_TOPIC
-                eventSystem.createTransmitter(netloc, path)
+                eventSystem.createTransmitter(netloc,
+                        events.EventLog.LOGGING_TOPIC)
                 queryItems = urlparse.parse_qs(query, strict_parsing=True)
                 if "runid" not in queryItems or "workerid" not in queryItems:
                     self.error("Missing runid or workerid parameter in pexlog URL: %s" %
