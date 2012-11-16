@@ -21,6 +21,23 @@ class LoggingTask(pipeBase.CmdLineTask):
 class LogTestCase(unittest.TestCase):
     """A test case for Task logging"""
 
+    def verifyContents(self, contents):
+        self.assertTrue(contents[0].startswith(": input"), contents[0])
+        self.assertTrue(contents[0].endswith("tests/data/input\n"))
+        self.assertEqual(contents[1], ": calib=None\n")
+        self.assertEqual(contents[2], ": output=None\n")
+        self.assertEqual(contents[3], "HelloWorld WARNING: "
+            "Could not persist config for dataId={'sensor': '1,0', "
+            "'visit': 85470982, 'snap': 1, 'raft': '0,2', 'skyTile': 1, "
+            "'channel': '1,1'}: "
+            "'TestMapper' object has no attribute 'map_HelloWorld_config'\n")
+        self.assertEqual(contents[4], "HelloWorld: Hello world\n")
+        self.assertEqual(contents[5], "HelloWorld WARNING: "
+            "Could not persist metadata for dataId={'sensor': '1,0', "
+            "'visit': 85470982, 'snap': 1, 'raft': '0,2', 'skyTile': 1, "
+            "'channel': '1,1'}: "
+            "'TestMapper' object has no attribute 'map_HelloWorld_metadata'\n") 
+
     def checkOutput(self, fname, nLines):
         self.assertTrue(os.path.exists(fname))
 
@@ -38,22 +55,7 @@ class LogTestCase(unittest.TestCase):
             self.assertTrue(
                     contents[1].endswith("config/test/HelloWorld.py'\n"))
             contents = contents[2:]
-        self.assertTrue(contents[0].startswith(": input"))
-        self.assertTrue(contents[0].endswith("tests/data/input\n"))
-        self.assertEqual(contents[1], ": calib=None\n")
-        self.assertEqual(contents[2], ": output=None\n")
-        self.assertEqual(contents[3], "HelloWorld WARNING: "
-            "Could not persist config for dataId={'sensor': '1,0', "
-            "'visit': 85470982, 'snap': 1, 'raft': '0,2', 'skyTile': 1, "
-            "'channel': '1,1'}: "
-            "'TestMapper' object has no attribute 'map_HelloWorld_config'\n")
-        self.assertEqual(contents[4], "HelloWorld: Hello world\n")
-        self.assertEqual(contents[5], "HelloWorld WARNING: "
-            "Could not persist metadata for dataId={'sensor': '1,0', "
-            "'visit': 85470982, 'snap': 1, 'raft': '0,2', 'skyTile': 1, "
-            "'channel': '1,1'}: "
-            "'TestMapper' object has no attribute 'map_HelloWorld_metadata'\n") 
-
+        self.verifyContents(contents)
         os.unlink(fname)
 
     @unittest.skipUnless("OBS_TEST_DIR" in os.environ, "obs_test is not setup")
@@ -131,6 +133,33 @@ class LogTestCase(unittest.TestCase):
             "snap=1", "raft=0,2", "sensor=1,0", "channel=1,1"
             ))
         self.checkOutput("test5.out", 6)
+
+    @unittest.skipUnless("OBS_TEST_DIR" in os.environ, "obs_test is not setup")
+    @unittest.skipUnless("CTRL_EVENTS_DIR" in os.environ, "ctrl_events is not setup")
+    def testZZZEnvEvent(self):
+        # Note: must come after other tests, since this affects the default
+        # logger.  Also note that this can only be run once since it affects
+        # the default EventSystem.
+        os.environ["LSST_LOGDEST"] = "pexlog://lsst8.ncsa.illinois.edu/" + \
+                "?runid=logging_test_x&workerid=%d" % (os.getpid(),)
+        import lsst.ctrl.events as events
+        eventSystem = events.EventSystem()
+        eventSystem.createReceiver("lsst8.ncsa.illinois.edu",
+                events.EventLog.LOGGING_TOPIC, "RUNID = 'logging_test_x'")
+        LoggingTask.parseAndRun(args=(
+            os.path.join(os.environ["OBS_TEST_DIR"], "tests", "data", "input"),
+            "--id", "visit=85470982",
+            "snap=1", "raft=0,2", "sensor=1,0", "channel=1,1"
+            ))
+        contents = []
+        for i in range(6):
+            val = eventSystem.receiveEvent(events.EventLog.LOGGING_TOPIC, 100)
+            ps = val.getPropertySet()
+            level = ""
+            if ps.get("LEVEL") == 10:
+                level = " WARNING"
+            contents.append(ps.get("LOG") + level + ": " + ps.get("COMMENT") + "\n")
+        self.verifyContents(contents)
 
 
 def suite():
