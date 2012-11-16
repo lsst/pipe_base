@@ -24,7 +24,9 @@ import itertools
 import os
 import re
 import shlex
+import socket
 import sys
+import urlparse
 
 import eups
 import lsst.pex.logging as pexLog
@@ -120,7 +122,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
-        self.add_argument("--logdest", help="logging destination")
+        self.add_argument("--logdest",
+                help="logging destination URL ([file:]path or pexlog://host/[topic]?runid=x&workerid=y)")
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
@@ -179,6 +182,64 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.input = inputRoot
         del namespace.configfile
         del namespace.id
+
+        # Handle log destinations
+        # If an explicit log was passed in, use that.
+        # Otherwise, if the --logdest option was specified, use that.
+        # Otherwise, if the LSST_LOGDEST environment variable is set, use that.
+
+        if namespace.logdest is None and "LSST_LOGDEST" in os.environ:
+            namespace.logdest = os.environ["LSST_LOGDEST"]
+        if log is None and namespace.logdest:
+
+            # Parse the logdest URL
+            urlTuple = urlparse.urlparse(namespace.logdest)
+            if urlTuple.scheme == "pexlog":
+                # Reparse as if this were an HTTP URL
+                tempUrl = re.sub(r'^pexlog:', 'http:', namespace.logdest)
+                scheme, netloc, path, params, query, fragment = \
+                        urlparse.urlparse(tempUrl)
+
+                # Configure the EventLog
+                import lsst.ctrl.events as events
+                eventSystem = events.EventSystem.getDefaultEventSystem()
+                if path.startswith("/"):
+                    path = path[1:]
+                if path == "":
+                    path = events.EventLog.LOGGING_TOPIC
+                eventSystem.createTransmitter(netloc, path)
+                queryItems = urlparse.parse_qs(query, strict_parsing=True)
+                if "runid" not in queryItems or "workerid" not in queryItems:
+                    self.error("Missing runid or workerid parameter in pexlog URL: %s" %
+                            (namespace.logdest,))
+                events.EventLog.createDefaultLog(queryItems["runid"][0],
+                        int(queryItems["workerid"][0]), socket.getfqdn())
+                namespace.log = pexLog.Log.getDefaultLog()
+                for k, v in queryItems.iteritems():
+                    if k != "runid" and k != "workerid":
+                        namespace.log.setPreamblePropertyString(k, v)
+            elif urlTuple.scheme == "file" or urlTuple.scheme == "":
+                # Simple file; add it to the logger
+                namespace.log.addDestination(urlTuple.path)
+
+            else:
+                self.error("Unrecognized log destination URL scheme: %s" %
+                        (namespace.logdest,))
+
+        del namespace.logdest
+
+        if namespace.loglevel:
+            permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
+            if namespace.loglevel.upper() in permitted:
+                value = getattr(pexLog.Log, namespace.loglevel.upper())
+            else:
+                try:
+                    value = int(namespace.loglevel)
+                except ValueError:
+                    self.error("log-level=%s not int or one of %s" % (namespace.loglevel, permitted))
+            namespace.log.setThreshold(value)
+        del namespace.loglevel
+        
         
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
@@ -216,22 +277,6 @@ class ArgumentParser(argparse.ArgumentParser):
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        if namespace.logdest:
-            namespace.log.addDestination(namespace.logdest)
-        del namespace.logdest
-        
-        if namespace.loglevel:
-            permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
-            if namespace.loglevel.upper() in permitted:
-                value = getattr(pexLog.Log, namespace.loglevel.upper())
-            else:
-                try:
-                    value = int(namespace.loglevel)
-                except ValueError:
-                    self.error("log-level=%s not int or one of %s" % (namespace.loglevel, permitted))
-            namespace.log.setThreshold(value)
-        del namespace.loglevel
-        
         namespace.config.validate()
         namespace.config.freeze()
 

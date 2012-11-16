@@ -154,6 +154,7 @@ class CmdLineTask(Task):
         @param dataRef   Data reference to process
         @param doraise   Allow exceptions to float up?
         """
+        self.log.setPreamblePropertyString("dataid", str(dataRef.dataId))
         if doraise:
             self.run(dataRef)
         else:
