@@ -30,7 +30,8 @@ import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction"]
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction",
+        "DatasetArgument"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -110,6 +111,12 @@ class ArgumentParser(argparse.ArgumentParser):
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--id", nargs="*", action=IdValueAction,
             help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        if isinstance(datasetType, DatasetArgument):
+            self._datasetType = None
+            self.add_argument("--datasettype", dest="datasetType",
+                required=datasetType.required,
+                help=datasetType.help,
+                default=datasetType.default)
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -196,6 +203,9 @@ class ArgumentParser(argparse.ArgumentParser):
             outputRoot = namespace.output,
         )
         
+        if namespace.datasetType is not None:
+            self._datasetType = namespace.datasetType
+
         self._castDataIds(namespace)
 
         self._makeDataRefList(namespace)
@@ -425,6 +435,26 @@ class TraceLevelAction(argparse.Action):
             except Exception:
                 parser.error("cannot parse %r as an integer level for %s" % (levelStr, component))
             pexLog.Trace.setVerbosity(component, level)
+
+class DatasetArgument(object):
+    """Specify that the dataset type should be a command-line option.
+
+    Somewhat more heavyweight than just using, e.g., None as a signal, but
+    provides the ability to have more informative help and a default.  Also
+    more extensible in the future.
+
+    @param[in] help: help string for the command-line option
+    @param[in] default: default value; if None, then the option is required
+    """
+    def __init__(self,
+            help="dataset type to process from input data repository",
+            default=None):
+        self.help = help
+        self.default = default
+
+    @property
+    def required(self):
+        return self.default is None
 
 def setDottedAttr(item, name, value):
     """Like setattr, but accepts hierarchical names, e.g. foo.bar.baz
