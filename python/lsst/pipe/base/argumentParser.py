@@ -78,6 +78,8 @@ class ArgumentParser(argparse.ArgumentParser):
         @param usage: usage string
         @param datasetType: dataset type appropriate to the task at hand;
             this affects which data ID keys are recognized.
+            Set to an instance of DatasetArgument to accept this from the
+            command line
         @param dataRefLevel: the level of the data references returned in dataRefList;
             None uses the data mapper's default, which is usually sensor.
             Warning: any value other than None is likely to be repository-specific.
@@ -203,7 +205,8 @@ class ArgumentParser(argparse.ArgumentParser):
             outputRoot = namespace.output,
         )
         
-        if namespace.datasetType is not None:
+        if hasattr(namespace, "datasetType") and \
+                namespace.datasetType is not None:
             self._datasetType = namespace.datasetType
 
         self._castDataIds(namespace)
