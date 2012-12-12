@@ -86,7 +86,6 @@ class ArgumentParser(argparse.ArgumentParser):
         @param **kwargs: additional keyword arguments for argparse.ArgumentParser
         """
         self._name = name
-        self._datasetType = datasetType
         self._dataRefLevel = dataRefLevel
         argparse.ArgumentParser.__init__(self,
             usage = usage,
@@ -119,6 +118,8 @@ class ArgumentParser(argparse.ArgumentParser):
                 required=datasetType.required,
                 help=datasetType.help,
                 default=datasetType.default)
+        else:
+            self._datasetType = datasetType
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -148,6 +149,7 @@ class ArgumentParser(argparse.ArgumentParser):
         - camera: camera name
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
+        - datasetType: dataset type
         - dataIdList: a list of data ID dicts
         - dataRefList: a list of butler data references; each data reference is guaranteed to contain
             data for the specified datasetType (though perhaps at a lower level than the specified level,
@@ -177,6 +179,7 @@ class ArgumentParser(argparse.ArgumentParser):
         mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getEupsProductName()
+        namespace.datasetType = self._datasetType
 
         self.handleCamera(namespace)
 
@@ -204,10 +207,6 @@ class ArgumentParser(argparse.ArgumentParser):
             calibRoot = namespace.calib,
             outputRoot = namespace.output,
         )
-        
-        if hasattr(namespace, "datasetType") and \
-                namespace.datasetType is not None:
-            self._datasetType = namespace.datasetType
 
         self._castDataIds(namespace)
 
@@ -253,7 +252,7 @@ class ArgumentParser(argparse.ArgumentParser):
     def _castDataIds(self, namespace):
         """Validate data IDs and cast them to the correct type
         """
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=self._datasetType, level=self._dataRefLevel)
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=namespace.datasetType, level=self._dataRefLevel)
         
         # convert data in namespace.dataIdList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -280,7 +279,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.dataRefList = []
         for dataId in namespace.dataIdList:
             dataRefList = list(namespace.butler.subset(
-                datasetType = self._datasetType,
+                datasetType = namespace.datasetType,
                 level = self._dataRefLevel,
                 dataId = dataId,
             ))
@@ -288,7 +287,7 @@ class ArgumentParser(argparse.ArgumentParser):
             # this is a recursive test, e.g. for the sake of "raw" data
             dataRefList = [dr for dr in dataRefList if dataExists(
                 butler = namespace.butler,
-                datasetType = self._datasetType,
+                datasetType = namespace.datasetType,
                 dataRef = dr,
             )]
             if not dataRefList:
