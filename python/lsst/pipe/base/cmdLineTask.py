@@ -73,7 +73,7 @@ class CmdLineTask(Task):
 
     @classmethod
     def runParsedCmd(cls, parsedCmd):
-        useMP = useMultiProcessing(parsedCmd)
+        useMP = cls.useMultiProcessing(parsedCmd)
         if useMP:
             try:
                 import multiprocessing
@@ -117,7 +117,7 @@ class CmdLineTask(Task):
         @return Struct(func: Function to receive 'inputs';
                        inputs: List of Structs to be passed to the 'func')
         """
-        log = parsedCmd.log if not useMultiProcessing(parsedCmd) else None# XXX pexLogging is not yet picklable
+        log = parsedCmd.log if not cls.useMultiProcessing(parsedCmd) else None# XXX pexLogging is not yet picklable
         inputs = [Struct(cls=cls, config=parsedCmd.config, log=log, doraise=parsedCmd.doraise, dataRef=dataRef)
                   for dataRef in parsedCmd.dataRefList]
         return Struct(func=runTask, inputs=inputs)
@@ -164,6 +164,15 @@ class CmdLineTask(Task):
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
 
+
+    @classmethod
+    def useMultiProcessing(cls, parsedCmd):
+        """Determine whether we're using multiprocessing, based on the parsed command.
+        
+        @params[in] parsedCmd: parsed command
+        """
+        return getattr(parsedCmd, "processes", 1) > 1
+
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
         """
@@ -174,13 +183,7 @@ class CmdLineTask(Task):
         """
         return self._DefaultName + "_metadata"
 
-
-def useMultiProcessing(args):
-    """Determine whether we're using multiprocessing,
-    based on the parsed command-line arguments."""
-    return hasattr(args, 'processes') and args.processes > 1
-
-def runTask(args):
+def runTask(parsedCmd):
     """Run task, by forwarding to CmdLineTask._runDataRef.
 
     This forwarding is necessary because multiprocessing requires
@@ -188,7 +191,7 @@ def runTask(args):
     named function, rather than an anonymous function (lambda) or
     method.
     """
-    task = args.cls(name = args.cls._DefaultName, config=args.config, log=args.log)
-    task.writeConfig(args.dataRef)
-    task.runDataRef(args.dataRef, doraise=args.doraise)
-    task.writeMetadata(args.dataRef)
+    task = parsedCmd.cls(name = parsedCmd.cls._DefaultName, config=parsedCmd.config, log=parsedCmd.log)
+    task.writeConfig(parsedCmd.dataRef)
+    task.runDataRef(parsedCmd.dataRef, doraise=parsedCmd.doraise)
+    task.writeMetadata(parsedCmd.dataRef)
