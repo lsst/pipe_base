@@ -41,10 +41,10 @@ class TaskRunner(object):
     def __init__(self, TaskClass, parsedCmd):
         """Constructor
 
-        @param CmdLineTaskClass   The class we're to run
-        @param parsedCmd          The parsed command-line arguments
+        @param TaskClass    The class we're to run
+        @param parsedCmd    The parsed command-line arguments
         """
-        self.cls = TaskClass
+        self.TaskClass = TaskClass
         self.name = TaskClass._DefaultName
         self.config = parsedCmd.config
         self.log = parsedCmd.log
@@ -60,7 +60,7 @@ class TaskRunner(object):
 
         Here, the target is assumed to be a dataRef.
         """
-        task = self.cls(name=self.name, config=self.config, log=self.log)
+        task = self.TaskClass(name=self.name, config=self.config, log=self.log)
         task.writeConfig(dataRef)
         task.runDataRef(dataRef, doraise=self.doraise)
         task.writeMetadata(dataRef)
