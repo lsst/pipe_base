@@ -72,7 +72,7 @@ class TaskRunner(object):
         return hasattr(parsedCmd, 'processes') and parsedCmd.processes > 1
 
     @staticmethod
-    def getTargetList(self, parsedCmd):
+    def getTargetList(parsedCmd):
         """Provide the list of targets to be processed,
         based on the command-line arguments."""
         return parsedCmd.dataRefList
