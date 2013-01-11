@@ -34,8 +34,7 @@ class TaskRunner(object):
     Instances must be picklable in order to be compatible
     with the use of multiprocessing in CmdLineTask.runParsedCmd.
     The 'prepareForMultiProcessing' method will be called by the
-    constructor if multiprocessing is configured (as determined
-    by the 'getMultiProcessing' method), which gives the
+    run() method if multiprocessing is configured, which gives the
     opportunity to jettison optional non-picklable elements.
     """
     def __init__(self, TaskClass, parsedCmd):
@@ -58,6 +57,10 @@ class TaskRunner(object):
         self.numProcesses = getattr(parsedCmd, 'processes', 1)
 
     def prepareForMultiProcessing(self):
+        """Prepare the instance for multiprocessing
+
+        This provides an opportunity to remove optional non-picklable elements.
+        """
         self.log = None
 
     def run(self, parsedCmd):
@@ -88,21 +91,31 @@ class TaskRunner(object):
 
         return results
 
+    @staticmethod
+    def getTargetList(parsedCmd):
+        """Provide the list of targets to be processed, based on the
+        command-line arguments.
+
+        The elements of the returned list will be processed by the '__call__'
+        method.
+        """
+        return parsedCmd.dataRefList
+
     def __call__(self, dataRef):
         """Run the Task on a single target.
 
-        Here, the target is assumed to be a dataRef.
+        The target is the elements of the list returned by the 'getTargetList'
+        method.  Here, the target is assumed to be a dataRef, but subclasses may
+        override.
+
+        Note that whatever is returned by this method needs to be picklable in
+        order to support multiprocessing.  Returning large structures is not
+        advisable, due to the additional overhead of pickling and unpickling.
         """
         task = self.TaskClass(name=self.name, config=self.config, log=self.log)
         task.writeConfig(dataRef)
         task.runDataRef(dataRef, doraise=self.doraise)
         task.writeMetadata(dataRef)
-
-    @staticmethod
-    def getTargetList(parsedCmd):
-        """Provide the list of targets to be processed,
-        based on the command-line arguments."""
-        return parsedCmd.dataRefList
 
 
 class CmdLineTask(Task):
