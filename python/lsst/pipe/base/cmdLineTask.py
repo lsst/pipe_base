@@ -49,8 +49,8 @@ class TaskRunner(object):
         self.config = parsedCmd.config
         self.log = parsedCmd.log
         self.doraise = parsedCmd.doraise
-        if useMultiProcessing(parsedCmd):
-            self.prepareMultiProcessing()
+        if self.getMultiProcessing(parsedCmd):
+            self.prepareForMultiProcessing()
 
     def prepareForMultiProcessing(self):
         self.parsedCmd.log = None
@@ -69,7 +69,7 @@ class TaskRunner(object):
     def getMultiProcessing(parsedCmd):
         """Determine whether we're using multiprocessing,
         based on the parsed command-line arguments."""
-        return hasattr(parsedCmd, 'processes') and args.parsedCmd > 1
+        return hasattr(parsedCmd, 'processes') and parsedCmd.processes > 1
 
     @staticmethod
     def getTargetList(self, parsedCmd):
@@ -189,15 +189,6 @@ class CmdLineTask(Task):
                 self.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
-
-
-    @classmethod
-    def useMultiProcessing(cls, parsedCmd):
-        """Determine whether we're using multiprocessing, based on the parsed command.
-        
-        @params[in] parsedCmd: parsed command
-        """
-        return getattr(parsedCmd, "processes", 1) > 1
 
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
