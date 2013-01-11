@@ -55,11 +55,38 @@ class TaskRunner(object):
         self.config = parsedCmd.config
         self.log = parsedCmd.log
         self.doraise = parsedCmd.doraise
-        if self.getMultiProcessing(parsedCmd):
-            self.prepareForMultiProcessing()
+        self.numProcesses = getattr(parsedCmd, 'processes', 1)
 
     def prepareForMultiProcessing(self):
         self.log = None
+
+    def run(self, parsedCmd):
+        """Run the task on all targets.
+
+        The task will be run under multiprocessing if configured; otherwise
+        processing will be serial.
+
+        The task returns the list of results from the '__call__' method.
+        """
+        if self.numProcesses > 1:
+            try:
+                import multiprocessing
+            except ImportError, e:
+                raise RuntimeError("Unable to import multiprocessing: %s" % e)
+            self.prepareForMultiProcessing()
+            pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
+            mapFunc = pool.map
+        else:
+            pool = None
+            mapFunc = map
+
+        results = mapFunc(self, self.getTargetList(parsedCmd))
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+        return results
 
     def __call__(self, dataRef):
         """Run the Task on a single target.
@@ -70,12 +97,6 @@ class TaskRunner(object):
         task.writeConfig(dataRef)
         task.runDataRef(dataRef, doraise=self.doraise)
         task.writeMetadata(dataRef)
-
-    @staticmethod
-    def getMultiProcessing(parsedCmd):
-        """Determine whether we're using multiprocessing,
-        based on the parsed command-line arguments."""
-        return hasattr(parsedCmd, 'processes') and parsedCmd.processes > 1
 
     @staticmethod
     def getTargetList(parsedCmd):
@@ -130,25 +151,8 @@ class CmdLineTask(Task):
 
     @classmethod
     def runParsedCmd(cls, parsedCmd):
-        useMP = cls.RunnerClass.getMultiProcessing(parsedCmd)
-        if useMP:
-            try:
-                import multiprocessing
-            except ImportError, e:
-                parsedCmd.log.warn("Unable to import multiprocessing: %s" % e)
-                useMP = False
-        if useMP:
-            pool = multiprocessing.Pool(processes=parsedCmd.processes, maxtasksperchild=1)
-            mapFunc = pool.map
-        else:
-            mapFunc = map
-
         runner = cls.RunnerClass(cls, parsedCmd)
-        mapFunc(runner, runner.getTargetList(parsedCmd))
-
-        if useMP:
-            pool.close()
-            pool.join()
+        runner.run(parsedCmd)
 
     @classmethod
     def _makeArgumentParser(cls):
