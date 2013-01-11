@@ -1,6 +1,6 @@
 # 
 # LSST Data Management System
-# Copyright 2008, 2009, 2010, 2011 LSST Corporation.
+# Copyright 2008-2013 LSST Corporation.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -26,7 +26,97 @@ from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
 
-__all__ = ["CmdLineTask"]
+__all__ = ["CmdLineTask", "TaskRunner"]
+
+class TaskRunner(object):
+    """Class whose instances will run a Task
+
+    Instances must be picklable in order to be compatible
+    with the use of multiprocessing in CmdLineTask.runParsedCmd.
+    The 'prepareForMultiProcessing' method will be called by the
+    run() method if multiprocessing is configured, which gives the
+    opportunity to jettison optional non-picklable elements.
+    """
+    def __init__(self, TaskClass, parsedCmd):
+        """Constructor
+
+        We don't want to store parsedCmd here, as this instance
+        will be pickled and the parsedCmd may contain non-picklable
+        elements.  Furthermore, the parsedCmd contains the dataRefList
+        and we don't want to have each process re-instantiating the
+        entire dataRefList.
+
+        @param TaskClass    The class we're to run
+        @param parsedCmd    The parsed command-line arguments
+        """
+        self.TaskClass = TaskClass
+        self.name = TaskClass._DefaultName
+        self.config = parsedCmd.config
+        self.log = parsedCmd.log
+        self.doraise = parsedCmd.doraise
+        self.numProcesses = getattr(parsedCmd, 'processes', 1)
+
+    def prepareForMultiProcessing(self):
+        """Prepare the instance for multiprocessing
+
+        This provides an opportunity to remove optional non-picklable elements.
+        """
+        self.log = None
+
+    def run(self, parsedCmd):
+        """Run the task on all targets.
+
+        The task will be run under multiprocessing if configured; otherwise
+        processing will be serial.
+
+        The task returns the list of results from the '__call__' method.
+        """
+        if self.numProcesses > 1:
+            try:
+                import multiprocessing
+            except ImportError, e:
+                raise RuntimeError("Unable to import multiprocessing: %s" % e)
+            self.prepareForMultiProcessing()
+            pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
+            mapFunc = pool.map
+        else:
+            pool = None
+            mapFunc = map
+
+        results = mapFunc(self, self.getTargetList(parsedCmd))
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+        return results
+
+    @staticmethod
+    def getTargetList(parsedCmd):
+        """Provide the list of targets to be processed, based on the
+        command-line arguments.
+
+        The elements of the returned list will be processed by the '__call__'
+        method.
+        """
+        return parsedCmd.dataRefList
+
+    def __call__(self, dataRef):
+        """Run the Task on a single target.
+
+        The target is the elements of the list returned by the 'getTargetList'
+        method.  Here, the target is assumed to be a dataRef, but subclasses may
+        override.
+
+        Note that whatever is returned by this method needs to be picklable in
+        order to support multiprocessing.  Returning large structures is not
+        advisable, due to the additional overhead of pickling and unpickling.
+        """
+        task = self.TaskClass(name=self.name, config=self.config, log=self.log)
+        task.writeConfig(dataRef)
+        task.runDataRef(dataRef, doraise=self.doraise)
+        task.writeMetadata(dataRef)
+
 
 class CmdLineTask(Task):
     """A task that can be executed from the command line
@@ -34,6 +124,7 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
+    RunnerClass = TaskRunner
 
     @classmethod
     def applyOverrides(cls, config):
@@ -73,25 +164,8 @@ class CmdLineTask(Task):
 
     @classmethod
     def runParsedCmd(cls, parsedCmd):
-        useMP = cls.useMultiProcessing(parsedCmd)
-        if useMP:
-            try:
-                import multiprocessing
-            except ImportError, e:
-                parsedCmd.log.warn("Unable to import multiprocessing: %s" % e)
-                useMP = False
-        if useMP:
-            pool = multiprocessing.Pool(processes=parsedCmd.processes, maxtasksperchild=1)
-            mapFunc = pool.map
-        else:
-            mapFunc = map
-
-        runInfo = cls.getRunInfo(parsedCmd)
-        mapFunc(runInfo.func, runInfo.inputs)
-
-        if useMP:
-            pool.close()
-            pool.join()
+        runner = cls.RunnerClass(cls, parsedCmd)
+        runner.run(parsedCmd)
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -100,27 +174,6 @@ class CmdLineTask(Task):
         Subclasses may wish to override, e.g. to change the dataset type or data ref level
         """
         return ArgumentParser(name=cls._DefaultName)
-
-    @classmethod
-    def getRunInfo(cls, parsedCmd):
-        """Construct information necessary to run the task from the command-line arguments
-
-        For multiprocessing to work, the 'func' returned must be picklable
-        (i.e., typically a named function rather than anonymous function or
-        method).  Thus, an extra level of indirection is typically required,
-        so that the 'func' will create the Task from the 'inputs', and run.
-        Because the 'func' is executed using 'map', it should not return any
-        large data structures (which will require transmission between
-        processes, and long-term memory storage).
-
-        @param parsedCmd   Results of the argument parser
-        @return Struct(func: Function to receive 'inputs';
-                       inputs: List of Structs to be passed to the 'func')
-        """
-        log = parsedCmd.log if not cls.useMultiProcessing(parsedCmd) else None# XXX pexLogging is not yet picklable
-        inputs = [Struct(cls=cls, config=parsedCmd.config, log=log, doraise=parsedCmd.doraise, dataRef=dataRef)
-                  for dataRef in parsedCmd.dataRefList]
-        return Struct(func=runTask, inputs=inputs)
 
     def writeConfig(self, dataRef):
         """Write the configuration used for processing the data"""
@@ -144,12 +197,8 @@ class CmdLineTask(Task):
         """Execute the task on the data reference
 
         If you want to override this method with different inputs, you're
-        also going to want to override getRunInfo and also have that provide
-        a different 'func' that calls into this method.  That's three
-        different places to override this one method: one for the
-        functionality (runDataRef), one to provide different input
-        (getRunInfo) and an (unfortunate) extra layer of indirection
-        required for multiprocessing support (runTask).
+        also going to want to provide a different RunnerClass for your
+        subclass.
 
         @param dataRef   Data reference to process
         @param doraise   Allow exceptions to float up?
@@ -164,15 +213,6 @@ class CmdLineTask(Task):
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
 
-
-    @classmethod
-    def useMultiProcessing(cls, parsedCmd):
-        """Determine whether we're using multiprocessing, based on the parsed command.
-        
-        @params[in] parsedCmd: parsed command
-        """
-        return getattr(parsedCmd, "processes", 1) > 1
-
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted
         """
@@ -182,16 +222,3 @@ class CmdLineTask(Task):
         """Return the name of the metadata dataset, or None if metadata is not persisted
         """
         return self._DefaultName + "_metadata"
-
-def runTask(parsedCmd):
-    """Run task, by forwarding to CmdLineTask._runDataRef.
-
-    This forwarding is necessary because multiprocessing requires
-    that the function used is picklable, which means it must be a
-    named function, rather than an anonymous function (lambda) or
-    method.
-    """
-    task = parsedCmd.cls(name = parsedCmd.cls._DefaultName, config=parsedCmd.config, log=parsedCmd.log)
-    task.writeConfig(parsedCmd.dataRef)
-    task.runDataRef(parsedCmd.dataRef, doraise=parsedCmd.doraise)
-    task.writeMetadata(parsedCmd.dataRef)
