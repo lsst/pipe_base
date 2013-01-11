@@ -41,6 +41,12 @@ class TaskRunner(object):
     def __init__(self, TaskClass, parsedCmd):
         """Constructor
 
+        We don't want to store parsedCmd here, as this instance
+        will be pickled and the parsedCmd may contain non-picklable
+        elements.  Furthermore, the parsedCmd contains the dataRefList
+        and we don't want to have each process re-instantiating the
+        entire dataRefList.
+
         @param TaskClass    The class we're to run
         @param parsedCmd    The parsed command-line arguments
         """
