@@ -53,7 +53,7 @@ class TaskRunner(object):
             self.prepareForMultiProcessing()
 
     def prepareForMultiProcessing(self):
-        self.parsedCmd.log = None
+        self.log = None
 
     def __call__(self, dataRef):
         """Run the Task on a single target.
