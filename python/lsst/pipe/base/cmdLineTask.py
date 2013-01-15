@@ -165,7 +165,7 @@ class CmdLineTask(Task):
     @classmethod
     def runParsedCmd(cls, parsedCmd):
         runner = cls.RunnerClass(cls, parsedCmd)
-        runner.run(parsedCmd)
+        return runner.run(parsedCmd)
 
     @classmethod
     def _makeArgumentParser(cls):
