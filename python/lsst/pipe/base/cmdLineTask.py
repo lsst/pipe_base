@@ -111,6 +111,8 @@ class TaskRunner(object):
         Note that whatever is returned by this method needs to be picklable in
         order to support multiprocessing.  Returning large structures is not
         advisable, due to the additional overhead of pickling and unpickling.
+        Because some Tasks have rather large return values (e.g., images),
+        this implementation does not return anything by default.
         """
         task = self.TaskClass(name=self.name, config=self.config, log=self.log)
         task.writeConfig(dataRef)
@@ -164,6 +166,11 @@ class CmdLineTask(Task):
 
     @classmethod
     def runParsedCmd(cls, parsedCmd):
+        """Run the task, using the results of the command-line parsing
+
+        @param parsedCmd   The argparse.Namespace output of the command-line parser
+        @return Results of running the task
+        """
         runner = cls.RunnerClass(cls, parsedCmd)
         return runner.run(parsedCmd)
 
