@@ -30,6 +30,8 @@ import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
+from .struct import Struct
+
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction",
         "DatasetArgument"]
 
@@ -66,27 +68,15 @@ class ArgumentParser(argparse.ArgumentParser):
       before I do this checking. Constructing a butler is slow, so I only want do it once,
       after parsing the command line, so as to catch syntax errors quickly.
     """
-    def __init__(self,
-        name,
-        usage = "%(prog)s input [options]",
-        datasetType = "raw",
-        dataRefLevel = None,
-    **kwargs):
+    def __init__(self, name, usage = "%(prog)s input [options]", **kwargs):
         """Construct an ArgumentParser
         
         @param name: name of top-level task; used to identify camera-specific override files
         @param usage: usage string
-        @param datasetType: dataset type appropriate to the task at hand;
-            this affects which data ID keys are recognized.
-            Set to an instance of DatasetArgument to accept this from the
-            command line
-        @param dataRefLevel: the level of the data references returned in dataRefList;
-            None uses the data mapper's default, which is usually sensor.
-            Warning: any value other than None is likely to be repository-specific.
         @param **kwargs: additional keyword arguments for argparse.ArgumentParser
         """
         self._name = name
-        self._dataRefLevel = dataRefLevel
+        self._identifiers = {} # Dict of data identifier specifications, by argument name
         argparse.ArgumentParser.__init__(self,
             usage = usage,
             fromfile_prefix_chars = '@',
@@ -110,16 +100,6 @@ class ArgumentParser(argparse.ArgumentParser):
             help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
         self.add_argument("--output",
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
-        self.add_argument("--id", nargs="*", action=IdValueAction,
-            help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
-        if isinstance(datasetType, DatasetArgument):
-            self._datasetType = None
-            self.add_argument("--datasettype", dest="datasetType",
-                required=datasetType.required,
-                help=datasetType.help,
-                default=datasetType.default)
-        else:
-            self._datasetType = datasetType
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -135,6 +115,55 @@ class ArgumentParser(argparse.ArgumentParser):
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
 
+    def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True):
+        """Add an argument to specify identifiers
+
+        The result after parsing is put in the attribute of 'namespace' specified
+        by 'name' (without any leading dashes; as is normally done for the
+        argparse.ArgumentParser) as a Struct, in which the data identifier
+        list is the 'idList' attribute and the data reference list is the 'refList'
+        attribute.
+
+        @param name: Name of the argument (typically prefixed with two dashes, e.g., "--id")
+        @param help: Help text (e.g., "data ID, e.g. --id visit=12345 ccd=1,2")
+        @param datasetType: Type of data set (e.g., "raw"), for construction of data references
+                            Set to an instance of DatasetArgument to accept this from the
+                            command line
+        @param level: Level for data reference (e.g., "sensor").  If None, uses the data mapper's
+                      default, which is usually sensor.  Warning: any value other than None is
+                      likely to be repository-specific.
+        @param doMakeDataRefList: Make data reference list from data identifiers?
+        """
+        self.add_argument(name, nargs="*", action=IdValueAction, help=help,
+                          metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        argName = name.lstrip("-")
+
+        if isinstance(datasetType, DatasetArgument):
+            self.add_argument(name + "-datasettype", dest=argName + "DatasetType", default=datasetType.default,
+                              required=datasetType.required, help=datasetType.help % argName)
+        self._identifiers[argName] = Struct(name=argName, datasetType=datasetType, level=level,
+                                            doMakeDataRefList=doMakeDataRefList)
+
+    def add_dynamic_id_argument(self, name, help, level=None, datasetDefault=None,
+                                datasetHelp="%s dataset type to process from input data repository",
+                                doMakeDataRefList=True):
+        """Add an argument to specify identifiers with user-specified dataset type
+
+        For more details, see add_id_argument
+
+        @param name: Name of the argument (typically prefixed with two dashes, e.g., "--id")
+        @param help: Help text (e.g., "data ID, e.g. --id visit=12345 ccd=1,2")
+        @param level: Level for data reference (e.g., "sensor").  If None, uses the data mapper's
+                      default, which is usually sensor.  Warning: any value other than None is
+                      likely to be repository-specific.
+        @param datasetDefault: Default dataset type, or None to force user to specify
+        @param datasetHelp: Help for dataset type argument; should contain a %%s for the id name
+        @param doMakeDataRefList: Make data reference list from data identifiers?
+        """
+        datasetType = DatasetArgument(datasetHelp, datasetDefault)
+        self.add_id_argument(self, name, datasetType, help, level, doMakeDataRefList)
+
+
     def parse_args(self, config, args=None, log=None, override=None):
         """Parse arguments for a pipeline task
 
@@ -149,11 +178,8 @@ class ArgumentParser(argparse.ArgumentParser):
         - camera: camera name
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
-        - datasetType: dataset type
-        - dataIdList: a list of data ID dicts
-        - dataRefList: a list of butler data references; each data reference is guaranteed to contain
-            data for the specified datasetType (though perhaps at a lower level than the specified level,
-            and if so, valid data may not exist for all valid sub-dataIDs)
+        - an entry for each of the identifiers registered by add_id_argument(),
+          the value of which is a Struct with public elements 'idList' and 'refList'
         - log: a pex_logging log
         - an entry for each command-line argument, with the following exceptions:
           - config is Config, not an override
@@ -175,23 +201,25 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.Namespace()
         namespace.config = config
         namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
-        namespace.dataIdList = []
         mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getEupsProductName()
-        namespace.datasetType = self._datasetType
+#        namespace.datasetType = self._datasetType
 
         self.handleCamera(namespace)
 
         self._applyInitialOverrides(namespace)
         if override is not None:
             override(namespace.config)
-        
+
+        # Initialise structs to hold data identifiers/references
+        for idName in self._identifiers.keys():
+            setattr(namespace, idName, Struct(idList=[], refList=[]))
+
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         namespace.input = inputRoot
         del namespace.configfile
-        del namespace.id
-        
+
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
@@ -208,16 +236,16 @@ class ArgumentParser(argparse.ArgumentParser):
             outputRoot = namespace.output,
         )
 
-        self._castDataIds(namespace)
+        # convert data in each of the identifier lists to proper types
+        # this is done after constructing the butler, hence after parsing the command line,
+        # because it takes a long time to construct a butler
+        for identName in self._identifiers.keys():
+            self._castDataIds(namespace, identName)
+            self._makeDataRefList(namespace, identName)
+            if "data" in namespace.show:
+                for dataRef in getattr(namespace, identName).refList:
+                    print identName + " dataRef.dataId =", dataRef.dataId
 
-        self._makeDataRefList(namespace)
-        if not namespace.dataRefList:
-            namespace.log.warn("No data found")
-        
-        if "data" in namespace.show:
-            for dataRef in namespace.dataRefList:
-                print "dataRef.dataId =", dataRef.dataId
-        
         if "exit" in namespace.show:
             sys.exit(0)
 
@@ -249,15 +277,19 @@ class ArgumentParser(argparse.ArgumentParser):
 
         return namespace
     
-    def _castDataIds(self, namespace):
+    def _castDataIds(self, namespace, identName):
         """Validate data IDs and cast them to the correct type
+
+        This operates on the namespace.<identName>.idList in-place.
         """
-        idKeyTypeDict = namespace.butler.getKeys(datasetType=namespace.datasetType, level=self._dataRefLevel)
+        identData = self._identifiers[identName]
+        dataIdList = getattr(namespace, identName).idList
+        idKeyTypeDict = namespace.butler.getKeys(datasetType=identData.datasetType, level=identData.level)
         
-        # convert data in namespace.dataIdList to proper types
+        # convert data in identData.idList to proper types
         # this is done after constructing the butler, hence after parsing the command line,
         # because it takes a long time to construct a butler
-        for dataDict in namespace.dataIdList:
+        for dataDict in dataIdList:
             for key, strVal in dataDict.iteritems():
                 try:
                     keyType = idKeyTypeDict[key]
@@ -271,29 +303,34 @@ class ArgumentParser(argparse.ArgumentParser):
                         self.error("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
     
-    def _makeDataRefList(self, namespace):
-        """Make namespace.dataRefList from namespace.dataIdList
+    def _makeDataRefList(self, namespace, identName):
+        """Make namespace.<identName>.dataRefList from namespace.<identName>.dataIdList
         
         useful because butler.subset is quite limited in what it supports
+
+        The results are placed in the namespace.<identName>.refList
         """
-        namespace.dataRefList = []
-        for dataId in namespace.dataIdList:
+        identData = self._identifiers[identName]
+        if not identData.doMakeDataRefList:
+            return
+        identValues = getattr(namespace, identName)
+        for dataId in identValues.idList:
             dataRefList = list(namespace.butler.subset(
-                datasetType = namespace.datasetType,
-                level = self._dataRefLevel,
+                datasetType = identData.datasetType,
+                level = identData.level,
                 dataId = dataId,
             ))
             # exclude nonexistent data (why doesn't subset support this?);
             # this is a recursive test, e.g. for the sake of "raw" data
             dataRefList = [dr for dr in dataRefList if dataExists(
                 butler = namespace.butler,
-                datasetType = namespace.datasetType,
+                datasetType = identData.datasetType,
                 dataRef = dr,
             )]
             if not dataRefList:
                 namespace.log.warn("No data found for dataId=%s" % (dataId,))
                 continue
-            namespace.dataRefList += dataRefList
+            identValues.refList += dataRefList
         
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
@@ -383,10 +420,10 @@ class ConfigFileAction(argparse.Action):
                 
 
 class IdValueAction(argparse.Action):
-    """argparse action callback to add one data ID dict to namespace.dataIdList
+    """argparse action callback to process a data ID into a dict
     """
     def __call__(self, parser, namespace, values, option_string):
-        """Parse --id data and append results to namespace.dataIdList
+        """Parse --id data and append results to namespace.<argument>.idList
         
         The data format is:
         key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
@@ -397,7 +434,7 @@ class IdValueAction(argparse.Action):
         
         The cross product is computed for keys with multiple values. For example:
             --id visit 1^2 ccd 1,1^2,2
-        results in the following data ID dicts being appended to namespace.dataIdList:
+        results in the following data ID dicts being appended to namespace.<argument>.idList:
             {"visit":1, "ccd":"1,1"}
             {"visit":2, "ccd":"1,1"}
             {"visit":1, "ccd":"2,2"}
@@ -423,7 +460,9 @@ class IdValueAction(argparse.Action):
         iterList = [idDict[key] for key in keyList]
         idDictList = [dict(zip(keyList, valList)) for valList in itertools.product(*iterList)]
 
-        namespace.dataIdList += idDictList
+        argName = option_string.lstrip("-")
+        ident = getattr(namespace, argName)
+        ident.idList += idDictList
 
 class TraceLevelAction(argparse.Action):
     """argparse action to set trace level"""

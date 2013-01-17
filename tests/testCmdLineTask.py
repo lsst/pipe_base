@@ -85,8 +85,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(retVal.resultList, [None])
         task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
-        self.assertEqual(len(parsedCmd.dataRefList), 1)
-        dataRef = parsedCmd.dataRefList[0]
+        self.assertEqual(len(parsedCmd.id.refList), 1)
+        dataRef = parsedCmd.id.refList[0]
         dataId = dataRef.dataId
         self.assertEqual(dataId["raft"], "0,3")
         self.assertEqual(dataId["sensor"], "1,1")

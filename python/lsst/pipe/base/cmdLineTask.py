@@ -105,7 +105,7 @@ class TaskRunner(object):
     def getTargetList(parsedCmd):
         """Return a list of targets (arguments for __call__); one entry per invocation
         """
-        return parsedCmd.dataRefList
+        return parsedCmd.id.refList
 
     def __call__(self, dataRef):
         """Run the Task on a single target.
@@ -207,9 +207,15 @@ class CmdLineTask(Task):
     def _makeArgumentParser(cls):
         """Create an argument parser
 
-        Subclasses may wish to override, e.g. to change the dataset type or data ref level
+        Subclasses may wish to override, e.g. to change the dataset type or data
+        ref level or add additional identifiers.  If additional identifiers are
+        added, you might also want to adjust the cls.RunnerClass.getTargetList()
+        method (and perhaps cls.RunnerClass.__call__()) to get additional data
+        into our runDataRef method.
         """
-        return ArgumentParser(name=cls._DefaultName)
+        parser = ArgumentParser(name=cls._DefaultName)
+        parser.add_id_argument("--id", "raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
+        return parser
 
     def writeConfig(self, dataRef):
         """Write the configuration used for processing the data"""
