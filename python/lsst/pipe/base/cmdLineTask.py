@@ -30,6 +30,16 @@ __all__ = ["CmdLineTask", "TaskRunner"]
 
 class TaskRunner(object):
     """Class whose instances will run a Task
+    
+    This version assumes your task has a method named runDataRef that has exactly
+    one argument: a data reference. If that is not the case for your task, you may
+    inherit from this class and override __call__ and getTargetList.
+    
+    __call__ could be made to support any runDataRef method by receiving and passing to runDataRef
+    an argument list (commonly named *args) and argument dict (commonly named **kwargs).
+    However, that requires pickling the argument list and argument dict for each invocation of __call__
+    It is more efficient to only pass those arguments to __call__ that runDataRef requires,
+    and thus make the user override both getTargetList and __call__.
 
     Instances must be picklable in order to be compatible
     with the use of multiprocessing in CmdLineTask.runParsedCmd.
@@ -37,19 +47,24 @@ class TaskRunner(object):
     run() method if multiprocessing is configured, which gives the
     opportunity to jettison optional non-picklable elements.
     """
-    def __init__(self, TaskClass, parsedCmd):
+    def __init__(self, TaskClass, parsedCmd, returnResults=False):
         """Constructor
 
         We don't want to store parsedCmd here, as this instance
-        will be pickled and the parsedCmd may contain non-picklable
-        elements.  Furthermore, the parsedCmd contains the dataRefList
+        will be pickled and parsedCmd may contain non-picklable
+        elements.  Furthermore, parsedCmd contains the dataRefList
         and we don't want to have each process re-instantiating the
         entire dataRefList.
 
         @param TaskClass    The class we're to run
         @param parsedCmd    The parsed command-line arguments
+        @param[in] returnResults    Return the collected results from each invocation of the task?
+            This is only intended for unit tests and similar use.
+            It can easily exhaust memory (if the task returns enough data and you call it enough times)
+            and it will fail when using multiprocessing if the returned data cannot be pickled.
         """
         self.TaskClass = TaskClass
+        self.returnResults = bool(returnResults)
         self.name = TaskClass._DefaultName
         self.config = parsedCmd.config
         self.log = parsedCmd.log
@@ -69,7 +84,7 @@ class TaskRunner(object):
         The task will be run under multiprocessing if configured; otherwise
         processing will be serial.
 
-        The task returns the list of results from the '__call__' method.
+        @return a list of results returned by __call__ (typically None unless returnResults is true).
         """
         if self.numProcesses > 1:
             try:
@@ -93,20 +108,16 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd):
-        """Provide the list of targets to be processed, based on the
-        command-line arguments.
-
-        The elements of the returned list will be processed by the '__call__'
-        method.
+        """Return a list of targets (arguments for __call__); one entry per invocation
         """
         return parsedCmd.dataRefList
 
     def __call__(self, dataRef):
         """Run the Task on a single target.
 
-        The target is the elements of the list returned by the 'getTargetList'
-        method.  Here, the target is assumed to be a dataRef, but subclasses may
-        override.
+        The argument(s) is/are one element of the list returned by getTargetList.
+        Here, the target is assumed to be a dataRef, but subclasses may override
+        (typically both __call__ and getTargetList).
 
         Note that whatever is returned by this method needs to be picklable in
         order to support multiprocessing.  Returning large structures is not
@@ -116,8 +127,15 @@ class TaskRunner(object):
         """
         task = self.TaskClass(name=self.name, config=self.config, log=self.log)
         task.writeConfig(dataRef)
-        task.runDataRef(dataRef, doraise=self.doraise)
+        results = task.runDataRef(dataRef, doraise=self.doraise)
         task.writeMetadata(dataRef)
+        
+        if self.returnResults:
+            return Struct(
+                dataRef = dataRef,
+                metadata = task.metadata,
+                results = results,
+            )
 
 
 class CmdLineTask(Task):
@@ -141,7 +159,7 @@ class CmdLineTask(Task):
         pass
 
     @classmethod
-    def parseAndRun(cls, args=None, config=None, log=None):
+    def parseAndRun(cls, args=None, config=None, log=None, returnResults=False):
         """Parse an argument list and run the command
 
         @param args: list of command-line arguments; if None use sys.argv
@@ -151,28 +169,20 @@ class CmdLineTask(Task):
         @return a Struct containing:
         - argumentParser: the argument parser
         - parsedCmd: the parsed command returned by argumentParser.parse_args
-        - task: the instantiated task
+        - results: results returned by cls.RunnerClass.run (cls.RunnerClass is TaskRunner by default).
         The return values are primarily for testing and debugging
         """
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
-        cls.runParsedCmd(parsedCmd)
+        runner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, returnResults=returnResults)
+        results = runner.run(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
-            )
-
-    @classmethod
-    def runParsedCmd(cls, parsedCmd):
-        """Run the task, using the results of the command-line parsing
-
-        @param parsedCmd   The argparse.Namespace output of the command-line parser
-        @return Results of running the task
-        """
-        runner = cls.RunnerClass(cls, parsedCmd)
-        return runner.run(parsedCmd)
+            results = results,
+        )
 
     @classmethod
     def _makeArgumentParser(cls):
