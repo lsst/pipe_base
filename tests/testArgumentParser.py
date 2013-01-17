@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # 
 # LSST Data Management System
-# Copyright 2008, 2009, 2010 LSST Corporation.
+# Copyright 2008-2013 LSST Corporation.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -50,6 +50,8 @@ class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
         self.ap = pipeBase.ArgumentParser(name="argumentParser")
+        self.ap.add_id_argument("--id", "raw", "help text")
+        self.ap.add_id_argument("--otherId", "raw", "more help")
         self.config = SampleConfig()
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -65,24 +67,45 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
-        self.assertEqual(len(namespace.dataRefList), 1)
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 1)
         
         namespace = self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
-        self.assertEqual(len(namespace.dataRefList), 0) # no data for this ID
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 0) # no data for this ID
         
+    def testOtherId(self):
+        """Test --other"""
+        # By itself
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = [DataPath, "--other", "raft=0,3", "sensor=1,1", "visit=85470982"],
+        )
+        self.assertEqual(len(namespace.otherId.idList), 1)
+        self.assertEqual(len(namespace.otherId.refList), 1)
+
+        # And together
+        namespace = self.ap.parse_args(
+            config = self.config,
+            args = [DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
+                    "--other", "raft=0,3", "sensor=0,1", "visit=85470982"],
+        )
+        self.assertEqual(len(namespace.id.idList), 1)
+        self.assertEqual(len(namespace.id.refList), 1)
+        self.assertEqual(len(namespace.otherId.idList), 1)
+        self.assertEqual(len(namespace.otherId.refList), 0) # no data for this ID
+
     def testIdCross(self):
         """Test --id cross product"""
         namespace = self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=0,0^0,1", "visit=85470982"],
         )
-        self.assertEqual(len(namespace.dataIdList), 6)
-        self.assertEqual(len(namespace.dataRefList), 2) # only have data for two of these
+        self.assertEqual(len(namespace.id.idList), 6)
+        self.assertEqual(len(namespace.id.refList), 2) # only have data for two of these
     
     def testConfigBasics(self):
         """Test --config"""
@@ -154,7 +177,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--configfile", "missingFile"],
         )
-    
+
     def testAtFile(self):
         """Test @file"""
         argPath = os.path.join(LocalDataPath, "args.txt")
@@ -162,7 +185,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "@%s" % (argPath,)],
         )
-        self.assertEqual(len(namespace.dataIdList), 1)
+        self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(namespace.config.floatItem, 4.7)
         self.assertEqual(namespace.config.strItem, "new value")
     

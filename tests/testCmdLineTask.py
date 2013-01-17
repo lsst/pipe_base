@@ -85,8 +85,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(retVal.resultList, [None])
         task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
-        self.assertEqual(len(parsedCmd.dataRefList), 1)
-        dataRef = parsedCmd.dataRefList[0]
+        self.assertEqual(len(parsedCmd.id.refList), 1)
+        dataRef = parsedCmd.id.refList[0]
         dataId = dataRef.dataId
         self.assertEqual(dataId["raft"], "0,3")
         self.assertEqual(dataId["sensor"], "1,1")
@@ -136,6 +136,76 @@ class CmdLineTaskTestCase(unittest.TestCase):
             self.assertEqual(result.taskRunner.numProcesses, 5 if TaskClass.canMultiprocess else 1)
         
 
+
+
+
+
+
+class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
+    """TaskRunner to get multiple identifiers down into a Task"""
+    @staticmethod
+    def getTargetList(parsedCmd):
+        """We want our Task to process one dataRef from each identifier at a time"""
+        return zip(parsedCmd.one.refList, parsedCmd.two.refList)
+
+    def __call__(self, target):
+        """Send results from the Task back so we can inspect
+
+        For this test case with obs_test, we know that the results are picklable
+        and small, so returning something is not a problem.
+        """
+        task = self.TaskClass(config=self.config, log=self.log)
+        return task.run(target)
+
+class TestMultipleIdTask(pipeBase.CmdLineTask):
+    _DefaultName = "multiple"
+    ConfigClass = pexConfig.Config
+    RunnerClass = TestMultipleIdTaskRunner
+
+    @classmethod
+    def _makeArgumentParser(cls):
+        """We want an argument parser that has multiple identifiers"""
+        parser = pipeBase.ArgumentParser(name=cls._DefaultName)
+        parser.add_id_argument("--one", "raw", "data identifier one", level="sensor")
+        parser.add_id_argument("--two", "raw", "data identifier two", level="sensor")
+        return parser
+
+    def run(self, data):
+        """Our Task just spits back what's in the dataRefs."""
+        oneRef = data[0]
+        twoRef = data[1]
+        return oneRef.get("raw", snap=0, channel="0,0"), twoRef.get("raw", snap=0, channel="0,0")
+
+
+class MultipleIdTaskTestCase(unittest.TestCase):
+    """A test case for CmdLineTask using multiple identifiers
+
+    Tests implementation of ticket 2144, and demonstrates how
+    to get results from multiple identifiers down into a Task.
+    """
+    def setUp(self):
+        os.environ.pop("PIPE_INPUT_ROOT", None)
+        os.environ.pop("PIPE_CALIB_ROOT", None)
+        os.environ.pop("PIPE_OUTPUT_ROOT", None)
+        self.outPath = tempfile.mkdtemp()
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.outPath)
+        except Exception:
+            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+        del self.outPath
+
+    def testMultiple(self):
+        """Test use of a CmdLineTask with multiple identifiers"""
+        args = [DataPath, "--output", self.outPath,
+                "--one", "raft=0,1", "sensor=1,0", "visit=85470982",
+                "--two", "raft=0,1", "sensor=1,1", "visit=85470982",
+                ]
+        retVal = TestMultipleIdTask.parseAndRun(args=args)
+        self.assertListEqual(retVal.resultList, [('110000/85470982', '111000/85470982')])
+
+
 def suite():
     """Return a suite containing all the test cases in this module.
     """
@@ -144,6 +214,7 @@ def suite():
     suites = []
 
     suites += unittest.makeSuite(CmdLineTaskTestCase)
+    suites += unittest.makeSuite(MultipleIdTaskTestCase)
     suites += unittest.makeSuite(utilsTests.MemoryTestCase)
 
     return unittest.TestSuite(suites)
