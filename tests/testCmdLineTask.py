@@ -48,8 +48,8 @@ class TestTask(pipeBase.CmdLineTask):
         self.dataRefList = []
         self.numProcessed = 0
 
-    def run(self, sensorRef):
-        self.dataRefList.append(sensorRef)
+    def run(self, dataRef):
+        self.dataRefList.append(dataRef)
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
         return pipeBase.Struct(
@@ -124,7 +124,6 @@ class CmdLineTaskTestCase(unittest.TestCase):
             "--id", "raft=0,3", "sensor=1,1", "visit=85470982"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
-        self.assertFalse(result.argDict["doRaise"])
         self.assertEqual(result.metadata.get("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
     
