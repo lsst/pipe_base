@@ -72,11 +72,9 @@ class TaskRunner(object):
         self.doRaise = bool(parsedCmd.doraise)
         self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
         if self.numProcesses > 1:
-            if not TaskClass.canMultiproccess():
+            if not TaskClass.canMultiprocess:
                 self.log.warn("This task does not support multiprocessing; using one process")
                 self.numProcesses = 1
-            else:
-                import multiprocessing
 
     def prepareForMultiProcessing(self):
         """Prepare this instance for multiprocessing by removing optional non-picklable elements.
@@ -91,6 +89,7 @@ class TaskRunner(object):
         @return a list of results returned by __call__ (typically None unless doReturnResults is true).
         """
         if self.numProcesses > 1:
+            import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
             mapFunc = pool.map
@@ -150,7 +149,13 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
+    # Specify the task runner class.
+    # You may use TaskRunner, the default, if your task has method runDataRef(dataRef, doRaise);
+    # otherwise you must use a version of TaskRunner specialized for your task.
     RunnerClass = TaskRunner
+
+    # Specify whether your task supports multiprocessing; most tasks do.
+    canMultiprocess = True
 
     @classmethod
     def applyOverrides(cls, config):
@@ -163,12 +168,6 @@ class CmdLineTask(Task):
         wiping out changes made in ConfigClass.setDefaults.  See LSST ticket #2282 for more discussion.
         """
         pass
-
-    @staticmethod
-    def canMultiproccess():
-        """Return True if this task supports multiprocessing, else False.
-        """
-        return True
 
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None, doReturnResults=False):
@@ -185,6 +184,7 @@ class CmdLineTask(Task):
         @return a Struct containing:
         - argumentParser: the argument parser
         - parsedCmd: the parsed command returned by argumentParser.parse_args
+        - taskRunner: the task runner used to run the task
         - resultList: results returned by cls.RunnerClass.run, one entry per invocation.
             This will typically be a list of None unless doReturnResults is True.
             see cls.RunnerClass (TaskRunner by default) for more information.
@@ -194,11 +194,12 @@ class CmdLineTask(Task):
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
-        runner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
-        resultList = runner.run(parsedCmd)
+        taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
+        resultList = taskRunner.run(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
+            taskRunner = taskRunner,
             resultList = resultList,
         )
 

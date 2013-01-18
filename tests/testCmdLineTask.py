@@ -56,10 +56,9 @@ class TestTask(pipeBase.CmdLineTask):
             numProcessed = self.numProcessed,
         )
 
-class NoMultiTask(TestTask):
+class NoMultiprocessTask(TestTask):
     """Version of TestTask that does not support multiprocessing"""
-    def canMultitask():
-        return False
+    canMultiprocess = False
 
 
 class CmdLineTaskTestCase(unittest.TestCase):
@@ -128,6 +127,14 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertFalse(result.argDict["doRaise"])
         self.assertEqual(result.metadata.get("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
+    
+    def testMultiprocess(self):
+        """Test multiprocessing at a very minimal level
+        """
+        for TaskClass in (TestTask, NoMultiprocessTask):
+            result = TaskClass.parseAndRun(args=[DataPath, "--output", self.outPath, 
+                "-j", "5", "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
+            self.assertEqual(result.taskRunner.numProcesses, 5 if TaskClass.canMultiprocess else 1)
         
 
 def suite():
