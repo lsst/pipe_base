@@ -103,7 +103,7 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd):
-        """Return a list of targets (argument dicts for __call__); one entry per invocation
+        """Return a list of targets (arguments for __call__); one entry per invocation
         """
         return parsedCmd.dataRefList
 
