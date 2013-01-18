@@ -29,53 +29,63 @@ from .argumentParser import ArgumentParser
 __all__ = ["CmdLineTask", "TaskRunner"]
 
 class TaskRunner(object):
-    """Class whose instances will run a Task
+    """Run a Task, using multiprocessing if requested.
+    
+    Each command-line task must have this task runner or a subclass as its RunnerClass.
+    See CmdLineTask.parseAndRun to see how a task runner is used.
+    
+    You may use this task runner for your command line task if your task has a run method
+    that takes exactly one argument: a butler data reference. Otherwise you must
+    provide a task-specific subclass of this runner for your task's RunnerClass
+    that overrides getTargetList and __call__.
 
-    Instances must be picklable in order to be compatible
-    with the use of multiprocessing in CmdLineTask.runParsedCmd.
-    The 'prepareForMultiProcessing' method will be called by the
-    run() method if multiprocessing is configured, which gives the
-    opportunity to jettison optional non-picklable elements.
+    Instances of this class must be picklable in order to be compatible with multiprocessing.
+    If multiprocessing is rquested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
+    to jettison optional non-picklable elements.
     """
-    def __init__(self, TaskClass, parsedCmd):
-        """Constructor
+    def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
+        """Construct a TaskRunner
+        
+        We don't store parsedCmd here, as this instance will be pickled (if multiprocessing)
+        and parsedCmd may contain non-picklable elements. Furthermore, parsedCmd contains the dataRefList
+        and we don't want to have each process re-instantiating the entire dataRefList.
 
-        We don't want to store parsedCmd here, as this instance
-        will be pickled and the parsedCmd may contain non-picklable
-        elements.  Furthermore, the parsedCmd contains the dataRefList
-        and we don't want to have each process re-instantiating the
-        entire dataRefList.
-
-        @param TaskClass    The class we're to run
-        @param parsedCmd    The parsed command-line arguments
+        @param TaskClass    The class of the task to run
+        @param parsedCmd    The parsed command-line arguments, as returned by the task's argument parser's
+                            parse_args method.
+        @param doReturnResults    Should run return the collected result from each invocation of the task?
+            This is only intended for unit tests and similar use.
+            It can easily exhaust memory (if the task returns enough data and you call it enough times)
+            and it will fail when using multiprocessing if the returned data cannot be pickled.
+        
+        @raise ImportError if multiprocessing requested (and the task supports it)
+        but the multiprocessing library cannot be imported.
         """
         self.TaskClass = TaskClass
-        self.name = TaskClass._DefaultName
+        self.doReturnResults = bool(doReturnResults)
         self.config = parsedCmd.config
         self.log = parsedCmd.log
-        self.doraise = parsedCmd.doraise
-        self.numProcesses = getattr(parsedCmd, 'processes', 1)
+        self.doRaise = bool(parsedCmd.doraise)
+        self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
+        if self.numProcesses > 1:
+            if not TaskClass.canMultiprocess:
+                self.log.warn("This task does not support multiprocessing; using one process")
+                self.numProcesses = 1
 
     def prepareForMultiProcessing(self):
-        """Prepare the instance for multiprocessing
-
-        This provides an opportunity to remove optional non-picklable elements.
+        """Prepare this instance for multiprocessing by removing optional non-picklable elements.
         """
         self.log = None
 
     def run(self, parsedCmd):
         """Run the task on all targets.
 
-        The task will be run under multiprocessing if configured; otherwise
-        processing will be serial.
+        The task is run under multiprocessing if numProcesses > 1; otherwise processing is serial.
 
-        The task returns the list of results from the '__call__' method.
+        @return a list of results returned by __call__; see __call__ for details.
         """
         if self.numProcesses > 1:
-            try:
-                import multiprocessing
-            except ImportError, e:
-                raise RuntimeError("Unable to import multiprocessing: %s" % e)
+            import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
             mapFunc = pool.map
@@ -83,41 +93,55 @@ class TaskRunner(object):
             pool = None
             mapFunc = map
 
-        results = mapFunc(self, self.getTargetList(parsedCmd))
+        resultList = mapFunc(self, self.getTargetList(parsedCmd))
 
         if pool is not None:
             pool.close()
             pool.join()
 
-        return results
+        return resultList
 
     @staticmethod
     def getTargetList(parsedCmd):
-        """Provide the list of targets to be processed, based on the
-        command-line arguments.
-
-        The elements of the returned list will be processed by the '__call__'
-        method.
+        """Return a list of targets (argument dicts for __call__); one entry per invocation
         """
         return parsedCmd.dataRefList
 
     def __call__(self, dataRef):
         """Run the Task on a single target.
+        
+        @param dataRef: butler data reference for task's run method
 
-        The target is the elements of the list returned by the 'getTargetList'
-        method.  Here, the target is assumed to be a dataRef, but subclasses may
-        override.
-
-        Note that whatever is returned by this method needs to be picklable in
-        order to support multiprocessing.  Returning large structures is not
-        advisable, due to the additional overhead of pickling and unpickling.
-        Because some Tasks have rather large return values (e.g., images),
-        this implementation does not return anything by default.
+        @warning if you override this method and wish to return something when doReturnResults is false,
+        then it must be picklable to support multiprocessing and it should be small enough that pickling
+        and unpickling do not add excessive overhead.
+        
+        @return:
+        - None if doReturnResults false
+        - A pipe_base Struct containing these fields if doReturnResults true:
+            - dataRef: the provided data reference
+            - metadata: task metadata after execution of runDataRef
+            - result: result returned by task runDataRef
         """
-        task = self.TaskClass(name=self.name, config=self.config, log=self.log)
+        task = self.TaskClass(config=self.config, log=self.log)
         task.writeConfig(dataRef)
-        task.runDataRef(dataRef, doraise=self.doraise)
+        if self.doRaise:
+            result = task.run(dataRef)
+        else:
+            try:
+                result = task.run(dataRef)
+            except Exception, e:
+                task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                if not isinstance(e, TaskError):
+                    traceback.print_exc(file=sys.stderr)
         task.writeMetadata(dataRef)
+        
+        if self.doReturnResults:
+            return Struct(
+                dataRef = dataRef,
+                metadata = task.metadata,
+                result = result,
+            )
 
 
 class CmdLineTask(Task):
@@ -126,7 +150,13 @@ class CmdLineTask(Task):
     Subclasses must specify the following attribute:
     _DefaultName: default name used for this task
     """
+    # Specify the task runner class.
+    # You may use TaskRunner, the default, if your task has method runDataRef(dataRef, doRaise);
+    # otherwise you must use a version of TaskRunner specialized for your task.
     RunnerClass = TaskRunner
+
+    # Specify whether your task supports multiprocessing; most tasks do.
+    canMultiprocess = True
 
     @classmethod
     def applyOverrides(cls, config):
@@ -141,38 +171,37 @@ class CmdLineTask(Task):
         pass
 
     @classmethod
-    def parseAndRun(cls, args=None, config=None, log=None):
+    def parseAndRun(cls, args=None, config=None, log=None, doReturnResults=False):
         """Parse an argument list and run the command
 
-        @param args: list of command-line arguments; if None use sys.argv
-        @param config: config for task (instance of pex_config Config); if None use cls.ConfigClass()
-        @param log: log (instance of pex_logging Log); if None use the default log
+        @param args     list of command-line arguments; if None use sys.argv
+        @param config   config for task (instance of pex_config Config); if None use cls.ConfigClass()
+        @param log      log (instance of pex_logging Log); if None use the default log
+        @param doReturnResults  Return the collected results from each invocation of the task?
+            This is only intended for unit tests and similar use.
+            It can easily exhaust memory (if the task returns enough data and you call it enough times)
+            and it will fail when using multiprocessing if the returned data cannot be pickled.
 
         @return a Struct containing:
         - argumentParser: the argument parser
         - parsedCmd: the parsed command returned by argumentParser.parse_args
-        - task: the instantiated task
-        The return values are primarily for testing and debugging
+        - taskRunner: the task runner used to run the task
+        - resultList: results returned by cls.RunnerClass.run, one entry per invocation.
+            This will typically be a list of None unless doReturnResults is True;
+            see cls.RunnerClass (TaskRunner by default) for more information.
         """
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
-        cls.runParsedCmd(parsedCmd)
+        taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
+        resultList = taskRunner.run(parsedCmd)
         return Struct(
             argumentParser = argumentParser,
             parsedCmd = parsedCmd,
-            )
-
-    @classmethod
-    def runParsedCmd(cls, parsedCmd):
-        """Run the task, using the results of the command-line parsing
-
-        @param parsedCmd   The argparse.Namespace output of the command-line parser
-        @return Results of running the task
-        """
-        runner = cls.RunnerClass(cls, parsedCmd)
-        return runner.run(parsedCmd)
+            taskRunner = taskRunner,
+            resultList = resultList,
+        )
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -199,26 +228,6 @@ class CmdLineTask(Task):
                 dataRef.put(self.getFullMetadata(), metadataName)
         except Exception, e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
-
-    def runDataRef(self, dataRef, doraise=False):
-        """Execute the task on the data reference
-
-        If you want to override this method with different inputs, you're
-        also going to want to provide a different RunnerClass for your
-        subclass.
-
-        @param dataRef   Data reference to process
-        @param doraise   Allow exceptions to float up?
-        """
-        if doraise:
-            self.run(dataRef)
-        else:
-            try:
-                self.run(dataRef)
-            except Exception, e:
-                self.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
-                if not isinstance(e, TaskError):
-                    traceback.print_exc(file=sys.stderr)
 
     def _getConfigName(self):
         """Return the name of the config dataset, or None if config is not persisted

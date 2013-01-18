@@ -48,11 +48,19 @@ class TestTask(pipeBase.CmdLineTask):
         self.dataRefList = []
         self.numProcessed = 0
 
-    def run(self, sensorRef):
-        self.dataRefList.append(sensorRef)
+    def run(self, dataRef):
+        self.dataRefList.append(dataRef)
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
-        
+        return pipeBase.Struct(
+            numProcessed = self.numProcessed,
+        )
+
+class NoMultiprocessTask(TestTask):
+    """Version of TestTask that does not support multiprocessing"""
+    canMultiprocess = False
+
+
 class CmdLineTaskTestCase(unittest.TestCase):
     """A test case for CmdLineTask
     """
@@ -74,6 +82,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """
         retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
             "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
+        self.assertEqual(retVal.resultList, [None])
         task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
         self.assertEqual(len(parsedCmd.dataRefList), 1)
@@ -107,6 +116,25 @@ class CmdLineTaskTestCase(unittest.TestCase):
         )
         self.assertEquals(retVal.parsedCmd.config.f, -99.9)
         self.assertTrue(retVal.parsedCmd.log is log)
+    
+    def testDoReturnResults(self):
+        """Test the doReturnResults flag
+        """
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
+            "--id", "raft=0,3", "sensor=1,1", "visit=85470982"], doReturnResults=True)
+        self.assertEqual(len(retVal.resultList), 1)
+        result = retVal.resultList[0]
+        self.assertEqual(result.metadata.get("numProcessed"), 1)
+        self.assertEqual(result.result.numProcessed, 1)
+    
+    def testMultiprocess(self):
+        """Test multiprocessing at a very minimal level
+        """
+        for TaskClass in (TestTask, NoMultiprocessTask):
+            result = TaskClass.parseAndRun(args=[DataPath, "--output", self.outPath, 
+                "-j", "5", "--id", "raft=0,3", "sensor=1,1", "visit=85470982"])
+            self.assertEqual(result.taskRunner.numProcesses, 5 if TaskClass.canMultiprocess else 1)
+        
 
 def suite():
     """Return a suite containing all the test cases in this module.
