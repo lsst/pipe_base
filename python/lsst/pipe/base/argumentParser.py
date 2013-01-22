@@ -139,7 +139,7 @@ class ArgumentParser(argparse.ArgumentParser):
         argName = name.lstrip("-")
 
         if isinstance(datasetType, DatasetArgument):
-            self.add_argument(name + "-datasettype", dest=argName + "DatasetType", default=datasetType.default,
+            self.add_argument(name + "-dstype", dest=argName + "DatasetType", default=datasetType.default,
                               required=datasetType.required, help=datasetType.help % argName)
         self._identifiers[argName] = Struct(name=argName, datasetType=datasetType, level=level,
                                             doMakeDataRefList=doMakeDataRefList)
