@@ -124,6 +124,9 @@ class ArgumentParser(argparse.ArgumentParser):
         list is the 'idList' attribute and the data reference list is the 'refList'
         attribute.
 
+        Given the potential for the confusing proliferation of command-line
+        arguments, it is recommended that id argument names end in "Id".
+
         @param name: Name of the argument (typically prefixed with two dashes, e.g., "--id")
         @param help: Help text (e.g., "data ID, e.g. --id visit=12345 ccd=1,2")
         @param datasetType: Type of data set (e.g., "raw"), for construction of data references
