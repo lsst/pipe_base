@@ -102,20 +102,32 @@ class TaskRunner(object):
         return resultList
 
     @staticmethod
-    def getTargetList(parsedCmd):
+    def getTargetList(parsedCmd, **kwargs):
         """Return a list of targets (arguments for __call__); one entry per invocation
+
+        The elements of the returned list will be processed by the '__call__'
+        method.
+
+        The default implementation returns a list of tuples (ref, kwargs).
+        This allows the Task.run method (which is called by the default
+        __call__) to take a data reference (called by any name) and then any
+        number of keyword arguments.  This matches the current typical use
+        pattern.
         """
-        return parsedCmd.id.refList
+        return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
-    def __call__(self, dataRef):
+    def __call__(self, args):
         """Run the Task on a single target.
-        
-        @param dataRef: butler data reference for task's run method
 
-        @warning if you override this method and wish to return something when doReturnResults is false,
-        then it must be picklable to support multiprocessing and it should be small enough that pickling
-        and unpickling do not add excessive overhead.
-        
+        This default implementation assumes that the 'args' is a tuple
+        containing a data reference and a dict of keyword arguments.
+
+        @warning if you override this method and wish to return something when
+        doReturnResults is false, then it must be picklable to support
+        multiprocessing and it should be small enough that pickling and
+        unpickling do not add excessive overhead.
+
+        @param args: Arguments for Task.run()
         @return:
         - None if doReturnResults false
         - A pipe_base Struct containing these fields if doReturnResults true:
@@ -123,13 +135,14 @@ class TaskRunner(object):
             - metadata: task metadata after execution of runDataRef
             - result: result returned by task runDataRef
         """
+        dataRef, kwargs = args
         task = self.TaskClass(config=self.config, log=self.log)
         task.writeConfig(dataRef)
         if self.doRaise:
-            result = task.run(dataRef)
+            result = task.run(dataRef, **kwargs)
         else:
             try:
-                result = task.run(dataRef)
+                result = task.run(dataRef, **kwargs)
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
                 if not isinstance(e, TaskError):
