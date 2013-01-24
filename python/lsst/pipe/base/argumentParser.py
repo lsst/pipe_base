@@ -79,12 +79,14 @@ class DataIdContainer(object):
     """Container for data identifiers"""
     def __init__(self, idData):
         """Construct from IdentifierData"""
-        self.name = idData.name
-        self.datasetType = idData.datasetType
-        self.level = idData.level
-        self.doMakeDataRefList = idData.doMakeDataRefList
+        self.idData = idData
         self.idList = []
         self.refList = []
+
+    def __getattr__(self, name):
+        """Forward some attribute requests to self.idData"""
+        if name in ("name", "datasetType", "level", "doMakeDataRefList"):
+            return getattr(self.idData, name)
 
     def isDynamicDatasetType(self):
         """Is the dataset type determined dynamically?"""
