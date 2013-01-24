@@ -68,4 +68,4 @@ class Struct(object):
     
     def __repr__(self):
         itemList = ["%s=%r" % (name, val) for name, val in self.getDict().iteritems()]
-        return "Struct(%s)" % ("; ".join(itemList))
+        return "%s(%s)" % (self.__class__.__name__, "; ".join(itemList))
