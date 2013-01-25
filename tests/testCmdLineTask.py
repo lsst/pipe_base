@@ -154,7 +154,7 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
         For this test case with obs_test, we know that the results are picklable
         and small, so returning something is not a problem.
         """
-        task = self.TaskClass(name=self.name, config=self.config, log=self.log)
+        task = self.TaskClass(config=self.config, log=self.log)
         return task.run(target)
 
 class TestMultipleIdTask(pipeBase.CmdLineTask):
@@ -203,7 +203,7 @@ class MultipleIdTaskTestCase(unittest.TestCase):
                 "--two", "raft=0,1", "sensor=1,1", "visit=85470982",
                 ]
         retVal = TestMultipleIdTask.parseAndRun(args=args)
-        self.assertListEqual(retVal.result, [('110000/85470982', '111000/85470982')])
+        self.assertListEqual(retVal.resultList, [('110000/85470982', '111000/85470982')])
 
 
 def suite():
