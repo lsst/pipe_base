@@ -37,7 +37,11 @@ class TaskRunner(object):
     You may use this task runner for your command line task if your task has a run method
     that takes exactly one argument: a butler data reference. Otherwise you must
     provide a task-specific subclass of this runner for your task's RunnerClass
-    that overrides getTargetList and __call__.
+    that overrides getTargetList and possibly __call__. See getTargetList for details.
+
+    This design matches the common pattern for command-line tasks: the run method takes a single
+    data reference, of some suitable name. Additional arguments are rare, and if present, require
+    a subclass of TaskRunner that calls these additional arguments by name.
 
     Instances of this class must be picklable in order to be compatible with multiprocessing.
     If multiprocessing is rquested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
@@ -46,9 +50,9 @@ class TaskRunner(object):
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """Construct a TaskRunner
         
-        We don't store parsedCmd here, as this instance will be pickled (if multiprocessing)
-        and parsedCmd may contain non-picklable elements. Furthermore, parsedCmd contains the dataRefList
-        and we don't want to have each process re-instantiating the entire dataRefList.
+        Do not store parsedCmd, as this instance is pickled (if multiprocessing) and parsedCmd may contain
+        non-picklable elements and it certainly contains more data than we need to send to each
+        iteration of the task.
 
         @param TaskClass    The class of the task to run
         @param parsedCmd    The parsed command-line arguments, as returned by the task's argument parser's
@@ -103,16 +107,35 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
-        """Return a list of targets (arguments for __call__); one entry per invocation
+        """Return a list of (dataRef, kwargs) to be used as arguments for __call__.
+        
+        @param parsedCmd the parsed command object returned by ArgumentParser.parse_args
+        @param **kwargs any additional keyword arguments. In the default TaskRunner
+        this is an empty dict, but having it simplifies overriding TaskRunner for tasks
+        whose run method takes additional arguments (see case (1) below).
+        
+        The default implementation of getTargetList and __call__ works for any task
+        that has a run method that takes exactly one argument: a data reference.
+        Otherwise you must provide a variant of TaskRunner that overrides getTargetList
+        and possibly __call__. There are two cases:
+        
+        (1) If your task has a run method that takes one data reference followed by additional arguments
+        then you need only override getTargetList to return the additional arguments an argument dict:
 
-        The elements of the returned list will be processed by the '__call__'
-        method.
-
-        The default implementation returns a list of tuples (ref, kwargs).
-        This allows the Task.run method (which is called by the default
-        __call__) to take a data reference (called by any name) and then any
-        number of keyword arguments.  This matches the current typical use
-        pattern.
+        @staticmethod
+        def getTargetList(parsedCmd):
+            return TaskRunner.getTargetList(parsedCmd, calExpList=parsedCmd.calexp.idList)
+        
+        which is equivalent to:
+        
+        @staticmethod
+        def getTargetList(parsedCmd):
+            argDict = dict(calExpList=parsedCmd.calexp.idList)
+            return [(dataId, argDict) for dataId in parsedCmd.id.idList]
+            
+        (2) If your task does not meet condition (1) then you must override both getTargetList
+        and __call__. You may do this however you see fit, so long as getTargetList returns
+        a list, each of whose elements is sent to __call__, which runs your task.
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
@@ -132,8 +155,8 @@ class TaskRunner(object):
         - None if doReturnResults false
         - A pipe_base Struct containing these fields if doReturnResults true:
             - dataRef: the provided data reference
-            - metadata: task metadata after execution of runDataRef
-            - result: result returned by task runDataRef
+            - metadata: task metadata after execution of run
+            - result: result returned by task run
         """
         dataRef, kwargs = args
         task = self.TaskClass(config=self.config, log=self.log)
@@ -161,14 +184,17 @@ class CmdLineTask(Task):
     """A task that can be executed from the command line
     
     Subclasses must specify the following attribute:
-    _DefaultName: default name used for this task
+    * ConfigClass: configuration class for your task (an instance of pex_config Config)
+    * _DefaultName: default name used for this task
+    
+    Subclasses may also specify the following attribute:
+    * RunnerClass: a task runner class. The default is TaskRunner, which works for any task
+      with a run method that takes exactly one argument: a data reference. If your task does
+      not meet this requirement then you must supply a variant of TaskRunner; see TaskRunner
+      for more information.
+    * canMultiprocess: the default is True; set False if your task does not support multiprocessing.
     """
-    # Specify the task runner class.
-    # You may use TaskRunner, the default, if your task has method runDataRef(dataRef, doRaise);
-    # otherwise you must use a version of TaskRunner specialized for your task.
     RunnerClass = TaskRunner
-
-    # Specify whether your task supports multiprocessing; most tasks do.
     canMultiprocess = True
 
     @classmethod
@@ -224,10 +250,10 @@ class CmdLineTask(Task):
         ref level or add additional identifiers.  If additional identifiers are
         added, you might also want to adjust the cls.RunnerClass.getTargetList()
         method (and perhaps cls.RunnerClass.__call__()) to get additional data
-        into our runDataRef method.
+        into our run method.
         """
         parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument("--id", "raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
+        parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
         return parser
 
     def writeConfig(self, dataRef):
