@@ -391,9 +391,9 @@ class IdValueAction(argparse.Action):
         The data format is:
         key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
 
-        The values (e.g. value1_1) may either be a string, or of the form "int...int" (e.g. "1..3")
+        The values (e.g. value1_1) may either be a string, or of the form "int..int" (e.g. "1..3")
         which is interpreted as "1^2^3" (inclusive, unlike a python range). So "0^2..4^7..9" is
-        equivalent to "0^2^3^4^7^8^9"
+        equivalent to "0^2^3^4^7^8^9".  You may also specify a stride: "1..5:2" is "1^3^5"
         
         The cross product is computed for keys with multiple values. For example:
             --id visit 1^2 ccd 1,1^2,2
@@ -410,11 +410,12 @@ class IdValueAction(argparse.Action):
             name, sep, valueStr = nameValue.partition("=")
             idDict[name] = []
             for v in valueStr.split("^"):
-                mat = re.search(r"^(\d+)\.\.(\d+)$", v)
+                mat = re.search(r"^(\d+)\.\.(\d+)(?::(\d+))?$", v)
                 if mat:
                     v1 = int(mat.group(1))
                     v2 = int(mat.group(2))
-                    for v in range(v1, v2 + 1):
+                    v3 = mat.group(3); v3 = int(v3) if v3 else 1
+                    for v in range(v1, v2 + 1, v3):
                         idDict[name].append(str(v))
                 else:
                     idDict[name].append(v)
