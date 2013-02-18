@@ -285,7 +285,7 @@ class ArgumentParser(argparse.ArgumentParser):
             datasetType = dataIdArgument.datasetType
             help = datasetType.help if datasetType.help else "dataset type for %s" % (name,)
             self.add_argument(
-                dataIdArgument.datasetTypeName,
+                "--" + dataIdArgument.datasetTypeName,
                 default = datasetType.default,
                 required = datasetType.required,
                 help = help,
