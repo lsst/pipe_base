@@ -32,7 +32,7 @@ import lsst.daf.persistence as dafPersist
 
 from .struct import Struct
 
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdArgument", "DatasetArgument"]
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DatasetArgument"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -121,8 +121,7 @@ class DataIdContainer(object):
 
 
 class DataIdArgument(object):
-    """Data ID argument
-    """
+    """Glorified struct for data about id arguments, used by ArgumentParser.add_id_argument"""
     def __init__(self, name, datasetType, level, doMakeDataRefList=True, ContainerClass=DataIdContainer):
         """Constructor
 
@@ -147,7 +146,7 @@ class DataIdArgument(object):
         if self.isDynamicDatasetType():
             self.datasetTypeName = datasetType.name if datasetType.name else self.name + "_dstype"
         else:
-            self.datasetTypeName = None        
+            self.datasetTypeName = None
 
     def isDynamicDatasetType(self):
         """Is the dataset type dynamic (specified on the command line)?"""
