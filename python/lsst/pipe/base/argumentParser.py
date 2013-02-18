@@ -98,16 +98,16 @@ class DataIdContainer(object):
                         raise TypeError("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
                     dataDict[key] = castVal
 
-    def makeDataRefList(self, butler, log):
+    def makeDataRefList(self, namespace):
         """Compute refList based on idList
         
         Not called if add_id_argument called with doMakeDataRef=False
         
-        @param butler: data butler
-        @param log: log (used to warn if no data found for a data ID)
+        @param namespace: results of parsing command-line (with 'butler' and 'log' elements)
         """
         if self.datasetType is None:
             raise RuntimeError("Must call setDatasetType first")
+        butler = namespace.butler
         for dataId in self.idList:
             refList = list(butler.subset(datasetType=self.datasetType, level=self.level, dataId=dataId))
             # exclude nonexistent data
@@ -115,7 +115,7 @@ class DataIdContainer(object):
             refList = [dr for dr in refList if dataExists(butler=butler, datasetType=self.datasetType,
                                                                   dataRef=dr)]
             if not refList:
-                log.warn("No data found for dataId=%s" % (dataId,))
+                namespace.log.warn("No data found for dataId=%s" % (dataId,))
                 continue
             self.refList += refList
 
@@ -429,7 +429,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 # whereas failure of makeDataRefList indicates a bug that wants a traceback
                 self.error(e)
             if dataIdArgument.doMakeDataRefList:
-                dataIdContainer.makeDataRefList(butler = namespace.butler, log = namespace.log)
+                dataIdContainer.makeDataRefList(namespace)
 
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
