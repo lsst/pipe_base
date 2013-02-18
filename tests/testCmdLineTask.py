@@ -20,6 +20,7 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import exceptions
 import os
 import shutil
 import unittest
@@ -39,6 +40,7 @@ else:
 
 class TestConfig(pexConfig.Config):
     f = pexConfig.Field(doc="test field", dtype=float, default=3.1)
+    exception = pexConfig.Field(doc="name of exception to raise", dtype=str, optional=True)
 
 class TestTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
@@ -49,6 +51,10 @@ class TestTask(pipeBase.CmdLineTask):
         self.numProcessed = 0
 
     def run(self, dataRef):
+        exceptionName = self.config.exception
+        if exceptionName:
+            exceptionClass = getattr(exceptions, exceptionName)
+            raise exceptionClass("I was told to raise exeption %s" % (exceptionName,))
         self.dataRefList.append(dataRef)
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
@@ -99,8 +105,29 @@ class CmdLineTaskTestCase(unittest.TestCase):
 #         self.assertEqual(config, task.config)
         metadata = dataRef.get("processCcd_metadata")
         self.assertEqual(metadata.get("processCcd.numProcessed"), 1)
-        
     
+    def testExceptions(self):
+        """Test what happens when a task's run method raises an exception
+        """
+        # raise an exception and continue from it
+        args = [DataPath, "--output", self.outPath, 
+            "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
+            "--config", "exception=Exception"]
+        TestTask.parseAndRun(args=args)
+
+        # raise an exception and halt due to --doraise
+        args = [DataPath, "--output", self.outPath, 
+            "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
+            "--config", "exception=Exception", "--doraise"]
+        self.assertRaises(Exception, TestTask.parseAndRun, args=args)
+
+        # raise MemoryError, which should halt even without --doraise
+        args = [DataPath, "--output", self.outPath, 
+            "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
+            "--config", "exception=MemoryError"]
+        self.assertRaises(MemoryError, TestTask.parseAndRun, args=args)
+
+        
     def testOverrides(self):
         """Test config and log override
         """

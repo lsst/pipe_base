@@ -130,6 +130,8 @@ class TaskRunner(object):
         else:
             try:
                 result = task.run(dataRef)
+            except MemoryError:
+                raise
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
                 if not isinstance(e, TaskError):
@@ -217,6 +219,8 @@ class CmdLineTask(Task):
             configName = self._getConfigName()
             if configName is not None:
                 dataRef.put(self.config, configName)
+        except MemoryError:
+            raise
         except Exception, e:
             self.log.warn("Could not persist config for dataId=%s: %s" % (dataRef.dataId, e,))
 
@@ -226,6 +230,8 @@ class CmdLineTask(Task):
             metadataName = self._getMetadataName()
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
+        except MemoryError:
+            raise
         except Exception, e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
 
