@@ -48,7 +48,10 @@ The first argument to a task must be the path to the input repository (or --help
 
 To shorten input, calib and output paths see \ref pipeBase_environmentVariables.
 
-Specify input data using <code>--id</code>; for details see \ref pipeBase_argumentParser_dataIDs
+Data is specified as <code>key=value</code> pairs for one of the data identifier arguments (typically
+ending in "Id"; when there is only one, it will typically be called <code>--id</code>); for details
+see \ref pipeBase_argumentParser_dataIDs .  If there is more than one data identifer argument, then the
+data identifiers are by default handled independently.
 
 You may show the config and/or data using <code>--show</code>. For example: <code>--show config data exit</code>
 will show the config and the data and then exit without running the task.
@@ -58,8 +61,8 @@ See \ref pipeBase_argumentParser_argumentFiles for details.
 
 \subsection pipeBase_argumentParser_dataIDs Specifying Data IDs
 
-The <code>--id</code> argument is used to specify IDs for input data. The ID keys depend on the camera
-and on the data product in question. For example for lsstSim, calibrated exposures
+The data identifier arguments are used to specify IDs for input and output data. The ID keys depend
+on the camera and on the data product in question. For example for lsstSim, calibrated exposures
 are identified by the following keys: <code>visit</code>, <code>filter</code>,
 <code>raft</code> and <code>sensor</code> (and a given visit has exactly one filter).
 
@@ -71,7 +74,8 @@ To specify multiple data IDs you may separate values with ^ (a character that do
 the unix command parser). The result is the outer product (all possible combinations). For example:
 - <code>--id visit=54123^55523 raft=1,1^2,1</code> specifies four IDs: visits 54123 and 55523 of rafts 1,1 and 2,1
 
-You may specify the --id argument as many times as you like. Each one is treated independently.
+By default (but depending on the application), you may specify a data identifier argument
+as many times as you like. Each one is treated independently.
 Thus the following example specifies all sensors for four combinations of visit and raft,
 plus all sensors for one raft of two other visits:
 - <code>--id visit=54123^55523 raft=1,1^2,1 --id visit=623459^293423 raft=0,0</code>
