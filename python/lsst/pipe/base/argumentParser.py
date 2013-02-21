@@ -30,8 +30,6 @@ import eups
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
-from .struct import Struct
-
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer", "DatasetArgument"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
