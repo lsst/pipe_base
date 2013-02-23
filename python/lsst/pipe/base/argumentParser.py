@@ -36,6 +36,7 @@ __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction",
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
 DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
+DEFAULT_RERUN_NAME = "PIPE_RERUN_ROOT"
 
 def _fixPath(defName, path):
     """Apply environment variable as default root, if present, and abspath
@@ -91,6 +92,8 @@ class ArgumentParser(argparse.ArgumentParser):
             usage = usage,
             fromfile_prefix_chars = '@',
             epilog = """Notes:
+* the --rerun option allows the input and output directories to be specified
+simultaneously, and relative to the same root.
 * --config, --configfile, --id, --trace and @file may appear multiple times;
     all values are used, in order left to right
 * @file reads command-line options from the specified file:
@@ -110,6 +113,8 @@ class ArgumentParser(argparse.ArgumentParser):
             help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
         self.add_argument("--output", dest="rawOutput",
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
+        self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
+            help="path to rerun data repository (need not exist), relative to $%s" % (DEFAULT_RERUN_NAME,))
         self.add_argument("--id", nargs="*", action=IdValueAction,
             help="data ID, e.g. --id visit=12345 ccd=1,2", metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
         if isinstance(datasetType, DatasetArgument):
@@ -171,6 +176,8 @@ class ArgumentParser(argparse.ArgumentParser):
         # where we put the processed output from running _fixPath on e.g. namespace.inputRaw.
         # We have to do input in advance because we need to get the mapper before parsing
         # the other arguments.
+        # Note that --rerun may change namespace.input, but if it does we verify that the
+        # new input has the same mapper class.
         namespace = argparse.Namespace()
         namespace.input = _fixPath(DEFAULT_INPUT_NAME, args[0])
         if not os.path.isdir(namespace.input):
@@ -199,6 +206,28 @@ class ArgumentParser(argparse.ArgumentParser):
         del namespace.rawInput
         del namespace.rawCalib
         del namespace.rawOutput
+
+        if namespace.rawRerun:
+            if namespace.output:
+                self.error("Error: cannot specify both --output and --rerun")
+            namespace.rerun = tuple(_fixPath(DEFAULT_RERUN_NAME, v) for v in namespace.rawRerun.split(":"))
+            modifiedInput = False
+            if len(namespace.rerun) == 2:
+                namespace.input, namespace.output = namespace.rerun
+                modifiedInput = True
+            elif len(namespace.rerun) == 1:
+                if os.path.exists(namespace.rerun[0]):
+                    namespace.input = namespace.rerun[0]  # also used as output since we don't set that
+                    modifiedInput = True
+                else:
+                    namespace.output = namespace.rerun[0]
+            else:
+                self.error("Error: invalid argument for --rerun: %s" % namespace.rerun)
+            if modifiedInput and dafPersist.Butler.getMapperClass(namespace.input) != mapperClass:
+                self.error("Error: input directory specified by --rerun must have the same mapper as INPUT")
+        else:
+            namespace.rerun = None
+        del namespace.rawRerun
         
         namespace.log.info("input=%s"  % (namespace.input,))
         namespace.log.info("calib=%s"  % (namespace.calib,))
