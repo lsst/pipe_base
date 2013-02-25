@@ -45,7 +45,7 @@ def logPairs(obj, pairs, logLevel=pexLog.Log.DEBUG):
         try:
             obj.metadata.add(name, value)
         except Exception, e:
-            obj.log.log(obj.log.FATAL, "%s.metadata.add(name=%r, value=%r) failed with error=%s" % \
+            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" % \
                 (type(obj).__name__, name, value, e))
         strList.append("%s=%s" % (name, value))
     obj.log.log(logLevel, "; ".join(strList))
@@ -72,26 +72,16 @@ def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
     obj.metadata.add(name = prefix + "Utc", value = utcStr) # log messages already have timestamps
     logPairs(obj = obj,
         pairs = [
-            (prefix + "CpuTime",  long(cpuTime)),
-            (prefix + "UTime",    long(res.ru_utime)),
-            (prefix + "STime",    long(res.ru_stime)),
-        ],
-        logLevel = logLevel,
-    )
-    logPairs(obj = obj,
-        pairs = [
-            (prefix + "MaxRss",   long(res.ru_maxrss)),
-            (prefix + "MinFlt",   long(res.ru_minflt)),
-            (prefix + "MajFlt",   long(res.ru_majflt)),
-        ],
-        logLevel = logLevel,
-    )
-    logPairs(obj = obj,
-        pairs = [
-            (prefix + "InBlock",  long(res.ru_inblock)),
-            (prefix + "OuBlock",  long(res.ru_oublock)),
-            (prefix + "NVCsw",    long(res.ru_nvcsw)),
-            (prefix + "NIvCsw",   long(res.ru_nivcsw)),
+            (prefix + "CpuTime", cpuTime),
+            (prefix + "UserTime", res.ru_utime),
+            (prefix + "SystemTime", res.ru_stime),
+            (prefix + "MaxResidentSetSize", long(res.ru_maxrss)),
+            (prefix + "MinorPageFaults", long(res.ru_minflt)),
+            (prefix + "MajorPageFaults", long(res.ru_majflt)),
+            (prefix + "BlockInputs", long(res.ru_inblock)),
+            (prefix + "BlockOutputs", long(res.ru_oublock)),
+            (prefix + "VoluntaryContextSwitches", long(res.ru_nvcsw)),
+            (prefix + "InvoluntaryContextSwitches", long(res.ru_nivcsw)),
         ],
         logLevel = logLevel,
     )
@@ -111,8 +101,9 @@ def timeMethod(func):
     Writes various measures of time and possibly memory usage to the task's metadata;
     all items are prefixed with the function name.
     
-    @warning This decorator only works with instance methods of Task (or any class with a metadata attribute
-      that supports add(name, value)).
+    @warning This decorator only works with instance methods of Task, or any class with these attributes:
+        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
+        * log: a pex_logging Log
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):

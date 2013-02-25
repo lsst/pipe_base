@@ -131,6 +131,11 @@ class Task(object):
         self.log = pexLog.Log(log, self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
+
+    def emptyMetadata(self):
+        """Empty metadata from this Task and all sub-Tasks."""
+        for subtask in self._taskDict.itervalues():
+            subtask.metadata = dafBase.PropertyList()
     
     def getFullMetadata(self):
         """Get metadata for all tasks
@@ -182,7 +187,7 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel = pexLog.Log.INFO):
+    def timer(self, name, logLevel = pexLog.Log.DEBUG):
         """Context manager to log performance data for an arbitrary block of code
         
         @param[in] name: name of code being timed;
