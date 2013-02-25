@@ -277,6 +277,7 @@ class ArgumentParser(argparse.ArgumentParser):
             datasetType = datasetType,
             level = level,
             doMakeDataRefList = doMakeDataRefList,
+            ContainerClass = ContainerClass,
         )
 
         if dataIdArgument.isDynamicDatasetType():
