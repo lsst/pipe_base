@@ -354,8 +354,14 @@ simultaneously, and relative to the same root.
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
         
-        namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
-        namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
+        if namespace.rawCalib:
+            namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
+        else:
+            namespace.calib = None
+        if namespace.rawOutput:
+            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
+        else:
+            namespace.output = None
         del namespace.rawInput
         del namespace.rawCalib
         del namespace.rawOutput
