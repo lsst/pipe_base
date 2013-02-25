@@ -282,6 +282,7 @@ simultaneously, and relative to the same root.
             datasetType = datasetType,
             level = level,
             doMakeDataRefList = doMakeDataRefList,
+            ContainerClass = ContainerClass,
         )
 
         if dataIdArgument.isDynamicDatasetType():
