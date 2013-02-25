@@ -269,7 +269,10 @@ class ArgumentParserTestCase(unittest.TestCase):
         os.environ["PIPE_RERUN_ROOT"] = os.path.join(LocalDataPath, "rerun")
         rerunPath1 = os.path.join(os.path.abspath(LocalDataPath), "rerun", "R1")
         rerunPath2 = os.path.join(os.path.abspath(LocalDataPath), "rerun", "R2")
-        shutil.rmtree(os.environ["PIPE_RERUN_ROOT"]) # don't want anything here before tests start
+        try:
+            shutil.rmtree(os.environ["PIPE_RERUN_ROOT"]) # don't want anything here before tests start
+        except:
+            pass
         # if --rerun is a single nonexistent directory, it's the output
         namespace = self.ap.parse_args(
             config = self.config,
