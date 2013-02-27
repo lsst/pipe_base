@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import sys
+import getpass
 
 import eups
 import lsst.pex.logging as pexLog
@@ -35,7 +36,6 @@ __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdCon
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
 DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
-DEFAULT_RERUN_NAME = "PIPE_RERUN_ROOT"
 
 def _fixPath(defName, path):
     """Apply environment variable as default root, if present, and abspath
@@ -224,14 +224,14 @@ simultaneously, and relative to the same root.
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
-        self.add_argument(metavar="INPUT", dest="rawInput",
+        self.add_argument(metavar="ROOT", dest="rawInput",
             help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
         self.add_argument("--calib", dest="rawCalib",
             help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
         self.add_argument("--output", dest="rawOutput",
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
-            help="path to rerun data repository (need not exist), relative to $%s" % (DEFAULT_RERUN_NAME,))
+            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; optionally sets ROOT to ROOT/rerun/INPUT")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -363,14 +363,14 @@ simultaneously, and relative to the same root.
             namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
         else:
             namespace.output = None
-        del namespace.rawInput
-        del namespace.rawCalib
-        del namespace.rawOutput
+            if namespace.rawRerun is None:
+                namespace.rawRerun = getpass.getuser()
 
         if namespace.rawRerun:
             if namespace.output:
                 self.error("Error: cannot specify both --output and --rerun")
-            namespace.rerun = tuple(_fixPath(DEFAULT_RERUN_NAME, v) for v in namespace.rawRerun.split(":"))
+            namespace.rerun = tuple(os.path.join(namespace.input, "rerun", v)
+                                    for v in namespace.rawRerun.split(":"))
             modifiedInput = False
             if len(namespace.rerun) == 2:
                 namespace.input, namespace.output = namespace.rerun
@@ -387,6 +387,9 @@ simultaneously, and relative to the same root.
                 self.error("Error: input directory specified by --rerun must have the same mapper as INPUT")
         else:
             namespace.rerun = None
+        del namespace.rawInput
+        del namespace.rawCalib
+        del namespace.rawOutput
         del namespace.rawRerun
         
         namespace.log.info("input=%s"  % (namespace.input,))
