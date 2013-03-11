@@ -21,7 +21,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import os
-import shutil
 import unittest
 import warnings
 
@@ -57,7 +56,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ.pop("PIPE_OUTPUT_ROOT", None)
-        os.environ.pop("PIPE_RERUN_ROOT", None)
     
     def tearDown(self):
         del self.ap
@@ -138,7 +136,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--config", "missingItem=-67.1"],
         )
-
+    
     def testShow(self):
         """Make sure that show doesn't crash"""
         namespace = self.ap.parse_args(
@@ -250,8 +248,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, None)
-        self.assertEqual(namespace.output, None)
-        self.assertEqual(namespace.rerun, None)
 
         os.environ["PIPE_CALIB_ROOT"] = DataPath
         namespace = self.ap.parse_args(
@@ -260,80 +256,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, os.path.abspath(DataPath))
-        self.assertEqual(namespace.output, None)
-        self.assertEqual(namespace.rerun, None)
-        
-        os.environ.pop("PIPE_CALIB_ROOT", None)
-        os.environ["PIPE_OUTPUT_ROOT"] = DataPath
-        namespace = self.ap.parse_args(
-            config = self.config,
-            args = ["."],
-        )
-        self.assertEqual(namespace.input, os.path.abspath(DataPath))
-        self.assertEqual(namespace.calib, None)
-        self.assertEqual(namespace.output, os.path.abspath(DataPath))
-        self.assertEqual(namespace.rerun, None)
-        
-        # unlike the other args, we only use $PIPE_RERUN_ROOT if the user
-        # actually passes --rerun
-        os.environ.pop("PIPE_OUTPUT_ROOT", None)
-        os.environ["PIPE_RERUN_ROOT"] = DataPath
-        namespace = self.ap.parse_args(
-            config = self.config,
-            args = ["."],
-        )
-        self.assertEqual(namespace.input, os.path.abspath(DataPath))
-        self.assertEqual(namespace.calib, None)
-        self.assertEqual(namespace.output, None)
-        self.assertEqual(namespace.rerun, None)
-
-    def testRerun(self):
-        """Test the various features of the --rerun argument"""
-        os.environ["PIPE_RERUN_ROOT"] = os.path.join(LocalDataPath, "rerun")
-        rerunPath1 = os.path.join(os.path.abspath(LocalDataPath), "rerun", "R1")
-        rerunPath2 = os.path.join(os.path.abspath(LocalDataPath), "rerun", "R2")
-        try:
-            shutil.rmtree(os.environ["PIPE_RERUN_ROOT"]) # don't want anything here before tests start
-        except:
-            pass
-        # if --rerun is a single nonexistent directory, it's the output
-        namespace = self.ap.parse_args(
-            config = self.config,
-            args = [DataPath, "--rerun", "R1"],
-        )
-        self.assertEqual(namespace.input, os.path.abspath(DataPath))
-        self.assertEqual(namespace.output, rerunPath1)
-        self.assertEqual(namespace.rerun, (rerunPath1,))
-        # if --rerun is a single pre-existing directory, it's the input (and implicitly the output)
-        os.makedirs(rerunPath1)
-        os.symlink(os.path.abspath(DataPath), os.path.join(rerunPath1, "_parent"))
-        namespace = self.ap.parse_args(
-            config = self.config,
-            args = [DataPath, "--rerun", "R1"],
-        )
-        self.assertEqual(namespace.input, rerunPath1)
-        self.assertEqual(namespace.output, None)
-        self.assertEqual(namespace.rerun, (rerunPath1,))
-        # if --rerun is a pair, it's input:output
-        namespace = self.ap.parse_args(
-            config = self.config,
-            args = [DataPath, "--rerun", "R1:R2"],
-        )
-        self.assertEqual(namespace.input, rerunPath1)
-        self.assertEqual(namespace.output, rerunPath2)
-        self.assertEqual(namespace.rerun, (rerunPath1,rerunPath2))
-        # cleanup
-        os.unlink(os.path.join(rerunPath1, "_parent"))
-        os.rmdir(rerunPath1)
-        
-        # test error conditions
-        self.assertRaises(SystemExit, self.ap.parse_args, config = self.config,
-                          args = [DataPath, "--rerun", "R1:R2", "--output", "foo"],
-                          )
-        self.assertRaises(Exception, self.ap.parse_args, config = self.config,
-                          args = [DataPath, "--rerun", "foo:R2"],
-                          )
-
 
 def suite():
     utilsTests.init()

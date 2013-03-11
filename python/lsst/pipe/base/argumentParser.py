@@ -355,10 +355,7 @@ simultaneously, and relative to the same root.
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
         
-        if namespace.rawCalib:
-            namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
-        else:
-            namespace.calib = None
+        namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
         if namespace.rawOutput:
             namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
         else:
