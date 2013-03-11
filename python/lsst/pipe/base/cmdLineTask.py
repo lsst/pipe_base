@@ -130,7 +130,10 @@ class TaskRunner(object):
         else:
             try:
                 result = task.run(dataRef)
-            except MemoryError:
+            except (MemoryError, SystemExit):
+                # Try to print a traceback and then give up. Catch SystemExit because in our SWIGged
+                # C++ code bad_alloc raises SystemExit to avoid being caught by "except Exception"
+                traceback.print_exc(file=sys.stderr)
                 raise
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -219,8 +222,6 @@ class CmdLineTask(Task):
             configName = self._getConfigName()
             if configName is not None:
                 dataRef.put(self.config, configName)
-        except MemoryError:
-            raise
         except Exception, e:
             self.log.warn("Could not persist config for dataId=%s: %s" % (dataRef.dataId, e,))
 
@@ -230,8 +231,6 @@ class CmdLineTask(Task):
             metadataName = self._getMetadataName()
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
-        except MemoryError:
-            raise
         except Exception, e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
 
