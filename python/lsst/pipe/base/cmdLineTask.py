@@ -163,10 +163,12 @@ class TaskRunner(object):
         task = self.TaskClass(config=self.config, log=self.log)
         if self.doRaise:
             task.writeConfig(dataRef, clobber=self.clobberConfig)
+            task.writeSchemas(dataRef)
             result = task.run(dataRef, **kwargs)
         else:
             try:
                 task.writeConfig(dataRef, clobber=self.clobberConfig)
+                task.writeSchemas(dataRef)
                 result = task.run(dataRef, **kwargs)
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -281,6 +283,11 @@ class CmdLineTask(Task):
                     )
         else:
             dataRef.put(self.config, configName)
+
+    def writeSchemas(self, dataRef):
+        """Write any catalogs returned by getSchemaCatalogs()."""
+        for dataset, catalog in self.getSchemaCatalogs().iteritems():
+            dataRef.put(catalog, dataset + "_schema")
 
     def writeMetadata(self, dataRef):
         """Write the metadata produced from processing the data"""
