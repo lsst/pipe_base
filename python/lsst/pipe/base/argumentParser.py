@@ -218,7 +218,6 @@ class ArgumentParser(argparse.ArgumentParser):
 * To specify multiple values for an option, do not use = after the option name:
     * wrong: --configfile=foo bar
     * right: --configfile foo bar
-* The need to specify camera is temporary
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
