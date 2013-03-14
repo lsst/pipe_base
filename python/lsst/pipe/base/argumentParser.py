@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import sys
+import shutil
 
 import eups
 import lsst.pex.logging as pexLog
@@ -241,6 +242,12 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
+        self.add_argument("--clobber-repo", action="store_true", dest="clobberRepo", default=False,
+                          help=("remove and re-create the output directory if it already exists"
+                                " (not compatible with -j or any other form of parallel processing)"))
+        self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
+                          help=("backup and then overwrite existing config files instead of checking them"
+                                " (not compatible with -j or any other form of parallel processing)"))
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
@@ -346,9 +353,21 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.input = inputRoot
         del namespace.configfile
 
+        if namespace.processes > 1 and (namespace.clobberRepo or namespace.clobberConfig):
+            self.error("--clobber commands are not compatible with multiprocessing")
+
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
+        if namespace.clobberRepo:
+            if namespace.output is None:
+                self.error("--clobber-repo is only valid with --output")
+            elif namespace.output == namespace.input:
+                self.error("--clobber-repo is not valid when the output and input repos are the same")
+            if os.path.exists(namespace.output):
+                namespace.log.info("Removing output repo %s for --clobber-repo" % namespace.output)
+                shutil.rmtree(namespace.output)
+
         namespace.log.info("input=%s"  % (namespace.input,))
         namespace.log.info("calib=%s"  % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
