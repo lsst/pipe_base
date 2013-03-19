@@ -22,6 +22,8 @@
 import sys
 import traceback
 
+import lsst.afw.table as afwTable
+
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
@@ -168,7 +170,7 @@ class TaskRunner(object):
         else:
             try:
                 task.writeConfig(dataRef, clobber=self.clobberConfig)
-                task.writeSchemas(dataRef)
+                task.writeSchemas(dataRef, clobber=self.clobberConfig)
                 result = task.run(dataRef, **kwargs)
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -268,7 +270,7 @@ class CmdLineTask(Task):
         if configName is None:
             return
         if clobber:
-            dataRef.put(self.config, configName, backup=True)
+            dataRef.put(self.config, configName, doBackup=True)
         elif dataRef.datasetExists(configName):
             # this may be subject to a race condition, but I don't think we care - if
             # another process creates a config just after we look for it, we don't really
@@ -284,10 +286,22 @@ class CmdLineTask(Task):
         else:
             dataRef.put(self.config, configName)
 
-    def writeSchemas(self, dataRef):
+    def writeSchemas(self, dataRef, clobber=False):
         """Write any catalogs returned by getSchemaCatalogs()."""
-        for dataset, catalog in self.getSchemaCatalogs().iteritems():
-            dataRef.put(catalog, dataset + "_schema")
+        for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
+            schemaDataset = dataset + "_schema"
+            if clobber:
+                dataRef.put(catalog, schemaDataset, doBackup=True)
+            elif dataRef.datasetExists(schemaDataset):
+                oldSchema = dataRef.get(schemaDataset, immediate=True).getSchema()
+                if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
+                    raise TaskError(
+                        "New schema does not match schema on disk for %r; schemas must be "
+                        " consistent within the same output repo (override with --clobber-config)"
+                        % dataset
+                        )
+            else:
+                dataRef.put(catalog, schemaDataset)
 
     def writeMetadata(self, dataRef):
         """Write the metadata produced from processing the data"""
