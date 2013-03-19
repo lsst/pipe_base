@@ -22,6 +22,8 @@
 import sys
 import traceback
 
+import lsst.afw.table as afwTable
+
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
@@ -70,6 +72,7 @@ class TaskRunner(object):
         self.config = parsedCmd.config
         self.log = parsedCmd.log
         self.doRaise = bool(parsedCmd.doraise)
+        self.clobberConfig = bool(parsedCmd.clobberConfig)
         self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
         if self.numProcesses > 1:
             if not TaskClass.canMultiprocess:
@@ -160,11 +163,14 @@ class TaskRunner(object):
         """
         dataRef, kwargs = args
         task = self.TaskClass(config=self.config, log=self.log)
-        task.writeConfig(dataRef)
         if self.doRaise:
+            task.writeConfig(dataRef, clobber=self.clobberConfig)
+            task.writeSchemas(dataRef)
             result = task.run(dataRef, **kwargs)
         else:
             try:
+                task.writeConfig(dataRef, clobber=self.clobberConfig)
+                task.writeSchemas(dataRef, clobber=self.clobberConfig)
                 result = task.run(dataRef, **kwargs)
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -256,14 +262,46 @@ class CmdLineTask(Task):
         parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
         return parser
 
-    def writeConfig(self, dataRef):
-        """Write the configuration used for processing the data"""
-        try:
-            configName = self._getConfigName()
-            if configName is not None:
-                dataRef.put(self.config, configName)
-        except Exception, e:
-            self.log.warn("Could not persist config for dataId=%s: %s" % (dataRef.dataId, e,))
+    def writeConfig(self, dataRef, clobber=False):
+        """Write the configuration used for processing the data, or check that an existing
+        one is equal to the new one if present.
+        """
+        configName = self._getConfigName()
+        if configName is None:
+            return
+        if clobber:
+            dataRef.put(self.config, configName, doBackup=True)
+        elif dataRef.datasetExists(configName):
+            # this may be subject to a race condition, but I don't think we care - if
+            # another process creates a config just after we look for it, we don't really
+            # want to look at it, because that other process is almost certainly running
+            # with the exact same config anyhow.
+            oldConfig = dataRef.get(configName, immediate=True)
+            output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
+            if not self.config.compare(oldConfig, shortcut=False, output=output):
+                raise TaskError(
+                    "Config does match existing config on disk for this task; tasks configurations "
+                    "must be consistent within the same output repo (override with --clobber-config)"
+                    )
+        else:
+            dataRef.put(self.config, configName)
+
+    def writeSchemas(self, dataRef, clobber=False):
+        """Write any catalogs returned by getSchemaCatalogs()."""
+        for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
+            schemaDataset = dataset + "_schema"
+            if clobber:
+                dataRef.put(catalog, schemaDataset, doBackup=True)
+            elif dataRef.datasetExists(schemaDataset):
+                oldSchema = dataRef.get(schemaDataset, immediate=True).getSchema()
+                if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
+                    raise TaskError(
+                        "New schema does not match schema on disk for %r; schemas must be "
+                        " consistent within the same output repo (override with --clobber-config)"
+                        % dataset
+                        )
+            else:
+                dataRef.put(catalog, schemaDataset)
 
     def writeMetadata(self, dataRef):
         """Write the metadata produced from processing the data"""
