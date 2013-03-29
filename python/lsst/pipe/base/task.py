@@ -267,7 +267,7 @@ but the sizes are doubled
 
         if exposure:
             if isinstance(exposure, list):
-                raise runtimeError("exposure may not be a list")
+                raise RuntimeError("exposure may not be a list")
             mi = exposure.getMaskedImage()
             ds9.mtv(exposure, frame=frame, title=name)
             x0, y0 = mi.getX0(), mi.getY0()
