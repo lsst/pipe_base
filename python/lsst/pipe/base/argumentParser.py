@@ -380,7 +380,8 @@ simultaneously, and relative to the same root.
                 modifiedInput = True
             elif len(namespace.rerun) == 1:
                 if os.path.exists(namespace.rerun[0]):
-                    namespace.input = namespace.rerun[0]  # also used as output since we don't set that
+                    namespace.output = namespace.rerun[0]
+                    namespace.input = os.path.realpath(os.path.join(namespace.rerun[0], "_parent"))
                     modifiedInput = True
                 else:
                     namespace.output = namespace.rerun[0]
@@ -400,7 +401,7 @@ simultaneously, and relative to the same root.
         
         if namespace.clobberRepo:
             if namespace.output is None:
-                self.error("--clobber-repo is only valid with --output")
+                self.error("--clobber-repo is only valid with --output or --rerun")
             elif namespace.output == namespace.input:
                 self.error("--clobber-repo is not valid when the output and input repos are the same")
             if os.path.exists(namespace.output):
