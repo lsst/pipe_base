@@ -242,11 +242,11 @@ class ArgumentParser(argparse.ArgumentParser):
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-repo", action="store_true", dest="clobberRepo", default=False,
-                          help=("remove and re-create the output directory if it already exists"
-                                " (not compatible with -j or any other form of parallel processing)"))
+                          help=("remove and re-create the output directory if it already exists "
+                                "(safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
-                          help=("backup and then overwrite existing config files instead of checking them"
-                                " (not compatible with -j or any other form of parallel processing)"))
+                          help=("backup and then overwrite existing config files instead of checking them "
+                                "(safe with -j, but not all other forms of parallel execution)"))
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
@@ -351,9 +351,6 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         namespace.input = inputRoot
         del namespace.configfile
-
-        if namespace.processes > 1 and (namespace.clobberRepo or namespace.clobberConfig):
-            self.error("--clobber commands are not compatible with multiprocessing")
 
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
