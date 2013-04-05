@@ -247,11 +247,9 @@ simultaneously, and relative to the same root.
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-repo", action="store_true", dest="clobberRepo", default=False,
-                          help=("remove and re-create the output directory if it already exists"
-                                " (not compatible with -j or any other form of parallel processing)"))
+                          help="remove and re-create the output directory if it already exists")
         self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
-                          help=("backup and then overwrite existing config files instead of checking them"
-                                " (not compatible with -j or any other form of parallel processing)"))
+                          help="backup and then overwrite existing config files instead of checking them")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
@@ -395,9 +393,6 @@ simultaneously, and relative to the same root.
         del namespace.rawCalib
         del namespace.rawOutput
         del namespace.rawRerun
-
-        if namespace.processes > 1 and (namespace.clobberRepo or namespace.clobberConfig):
-            self.error("--clobber commands are not compatible with multiprocessing")
         
         if namespace.clobberRepo:
             if namespace.output is None:
