@@ -241,7 +241,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
-        self.add_argument("--clobber-repo", action="store_true", dest="clobberRepo", default=False,
+        self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
                           help=("remove and re-create the output directory if it already exists "
                                 "(safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
@@ -355,13 +355,13 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
         
-        if namespace.clobberRepo:
+        if namespace.clobberOutput:
             if namespace.output is None:
-                self.error("--clobber-repo is only valid with --output")
+                self.error("--clobber-output is only valid with --output")
             elif namespace.output == namespace.input:
-                self.error("--clobber-repo is not valid when the output and input repos are the same")
+                self.error("--clobber-output is not valid when the output and input repos are the same")
             if os.path.exists(namespace.output):
-                namespace.log.info("Removing output repo %s for --clobber-repo" % namespace.output)
+                namespace.log.info("Removing output repo %s for --clobber-output" % namespace.output)
                 shutil.rmtree(namespace.output)
 
         namespace.log.info("input=%s"  % (namespace.input,))
