@@ -56,6 +56,11 @@ class TestTask(pipeBase.CmdLineTask):
             numProcessed = self.numProcessed,
         )
 
+    def writeConfig(self, butler, clobber=False):
+        # Turn off config saving, because the obs_test mapper can't handle it without
+        # putting our test config in an importable location.
+        pass
+
 class NoMultiprocessTask(TestTask):
     """Version of TestTask that does not support multiprocessing"""
     canMultiprocess = False
@@ -147,6 +152,11 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
     def getTargetList(parsedCmd):
         """We want our Task to process one dataRef from each identifier at a time"""
         return zip(parsedCmd.one.refList, parsedCmd.two.refList)
+
+    def precall(self, parsedCmd):
+        # Turn off config saving, because the obs_test mapper can't handle it without
+        # putting our test config in an importable location.
+        pass
 
     def __call__(self, target):
         """Send results from the Task back so we can inspect
