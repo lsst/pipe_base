@@ -46,7 +46,7 @@ class TaskRunner(object):
     a subclass of TaskRunner that calls these additional arguments by name.
 
     Instances of this class must be picklable in order to be compatible with multiprocessing.
-    If multiprocessing is rquested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
+    If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
     to jettison optional non-picklable elements.
     """
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
@@ -100,6 +100,7 @@ class TaskRunner(object):
             pool = None
             mapFunc = map
 
+        self.precall(parsedCmd)
         resultList = mapFunc(self, self.getTargetList(parsedCmd))
 
         if pool is not None:
@@ -142,6 +143,19 @@ class TaskRunner(object):
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
+    def precall(self, parsedCmd):
+        """Hook for code that should run exactly once, before multiprocessing is invoked.
+
+        Implementations must take care to ensure that no unpicklable attributes are added to
+        the TaskRunner itself.
+
+        The default implementation writes schemas and configs (and compares them to existing
+        files on disk if present).
+        """
+        task = self.TaskClass(config=self.config, log=self.log)
+        task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
+        task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
+
     def __call__(self, args):
         """Run the Task on a single target.
 
@@ -164,13 +178,9 @@ class TaskRunner(object):
         dataRef, kwargs = args
         task = self.TaskClass(config=self.config, log=self.log)
         if self.doRaise:
-            task.writeConfig(dataRef, clobber=self.clobberConfig)
-            task.writeSchemas(dataRef)
             result = task.run(dataRef, **kwargs)
         else:
             try:
-                task.writeConfig(dataRef, clobber=self.clobberConfig)
-                task.writeSchemas(dataRef, clobber=self.clobberConfig)
                 result = task.run(dataRef, **kwargs)
             except Exception, e:
                 task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -262,7 +272,7 @@ class CmdLineTask(Task):
         parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
         return parser
 
-    def writeConfig(self, dataRef, clobber=False):
+    def writeConfig(self, butler, clobber=False):
         """Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
         """
@@ -270,13 +280,10 @@ class CmdLineTask(Task):
         if configName is None:
             return
         if clobber:
-            dataRef.put(self.config, configName, doBackup=True)
-        elif dataRef.datasetExists(configName):
-            # this may be subject to a race condition, but I don't think we care - if
-            # another process creates a config just after we look for it, we don't really
-            # want to look at it, because that other process is almost certainly running
-            # with the exact same config anyhow.
-            oldConfig = dataRef.get(configName, immediate=True)
+            butler.put(self.config, configName, doBackup=True)
+        elif butler.datasetExists(configName):
+            # this may be subject to a race condition; see #2789
+            oldConfig = butler.get(configName, immediate=True)
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
@@ -284,16 +291,16 @@ class CmdLineTask(Task):
                     "must be consistent within the same output repo (override with --clobber-config)"
                     )
         else:
-            dataRef.put(self.config, configName)
+            butler.put(self.config, configName)
 
-    def writeSchemas(self, dataRef, clobber=False):
+    def writeSchemas(self, butler, clobber=False):
         """Write any catalogs returned by getSchemaCatalogs()."""
         for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
             schemaDataset = dataset + "_schema"
             if clobber:
-                dataRef.put(catalog, schemaDataset, doBackup=True)
-            elif dataRef.datasetExists(schemaDataset):
-                oldSchema = dataRef.get(schemaDataset, immediate=True).getSchema()
+                butler.put(catalog, schemaDataset, doBackup=True)
+            elif butler.datasetExists(schemaDataset):
+                oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
                         "New schema does not match schema on disk for %r; schemas must be "
@@ -301,7 +308,7 @@ class CmdLineTask(Task):
                         % dataset
                         )
             else:
-                dataRef.put(catalog, schemaDataset)
+                butler.put(catalog, schemaDataset)
 
     def writeMetadata(self, dataRef):
         """Write the metadata produced from processing the data"""
