@@ -100,8 +100,8 @@ class TaskRunner(object):
             pool = None
             mapFunc = map
 
-        self.precall(parsedCmd)
-        resultList = mapFunc(self, self.getTargetList(parsedCmd))
+        if self.precall(parsedCmd):
+            resultList = mapFunc(self, self.getTargetList(parsedCmd))
 
         if pool is not None:
             pool.close()
@@ -165,6 +165,8 @@ class TaskRunner(object):
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
+                return False
+        return True
 
     def __call__(self, args):
         """Run the Task on a single target.
