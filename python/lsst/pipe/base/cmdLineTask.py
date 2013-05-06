@@ -144,7 +144,8 @@ class TaskRunner(object):
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
     def precall(self, parsedCmd):
-        """Hook for code that should run exactly once, before multiprocessing is invoked.
+        """Hook for code that should run exactly once, before multiprocessing is invoked.  Must
+        return True if __call__ should subsequently be called.
 
         Implementations must take care to ensure that no unpicklable attributes are added to
         the TaskRunner itself.
