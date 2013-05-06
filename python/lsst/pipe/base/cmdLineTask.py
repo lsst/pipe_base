@@ -100,8 +100,8 @@ class TaskRunner(object):
             pool = None
             mapFunc = map
 
-        self.precall(parsedCmd)
-        resultList = mapFunc(self, self.getTargetList(parsedCmd))
+        if self.precall(parsedCmd):
+            resultList = mapFunc(self, self.getTargetList(parsedCmd))
 
         if pool is not None:
             pool.close()
@@ -144,7 +144,8 @@ class TaskRunner(object):
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
     def precall(self, parsedCmd):
-        """Hook for code that should run exactly once, before multiprocessing is invoked.
+        """Hook for code that should run exactly once, before multiprocessing is invoked.  Must
+        return True if __call__ should subsequently be called.
 
         Implementations must take care to ensure that no unpicklable attributes are added to
         the TaskRunner itself.
@@ -165,6 +166,8 @@ class TaskRunner(object):
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
+                return False
+        return True
 
     def __call__(self, args):
         """Run the Task on a single target.

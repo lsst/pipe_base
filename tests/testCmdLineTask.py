@@ -156,7 +156,7 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
     def precall(self, parsedCmd):
         # Turn off config saving, because the obs_test mapper can't handle it without
         # putting our test config in an importable location.
-        pass
+        return True
 
     def __call__(self, target):
         """Send results from the Task back so we can inspect
