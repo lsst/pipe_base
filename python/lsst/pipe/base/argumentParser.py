@@ -81,7 +81,10 @@ class DataIdContainer(object):
         """
         if self.datasetType is None:
             raise RuntimeError("Must call setDatasetType first")
-        idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
+        try:
+            idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
+        except KeyError as e:
+            raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
         
         for dataDict in self.idList:
             for key, strVal in dataDict.iteritems():
@@ -435,13 +438,13 @@ class ArgumentParser(argparse.ArgumentParser):
         """
         for dataIdArgument in self._dataIdArgDict.itervalues():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
+            dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
             try:
-                dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
                 dataIdContainer.castDataIds(butler = namespace.butler)
-            except Exception, e:
-                # failure of setDatasetType or castDataIds indicates invalid command args
-                # whereas failure of makeDataRefList indicates a bug that wants a traceback
+            except (KeyError, TypeError) as e:
+                # failure of castDataIds indicates invalid command args
                 self.error(e)
+            # failure of makeDataRefList indicates a bug that wants a traceback
             if dataIdArgument.doMakeDataRefList:
                 dataIdContainer.makeDataRefList(namespace)
 
