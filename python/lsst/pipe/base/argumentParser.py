@@ -82,7 +82,10 @@ class DataIdContainer(object):
         """
         if self.datasetType is None:
             raise RuntimeError("Must call setDatasetType first")
-        idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
+        try:
+            idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
+        except KeyError as e:
+            raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
         
         for dataDict in self.idList:
             for key, strVal in dataDict.iteritems():
@@ -246,10 +249,12 @@ simultaneously, and relative to the same root.
         self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
-        self.add_argument("--clobber-repo", action="store_true", dest="clobberRepo", default=False,
-                          help="remove and re-create the output directory if it already exists")
+        self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
+                          help=("remove and re-create the output directory if it already exists "
+                                "(safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
-                          help="backup and then overwrite existing config files instead of checking them")
+                          help=("backup and then overwrite existing config files instead of checking them "
+                                "(safe with -j, but not all other forms of parallel execution)"))
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
@@ -394,13 +399,13 @@ simultaneously, and relative to the same root.
         del namespace.rawOutput
         del namespace.rawRerun
         
-        if namespace.clobberRepo:
+        if namespace.clobberOutput:
             if namespace.output is None:
-                self.error("--clobber-repo is only valid with --output or --rerun")
+                self.error("--clobber-output is only valid with --output or --rerun")
             elif namespace.output == namespace.input:
-                self.error("--clobber-repo is not valid when the output and input repos are the same")
+                self.error("--clobber-output is not valid when the output and input repos are the same")
             if os.path.exists(namespace.output):
-                namespace.log.info("Removing output repo %s for --clobber-repo" % namespace.output)
+                namespace.log.info("Removing output repo %s for --clobber-output" % namespace.output)
                 shutil.rmtree(namespace.output)
 
         namespace.log.info("input=%s"  % (namespace.input,))
@@ -474,13 +479,13 @@ simultaneously, and relative to the same root.
         """
         for dataIdArgument in self._dataIdArgDict.itervalues():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
+            dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
             try:
-                dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
                 dataIdContainer.castDataIds(butler = namespace.butler)
-            except Exception, e:
-                # failure of setDatasetType or castDataIds indicates invalid command args
-                # whereas failure of makeDataRefList indicates a bug that wants a traceback
+            except (KeyError, TypeError) as e:
+                # failure of castDataIds indicates invalid command args
                 self.error(e)
+            # failure of makeDataRefList indicates a bug that wants a traceback
             if dataIdArgument.doMakeDataRefList:
                 dataIdContainer.makeDataRefList(namespace)
 
