@@ -102,6 +102,8 @@ class TaskRunner(object):
 
         if self.precall(parsedCmd):
             resultList = mapFunc(self, self.getTargetList(parsedCmd))
+        else:
+            resultList = None
 
         if pool is not None:
             pool.close()
