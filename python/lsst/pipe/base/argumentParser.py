@@ -566,6 +566,8 @@ class IdValueAction(argparse.Action):
         idDict = dict()
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
+            if name in idDict:
+                parser.error("%s appears multiple times in one ID argument: %s" % (name, option_string))
             idDict[name] = []
             for v in valueStr.split("^"):
                 mat = re.search(r"^(\d+)\.\.(\d+)(?::(\d+))?$", v)
