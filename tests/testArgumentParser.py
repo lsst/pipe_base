@@ -107,6 +107,13 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(len(namespace.id.idList), 6)
         self.assertEqual(len(namespace.id.refList), 2) # only have data for two of these
     
+    def testIdDuplicate(self):
+        """Verify that each ID name can only appear once in a given ID argument"""
+        self.assertRaises(SystemExit, self.ap.parse_args,
+            config = self.config,
+            args = [DataPath, "--id", "sensor=0,0^0,1", "sensor=1,1"],
+        )
+    
     def testConfigBasics(self):
         """Test --config"""
         namespace = self.ap.parse_args(
