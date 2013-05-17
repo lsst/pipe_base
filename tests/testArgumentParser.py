@@ -20,6 +20,7 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import itertools
 import os
 import unittest
 import warnings
@@ -99,12 +100,25 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(len(namespace.otherId.refList), 0) # no data for this ID
 
     def testIdCross(self):
-        """Test --id cross product"""
+        """Test --id cross product, including order"""
+        sensorList = ("1,1", "0,2")
+        raftList = ("0,1", "2,1", "0,3")
+        visitList = (85470982,)
         namespace = self.ap.parse_args(
             config = self.config,
-            args = [DataPath, "--id", "raft=0,1^0,2^0,3", "sensor=0,0^0,1", "visit=85470982"],
+            args = [
+                DataPath,
+                "--id",
+                "sensor=%s" % ("^".join(sensorList),),
+                "raft=%s" % ("^".join(raftList),),
+                "visit=%s" % ("^".join(str(visit) for visit in visitList),),
+            ]
         )
         self.assertEqual(len(namespace.id.idList), 6)
+        predValList =  itertools.product(sensorList, raftList, visitList)
+        for id, predVal in itertools.izip(namespace.id.idList, predValList):
+            idVal = tuple(id[key] for key in ("sensor", "raft", "visit"))
+            self.assertEqual(idVal, predVal)
         self.assertEqual(len(namespace.id.refList), 2) # only have data for two of these
     
     def testIdDuplicate(self):
