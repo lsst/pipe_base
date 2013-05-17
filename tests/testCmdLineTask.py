@@ -28,15 +28,9 @@ import tempfile
 
 import eups
 import lsst.utils.tests as utilsTests
-import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
-
-# add tests/testConfigs to sys.path so the butler can unpersist configs defined there
-TestConfigDir = os.path.abspath(os.path.join(os.path.dirname(__file__), "testConfigs"))
-sys.path.append(TestConfigDir)
-
-from testCmdLineTaskConfigs import TestConfig
+from lsst.obs.test import TestConfig
 
 ObsTestDir = eups.productDir("obs_test")
 if not ObsTestDir:
@@ -106,7 +100,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """Test config and log override
         """
         config = TestTask.ConfigClass()
-        config.f = -99.9
+        config.floatField = -99.9
         defLog = pexLog.getDefaultLog()
         log = pexLog.Log(defLog, "cmdLineTask")
         retVal = TestTask.parseAndRun(
@@ -115,7 +109,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
             config = config,
             log = log
         )
-        self.assertEquals(retVal.parsedCmd.config.f, -99.9)
+        self.assertEquals(retVal.parsedCmd.config.floatField, -99.9)
         self.assertTrue(retVal.parsedCmd.log is log)
     
     def testDoReturnResults(self):
@@ -160,7 +154,7 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
 
 class TestMultipleIdTask(pipeBase.CmdLineTask):
     _DefaultName = "processCcd"
-    ConfigClass = pexConfig.Config
+    ConfigClass = TestConfig
     RunnerClass = TestMultipleIdTaskRunner
 
     @classmethod
