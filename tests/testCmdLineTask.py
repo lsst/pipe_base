@@ -22,6 +22,7 @@
 #
 import os
 import shutil
+import sys
 import unittest
 import tempfile
 
@@ -31,14 +32,17 @@ import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
+# add tests/testConfigs to sys.path so the butler can unpersist configs defined there
+TestConfigDir = os.path.abspath(os.path.join(os.path.dirname(__file__), "testConfigs"))
+sys.path.append(TestConfigDir)
+
+from testCmdLineTaskConfigs import TestConfig
+
 ObsTestDir = eups.productDir("obs_test")
 if not ObsTestDir:
     print "Warning: you must setup obs_test to run these tests"
 else:
     DataPath = os.path.join(ObsTestDir, "tests/data/input")
-
-class TestConfig(pexConfig.Config):
-    f = pexConfig.Field(doc="test field", dtype=float, default=3.1)
 
 class TestTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
@@ -55,11 +59,6 @@ class TestTask(pipeBase.CmdLineTask):
         return pipeBase.Struct(
             numProcessed = self.numProcessed,
         )
-
-    def writeConfig(self, butler, clobber=False):
-        # Turn off config saving, because the obs_test mapper can't handle it without
-        # putting our test config in an importable location.
-        pass
 
 class NoMultiprocessTask(TestTask):
     """Version of TestTask that does not support multiprocessing"""
@@ -97,12 +96,9 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(dataId["sensor"], "1,1")
         self.assertEqual(dataId["visit"], 85470982)
         name = task.getName()
-        # config unpersistence is not yet supported by the butler;
-        # when it is, uncomment these lines
-        print "WARNING: cannot check config: the butler does not yet support config unpersistence"
-#         config = dataRef.get("processCcd_config")
-#         self.assertEqual(config, task.config)
-        metadata = dataRef.get("processCcd_metadata")
+        config = dataRef.get("processCcd_config", immediate=True)
+        self.assertEqual(config, task.config)
+        metadata = dataRef.get("processCcd_metadata", immediate=True)
         self.assertEqual(metadata.get("processCcd.numProcessed"), 1)
         
     
@@ -153,11 +149,6 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
         """We want our Task to process one dataRef from each identifier at a time"""
         return zip(parsedCmd.one.refList, parsedCmd.two.refList)
 
-    def precall(self, parsedCmd):
-        # Turn off config saving, because the obs_test mapper can't handle it without
-        # putting our test config in an importable location.
-        return True
-
     def __call__(self, target):
         """Send results from the Task back so we can inspect
 
@@ -168,7 +159,7 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
         return task.run(target)
 
 class TestMultipleIdTask(pipeBase.CmdLineTask):
-    _DefaultName = "multiple"
+    _DefaultName = "processCcd"
     ConfigClass = pexConfig.Config
     RunnerClass = TestMultipleIdTaskRunner
 

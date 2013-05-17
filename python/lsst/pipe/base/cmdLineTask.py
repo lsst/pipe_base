@@ -89,7 +89,8 @@ class TaskRunner(object):
 
         The task is run under multiprocessing if numProcesses > 1; otherwise processing is serial.
 
-        @return a list of results returned by __call__; see __call__ for details.
+        @return a list of results returned by __call__, or [] if __call__ not called
+            (e.g. if precall returns False). See __call__ for details.
         """
         if self.numProcesses > 1:
             import multiprocessing
@@ -102,6 +103,8 @@ class TaskRunner(object):
 
         if self.precall(parsedCmd):
             resultList = mapFunc(self, self.getTargetList(parsedCmd))
+        else:
+            resultList = []
 
         if pool is not None:
             pool.close()
