@@ -156,13 +156,12 @@ class TaskRunner(object):
         The default implementation writes schemas and configs (and compares them to existing
         files on disk if present).
         """
+        task = self.TaskClass(config=self.config, log=self.log)
         if self.doRaise:
-            task = self.TaskClass(config=self.config, log=self.log)
             task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
             task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
         else:
             try:
-                task = self.TaskClass(config=self.config, log=self.log)
                 task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
                 task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
             except Exception, e:
