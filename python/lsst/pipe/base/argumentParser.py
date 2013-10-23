@@ -372,6 +372,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.log.info("calib=%s"  % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
         
+        if "tasks" in namespace.show:
+            showTaskHierarchy(config=namespace.config)
+        
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
 
@@ -497,6 +500,39 @@ class ArgumentParser(argparse.ArgumentParser):
             if not arg.strip():
                 continue
             yield arg
+
+def getTaskDict(config, taskDict=None, baseName=""):
+    """Get a dictionary task info for all subtasks in a config
+    
+    @param[in] config: configuration to process, an instance of lsst.pex.config.Config
+    @return taskDict: a dict of config field name: task name
+    """
+    if taskDict is None:
+        taskDict = dict()
+    for fieldName, field in config.iteritems():
+        if hasattr(field, "value"):
+            subConfig = field.value
+            if isinstance(subConfig, pexConfig.Config):
+                if baseName:
+                    subBaseName = "%s.%s" % (baseName, fieldName)
+                else:
+                    subBaseName = fieldName
+                taskDict[subBaseName] = "%s.%s" % (field.target.__module__, field.target.__name__)
+                getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
+    return taskDict
+    
+def showTaskHierarchy(config):
+    """Print task hierarchy to stdout
+    
+    @param[in] config: configuration to process, an instance of lsst.pex.config.Config
+    """
+    print "Subtasks:"
+    taskDict = getTaskDict(config=config)
+        
+    fieldNameList = sorted(taskDict.keys())
+    for fieldName in fieldNameList:
+        taskName = taskDict[key]
+        print "%s: %s" % (fieldName, taskName)
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
