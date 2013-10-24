@@ -502,7 +502,7 @@ class ArgumentParser(argparse.ArgumentParser):
             yield arg
 
 def getTaskDict(config, taskDict=None, baseName=""):
-    """Get a dictionary task info for all subtasks in a config
+    """Get a dictionary of task info for all subtasks in a config
     
     @param[in] config: configuration to process, an instance of lsst.pex.config.Config
     @return taskDict: a dict of config field name: task name
@@ -510,14 +510,15 @@ def getTaskDict(config, taskDict=None, baseName=""):
     if taskDict is None:
         taskDict = dict()
     for fieldName, field in config.iteritems():
-        if hasattr(field, "value"):
+        if hasattr(field, "value") and hasattr(field, "target"):
             subConfig = field.value
             if isinstance(subConfig, pexConfig.Config):
-                if baseName:
-                    subBaseName = "%s.%s" % (baseName, fieldName)
-                else:
-                    subBaseName = fieldName
-                taskDict[subBaseName] = "%s.%s" % (field.target.__module__, field.target.__name__)
+                subBaseName = "%s.%s" % (baseName, fieldName) if baseName else fieldName
+                try:
+                    taskName = "%s.%s" % (field.target.__module__, field.target.__name__)
+                except Exception:
+                    taskName = repr(field.target)
+                taskDict[subBaseName] = taskName
                 getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
     return taskDict
     
