@@ -243,8 +243,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
-        self.add_argument("--show", nargs="*", choices="config data tasks exit".split(), default=(),
-            help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
+        self.add_argument("--show", nargs="*", choices="config data tasks run".split(), default=(),
+            help="display the specified information to stdout and quit (unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
                           help=("remove and re-create the output directory if it already exists "
@@ -394,7 +394,7 @@ class ArgumentParser(argparse.ArgumentParser):
                 for dataRef in getattr(namespace, dataIdName).refList:
                     print dataIdName + " dataRef.dataId =", dataRef.dataId
 
-        if "exit" in namespace.show:
+        if namespace.show and "run" not in namespace.show:
             sys.exit(0)
 
         if namespace.debug:

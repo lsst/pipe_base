@@ -22,8 +22,9 @@
 #
 import itertools
 import os
+import sys
+import StringIO
 import unittest
-import warnings
 
 import eups
 import lsst.utils.tests as utilsTests
@@ -159,14 +160,33 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
     
     def testShow(self):
-        """Make sure that show doesn't crash"""
-        namespace = self.ap.parse_args(
+        """Test --show"""
+        tempStdOut = StringIO.StringIO()
+        savedStdOut, sys.stdout = sys.stdout, tempStdOut
+        expectedData = """Subtasks:
+import __main__
+assert type(config)==__main__.SampleConfig, 'config is of type %s.%s instead of __main__.SampleConfig' % (type(root).__module__, type(root).__name__)
+config.floatItem=3.1
+config.subItem.intItem=8
+config.boolItem=True
+config.strItem='strDefault'
+"""
+        try:
+            self.ap.parse_args(
+                config = self.config,
+                args = [DataPath, "--show", "config", "data", "tasks", "run"],
+            )
+        finally:
+            sys.stdout = savedStdOut
+        self.assertEqual(tempStdOut.getvalue(), expectedData)
+
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--show", "config", "data"],
+            args = [DataPath, "--show", "config"],
         )
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--show", "badname"],
+            args = [DataPath, "--show", "badname", "run"],
         )
         
     def testConfigFileBasics(self):
@@ -214,7 +234,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --logdest
         """
         logFile = "tests_argumentParser_testLog_temp.txt"
-        namespace = self.ap.parse_args(
+        self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--logdest", logFile],
         )
@@ -249,7 +269,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         
         I'm not sure how to verify that tracing is enabled; just see if it runs
         """
-        namespace = self.ap.parse_args(
+        self.ap.parse_args(
             config = self.config,
             args = [DataPath,
                 "--trace", "afw.math=2", "meas.algorithms=3",
