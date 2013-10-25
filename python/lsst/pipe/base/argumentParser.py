@@ -29,6 +29,7 @@ import sys
 import shutil
 
 import eups
+import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
@@ -532,7 +533,7 @@ def showTaskHierarchy(config):
         
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
-        taskName = taskDict[key]
+        taskName = taskDict[fieldName]
         print "%s: %s" % (fieldName, taskName)
 
 class ConfigValueAction(argparse.Action):
