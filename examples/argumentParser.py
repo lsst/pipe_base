@@ -66,5 +66,3 @@ class ExampleConfig(pexConfig.Config):
 parser = pipeBase.ArgumentParser(name="argumentParser")
 config = ExampleConfig()
 namespace = parser.parse_args(config=config)
-print "namespace.dataIdList=%s" % (namespace.dataIdList,)
-print "len(namespace.dataRefList)=%s" % (len(namespace.dataRefList),)

@@ -53,8 +53,8 @@ ending in "Id"; when there is only one, it will typically be called <code>--id</
 see \ref pipeBase_argumentParser_dataIDs .  If there is more than one data identifer argument, then the
 data identifiers are by default handled independently.
 
-You may show the config and/or data using <code>--show</code>. For example: <code>--show config data exit</code>
-will show the config and the data and then exit without running the task.
+You may show the config, subtasks and/or data using <code>--show</code>. For example: <code>--show config data exit</code>
+will show the config, subtasks and data and then exit without running the task.
 
 For long or repetitive command lines you may wish to specify some arguments in separate text files.
 See \ref pipeBase_argumentParser_argumentFiles for details.

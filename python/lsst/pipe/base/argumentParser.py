@@ -85,7 +85,7 @@ class DataIdContainer(object):
             raise RuntimeError("Must call setDatasetType first")
         try:
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
-        except KeyError as e:
+        except KeyError:
             raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
         
         for dataDict in self.idList:
@@ -243,7 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
-        self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
+        self.add_argument("--show", nargs="*", choices="config data tasks exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
