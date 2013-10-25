@@ -163,14 +163,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --show"""
         tempStdOut = StringIO.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
-        expectedData = """Subtasks:
-import __main__
-assert type(config)==__main__.SampleConfig, 'config is of type %s.%s instead of __main__.SampleConfig' % (type(root).__module__, type(root).__name__)
-config.floatItem=3.1
-config.subItem.intItem=8
-config.boolItem=True
-config.strItem='strDefault'
-"""
         try:
             self.ap.parse_args(
                 config = self.config,
@@ -178,7 +170,11 @@ config.strItem='strDefault'
             )
         finally:
             sys.stdout = savedStdOut
-        self.assertEqual(tempStdOut.getvalue(), expectedData)
+        res = tempStdOut.getvalue()
+        self.assertTrue("config.floatItem" in res)
+        self.assertTrue("config.subItem" in res)
+        self.assertTrue("config.boolItem" in res)
+        self.assertTrue("config.strItem" in res)
 
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
