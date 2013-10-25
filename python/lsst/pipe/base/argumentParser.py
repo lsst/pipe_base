@@ -29,6 +29,7 @@ import sys
 import shutil
 
 import eups
+import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
@@ -84,7 +85,7 @@ class DataIdContainer(object):
             raise RuntimeError("Must call setDatasetType first")
         try:
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
-        except KeyError as e:
+        except KeyError:
             raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
         
         for dataDict in self.idList:
@@ -242,7 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
-        self.add_argument("--show", nargs="*", choices="config data exit".split(), default=(),
+        self.add_argument("--show", nargs="*", choices="config data tasks exit".split(), default=(),
             help="display final configuration and/or data IDs to stdout? If exit, then don't process data.")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
@@ -372,6 +373,9 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.log.info("calib=%s"  % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
         
+        if "tasks" in namespace.show:
+            showTaskHierarchy(config=namespace.config)
+        
         if "config" in namespace.show:
             namespace.config.saveToStream(sys.stdout, "config")
 
@@ -497,6 +501,40 @@ class ArgumentParser(argparse.ArgumentParser):
             if not arg.strip():
                 continue
             yield arg
+
+def getTaskDict(config, taskDict=None, baseName=""):
+    """Get a dictionary of task info for all subtasks in a config
+    
+    @param[in] config: configuration to process, an instance of lsst.pex.config.Config
+    @return taskDict: a dict of config field name: task name
+    """
+    if taskDict is None:
+        taskDict = dict()
+    for fieldName, field in config.iteritems():
+        if hasattr(field, "value") and hasattr(field, "target"):
+            subConfig = field.value
+            if isinstance(subConfig, pexConfig.Config):
+                subBaseName = "%s.%s" % (baseName, fieldName) if baseName else fieldName
+                try:
+                    taskName = "%s.%s" % (field.target.__module__, field.target.__name__)
+                except Exception:
+                    taskName = repr(field.target)
+                taskDict[subBaseName] = taskName
+                getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
+    return taskDict
+    
+def showTaskHierarchy(config):
+    """Print task hierarchy to stdout
+    
+    @param[in] config: configuration to process, an instance of lsst.pex.config.Config
+    """
+    print "Subtasks:"
+    taskDict = getTaskDict(config=config)
+        
+    fieldNameList = sorted(taskDict.keys())
+    for fieldName in fieldNameList:
+        taskName = taskDict[fieldName]
+        print "%s: %s" % (fieldName, taskName)
 
 class ConfigValueAction(argparse.Action):
     """argparse action callback to override config parameters using name=value pairs from the command line
