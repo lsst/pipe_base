@@ -22,8 +22,9 @@
 #
 import itertools
 import os
+import sys
+import StringIO
 import unittest
-import warnings
 
 import eups
 import lsst.utils.tests as utilsTests
@@ -159,14 +160,29 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
     
     def testShow(self):
-        """Make sure that show doesn't crash"""
-        namespace = self.ap.parse_args(
+        """Test --show"""
+        tempStdOut = StringIO.StringIO()
+        savedStdOut, sys.stdout = sys.stdout, tempStdOut
+        try:
+            self.ap.parse_args(
+                config = self.config,
+                args = [DataPath, "--show", "config", "data", "tasks", "run"],
+            )
+        finally:
+            sys.stdout = savedStdOut
+        res = tempStdOut.getvalue()
+        self.assertTrue("config.floatItem" in res)
+        self.assertTrue("config.subItem" in res)
+        self.assertTrue("config.boolItem" in res)
+        self.assertTrue("config.strItem" in res)
+
+        self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--show", "config", "data"],
+            args = [DataPath, "--show", "config"],
         )
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--show", "badname"],
+            args = [DataPath, "--show", "badname", "run"],
         )
         
     def testConfigFileBasics(self):
@@ -214,7 +230,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --logdest
         """
         logFile = "tests_argumentParser_testLog_temp.txt"
-        namespace = self.ap.parse_args(
+        self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--logdest", logFile],
         )
@@ -249,7 +265,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         
         I'm not sure how to verify that tracing is enabled; just see if it runs
         """
-        namespace = self.ap.parse_args(
+        self.ap.parse_args(
             config = self.config,
             args = [DataPath,
                 "--trace", "afw.math=2", "meas.algorithms=3",

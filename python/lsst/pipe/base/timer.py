@@ -21,7 +21,6 @@
 #
 """Utilities for measuring execution time.
 """
-import contextlib
 import functools
 import resource
 import time

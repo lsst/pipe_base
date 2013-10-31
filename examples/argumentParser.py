@@ -65,4 +65,7 @@ class ExampleConfig(pexConfig.Config):
 
 parser = pipeBase.ArgumentParser(name="argumentParser")
 config = ExampleConfig()
-namespace = parser.parse_args(config=config)
+parsedCmd = parser.parse_args(config=config)
+pcDict = parsedCmd.__dict__
+for key in sorted(pcDict):
+        print "parsedCmd.%s=%r" % (key, pcDict[key])
