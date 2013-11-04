@@ -48,7 +48,14 @@ class TaskRunner(object):
     Instances of this class must be picklable in order to be compatible with multiprocessing.
     If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
     to jettison optional non-picklable elements.
+
+    Due to a python bug (http://bugs.python.org/issue8296), handling a KeyboardInterrupt
+    properly requires specifying a timeout [1].  This timeout (TaskRunner.TIMEOUT) may need
+    to be revised upwards for very long-running processes.
+
+    [1] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
+    TIMEOUT = 9999 # Timeout for multiprocessing; adjust if you have a really long-running process
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """Construct a TaskRunner
         
@@ -96,7 +103,7 @@ class TaskRunner(object):
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
-            mapFunc = pool.map
+            mapFunc = lambda x, y: pool.map_async(x, y).get(self.TIMEOUT)
         else:
             pool = None
             mapFunc = map
