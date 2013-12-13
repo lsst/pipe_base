@@ -153,11 +153,11 @@ class TaskRunner(object):
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
-    def precall(self, parsedCmd, **kwargs):
+    def precall(self, parsedCmd, initKwds=None):
         """Hook for code that should run exactly once, before multiprocessing is invoked.  Must
         return True if __call__ should subsequently be called.
 
-        Additional kwargs are forwarded to the TaskClass constructor, so that custom TaskRunners
+        The initKwds are forwarded as to the TaskClass constructor, so that custom TaskRunners
         for Tasks that require additional constructor arguments can trivially override precall
         while still delegating most of the work to this implementatino.
 
@@ -167,7 +167,8 @@ class TaskRunner(object):
         The default implementation writes schemas and configs (and compares them to existing
         files on disk if present).
         """
-        task = self.TaskClass(config=self.config, log=self.log, **kwargs)
+        if initKwds is None: initKwds = {}
+        task = self.TaskClass(config=self.config, log=self.log, **initKwds)
         if self.doRaise:
             task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
             task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
@@ -182,7 +183,7 @@ class TaskRunner(object):
                 return False
         return True
 
-    def __call__(self, args):
+    def __call__(self, args, initKwds=None):
         """Run the Task on a single target.
 
         This default implementation assumes that the 'args' is a tuple
@@ -194,6 +195,11 @@ class TaskRunner(object):
         unpickling do not add excessive overhead.
 
         @param args: Arguments for Task.run()
+        @param initKwds:  Additional keyword arguments for Task constructor;
+                          only for use by subclasses when delegating to this
+                          implementation (otherwise it's impossible to pass
+                          the keyword arguments through the map() function
+                          that ultimately invokes this).
         @return:
         - None if doReturnResults false
         - A pipe_base Struct containing these fields if doReturnResults true:
@@ -201,8 +207,9 @@ class TaskRunner(object):
             - metadata: task metadata after execution of run
             - result: result returned by task run
         """
+        if initKwds is None: initKwds = {}
         dataRef, kwargs = args
-        task = self.TaskClass(config=self.config, log=self.log)
+        task = self.TaskClass(config=self.config, log=self.log, **initKwds)
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:
@@ -226,10 +233,16 @@ class ButlerInitializedTaskRunner(TaskRunner):
     their constructor.
     """
 
-    def precall(self, parsedCmd, **kwargs):
-        """Hook for code invoked before any multiprocessing.; see TaskRunner.precall() for more information.
+    def precall(self, parsedCmd, initKwds=None):
+        """Hook for code invoked before any multiprocessing; see TaskRunner.precall() for more information.
         """
-        return TaskRunner.precall(self, parsedCmd, butler=parsedCmd.butler)
+        return TaskRunner.precall(self, parsedCmd, initKwds=dict(butler=parsedCmd.butler))
+
+    def __call__(self, args, initKwds=None):
+        """Run the Task on a single target; see TaskRunner.__call__() for more information.
+        """
+        dataRef, kwargs = args
+        return TaskRunner.__call__(self, args, initKwds=dict(butler=dataRef.butlerSubset.butler))
 
 class CmdLineTask(Task):
     """A task that can be executed from the command line
