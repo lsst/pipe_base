@@ -153,9 +153,13 @@ class TaskRunner(object):
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
-    def precall(self, parsedCmd):
+    def precall(self, parsedCmd, **kwargs):
         """Hook for code that should run exactly once, before multiprocessing is invoked.  Must
         return True if __call__ should subsequently be called.
+
+        Additional kwargs are forwarded to the TaskClass constructor, so that custom TaskRunners
+        for Tasks that require additional constructor arguments can trivially override precall
+        while still delegating most of the work to this implementatino.
 
         Implementations must take care to ensure that no unpicklable attributes are added to
         the TaskRunner itself.
@@ -163,7 +167,7 @@ class TaskRunner(object):
         The default implementation writes schemas and configs (and compares them to existing
         files on disk if present).
         """
-        task = self.TaskClass(config=self.config, log=self.log)
+        task = self.TaskClass(config=self.config, log=self.log, **kwargs)
         if self.doRaise:
             task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
             task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
