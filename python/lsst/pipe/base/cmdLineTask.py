@@ -28,7 +28,7 @@ from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
 
-__all__ = ["CmdLineTask", "TaskRunner"]
+__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
 class TaskRunner(object):
     """Run a Task, using multiprocessing if requested.
@@ -221,6 +221,15 @@ class TaskRunner(object):
                 result = result,
             )
 
+class ButlerInitializedTaskRunner(TaskRunner):
+    """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
+    their constructor.
+    """
+
+    def precall(self, parsedCmd, **kwargs):
+        """Hook for code invoked before any multiprocessing.; see TaskRunner.precall() for more information.
+        """
+        return TaskRunner.precall(self, parsedCmd, butler=parsedCmd.butler)
 
 class CmdLineTask(Task):
     """A task that can be executed from the command line
