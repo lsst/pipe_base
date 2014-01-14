@@ -153,13 +153,22 @@ class TaskRunner(object):
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
-    def precall(self, parsedCmd, initKwds=None):
+    def makeTask(self, parsedCmd=None, args=None):
+        """Create a Task instance
+
+        @param[in] parsedCmd: parsed command-line options (used for extra task args by some task runners)
+        @param[in] args: args tuple passed to __call__ (used for extra task args by some task runners)
+
+        makeTask() can be called with either the 'parsedCmd' argument or 'args' argument set to None,
+        but it must construct identical Task instances in either case.
+
+        Subclasses may ignore this method entirely if they reimplement both precall() and __call__()
+        """
+        return self.TaskClass(config=self.config, log=self.log)
+
+    def precall(self, parsedCmd):
         """Hook for code that should run exactly once, before multiprocessing is invoked.  Must
         return True if __call__ should subsequently be called.
-
-        The initKwds are forwarded as to the TaskClass constructor, so that custom TaskRunners
-        for Tasks that require additional constructor arguments can trivially override precall
-        while still delegating most of the work to this implementatino.
 
         Implementations must take care to ensure that no unpicklable attributes are added to
         the TaskRunner itself.
@@ -167,8 +176,7 @@ class TaskRunner(object):
         The default implementation writes schemas and configs (and compares them to existing
         files on disk if present).
         """
-        if initKwds is None: initKwds = {}
-        task = self.TaskClass(config=self.config, log=self.log, **initKwds)
+        task = self.makeTask(parsedCmd=parsedCmd)
         if self.doRaise:
             task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
             task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
@@ -183,7 +191,7 @@ class TaskRunner(object):
                 return False
         return True
 
-    def __call__(self, args, initKwds=None):
+    def __call__(self, args):
         """Run the Task on a single target.
 
         This default implementation assumes that the 'args' is a tuple
@@ -195,11 +203,7 @@ class TaskRunner(object):
         unpickling do not add excessive overhead.
 
         @param args: Arguments for Task.run()
-        @param initKwds:  Additional keyword arguments for Task constructor;
-                          only for use by subclasses when delegating to this
-                          implementation (otherwise it's impossible to pass
-                          the keyword arguments through the map() function
-                          that ultimately invokes this).
+
         @return:
         - None if doReturnResults false
         - A pipe_base Struct containing these fields if doReturnResults true:
@@ -207,9 +211,8 @@ class TaskRunner(object):
             - metadata: task metadata after execution of run
             - result: result returned by task run
         """
-        if initKwds is None: initKwds = {}
         dataRef, kwargs = args
-        task = self.TaskClass(config=self.config, log=self.log, **initKwds)
+        task = self.makeTask(args=args)
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:
@@ -232,17 +235,19 @@ class ButlerInitializedTaskRunner(TaskRunner):
     """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
     their constructor.
     """
+    def makeTask(self, parsedCmd=None, args=None):
+        """A variant of the base version that passes a butler argument to the task's constructor
 
-    def precall(self, parsedCmd, initKwds=None):
-        """Hook for code invoked before any multiprocessing; see TaskRunner.precall() for more information.
+        parsedCmd or args must be specified
         """
-        return TaskRunner.precall(self, parsedCmd, initKwds=dict(butler=parsedCmd.butler))
-
-    def __call__(self, args, initKwds=None):
-        """Run the Task on a single target; see TaskRunner.__call__() for more information.
-        """
-        dataRef, kwargs = args
-        return TaskRunner.__call__(self, args, initKwds=dict(butler=dataRef.butlerSubset.butler))
+        if parsedCmd is not None:
+            butler = parsedCmd.butler
+        elif args is not None:
+            dataRef, kwargs = args
+            butler = dataRef.butlerSubset.butler
+        else:
+            raise RuntimeError("parsedCmd or args must be specified")
+        return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
 class CmdLineTask(Task):
     """A task that can be executed from the command line
