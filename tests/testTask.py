@@ -56,8 +56,8 @@ class MultTask(pipeBase.Task):
         )
 
 class AddMultConfig(pexConfig.Config):
-    add = pexConfig.ConfigurableField(doc="", target=AddTask)
-    mult = pexConfig.ConfigurableField(doc="", target=MultTask)
+    add = AddTask.makeField("add task")
+    mult = MultTask.makeField("mult task")
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig

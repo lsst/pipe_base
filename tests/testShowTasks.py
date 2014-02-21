@@ -36,8 +36,8 @@ class SimpleTask(pipeBase.Task):
     ConfigClass = SimpleTaskConfig
 
 class TaskWithSubtasksConfig(pexConfig.Config):
-    sst1 = pexConfig.ConfigurableField(target=SimpleTask, doc="sub-subtask 1")
-    sst2 = pexConfig.ConfigurableField(target=SimpleTask, doc="sub-subtask 2")
+    sst1 = SimpleTask.makeField(doc="sub-subtask 1")
+    sst2 = SimpleTask.makeField(doc="sub-subtask 2")
     ff2 = pexConfig.Field(doc="float 1", dtype=float, default=3.1)
     sf2 = pexConfig.Field(doc="str 1", dtype=str, default="default for sf1")
 
@@ -45,8 +45,8 @@ class TaskWithSubtasks(pipeBase.Task):
     ConfigClass = TaskWithSubtasksConfig
 
 class MainTaskConfig(pexConfig.Config):
-    st1 = pexConfig.ConfigurableField(target=TaskWithSubtasks, doc="subtask 1")
-    st2 = pexConfig.ConfigurableField(target=TaskWithSubtasks, doc="subtask 2")
+    st1 = TaskWithSubtasks.makeField(doc="subtask 1")
+    st2 = TaskWithSubtasks.makeField(doc="subtask 2")
     ff1 = pexConfig.Field(doc="float 2", dtype=float, default=3.1)
     sf1 = pexConfig.Field(doc="str 2", dtype=str, default="default for strField")
 

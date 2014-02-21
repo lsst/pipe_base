@@ -22,6 +22,7 @@
 import contextlib
 
 import lsstDebug
+from lsst.pex.config import ConfigurableField
 
 try:
     import lsst.afw.display.ds9 as ds9
@@ -80,7 +81,7 @@ class Task(object):
       The default level for data references is "sensor" (aka "ccd" for some cameras).
     * If "run" can persist data then the task's config should offer a flag to disable persistence.
     
-    Subclasses must also have an attribute ConfigClass that is a subclass of pexConfig.Config
+    Subclasses must also have an attribute ConfigClass that is a subclass of lsst.pex.config.Config
     which configures this task. Subclasses should also have an attribute _DefaultName:
     the default name if there is no parent task. _DefaultName is required for subclasses of CmdLineTask
     and recommended for subclasses of Task because it simplifies construction (e.g. for unit tests).
@@ -90,7 +91,7 @@ class Task(object):
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """Create a Task
         
-        @param config: config to configure this task (task-specific subclass of pexConfig.Config);
+        @param config: config to configure this task (task-specific subclass of lsst.pex.config.Config);
             If parentTask specified then defaults to parentTask.config.<name>
             If parentTask is None then defaults to self.ConfigClass()
         @param name: brief name of task; defaults to the class name if parentTask=None
@@ -328,7 +329,13 @@ but the sizes are doubled
                     import pdb; pdb.set_trace()
                 elif ans in ("h", ):
                     print "h[elp] c[ontinue] p[db]"
-    
+
+    @classmethod
+    def makeField(cls, doc):
+        """Make an lsst.pex.config.ConfigurableField for this task
+        """
+        return ConfigurableField(doc=doc, target=cls)
+
     def _computeFullName(self, name):
         """Compute the full name of a subtask or metadata item, given its brief name
         
