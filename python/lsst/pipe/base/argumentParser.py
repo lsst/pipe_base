@@ -243,7 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
-        self.add_argument("--show", nargs="*", choices="config data tasks run".split(), default=(),
+        self.add_argument("--show", nargs="+", choices="config data tasks run".split(), default=(),
             help="display the specified information to stdout and quit (unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
