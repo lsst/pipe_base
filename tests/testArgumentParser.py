@@ -184,6 +184,10 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show", "badname", "run"],
         )
+        self.assertRaises(SystemExit, self.ap.parse_args,
+            config = self.config,
+            args = [DataPath, "--show"], # no --show arguments
+        )
         
     def testConfigFileBasics(self):
         """Test --configfile"""
