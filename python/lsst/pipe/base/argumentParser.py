@@ -221,8 +221,8 @@ class ArgumentParser(argparse.ArgumentParser):
     * data after # is treated as a comment and ignored
     * blank lines and lines starting with # are ignored
 * To specify multiple values for an option, do not use = after the option name:
-    * wrong: --configfile=foo bar
     * right: --configfile foo bar
+    * wrong: --configfile=foo bar
 """,
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
@@ -329,7 +329,10 @@ class ArgumentParser(argparse.ArgumentParser):
 
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
             self.print_help()
-            self.exit("%s: error: Must specify input as first argument" % self.prog)
+            if len(args) == 1 and args[0] in ("-h", "--help"):
+                self.exit()
+            else:
+                self.exit("%s: error: Must specify input as first argument" % self.prog)
 
         # note: don't set namespace.input until after running parse_args, else it will get overwritten
         inputRoot = _fixPath(DEFAULT_INPUT_NAME, args[0])
@@ -400,6 +403,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if namespace.debug:
             try:
                 import debug
+                assert debug # silence pyflakes
             except ImportError:
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
