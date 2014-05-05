@@ -310,6 +310,18 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.calib, None)
         self.assertEqual(namespace.output, os.path.abspath(DataPath))
 
+    def testBareHelp(self):
+        """Make sure bare help does not print an error message (ticket #3090)
+        """
+        for helpArg in ("-h", "--help"):
+            try:
+                self.ap.parse_args(
+                    config = self.config,
+                    args = [helpArg],
+                )
+                self.fail("should have raised SystemExit")
+            except SystemExit, e:
+                self.assertEqual(e.code, 0)
 
 def suite():
     utilsTests.init()
