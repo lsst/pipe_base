@@ -49,13 +49,15 @@ class TaskRunner(object):
     If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
     to jettison optional non-picklable elements.
 
-    Due to a python bug (http://bugs.python.org/issue8296), handling a KeyboardInterrupt
-    properly requires specifying a timeout [1].  This timeout (TaskRunner.TIMEOUT) may need
-    to be revised upwards for very long-running processes.
+    Due to a python bug [1], handling a KeyboardInterrupt properly requires specifying a timeout [2].  This
+    timeout (in sec) can be specified as the TaskRunner.TIMEOUT_NAME element in the output from ArgumentParser
+    (the "parsedCmd"), if available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
 
-    [1] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
+    [1] http://bugs.python.org/issue8296
+    [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT = 9999 # Timeout for multiprocessing; adjust if you have a really long-running process
+    TIMEOUT_NAME = "process_timeout" # Name of element in parsedCmd (output from ArgumentParser) with timeout
+    TIMEOUT = 9999 # Default timeout (sec) for multiprocessing
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
         
@@ -81,6 +83,13 @@ class TaskRunner(object):
         self.doRaise = bool(parsedCmd.doraise)
         self.clobberConfig = bool(parsedCmd.clobberConfig)
         self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
+
+        self.timeout = None
+        if self.TIMEOUT_NAME is not None:
+            self.timeout = getattr(parsedCmd, self.TIMEOUT_NAME, None)
+        if self.timeout is None or self.timeout <= 0:
+            self.timeout = self.TIMEOUT
+
         if self.numProcesses > 1:
             if not TaskClass.canMultiprocess:
                 self.log.warn("This task does not support multiprocessing; using one process")
@@ -103,7 +112,7 @@ class TaskRunner(object):
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
-            mapFunc = lambda x, y: pool.map_async(x, y).get(self.TIMEOUT)
+            mapFunc = lambda x, y: pool.map_async(x, y).get(self.timeout)
         else:
             pool = None
             mapFunc = map
