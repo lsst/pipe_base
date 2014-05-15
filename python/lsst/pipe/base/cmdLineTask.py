@@ -90,7 +90,7 @@ class TaskRunner(object):
     [1] http://bugs.python.org/issue8296
     [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT_NAME = "process_timeout" # Name of element in parsedCmd (output from ArgumentParser) with timeout
+    TIMEOUT_NAME = "processTimeout" # Name of element in parsedCmd (output from ArgumentParser) with timeout
     TIMEOUT = 9999 # Default timeout (sec) for multiprocessing
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner

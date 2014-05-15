@@ -247,7 +247,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--show", nargs="+", default=(),
             help="display the specified information to stdout and quit (unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
-        self.add_argument("-t", "--process-timeout", type=float,
+        self.add_argument("-t", "--process-timeout", dest="processTimeout", type=float,
                           help="Timeout for multiprocessing; maximum wall time (sec)")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
                           help=("remove and re-create the output directory if it already exists "
