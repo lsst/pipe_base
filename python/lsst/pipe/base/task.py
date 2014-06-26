@@ -298,12 +298,13 @@ but the sizes are doubled
                     #except: continue
                     #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
 
-        if matches:
+        if matches and exposure.getWcs() is not None:
+            wcs = exposure.getWcs()
             with ds9.Buffering():
+                i = len(sources)    # counter for ptypes/ctypes
                 for first, second, d in matches:
-                    i = len(sources)    # counter for ptypes/ctypes
-
-                    x1, y1 = first.getX() - x0, first.getY() - y0
+                    catPos = wcs.skyToPixel(first.getCoord())
+                    x1, y1 = catPos.getX() - x0, catPos.getY() - y0
 
                     ctype = ctypes[i%len(ctypes)]
                     ptype = ptypes[i%len(ptypes)]
