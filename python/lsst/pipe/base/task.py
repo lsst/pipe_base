@@ -64,12 +64,12 @@ class TaskError(Exception):
     pass
 
 class Task(object):
-    """A data processing task
+    """!A data processing task
     
     Useful attributes include:
     * log: an lsst.pex.logging.Log
     * config: task-specific configuration; an instance of ConfigClass (see below)
-    * metadata: an lsst.daf.data.PropertyList for collecting task-specific metadata,
+    * metadata: an lsst.daf.base.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used by the task.
     
@@ -80,29 +80,32 @@ class Task(object):
       (or a collection of data references, if appropriate, e.g. coaddition).
       The default level for data references is "sensor" (aka "ccd" for some cameras).
     * If "run" can persist data then the task's config should offer a flag to disable persistence.
+
+    \deprecated Tasks other than cmdLineTask.CmdLineTask%s should \em not accept a blob such as a butler data
+    reference.  How we will handle data references is still TBD, so don't make changes yet! RHL 2014-06-27
     
     Subclasses must also have an attribute ConfigClass that is a subclass of lsst.pex.config.Config
     which configures this task. Subclasses should also have an attribute _DefaultName:
-    the default name if there is no parent task. _DefaultName is required for subclasses of CmdLineTask
+    the default name if there is no parent task. _DefaultName is required for subclasses of cmdLineTask.CmdLineTask
     and recommended for subclasses of Task because it simplifies construction (e.g. for unit tests).
     
-    Pipeline tasks intended to be run as top-level tasks should be subclasses of CmdLineTask, not Task.
+    Pipeline tasks intended to be run as top-level tasks should be subclasses of cmdLineTask.CmdLineTask, not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
-        """Create a Task
+        """!Create a Task
         
-        @param config: config to configure this task (task-specific subclass of lsst.pex.config.Config);
-            If parentTask specified then defaults to parentTask.config.<name>
-            If parentTask is None then defaults to self.ConfigClass()
-        @param name: brief name of task; defaults to the class name if parentTask=None
-        @param parentTask: the parent task of this subtask, if any.
-            If None (a top-level task) then you must specify config and name is ignored.
-            If not None (a subtask) then you must specify name
-        @param log: pexLog log; if None then the default is used;
+        @param config config to configure this task (task-specific subclass of lsst.pex.config.Config);
+            - If parentTask specified then defaults to parentTask.config.\<name>
+            - If parentTask is None then defaults to self.ConfigClass()
+        @param name brief name of task; defaults to the class name if parentTask=None
+        @param parentTask the parent task of this subtask, if any.
+            - If None (a top-level task) then you must specify config and name is ignored.
+            - If not None (a subtask) then you must specify name
+        @param log pexLog log; if None then the default is used;
             in either case a copy is made using the full task name.
         
-        @raise RuntimeError if parentTask is None and config is None.
-        @raise RuntimeError if parentTask is not None and name is None.
+        @throws RuntimeError if parentTask is None and config is None.
+        @throws RuntimeError if parentTask is not None and name is None.
         """
         self.metadata = dafBase.PropertyList()
 
@@ -166,7 +169,7 @@ class Task(object):
         return schemaDict
 
     def getFullMetadata(self):
-        """Get metadata for all tasks
+        """!Get metadata for all tasks
         
         @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
             for the top-level task and all subtasks, sub-subtasks, etc.
@@ -177,10 +180,10 @@ class Task(object):
         return fullMetadata
     
     def getFullName(self):
-        """Return the full name of the task.
+        """!Return the full name of the task.
 
         Subtasks use dotted notation. Thus subtask "foo" of subtask "bar" of the top level task
-        has the full name "<top>.foo.bar" where <top> is the name of the top-level task
+        has the full name "\<top>.foo.bar" where \<top> is the name of the top-level task
         (which defaults to the name of its class).
         """
         return self._fullName
@@ -191,7 +194,7 @@ class Task(object):
         return self._name
     
     def getTaskDict(self):
-        """Return a dictionary of all tasks as a shallow copy.
+        """!Return a dictionary of all tasks as a shallow copy.
         
         @return taskDict: a dict containing full task name: task object
             for the top-level task and all subtasks, sub-subtasks, etc.
@@ -199,12 +202,12 @@ class Task(object):
         return self._taskDict.copy()
     
     def makeSubtask(self, name, **keyArgs):
-        """Create a subtask as a new instance self.<name>
+        """!Create a subtask as a new instance self.\<name>
         
-        The subtask must be defined by self.config.<name>, an instance of pex_config ConfigurableField.
+        The subtask must be defined by self.config.\<name>, an instance of pex_config ConfigurableField.
         
-        @param name: brief name of subtask
-        @param **kwargs: extra keyword arguments used to construct the task.
+        @param name brief name of subtask
+        @param **keyArgs extra keyword arguments used to construct the task.
             The following arguments are automatically provided and cannot be overridden:
             config, name and parentTask.
         """
@@ -216,11 +219,11 @@ class Task(object):
 
     @contextlib.contextmanager
     def timer(self, name, logLevel = pexLog.Log.DEBUG):
-        """Context manager to log performance data for an arbitrary block of code
+        """!Context manager to log performance data for an arbitrary block of code
         
-        @param[in] name: name of code being timed;
-            data will be logged using item name: <name>Start<item> and <name>End<item>
-        @param logLevel: one of the pexLog.Log level constants
+        @param[in] name name of code being timed;
+            data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
+        @param logLevel one of the pexLog.Log level constants
         
         To use:
         with self.timer(name):
@@ -238,7 +241,7 @@ class Task(object):
                 ctypes=(ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE,), ptypes=("o", "+", "x", "*",),
                 sizes=(4,),
                 pause=None, prompt=None):
-        """Display image and/or sources
+        """!Display image and/or sources
 
         @param name Name of product to display
         @param exposure Exposure to display, or None
@@ -254,6 +257,7 @@ N.b. the ds9 arrays (ctypes etc.) are used for the lists of the list of lists-of
 first ctype is used for the first SourceSet); the matches are interpreted as an extra pair of SourceSets
 but the sizes are doubled
         """
+        # N.b. doxygen will complain about parameters like ds9 and RED not being documented.  Bug ID 732356
         if not self._display or not self._display.has_key(name) or \
                 self._display < 0 or self._display in (False, None) or \
                 self._display[name] < 0 or self._display[name] in (False, None):
@@ -338,8 +342,8 @@ but the sizes are doubled
         return ConfigurableField(doc=doc, target=cls)
 
     def _computeFullName(self, name):
-        """Compute the full name of a subtask or metadata item, given its brief name
+        """!Compute the full name of a subtask or metadata item, given its brief name
         
-        @param name: brief name of subtask or metadata item
+        @param name brief name of subtask or metadata item
         """
         return "%s.%s" % (self._fullName, name)
