@@ -305,22 +305,22 @@ but the sizes are doubled
         if matches and exposure.getWcs() is not None:
             wcs = exposure.getWcs()
             with ds9.Buffering():
-                i = len(sources)    # counter for ptypes/ctypes
                 for first, second, d in matches:
+                    i = len(sources)    # counter for ptypes/ctypes, starting one after number of source lists
                     catPos = wcs.skyToPixel(first.getCoord())
                     x1, y1 = catPos.getX() - x0, catPos.getY() - y0
 
                     ctype = ctypes[i%len(ctypes)]
                     ptype = ptypes[i%len(ptypes)]
                     size  = 2*sizes[i%len(sizes)]
-                    ds9.dot(ptype, x1, y1, size=8, frame=frame, ctype=ctype)
+                    ds9.dot(ptype, x1, y1, size=size, frame=frame, ctype=ctype)
                     i += 1
 
                     ctype = ctypes[i%len(ctypes)]
                     ptype = ptypes[i%len(ptypes)]
                     size  = 2*sizes[i%len(sizes)]
                     x2, y2 = second.getX() - x0, second.getY() - y0
-                    ds9.dot(ptype, x2, y2, size=8, frame=frame, ctype=ctype)
+                    ds9.dot(ptype, x2, y2, size=size, frame=frame, ctype=ctype)
                     i += 1
 
         if pause:
