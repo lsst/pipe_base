@@ -21,6 +21,7 @@
 #
 import argparse
 import collections
+import fnmatch
 import itertools
 import os
 import re
@@ -243,7 +244,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--logdest", help="logging destination")
-        self.add_argument("--show", nargs="+", choices="config data tasks run".split(), default=(),
+        self.add_argument("--show", nargs="+", default=(),
             help="display the specified information to stdout and quit (unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
@@ -375,12 +376,8 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.log.info("input=%s"  % (namespace.input,))
         namespace.log.info("calib=%s"  % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
-        
-        if "tasks" in namespace.show:
-            showTaskHierarchy(config=namespace.config)
-        
-        if "config" in namespace.show:
-            namespace.config.saveToStream(sys.stdout, "config")
+
+        obeyShowArgument(namespace.show, namespace.config, exit=False)
 
         namespace.butler = dafPersist.Butler(
             root = namespace.input,
@@ -527,6 +524,57 @@ def getTaskDict(config, taskDict=None, baseName=""):
                 getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
     return taskDict
     
+def obeyShowArgument(showOpts, config=None, exit=False):
+    """!Process arguments specified with --show
+    \param showOpts  List of options passed to --show
+    \param config    The provided config
+    \param exit      Exit if "run" isn't included in showOpts
+
+    - config[=PAT]   Dump all the config entries, or just the ones that match the glob pattern
+    - data       Ignored; to be processed by caller
+    - run        Keep going (the default behaviour is to exit if --show is specified)
+    - tasks      Show task hierarchy
+    """
+    if not showOpts:
+        return
+
+    for what in showOpts:
+        mat = re.search(r"^config(?:=(.+))?", what)
+        if mat:
+            pattern = mat.group(1)
+            if pattern:
+                class FilteredStream(object):
+                    """A file object that only prints lines that match the glob "pattern"
+
+                    N.b. Newlines are silently discarded and reinserted;  crude but effective.
+                    """
+                    def __init__(self, pattern):
+                        self._pattern = pattern
+
+                    def write(self, str):
+                        str = str.rstrip()
+                        if str and fnmatch.fnmatch(str, self._pattern):
+                            print str
+
+                fd = FilteredStream(pattern)
+            else:
+                fd = sys.stdout
+
+            config.saveToStream(fd, "config")
+        elif what == "data":
+            pass
+        elif what == "run":
+            pass
+        elif what == "tasks":
+            showTaskHierarchy(config)
+        else:
+            print >> sys.stderr, "Unknown value for show: %s (choose from '%s')" % \
+                (what, "', '".join("config[=XXX] data tasks run".split()))
+            sys.exit(1)
+
+    if exit and "run" not in showOpts:
+        sys.exit(0)
+
 def showTaskHierarchy(config):
     """Print task hierarchy to stdout
     
