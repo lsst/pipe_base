@@ -38,6 +38,28 @@ if not ObsTestDir:
 else:
     DataPath = os.path.join(ObsTestDir, "tests/data/input")
 LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests/data")
+#
+# Context manager to intercept stdout/err
+#  http://stackoverflow.com/questions/5136611/capture-stdout-from-a-script-in-python
+#
+# Use as:
+#   with capture() as out:
+#      print 'hi'
+#
+import contextlib
+@contextlib.contextmanager
+def capture():
+    import sys
+    from cStringIO import StringIO
+    oldout,olderr = sys.stdout, sys.stderr
+    try:
+        out=[StringIO(), StringIO()]
+        sys.stdout,sys.stderr = out
+        yield out
+    finally:
+        sys.stdout,sys.stderr = oldout, olderr
+        out[0] = out[0].getvalue()
+        out[1] = out[1].getvalue()
 
 class SubConfig(pexConfig.Config):
     intItem = pexConfig.Field(doc="sample int field", dtype=int, default=8)
@@ -166,7 +188,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         try:
             self.ap.parse_args(
                 config = self.config,
-                args = [DataPath, "--show", "config", "data", "tasks", "run"],
+                args = [DataPath, "--show", "config", "data", "glob=XXX", "tasks", "run"],
             )
         finally:
             sys.stdout = savedStdOut
@@ -180,6 +202,22 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show", "config"],
         )
+        with capture() as out:
+            self.ap.parse_args(self.config, [DataPath, "--show", "config", "run"])
+        stdout = out[0]
+        answer = stdout.rstrip().split('\n')[2:] # strip the assertion on the config type
+        self.assertEqual(len(answer), 4)         # 4 config items
+
+        self.assertRaises(SystemExit, self.ap.parse_args,
+            config = self.config,
+            args = [DataPath, "--show", "glob"],
+        )
+        with capture() as out:
+            self.ap.parse_args(self.config, [DataPath, "--show", "glob=*strItem", "run"])
+        stdout = out[0]
+        answer = stdout.rstrip().split('\n')
+        self.assertEqual(len(answer), 1)         # only 1 config item matches
+
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = [DataPath, "--show", "badname", "run"],
