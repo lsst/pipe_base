@@ -183,16 +183,12 @@ class ArgumentParserTestCase(unittest.TestCase):
     
     def testShow(self):
         """Test --show"""
-        tempStdOut = StringIO.StringIO()
-        savedStdOut, sys.stdout = sys.stdout, tempStdOut
-        try:
+        with capture() as out:
             self.ap.parse_args(
                 config = self.config,
-                args = [DataPath, "--show", "config", "data", "glob=XXX", "tasks", "run"],
+                args = [DataPath, "--show", "config", "data", "tasks", "run"],
             )
-        finally:
-            sys.stdout = savedStdOut
-        res = tempStdOut.getvalue()
+        res = out[0]
         self.assertTrue("config.floatItem" in res)
         self.assertTrue("config.subItem" in res)
         self.assertTrue("config.boolItem" in res)
@@ -202,21 +198,17 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show", "config"],
         )
-        with capture() as out:
-            self.ap.parse_args(self.config, [DataPath, "--show", "config", "run"])
-        stdout = out[0]
-        answer = stdout.rstrip().split('\n')[2:] # strip the assertion on the config type
-        self.assertEqual(len(answer), 4)         # 4 config items
 
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--show", "glob"],
+            args = [DataPath, "--show", "config=X"],
         )
         with capture() as out:
-            self.ap.parse_args(self.config, [DataPath, "--show", "glob=*strItem", "run"])
+            self.ap.parse_args(self.config, [DataPath, "--show", "config=*strItem*", "run"])
         stdout = out[0]
         answer = stdout.rstrip().split('\n')
         self.assertEqual(len(answer), 1)         # only 1 config item matches
+        self.assertTrue("strDefault" in answer[0])
 
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,

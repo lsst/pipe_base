@@ -376,7 +376,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.log.info("input=%s"  % (namespace.input,))
         namespace.log.info("calib=%s"  % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
-        
+
         obeyShowArgument(namespace.show, namespace.config, exit=False)
 
         namespace.butler = dafPersist.Butler(
@@ -530,9 +530,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
     \param config    The provided config
     \param exit      Exit if "run" isn't included in showOpts
 
-    - config     Dump all the config entries
+    - config[=PAT]   Dump all the config entries, or just the ones that match the glob pattern
     - data       Ignored; to be processed by caller
-    - glob=pat   Dump all the config entries that match PAT
     - run        Keep going (the default behaviour is to exit if --show is specified)
     - tasks      Show task hierarchy
     """
@@ -540,32 +539,37 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         return
 
     for what in showOpts:
-        if what == "config":
-            config.saveToStream(sys.stdout, "config")
+        mat = re.search(r"^config(?:=(.+))?", what)
+        if mat:
+            pattern = mat.group(1)
+            if pattern:
+                class FilteredStream(object):
+                    """A file object that only prints lines that match the glob "pattern"
+
+                    N.b. Newlines are silently discarded and reinserted;  crude but effective.
+                    """
+                    def __init__(self, pattern):
+                        self._pattern = pattern
+
+                    def write(self, str):
+                        str = str.rstrip()
+                        if str and fnmatch.fnmatch(str, self._pattern):
+                            print str
+
+                fd = FilteredStream(pattern)
+            else:
+                fd = sys.stdout
+
+            config.saveToStream(fd, "config")
         elif what == "data":
             pass
-        elif fnmatch.fnmatch(what, "glob=*"):
-            class FilteredStream(object):
-                """A file object that only prints lines that match the glob "pattern"
-
-                N.b. Newlines are silently discarded and reinserted;  crude but effective.
-                """
-                def __init__(self, pattern):
-                    self._pattern = pattern
-
-                def write(self, str):
-                    str = str.rstrip()
-                    if str and fnmatch.fnmatch(str, self._pattern):
-                        print str
-
-            config.saveToStream(FilteredStream(what[5:]), "config")
         elif what == "run":
             pass
         elif what == "tasks":
             showTaskHierarchy(config)
         else:
             print >> sys.stderr, "Unknown value for show: %s (choose from '%s')" % \
-                (what, "', '".join("config glob=XXX tasks run".split()))
+                (what, "', '".join("config[=XXX] data tasks run".split()))
             sys.exit(1)
 
     if exit and "run" not in showOpts:
