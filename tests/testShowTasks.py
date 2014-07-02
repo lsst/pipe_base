@@ -58,7 +58,7 @@ c = MainTaskConfig()
 
 
 class ShowTasksTestCase(unittest.TestCase):
-    """A test case for the code that implements ArgumentParser's --show config option
+    """A test case for the code that implements ArgumentParser's --show tasks option
     """
     def testBasicShowTaskHierarchy(self):
         """Test basic usage of show
