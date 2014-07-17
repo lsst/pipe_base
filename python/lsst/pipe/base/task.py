@@ -20,6 +20,8 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import contextlib
+import functools
+import traceback
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField
@@ -52,7 +54,7 @@ import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
 
-__all__ = ["Task", "TaskError"]
+__all__ = ["Task", "TaskError", "suppressExceptions", "logOperation"]
 
 class TaskError(Exception):
     """Use to report errors for which a traceback is not useful.
@@ -62,6 +64,75 @@ class TaskError(Exception):
     - coadd finds no valid images in the specified patch.
     """
     pass
+
+
+def suppressExceptions(description, logDataRef=False, doTrace=True, excClasses=(Exception,)):
+    """Decorator maker for suppressing an exception in a Task method
+
+    Use this like:
+
+        @suppressExceptions("do something")
+        def method(self, *args, **kwargs):
+
+    If logDataRef=True, then the first argument to the method should be a data reference.
+
+    Raised exceptions are logged using the Task logger.
+
+    @param description: a description of the operation, for logging exceptions
+    @param logDataRef: should the data reference's identifier be logged?
+    @param doTrace: add traceback to the log?
+    @param excClasses: tuple of exception classes to catch
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except excClasses as e:
+                if logDataRef:
+                    dataRef = args[0]
+                    identifier = " on %s" % (dataRef.dataId,)
+                else:
+                    identifier = ""
+                self.log.warn("Unable to %s%s (%s): %s" %
+                              (description, identifier, dataRef.dataId, e.__class__.__name__, e))
+                if doTrace:
+                    self.log.info("Traceback:\n%s" % traceback.format_exc())
+                return None
+        return wrapped
+    return decorator
+
+def logOperation(description, logDataRef=False):
+    """Decorator maker for logging an operation in a Task method
+
+    Use this like:
+
+        @logOperation("do something")
+        def method(self, *args, **kwargs):
+
+    If logDataRef=True, then the first argument to the method should be a data reference.
+
+    The start and end of the operation are logged with the Task logger.
+
+    @param operation: description of operation (string)
+    @param logDataRef: should the data reference's identifier be logged?
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            if logDataRef:
+                dataRef = args[0]
+                identifier = " on %s" % (dataRef.dataId,)
+            else:
+                identifier = ""
+            self.log.info("Starting %s%s" % (description, identifier))
+            try:
+                return func(self, *args, **kwargs)
+            finally:
+                self.log.info("Finished %s%s" % (description, identifier))
+        return wrapped
+    return decorator
+
 
 class Task(object):
     """!A data processing task
