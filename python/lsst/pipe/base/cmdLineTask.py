@@ -21,6 +21,7 @@
 #
 import sys
 import traceback
+import functools
 
 import lsst.afw.table as afwTable
 
@@ -29,6 +30,37 @@ from .struct import Struct
 from .argumentParser import ArgumentParser
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
+
+def _poolFunctionWrapper(function, arg):
+    """Wrapper around function to catch exceptions that don't inherit from Exception
+
+    Such exceptions aren't caught by multiprocessing, which causes the slave
+    process to crash and you end up hitting the timeout.
+    """
+    try:
+        return function(arg)
+    except:
+        cls, exc, tb = sys.exc_info()
+        if issubclass(cls, Exception):
+            raise # No worries
+        # Need to wrap the exception with something multiprocessing will recognise
+        import traceback
+        from lsst.pex.logging import getDefaultLog
+        log = getDefaultLog()
+        log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
+        raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
+
+def _runPool(pool, timeout, function, iterable):
+    """Wrapper around pool.map_async, to handle timeout
+
+    This is required so as to trigger an immediate interrupt on the KeyboardInterrupt (Ctrl-C); see
+    http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
+
+    Further wraps the function in _poolFunctionWrapper to catch exceptions
+    that don't inherit from Exception.
+    """
+    return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
+
 
 class TaskRunner(object):
     """!Run a Task, using multiprocessing if requested.
@@ -109,7 +141,7 @@ class TaskRunner(object):
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
-            mapFunc = lambda x, y: pool.map_async(x, y).get(self.timeout)
+            mapFunc = functools.partial(_runPool, pool, self.timeout)
         else:
             pool = None
             mapFunc = map
