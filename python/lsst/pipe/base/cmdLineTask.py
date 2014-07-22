@@ -22,6 +22,7 @@
 import sys
 import traceback
 import functools
+import contextlib
 
 import lsst.afw.table as afwTable
 
@@ -60,6 +61,39 @@ def _runPool(pool, timeout, function, iterable):
     that don't inherit from Exception.
     """
     return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
+
+@contextlib.contextmanager
+def profile(filename, log=None):
+    """Context manager for profiling with cProfile
+
+    @param filename: Filename to which to write profile (profiling disabled if None or empty)
+    @param log: Log object for logging the profile operations
+
+    If profiling is enabled, the context manager returns the cProfile.Profile object (otherwise
+    it returns None), which allows additional control over profiling.  You can obtain this using
+    the "as" clause, e.g.:
+
+        with profile(filename) as prof:
+            runYourCodeHere()
+
+    The output cumulative profile can be printed with a command-line like:
+
+        python -c 'import pstats; pstats.Stats("<filename>").sort_stats("cumtime").print_stats(30)'
+    """
+    if not filename:
+        # Nothing to do
+        yield
+        return
+    from cProfile import Profile
+    profile = Profile()
+    if log is not None:
+        log.info("Enabling cProfile profiling")
+    profile.enable()
+    yield profile
+    profile.disable()
+    profile.dump_stats(filename)
+    if log is not None:
+        log.info("cProfile stats written to %s" % filename)
 
 
 class TaskRunner(object):
@@ -147,7 +181,11 @@ class TaskRunner(object):
             mapFunc = map
 
         if self.precall(parsedCmd):
-            resultList = mapFunc(self, self.getTargetList(parsedCmd))
+            profileName = parsedCmd.profile if hasattr(parsedCmd, "profile") else None
+            log = parsedCmd.log if hasattr(parsedCmd, "log") else None
+            with profile(profileName, log):
+                # All the work is done here
+                resultList = mapFunc(self, self.getTargetList(parsedCmd))
         else:
             resultList = []
 

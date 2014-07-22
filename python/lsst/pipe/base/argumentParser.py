@@ -243,6 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
+        self.add_argument("--profile", help="Dump cProfile statistics to filename")
         self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="+", default=(),
             help="display the specified information to stdout and quit (unless run is specified).")
