@@ -29,6 +29,7 @@ import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
+from lsst.pex.logging import getDefaultLog
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
@@ -40,13 +41,11 @@ def _poolFunctionWrapper(function, arg):
     """
     try:
         return function(arg)
+    except Exception:
+        raise # No worries
     except:
-        cls, exc, tb = sys.exc_info()
-        if issubclass(cls, Exception):
-            raise # No worries
         # Need to wrap the exception with something multiprocessing will recognise
-        import traceback
-        from lsst.pex.logging import getDefaultLog
+        cls, exc, tb = sys.exc_info()
         log = getDefaultLog()
         log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
         raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
