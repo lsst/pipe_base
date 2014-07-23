@@ -21,14 +21,79 @@
 #
 import sys
 import traceback
+import functools
+import contextlib
 
 import lsst.afw.table as afwTable
 
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
+from lsst.pex.logging import getDefaultLog
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
+
+def _poolFunctionWrapper(function, arg):
+    """Wrapper around function to catch exceptions that don't inherit from Exception
+
+    Such exceptions aren't caught by multiprocessing, which causes the slave
+    process to crash and you end up hitting the timeout.
+    """
+    try:
+        return function(arg)
+    except Exception:
+        raise # No worries
+    except:
+        # Need to wrap the exception with something multiprocessing will recognise
+        cls, exc, tb = sys.exc_info()
+        log = getDefaultLog()
+        log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
+        raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
+
+def _runPool(pool, timeout, function, iterable):
+    """Wrapper around pool.map_async, to handle timeout
+
+    This is required so as to trigger an immediate interrupt on the KeyboardInterrupt (Ctrl-C); see
+    http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
+
+    Further wraps the function in _poolFunctionWrapper to catch exceptions
+    that don't inherit from Exception.
+    """
+    return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
+
+@contextlib.contextmanager
+def profile(filename, log=None):
+    """Context manager for profiling with cProfile
+
+    @param filename: Filename to which to write profile (profiling disabled if None or empty)
+    @param log: Log object for logging the profile operations
+
+    If profiling is enabled, the context manager returns the cProfile.Profile object (otherwise
+    it returns None), which allows additional control over profiling.  You can obtain this using
+    the "as" clause, e.g.:
+
+        with profile(filename) as prof:
+            runYourCodeHere()
+
+    The output cumulative profile can be printed with a command-line like:
+
+        python -c 'import pstats; pstats.Stats("<filename>").sort_stats("cumtime").print_stats(30)'
+    """
+    if not filename:
+        # Nothing to do
+        yield
+        return
+    from cProfile import Profile
+    profile = Profile()
+    if log is not None:
+        log.info("Enabling cProfile profiling")
+    profile.enable()
+    yield profile
+    profile.disable()
+    profile.dump_stats(filename)
+    if log is not None:
+        log.info("cProfile stats written to %s" % filename)
+
 
 class TaskRunner(object):
     """!Run a Task, using multiprocessing if requested.
@@ -49,13 +114,14 @@ class TaskRunner(object):
     If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
     to jettison optional non-picklable elements.
 
-    Due to a python bug (http://bugs.python.org/issue8296), handling a KeyboardInterrupt
-    properly requires specifying a timeout [1].  This timeout (TaskRunner.TIMEOUT) may need
-    to be revised upwards for very long-running processes.
+    Due to a python bug [1], handling a KeyboardInterrupt properly requires specifying a timeout [2].  This
+    timeout (in sec) can be specified as the "timeout" element in the output from ArgumentParser
+    (the "parsedCmd"), if available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
 
-    [1] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
+    [1] http://bugs.python.org/issue8296
+    [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT = 9999 # Timeout for multiprocessing; adjust if you have a really long-running process
+    TIMEOUT = 9999 # Default timeout (sec) for multiprocessing
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
         
@@ -81,6 +147,11 @@ class TaskRunner(object):
         self.doRaise = bool(parsedCmd.doraise)
         self.clobberConfig = bool(parsedCmd.clobberConfig)
         self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
+
+        self.timeout = getattr(parsedCmd, 'timeout', None)
+        if self.timeout is None or self.timeout <= 0:
+            self.timeout = self.TIMEOUT
+
         if self.numProcesses > 1:
             if not TaskClass.canMultiprocess:
                 self.log.warn("This task does not support multiprocessing; using one process")
@@ -103,13 +174,17 @@ class TaskRunner(object):
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
-            mapFunc = lambda x, y: pool.map_async(x, y).get(self.TIMEOUT)
+            mapFunc = functools.partial(_runPool, pool, self.timeout)
         else:
             pool = None
             mapFunc = map
 
         if self.precall(parsedCmd):
-            resultList = mapFunc(self, self.getTargetList(parsedCmd))
+            profileName = parsedCmd.profile if hasattr(parsedCmd, "profile") else None
+            log = parsedCmd.log if hasattr(parsedCmd, "log") else None
+            with profile(profileName, log):
+                # All the work is done here
+                resultList = mapFunc(self, self.getTargetList(parsedCmd))
         else:
             resultList = []
 
