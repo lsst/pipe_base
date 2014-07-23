@@ -10,6 +10,7 @@ namespace lsst { namespace pipe { namespace base {
   - \ref pipeBase_argumentParser_dataIDs
   - \ref pipeBase_argumentParser_argumentFiles
   - \ref pipeBase_argumentParser_configOverride
+  - \ref pipeBase_argumentParser_retargetSubtasks
   - \ref pipeBase_argumentParser_debugVariables
 - \ref pipeBase_environmentVariables
 - \ref pipeBase_configOverrideFiles
@@ -18,7 +19,7 @@ namespace lsst { namespace pipe { namespace base {
 \section pipeBase_introduction Introduction
 
 lsst::pipe::base provides a data processing pipeline infrastructure. Data processing is performed by
-"tasks", which are instances of \ref task.Task "CmdLineTask" or \ref cmdLineTask.CmdLineTask "CmdLineTask".
+"tasks", which are instances of \ref task.Task "Task" or \ref cmdLineTask.CmdLineTask "CmdLineTask".
 Tasks perform a wide range of data processing operations, from basic operations such as
 assembling raw images into CCD images (trimming overscan), fitting a WCS or detecting sources on an image,
 to complex combinations of such operations.
@@ -148,12 +149,35 @@ In addition, you can specify configuration override files on the command line us
 and override some (but not all) configuration parameters directly on the command line using `--config`,
 as shown in these examples:
 - `--config str1=foo str2="fancier string" int1=5 intList=2,4,-87 float1=1.53 floatList=3.14,-5.6e7`
-- `--configfile %config.py`, where file `%config.py` contains: `root.strList = "first string", "second string"`
+- `--configfile %config.py`, where file `%config.py` contains:
+  \code
+  root.strList = "first string", "second string"
+  \endcode
 
-There are important limitations on using `--config` (use `--configfile` to get around these issues):
-- For items in registries you can only specify values for the active (current) item
+\note `root` in a configuration override file is equivalent to `self.config` in a task.
+
+There are important limitations `--config` (use `--configfile`, instead, in these situations):
+- You cannot \ref pipeBase_argumentParser_retargetSubtasks "retarget subtasks"
+- For items in registries, you can only specify values for the active (current) item
 - You cannot specify values for lists of strings
 - You cannot specify a subset of list; you must specify all values at once
+
+\subsection pipeBase_argumentParser_retargetSubtasks Retargeting Subtasks
+
+As a special case of \ref pipeBase_argumentParser_configOverride "overriding configuration parameters",
+users may replace one subtask with another; this is called "retargeting" the subtask. One common use case
+is to use a camera-specific variant of a subtask. Examples include:
+- lsst.obs.subaru.isr.SuprimeCamIsrTask: a version of instrument signature removal (ISR or detrending)
+    for Suprime-Cam and Hyper Suprime-Cam
+- lsst.obs.sdss.selectSdssImages.SelectSdssImagesTask: an version of the task that selects images
+    for co-addition of SDSS stripe 82 images
+
+Here is an example of retargeting a subtask in a config override file; this retargets
+lsst.pipe.tasks.exampleCmdLineTask.ExampleCmdLineTask `stats` with a simpler version:
+<pre>
+    from lsst.pipe.tasks.exampleStatsTasks import ExampleSimpleStatsTask
+    root.stats.retarget(ExampleSimpleStatsTask)
+</pre>
 
 \subsection pipeBase_argumentParser_debugVariables Specifying Debug Variables
 
@@ -183,11 +207,12 @@ The default value for each of these environment variables is the current working
 
 \section pipeBase_configOverrideFiles Automatically Loaded Config Override Files
 
-When a pipeline task is run, two camera-specific configuration overrides are loaded, if found;
-first one for the obs package then one for the camera. (There are two because in some cases
-an obs package may contain data for multiple cameras). These files may override configuration
-parameters or even replace subtasks with camera-specific variants (e.g. for instrument
-signature removal). The configuration override files are, in order:
+When a pipeline task is run, two camera-specific
+\ref pipeBase_argumentParser_configOverride "configuration override files" are loaded, if found;
+first one for the obs_ package then one for the camera. (There are two because some obs_ packages contain data
+for multiple cameras). These files may override configuration parameters or even
+\ref pipeBase_argumentParser_retargetSubtasks "retarget subtasks" with camera-specific variants
+(e.g. for instrument signature removal). The configuration override files are, in order:
 - <em>obs_path</em>/config/<em>task_name</em>.py
 - <em>obs_path</em>/config/<em>camera_name</em>/<em>task_name</em>.py
 
@@ -195,13 +220,14 @@ where the path elements are:
 - <em>task_name</em>: the name of the pipeline task (the value of its `_DefaultName` class variable),
   e.g. "processCcd" for lsst.pipe.tasks.processCcd.ProcessCcdTask.  
 - <em>camera_name</em>: the name of the camera, e.g. "lsstSim"
-- <em>obs_path</em>: the path to the obs package for the camera, e.g. "obs_lsstSim"
+- <em>obs_path</em>: the path to the obs_ package for the camera, e.g. the path to obs_lsstSim
 
 Here are two examples:
 - obs_lsstSim/config/makeCoaddTempExp.py: specifies which version of the image selector task to use
     for co-adding LSST simulated images
-- obs_subaru/config/hsc/isr.py: provides overrides for the ISR (instrument signature removal, aka detrending)
-    task for Hyper Suprime-Cam
+- obs_subaru/config/hsc/isr.py: provides overrides for the instrument signature removal (aka detrending)
+   task for Hyper Suprime-Cam
+    
 
 \section pipeBase_other Other Resources
 
