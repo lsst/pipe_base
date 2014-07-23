@@ -12,8 +12,8 @@ namespace lsst { namespace pipe { namespace base {
   - \ref pipeBase_argumentParser_configOverride
   - \ref pipeBase_argumentParser_retargetSubtasks
   - \ref pipeBase_argumentParser_debugVariables
+- \ref pipeBase_autoLoadedConfigOverrideFiles
 - \ref pipeBase_environmentVariables
-- \ref pipeBase_configOverrideFiles
 - \ref pipeBase_other
 
 \section pipeBase_introduction Introduction
@@ -140,7 +140,7 @@ myTask.py inputPath @@foo --config anotherParam=anotherValue --output outputPath
 \subsection pipeBase_argumentParser_configOverride Overriding Configuration Parameters
 
 The argument parser automatically loads specific configuration override files based on
-the camera name and its obs_ package. See \ref pipeBase_configOverrideFiles.
+the camera name and its obs_ package. See \ref pipeBase_autoLoadedConfigOverrideFiles.
 The format of a congiguration override file matches the configuration shown using `--show config`
 (in particular, note that `root` in a configuration override file is the word that matches `self.config`
 in a task when the task uses its config).
@@ -195,17 +195,7 @@ def DebugInfo(name):
 lsstDebug.Info = DebugInfo
 \endcode
 
-\section pipeBase_environmentVariables Environment Variables
-
-The command parser uses environment variables PIPE_INPUT_ROOT, PIPE_CALIB_ROOT, and PIPE_OUTPUT_ROOT,
-if available, to make it easier to specify the input, calib and output data repositories.
-Each environment variable is used as a root directory for relative paths and ignored for absolute paths.
-The default value for each of these environment variables is the current working directory. For example:
-- mytask foo # use $PIPE_INPUT_ROOT/foo as the input repository (or ./foo if $PIPE_INPUT_ROOT is undefined)
-- mytask  . # use $PIPE_INPUT_ROOT (= $PIPE_INPUT_ROOT/.) as the input repository
-- mytask  /a/b # use /a/b as the input repository ($PIPE_INPUT_ROOT is ignored for absolute paths)
-
-\section pipeBase_configOverrideFiles Automatically Loaded Config Override Files
+\section pipeBase_autoLoadedConfigOverrideFiles Automatically Loaded Config Override Files
 
 When a pipeline task is run, two camera-specific
 \ref pipeBase_argumentParser_configOverride "configuration override files" are loaded, if found;
@@ -227,7 +217,16 @@ Here are two examples:
     for co-adding LSST simulated images
 - obs_subaru/config/hsc/isr.py: provides overrides for the instrument signature removal (aka detrending)
    task for Hyper Suprime-Cam
-    
+
+\section pipeBase_environmentVariables Environment Variables
+
+The command parser uses environment variables PIPE_INPUT_ROOT, PIPE_CALIB_ROOT, and PIPE_OUTPUT_ROOT,
+if available, to make it easier to specify the input, calib and output data repositories.
+Each environment variable is used as a root directory for relative paths and ignored for absolute paths.
+The default value for each of these environment variables is the current working directory. For example:
+- mytask foo # use $PIPE_INPUT_ROOT/foo as the input repository (or ./foo if $PIPE_INPUT_ROOT is undefined)
+- mytask  . # use $PIPE_INPUT_ROOT (= $PIPE_INPUT_ROOT/.) as the input repository
+- mytask  /a/b # use /a/b as the input repository ($PIPE_INPUT_ROOT is ignored for absolute paths)
 
 \section pipeBase_other Other Resources
 
