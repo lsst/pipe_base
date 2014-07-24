@@ -181,7 +181,7 @@ lsst.pipe.tasks.exampleCmdLineTask.ExampleCmdLineTask `stats` with a simpler ver
 
 \subsection pipeBase_argumentParser_debugVariables Specifying Debug Variables
 
-Some tasks support debug variables that can be set while running from the command line
+Some tasks support debug variables that can be set, while running from the command line,
 to display additional information. Each task documents which debug variables it supports.
 See \ref baseDebug for information about how to enable specific debug variables while running
 from the command line.
