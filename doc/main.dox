@@ -181,19 +181,10 @@ lsst.pipe.tasks.exampleCmdLineTask.ExampleCmdLineTask `stats` with a simpler ver
 
 \subsection pipeBase_argumentParser_debugVariables Specifying Debug Variables
 
-To specify debug variables while running a task, put something like the following into a file named
-`debug.py`, and put that file somewhere on your python path (such as the directory from which
-you are running the task). Then run the task with the `--debug` flag.
-
-\code{.py}
-import lsstDebug
-def DebugInfo(name):
-    di = lsstDebug.getInfo(name)  # N.b. lsstDebug.Info(name) would call us recursively
-    if name == "lsst.pipe.tasks.exampleTask":
-        di.display = 1
-    return di
-lsstDebug.Info = DebugInfo
-\endcode
+Some tasks support debug variables that can be set while running from the command line
+to display additional information. Each task documents which debug variables it supports.
+See \ref baseDebug for information about how to enable specific debug variables while running
+from the command line.
 
 \section pipeBase_autoLoadedConfigOverrideFiles Automatically Loaded Config Override Files
 
