@@ -31,13 +31,13 @@ import lsst.pex.logging as pexLog
 __all__ = ["logInfo", "timeMethod"]
 
 def logPairs(obj, pairs, logLevel=pexLog.Log.DEBUG):
-    """Log (name, value) pairs to obj.metadata and obj.log
+    """!Log (name, value) pairs to obj.metadata and obj.log
     
-    @param obj: an object with two attributes:
-        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
-        * log: a pex_logging Log
-    @param pairs: a collection of (name, value) pairs
-    @param logLevel: one of the pexLog.Log level constants
+    @param obj      an object with two attributes:
+    * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
+    * log an instance of lsst.pex.logging.Log
+    @param pairs    a collection of (name, value) pairs
+    @param logLevel one of the pexLog.Log level constants
     """
     strList = []
     for name, value in pairs:
@@ -50,19 +50,19 @@ def logPairs(obj, pairs, logLevel=pexLog.Log.DEBUG):
     obj.log.log(logLevel, "; ".join(strList))
 
 def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
-    """Log timer information to obj.metadata and obj.log
+    """!Log timer information to obj.metadata and obj.log
 
-    @param obj: an object with two attributes:
-        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
-        * log: a pex_logging Log
-    @param prefix: name prefix, e.g. <funcName>Start
-    @param logLevel: one of the pexLog.Log level constants
+    @param obj      an object with two attributes:
+    * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
+    * log an instance of lsst.pex.logging.Log
+    @param prefix   name prefix, e.g. \<funcName>Start
+    @param logLevel one of the pexLog.Log level constants
 
             
     Logged items include:
-    * Utc:  UTC date in ISO format (only in metadata since log entries have timestamps)
-    * CpuTime: CPU time (seconds)
-    * MaxRss: maximum resident set size
+    * Utc:      UTC date in ISO format (only in metadata since log entries have timestamps)
+    * CpuTime:  CPU time (seconds)
+    * MaxRss:   maximum resident set size
     All logged resource information is only for the current process; child processes are excluded
     """
     cpuTime = time.clock()
@@ -86,9 +86,13 @@ def logInfo(obj, prefix, logLevel=pexLog.Log.DEBUG):
     )
 
 def timeMethod(func):
-    """Decorator to measure duration of a task method
+    """!Decorator to measure duration of a task method
+    
+    Writes various measures of time and possibly memory usage to the task's metadata;
+    all items are prefixed with the function name.
     
     To use:
+    \code
     import lsst.pipe.base as pipeBase
     class FooTask(pipeBase.Task):
         ...
@@ -96,13 +100,13 @@ def timeMethod(func):
         @pipeBase.timeMethod
         def run(self, ...): # or any other instance method you want to time
             ...
-    
-    Writes various measures of time and possibly memory usage to the task's metadata;
-    all items are prefixed with the function name.
-    
+    \endcode
+
+    @param func the method to wrap
+
     @warning This decorator only works with instance methods of Task, or any class with these attributes:
-        * metadata: a daf_data PropertyList (or other object with add(name, value) method)
-        * log: a pex_logging Log
+    * metadata: an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
+    * log: an instance of lsst.pex.logging.Log
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):

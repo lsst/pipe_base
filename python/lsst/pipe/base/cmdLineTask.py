@@ -63,7 +63,7 @@ def _runPool(pool, timeout, function, iterable):
 
 @contextlib.contextmanager
 def profile(filename, log=None):
-    """Context manager for profiling with cProfile
+    """!Context manager for profiling with cProfile
 
     @param filename: Filename to which to write profile (profiling disabled if None or empty)
     @param log: Log object for logging the profile operations
@@ -96,15 +96,18 @@ def profile(filename, log=None):
 
 
 class TaskRunner(object):
-    """!Run a Task, using multiprocessing if requested.
-    
-    Each command-line task must have this task runner or a subclass as its RunnerClass.
+    """!Run a command-line task, using multiprocessing if requested.
+
+    Each command-line task must have this task runner or a subclass as its `RunnerClass`.
     See CmdLineTask.parseAndRun to see how a task runner is used.
+    See the "how to write a command-line task" manual in the pipe_tasks documentation
+    for information about writing a custom task runner.
     
-    You may use this task runner for your command line task if your task has a run method
+    You may use this task runner for your command-line task if your task has a run method
     that takes exactly one argument: a butler data reference. Otherwise you must
-    provide a task-specific subclass of this runner for your task's RunnerClass
-    that overrides getTargetList and possibly __call__. See getTargetList for details.
+    provide a task-specific subclass of this runner for your task's `RunnerClass`
+    that overrides TaskRunner.getTargetList and possibly TaskRunner.\_\_call\_\_.
+    See TaskRunner.getTargetList for details.
 
     This design matches the common pattern for command-line tasks: the run method takes a single
     data reference, of some suitable name. Additional arguments are rare, and if present, require
@@ -112,9 +115,10 @@ class TaskRunner(object):
 
     Instances of this class must be picklable in order to be compatible with multiprocessing.
     If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
-    to jettison optional non-picklable elements.
+    to jettison optional non-picklable elements. If your task runner is not compatible with multiprocessing
+    then indicate this in your task by setting class variable canMultiprocess=False.
 
-    Due to a python bug [1], handling a KeyboardInterrupt properly requires specifying a timeout [2].  This
+    Due to a python bug [1], handling a KeyboardInterrupt properly requires specifying a timeout [2]. This
     timeout (in sec) can be specified as the "timeout" element in the output from ArgumentParser
     (the "parsedCmd"), if available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
 
@@ -125,9 +129,9 @@ class TaskRunner(object):
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
         
-        Do not store parsedCmd, as this instance is pickled (if multiprocessing) and parsedCmd may contain
-        non-picklable elements and it certainly contains more data than we need to send to each
-        iteration of the task.
+        \warning Do not store parsedCmd, as this instance is pickled (if multiprocessing) and parsedCmd may
+        contain non-picklable elements. It certainly contains more data than we need to send to each
+        instance of the task.
 
         @param TaskClass    The class of the task to run
         @param parsedCmd    The parsed command-line arguments, as returned by the task's argument parser's
@@ -159,6 +163,8 @@ class TaskRunner(object):
 
     def prepareForMultiProcessing(self):
         """!Prepare this instance for multiprocessing by removing optional non-picklable elements.
+
+        This is only called if the task is run under multiprocessing.
         """
         self.log = None
 
@@ -167,8 +173,9 @@ class TaskRunner(object):
 
         The task is run under multiprocessing if numProcesses > 1; otherwise processing is serial.
 
-        @return a list of results returned by __call__, or [] if __call__ not called
-            (e.g. if precall returns False). See __call__ for details.
+        @return a list of results returned by TaskRunner.\_\_call\_\_, or an empty list if
+        TaskRunner.\_\_call\_\_ is not called (e.g. if TaskRunner.precall returns `False`).
+        See TaskRunner.\_\_call\_\_ for details.
         """
         if self.numProcesses > 1:
             import multiprocessing
@@ -196,35 +203,44 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
-        """!Return a list of (dataRef, kwargs) to be used as arguments for __call__.
+        """!Return a list of (dataRef, kwargs) to be used as arguments for TaskRunner.\_\_call\_\_.
         
-        @param parsedCmd the parsed command object returned by ArgumentParser.parse_args
+        @param parsedCmd the parsed command object returned by \ref argumentParser.ArgumentParser.parse_args
+            "ArgumentParser.parse_args".
         @param **kwargs any additional keyword arguments. In the default TaskRunner
-        this is an empty dict, but having it simplifies overriding TaskRunner for tasks
-        whose run method takes additional arguments (see case (1) below).
+            this is an empty dict, but having it simplifies overriding TaskRunner for tasks
+            whose run method takes additional arguments (see case (1) below).
         
-        The default implementation of getTargetList and __call__ works for any task
-        that has a run method that takes exactly one argument: a data reference.
-        Otherwise you must provide a variant of TaskRunner that overrides getTargetList
-        and possibly __call__. There are two cases:
+        The default implementation of TaskRunner.getTargetList and TaskRunner.\_\_call\_\_ works for any
+        command-line task whose run method takes exactly one argument: a data reference.
+        Otherwise you must provide a variant of TaskRunner that overrides TaskRunner.getTargetList
+        and possibly TaskRunner.\_\_call\_\_. There are two cases:
         
-        (1) If your task has a run method that takes one data reference followed by additional arguments
-        then you need only override getTargetList to return the additional arguments an argument dict:
+        (1) If your command-line task has a `run` method that takes one data reference followed by additional
+        arguments, then you need only override TaskRunner.getTargetList to return the additional arguments as
+        an argument dict. To make this easier, your overridden version of getTargetList may call
+        TaskRunner.getTargetList with the extra arguments as keyword arguments. For example,
+        the following adds an argument dict containing a single key: "calExpList", whose value is the list
+        of data IDs for the calexp ID argument:
 
+        \code
         \@staticmethod
         def getTargetList(parsedCmd):
             return TaskRunner.getTargetList(parsedCmd, calExpList=parsedCmd.calexp.idList)
+        \endcode
         
-        which is equivalent to:
+        It is equivalent to this slightly longer version:
         
+        \code
         \@staticmethod
         def getTargetList(parsedCmd):
             argDict = dict(calExpList=parsedCmd.calexp.idList)
             return [(dataId, argDict) for dataId in parsedCmd.id.idList]
+        \endcode
             
-        (2) If your task does not meet condition (1) then you must override both getTargetList
-        and __call__. You may do this however you see fit, so long as getTargetList returns
-        a list, each of whose elements is sent to __call__, which runs your task.
+        (2) If your task does not meet condition (1) then you must override both TaskRunner.getTargetList
+        and TaskRunner.\_\_call\_\_. You may do this however you see fit, so long as TaskRunner.getTargetList
+        returns a list, each of whose elements is sent to TaskRunner.\_\_call\_\_, which runs your task.
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
@@ -232,24 +248,26 @@ class TaskRunner(object):
         """!Create a Task instance
 
         @param[in] parsedCmd parsed command-line options (used for extra task args by some task runners)
-        @param[in] args args tuple passed to __call__ (used for extra task args by some task runners)
+        @param[in] args args tuple passed to TaskRunner.\_\_call\_\_ (used for extra task args by some task runners)
 
         makeTask() can be called with either the 'parsedCmd' argument or 'args' argument set to None,
         but it must construct identical Task instances in either case.
 
-        Subclasses may ignore this method entirely if they reimplement both precall() and __call__()
+        Subclasses may ignore this method entirely if they reimplement both TaskRunner.precall and
+        TaskRunner.\_\_call\_\_
         """
         return self.TaskClass(config=self.config, log=self.log)
 
     def precall(self, parsedCmd):
-        """!Hook for code that should run exactly once, before multiprocessing is invoked.  Must
-        return True if __call__ should subsequently be called.
+        """!Hook for code that should run exactly once, before multiprocessing is invoked.
 
-        Implementations must take care to ensure that no unpicklable attributes are added to
-        the TaskRunner itself.
+        Must return True if TaskRunner.\_\_call\_\_ should subsequently be called.
 
-        The default implementation writes schemas and configs (and compares them to existing
-        files on disk if present).
+        \warning Implementations must take care to ensure that no unpicklable attributes are added to
+        the TaskRunner itself, for compatibility with multiprocessing.
+
+        The default implementation writes schemas and configs, or compares them to existing
+        files on disk if present.
         """
         task = self.makeTask(parsedCmd=parsedCmd)
         if self.doRaise:
@@ -313,7 +331,11 @@ class ButlerInitializedTaskRunner(TaskRunner):
     def makeTask(self, parsedCmd=None, args=None):
         """!A variant of the base version that passes a butler argument to the task's constructor
 
-        parsedCmd or args must be specified
+        @param[in] parsedCmd: parsed command-line options, as returned by the argument parser;
+            if specified then args is ignored
+        @param[in] args: other arguments; if parsedCmd is None then this must be specified
+
+        @throw RuntimeError if parsedCmd and args are both None
         """
         if parsedCmd is not None:
             butler = parsedCmd.butler
@@ -325,10 +347,13 @@ class ButlerInitializedTaskRunner(TaskRunner):
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
 class CmdLineTask(Task):
-    """!A task that can be executed from the command line
+    """!A command-line task is a data processing task can be executed from the command line
+
+    See \ref pipeBase_introduction "pipe_base introduction" to learn what tasks are,
+    and the pipe_tasks documentation for a manual on how to write command-line tasks.
     
     Subclasses must specify the following attribute:
-    * ConfigClass: configuration class for your task (an instance of pex_config Config)
+    * ConfigClass: configuration class for your task (an instance of lsst.pex.config.config.Config)
     * _DefaultName: default name used for this task
     
     Subclasses may also specify the following attribute:
@@ -344,12 +369,16 @@ class CmdLineTask(Task):
     @classmethod
     def applyOverrides(cls, config):
         """!A hook to allow a task to change the values of its config *after* the camera-specific
-        overrides are loaded but before any command-line overrides are applied.  This is invoked
-        only when parseAndRun is used; other ways of constructing a config will not apply these
-        overrides.
+        overrides are loaded but before any command-line overrides are applied.
 
         This is necessary in some cases because the camera-specific overrides may retarget subtasks,
-        wiping out changes made in ConfigClass.setDefaults.  See LSST ticket #2282 for more discussion.
+        wiping out changes made in ConfigClass.setDefaults. See LSST Trac ticket #2282 for more discussion.
+
+        \warning This is called by CmdLineTask.parseAndRun; other ways of constructing a config
+        will not apply these overrides.
+
+        @param[in] cls: the class object
+        @param[in] config: task configuration (an instance of cls.ConfigClass)
         """
         pass
 
@@ -357,10 +386,10 @@ class CmdLineTask(Task):
     def parseAndRun(cls, args=None, config=None, log=None, doReturnResults=False):
         """!Parse an argument list and run the command
 
-        @param cls      The class object
-        @param args     list of command-line arguments; if None use sys.argv
-        @param config   config for task (instance of pex_config Config); if None use cls.ConfigClass()
-        @param log      log (instance of pex_logging Log); if None use the default log
+        @param cls      the class object
+        @param args     list of command-line arguments; if `None` use sys.argv
+        @param config   config for task (instance of pex_config Config); if `None` use cls.ConfigClass()
+        @param log      log (instance of lsst.pex.logging.Log); if `None` use the default log
         @param doReturnResults  Return the collected results from each invocation of the task?
             This is only intended for unit tests and similar use.
             It can easily exhaust memory (if the task returns enough data and you call it enough times)
@@ -368,10 +397,10 @@ class CmdLineTask(Task):
 
         @return a Struct containing:
         - argumentParser: the argument parser
-        - parsedCmd: the parsed command returned by argumentParser.parse_args
-        - taskRunner: the task runner used to run the task
-        - resultList: results returned by cls.RunnerClass.run, one entry per invocation.
-            This will typically be a list of None unless doReturnResults is True;
+        - parsedCmd: the parsed command returned by the argument parer's parse_args method
+        - taskRunner: the task runner used to run the task (an instance of cls.RunnerClass)
+        - resultList: results returned by the task runner's run method, one entry per invocation.
+            This will typically be a list of `None` unless doReturnResults is `True`;
             see cls.RunnerClass (TaskRunner by default) for more information.
         """
         argumentParser = cls._makeArgumentParser()
@@ -389,13 +418,17 @@ class CmdLineTask(Task):
 
     @classmethod
     def _makeArgumentParser(cls):
-        """!Create an argument parser
+        """!Create and return an argument parser
 
-        Subclasses may wish to override, e.g. to change the dataset type or data
-        ref level or add additional identifiers.  If additional identifiers are
-        added, you might also want to adjust the cls.RunnerClass.getTargetList()
-        method (and perhaps cls.RunnerClass.__call__()) to get additional data
-        into our run method.
+        @param[in] cls: the class object
+        @return the argument parser for this task.
+
+        By default this returns an ArgumentParser with one ID argument named `--id`  of dataset type "raw".
+
+        Your task subclass may need to override this method to change the dataset type or data ref level,
+        or to add additional data ID arguments. If you add additional data ID arguments or your task's
+        run method takes more than a single data reference then you will also have to provide a task-specific
+        task runner (see TaskRunner for more information).
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
@@ -404,6 +437,15 @@ class CmdLineTask(Task):
     def writeConfig(self, butler, clobber=False):
         """!Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
+
+        @param[in] butler: data butler used to write the config.
+            The config is written to dataset type self._getConfigName()
+        @param[in] clobber: a boolean flag that controls what happens if a config already has been saved:
+            - True: overwrite the existing config
+            - False: raise TaskError if this config does not match the existing config
+
+        @throw TaskError if there is an existing config and clobber is False and the existing config does not
+        match the current config.
         """
         configName = self._getConfigName()
         if configName is None:
@@ -416,14 +458,28 @@ class CmdLineTask(Task):
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
-                    "Config does match existing config on disk for this task; tasks configurations "
-                    "must be consistent within the same output repo (override with --clobber-config)"
-                    )
+                    "Config does match existing task config %r on disk; tasks configurations "
+                    "must be consistent within the same output repo (override with --clobber-config)" % \
+                    (configName,))
         else:
             butler.put(self.config, configName)
 
     def writeSchemas(self, butler, clobber=False):
-        """!Write any catalogs returned by getSchemaCatalogs()."""
+        """!Write the schemas returned by getSchemaCatalogs()
+
+        @param[in] butler: data butler used to write the schema.
+            The schema is written to dataset type self._getConfigName()
+        @param[in] clobber: a boolean flag that controls what happens if a schema already has been saved:
+            - True: overwrite the existing schema
+            - False: raise TaskError if this schema does not match the existing schema
+
+        \warning if clobber is False and an existing schema does not match a current schema,
+        then some schemas may have been saved successfully and others may not, and there is no easy way to
+        tell which is which.
+
+        @throw TaskError if there is an existing schema and clobber is False and the existing schema does not
+        match the current schema.
+        """
         for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
             schemaDataset = dataset + "_schema"
             if clobber:
@@ -432,15 +488,18 @@ class CmdLineTask(Task):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
-                        "New schema does not match schema on disk for %r; schemas must be "
+                        "New schema does not match schema %r on disk; schemas must be "
                         " consistent within the same output repo (override with --clobber-config)"
-                        % dataset
-                        )
+                        % (dataset,))
             else:
                 butler.put(catalog, schemaDataset)
 
     def writeMetadata(self, dataRef):
-        """!Write the metadata produced from processing the data"""
+        """!Write the metadata produced from processing the data
+
+        @param[in] dataRef: butler data reference used to write the metadata.
+            The metadata is written to dataset type self._getMetadataName()
+        """
         try:
             metadataName = self._getMetadataName()
             if metadataName is not None:
@@ -449,11 +508,15 @@ class CmdLineTask(Task):
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
 
     def _getConfigName(self):
-        """!Return the name of the config dataset, or None if config is not persisted
+        """!Return the name of the config dataset type, or None if config is not to be persisted
+
+        @note The name may depend on the config; that is why this is not a class method.
         """
         return self._DefaultName + "_config"
 
     def _getMetadataName(self):
-        """!Return the name of the metadata dataset, or None if metadata is not persisted
+        """!Return the name of the metadata dataset type, or None if metadata is not to be persisted
+
+        @note The name may depend on the config; that is why this is not a class method.
         """
         return self._DefaultName + "_metadata"

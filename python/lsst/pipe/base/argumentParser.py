@@ -316,7 +316,7 @@ class ArgumentParser(argparse.ArgumentParser):
             files but before any command-line config overrides.  It should take the root config
             object as its only argument.
 
-        @return namespace: a struct containing many useful fields including:
+        @return namespace: an argparse.Namespace containing many useful fields including:
         - camera: camera name
         - config: the supplied config with all overrides applied, validated and frozen
         - butler: a butler for the data
@@ -437,7 +437,7 @@ class ArgumentParser(argparse.ArgumentParser):
         - Cast the data ID values to the correct type
         - Compute data references from data IDs
 
-        @param namespace: parsed namespace; reads these attributes:
+        @param namespace: parsed namespace (an argparse.Namespace); reads these attributes:
             - butler
             - log
             - <name_dstype> for each data ID argument with a dynamic dataset type registered using
@@ -460,7 +460,7 @@ class ArgumentParser(argparse.ArgumentParser):
     def _applyInitialOverrides(self, namespace):
         """Apply obs-package-specific and camera-specific config override files, if found
 
-        @param namespace: parsed namespace; reads these attributes:
+        @param namespace: parsed namespace (an argparse.Namespace); reads these attributes:
             - obsPkg
         
         Look in the package namespace.obsPkg for files:
@@ -485,7 +485,7 @@ class ArgumentParser(argparse.ArgumentParser):
     def handleCamera(self, namespace):
         """Perform camera-specific operations before parsing the command line.
         
-        @param namespace: namespace object with the following fields:
+        @param namespace: namespace (an argparse.Namespace) with the following fields:
             - camera: the camera name
             - config: the config passed to parse_args, with no overrides applied
             - obsPkg: the obs_ package for this camera
@@ -528,15 +528,19 @@ def getTaskDict(config, taskDict=None, baseName=""):
     return taskDict
     
 def obeyShowArgument(showOpts, config=None, exit=False):
-    """!Process arguments specified with --show
-    \param showOpts  List of options passed to --show
-    \param config    The provided config
-    \param exit      Exit if "run" isn't included in showOpts
+    """!Process arguments specified with --show (but ignores "data")
 
+    @param showOpts  List of options passed to --show
+    @param config    The provided config
+    @param exit      Exit if "run" isn't included in showOpts
+
+    Supports the following options in showOpts:
     - config[=PAT]   Dump all the config entries, or just the ones that match the glob pattern
+    - tasks      Show task hierarchy
     - data       Ignored; to be processed by caller
     - run        Keep going (the default behaviour is to exit if --show is specified)
-    - tasks      Show task hierarchy
+
+    Calls sys.exit(1) if any other option found.
     """
     if not showOpts:
         return
@@ -581,7 +585,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 def showTaskHierarchy(config):
     """Print task hierarchy to stdout
     
-    @param[in] config: configuration to process, an instance of lsst.pex.config.Config
+    @param[in] config: configuration to process (an lsst.pex.config.Config)
     """
     print "Subtasks:"
     taskDict = getTaskDict(config=config)
@@ -684,7 +688,8 @@ class IdValueAction(argparse.Action):
         ident.idList += idDictList
 
 class TraceLevelAction(argparse.Action):
-    """argparse action to set trace level"""
+    """argparse action to set trace level
+    """
     def __call__(self, parser, namespace, values, option_string):
         for componentLevel in values:
             component, sep, levelStr = componentLevel.partition("=")
@@ -716,7 +721,7 @@ def getDottedAttr(item, name):
     return subitem
 
 def dataExists(butler, datasetType, dataRef):
-    """Return True if data exists at the current level or any data exists at any level below
+    """Return True if data exists at the current level or any data exists at a deeper level
     """
     subDRList = dataRef.subItems()
     if subDRList:
