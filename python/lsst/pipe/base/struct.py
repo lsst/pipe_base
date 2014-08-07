@@ -1,3 +1,4 @@
+from __future__ import absolute_import, division
 # 
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -19,10 +20,26 @@
 # the GNU General Public License along with this program.  If not, 
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+__all__ = ["Struct"]
+
 class Struct(object):
     """!A struct to which you can add any fields
     
-    Intended for return values from run methods of Tasks, to provide easy but safe access.
+    Intended to be used for the return value from Task.run and other Task methods,
+    and useful for any method that returns multiple values.
+
+    The intent is to allow accessing returned items by name, instead of unpacking a tuple.
+    This makes the code much more robust and easier to read. It allows one to change what values are returned
+    without inducing mysterious failures: adding items is completely safe, and removing or renaming items
+    causes errors that are caught quickly and reported in a way that is easy to understand.
+
+    The primary reason for using Struct instead of dict is that the fields may be accessed as attributes,
+    e.g. aStruct.foo instead of aDict["foo"]. Admittedly this only saves a few characters, but it makes
+    the code significantly more readable.
+
+    Struct is preferred over named tuples, because named tuples can be used as ordinary tuples, thus losing
+    all the safety advantages of Struct. In addition, named tuples are clumsy to define and Structs
+    are much more mutable (e.g. one can trivially combine Structs and add additional fields).
     """
     def __init__(self, **keyArgs):
         """!Create a Struct with the specified field names and values
