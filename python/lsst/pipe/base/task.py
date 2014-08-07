@@ -1,3 +1,4 @@
+from __future__ import absolute_import, division
 # 
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -70,7 +71,12 @@ class TaskError(Exception):
     pass
 
 class Task(object):
-    """!A data processing task
+    """!Base class for data processing tasks
+
+    See \ref pipeBase_introduction "pipe_base introduction" to learn what tasks are,
+    and \ref pipeTasks_writeTask "how to write a task" for more information about writing tasks.
+    If the second link is broken (as it will be before the documentation is cross-linked)
+    then look at the main page of pipe_tasks documentation for a link.
     
     Useful attributes include:
     * log: an lsst.pex.logging.Log
@@ -79,39 +85,45 @@ class Task(object):
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used by the task.
     
-    Subclasses should have a method named "run" to perform the main data processing. Details:
+    Subclasses typically have a method named "run" to perform the main data processing. Details:
     * run should process the minimum reasonable amount of data, typically a single CCD.
-      Iteration, if desired, is performed by a caller of the run method.
-    * If "run" can persist or unpersist data: "run" should accept a butler data reference
-      (or a collection of data references, if appropriate, e.g. coaddition).
-      The default level for data references is "sensor" (aka "ccd" for some cameras).
-    * If "run" can persist data then the task's config should offer a flag to disable persistence.
+      Iteration, if desired, is performed by a caller of the run method. This is good design and allows
+      multiprocessing without the run method having to support it directly.
+    * If "run" can persist or unpersist data:
+        * "run" should accept a butler data reference (or a collection of data references, if appropriate,
+            e.g. coaddition).
+        * There should be a way to run the task without persisting data. Typically the run method returns all
+            data, even if it is persisted, and the task's config method offers a flag to disable persistence.
 
     \deprecated Tasks other than cmdLineTask.CmdLineTask%s should \em not accept a blob such as a butler data
     reference.  How we will handle data references is still TBD, so don't make changes yet! RHL 2014-06-27
     
     Subclasses must also have an attribute ConfigClass that is a subclass of lsst.pex.config.Config
-    which configures this task. Subclasses should also have an attribute _DefaultName:
-    the default name if there is no parent task. _DefaultName is required for subclasses of cmdLineTask.CmdLineTask
-    and recommended for subclasses of Task because it simplifies construction (e.g. for unit tests).
+    which configures the task. Subclasses should also have an attribute _DefaultName:
+    the default name if there is no parent task. _DefaultName is required for subclasses of
+    \ref cmdLineTask.CmdLineTask "CmdLineTask" and recommended for subclasses of Task because it simplifies
+    construction (e.g. for unit tests).
     
-    Pipeline tasks intended to be run as top-level tasks should be subclasses of cmdLineTask.CmdLineTask, not Task.
+    Tasks intended to be run from the command line should be subclasses of \ref cmdLineTask.CmdLineTask
+    "CmdLineTask", not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """!Create a Task
         
-        @param[in] config config to configure this task (task-specific subclass of lsst.pex.config.Config);
+        @param[in] config       configuration for this task (an instance of self.ConfigClass,
+            which is a task-specific subclass of lsst.pex.config.Config), or None. If None:
             - If parentTask specified then defaults to parentTask.config.\<name>
             - If parentTask is None then defaults to self.ConfigClass()
-        @param[in] name brief name of task; defaults to the class name if parentTask=None
-        @param[in] parentTask the parent task of this subtask, if any.
+        @param[in] name         brief name of task, or None; if None then defaults to self._DefaultName
+        @param[in] parentTask   the parent task of this subtask, if any.
             - If None (a top-level task) then you must specify config and name is ignored.
             - If not None (a subtask) then you must specify name
-        @param[in] log pexLog log; if None then the default is used;
+        @param[in] log          pexLog log; if None then the default is used;
             in either case a copy is made using the full task name.
         
-        @throws RuntimeError if parentTask is None and config is None.
-        @throws RuntimeError if parentTask is not None and name is None.
+        @throw RuntimeError if parentTask is None and config is None.
+        @throw RuntimeError if parentTask is not None and name is None.
+        @throw RuntimeError if name is None and _DefaultName does not exist.
         """
         self.metadata = dafBase.PropertyList()
 
@@ -143,31 +155,40 @@ class Task(object):
         self._taskDict[self._fullName] = self
 
     def emptyMetadata(self):
-        """!Empty metadata from this Task and all sub-Tasks."""
+        """!Empty (clear) the metadata for this Task and all sub-Tasks."""
         for subtask in self._taskDict.itervalues():
             subtask.metadata = dafBase.PropertyList()
 
     def getSchemaCatalogs(self):
-        """!Return the schemas of catalogs generated by this task.
+        """!Return the schemas generated by this task
 
-        The actual return value should be a dict of empty catalog objects that can be used to save
-        all the schemas of all catalogs generated by this task.  Dict keys should be the butler
-        dataset of the catalog, and values should be the correct lsst.afw.table catalog class.
+        @warning Subclasses the use schemas must override this method. The default implemenation
+        returns an empty dict.
 
-        Subtasks should not be called recursively; instead use Task.getAllSchemaCatalogs() to return
-        all schemas within a task hierarchy.
+        @return a dict of butler dataset type: empty catalog (an instance of the appropriate
+            lsst.afw.table Catalog type) for this task
 
         This method may be called at any time after the Task is constructed, which means that
-        all task schemas should be computed at construction time, *not* when data is actually
-        processed.  This reflects the philosophy that the schema should not depend on the data.
+        all task schemas should be computed at construction time, __not__ when data is actually
+        processed. This reflects the philosophy that the schema should not depend on the data.
 
-        Returning catalogs rather than just schemas allows us to save e.g. slots for
-        SourceCatalog as well.
+        Returning catalogs rather than just schemas allows us to save e.g. slots for SourceCatalog as well.
+
+        See also Task.getAllSchemaCatalogs
         """
         return {}
 
     def getAllSchemaCatalogs(self):
-        """!Call getSchemaCatalogs() on self and all subtasks, combining the results into a single dict.
+        """!Call getSchemaCatalogs() on all tasks in the hiearchy, combining the results into a single dict.
+
+        @return a dict of butler dataset type: empty catalog (an instance of the appropriate
+            lsst.afw.table Catalog type) for all tasks in the hierarchy, from the top-level task down
+            through all subtasks
+
+        This method may be called on any task in the hierarchy; it will return the same answer, regardless.
+
+        The default implementation should always suffice. If your subtask uses schemas the override
+        Task.getSchemaCatalogs, not this method.
         """
         schemaDict = self.getSchemaCatalogs()
         for subtask in self._taskDict.itervalues():
@@ -176,6 +197,13 @@ class Task(object):
 
     def getFullMetadata(self):
         """!Get metadata for all tasks
+
+        The returned metadata includes timing information (if \@timer.timeMethod is used)
+        and any metadata set by the task. The name of each item consists of the full task name
+        with "." replaced by ":", followed by "." and the name of the item, e.g.:
+            topLeveltTaskName:subtaskName:subsubtaskName.itemName
+        using ":" in the full task name disambiguates the rare situation that a task has a subtask
+        and a metadata item with the same name.
         
         @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
             for the top-level task and all subtasks, sub-subtasks, etc.
@@ -186,16 +214,20 @@ class Task(object):
         return fullMetadata
     
     def getFullName(self):
-        """!Return the full name of the task.
+        """!Return the task name as a hierarchical name including parent task names
 
-        Subtasks use dotted notation. Thus subtask "foo" of subtask "bar" of the top level task
-        has the full name "\<top>.foo.bar" where \<top> is the name of the top-level task
-        (which defaults to the name of its class).
+        The full name consists of the name of the parent task and each subtask separated by periods.
+        For example:
+        - The full name of top-level task "top" is simply "top"
+        - The full name of subtask "sub" of top-level task "top" is "top.sub"
+        - The full name of subtask "sub2" of subtask "sub" of top-level task "top" is "top.sub.sub2".
         """
         return self._fullName
 
     def getName(self):
-        """!Return the brief name of the task (the last field in the full name).
+        """!Return the name of the task
+
+        See getFullName to get a hierarchical name including parent task names
         """
         return self._name
     
@@ -212,10 +244,10 @@ class Task(object):
         
         The subtask must be defined by self.config.\<name>, an instance of pex_config ConfigurableField.
         
-        @param name brief name of subtask
-        @param **keyArgs extra keyword arguments used to construct the task.
+        @param name         brief name of subtask
+        @param **keyArgs    extra keyword arguments used to construct the task.
             The following arguments are automatically provided and cannot be overridden:
-            config, name and parentTask.
+            "config" and "parentTask".
         """
         configurableField = getattr(self.config, name, None)
         if configurableField is None:
@@ -227,13 +259,15 @@ class Task(object):
     def timer(self, name, logLevel = pexLog.Log.DEBUG):
         """!Context manager to log performance data for an arbitrary block of code
         
-        @param[in] name name of code being timed;
+        @param[in] name         name of code being timed;
             data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
-        @param logLevel one of the pexLog.Log level constants
+        @param[in] logLevel     one of the lsst.pex.logging.Log level constants
         
-        To use:
-        with self.timer(name):
+        Example of use:
+        \code
+        with self.timer("someCodeToTime"):
             ...code to time...
+        \endcode
 
         See timer.logInfo for the information logged            
         """
@@ -247,21 +281,35 @@ class Task(object):
                 ctypes=_DefaultDS9CTypes, ptypes=_DefaultDS9PTypes,
                 sizes=(4,),
                 pause=None, prompt=None):
-        """!Display image and/or sources
+        """!Display an exposure and/or sources
 
-        @param[in] name Name of product to display
-        @param[in] exposure Exposure to display, or None
-        @param[in] sources list of sets of Sources to display, or []
-        @param[in] matches Matches to display, or None
-        @param[in] ctypes Array of colours to use on ds9 (will be reused as necessary)
-        @param[in] ptypes Array of ptypes to use on ds9 (will be reused as necessary)
-        @param[in] sizes Array of sizes to use on ds9 (will be reused as necessary)
-        @param[in] pause Pause execution?
-        @param[in] prompt Prompt for user
+        @warning This method is deprecated. New code should call lsst.afw.display.ds9 directly.
 
-N.b. the ds9 arrays (ctypes etc.) are used for the lists of the list of lists-of-sources (so the
-first ctype is used for the first SourceSet); the matches are interpreted as an extra pair of SourceSets
-but the sizes are doubled
+        @param[in] name         name of product to display
+        @param[in] exposure     exposure to display (instance of lsst::afw::image::Exposure), or None
+        @param[in] sources      list of Sources to display, as a single lsst.afw.table.SourceCatalog
+                                or a list of lsst.afw.table.SourceCatalog,
+                                or an empty list to not display sources
+        @param[in] matches      list of source matches to display (instances of
+            lsst.afw.table.ReferenceMatch), or None;
+            if any matches are specified then exposure must be provided and have a lsst.afw.image.Wcs.
+        @param[in] ctypes       array of colors to use on ds9 for displaying sources and matches
+            (in that order).
+            ctypes is indexed as follows, where ctypes is repeatedly cycled through, if necessary:
+            - ctypes[i] is used to display sources[i]
+            - ctypes[len(sources) + 2i] is used to display matches[i][0]
+            - ctypes[len(sources) + 2i + 1] is used to display matches[i][1]
+        @param[in] ptypes       array of ptypes to use on ds9 for displaying sources and matches;
+            indexed like ctypes
+        @param[in] sizes        array of sizes to use on ds9 for displaying sources and matches;
+            indexed like ctypes
+        @param[in] pause        pause execution?
+        @param[in] prompt       prompt for user while paused (ignored if pause is False)
+
+        @warning if matches are specified and exposure has no lsst.afw.image.Wcs then the matches are
+        silently not shown.
+
+        @throw Exception if matches specified and exposure is None
         """
         # N.b. doxygen will complain about parameters like ds9 and RED not being documented.  Bug ID 732356
         if not self._display or not self._display.has_key(name) or \
@@ -344,12 +392,27 @@ but the sizes are doubled
     @classmethod
     def makeField(cls, doc):
         """!Make an lsst.pex.config.ConfigurableField for this task
+
+        Provides a convenient way to specify this task is a subtask of another task.
+        Here is an example of use:
+        \code
+        class OtherTaskConfig(lsst.pex.config.Config)
+            aSubtask = ATaskClass.makeField("a brief description of what this task does")
+        \endcode
+
+        @param[in] cls      this class
+        @param[in] doc      help text for the field
+        @return a lsst.pex.config.ConfigurableField for this task
         """
         return ConfigurableField(doc=doc, target=cls)
 
     def _computeFullName(self, name):
         """!Compute the full name of a subtask or metadata item, given its brief name
+
+        For example: if the full name of this task is "top.sub.sub2"
+        then _computeFullName("subname") returns "top.sub.sub2.subname".
         
-        @param name brief name of subtask or metadata item
+        @param[in] name     brief name of subtask or metadata item
+        @return the full name: the "name" argument prefixed by the full task name and a period.
         """
         return "%s.%s" % (self._fullName, name)
