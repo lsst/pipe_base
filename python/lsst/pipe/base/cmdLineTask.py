@@ -474,8 +474,8 @@ class CmdLineTask(Task):
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
-                    "Config does match existing task config %r on disk; tasks configurations " + \
-                    "must be consistent within the same output repo (override with --clobber-config)" % \
+                    ("Config does match existing task config %r on disk; tasks configurations " + \
+                    "must be consistent within the same output repo (override with --clobber-config)") % \
                     (configName,))
         else:
             butler.put(self.config, configName)
@@ -502,8 +502,8 @@ class CmdLineTask(Task):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
-                        "New schema does not match schema %r on disk; schemas must be " + \
-                        " consistent within the same output repo (override with --clobber-config)" % \
+                        ("New schema does not match schema %r on disk; schemas must be " + \
+                        " consistent within the same output repo (override with --clobber-config)") % \
                         (dataset,))
             else:
                 butler.put(catalog, schemaDataset)
