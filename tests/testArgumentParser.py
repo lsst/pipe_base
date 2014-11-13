@@ -34,8 +34,8 @@ ObsTestDir = eups.productDir("obs_test")
 if not ObsTestDir:
     print "Warning: you must setup obs_test to run these tests"
 else:
-    DataPath = os.path.join(ObsTestDir, "tests/data/input")
-LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests/data")
+    DataPath = os.path.join(ObsTestDir, "data", "input")
+LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests", "data")
 #
 # Context manager to intercept stdout/err
 #  http://stackoverflow.com/questions/5136611/capture-stdout-from-a-script-in-python
@@ -87,14 +87,14 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --id basics"""
         namespace = self.ap.parse_args(
             config = self.config,
-            args = [DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982"],
+            args = [DataPath, "--id", "visit=1", "filter=g"],
         )
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(len(namespace.id.refList), 1)
         
         namespace = self.ap.parse_args(
             config = self.config,
-            args = [DataPath, "--id", "raft=0,3", "sensor=0,1", "visit=85470982"],
+            args = [DataPath, "--id", "visit=22", "filter=g"],
         )
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(len(namespace.id.refList), 0) # no data for this ID
@@ -104,16 +104,16 @@ class ArgumentParserTestCase(unittest.TestCase):
         # By itself
         namespace = self.ap.parse_args(
             config = self.config,
-            args = [DataPath, "--other", "raft=0,3", "sensor=1,1", "visit=85470982"],
+            args = [DataPath, "--other", "visit=99"],
         )
         self.assertEqual(len(namespace.otherId.idList), 1)
-        self.assertEqual(len(namespace.otherId.refList), 1)
+        self.assertEqual(len(namespace.otherId.refList), 0)
 
         # And together
         namespace = self.ap.parse_args(
             config = self.config,
-            args = [DataPath, "--id", "raft=0,3", "sensor=1,1", "visit=85470982",
-                    "--other", "raft=0,3", "sensor=0,1", "visit=85470982"],
+            args = [DataPath, "--id", "visit=1",
+                    "--other", "visit=99"],
         )
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(len(namespace.id.refList), 1)
@@ -122,31 +122,29 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def testIdCross(self):
         """Test --id cross product, including order"""
-        sensorList = ("1,1", "0,2")
-        raftList = ("0,1", "2,1", "0,3")
-        visitList = (85470982,)
+        visitList = (1, 2, 3)
+        filterList = ("g", "r")
         namespace = self.ap.parse_args(
             config = self.config,
             args = [
                 DataPath,
                 "--id",
-                "sensor=%s" % ("^".join(sensorList),),
-                "raft=%s" % ("^".join(raftList),),
+                "filter=%s" % ("^".join(filterList),),
                 "visit=%s" % ("^".join(str(visit) for visit in visitList),),
             ]
         )
         self.assertEqual(len(namespace.id.idList), 6)
-        predValList =  itertools.product(sensorList, raftList, visitList)
+        predValList =  itertools.product(filterList, visitList)
         for id, predVal in itertools.izip(namespace.id.idList, predValList):
-            idVal = tuple(id[key] for key in ("sensor", "raft", "visit"))
+            idVal = tuple(id[key] for key in ("filter", "visit"))
             self.assertEqual(idVal, predVal)
-        self.assertEqual(len(namespace.id.refList), 2) # only have data for two of these
+        self.assertEqual(len(namespace.id.refList), 3) # only have data for three of these
     
     def testIdDuplicate(self):
         """Verify that each ID name can only appear once in a given ID argument"""
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
-            args = [DataPath, "--id", "sensor=0,0^0,1", "sensor=1,1"],
+            args = [DataPath, "--id", "visit=1", "visit=2"],
         )
     
     def testConfigBasics(self):
