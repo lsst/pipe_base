@@ -37,8 +37,6 @@ if not ObsTestDir:
 else:
     DataPath = os.path.join(ObsTestDir, "data", "input")
 
-__all__ = ["TestConfig"]
-
 class TestTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
     _DefaultName = "test"
