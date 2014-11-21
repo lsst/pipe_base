@@ -304,10 +304,11 @@ class TaskRunner(object):
         - A pipe_base Struct containing these fields if doReturnResults true:
             - dataRef: the provided data reference
             - metadata: task metadata after execution of run
-            - result: result returned by task run
+            - result: result returned by task run, or None if the task fails
         """
         dataRef, kwargs = args
         task = self.makeTask(args=args)
+        result = None # in case the task fails
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:

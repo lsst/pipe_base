@@ -37,8 +37,6 @@ if not ObsTestDir:
 else:
     DataPath = os.path.join(ObsTestDir, "data", "input")
 
-__all__ = ["TestConfig"]
-
 class TestTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
     _DefaultName = "test"
@@ -46,8 +44,12 @@ class TestTask(pipeBase.CmdLineTask):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
         self.dataRefList = []
         self.numProcessed = 0
+        self.metadata.set("numProcessed", self.numProcessed)
 
+    @pipeBase.timeMethod
     def run(self, dataRef):
+        if self.config.doFail:
+            raise pipeBase.TaskError("Failed by request: config.doFail is true")
         self.dataRefList.append(dataRef)
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
@@ -124,7 +126,15 @@ class CmdLineTaskTestCase(unittest.TestCase):
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
-    
+
+    def testDoReturnResultsOnFailure(self):
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
+            "--id", "visit=3", "filter=r", "--config", "doFail=True", "--clobber-config"], doReturnResults=True)
+        self.assertEqual(len(retVal.resultList), 1)
+        result = retVal.resultList[0]
+        self.assertEqual(result.metadata.get("numProcessed"), 0)
+        self.assertEqual(retVal.resultList[0].result, None)
+
     def testMultiprocess(self):
         """Test multiprocessing at a very minimal level
         """
