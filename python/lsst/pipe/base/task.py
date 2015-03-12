@@ -251,7 +251,7 @@ class Task(object):
         """
         configurableField = getattr(self.config, name, None)
         if configurableField is None:
-            raise KeyError("%s's config does not have field %r" % (self.getFullName, name))
+            raise KeyError("%s's config does not have field %r" % (self.getFullName(), name))
         subtask = configurableField.apply(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
 
