@@ -475,7 +475,7 @@ class CmdLineTask(Task):
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
-                    ("Config does match existing task config %r on disk; tasks configurations " + \
+                    ("Config does not match existing task config %r on disk; tasks configurations " + \
                     "must be consistent within the same output repo (override with --clobber-config)") % \
                     (configName,))
         else:
