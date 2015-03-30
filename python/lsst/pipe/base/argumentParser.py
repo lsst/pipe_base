@@ -259,6 +259,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
                           help=("backup and then overwrite existing config files instead of checking them "
                                 "(safe with -j, but not all other forms of parallel execution)"))
+        self.add_argument("--no-backup-config", action="store_true", dest="noBackupConfig", default=False,
+                          help="Don't copy config and eups versions to file~N backup.")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
