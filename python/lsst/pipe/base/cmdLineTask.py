@@ -151,6 +151,7 @@ class TaskRunner(object):
         self.log = parsedCmd.log
         self.doRaise = bool(parsedCmd.doraise)
         self.clobberConfig = bool(parsedCmd.clobberConfig)
+        self.doBackup = not bool(parsedCmd.noBackupConfig)
         self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
 
         self.timeout = getattr(parsedCmd, 'timeout', None)
@@ -277,12 +278,12 @@ class TaskRunner(object):
         """
         task = self.makeTask(parsedCmd=parsedCmd)
         if self.doRaise:
-            task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
-            task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
+            task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+            task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
         else:
             try:
-                task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig)
-                task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig)
+                task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+                task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
             except Exception, e:
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
@@ -458,7 +459,7 @@ class CmdLineTask(Task):
         parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
         return parser
 
-    def writeConfig(self, butler, clobber=False):
+    def writeConfig(self, butler, clobber=False, doBackup=True):
         """!Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
 
@@ -472,7 +473,7 @@ class CmdLineTask(Task):
         if configName is None:
             return
         if clobber:
-            butler.put(self.config, configName, doBackup=True)
+            butler.put(self.config, configName, doBackup=doBackup)
         elif butler.datasetExists(configName):
             # this may be subject to a race condition; see #2789
             oldConfig = butler.get(configName, immediate=True)
@@ -485,7 +486,7 @@ class CmdLineTask(Task):
         else:
             butler.put(self.config, configName)
 
-    def writeSchemas(self, butler, clobber=False):
+    def writeSchemas(self, butler, clobber=False, doBackup=True):
         """!Write the schemas returned by \ref task.Task.getAllSchemaCatalogs "getAllSchemaCatalogs"
 
         @param[in] butler   data butler used to write the schema.
@@ -502,7 +503,7 @@ class CmdLineTask(Task):
         for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
             schemaDataset = dataset + "_schema"
             if clobber:
-                butler.put(catalog, schemaDataset, doBackup=True)
+                butler.put(catalog, schemaDataset, doBackup=doBackup)
             elif butler.datasetExists(schemaDataset):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
