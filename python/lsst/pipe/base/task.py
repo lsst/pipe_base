@@ -312,10 +312,11 @@ class Task(object):
         @throw Exception if matches specified and exposure is None
         """
         # N.b. doxygen will complain about parameters like ds9 and RED not being documented.  Bug ID 732356
-        if not self._display or not self._display.has_key(name) or \
-                self._display < 0 or self._display in (False, None) or \
-                self._display[name] < 0 or self._display[name] in (False, None):
+        if not self._display or self._display < 0:
             return
+        if isinstance(self._display, dict):
+            if (name not in self._display) or not self._display[name] or self._display[name] < 0:
+                return
 
         if isinstance(self._display, int):
             frame = self._display
