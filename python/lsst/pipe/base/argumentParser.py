@@ -30,7 +30,7 @@ import shlex
 import sys
 import shutil
 
-import eups
+import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
@@ -474,10 +474,8 @@ class ArgumentParser(argparse.ArgumentParser):
         - config/\<camera_name>/\<task_name>.py
         and load if found
         """
-        obsPkgDir = eups.productDir(namespace.obsPkg)
+        obsPkgDir = lsst.utils.getPackageDir(namespace.obsPkg)
         fileName = self._name + ".py"
-        if not obsPkgDir:
-            raise RuntimeError("Must set up %r" % (namespace.obsPkg,))
         for filePath in (
             os.path.join(obsPkgDir, "config", fileName),
             os.path.join(obsPkgDir, "config", namespace.camera, fileName),
