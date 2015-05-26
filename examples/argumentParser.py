@@ -22,9 +22,13 @@
 #
 """Example showing use of the argument parser
 
-@note
-- to select data you must specify --id
-- you may wish to display the config and data using --show config data
+Here are some examples that use the repository in obs_test (which is automatically setup
+when pipe_base is setup):
+
+./argumentParser.py $OBS_TEST_DIR/data/input --help
+./argumentParser.py $OBS_TEST_DIR/data/input --id --show config data
+./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --show data
+./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --config oneFloat=1.5 --show config
 """
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -64,6 +68,7 @@ class ExampleConfig(pexConfig.Config):
     )
 
 parser = pipeBase.ArgumentParser(name="argumentParser")
+parser.add_id_argument("--id", "raw", "data identifier", level="sensor")
 config = ExampleConfig()
 parsedCmd = parser.parse_args(config=config)
 pcDict = parsedCmd.__dict__
