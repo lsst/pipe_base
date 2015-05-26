@@ -352,7 +352,7 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
         mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
         namespace.camera = mapperClass.getCameraName()
-        namespace.obsPkg = mapperClass.getEupsProductName()
+        namespace.obsPkg = mapperClass.getPackageName()
 
         self.handleCamera(namespace)
 
