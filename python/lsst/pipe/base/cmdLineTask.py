@@ -178,6 +178,7 @@ class TaskRunner(object):
         TaskRunner.\_\_call\_\_ is not called (e.g. if TaskRunner.precall returns `False`).
         See TaskRunner.\_\_call\_\_ for details.
         """
+        resultList = []
         if self.numProcesses > 1:
             import multiprocessing
             self.prepareForMultiProcessing()
@@ -189,12 +190,15 @@ class TaskRunner(object):
 
         if self.precall(parsedCmd):
             profileName = parsedCmd.profile if hasattr(parsedCmd, "profile") else None
-            log = parsedCmd.log if hasattr(parsedCmd, "log") else None
-            with profile(profileName, log):
-                # All the work is done here
-                resultList = mapFunc(self, self.getTargetList(parsedCmd))
-        else:
-            resultList = []
+            log = parsedCmd.log
+            targetList = self.getTargetList(parsedCmd)
+            if len(targetList) > 0:
+                with profile(profileName, log):
+                    # Run the task using self.__call__
+                    resultList = mapFunc(self, targetList)
+            else:
+                log.warn("Not running the task because there is no data to process; "
+                    "you may preview data using \"--show data\"")
 
         if pool is not None:
             pool.close()
