@@ -25,17 +25,14 @@ import shutil
 import unittest
 import tempfile
 
-import eups
+import lsst.utils
 import lsst.utils.tests as utilsTests
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 from lsst.obs.test import TestConfig
 
-ObsTestDir = eups.productDir("obs_test")
-if not ObsTestDir:
-    print "Warning: you must setup obs_test to run these tests"
-else:
-    DataPath = os.path.join(ObsTestDir, "data", "input")
+ObsTestDir = lsst.utils.getPackageDir("obs_test")
+DataPath = os.path.join(ObsTestDir, "data", "input")
 
 class TestTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
@@ -233,8 +230,6 @@ def suite():
 
 def run(shouldExit=False):
     """Run the tests"""
-    if ObsTestDir is None:
-        return
     utilsTests.run(suite(), shouldExit)
 
 if __name__ == "__main__":

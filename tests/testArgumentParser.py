@@ -24,18 +24,15 @@ import itertools
 import os
 import unittest
 
-import eups
+import lsst.utils
 import lsst.utils.tests as utilsTests
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
-ObsTestDir = eups.productDir("obs_test")
-if not ObsTestDir:
-    print "Warning: you must setup obs_test to run these tests"
-else:
-    DataPath = os.path.join(ObsTestDir, "data", "input")
-LocalDataPath = os.path.join(eups.productDir("pipe_base"), "tests", "data")
+ObsTestDir = lsst.utils.getPackageDir("obs_test")
+DataPath = os.path.join(ObsTestDir, "data", "input")
+LocalDataPath = os.path.join(os.path.dirname(__file__), "data")
 #
 # Context manager to intercept stdout/err
 #  http://stackoverflow.com/questions/5136611/capture-stdout-from-a-script-in-python
@@ -358,8 +355,6 @@ def suite():
     return unittest.TestSuite(suites)
 
 def run(shouldExit = False):
-    if ObsTestDir is None:
-        return
     utilsTests.run(suite(), shouldExit)
 
 if __name__ == '__main__':
