@@ -141,7 +141,7 @@ myTask.py inputPath @@foo --config anotherParam=anotherValue --output outputPath
 
 The argument parser automatically loads specific configuration override files based on
 the camera name and its obs_ package. See \ref pipeBase_autoLoadedConfigOverrideFiles.
-The format of a congiguration override file matches the configuration shown using `--show config`
+The format of a configuration override file matches the configuration shown using `--show config`
 (in particular, note that `root` in a configuration override file is the word that matches `self.config`
 in a task when the task uses its config).
 
