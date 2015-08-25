@@ -30,7 +30,7 @@ import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
-from lsst.pex.logging import getDefaultLog
+from lsst.log import Log
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
@@ -47,7 +47,7 @@ def _poolFunctionWrapper(function, arg):
     except:
         # Need to wrap the exception with something multiprocessing will recognise
         cls, exc, tb = sys.exc_info()
-        log = getDefaultLog()
+        log = Log()
         log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
         raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
 
@@ -413,7 +413,7 @@ class CmdLineTask(Task):
         @param cls      the class object
         @param args     list of command-line arguments; if `None` use sys.argv
         @param config   config for task (instance of pex_config Config); if `None` use cls.ConfigClass()
-        @param log      log (instance of lsst.pex.logging.Log); if `None` use the default log
+        @param log      log (instance of lsst.log.Log); if `None` use the default log
         @param doReturnResults  Return the collected results from each invocation of the task?
             This is only intended for unit tests and similar use.
             It can easily exhaust memory (if the task returns enough data and you call it enough times)

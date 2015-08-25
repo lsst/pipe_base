@@ -24,10 +24,10 @@ import itertools
 import os
 import unittest
 
+import lsst.log
 import lsst.utils
 import lsst.utils.tests as utilsTests
 import lsst.pex.config as pexConfig
-import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
@@ -267,40 +267,32 @@ class ArgumentParserTestCase(unittest.TestCase):
     def testLogLevel(self):
         """Test --loglevel"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
-            intLevel = getattr(pexLog.Log, logLevel.upper())
+            intLevel = getattr(lsst.log, logLevel.upper())
             namespace = self.ap.parse_args(
                 config = self.config,
                 args = [DataPath, "--loglevel", logLevel],
             )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
+            self.assertEqual(lsst.log.getLevel(), intLevel)
+            self.assertFalse(hasattr(namespace, "loglevel"))
 
-            namespace = self.ap.parse_args(
+            self.ap.parse_args(
                 config = self.config,
-                args = [DataPath, "--loglevel", str(intLevel)],
+                args = [DataPath, "--loglevel", str(intLevel),
+                    "foo.bar=%s" % (str(intLevel + 27),),
+                    "baz=0",
+                    "baz=5000", # test that later values override earlier values
+                ],
             )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
-        
+            self.assertEqual(lsst.log.getLevel(), intLevel)
+            self.assertEqual(lsst.log.getLevel("foo.bar"), intLevel + 27)
+            self.assertEqual(lsst.log.getLevel("baz"), 5000)
+
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = [DataPath,
                 "--loglevel", "INVALID_LEVEL",
             ],
         )
-    
-    def testTrace(self):
-        """Test --trace
-        
-        I'm not sure how to verify that tracing is enabled; just see if it runs
-        """
-        self.ap.parse_args(
-            config = self.config,
-            args = [DataPath,
-                "--trace", "afw.math=2", "meas.algorithms=3",
-                "--trace", "something=5",
-            ],
-        )
-        pexLog.Trace("something", 4, "You should see this message")
-        pexLog.Trace("something", 6, "You should not see this message")
     
     def testPipeVars(self):
         """Test handling of $PIPE_x_ROOT environment variables, where x is INPUT, CALIB or OUTPUT

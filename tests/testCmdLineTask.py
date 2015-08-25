@@ -27,7 +27,6 @@ import tempfile
 
 import lsst.utils
 import lsst.utils.tests as utilsTests
-import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 from lsst.obs.test import TestConfig
 
@@ -104,8 +103,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """
         config = TestTask.ConfigClass()
         config.floatField = -99.9
-        defLog = pexLog.getDefaultLog()
-        log = pexLog.Log(defLog, "cmdLineTask")
+        defLog = lsst.log.Log()
+        log = defLog.makeLog(name="cmdLineTask")
         retVal = TestTask.parseAndRun(
             args=[DataPath, "--output", self.outPath, "--id", "visit=2"],
             config = config,

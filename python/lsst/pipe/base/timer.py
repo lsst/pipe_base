@@ -27,18 +27,18 @@ import resource
 import time
 import datetime
 
-from lsst.pex.logging import Log
+import lsst.log
 
 __all__ = ["logInfo", "timeMethod"]
 
-def logPairs(obj, pairs, logLevel=Log.DEBUG):
+def logPairs(obj, pairs, logLevel=lsst.log.DEBUG):
     """!Log (name, value) pairs to obj.metadata and obj.log
     
     @param obj      a \ref task.Task "Task", or any other object with these two attributes:
     * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.pex.logging.Log
+    * log an instance of lsst.log.Log
     @param pairs    a collection of (name, value) pairs
-    @param logLevel log level (an lsst.pex.logging.Log level constant, such as lsst.pex.logging.Log.DEBUG)
+    @param logLevel log level (an lsst.log level constant, such as lsst.log.DEBUG)
     """
     strList = []
     for name, value in pairs:
@@ -50,16 +50,16 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
         strList.append("%s=%s" % (name, value))
     obj.log.log(logLevel, "; ".join(strList))
 
-def logInfo(obj, prefix, logLevel=Log.DEBUG):
+def logInfo(obj, prefix, logLevel=lsst.log.DEBUG):
     """!Log timer information to obj.metadata and obj.log
 
     @param obj      a \ref task.Task "Task", or any other object with these two attributes:
     * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.pex.logging.Log
+    * log an instance of lsst.log.Log
     @param prefix   name prefix, the resulting entries are \<prefix>CpuTime, etc.
         For example timeMethod uses prefix = \<methodName>Start
         when the method begins and prefix = \<methodName>End when the method ends.
-    @param logLevel log level (an lsst.pex.logging.Log level, constant such as lsst.pex.logging.Log.DEBUG)
+    @param logLevel log level (an lsst.log level, constant such as lsst.log.DEBUG)
 
             
     Logged items include:
@@ -109,7 +109,7 @@ def timeMethod(func):
 
     @warning This decorator only works with instance methods of Task, or any class with these attributes:
     * metadata: an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log: an instance of lsst.pex.logging.Log
+    * log: an instance of lsst.log.Log
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):

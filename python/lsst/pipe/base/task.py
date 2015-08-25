@@ -49,8 +49,8 @@ except ImportError:
             return self
     ds9 = Ds9Warning()
 
-import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
+import lsst.log
 from .timer import logInfo
 
 __all__ = ["Task", "TaskError"]
@@ -79,7 +79,7 @@ class Task(object):
     then look at the main page of pipe_tasks documentation for a link.
     
     Useful attributes include:
-    * log: an lsst.pex.logging.Log
+    * log: an lsst.log.Log
     * config: task-specific configuration; an instance of ConfigClass (see below)
     * metadata: an lsst.daf.base.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
@@ -118,7 +118,7 @@ class Task(object):
         @param[in] parentTask   the parent task of this subtask, if any.
             - If None (a top-level task) then you must specify config and name is ignored.
             - If not None (a subtask) then you must specify name
-        @param[in] log          pexLog log; if None then the default is used;
+        @param[in] log          lsst.log Log; if None then the default is used;
             in either case a copy is made using the full task name.
         
         @throw RuntimeError if parentTask is None and config is None.
@@ -149,8 +149,8 @@ class Task(object):
   
         self.config = config
         if log == None:
-            log = pexLog.getDefaultLog()
-        self.log = pexLog.Log(log, self._fullName)
+            log = lsst.log.Log()
+        self.log = log.makeLog(name=self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
 
@@ -256,12 +256,12 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel = pexLog.Log.DEBUG):
+    def timer(self, name, logLevel=lsst.log.DEBUG):
         """!Context manager to log performance data for an arbitrary block of code
         
         @param[in] name         name of code being timed;
             data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
-        @param[in] logLevel     one of the lsst.pex.logging.Log level constants
+        @param[in] logLevel     an integer or one of the lsst.log.Log level constants
         
         Example of use:
         \code
