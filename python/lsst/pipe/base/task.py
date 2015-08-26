@@ -150,7 +150,7 @@ class Task(object):
         self.config = config
         if log == None:
             log = lsst.log.Log()
-        self.log = log.makeLog(name=self._fullName)
+        self.log = log.getLogger(self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
 

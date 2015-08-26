@@ -103,8 +103,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """
         config = TestTask.ConfigClass()
         config.floatField = -99.9
-        defLog = lsst.log.Log()
-        log = defLog.makeLog(name="cmdLineTask")
+        log = lsst.log.Log("cmdLineTask")
         retVal = TestTask.parseAndRun(
             args=[DataPath, "--output", self.outPath, "--id", "visit=2"],
             config = config,
