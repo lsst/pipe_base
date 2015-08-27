@@ -342,7 +342,6 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
                           help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--profile", help="Dump cProfile statistics to filename")
-        self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="+", default=(),
                           help="display the specified information to stdout and quit "
                                "(unless run is specified).")
@@ -515,9 +514,6 @@ class ArgumentParser(argparse.ArgumentParser):
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        if namespace.logdest:
-            namespace.log.addDestination(namespace.logdest)
-        del namespace.logdest
         del namespace.loglevel
 
         namespace.config.validate()
