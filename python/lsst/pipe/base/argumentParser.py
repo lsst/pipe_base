@@ -245,7 +245,6 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--profile", help="Dump cProfile statistics to filename")
-        self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="+", default=(),
             help="display the specified information to stdout and quit (unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
@@ -328,7 +327,7 @@ class ArgumentParser(argparse.ArgumentParser):
         - log: a pex_logging log
         - an entry for each command-line argument, with the following exceptions:
           - config is the supplied config, suitably updated
-          - configfile, id, logdest and loglevel are all missing
+          - configfile, id and loglevel are all missing
         - obsPkg: name of obs_ package for this camera
         """
         if args == None:
@@ -411,10 +410,6 @@ class ArgumentParser(argparse.ArgumentParser):
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        if namespace.logdest:
-            self.error("The --logdest argument is not presently supported")
-        del namespace.logdest
-        
         del namespace.loglevel
         
         namespace.config.validate()
