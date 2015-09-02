@@ -142,7 +142,7 @@ myTask.py inputPath @@foo --config anotherParam=anotherValue --output outputPath
 The argument parser automatically loads specific configuration override files based on
 the camera name and its obs_ package. See \ref pipeBase_autoLoadedConfigOverrideFiles.
 The format of a configuration override file matches the configuration shown using `--show config`
-(in particular, note that `root` in a configuration override file is the word that matches `self.config`
+(in particular, note that `config` in a configuration override file is the word that matches `self.config`
 in a task when the task uses its config).
 
 In addition, you can specify configuration override files on the command line using `--configfile`
@@ -151,10 +151,10 @@ as shown in these examples:
 - `--config str1=foo str2="fancier string" int1=5 intList=2,4,-87 float1=1.53 floatList=3.14,-5.6e7`
 - `--configfile %config.py`, where file `%config.py` contains:
   \code
-  root.strList = "first string", "second string"
+  config.strList = "first string", "second string"
   \endcode
 
-\note `root` in a configuration override file is equivalent to `self.config` in a task.
+\note `config` in a configuration override file is equivalent to `self.config` in a task.
 
 There are important limitations `--config` (use `--configfile`, instead, in these situations):
 - You cannot \ref pipeBase_argumentParser_retargetSubtasks "retarget subtasks"
@@ -176,7 +176,7 @@ Here is an example of retargeting a subtask in a config override file; this reta
 lsst.pipe.tasks.exampleCmdLineTask.ExampleCmdLineTask `stats` with a simpler version:
 <pre>
     from lsst.pipe.tasks.exampleStatsTasks import ExampleSimpleStatsTask
-    root.stats.retarget(ExampleSimpleStatsTask)
+    config.stats.retarget(ExampleSimpleStatsTask)
 </pre>
 
 \subsection pipeBase_argumentParser_debugVariables Specifying Debug Variables
