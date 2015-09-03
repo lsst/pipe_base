@@ -268,39 +268,34 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --loglevel"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
             intLevel = getattr(pexLog.Log, logLevel.upper())
+            print "testing logLevel=%r" % (logLevel,)
             namespace = self.ap.parse_args(
                 config = self.config,
                 args = [DataPath, "--loglevel", logLevel],
             )
             self.assertEqual(namespace.log.getThreshold(), intLevel)
+            self.assertFalse(hasattr(namespace, "loglevel"))
 
+            fooBarLevel = intLevel + 27
+            bazLevel = -500
             namespace = self.ap.parse_args(
                 config = self.config,
-                args = [DataPath, "--loglevel", str(intLevel)],
+                args = [DataPath, "--loglevel", str(intLevel),
+                    "foo.bar=%d" % (fooBarLevel,),
+                    "baz=0",
+                    "baz=%s" % bazLevel, # test that later values override earlier values
+                ],
             )
             self.assertEqual(namespace.log.getThreshold(), intLevel)
-        
+            self.assertEqual(namespace.log.getThresholdFor("foo.bar"), fooBarLevel)
+            self.assertEqual(namespace.log.getThresholdFor("baz"), bazLevel)
+
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = [DataPath,
                 "--loglevel", "INVALID_LEVEL",
             ],
         )
-    
-    def testTrace(self):
-        """Test --trace
-        
-        I'm not sure how to verify that tracing is enabled; just see if it runs
-        """
-        self.ap.parse_args(
-            config = self.config,
-            args = [DataPath,
-                "--trace", "afw.math=2", "meas.algorithms=3",
-                "--trace", "something=5",
-            ],
-        )
-        pexLog.Trace("something", 4, "You should see this message")
-        pexLog.Trace("something", 6, "You should not see this message")
     
     def testPipeVars(self):
         """Test handling of $PIPE_x_ROOT environment variables, where x is INPUT, CALIB or OUTPUT
