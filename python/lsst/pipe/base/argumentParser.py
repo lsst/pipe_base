@@ -217,7 +217,7 @@ class ArgumentParser(argparse.ArgumentParser):
             usage = usage,
             fromfile_prefix_chars = '@',
             epilog = """Notes:
-* --config, --configfile, --id, --trace and @file may appear multiple times;
+* --config, --configfile, --id, --loglevel and @file may appear multiple times;
     all values are used, in order left to right
 * @file reads command-line options from the specified file:
     * data may be distributed among multiple lines (e.g. one option per line)
@@ -239,9 +239,10 @@ class ArgumentParser(argparse.ArgumentParser):
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
             help="config override file(s)")
-        self.add_argument("-L", "--loglevel", help="logging level")
-        self.add_argument("-T", "--trace", nargs="*", action=TraceLevelAction,
-            help="trace level for component", metavar="COMPONENT=LEVEL")
+        self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
+            help="logging level; supported levels are [debug|warn|info|fatal] or an integer; "
+                "trace level is negative log level, e.g. use level -3 for trace level 3",
+            metavar="LEVEL|COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
             help="raise an exception on error (else log a message and continue)?")
@@ -328,8 +329,8 @@ class ArgumentParser(argparse.ArgumentParser):
           the value of which is a DataIdArgument that includes public elements 'idList' and 'refList'
         - log: a pex_logging log
         - an entry for each command-line argument, with the following exceptions:
-          - config is Config, not an override
-          - configfile, id, logdest, loglevel are all missing
+          - config is the supplied config, suitably updated
+          - configfile, id and loglevel are all missing
         - obsPkg: name of obs_ package for this camera
         """
         if args == None:
@@ -415,17 +416,6 @@ class ArgumentParser(argparse.ArgumentParser):
         if namespace.logdest:
             namespace.log.addDestination(namespace.logdest)
         del namespace.logdest
-        
-        if namespace.loglevel:
-            permitted = ('DEBUG', 'INFO', 'WARN', 'FATAL')
-            if namespace.loglevel.upper() in permitted:
-                value = getattr(pexLog.Log, namespace.loglevel.upper())
-            else:
-                try:
-                    value = int(namespace.loglevel)
-                except ValueError:
-                    self.error("log-level=%s not int or one of %s" % (namespace.loglevel, permitted))
-            namespace.log.setThreshold(value)
         del namespace.loglevel
         
         namespace.config.validate()
@@ -723,8 +713,10 @@ class IdValueAction(argparse.Action):
         ident = getattr(namespace, argName)
         ident.idList += idDictList
 
-class TraceLevelAction(argparse.Action):
-    """!argparse action to set trace level
+
+
+class LogLevelAction(argparse.Action):
+    """!argparse action to set log level
     """
     def __call__(self, parser, namespace, values, option_string):
         """!Set trace level
@@ -732,19 +724,28 @@ class TraceLevelAction(argparse.Action):
         @param[in] parser       argument parser (instance of ArgumentParser)
         @param[in] namespace    parsed command (an instance of argparse.Namespace); ignored
         @param[in] values       a list of trace levels;
-            each item must be of the form component_name=level
+            each item must be of the form 'component_name=level' or 'level',
+            where level is a keyword (not case sensitive) or an integer
         @param[in] option_string    option value specified by the user (a str)
         """
+        permittedLevelList = ('DEBUG', 'INFO', 'WARN', 'FATAL')
+        permittedLevelSet = set(permittedLevelList)
         for componentLevel in values:
             component, sep, levelStr = componentLevel.partition("=")
             if not levelStr:
-                parser.error("%s level %s must be in form component=level" % (option_string, componentLevel))
-            try:
-                level = int(levelStr)
-            except Exception:
-                parser.error("cannot parse %r as an integer level for %s" % (levelStr, component))
-            pexLog.Trace.setVerbosity(component, level)
-
+                levelStr, component = component, None
+            logLevelUpr = levelStr.upper()
+            if logLevelUpr in permittedLevelSet:
+                logLevel = getattr(namespace.log, logLevelUpr)
+            else:
+                try:
+                    logLevel = int(levelStr)
+                except Exception:
+                    parser.error("loglevel=%r not int or one of %s" % (namespace.loglevel, permittedLevelList))
+            if component is None:
+                namespace.log.setThreshold(logLevel)
+            else:
+                namespace.log.setThresholdFor(component, logLevel)
 
 
 def setDottedAttr(item, name, value):
