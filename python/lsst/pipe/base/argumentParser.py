@@ -562,6 +562,9 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     def __init__(self, pattern):
                         self._pattern = pattern
 
+                    def isatty(self):
+                        return sys.stdout.isatty()
+
                     def write(self, str):
                         str = str.rstrip()
                         if str and fnmatch.fnmatch(str, self._pattern):
