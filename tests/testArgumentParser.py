@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # 
 # LSST Data Management System
-# Copyright 2008-2013 LSST Corporation.
+# Copyright 2008-2015 AURA/LSST.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -18,7 +18,7 @@
 # 
 # You should have received a copy of the LSST License Statement and 
 # the GNU General Public License along with this program.  If not, 
-# see <http://www.lsstcorp.org/LegalNotices/>.
+# see <https://www.lsstcorp.org/LegalNotices/>.
 #
 import itertools
 import os
@@ -64,7 +64,7 @@ class SampleConfig(pexConfig.Config):
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     subItem = pexConfig.ConfigField(doc="sample subfield", dtype=SubConfig)
-    
+
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
     def setUp(self):
@@ -75,11 +75,11 @@ class ArgumentParserTestCase(unittest.TestCase):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ.pop("PIPE_OUTPUT_ROOT", None)
-    
+
     def tearDown(self):
         del self.ap
         del self.config
-    
+
     def testBasicId(self):
         """Test --id basics"""
         namespace = self.ap.parse_args(
@@ -88,14 +88,14 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(len(namespace.id.refList), 1)
-        
+
         namespace = self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--id", "visit=22", "filter=g"],
         )
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(len(namespace.id.refList), 0) # no data for this ID
-        
+
     def testOtherId(self):
         """Test --other"""
         # By itself
@@ -136,14 +136,14 @@ class ArgumentParserTestCase(unittest.TestCase):
             idVal = tuple(id[key] for key in ("filter", "visit"))
             self.assertEqual(idVal, predVal)
         self.assertEqual(len(namespace.id.refList), 3) # only have data for three of these
-    
+
     def testIdDuplicate(self):
         """Verify that each ID name can only appear once in a given ID argument"""
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = [DataPath, "--id", "visit=1", "visit=2"],
         )
-    
+
     def testConfigBasics(self):
         """Test --config"""
         namespace = self.ap.parse_args(
@@ -166,14 +166,14 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "final value")
-    
+
     def testConfigWrongNames(self):
         """Verify that incorrect names for config fields are caught"""
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
             args = [DataPath, "--config", "missingItem=-67.1"],
         )
-    
+
     def testShow(self):
         """Test --show"""
         with capture() as out:
@@ -211,7 +211,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show"], # no --show arguments
         )
-        
+
     def testConfigFileBasics(self):
         """Test --configfile"""
         configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
@@ -221,9 +221,9 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.config.floatItem, -9e9)
         self.assertEqual(namespace.config.strItem, "set in override file")
-       
+
     def testConfigFileLeftRight(self):
-        """verify that order of setting values is with a mix of config file and config is left to right"""
+        """Verify that order of setting values is with a mix of config file and config is left to right"""
         configFilePath = os.path.join(LocalDataPath, "argumentParserConfig.py")
         namespace = self.ap.parse_args(
             config = self.config,
@@ -252,7 +252,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(len(namespace.id.idList), 1)
         self.assertEqual(namespace.config.floatItem, 4.7)
         self.assertEqual(namespace.config.strItem, "new value")
-    
+
     def testLogDest(self):
         """Test --logdest
         """
@@ -263,7 +263,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertTrue(os.path.isfile(logFile))
         os.remove(logFile)
-    
+
     def testLogLevel(self):
         """Test --loglevel"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
@@ -296,7 +296,7 @@ class ArgumentParserTestCase(unittest.TestCase):
                 "--loglevel", "INVALID_LEVEL",
             ],
         )
-    
+
     def testPipeVars(self):
         """Test handling of $PIPE_x_ROOT environment variables, where x is INPUT, CALIB or OUTPUT
         """
@@ -317,7 +317,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, os.path.abspath(DataPath))
         self.assertEqual(namespace.output, None)
-        
+
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ["PIPE_OUTPUT_ROOT"] = DataPath
         namespace = self.ap.parse_args(
