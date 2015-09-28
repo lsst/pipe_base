@@ -82,7 +82,7 @@ The first argument to a task must be the path to the input repository (or `--hel
 `--output` specifies the path to the output repository. Some tasks also support `--calib`: the path to
 input calibration data. To shorten input, output and calib paths see \ref pipeBase_environmentVariables.
 
-Data is specified usually specified by the `--id` argument with `key=value` pairs as the value,
+Data is usually specified by the `--id` argument with `key=value` pairs as the value,
 where the keys depend on the camera and type of data. If you run the task and specify both
 an input data repository and `--help` then the printed help will show you valid keys
 (the input repository tells the task what kind of camera data is being processed).
