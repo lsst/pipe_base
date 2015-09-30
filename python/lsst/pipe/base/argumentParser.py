@@ -567,7 +567,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         # Strip off doc string line(s) and cut off at "=" for string matching
                         matchStr = str.split("\n")[-1].split("=")[0]
                         if fnmatch.fnmatch(matchStr, self._pattern):
-                            print str
+                            print "\n" + str
 
                 fd = FilteredStream(pattern)
             else:
