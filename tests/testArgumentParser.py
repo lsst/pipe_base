@@ -185,11 +185,11 @@ class ArgumentParserTestCase(unittest.TestCase):
                 args = [DataPath, "--show", "config", "data", "tasks", "run"],
             )
         res = out[0]
-        self.assertTrue("config.floatItem" in res)
-        self.assertTrue("config.subItem" in res)
-        self.assertTrue("config.boolItem" in res)
-        self.assertTrue("config.strItem" in res)
-        self.assertTrue("config.multiDocItem" in res)
+        self.assertIn("config.floatItem", res)
+        self.assertIn("config.subItem", res)
+        self.assertIn("config.boolItem", res)
+        self.assertIn("config.strItem", res)
+        self.assertIn("config.multiDocItem", res)
         # Test show with exact config name and with one sided, embedded, and two sided globs
         for configStr in ("config.multiDocItem", "*ultiDocItem", "*ulti*Item", "*ultiDocI*"):
             with capture() as out:
