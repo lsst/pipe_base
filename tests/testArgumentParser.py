@@ -64,6 +64,8 @@ class SampleConfig(pexConfig.Config):
     floatItem = pexConfig.Field(doc="sample float field", dtype=float, default=3.1)
     strItem = pexConfig.Field(doc="sample str field", dtype=str, default="strDefault")
     subItem = pexConfig.ConfigField(doc="sample subfield", dtype=SubConfig)
+    multiDocItem = pexConfig.Field(doc="1. sample... \n#2...multiline \n##3...#\n###4...docstring",
+                                   dtype=str, default="multiLineDoc")
 
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
@@ -149,12 +151,13 @@ class ArgumentParserTestCase(unittest.TestCase):
         namespace = self.ap.parse_args(
             config = self.config,
             args = [DataPath, "--config", "boolItem=False", "floatItem=-67.1",
-                "strItem=overridden value", "subItem.intItem=5"],
+                "strItem=overridden value", "subItem.intItem=5", "multiDocItem=edited value"],
         )
         self.assertEqual(namespace.config.boolItem, False)
         self.assertEqual(namespace.config.floatItem, -67.1)
         self.assertEqual(namespace.config.strItem, "overridden value")
         self.assertEqual(namespace.config.subItem.intItem, 5)
+        self.assertEqual(namespace.config.multiDocItem, "edited value")
 
     def testConfigLeftToRight(self):
         """Verify that order of overriding config values is left to right"""
@@ -186,6 +189,13 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertTrue("config.subItem" in res)
         self.assertTrue("config.boolItem" in res)
         self.assertTrue("config.strItem" in res)
+        self.assertTrue("config.multiDocItem" in res)
+        # Test show with exact config name and with one sided, embedded, and two sided globs
+        for configStr in ("config.multiDocItem", "*ultiDocItem", "*ulti*Item", "*ultiDocI*"):
+            with capture() as out:
+                self.ap.parse_args(self.config, [DataPath, "--show", "config=" + configStr, "run"])
+            res = out[0]
+            self.assertIn("config.multiDocItem", res)
 
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
@@ -196,12 +206,18 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show", "config=X"],
         )
-        with capture() as out:
-            self.ap.parse_args(self.config, [DataPath, "--show", "config=*strItem*", "run"])
-        stdout = out[0]
-        answer = stdout.rstrip().split('\n')
-        self.assertEqual(len(answer), 1)         # only 1 config item matches
-        self.assertTrue("strDefault" in answer[0])
+
+        # Test show with glob for single and multi-line doc strings
+        for configStr, assertStr in ("*strItem*", "strDefault"), ("*multiDocItem", "multiLineDoc"):
+            with capture() as out:
+                self.ap.parse_args(self.config, [DataPath, "--show", "config=" + configStr, "run"])
+            stdout = out[0]
+            stdoutList = stdout.rstrip().split("\n")
+            self.assertGreater(len(stdoutList), 2) # at least 2 docstring lines (1st line is always a \n)
+                                                   # and 1 config parameter
+            answer = [ans for ans in stdoutList if not ans.startswith("#")] # get rid of comment lines
+            self.assertEqual(len(answer), 2)       # only 1 config item matches (+ 1 \n entry per doc string)
+            self.assertIn(assertStr, answer[1])
 
         self.assertRaises(SystemExit, self.ap.parse_args,
             config = self.config,
