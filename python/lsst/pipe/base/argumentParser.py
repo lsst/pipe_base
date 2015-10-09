@@ -562,12 +562,12 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     def __init__(self, pattern):
                         self._pattern = pattern
 
-                    def write(self, str):
-                        str = str.rstrip()
+                    def write(self, showStr):
+                        showStr = showStr.rstrip()
                         # Strip off doc string line(s) and cut off at "=" for string matching
-                        matchStr = str.split("\n")[-1].split("=")[0]
+                        matchStr = showStr.split("\n")[-1].split("=")[0]
                         if fnmatch.fnmatch(matchStr, self._pattern):
-                            print "\n" + str
+                            print "\n" + showStr
 
                 fd = FilteredStream(pattern)
             else:
