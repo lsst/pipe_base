@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division
 #
 # LSST Data Management System
-# Copyright 2008, 2009, 2010 LSST Corporation.
+# Copyright 2008-2015 AURA/LSST.
 #
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -13,12 +13,12 @@ from __future__ import absolute_import, division
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the LSST License Statement and
 # the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
+# see <https://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse
 import collections
@@ -43,7 +43,7 @@ DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
 
 def _fixPath(defName, path):
     """!Apply environment variable as default root, if present, and abspath
-    
+
     @param[in] defName  name of environment variable containing default root path;
         if the environment variable does not exist then the path is relative
         to the current working directory
@@ -61,7 +61,7 @@ def _fixPath(defName, path):
 
 class DataIdContainer(object):
     """!A container for data IDs and associated data references
-    
+
     Override for data IDs that require special handling to be converted to data references,
     and specify the override class as ContainerClass for add_id_argument.
     (If you don't want the argument parser to compute data references, you may use this class
@@ -73,11 +73,11 @@ class DataIdContainer(object):
         self.level = level
         self.idList = []
         self.refList = []
-        
+
     def setDatasetType(self, datasetType):
         """!Set actual dataset type, once it is known"""
         self.datasetType = datasetType
-    
+
     def castDataIds(self, butler):
         """!Validate data IDs and cast them to the correct type (modify idList in place).
 
@@ -90,7 +90,7 @@ class DataIdContainer(object):
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
         except KeyError:
             raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
-        
+
         for dataDict in self.idList:
             for key, strVal in dataDict.iteritems():
                 try:
@@ -107,9 +107,9 @@ class DataIdContainer(object):
 
     def makeDataRefList(self, namespace):
         """!Compute refList based on idList
-        
+
         Not called if add_id_argument called with doMakeDataRef=False
-        
+
         @param[in] namespace    results of parsing command-line (with 'butler' and 'log' elements)
         """
         if self.datasetType is None:
@@ -161,7 +161,7 @@ class DataIdArgument(object):
 
     def getDatasetType(self, namespace):
         """!Get the dataset type
-        
+
         @param[in] namespace    parsed command created by argparse parse_args;
             if the dataset type is dynamic then it is read from namespace.\<name>_dstype
             else namespace is ignored
@@ -195,9 +195,9 @@ class DatasetArgument(object):
 
 class ArgumentParser(argparse.ArgumentParser):
     """!An argument parser for pipeline tasks that is based on argparse.ArgumentParser
-    
+
     Users may wish to add additional arguments before calling parse_args.
-    
+
     @note
     - I would prefer to check data ID keys and values as they are parsed,
       but the required information comes from the butler, so I have to construct a butler
@@ -206,7 +206,7 @@ class ArgumentParser(argparse.ArgumentParser):
     """
     def __init__(self, name, usage = "%(prog)s input [options]", **kwargs):
         """!Construct an ArgumentParser
-        
+
         @param[in] name     name of top-level task; used to identify camera-specific override files
         @param[in] usage    usage string
         @param[in] **kwargs additional keyword arguments for argparse.ArgumentParser
@@ -263,7 +263,7 @@ class ArgumentParser(argparse.ArgumentParser):
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
         """!Add a data ID argument
-        
+
         Add an argument to specify data IDs. If datasetType is an instance of DatasetArgument,
         then add a second argument to specify the dataset type.
 
@@ -347,7 +347,7 @@ class ArgumentParser(argparse.ArgumentParser):
         inputRoot = _fixPath(DEFAULT_INPUT_NAME, args[0])
         if not os.path.isdir(inputRoot):
             self.error("Error: input=%r not found" % (inputRoot,))
-        
+
         namespace = argparse.Namespace()
         namespace.config = config
         namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
@@ -371,7 +371,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
         namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
         namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
-        
+
         if namespace.clobberOutput:
             if namespace.output is None:
                 self.error("--clobber-output is only valid with --output")
@@ -417,15 +417,15 @@ class ArgumentParser(argparse.ArgumentParser):
             namespace.log.addDestination(namespace.logdest)
         del namespace.logdest
         del namespace.loglevel
-        
+
         namespace.config.validate()
         namespace.config.freeze()
 
         return namespace
-    
+
     def _processDataIds(self, namespace):
         """!Process the parsed data for each data ID argument
-        
+
         Processing includes:
         - Validate data ID keys
         - Cast the data ID values to the correct type
@@ -458,7 +458,7 @@ class ArgumentParser(argparse.ArgumentParser):
         @param[in] namespace    parsed namespace (an argparse.Namespace);
             reads these attributes:
             - obsPkg
-        
+
         Look in the package namespace.obsPkg for files:
         - config/\<task_name>.py
         - config/\<camera_name>/\<task_name>.py
@@ -475,12 +475,12 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.config.load(filePath)
             else:
                 namespace.log.info("Config override file does not exist: %r" % (filePath,))
-    
+
     def handleCamera(self, namespace):
         """!Perform camera-specific operations before parsing the command line.
 
         The default implementation does nothing.
-        
+
         @param[in,out] namespace    namespace (an argparse.Namespace) with the following fields:
             - camera: the camera name
             - config: the config passed to parse_args, with no overrides applied
@@ -491,7 +491,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
     def convert_arg_line_to_args(self, arg_line):
         """!Allow files of arguments referenced by `@<path>` to contain multiple values on each line
-        
+
         @param[in] arg_line     line of text read from an argument file
         """
         arg_line = arg_line.strip()
@@ -507,7 +507,7 @@ def getTaskDict(config, taskDict=None, baseName=""):
 
     Designed to be called recursively; the user should call with only a config
     (leaving taskDict and baseName at their default values).
-    
+
     @param[in] config           configuration to process, an instance of lsst.pex.config.Config
     @param[in,out] taskDict     users should not specify this argument;
         (supports recursion; if provided, taskDict is updated in place, else a new dict is started)
@@ -530,7 +530,7 @@ def getTaskDict(config, taskDict=None, baseName=""):
                 taskDict[subBaseName] = taskName
                 getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
     return taskDict
-    
+
 def obeyShowArgument(showOpts, config=None, exit=False):
     """!Process arguments specified with --show (but ignores "data")
 
@@ -562,10 +562,12 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     def __init__(self, pattern):
                         self._pattern = pattern
 
-                    def write(self, str):
-                        str = str.rstrip()
-                        if str and fnmatch.fnmatch(str, self._pattern):
-                            print str
+                    def write(self, showStr):
+                        showStr = showStr.rstrip()
+                        # Strip off doc string line(s) and cut off at "=" for string matching
+                        matchStr = showStr.split("\n")[-1].split("=")[0]
+                        if fnmatch.fnmatch(matchStr, self._pattern):
+                            print "\n" + showStr
 
                 fd = FilteredStream(pattern)
             else:
@@ -588,12 +590,12 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 
 def showTaskHierarchy(config):
     """!Print task hierarchy to stdout
-    
+
     @param[in] config: configuration to process (an lsst.pex.config.Config)
     """
     print "Subtasks:"
     taskDict = getTaskDict(config=config)
-        
+
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
         taskName = taskDict[fieldName]
@@ -654,7 +656,6 @@ class ConfigFileAction(argparse.Action):
                 namespace.config.load(configfile)
             except Exception, e:
                 parser.error("cannot load config file %r: %s" % (configfile, e))
-                
 
 class IdValueAction(argparse.Action):
     """!argparse action callback to process a data ID into a dict
@@ -669,14 +670,14 @@ class IdValueAction(argparse.Action):
                 for instance "id" for ID argument --id
         @param[in] values           a list of data IDs; see data format below
         @param[in] option_string    option value specified by the user (a str)
-        
+
         The data format is:
         key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
 
         The values (e.g. value1_1) may either be a string, or of the form "int..int" (e.g. "1..3")
         which is interpreted as "1^2^3" (inclusive, unlike a python range). So "0^2..4^7..9" is
         equivalent to "0^2^3^4^7^8^9".  You may also specify a stride: "1..5:2" is "1^3^5"
-        
+
         The cross product is computed for keys with multiple values. For example:
             --id visit 1^2 ccd 1,1^2,2
         results in the following data ID dicts being appended to namespace.\<argument>.idList:
@@ -713,8 +714,6 @@ class IdValueAction(argparse.Action):
         ident = getattr(namespace, argName)
         ident.idList += idDictList
 
-
-
 class LogLevelAction(argparse.Action):
     """!argparse action to set log level
     """
@@ -746,7 +745,6 @@ class LogLevelAction(argparse.Action):
                 namespace.log.setThreshold(logLevel)
             else:
                 namespace.log.setThresholdFor(component, logLevel)
-
 
 def setDottedAttr(item, name, value):
     """!Like setattr, but accepts hierarchical names, e.g. foo.bar.baz
