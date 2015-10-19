@@ -334,11 +334,8 @@ class Task(object):
         else:
             x0, y0 = 0, 0
 
-        try:
-            sources[0][0]
-        except IndexError:              # empty list
-            pass
-        except (TypeError, NotImplementedError): # not a list of sets of sources
+        if len(sources) > 0 and hasattr(sources, "schema"):
+            # user provided a single source catalog instead of a collection of catalogs
             sources = [sources]
             
         with ds9.Buffering():
