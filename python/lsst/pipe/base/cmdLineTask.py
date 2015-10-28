@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division
 # 
 # LSST Data Management System
-# Copyright 2008-2013 LSST Corporation.
+# Copyright 2008-2015 AURA/LSST.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -18,7 +18,7 @@ from __future__ import absolute_import, division
 # 
 # You should have received a copy of the LSST License Statement and 
 # the GNU General Public License along with this program.  If not, 
-# see <http://www.lsstcorp.org/LegalNotices/>.
+# see <https://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
 import traceback
@@ -103,7 +103,7 @@ class TaskRunner(object):
     this class, but some tasks require a subclass. See the manual "how to write a command-line task"
     in the pipe_tasks documentation for more information.
     See CmdLineTask.parseAndRun to see how a task runner is used.
-    
+
     You may use this task runner for your command-line task if your task has a run method
     that takes exactly one argument: a butler data reference. Otherwise you must
     provide a task-specific subclass of this runner for your task's `RunnerClass`
@@ -129,7 +129,7 @@ class TaskRunner(object):
     TIMEOUT = 9999 # Default timeout (sec) for multiprocessing
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
-        
+
         @warning Do not store parsedCmd, as this instance is pickled (if multiprocessing) and parsedCmd may
         contain non-picklable elements. It certainly contains more data than we need to send to each
         instance of the task.
@@ -141,7 +141,7 @@ class TaskRunner(object):
             This is only intended for unit tests and similar use.
             It can easily exhaust memory (if the task returns enough data and you call it enough times)
             and it will fail when using multiprocessing if the returned data cannot be pickled.
-        
+
         @throws ImportError if multiprocessing requested (and the task supports it)
         but the multiprocessing library cannot be imported.
         """
@@ -210,18 +210,18 @@ class TaskRunner(object):
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """!Return a list of (dataRef, kwargs) to be used as arguments for TaskRunner.\_\_call\_\_.
-        
+
         @param parsedCmd    the parsed command object (an argparse.Namespace) returned by
             \ref argumentParser.ArgumentParser.parse_args "ArgumentParser.parse_args".
         @param **kwargs     any additional keyword arguments. In the default TaskRunner
             this is an empty dict, but having it simplifies overriding TaskRunner for tasks
             whose run method takes additional arguments (see case (1) below).
-        
+
         The default implementation of TaskRunner.getTargetList and TaskRunner.\_\_call\_\_ works for any
         command-line task whose run method takes exactly one argument: a data reference.
         Otherwise you must provide a variant of TaskRunner that overrides TaskRunner.getTargetList
         and possibly TaskRunner.\_\_call\_\_. There are two cases:
-        
+
         (1) If your command-line task has a `run` method that takes one data reference followed by additional
         arguments, then you need only override TaskRunner.getTargetList to return the additional arguments as
         an argument dict. To make this easier, your overridden version of getTargetList may call
@@ -234,16 +234,16 @@ class TaskRunner(object):
         def getTargetList(parsedCmd):
             return TaskRunner.getTargetList(parsedCmd, calExpList=parsedCmd.calexp.idList)
         \endcode
-        
+
         It is equivalent to this slightly longer version:
-        
+
         \code
         \@staticmethod
         def getTargetList(parsedCmd):
             argDict = dict(calExpList=parsedCmd.calexp.idList)
             return [(dataId, argDict) for dataId in parsedCmd.id.idList]
         \endcode
-            
+
         (2) If your task does not meet condition (1) then you must override both TaskRunner.getTargetList
         and TaskRunner.\_\_call\_\_. You may do this however you see fit, so long as TaskRunner.getTargetList
         returns a list, each of whose elements is sent to TaskRunner.\_\_call\_\_, which runs your task.
@@ -324,7 +324,7 @@ class TaskRunner(object):
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
         task.writeMetadata(dataRef)
-        
+
         if self.doReturnResults:
             return Struct(
                 dataRef = dataRef,
@@ -362,13 +362,13 @@ class CmdLineTask(Task):
     about writing command-line tasks.
     If the second link is broken (as it will be before the documentation is cross-linked)
     then look at the main page of pipe_tasks documentation for a link.
-    
+
     Subclasses must specify the following class variables:
     * ConfigClass: configuration class for your task (a subclass of \ref lsst.pex.config.config.Config
         "lsst.pex.config.Config", or if your task needs no configuration, then
         \ref lsst.pex.config.config.Config "lsst.pex.config.Config" itself)
     * _DefaultName: default name used for this task (a str)
-    
+
     Subclasses may also specify the following class variables:
     * RunnerClass: a task runner class. The default is TaskRunner, which works for any task
       with a run method that takes exactly one argument: a data reference. If your task does
