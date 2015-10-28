@@ -132,6 +132,26 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(result.metadata.get("numProcessed"), 0)
         self.assertEqual(retVal.resultList[0].result, None)
 
+    def testBackupConfig(self):
+        """Test backup config file creation
+        """
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        # Rerun with --clobber-config to ensure backup config file is created
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                   "--config", "floatField=-99.9", "--clobber-config"])
+        # Ensure backup config file was created
+        self.assertTrue(os.path.exists(os.path.join(self.outPath, "config", TestTask._DefaultName + ".py~1")))
+
+    def testNoBackupConfig(self):
+        """Test no backup config file creation
+        """
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                   "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+        # Ensure backup config file was NOT created
+        self.assertFalse(os.path.exists(os.path.join(self.outPath, "config", TestTask._DefaultName + ".py~1")))
+
     def testMultiprocess(self):
         """Test multiprocessing at a very minimal level
         """
