@@ -320,7 +320,15 @@ class TaskRunner(object):
             try:
                 result = task.run(dataRef, **kwargs)
             except Exception, e:
-                task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                # don't use a try block as we need to preserve the original exception
+                if hasattr(dataRef, "dataId"):
+                    task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                elif isinstance(dataRef, (list, tuple)):
+                    task.log.fatal("Failed on dataId=[%s]: %s" %
+                                   (",".join([str(_.dataId) for _ in dataRef]), e))
+                else:
+                    task.log.fatal("Failed on dataRef=%s: %s" % (dataRef, e))
+
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
         task.writeMetadata(dataRef)
