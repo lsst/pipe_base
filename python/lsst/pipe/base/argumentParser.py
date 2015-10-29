@@ -562,13 +562,23 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     N.b. Newlines are silently discarded and reinserted;  crude but effective.
                     """
                     def __init__(self, pattern):
-                        self._pattern = pattern
+                        # obey case if pattern isn't lowecase or requests NOIGNORECASE
+                        mat = re.search(r"(.*):NOIGNORECASE$", pattern)
+
+                        if mat:
+                            pattern = mat.group(1)
+                            self._pattern = re.compile(fnmatch.translate(pattern))
+                        else:
+                            if pattern != pattern.lower():
+                                print >> sys.stdout, "Matching \"%s\" without regard to case " \
+                                    "(append :NOIGNORECASE to prevent this)" % (pattern,)
+                            self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
                         showStr = showStr.rstrip()
                         # Strip off doc string line(s) and cut off at "=" for string matching
                         matchStr = showStr.split("\n")[-1].split("=")[0]
-                        if fnmatch.fnmatch(matchStr, self._pattern):
+                        if self._pattern.search(matchStr):
                             print "\n" + showStr
 
                 fd = FilteredStream(pattern)
