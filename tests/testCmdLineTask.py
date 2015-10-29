@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # 
 # LSST Data Management System
-# Copyright 2008, 2009, 2010 LSST Corporation.
+# Copyright 2008-2015 AURA/LSST.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -18,7 +18,7 @@
 # 
 # You should have received a copy of the LSST License Statement and 
 # the GNU General Public License along with this program.  If not, 
-# see <http://www.lsstcorp.org/LegalNotices/>.
+# see <https://www.lsstcorp.org/LegalNotices/>.
 #
 import os
 import shutil
@@ -73,7 +73,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ.pop("PIPE_OUTPUT_ROOT", None)
         self.outPath = tempfile.mkdtemp()
-    
+
     def tearDown(self):
         try:
             shutil.rmtree(self.outPath)
@@ -84,8 +84,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testBasics(self):
         """Test basic construction and use of a command-line task
         """
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
-            "--id", "visit=1"])
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=1"])
         self.assertEqual(retVal.resultList, [None])
         task = TestTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
@@ -98,7 +97,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         self.assertEqual(config, task.config)
         metadata = dataRef.get("test_metadata", immediate=True)
         self.assertEqual(metadata.get("test.numProcessed"), 1)
-    
+
     def testOverrides(self):
         """Test config and log override
         """
@@ -113,33 +112,54 @@ class CmdLineTaskTestCase(unittest.TestCase):
         )
         self.assertEquals(retVal.parsedCmd.config.floatField, -99.9)
         self.assertTrue(retVal.parsedCmd.log is log)
-    
+
     def testDoReturnResults(self):
         """Test the doReturnResults flag
         """
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
-            "--id", "visit=3", "filter=r"], doReturnResults=True)
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                            "--id", "visit=3", "filter=r"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
 
     def testDoReturnResultsOnFailure(self):
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, 
-            "--id", "visit=3", "filter=r", "--config", "doFail=True", "--clobber-config"], doReturnResults=True)
+        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                            "--id", "visit=3", "filter=r", "--config", "doFail=True",
+                                            "--clobber-config"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 0)
         self.assertEqual(retVal.resultList[0].result, None)
 
+    def testBackupConfig(self):
+        """Test backup config file creation
+        """
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        # Rerun with --clobber-config to ensure backup config file is created
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                   "--config", "floatField=-99.9", "--clobber-config"])
+        # Ensure backup config file was created
+        self.assertTrue(os.path.exists(os.path.join(self.outPath, "config", TestTask._DefaultName + ".py~1")))
+
+    def testNoBackupConfig(self):
+        """Test no backup config file creation
+        """
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
+        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                   "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+        # Ensure backup config file was NOT created
+        self.assertFalse(os.path.exists(os.path.join(self.outPath, "config", TestTask._DefaultName + ".py~1")))
+
     def testMultiprocess(self):
         """Test multiprocessing at a very minimal level
         """
         for TaskClass in (TestTask, NoMultiprocessTask):
-            result = TaskClass.parseAndRun(args=[DataPath, "--output", self.outPath, 
-                "-j", "5", "--id", "visit=2", "filter=r"])
+            result = TaskClass.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                                 "-j", "5", "--id", "visit=2", "filter=r"])
             self.assertEqual(result.taskRunner.numProcesses, 5 if TaskClass.canMultiprocess else 1)
-    
+
     def testCannotConstructTask(self):
         """Test error handling when a task cannot be constructed
         """
