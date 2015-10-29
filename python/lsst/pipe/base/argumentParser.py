@@ -30,6 +30,7 @@ import shlex
 import sys
 import shutil
 import getpass
+import textwrap
 
 import lsst.utils
 import lsst.pex.config as pexConfig
@@ -217,17 +218,17 @@ class ArgumentParser(argparse.ArgumentParser):
         argparse.ArgumentParser.__init__(self,
             usage = usage,
             fromfile_prefix_chars = '@',
-            epilog = """Notes:
-* --config, --configfile, --id, --loglevel and @file may appear multiple times;
-    all values are used, in order left to right
-* @file reads command-line options from the specified file:
-    * data may be distributed among multiple lines (e.g. one option per line)
-    * data after # is treated as a comment and ignored
-    * blank lines and lines starting with # are ignored
-* To specify multiple values for an option, do not use = after the option name:
-    * right: --configfile foo bar
-    * wrong: --configfile=foo bar
-""",
+            epilog = textwrap.dedent("""Notes:
+            * --config, --configfile, --id, --loglevel and @file may appear multiple times;
+                all values are used, in order left to right
+            * @file reads command-line options from the specified file:
+                * data may be distributed among multiple lines (e.g. one option per line)
+                * data after # is treated as a comment and ignored
+                * blank lines and lines starting with # are ignored
+            * To specify multiple values for an option, do not use = after the option name:
+                * right: --configfile foo bar
+                * wrong: --configfile=foo bar
+            """),
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
         self.add_argument(metavar='input', dest="rawInput",
