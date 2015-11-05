@@ -29,7 +29,6 @@ import re
 import shlex
 import sys
 import shutil
-import getpass
 import textwrap
 
 import lsst.utils
@@ -444,10 +443,9 @@ class ArgumentParser(argparse.ArgumentParser):
         # This catches the case where the output was not specified, but _fixPath must still
         # be run as there may be an environment variable set for the output
         else:
-            namespace.output = None
+            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
             if namespace.rawRerun is None:
                 guessedRerun = True
-                namespace.rawRerun = getpass.getuser()
 
         # This section processes the rerun argument, if rerun is specified as a colon separated 
         # value, it will be parsed as an input and output. The input value will be overridden if
