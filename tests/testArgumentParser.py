@@ -216,6 +216,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             self.assertGreater(len(stdoutList), 2) # at least 2 docstring lines (1st line is always a \n)
                                                    # and 1 config parameter
             answer = [ans for ans in stdoutList if not ans.startswith("#")] # get rid of comment lines
+            answer = [ans for ans in answer if not ":NOIGNORECASE to prevent this" in ans]
             self.assertEqual(len(answer), 2)       # only 1 config item matches (+ 1 \n entry per doc string)
             self.assertIn(assertStr, answer[1])
 
@@ -227,6 +228,19 @@ class ArgumentParserTestCase(unittest.TestCase):
             config = self.config,
             args = [DataPath, "--show"], # no --show arguments
         )
+
+        # Test show with and without case sensitivity
+        for configStr, shouldMatch in [("*multiDocItem*", True),
+                                       ("*multidocitem*", True),
+                                       ("*multidocitem*:NOIGNORECASE", False)]:
+            with capture() as out:
+                self.ap.parse_args(self.config, [DataPath, "--show", "config=" + configStr, "run"])
+            res = out[0]
+
+            if shouldMatch:
+                self.assertIn("config.multiDocItem", res)
+            else:
+                self.assertNotIn("config.multiDocItem", res)
 
     def testConfigFileBasics(self):
         """Test --configfile"""
