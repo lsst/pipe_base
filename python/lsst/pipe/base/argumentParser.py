@@ -29,6 +29,7 @@ import re
 import shlex
 import sys
 import shutil
+import textwrap
 
 import lsst.utils
 import lsst.pex.config as pexConfig
@@ -216,25 +217,27 @@ class ArgumentParser(argparse.ArgumentParser):
         argparse.ArgumentParser.__init__(self,
             usage = usage,
             fromfile_prefix_chars = '@',
-            epilog = """Notes:
-* --config, --configfile, --id, --loglevel and @file may appear multiple times;
-    all values are used, in order left to right
-* @file reads command-line options from the specified file:
-    * data may be distributed among multiple lines (e.g. one option per line)
-    * data after # is treated as a comment and ignored
-    * blank lines and lines starting with # are ignored
-* To specify multiple values for an option, do not use = after the option name:
-    * right: --configfile foo bar
-    * wrong: --configfile=foo bar
-""",
+            epilog = textwrap.dedent("""Notes:
+            * --config, --configfile, --id, --loglevel and @file may appear multiple times;
+                all values are used, in order left to right
+            * @file reads command-line options from the specified file:
+                * data may be distributed among multiple lines (e.g. one option per line)
+                * data after # is treated as a comment and ignored
+                * blank lines and lines starting with # are ignored
+            * To specify multiple values for an option, do not use = after the option name:
+                * right: --configfile foo bar
+                * wrong: --configfile=foo bar
+            """),
             formatter_class = argparse.RawDescriptionHelpFormatter,
         **kwargs)
-        self.add_argument("input",
+        self.add_argument(metavar='input', dest="rawInput",
             help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
-        self.add_argument("--calib",
+        self.add_argument("--calib", dest="rawCalib",
             help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
-        self.add_argument("--output",
+        self.add_argument("--output", dest="rawOutput",
             help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
+        self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
+            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; optionally sets ROOT to ROOT/rerun/INPUT")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
             help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -345,15 +348,16 @@ class ArgumentParser(argparse.ArgumentParser):
             else:
                 self.exit("%s: error: Must specify input as first argument" % self.prog)
 
-        # note: don't set namespace.input until after running parse_args, else it will get overwritten
-        inputRoot = _fixPath(DEFAULT_INPUT_NAME, args[0])
-        if not os.path.isdir(inputRoot):
-            self.error("Error: input=%r not found" % (inputRoot,))
-
+        # Note that --rerun may change namespace.input, but if it does we verify that the
+        # new input has the same mapper class.
         namespace = argparse.Namespace()
+        namespace.input = _fixPath(DEFAULT_INPUT_NAME, args[0])
+        if not os.path.isdir(namespace.input):
+            self.error("Error: input=%r not found" % (namespace.input,))
+
         namespace.config = config
         namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
-        mapperClass = dafPersist.Butler.getMapperClass(inputRoot)
+        mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getPackageName()
 
@@ -368,15 +372,13 @@ class ArgumentParser(argparse.ArgumentParser):
             setattr(namespace, dataIdArgument.name, dataIdArgument.ContainerClass(level=dataIdArgument.level))
 
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
-        namespace.input = inputRoot
         del namespace.configfile
 
-        namespace.calib  = _fixPath(DEFAULT_CALIB_NAME,  namespace.calib)
-        namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.output)
+        self._parseDirectories(namespace)
 
         if namespace.clobberOutput:
             if namespace.output is None:
-                self.error("--clobber-output is only valid with --output")
+                self.error("--clobber-output is only valid with --output or --rerun")
             elif namespace.output == namespace.input:
                 self.error("--clobber-output is not valid when the output and input repos are the same")
             if os.path.exists(namespace.output):
@@ -424,6 +426,61 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.config.freeze()
 
         return namespace
+
+    def _parseDirectories(self, namespace):
+        """Parse input, output and calib directories
+
+        This allows for hacking the directories, e.g., to include a "rerun".
+        Modifications are made to the 'namespace' object in-place.
+        """
+        mapperClass = dafPersist.Butler.getMapperClass(_fixPath(DEFAULT_INPUT_NAME,namespace.rawInput))
+        namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
+
+        guessedRerun = False            # did we guess the rerun name?
+        # If an output directory is specified, process it and assign it to the namespace
+        if namespace.rawOutput:
+            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
+        # This catches the case where the output was not specified, but _fixPath must still
+        # be run as there may be an environment variable set for the output
+        else:
+            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
+            if namespace.rawRerun is None:
+                guessedRerun = True
+
+        # This section processes the rerun argument, if rerun is specified as a colon separated 
+        # value, it will be parsed as an input and output. The input value will be overridden if
+        # previously specified (but a check is made to make sure both inputs use the same mapper)
+        if namespace.rawRerun:
+            if namespace.output:
+                self.error("Error: cannot specify both --output and --rerun")
+            namespace.rerun = tuple(os.path.join(namespace.input, "rerun", v)
+                                    for v in namespace.rawRerun.split(":"))
+            modifiedInput = False
+            if len(namespace.rerun) == 2:
+                namespace.input, namespace.output = namespace.rerun
+                modifiedInput = True
+            elif len(namespace.rerun) == 1:
+                if os.path.exists(namespace.rerun[0]):
+                    namespace.output = namespace.rerun[0]
+
+                    guessedInput = os.path.realpath(os.path.join(namespace.rerun[0], "_parent"))
+                    if guessedRerun and not os.path.exists(guessedInput):
+                        pass            # refuse the guesses
+                    else:
+                        namespace.input = guessedInput
+                        modifiedInput = True
+                else:
+                    namespace.output = namespace.rerun[0]
+            else:
+                self.error("Error: invalid argument for --rerun: %s" % namespace.rerun)
+            if modifiedInput and dafPersist.Butler.getMapperClass(namespace.input) != mapperClass:
+                self.error("Error: input directory specified by --rerun must have the same mapper as INPUT")
+        else:
+            namespace.rerun = None
+        del namespace.rawInput
+        del namespace.rawCalib
+        del namespace.rawOutput
+        del namespace.rawRerun
 
     def _processDataIds(self, namespace):
         """!Process the parsed data for each data ID argument
