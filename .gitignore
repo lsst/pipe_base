@@ -14,3 +14,4 @@ doc/doxygen.conf
 python/lsst/pipe/base/version.py
 tests/.tests
 ups/*.cfgc
+bin/cmdLineActivator

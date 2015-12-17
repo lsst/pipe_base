@@ -4,3 +4,5 @@ from .struct import *
 from .task import *
 from .cmdLineTask import *
 from .timer import *
+from .activator import *
+from .super_task import *
