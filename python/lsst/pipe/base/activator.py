@@ -348,10 +348,9 @@ class CmdLineActivator(Activator):
                                       classes_map[class_key].module == module_name]
                     for mod_cls in module_classes:
                         # Get all task except the base classes
-                        if mod_cls.upper().find('TASK') > -1 and mod_cls not in ['WorkFlowParTask',
-                                                                                 'WorkFlowSeqTask',
-                                                                                 'Task',
-                                                                                 'SuperTask']:
+                        if mod_cls[-4:].upper() == 'TASK' and mod_cls not in [
+                            'WorkFlowParTask', 'WorkFlowSeqTask', 'Task', 'SuperTask',
+                            'WorkFlowTask', 'CmdLineTask']:
                             tasks_list.append(task_module + '.' + mod_cls)
         if modules_only:
             return module_list
@@ -386,6 +385,10 @@ class CmdLineActivator(Activator):
                                       help='shows {tree} and/or {config}')
         parser_activator.add_argument('--extras', action="store_true", default=False,
                                       help='Add extra arguments for the (Super)Task itself')
+        parser_activator.add_argument('--packages', nargs='+', default=(),
+                                      help="Manually adds packages to look for task, overrides "
+                                           "TASK_PACKAGES, to see the available packages use -lp "
+                                           "option")
 
         try:
             idx = sys.argv.index('--extras')
@@ -395,17 +398,32 @@ class CmdLineActivator(Activator):
         except ValueError:
             args = parser_activator.parse_args()
 
+        if args.packages:
+            TASK_PACKAGES.clear()
+            for package in args.packages:
+                TASK_PACKAGES[package] = importlib.import_module(package)
+
         if args.list_modules:
             print("\n List of available modules: \n")
-            for i in cls.get_tasks(modules_only=True):
-                print(i)
+            list_modules = cls.get_tasks(modules_only=True)
+            if len(list_modules) == 0:
+                print('No modules in these packages: ')
+                for package in TASK_PACKAGES.keys():
+                    print(package)
+            for modules in list_modules:
+                print(modules)
             print()
             sys.exit()
 
         if args.list_tasks:
             print("\n List of available tasks: \n")
-            for i in cls.get_tasks():
-                print(i)
+            list_tasks = cls.get_tasks()
+            if len(list_tasks) == 0:
+                print('No Tasks in these packages: ')
+                for package in TASK_PACKAGES.keys():
+                    print(package)
+            for task in list_tasks:
+                print(task)
             print()
             sys.exit()
 
