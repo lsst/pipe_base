@@ -55,7 +55,7 @@ class ActivatorParser(argp.ArgumentParser):
         """
         Writes outs the message error in the argument parser
         """
-        sys.stderr.write('error: %s\n' % message)
+        sys.stderr.write('\n*ERROR* : %s\n\n' % message)
         self.print_help()
         sys.exit(2)
 
@@ -397,6 +397,7 @@ class CmdLineActivator(Activator):
             args2 = sys.argv[idx + 1:]
         except ValueError:
             args = parser_activator.parse_args()
+            args2 = None
 
         if args.packages:
             TASK_PACKAGES.clear()
@@ -450,8 +451,16 @@ class CmdLineActivator(Activator):
                     print('\nUnknown value for show, use {tree or config}')
             sys.exit()
 
-        super_taskname = args.taskname
+        if args.taskname is None:
+            parser_activator.error('Need to specify a task, use --list_task to see the avaiables '
+                                   'ones')
+        super_taskname = args.taskname.split('.')[-1]  # TODO: take full path instead of cutting it
         super_task_class = cls.load_super_task(super_taskname)
+
+        # Before creating an instance of the class, check whether --extras was indeed parsed
+        if args2 is None:
+            parser_activator.error('Missing --extras arguments before inputs and options for the '
+                                   'task')
         super_task = super_task_class(activator='cmdLine')
         argparse = ArgumentParser(name=super_task.name)
         argparse.add_id_argument(name="--id", datasetType="raw",
