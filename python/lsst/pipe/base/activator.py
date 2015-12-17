@@ -274,17 +274,20 @@ class CmdLineActivator(Activator):
             for _, module_name, _ in pkgutil.iter_modules(package.__path__):  # Loop over modules
                 # Get a dictionary of  ALL classes defined inside module
                 classes_map = pyclbr.readmodule(module_name, path=package.__path__)
-                mod_classes = [class_key.upper() for class_key in classes_map.keys() if
+                mod_classes = [class_key for class_key in classes_map.keys() if
                                classes_map[class_key].module.upper() == module_name.upper()]
-                if super_taskname.upper() in mod_classes:
+                if super_taskname.upper() in map(lambda x: x.upper(), mod_classes):
                     super_task_module = module_name  # SuperTask Class Found
+                    super_taskname = mod_classes[map(lambda x: x.upper(), mod_classes).index(
+                        super_taskname.upper())]  # Get correct name
                     break
                     # Breaks after first instance is found, There should not be SuperTask Classes
                     # with the same name.
                     # I might add an Exception raise if more than one is found
 
             if super_task_module:  # It was found, hence it breaks this loop as well
-                print(package.__name__ + '.' + super_task_module + ' found!')  # Debug only
+                print(package.__name__ + '.' + super_task_module + '.' + super_taskname +
+                      ' found!')  # Debug only
                 break
 
         if super_task_module:
