@@ -1,5 +1,5 @@
 """
-activator: This module contains the activator class which are used
+activator: This module contains the activator classes which are used
 to execute (Super)Task in different context/environments
 """
 from __future__ import absolute_import, division, print_function
@@ -99,6 +99,10 @@ class TaskNameError(Exception):
     """
     Exception Class to handle conflict with task and config names,
     might be replaced for a more general one, or even RunTimeError
+
+    TODO: Decide on final Exception handler for name conflicts
+     I though about creating a new Exception to deal with name
+     conflicts in general (that differs from NameError)
     """
 
     def __init__(self, msg, errs):
@@ -117,7 +121,7 @@ class Activator(object):
     def __init__(self):
         """
         This might grow into a common initialization, right now
-        is overwritten
+        is overridden
         """
         pass
 
@@ -170,10 +174,10 @@ class CmdLineActivator(Activator):
 
     def precall(self):
         """
-        A hook similar to the CmdLineTask one, is True by default and need to copy it from it,
-        which is TBD.
+        A hook similar to the CmdLineTask one, it returns True by default. Need to implement this
+        from CmdLineActivator.py
 
-        TODO: Need to add writeConfig, writeSchema and writeMetadata to activator
+        TODO: Need to add writeConfig, writeSchema and writeMetadata to activator from
         """
         return True
 
@@ -266,7 +270,7 @@ class CmdLineActivator(Activator):
         class_config_instance = None
         super_task_module = None
 
-        for _, package in TASK_PACKAGES.iteritems():  # Loop over all packages
+        for package in TASK_PACKAGES.itervalues():  # Loop over all packages
             for _, module_name, _ in pkgutil.iter_modules(package.__path__):  # Loop over modules
                 # Get a dictionary of  ALL classes defined inside module
                 classes_map = pyclbr.readmodule(module_name, path=package.__path__)
@@ -333,7 +337,7 @@ class CmdLineActivator(Activator):
 
         tasks_list = []
         module_list = []
-        for _, package in TASK_PACKAGES.iteritems():
+        for package in TASK_PACKAGES.itervalues():
             for _, module_name, _ in pkgutil.iter_modules(package.__path__):
 
                 task_module = package.__name__ + '.' + module_name
@@ -341,7 +345,7 @@ class CmdLineActivator(Activator):
                 if not modules_only:
                     classes_map = pyclbr.readmodule(module_name, path=package.__path__)
                     module_classes = [class_key for class_key in classes_map.keys() if
-                               classes_map[class_key].module == module_name]
+                                      classes_map[class_key].module == module_name]
                     for mod_cls in module_classes:
                         # Get all task except the base classes
                         if mod_cls.upper().find('TASK') > -1 and mod_cls not in ['WorkFlowParTask',
