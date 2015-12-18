@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+from __future__ import division, absolute_import
 #
 # LSST Data Management System
 # Copyright 2014 LSST Corporation.
@@ -106,7 +106,6 @@ class NewExampleCmdLineTask(pipeBase.SuperTask):
 
         Call the parent class constructor and make the "stats" subtask from the config field of the same name.
         """
-        #pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
         super(NewExampleCmdLineTask, self).__init__(*args, **kwargs)
 
         self.makeSubtask("stats")
