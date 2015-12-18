@@ -439,11 +439,14 @@ class CmdLineActivator(Activator):
             sys.exit()
 
         if args.show:
-            super_taskname = args.taskname
+            if args.taskname is None:
+                parser_activator.error('Need to specify a task, use --list_task to see the '
+                                       'available ones')
+            super_taskname = args.taskname.split('.')[-1]
             super_task_class = cls.load_super_task(super_taskname)
-            super_task = super_task_class(activator='cmdLine')
-            CmdLineClass = cls(super_task, None)
 
+            super_task = super_task_class()
+            CmdLineClass = cls(super_task, None)
             for show in args.show:
                 if show == 'tree':
                     CmdLineClass.display_tree()
@@ -455,28 +458,61 @@ class CmdLineActivator(Activator):
             sys.exit()
 
         if args.taskname is None:
-            parser_activator.error('Need to specify a task, use --list_task to see the avaiables '
+            parser_activator.error('Need to specify a task, use --list_task to see the available '
                                    'ones')
         super_taskname = args.taskname.split('.')[-1]  # TODO: take full path instead of cutting it
         super_task_class = cls.load_super_task(super_taskname)
 
-        # Before creating an instance of the class, check whether --extras was indeed parsed
-        if args2 is None:
-            parser_activator.error('Missing --extras arguments before inputs and options for the '
-                                   'task')
-        super_task = super_task_class(activator='cmdLine')
-        argparse = ArgumentParser(name=super_task.name)
-        argparse.add_id_argument(name="--id", datasetType="raw",
-                                 help="data ID, e.g. --id visit=12345 ccd=1,2")
-        # Parsing the second set of arguments to the usual argparse
-        parser = argparse.parse_args(config=super_task.ConfigClass(), args=args2)
+        # Check whether is a SuperTask, an old CmdLineTask or neither
+        super_task_mro = map(lambda x: x.__name__, inspect.getmro(super_task_class))
+        if 'SuperTask' in super_task_mro:
+            super_task_subclass = 'SuperTask'
+        elif 'CmdLineTask' in super_task_mro:
+            super_task_subclass = 'CmdLineTask'
+        elif 'SuperTask' in super_task_mro and 'CmdLineTask' in super_task_mro:
+            super_task_subclass = 'Both'
+        else:
+            super_task_subclass = 'None'
 
-        # Create the Class, display tree and generate dot (locally for now) and execute the
-        # activator
-        CmdLineClass = cls(super_task, parser)
-        CmdLineClass.display_tree()
-        CmdLineClass.generate_dot()
-        CmdLineClass.activate()
+        print(super_task_subclass)
+
+        if super_task_subclass == 'SuperTask':
+            # Before creating an instance of the class, check whether --extras was indeed parsed
+            if args2 is None:
+                parser_activator.error(
+                    'Missing --extras arguments before inputs and options for the task')
+            super_task = super_task_class(activator='cmdLine')
+            argparse = ArgumentParser(name=super_task.name)
+            argparse.add_id_argument(name="--id", datasetType="raw",
+                                     help="data ID, e.g. --id visit=12345 ccd=1,2")
+            # Parsing the second set of arguments to the usual argparse
+            parser = argparse.parse_args(config=super_task.ConfigClass(), args=args2)
+
+            # Create the Class, display tree and generate dot (locally for now) and execute the
+            # activator
+            CmdLineClass = cls(super_task, parser)
+            CmdLineClass.display_tree()
+            CmdLineClass.generate_dot()
+            CmdLineClass.activate()
+
+        if super_task_subclass == 'CmdLineTask':
+            # Before creating an instance of the class, check whether --extras was indeed parsed
+            if args2 is None:
+                parser_activator.error(
+                    'Missing --extras arguments before inputs and options for the task')
+            super_task = super_task_class()
+            if hasattr(super_task, 'parseAndRun'):
+                super_task.parseAndRun(args=args2)
+            else:
+                raise RuntimeError("%s appears to be CmdLineTask but has no parseAndRun method" %
+                                   super_taskname)
+
+        if super_task_subclass == 'None':
+            raise RuntimeError("%s is not a SuperTask nor a CmdLineTask" % super_taskname)
+
+        if super_task_subclass == 'Both':
+            raise RuntimeError("%s is both a SuperTask and a CmdLineTask" % super_taskname)
+
 
 
 
