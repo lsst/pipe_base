@@ -243,7 +243,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
             help="config override file(s)")
         self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
-            help="logging level; supported levels are [debug|warn|info|fatal] or an integer; "
+            help="logging level; supported levels are [debug|info|warn|fatal] or an integer; "
                 "trace level is negative log level, e.g. use level -3 for trace level 3",
             metavar="LEVEL|COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
