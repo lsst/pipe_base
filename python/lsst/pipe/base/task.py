@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division
 # 
 # LSST Data Management System
-# Copyright 2008, 2009, 2010, 2011 LSST Corporation.
+# Copyright 2008-2016 AURA/LSST.
 # 
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -24,42 +24,11 @@ import contextlib
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField
-
-try:
-    import lsst.afw.display.ds9 as ds9
-except ImportError:
-    # afw is above pipe_base in the class hierarchy, so we have to cope without it.
-    # We'll warn on first use that it's unavailable, and then quietly swallow all
-    # references to it.
-    class Ds9Warning(object):
-        """A null pattern which warns once that ds9 is not available"""
-        def __init__(self):
-            super(Ds9Warning, self).__setattr__("_warned", False)
-        def __getattr__(self, name):
-            if name in ("GREEN", "YELLOW", "RED", "BLUE"):
-                # These are used in the Task.display definition, so don't warn when we use them
-                return self
-            if not super(Ds9Warning, self).__getattribute__("_warned"):
-                print "WARNING: afw's ds9 is not available"
-                super(Ds9Warning, self).__setattr__("_warned", True)
-            return self
-        def __setattr__(self, name, value):
-            return self
-        def __call__(self, *args, **kwargs):
-            return self
-    ds9 = Ds9Warning()
-
 import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 from .timer import logInfo
 
 __all__ = ["Task", "TaskError"]
-
-## default ds9 colors for Task.display's ctypes argument
-_DefaultDS9CTypes = (ds9.GREEN, ds9.YELLOW, ds9.RED, ds9.BLUE) 
-
-## default ds9 point types for Task.display's ptypes argument
-_DefaultDS9PTypes = ("o", "+", "x", "*")
 
 class TaskError(Exception):
     """!Use to report errors for which a traceback is not useful.
@@ -276,116 +245,6 @@ class Task(object):
             yield
         finally:
             logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
-    
-    def display(self, name, exposure=None, sources=(), matches=None,
-                ctypes=_DefaultDS9CTypes, ptypes=_DefaultDS9PTypes,
-                sizes=(4,),
-                pause=None, prompt=None):
-        """!Display an exposure and/or sources
-
-        @warning This method is deprecated. New code should call lsst.afw.display.ds9 directly.
-
-        @param[in] name         name of product to display
-        @param[in] exposure     exposure to display (instance of lsst::afw::image::Exposure), or None
-        @param[in] sources      list of Sources to display, as a single lsst.afw.table.SourceCatalog
-                                or a list of lsst.afw.table.SourceCatalog,
-                                or an empty list to not display sources
-        @param[in] matches      list of source matches to display (instances of
-            lsst.afw.table.ReferenceMatch), or None;
-            if any matches are specified then exposure must be provided and have a lsst.afw.image.Wcs.
-        @param[in] ctypes       array of colors to use on ds9 for displaying sources and matches
-            (in that order).
-            ctypes is indexed as follows, where ctypes is repeatedly cycled through, if necessary:
-            - ctypes[i] is used to display sources[i]
-            - ctypes[len(sources) + 2i] is used to display matches[i][0]
-            - ctypes[len(sources) + 2i + 1] is used to display matches[i][1]
-        @param[in] ptypes       array of ptypes to use on ds9 for displaying sources and matches;
-            indexed like ctypes
-        @param[in] sizes        array of sizes to use on ds9 for displaying sources and matches;
-            indexed like ctypes
-        @param[in] pause        pause execution?
-        @param[in] prompt       prompt for user while paused (ignored if pause is False)
-
-        @warning if matches are specified and exposure has no lsst.afw.image.Wcs then the matches are
-        silently not shown.
-
-        @throw Exception if matches specified and exposure is None
-        """
-        # N.b. doxygen will complain about parameters like ds9 and RED not being documented.  Bug ID 732356
-        if not self._display or self._display < 0:
-            return
-        if isinstance(self._display, dict):
-            if (name not in self._display) or not self._display[name] or self._display[name] < 0:
-                return
-
-        if isinstance(self._display, int):
-            frame = self._display
-        elif isinstance(self._display, dict):
-            frame = self._display[name]
-        else:
-            frame = 1
-
-        if exposure:
-            if isinstance(exposure, list):
-                raise RuntimeError("exposure may not be a list")
-            mi = exposure.getMaskedImage()
-            ds9.mtv(exposure, frame=frame, title=name)
-            x0, y0 = mi.getX0(), mi.getY0()
-        else:
-            x0, y0 = 0, 0
-
-        if len(sources) > 0 and hasattr(sources, "schema"):
-            # user provided a single source catalog instead of a collection of catalogs
-            sources = [sources]
-            
-        with ds9.Buffering():
-            i = 0
-            for i, ss in enumerate(sources):
-                ctype = ctypes[i%len(ctypes)]
-                ptype = ptypes[i%len(ptypes)]
-                size = sizes[i%len(sizes)]
-
-                for source in ss:
-                    xc, yc = source.getX() - x0, source.getY() - y0
-                    ds9.dot(ptype, xc, yc, size=size, frame=frame, ctype=ctype)
-                    #try:
-                    #    mag = 25-2.5*math.log10(source.getPsfFlux())
-                    #    if mag > 15: continue
-                    #except: continue
-                    #ds9.dot("%.1f" % mag, xc, yc, frame=frame, ctype="red")
-
-        if matches and exposure.getWcs() is not None:
-            wcs = exposure.getWcs()
-            with ds9.Buffering():
-                for first, second, d in matches:
-                    i = len(sources)    # counter for ptypes/ctypes, starting one after number of source lists
-                    catPos = wcs.skyToPixel(first.getCoord())
-                    x1, y1 = catPos.getX() - x0, catPos.getY() - y0
-
-                    ctype = ctypes[i%len(ctypes)]
-                    ptype = ptypes[i%len(ptypes)]
-                    size  = 2*sizes[i%len(sizes)]
-                    ds9.dot(ptype, x1, y1, size=size, frame=frame, ctype=ctype)
-                    i += 1
-
-                    ctype = ctypes[i%len(ctypes)]
-                    ptype = ptypes[i%len(ptypes)]
-                    size  = 2*sizes[i%len(sizes)]
-                    x2, y2 = second.getX() - x0, second.getY() - y0
-                    ds9.dot(ptype, x2, y2, size=size, frame=frame, ctype=ctype)
-                    i += 1
-
-        if pause:
-            if prompt is None:
-                prompt = "%s: Enter or c to continue [chp]: " % name
-            while True:
-                ans = raw_input(prompt).lower()
-                if ans in ("", "c",):
-                    break
-                if ans in ("p",):
-                    import pdb; pdb.set_trace()
-                elif ans in ("h", ):
-                    print "h[elp] c[ontinue] p[db]"
 
     @classmethod
     def makeField(cls, doc):
