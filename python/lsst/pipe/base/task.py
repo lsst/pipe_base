@@ -273,3 +273,7 @@ class Task(object):
         @return the full name: the "name" argument prefixed by the full task name and a period.
         """
         return "%s.%s" % (self._fullName, name)
+
+    def __reduce__(self):
+        """Pickler"""
+        return self.__class__, (self.config, self._name, self._parentTask, None)
