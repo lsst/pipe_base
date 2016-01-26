@@ -95,6 +95,7 @@ class Task(object):
         @throw RuntimeError if name is None and _DefaultName does not exist.
         """
         self.metadata = dafBase.PropertyList()
+        self._parentTask = parentTask
 
         if parentTask != None:
             if name is None:
