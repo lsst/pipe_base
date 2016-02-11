@@ -314,6 +314,16 @@ class TaskRunner(object):
         dataRef, kwargs = args
         task = self.makeTask(args=args)
         result = None # in case the task fails
+
+        task.log.setShowAll(True)
+        if hasattr(dataRef, "dataId"):
+            task.log.setPreambleProperty("dataId", str(dataRef.dataId))
+        elif isinstance(dataRef, (list, tuple)):
+            task.log.setPreambleProperty("dataId", "[%s]" %
+                                   (",".join([str(_.dataId) for _ in dataRef])))
+        else:
+            task.log.setPreambleProperty("dataId", str(dataRef))
+
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:
