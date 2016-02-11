@@ -317,12 +317,12 @@ class TaskRunner(object):
 
         task.log.setShowAll(True)
         if hasattr(dataRef, "dataId"):
-            task.log.setPreambleProperty("dataId", str(dataRef.dataId))
+            task.log.setPreamblePropertyString("dataId", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
-            task.log.setPreambleProperty("dataId", "[%s]" %
+            task.log.setPreamblePropertyString("dataId", "[%s]" %
                                    (",".join([str(_.dataId) for _ in dataRef])))
         else:
-            task.log.setPreambleProperty("dataId", str(dataRef))
+            task.log.setPreamblePropertyString("dataId", str(dataRef))
 
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
