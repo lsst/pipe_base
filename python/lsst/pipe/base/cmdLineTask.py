@@ -312,6 +312,12 @@ class TaskRunner(object):
             - result: result returned by task run, or None if the task fails
         """
         dataRef, kwargs = args
+        if self.log is None:
+            self.log = getDefaultLog()
+        if hasattr(dataRef, "dataId"):
+            self.log.addLabel(str(dataRef.dataId))
+        elif isinstance(dataRef, (list, tuple)):
+            self.log.addLabel(str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
         result = None # in case the task fails
         if self.doRaise:
