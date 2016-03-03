@@ -464,7 +464,8 @@ class CmdLineTask(Task):
         task runner (see TaskRunner for more information).
         """
         parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
+        parser.add_id_argument(name="--id", datasetType="raw",
+            help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
         return parser
 
     def writeConfig(self, butler, clobber=False, doBackup=True):
