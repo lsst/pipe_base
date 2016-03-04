@@ -109,7 +109,7 @@ class DataIdContainer(object):
     def makeDataRefList(self, namespace):
         """!Compute refList based on idList
 
-        Not called if add_id_argument called with doMakeDataRef=False
+        Not called if add_id_argument called with doMakeDataRefList=False
 
         @param[in] namespace    results of parsing command-line (with 'butler' and 'log' elements)
         """
