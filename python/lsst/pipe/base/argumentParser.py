@@ -502,13 +502,14 @@ class ArgumentParser(argparse.ArgumentParser):
         for dataIdArgument in self._dataIdArgDict.itervalues():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
             dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
-            try:
-                dataIdContainer.castDataIds(butler = namespace.butler)
-            except (KeyError, TypeError) as e:
-                # failure of castDataIds indicates invalid command args
-                self.error(e)
-            # failure of makeDataRefList indicates a bug that wants a traceback
             if dataIdArgument.doMakeDataRefList:
+                try:
+                    dataIdContainer.castDataIds(butler = namespace.butler)
+                except (KeyError, TypeError) as e:
+                    # failure of castDataIds indicates invalid command args
+                    self.error(e)
+
+                # failure of makeDataRefList indicates a bug that wants a traceback
                 dataIdContainer.makeDataRefList(namespace)
 
     def _applyInitialOverrides(self, namespace):
