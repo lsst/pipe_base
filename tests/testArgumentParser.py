@@ -66,6 +66,9 @@ class SampleConfig(pexConfig.Config):
     subItem = pexConfig.ConfigField(doc="sample subfield", dtype=SubConfig)
     multiDocItem = pexConfig.Field(doc="1. sample... \n#2...multiline \n##3...#\n###4...docstring",
                                    dtype=str, default="multiLineDoc")
+    dsType = pexConfig.Field(doc="dataset type for --id argument", dtype=str, default="calexp")
+    dsTypeNoDefault = pexConfig.Field(doc="dataset type for --id argument; no default", dtype=str,
+        optional=True)
 
 class ArgumentParserTestCase(unittest.TestCase):
     """A test case for ArgumentParser."""
@@ -434,6 +437,43 @@ class ArgumentParserTestCase(unittest.TestCase):
 
         # make sure dataset type argument is required
         with self.assertRaises(SystemExit):
+            ap.parse_args(
+                config = self.config,
+                args = [DataPath,
+                    "--id", "visit=2",
+                ],
+            )
+
+    def testConfigDatasetTypeFieldDefault(self):
+        """Test ConfigDatasetType with a config field that has a default value"""
+        # default value for config field "dsType" is "calexp";
+        # use a different value as the default for the ConfigDatasetType
+        # so the test can tell the difference
+        name = "dsType"
+        ap = pipeBase.ArgumentParser(name="argumentParser")
+        dsType = pipeBase.ConfigDatasetType(name=name)
+
+        ap.add_id_argument("--id", dsType, "help text")
+        namespace = ap.parse_args(
+            config = self.config,
+            args = [DataPath,
+                "--id", "visit=2",
+            ],
+        )
+        self.assertEqual(namespace.id.datasetType, "calexp") # default of config field dsType
+        self.assertEqual(len(namespace.id.idList), 1)
+
+    def testConfigDatasetTypeNoFieldDefault(self):
+        """Test ConfigDatasetType with a config field that has no default value"""
+        name = "dsTypeNoDefault"
+        ap = pipeBase.ArgumentParser(name="argumentParser")
+        dsType = pipeBase.ConfigDatasetType(name=name)
+
+        ap.add_id_argument("--id", dsType, "help text")
+        # neither the argument nor the config field has a default,
+        # so the user must specify the argument (or specify doMakeDataRefList=False
+        # and post-process the ID list)
+        with self.assertRaises(RuntimeError):
             ap.parse_args(
                 config = self.config,
                 args = [DataPath,
