@@ -371,6 +371,76 @@ class ArgumentParserTestCase(unittest.TestCase):
             except SystemExit, e:
                 self.assertEqual(e.code, 0)
 
+    def testDatasetArgumentBasics(self):
+        """Test DatasetArgument basics"""
+        dsTypeHelp = "help text for dataset argument"
+        for name in (None, "--foo"):
+            for default in (None, "raw"):
+                argName = name if name is not None else "--id_dstype"
+                ap = pipeBase.ArgumentParser(name="argumentParser")
+                dsType = pipeBase.DatasetArgument(name=name, help=dsTypeHelp, default=default)
+                self.assertEqual(dsType.help, dsTypeHelp)
+
+                ap.add_id_argument("--id", dsType, "help text")
+                namespace = ap.parse_args(
+                    config = self.config,
+                    args = [DataPath,
+                        argName, "calexp",
+                        "--id", "visit=2",
+                    ],
+                )
+                self.assertEqual(namespace.id.datasetType, "calexp")
+                self.assertEqual(len(namespace.id.idList), 1)
+
+                del namespace
+
+                if default is None:
+                    # make sure dataset type argument is required
+                    with self.assertRaises(SystemExit):
+                        ap.parse_args(
+                            config = self.config,
+                            args = [DataPath,
+                                "--id", "visit=2",
+                            ],
+                        )
+                else:
+                    namespace = ap.parse_args(
+                        config = self.config,
+                        args = [DataPath,
+                            "--id", "visit=2",
+                        ],
+                    )
+                    self.assertEqual(namespace.id.datasetType, default)
+                    self.assertEqual(len(namespace.id.idList), 1)
+
+    def testDatasetArgumentPositional(self):
+        """Test DatasetArgument with a positional argument"""
+        name = "foo"
+        defaultDsTypeHelp = "dataset type to process from input data repository"
+        ap = pipeBase.ArgumentParser(name="argumentParser")
+        dsType = pipeBase.DatasetArgument(name=name)
+        self.assertEqual(dsType.help, defaultDsTypeHelp)
+
+        ap.add_id_argument("--id", dsType, "help text")
+        namespace = ap.parse_args(
+            config = self.config,
+            args = [DataPath,
+                "calexp",
+                "--id", "visit=2",
+            ],
+        )
+        self.assertEqual(namespace.id.datasetType, "calexp")
+        self.assertEqual(len(namespace.id.idList), 1)
+
+        # make sure dataset type argument is required
+        with self.assertRaises(SystemExit):
+            ap.parse_args(
+                config = self.config,
+                args = [DataPath,
+                    "--id", "visit=2",
+                ],
+            )
+
 def suite():
     utilsTests.init()
 
