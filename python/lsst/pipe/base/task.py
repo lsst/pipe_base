@@ -105,6 +105,7 @@ class Task(object):
             if config == None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
+            self.log = pexLog.Log(parentTask.log, name)
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -116,11 +117,11 @@ class Task(object):
             if config == None:
                 config = self.ConfigClass()
             self._taskDict = dict()
+            if log is None:
+                log = pexLog.getDefaultLog()
+            self.log = pexLog.Log(log, self._fullName)
   
         self.config = config
-        if log == None:
-            log = pexLog.getDefaultLog()
-        self.log = pexLog.Log(log, self._fullName)
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
 
