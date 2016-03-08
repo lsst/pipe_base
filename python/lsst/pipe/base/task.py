@@ -95,6 +95,7 @@ class Task(object):
         @throw RuntimeError if name is None and _DefaultName does not exist.
         """
         self.metadata = dafBase.PropertyList()
+        self._parentTask = parentTask
 
         if parentTask != None:
             if name is None:
@@ -273,3 +274,7 @@ class Task(object):
         @return the full name: the "name" argument prefixed by the full task name and a period.
         """
         return "%s.%s" % (self._fullName, name)
+
+    def __reduce__(self):
+        """Pickler"""
+        return self.__class__, (self.config, self._name, self._parentTask, None)
