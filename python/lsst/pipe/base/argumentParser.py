@@ -20,6 +20,7 @@ from __future__ import absolute_import, division
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+import abc
 import argparse
 import collections
 import fnmatch
@@ -36,7 +37,8 @@ import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer", "DatasetArgument"]
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
+    "DatasetArgument", "ConfigDatasetType"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -109,7 +111,7 @@ class DataIdContainer(object):
     def makeDataRefList(self, namespace):
         """!Compute refList based on idList
 
-        Not called if add_id_argument called with doMakeDataRef=False
+        Not called if add_id_argument called with doMakeDataRefList=False
 
         @param[in] namespace    results of parsing command-line (with 'butler' and 'log' elements)
         """
@@ -127,7 +129,6 @@ class DataIdContainer(object):
                 continue
             self.refList += refList
 
-
 class DataIdArgument(object):
     """!Glorified struct for data about id arguments, used by ArgumentParser.add_id_argument"""
     def __init__(self, name, datasetType, level, doMakeDataRefList=True, ContainerClass=DataIdContainer):
@@ -135,8 +136,7 @@ class DataIdArgument(object):
 
         @param[in] name         name of identifier (argument name without dashes)
         @param[in] datasetType  type of dataset; specify a string for a fixed dataset type
-            or a DatasetArgument for a dynamic dataset type (one specified on the command line),
-            in which case an argument is added by name --\<name>_dstype
+            or a DatasetArgument for a dynamic dataset type (e.g. one specified by a command-line argument)
         @param[in] level        level of dataset, for butler
         @param[in] doMakeDataRefList    construct data references?
         @param[in] ContainerClass   class to contain data IDs and data references;
@@ -151,48 +151,123 @@ class DataIdArgument(object):
         self.doMakeDataRefList = bool(doMakeDataRefList)
         self.ContainerClass = ContainerClass
         self.argName = name.lstrip("-")
-        if self.isDynamicDatasetType():
-            self.datasetTypeName = datasetType.name if datasetType.name else self.name + "_dstype"
-        else:
-            self.datasetTypeName = None
 
+    @property
     def isDynamicDatasetType(self):
         """!Is the dataset type dynamic (specified on the command line)?"""
-        return isinstance(self.datasetType, DatasetArgument)
+        return isinstance(self.datasetType, DynamicDatasetType)
 
     def getDatasetType(self, namespace):
-        """!Get the dataset type
+        """!Return the dataset type as a string
 
-        @param[in] namespace    parsed command created by argparse parse_args;
-            if the dataset type is dynamic then it is read from namespace.\<name>_dstype
-            else namespace is ignored
+        @param[in] namespace  parsed command
         """
-        return getattr(namespace, self.datasetTypeName) if self.isDynamicDatasetType() else self.datasetType
+        if self.isDynamicDatasetType:
+            return self.datasetType.getDatasetType(namespace)
+        else:
+            return self.datasetType
 
-class DatasetArgument(object):
-    """!Specify that the dataset type should be a command-line option.
 
-    Somewhat more heavyweight than just using, e.g., None as a signal, but
-    provides the ability to have more informative help and a default.  Also
-    more extensible in the future.
+class DynamicDatasetType(object):
+    """!Abstract base class for a dataset type determined from parsed command-line arguments
+    """
+    __metaclass__ = abc.ABCMeta
 
-    @param[in] name     name of command-line argument (including leading "--", if wanted);
-        if omitted a suitable default is chosen
-    @param[in] help     help string for the command-line option
-    @param[in] default  default value; if None, then the option is required
+    def addArgument(self, parser, idName):
+        """!Add a command-line argument to specify dataset type name, if wanted
+
+        @param[in] parser  argument parser to which to add argument
+        @param[in] idName  name of data ID argument, without the leading "--", e.g. "id"
+
+        The default implementation does nothing
+        """
+        pass
+
+    @abc.abstractmethod
+    def getDatasetType(self, namespace):
+        """Return the dataset type as a string, based on parsed command-line arguments
+
+        @param[in] namespace  parsed command
+        """
+        raise NotImplementedError("Subclasses must override")
+
+
+class DatasetArgument(DynamicDatasetType):
+    """!A dataset type specified by a command-line argument.
     """
     def __init__(self,
-        name = None,
+        name=None,
         help="dataset type to process from input data repository",
         default=None,
     ):
+        """!Construct a DatasetArgument
+
+        @param[in] name  name of command-line argument (including leading "--", if appropriate)
+            whose value is the dataset type; if None, uses --idName_dstype
+            where idName is the name of the data ID argument (e.g. "id")
+        @param[in] help  help string for the command-line argument
+        @param[in] default  default value; if None, then the command-line option is required;
+            ignored if the argument is positional (name does not start with "-")
+            because positional argument do not support default values
+        """
+        DynamicDatasetType.__init__(self)
         self.name = name
         self.help = help
         self.default = default
 
-    @property
-    def required(self):
-        return self.default is None
+    def getDatasetType(self, namespace):
+        """Return the dataset type as a string, from the appropriate command-line argument
+
+        @param[in] namespace  parsed command
+        """
+        argName = self.name.lstrip("-")
+        return getattr(namespace, argName)
+
+    def addArgument(self, parser, idName):
+        """!Add a command-line argument to specify dataset type name
+
+        Also set self.name if it is None
+        """
+        help = self.help if self.help else "dataset type for %s" % (idName,)
+        if self.name is None:
+            self.name = "--%s_dstype" % (idName,)
+        requiredDict = dict()
+        if self.name.startswith("-"):
+            requiredDict = dict(required = self.default is None)
+        parser.add_argument(
+            self.name,
+            default = self.default,
+            help = help,
+            **requiredDict) # cannot specify required=None for positional arguments
+
+
+class ConfigDatasetType(DynamicDatasetType):
+    """!A dataset type specified by a config parameter
+    """
+    def __init__(self, name):
+        """!Construct a ConfigDatasetType
+
+        @param[in] name  name of config option whose value is the dataset type
+        """
+        DynamicDatasetType.__init__(self)
+        self.name = name
+
+    def getDatasetType(self, namespace):
+        """Return the dataset type as a string, from the appropriate config field
+
+        @param[in] namespace  parsed command
+        """
+        # getattr does not work reliably if the config field name is dotted,
+        # so step through one level at a time
+        keyList = self.name.split(".")
+        value = namespace.config
+        for key in keyList:
+            try:
+                value = getattr(value, key)
+            except KeyError:
+                raise RuntimeError("Cannot find config parameter %r" % (self.name,))
+        return value
+
 
 class ArgumentParser(argparse.ArgumentParser):
     """!An argument parser for pipeline tasks that is based on argparse.ArgumentParser
@@ -272,9 +347,9 @@ class ArgumentParser(argparse.ArgumentParser):
         Add an argument to specify data IDs. If datasetType is an instance of DatasetArgument,
         then add a second argument to specify the dataset type.
 
-        @param[in] name                 name of name (including leading dashes, if wanted)
+        @param[in] name                 data ID argument (including leading dashes, if wanted)
         @param[in] datasetType          type of dataset; supply a string for a fixed dataset type,
-            or a DatasetArgument for a dynamically determined dataset type
+            or a DynamicDatasetType, such as DatasetArgument, for a dynamically determined dataset type
         @param[in] help                 help string for the argument
         @param[in] level                level of dataset, for butler
         @param[in] doMakeDataRefList    construct data references?
@@ -304,15 +379,9 @@ class ArgumentParser(argparse.ArgumentParser):
             ContainerClass = ContainerClass,
         )
 
-        if dataIdArgument.isDynamicDatasetType():
-            datasetType = dataIdArgument.datasetType
-            help = datasetType.help if datasetType.help else "dataset type for %s" % (name,)
-            self.add_argument(
-                "--" + dataIdArgument.datasetTypeName,
-                default = datasetType.default,
-                required = datasetType.required,
-                help = help,
-            )
+        if dataIdArgument.isDynamicDatasetType:
+            datasetType.addArgument(parser=self, idName=argName)
+
         self._dataIdArgDict[argName] = dataIdArgument
 
     def parse_args(self, config, args=None, log=None, override=None):
@@ -447,7 +516,7 @@ class ArgumentParser(argparse.ArgumentParser):
             if namespace.rawRerun is None:
                 guessedRerun = True
 
-        # This section processes the rerun argument, if rerun is specified as a colon separated 
+        # This section processes the rerun argument, if rerun is specified as a colon separated
         # value, it will be parsed as an input and output. The input value will be overridden if
         # previously specified (but a check is made to make sure both inputs use the same mapper)
         if namespace.rawRerun:
@@ -494,21 +563,22 @@ class ArgumentParser(argparse.ArgumentParser):
             reads these attributes:
             - butler
             - log
-            - \<name_dstype> for each data ID argument with a dynamic dataset type registered using
-                add_id_argument
+            - config, if any dynamic dataset types are set by a config parameter
+            - dataset type arguments (e.g. id_dstype), if any dynamic dataset types are specified by such
             and modifies these attributes:
             - \<name> for each data ID argument registered using add_id_argument
         """
         for dataIdArgument in self._dataIdArgDict.itervalues():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
             dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
-            try:
-                dataIdContainer.castDataIds(butler = namespace.butler)
-            except (KeyError, TypeError) as e:
-                # failure of castDataIds indicates invalid command args
-                self.error(e)
-            # failure of makeDataRefList indicates a bug that wants a traceback
             if dataIdArgument.doMakeDataRefList:
+                try:
+                    dataIdContainer.castDataIds(butler = namespace.butler)
+                except (KeyError, TypeError) as e:
+                    # failure of castDataIds indicates invalid command args
+                    self.error(e)
+
+                # failure of makeDataRefList indicates a bug that wants a traceback
                 dataIdContainer.makeDataRefList(namespace)
 
     def _applyInitialOverrides(self, namespace):
