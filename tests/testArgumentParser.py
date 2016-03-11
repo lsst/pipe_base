@@ -76,6 +76,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.ap = pipeBase.ArgumentParser(name="argumentParser")
         self.ap.add_id_argument("--id", "raw", "help text")
         self.ap.add_id_argument("--otherId", "raw", "more help")
+        self.ap.requireOutput = False  # makes testing everything else easier
         self.config = SampleConfig()
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -340,7 +341,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, None)
-        self.assertEqual(namespace.output, None)
 
         os.environ["PIPE_CALIB_ROOT"] = DataPath
         namespace = self.ap.parse_args(
@@ -349,7 +349,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, os.path.abspath(DataPath))
-        self.assertEqual(namespace.output, None)
 
         os.environ.pop("PIPE_CALIB_ROOT", None)
         os.environ["PIPE_OUTPUT_ROOT"] = DataPath
@@ -381,6 +380,7 @@ class ArgumentParserTestCase(unittest.TestCase):
             for default in (None, "raw"):
                 argName = name if name is not None else "--id_dstype"
                 ap = pipeBase.ArgumentParser(name="argumentParser")
+                ap.requireOutput = False  # Allow simpler command-lines
                 dsType = pipeBase.DatasetArgument(name=name, help=dsTypeHelp, default=default)
                 self.assertEqual(dsType.help, dsTypeHelp)
 
@@ -421,6 +421,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         name = "foo"
         defaultDsTypeHelp = "dataset type to process from input data repository"
         ap = pipeBase.ArgumentParser(name="argumentParser")
+        ap.requireOutput = False  # Allow simpler command-lines
         dsType = pipeBase.DatasetArgument(name=name)
         self.assertEqual(dsType.help, defaultDsTypeHelp)
 
@@ -451,6 +452,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         # so the test can tell the difference
         name = "dsType"
         ap = pipeBase.ArgumentParser(name="argumentParser")
+        ap.requireOutput = False  # Allow simpler command-line
         dsType = pipeBase.ConfigDatasetType(name=name)
 
         ap.add_id_argument("--id", dsType, "help text")
@@ -480,6 +482,46 @@ class ArgumentParserTestCase(unittest.TestCase):
                     "--id", "visit=2",
                 ],
             )
+
+    def testOutputs(self):
+        """Test output directories, specified in different ways"""
+        parser = pipeBase.ArgumentParser(name="argumentParser")
+        self.assertTrue(parser.requireOutput)
+
+        path = os.path.join(DataPath, "testOutputs")
+
+        # Specified by "--output"
+        args = parser.parse_args(config=self.config, args=[DataPath, "--output", path])
+        self.assertEqual(args.input, DataPath)
+        self.assertEqual(args.output, path)
+        self.assertIsNone(args.rerun)
+
+        # Specified by environment variable
+        try:
+            os.environ["PIPE_OUTPUT_ROOT"] = path
+            args = parser.parse_args(config=self.config, args=[DataPath,])
+            self.assertEqual(args.input, DataPath)
+            self.assertEqual(args.output, path)
+            self.assertIsNone(args.rerun)
+        finally:
+            os.environ.pop("PIPE_OUTPUT_ROOT", None)
+
+        # Specified by rerun
+        args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo"])
+        self.assertEqual(args.input, DataPath)
+        self.assertEqual(args.output, os.path.join(DataPath, "rerun", "foo"))
+        self.assertEqual(args.rerun, ["foo"])
+
+        # Specified by multiple reruns
+        args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo:bar"])
+        self.assertEqual(args.input, os.path.join(DataPath, "rerun", "foo"))
+        self.assertEqual(args.output, os.path.join(DataPath, "rerun", "bar"))
+        self.assertEqual(args.rerun, ["foo", "bar"])
+
+        # Unspecified
+        with self.assertRaises(SystemExit):
+            parser.parse_args(config=self.config, args=[DataPath,])
+
 
 def suite():
     utilsTests.init()
