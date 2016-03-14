@@ -461,6 +461,12 @@ class ArgumentParser(argparse.ArgumentParser):
 
         obeyShowArgument(namespace.show, namespace.config, exit=False)
 
+        # No environment variable or --output or --rerun specified.
+        if self.requireOutput and namespace.output is None and namespace.rerun is None:
+            self.error("no output directory specified.\n"
+                       "An output directory must be specified with the --output or --rerun\n"
+                       "command-line arguments.\n")
+
         namespace.butler = dafPersist.Butler(
             root = namespace.input,
             calibRoot = namespace.calib,
@@ -495,12 +501,6 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace.config.validate()
         namespace.config.freeze()
 
-        # No environment variable or --output or --rerun specified.
-        if self.requireOutput and namespace.output is None and namespace.rerun is None:
-            self.error("no output directory specified.\n"
-                       "An output directory must be specified with the --output or --rerun\n"
-                       "command-line arguments or the PIPE_OUTPUT_ROOT environment variable.\n")
-
         return namespace
 
     def _parseDirectories(self, namespace):
@@ -515,10 +515,8 @@ class ArgumentParser(argparse.ArgumentParser):
         # If an output directory is specified, process it and assign it to the namespace
         if namespace.rawOutput:
             namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
-        # This catches the case where the output was not specified, but _fixPath must still
-        # be run as there may be an environment variable set for the output
         else:
-            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
+            namespace.output = None
 
         # This section processes the rerun argument, if rerun is specified as a colon separated
         # value, it will be parsed as an input and output. The input value will be overridden if

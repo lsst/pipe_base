@@ -357,7 +357,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(namespace.input, os.path.abspath(DataPath))
         self.assertEqual(namespace.calib, None)
-        self.assertEqual(namespace.output, os.path.abspath(DataPath))
+        self.assertEqual(namespace.output, None)
 
     def testBareHelp(self):
         """Make sure bare help does not print an error message (ticket #3090)
@@ -491,16 +491,6 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(args.input, DataPath)
         self.assertEqual(args.output, path)
         self.assertIsNone(args.rerun)
-
-        # Specified by environment variable
-        try:
-            os.environ["PIPE_OUTPUT_ROOT"] = path
-            args = parser.parse_args(config=self.config, args=[DataPath,])
-            self.assertEqual(args.input, DataPath)
-            self.assertEqual(args.output, path)
-            self.assertIsNone(args.rerun)
-        finally:
-            os.environ.pop("PIPE_OUTPUT_ROOT", None)
 
         # Specified by rerun
         args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo"])
