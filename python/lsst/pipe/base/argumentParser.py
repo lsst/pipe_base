@@ -38,7 +38,7 @@ import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
 
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
-    "DatasetArgument", "ConfigDatasetType"]
+           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -268,7 +268,6 @@ class ConfigDatasetType(DynamicDatasetType):
                 raise RuntimeError("Cannot find config parameter %r" % (self.name,))
         return value
 
-
 class ArgumentParser(argparse.ArgumentParser):
     """!An argument parser for pipeline tasks that is based on argparse.ArgumentParser
 
@@ -280,6 +279,8 @@ class ArgumentParser(argparse.ArgumentParser):
       before I do this checking. Constructing a butler is slow, so I only want do it once,
       after parsing the command line, so as to catch syntax errors quickly.
     """
+    requireOutput = True  # Require an output directory to be specified?
+
     def __init__(self, name, usage = "%(prog)s input [options]", **kwargs):
         """!Construct an ArgumentParser
 
@@ -460,6 +461,12 @@ class ArgumentParser(argparse.ArgumentParser):
 
         obeyShowArgument(namespace.show, namespace.config, exit=False)
 
+        # No environment variable or --output or --rerun specified.
+        if self.requireOutput and namespace.output is None and namespace.rerun is None:
+            self.error("no output directory specified.\n"
+                       "An output directory must be specified with the --output or --rerun\n"
+                       "command-line arguments.\n")
+
         namespace.butler = dafPersist.Butler(
             root = namespace.input,
             calibRoot = namespace.calib,
@@ -505,16 +512,11 @@ class ArgumentParser(argparse.ArgumentParser):
         mapperClass = dafPersist.Butler.getMapperClass(_fixPath(DEFAULT_INPUT_NAME,namespace.rawInput))
         namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
 
-        guessedRerun = False            # did we guess the rerun name?
         # If an output directory is specified, process it and assign it to the namespace
         if namespace.rawOutput:
             namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
-        # This catches the case where the output was not specified, but _fixPath must still
-        # be run as there may be an environment variable set for the output
         else:
-            namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
-            if namespace.rawRerun is None:
-                guessedRerun = True
+            namespace.output = None
 
         # This section processes the rerun argument, if rerun is specified as a colon separated
         # value, it will be parsed as an input and output. The input value will be overridden if
@@ -522,24 +524,17 @@ class ArgumentParser(argparse.ArgumentParser):
         if namespace.rawRerun:
             if namespace.output:
                 self.error("Error: cannot specify both --output and --rerun")
-            namespace.rerun = tuple(os.path.join(namespace.input, "rerun", v)
-                                    for v in namespace.rawRerun.split(":"))
+            namespace.rerun = namespace.rawRerun.split(":")
+            rerunDir = [os.path.join(namespace.input, "rerun", dd) for dd in namespace.rerun]
             modifiedInput = False
-            if len(namespace.rerun) == 2:
-                namespace.input, namespace.output = namespace.rerun
+            if len(rerunDir) == 2:
+                namespace.input, namespace.output = rerunDir
                 modifiedInput = True
-            elif len(namespace.rerun) == 1:
-                if os.path.exists(namespace.rerun[0]):
-                    namespace.output = namespace.rerun[0]
-
-                    guessedInput = os.path.realpath(os.path.join(namespace.rerun[0], "_parent"))
-                    if guessedRerun and not os.path.exists(guessedInput):
-                        pass            # refuse the guesses
-                    else:
-                        namespace.input = guessedInput
-                        modifiedInput = True
-                else:
-                    namespace.output = namespace.rerun[0]
+            elif len(rerunDir) == 1:
+                namespace.output = rerunDir[0]
+                if os.path.exists(namespace.output):
+                    namespace.input = os.path.realpath(os.path.join(namespace.output, "_parent"))
+                    modifiedInput = True
             else:
                 self.error("Error: invalid argument for --rerun: %s" % namespace.rerun)
             if modifiedInput and dafPersist.Butler.getMapperClass(namespace.input) != mapperClass:
@@ -630,6 +625,12 @@ class ArgumentParser(argparse.ArgumentParser):
             if not arg.strip():
                 continue
             yield arg
+
+
+class InputOnlyArgumentParser(ArgumentParser):
+    """An ArgumentParser for pipeline tasks that don't write any output"""
+    requireOutput = False  # We're not going to write anything
+
 
 def getTaskDict(config, taskDict=None, baseName=""):
     """!Get a dictionary of task info for all subtasks in a config
