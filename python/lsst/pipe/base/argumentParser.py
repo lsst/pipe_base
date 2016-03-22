@@ -480,7 +480,11 @@ class ArgumentParser(argparse.ArgumentParser):
         if "data" in namespace.show:
             for dataIdName in self._dataIdArgDict.iterkeys():
                 for dataRef in getattr(namespace, dataIdName).refList:
-                    print dataIdName + " dataRef.dataId =", dataRef.dataId
+                    if hasattr(dataRef, "dataId"):
+                        print dataIdName + " dataRef.dataId =", dataRef.dataId
+                    elif isinstance(dataRef, (list, tuple)):
+                        print dataIdName + " dataId = " + str([ref.dataId for ref in dataRef
+                                                               if hasattr(ref, "dataId")])
 
         if namespace.show and "run" not in namespace.show:
             sys.exit(0)
