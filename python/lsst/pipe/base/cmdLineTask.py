@@ -491,7 +491,11 @@ class CmdLineTask(Task):
             butler.put(self.config, configName, doBackup=doBackup)
         elif butler.datasetExists(configName):
             # this may be subject to a race condition; see #2789
-            oldConfig = butler.get(configName, immediate=True)
+            try:
+                oldConfig = butler.get(configName, immediate=True)
+            except Exception as exc:
+                raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
+                                (configName, exc))
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
