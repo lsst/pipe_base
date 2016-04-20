@@ -28,6 +28,7 @@ from past.builtins import basestring
 
 import lsst.utils.tests
 import lsst.daf.base as dafBase
+from lsst.log import Log
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -158,6 +159,18 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask._fullName, "addMult")
         self.assertEqual(addMultTask.add._fullName, "addMult.add")
         self.assertEqual(addMultTask.mult._fullName, "addMult.mult")
+
+    def testLog(self):
+        """Test the Task's logger
+        """
+        addMultTask = AddMultTask()
+        self.assertEqual(addMultTask.log.getName(), "addMult")
+        self.assertEqual(addMultTask.add.log.getName(), "addMult.add")
+
+        log = Log.getLogger("tester")
+        addMultTask = AddMultTask(log=log)
+        self.assertEqual(addMultTask.log.getName(), "tester.addMult")
+        self.assertEqual(addMultTask.add.log.getName(), "tester.addMult.add")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()

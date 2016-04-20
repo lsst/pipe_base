@@ -31,8 +31,8 @@ from builtins import str
 
 import lsst.utils
 import lsst.utils.tests
+import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
-import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
@@ -299,29 +299,33 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def testLogLevel(self):
         """Test --loglevel"""
-        for logLevel in ("debug", "Info", "WARN", "fatal"):
-            intLevel = getattr(pexLog.Log, logLevel.upper())
+        for logLevel in ("trace", "debug", "Info", "WARN", "eRRoR", "fatal"):
+            intLevel = getattr(lsstLog.Log, logLevel.upper())
             print("testing logLevel=%r" % (logLevel,))
             namespace = self.ap.parse_args(
                 config=self.config,
                 args=[DataPath, "--loglevel", logLevel],
             )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
+            self.assertEqual(namespace.log.getLevel(), intLevel)
             self.assertFalse(hasattr(namespace, "loglevel"))
 
-            fooBarLevel = intLevel + 27
-            bazLevel = -500
+            bazLevel = "TRACE"
             namespace = self.ap.parse_args(
                 config=self.config,
-                args=[DataPath, "--loglevel", str(intLevel),
-                      "foo.bar=%d" % (fooBarLevel,),
-                      "baz=0",
+                args=[DataPath, "--loglevel", logLevel,
+                      "foo.bar=%s" % (logLevel,),
+                      "baz=INFO",
                       "baz=%s" % bazLevel,  # test that later values override earlier values
                       ],
             )
-            self.assertEqual(namespace.log.getThreshold(), intLevel)
-            self.assertEqual(namespace.log.getThresholdFor("foo.bar"), fooBarLevel)
-            self.assertEqual(namespace.log.getThresholdFor("baz"), bazLevel)
+            self.assertEqual(namespace.log.getLevel(), intLevel)
+            self.assertEqual(lsstLog.Log.getLogger("foo.bar").getLevel(), intLevel)
+            self.assertEqual(lsstLog.Log.getLogger("baz").getLevel(), getattr(lsstLog.Log, bazLevel))
+
+        self.assertRaises(SystemExit, self.ap.parse_args,
+                          config=self.config,
+                          args=[DataPath, "--loglevel", "1234"],
+                          )
 
         self.assertRaises(SystemExit, self.ap.parse_args,
                           config=self.config,

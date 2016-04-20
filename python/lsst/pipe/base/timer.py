@@ -27,7 +27,7 @@ import resource
 import time
 import datetime
 
-from lsst.pex.logging import Log
+from lsst.log import Log
 
 __all__ = ["logInfo", "timeMethod"]
 
@@ -37,19 +37,19 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
 
     @param obj      a \ref task.Task "Task", or any other object with these two attributes:
     * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.pex.logging.Log
+    * log an instance of lsst.log.Log
     @param pairs    a collection of (name, value) pairs
-    @param logLevel log level (an lsst.pex.logging.Log level constant, such as lsst.pex.logging.Log.DEBUG)
+    @param logLevel log level (an lsst.log level constant, such as lsst.log.Log.DEBUG)
     """
     strList = []
     for name, value in pairs:
         try:
             obj.metadata.add(name, value)
         except Exception as e:
-            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" %
-                          (type(obj).__name__, name, value, e))
+            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s",
+                          type(obj).__name__, name, value, e)
         strList.append("%s=%s" % (name, value))
-    obj.log.log(logLevel, "; ".join(strList))
+    obj.log._log(logLevel, "; ".join(strList))
 
 
 def logInfo(obj, prefix, logLevel=Log.DEBUG):
@@ -57,11 +57,11 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
 
     @param obj      a \ref task.Task "Task", or any other object with these two attributes:
     * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.pex.logging.Log
+    * log an instance of lsst.log.Log
     @param prefix   name prefix, the resulting entries are \<prefix>CpuTime, etc.
         For example timeMethod uses prefix = \<methodName>Start
         when the method begins and prefix = \<methodName>End when the method ends.
-    @param logLevel log level (an lsst.pex.logging.Log level, constant such as lsst.pex.logging.Log.DEBUG)
+    @param logLevel log level (an lsst.log level, constant such as lsst.log.Log.DEBUG)
 
 
     Logged items include:
@@ -112,7 +112,7 @@ def timeMethod(func):
 
     @warning This decorator only works with instance methods of Task, or any class with these attributes:
     * metadata: an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log: an instance of lsst.pex.logging.Log
+    * log: an instance of lsst.log.Log
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):

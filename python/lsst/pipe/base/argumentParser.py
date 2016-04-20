@@ -40,7 +40,7 @@ from builtins import object
 
 import lsst.utils
 import lsst.pex.config as pexConfig
-import lsst.pex.logging as pexLog
+import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
 from future.utils import with_metaclass
 
@@ -335,8 +335,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
                           help="config override file(s)")
         self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
-                          help="logging level; supported levels are [debug|info|warn|fatal] or an integer; "
-                          "trace level is negative log level, e.g. use level -3 for trace level 3",
+                          help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
                           metavar="LEVEL|COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
@@ -361,6 +360,13 @@ class ArgumentParser(argparse.ArgumentParser):
                                 "them (safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--no-versions", action="store_true", dest="noVersions", default=False,
                           help="don't check package versions; useful for development")
+        lsstLog.configure_prop("""
+log4j.rootLogger=INFO, A1
+log4j.appender.A1=ConsoleAppender
+log4j.appender.A1.Target=System.err
+log4j.appender.A1.layout=PatternLayout
+log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
+""")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
                         ContainerClass=DataIdContainer):
@@ -411,7 +417,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
         @param[in,out] config   config for the task being run
         @param[in] args         argument list; if None use sys.argv[1:]
-        @param[in] log          log (instance pex_logging Log); if None use the default log
+        @param[in] log          log (instance lsst.log Log); if None use the default log
         @param[in] override     a config override function; it must take the root config object
             as its only argument and must modify the config in place.
             This function is called after camera-specific overrides files are applied, and before
@@ -423,7 +429,7 @@ class ArgumentParser(argparse.ArgumentParser):
         - butler: a butler for the data
         - an entry for each of the data ID arguments registered by add_id_argument(),
           the value of which is a DataIdArgument that includes public elements 'idList' and 'refList'
-        - log: a pex_logging log
+        - log: a lsst.log Log
         - an entry for each command-line argument, with the following exceptions:
           - config is the supplied config, suitably updated
           - configfile, id and loglevel are all missing
@@ -447,7 +453,7 @@ class ArgumentParser(argparse.ArgumentParser):
             self.error("Error: input=%r not found" % (namespace.input,))
 
         namespace.config = config
-        namespace.log = log if log is not None else pexLog.Log.getDefaultLog()
+        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getPackageName()
@@ -627,7 +633,7 @@ class ArgumentParser(argparse.ArgumentParser):
             - camera: the camera name
             - config: the config passed to parse_args, with no overrides applied
             - obsPkg: the obs_ package for this camera
-            - log: a pex_logging log
+            - log: a lsst.log Log
         """
         pass
 
@@ -896,7 +902,7 @@ class LogLevelAction(argparse.Action):
             where level is a keyword (not case sensitive) or an integer
         @param[in] option_string    option value specified by the user (a str)
         """
-        permittedLevelList = ('DEBUG', 'INFO', 'WARN', 'FATAL')
+        permittedLevelList = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')
         permittedLevelSet = set(permittedLevelList)
         for componentLevel in values:
             component, sep, levelStr = componentLevel.partition("=")
@@ -904,17 +910,13 @@ class LogLevelAction(argparse.Action):
                 levelStr, component = component, None
             logLevelUpr = levelStr.upper()
             if logLevelUpr in permittedLevelSet:
-                logLevel = getattr(namespace.log, logLevelUpr)
+                logLevel = getattr(lsstLog.Log, logLevelUpr)
             else:
-                try:
-                    logLevel = int(levelStr)
-                except Exception:
-                    parser.error("loglevel=%r not int or one of %s" %
-                                 (namespace.loglevel, permittedLevelList))
+                parser.error("loglevel=%r not one of %s" % (levelStr, permittedLevelList))
             if component is None:
-                namespace.log.setThreshold(logLevel)
+                namespace.log.setLevel(logLevel)
             else:
-                namespace.log.setThresholdFor(component, logLevel)
+                lsstLog.Log.getLogger(component).setLevel(logLevel)
 
 
 def setDottedAttr(item, name, value):

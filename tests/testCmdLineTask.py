@@ -29,9 +29,9 @@ import tempfile
 from builtins import zip
 
 import lsst.utils
-import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 import lsst.obs.test
+from lsst.log import Log
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.join(ObsTestDir, "data", "input")
@@ -111,8 +111,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """
         config = ExampleTask.ConfigClass()
         config.floatField = -99.9
-        defLog = pexLog.getDefaultLog()
-        log = pexLog.Log(defLog, "cmdLineTask")
+        log = Log.getLogger("cmdLineTask")
         retVal = ExampleTask.parseAndRun(
             args=[DataPath, "--output", self.outPath, "--id", "visit=2"],
             config=config,
