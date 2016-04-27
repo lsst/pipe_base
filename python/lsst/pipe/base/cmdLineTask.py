@@ -25,6 +25,7 @@ import traceback
 import functools
 import contextlib
 
+from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 
 from .task import Task, TaskError
@@ -181,6 +182,7 @@ class TaskRunner(object):
         """
         resultList = []
         if self.numProcesses > 1:
+            disableImplicitThreading()  # To prevent thread contention
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
