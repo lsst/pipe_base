@@ -31,7 +31,7 @@ import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
-DataPath = os.path.join(ObsTestDir, "data", "input")
+DataPath = os.path.realpath(os.path.join(ObsTestDir, "data", "input"))
 LocalDataPath = os.path.join(os.path.dirname(__file__), "data")
 #
 # Context manager to intercept stdout/err
