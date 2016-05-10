@@ -23,6 +23,7 @@
 import itertools
 import os
 import unittest
+import tempfile
 
 import lsst.utils
 import lsst.utils.tests as utilsTests
@@ -31,7 +32,7 @@ import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
-DataPath = os.path.join(ObsTestDir, "data", "input")
+DataPath = os.path.realpath(os.path.join(ObsTestDir, "data", "input"))
 LocalDataPath = os.path.join(os.path.dirname(__file__), "data")
 #
 # Context manager to intercept stdout/err
@@ -289,13 +290,17 @@ class ArgumentParserTestCase(unittest.TestCase):
     def testLogDest(self):
         """Test --logdest
         """
-        logFile = "tests_argumentParser_testLog_temp.txt"
-        self.ap.parse_args(
-            config = self.config,
-            args = [DataPath, "--logdest", logFile],
-        )
-        self.assertTrue(os.path.isfile(logFile))
-        os.remove(logFile)
+        logFile = tempfile.NamedTemporaryFile()
+        try:
+            namespace = self.ap.parse_args(
+                config = self.config,
+                args = [DataPath, "--logdest", logFile.name],
+            )
+            namespace.log.info('test logging to the specified file')
+            self.assertTrue(os.path.isfile(logFile.name))
+            self.assertGreater(os.path.getsize(logFile.name), 0)
+        finally:
+            logFile.close()
 
     def testLogLevel(self):
         """Test --loglevel"""
