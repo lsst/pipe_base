@@ -308,6 +308,13 @@ class SuperTask(Task):
 
     @classmethod
     def _makeArgumentParser(cls):
-        parser = ArgumentParser(name=cls._default_name)
+        # Allow either _default_name or _DefaultName
+        if cls._default_name is not None:
+            task_name = cls._default_name
+        elif cls._DefaultName is not None:
+            task_name = cls._DefaultName
+        else:
+            raise RuntimeError("_default_name or _DefaultName is required for a task")
+        parser = ArgumentParser(name=task_name)
         parser.add_id_argument("--id", "raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
         return parser
