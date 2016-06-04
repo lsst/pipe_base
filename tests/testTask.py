@@ -55,9 +55,14 @@ class MultTask(pipeBase.Task):
             val = val * self.config.multiplicand,
         )
 
+# prove that registry fields can also be used to hold subtasks
+# by using a registry to hold MultTask
+multRegistry = pexConfig.makeRegistry("Registry for Mult-like tasks")
+multRegistry.register("stdMult", MultTask)
+
 class AddMultConfig(pexConfig.Config):
     add = AddTask.makeField("add task")
-    mult = MultTask.makeField("mult task")
+    mult = multRegistry.makeField("mult task", default="stdMult")
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
@@ -114,7 +119,9 @@ class TaskTestCase(unittest.TestCase):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
                 config.add.addend = addend
-                config.mult.multiplicand = multiplicand
+                config.mult["stdMult"].multiplicand = multiplicand
+                # make sure both ways of accessing the registry work and give the same result
+                self.assertEqual(config.mult.active.multiplicand, multiplicand)
                 addMultTask = AddMultTask(config=config)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
@@ -166,7 +173,7 @@ class TaskTestCase(unittest.TestCase):
                 config = AddMultTask.ConfigClass()
                 config.add.retarget(AddTwiceTask)
                 config.add.addend = addend
-                config.mult.multiplicand = multiplicand
+                config.mult["stdMult"].multiplicand = multiplicand
                 addMultTask = AddMultTask(config=config)
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
