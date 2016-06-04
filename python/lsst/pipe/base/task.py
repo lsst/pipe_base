@@ -97,12 +97,12 @@ class Task(object):
         self.metadata = dafBase.PropertyList()
         self._parentTask = parentTask
 
-        if parentTask != None:
+        if parentTask is not None:
             if name is None:
                 raise RuntimeError("name is required for a subtask")
             self._name = name
             self._fullName = parentTask._computeFullName(name)
-            if config == None:
+            if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
             self.log = pexLog.Log(parentTask.log, name)
@@ -114,7 +114,7 @@ class Task(object):
                 name = self._DefaultName
             self._name = name
             self._fullName = self._name
-            if config == None:
+            if config is None:
                 config = self.ConfigClass()
             self._taskDict = dict()
             if log is None:

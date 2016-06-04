@@ -408,7 +408,7 @@ class ArgumentParser(argparse.ArgumentParser):
           - configfile, id and loglevel are all missing
         - obsPkg: name of obs_ package for this camera
         """
-        if args == None:
+        if args is None:
             args = sys.argv[1:]
 
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
