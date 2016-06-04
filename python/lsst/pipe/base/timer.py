@@ -1,8 +1,8 @@
 from __future__ import absolute_import, division
-# 
+#
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
-# 
+#
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
 #
@@ -10,14 +10,14 @@ from __future__ import absolute_import, division
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
-# You should have received a copy of the LSST License Statement and 
-# the GNU General Public License along with this program.  If not, 
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 """Utilities for measuring execution time.
@@ -33,7 +33,7 @@ __all__ = ["logInfo", "timeMethod"]
 
 def logPairs(obj, pairs, logLevel=Log.DEBUG):
     """!Log (name, value) pairs to obj.metadata and obj.log
-    
+
     @param obj      a \ref task.Task "Task", or any other object with these two attributes:
     * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
     * log an instance of lsst.pex.logging.Log
@@ -61,7 +61,7 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
         when the method begins and prefix = \<methodName>End when the method ends.
     @param logLevel log level (an lsst.pex.logging.Log level, constant such as lsst.pex.logging.Log.DEBUG)
 
-            
+
     Logged items include:
     * Utc:      UTC date in ISO format (only in metadata since log entries have timestamps)
     * CpuTime:  CPU time (seconds)
@@ -90,16 +90,16 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
 
 def timeMethod(func):
     """!Decorator to measure duration of a task method
-    
+
     Writes various measures of time and possibly memory usage to the task's metadata;
     all items are prefixed with the function name.
-    
+
     To use:
     \code
     import lsst.pipe.base as pipeBase
     class FooTask(pipeBase.Task):
         ...
-            
+
         @pipeBase.timeMethod
         def run(self, ...): # or any other instance method you want to time
             ...

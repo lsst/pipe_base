@@ -1,8 +1,8 @@
 from __future__ import absolute_import, division
-# 
+#
 # LSST Data Management System
 # Copyright 2008-2016 AURA/LSST.
-# 
+#
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
 #
@@ -10,14 +10,14 @@ from __future__ import absolute_import, division
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
-# You should have received a copy of the LSST License Statement and 
-# the GNU General Public License along with this program.  If not, 
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import contextlib
@@ -32,7 +32,7 @@ __all__ = ["Task", "TaskError"]
 
 class TaskError(Exception):
     """!Use to report errors for which a traceback is not useful.
-    
+
     Examples of such errors:
     - processCcd is asked to run detection, but not calibration, and no calexp is found.
     - coadd finds no valid images in the specified patch.
@@ -46,14 +46,14 @@ class Task(object):
     and \ref pipeTasks_writeTask "how to write a task" for more information about writing tasks.
     If the second link is broken (as it will be before the documentation is cross-linked)
     then look at the main page of pipe_tasks documentation for a link.
-    
+
     Useful attributes include:
     * log: an lsst.pex.logging.Log
     * config: task-specific configuration; an instance of ConfigClass (see below)
     * metadata: an lsst.daf.base.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used by the task.
-    
+
     Subclasses typically have a method named "run" to perform the main data processing. Details:
     * run should process the minimum reasonable amount of data, typically a single CCD.
       Iteration, if desired, is performed by a caller of the run method. This is good design and allows
@@ -66,19 +66,19 @@ class Task(object):
 
     \deprecated Tasks other than cmdLineTask.CmdLineTask%s should \em not accept a blob such as a butler data
     reference.  How we will handle data references is still TBD, so don't make changes yet! RHL 2014-06-27
-    
+
     Subclasses must also have an attribute ConfigClass that is a subclass of lsst.pex.config.Config
     which configures the task. Subclasses should also have an attribute _DefaultName:
     the default name if there is no parent task. _DefaultName is required for subclasses of
     \ref cmdLineTask.CmdLineTask "CmdLineTask" and recommended for subclasses of Task because it simplifies
     construction (e.g. for unit tests).
-    
+
     Tasks intended to be run from the command line should be subclasses of \ref cmdLineTask.CmdLineTask
     "CmdLineTask", not Task.
     """
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """!Create a Task
-        
+
         @param[in] config       configuration for this task (an instance of self.ConfigClass,
             which is a task-specific subclass of lsst.pex.config.Config), or None. If None:
             - If parentTask specified then defaults to parentTask.config.\<name>
@@ -89,7 +89,7 @@ class Task(object):
             - If not None (a subtask) then you must specify name
         @param[in] log          pexLog log; if None then the default is used;
             in either case a copy is made using the full task name.
-        
+
         @throw RuntimeError if parentTask is None and config is None.
         @throw RuntimeError if parentTask is not None and name is None.
         @throw RuntimeError if name is None and _DefaultName does not exist.
@@ -120,7 +120,7 @@ class Task(object):
             if log is None:
                 log = pexLog.getDefaultLog()
             self.log = pexLog.Log(log, self._fullName)
-  
+
         self.config = config
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
@@ -175,7 +175,7 @@ class Task(object):
             topLeveltTaskName:subtaskName:subsubtaskName.itemName
         using ":" in the full task name disambiguates the rare situation that a task has a subtask
         and a metadata item with the same name.
-        
+
         @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
             for the top-level task and all subtasks, sub-subtasks, etc.
         """
@@ -183,7 +183,7 @@ class Task(object):
         for fullName, task in self.getTaskDict().iteritems():
             fullMetadata.set(fullName.replace(".", ":"), task.metadata)
         return fullMetadata
-    
+
     def getFullName(self):
         """!Return the task name as a hierarchical name including parent task names
 
@@ -201,20 +201,20 @@ class Task(object):
         See getFullName to get a hierarchical name including parent task names
         """
         return self._name
-    
+
     def getTaskDict(self):
         """!Return a dictionary of all tasks as a shallow copy.
-        
+
         @return taskDict: a dict containing full task name: task object
             for the top-level task and all subtasks, sub-subtasks, etc.
         """
         return self._taskDict.copy()
-    
+
     def makeSubtask(self, name, **keyArgs):
         """!Create a subtask as a new instance self.\<name>
-        
+
         The subtask must be defined by self.config.\<name>, an instance of pex_config ConfigurableField.
-        
+
         @param name         brief name of subtask
         @param **keyArgs    extra keyword arguments used to construct the task.
             The following arguments are automatically provided and cannot be overridden:
@@ -229,18 +229,18 @@ class Task(object):
     @contextlib.contextmanager
     def timer(self, name, logLevel = pexLog.Log.DEBUG):
         """!Context manager to log performance data for an arbitrary block of code
-        
+
         @param[in] name         name of code being timed;
             data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
         @param[in] logLevel     one of the lsst.pex.logging.Log level constants
-        
+
         Example of use:
         \code
         with self.timer("someCodeToTime"):
             ...code to time...
         \endcode
 
-        See timer.logInfo for the information logged            
+        See timer.logInfo for the information logged
         """
         logInfo(obj = self, prefix = name + "Start", logLevel = logLevel)
         try:
@@ -270,7 +270,7 @@ class Task(object):
 
         For example: if the full name of this task is "top.sub.sub2"
         then _computeFullName("subname") returns "top.sub.sub2.subname".
-        
+
         @param[in] name     brief name of subtask or metadata item
         @return the full name: the "name" argument prefixed by the full task name and a period.
         """

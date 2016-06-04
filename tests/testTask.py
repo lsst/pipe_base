@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-# 
+#
 # LSST Data Management System
 # Copyright 2008, 2009, 2010 LSST Corporation.
-# 
+#
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
 #
@@ -10,14 +10,14 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
-# You should have received a copy of the LSST License Statement and 
-# the GNU General Public License along with this program.  If not, 
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import time
@@ -78,13 +78,13 @@ class AddMultTask(pipeBase.Task):
             return pipeBase.Struct(
                 val = multRet.val,
             )
-    
+
     @pipeBase.timeMethod
     def failDec(self):
         """A method that fails with a decorator
         """
         raise RuntimeError("failDec intentional error")
-    
+
     def failCtx(self):
         """A method that fails inside a context manager
         """
@@ -103,7 +103,7 @@ class TaskTestCase(unittest.TestCase):
     """
     def setUp(self):
         self.valDict = dict()
-        
+
     def tearDown(self):
         self.valDict = None
 
@@ -119,7 +119,7 @@ class TaskTestCase(unittest.TestCase):
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + addend) * multiplicand)
-    
+
     def testNames(self):
         """Test getName() and getFullName()
         """
@@ -128,10 +128,18 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.add.getName(), "add")
         self.assertEqual(addMultTask.mult.getName(), "mult")
 
+        self.assertEquals(addMultTask._name, "addMult")
+        self.assertEquals(addMultTask.add._name, "add")
+        self.assertEquals(addMultTask.mult._name, "mult")
+
         self.assertEqual(addMultTask.getFullName(), "addMult")
         self.assertEqual(addMultTask.add.getFullName(), "addMult.add")
         self.assertEqual(addMultTask.mult.getFullName(), "addMult.mult")
-    
+
+        self.assertEquals(addMultTask._fullName, "addMult")
+        self.assertEquals(addMultTask.add._fullName, "addMult.add")
+        self.assertEquals(addMultTask.mult._fullName, "addMult.mult")
+
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
@@ -149,7 +157,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(fullMetadata.getPropertySet("addMult").nameCount(), 0)
         self.assertEqual(fullMetadata.getPropertySet("addMult:add").nameCount(), 0)
         self.assertEqual(fullMetadata.getPropertySet("addMult:mult").nameCount(), 0)
-            
+
     def testReplace(self):
         """Test replacing one subtask with another
         """
@@ -163,7 +171,7 @@ class TaskTestCase(unittest.TestCase):
                 for val in (-1.0, 0.0, 17.5):
                     ret = addMultTask.run(val=val)
                     self.assertAlmostEqual(ret.val, (val + (2 * addend)) * multiplicand)
-    
+
     def testFail(self):
         """Test timers when the code they are timing fails
         """
@@ -178,19 +186,8 @@ class TaskTestCase(unittest.TestCase):
             self.fail("Expected RuntimeError")
         except RuntimeError:
             self.assertIsNotNone(addMultTask.metadata.get("failCtxEndCpuTime", None))
-        
-    
-    def testNames(self):
-        """Test task names
-        """
-        addMultTask = AddMultTask()
-        self.assertEquals(addMultTask._name, "addMult")
-        self.assertEquals(addMultTask.add._name, "add")
-        self.assertEquals(addMultTask.mult._name, "mult")
-        self.assertEquals(addMultTask._fullName, "addMult")
-        self.assertEquals(addMultTask.add._fullName, "addMult.add")
-        self.assertEquals(addMultTask.mult._fullName, "addMult.mult")
-    
+
+
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
@@ -212,9 +209,11 @@ class TaskTestCase(unittest.TestCase):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertTrue(name in addMultTask.metadata.names(), name + " is missing from task metadata")
+                    self.assertTrue(name in addMultTask.metadata.names(),
+                                    name + " is missing from task metadata")
                     self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType),
-                                    "%s is not of the right type (%s vs %s)" % (name, keyType, type(addMultTask.metadata.get(name))))
+                                    "%s is not of the right type (%s vs %s)" %
+                                    (name, keyType, type(addMultTask.metadata.get(name))))
         # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
