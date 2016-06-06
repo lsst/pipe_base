@@ -408,7 +408,7 @@ class ArgumentParser(argparse.ArgumentParser):
           - configfile, id and loglevel are all missing
         - obsPkg: name of obs_ package for this camera
         """
-        if args == None:
+        if args is None:
             args = sys.argv[1:]
 
         if len(args) < 1 or args[0].startswith("-") or args[0].startswith("@"):
@@ -839,7 +839,8 @@ class IdValueAction(argparse.Action):
                 if mat:
                     v1 = int(mat.group(1))
                     v2 = int(mat.group(2))
-                    v3 = mat.group(3); v3 = int(v3) if v3 else 1
+                    v3 = mat.group(3)
+                    v3 = int(v3) if v3 else 1
                     for v in range(v1, v2 + 1, v3):
                         idDict[name].append(str(v))
                 else:
@@ -880,7 +881,8 @@ class LogLevelAction(argparse.Action):
                 try:
                     logLevel = int(levelStr)
                 except Exception:
-                    parser.error("loglevel=%r not int or one of %s" % (namespace.loglevel, permittedLevelList))
+                    parser.error("loglevel=%r not int or one of %s" %
+                                 (namespace.loglevel, permittedLevelList))
             if component is None:
                 namespace.log.setThreshold(logLevel)
             else:

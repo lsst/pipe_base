@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-# 
+#
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
-# 
+#
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
 #
@@ -10,14 +10,14 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
-# You should have received a copy of the LSST License Statement and 
-# the GNU General Public License along with this program.  If not, 
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 import itertools
@@ -217,10 +217,10 @@ class ArgumentParserTestCase(unittest.TestCase):
                 self.ap.parse_args(self.config, [DataPath, "--show", "config=" + configStr, "run"])
             stdout = out[0]
             stdoutList = stdout.rstrip().split("\n")
-            self.assertGreater(len(stdoutList), 2) # at least 2 docstring lines (1st line is always a \n)
-                                                   # and 1 config parameter
+            self.assertGreater(len(stdoutList), 2)  # at least 2 docstring lines (1st line is always a \n)
+                                                    # and 1 config parameter
             answer = [ans for ans in stdoutList if not ans.startswith("#")] # get rid of comment lines
-            answer = [ans for ans in answer if not ":NOIGNORECASE to prevent this" in ans]
+            answer = [ans for ans in answer if ":NOIGNORECASE to prevent this" not in ans]
             self.assertEqual(len(answer), 2)       # only 1 config item matches (+ 1 \n entry per doc string)
             self.assertIn(assertStr, answer[1])
 

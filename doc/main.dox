@@ -156,11 +156,17 @@ as shown in these examples:
 
 \note `config` in a configuration override file is equivalent to `self.config` in a task.
 
-There are important limitations `--config` (use `--configfile`, instead, in these situations):
-- You cannot \ref pipeBase_argumentParser_retargetSubtasks "retarget subtasks"
+You can use a config file (e.g. as specified by `--configfile`) to override any config parameter,
+but the simpler `--config` command-line option has significant limitations:
+- You cannot \ref pipeBase_argumentParser_retargetSubtasks "retarget a subtask" specified by a
+    \ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField"
+    (which is the most common case)
 - For items in registries, you can only specify values for the active (current) item
 - You cannot specify values for lists of strings
 - You cannot specify a subset of list; you must specify all values at once
+
+See \ref pipeBase_argumentParser_retargetSubtasks for more information about
+overriding configuration parmaters in subtasks.
 
 \subsection pipeBase_argumentParser_retargetSubtasks Retargeting Subtasks
 
@@ -172,11 +178,57 @@ is to use a camera-specific variant of a subtask. Examples include:
 - lsst.obs.sdss.selectSdssImages.SelectSdssImagesTask: an version of the task that selects images
     for co-addition of SDSS stripe 82 images
 
-Here is an example of retargeting a subtask in a config override file; this retargets
-lsst.pipe.tasks.exampleCmdLineTask.ExampleCmdLineTask `stats` with a simpler version:
+How you retarget a subtask and override its config parameters depends on whether
+the task is specified as an
+\ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField"
+(the most common case, and the source of the term "retarget") or as an
+\ref lsst.pex.config.registry.RegistryField "lsst.pex.config.RegistryField".
+
+To override a subtask specified as an
+\ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField"
+use `retarget` method of the field. To override config parameters use simple dotted
+notation. Here is an example:
 <pre>
-    from lsst.pipe.tasks.exampleStatsTasks import ExampleSimpleStatsTask
-    config.stats.retarget(ExampleSimpleStatsTask)
+    # Example of retargeting a subtask and overriding its configuration
+    # for a subtask specified by an lsst.pex.config.ConfigurableField
+
+    # import the task and then retarget it
+    from ... import FooTask
+    config.configurableSubtask.retarget(FooTask)
+
+    # override a config parameter
+    config.configurableSubtask.subtaskParam1 = newValue
+</pre>
+
+\warning when you retarget a task specified by an
+\ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField"
+you lose all configuration overrides for both the old and new task. This limitation is not
+shared by \ref lsst.pex.config.registry.RegistryField "lsst.pex.config.RegistryField".
+
+To retarget a subtask is specified as an
+\ref lsst.pex.config.registry.RegistryField "lsst.pex.config.RegistryField"
+set the `name` property of the field. Overriding config parameters is a bit more complicated
+than for \ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField":
+you can set the `active` attribute of the field to override the currently active subtask,
+or use dictionary access notation to override any registered subtask. On the other hand,
+retargeting does not lose any config overrides for any registered subtask.
+Here is an example that assumes the same FooTask is defined
+in module .../foo.py and registered using name "foo":
+
+<pre>
+    # Example of retargeting a subtask and overriding its configuration
+    # for a subtask specified by an lsst.pex.config.RegistryField
+
+    # import the task's module, so the task registers itself,
+    # then set the name property of the field to the name in the registry
+    import .../foo.py
+    config.registrySubtask.name = "foo"
+
+    # you can override the active subtask's configuration using attribute `active`
+    config.registrySubtask.active.subtaskParam1 = newValue
+
+    # and/or you can override parameters in any subtask in the registry using dictionary access:
+    config.registrySubtask["foo"].subtaskParam1 = newValue
 </pre>
 
 \subsection pipeBase_argumentParser_debugVariables Specifying Debug Variables

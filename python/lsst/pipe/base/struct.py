@@ -1,8 +1,8 @@
 from __future__ import absolute_import, division
-# 
+#
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
-# 
+#
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
 #
@@ -10,21 +10,21 @@ from __future__ import absolute_import, division
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
-# You should have received a copy of the LSST License Statement and 
-# the GNU General Public License along with this program.  If not, 
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 __all__ = ["Struct"]
 
 class Struct(object):
     """!A struct to which you can add any fields
-    
+
     Intended to be used for the return value from Task.run and other Task methods,
     and useful for any method that returns multiple values.
 
@@ -57,7 +57,7 @@ class Struct(object):
         object.__init__(self)
         for name, val in keyArgs.iteritems():
             self.__safeAdd(name, val)
-    
+
     def __safeAdd(self, name, val):
         """!Add a field if it does not already exist and name does not start with __ (two underscores)
 
@@ -74,7 +74,7 @@ class Struct(object):
 
     def getDict(self):
         """!Return a dictionary of attribute name: value
-        
+
         @warning: the values are shallow copies.
         """
         return self.__dict__.copy()
@@ -84,7 +84,7 @@ class Struct(object):
 
         @param[in] struct       struct from which to copy
         @param[in] *nameList    all remaining arguments are names of items to copy
-        
+
         For example: foo.copyItems(other, "itemName1", "itemName2")
         copies other.itemName1 and other.itemName2 into self.
 
@@ -93,18 +93,18 @@ class Struct(object):
         """
         for name in nameList:
             self.__safeAdd(name, getattr(struct, name))
-    
+
     def copy(self):
         """!Return a one-level-deep copy (values are not copied)
         """
         return Struct(**self.getDict())
-    
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
-    
+
     def __len__(self):
         return len(self.__dict__)
-    
+
     def __repr__(self):
         itemList = ["%s=%r" % (name, val) for name, val in self.getDict().iteritems()]
         return "%s(%s)" % (self.__class__.__name__, "; ".join(itemList))
