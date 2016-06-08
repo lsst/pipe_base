@@ -32,6 +32,7 @@ from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
 from lsst.pex.logging import getDefaultLog
+from lsst.base import Packages
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
@@ -267,6 +268,17 @@ class TaskRunner(object):
         """
         return self.TaskClass(config=self.config, log=self.log)
 
+    def _precallImpl(self, task, parsedCmd):
+        """The main work of 'precall'
+
+        We write package versions, schemas and configs, or compare these to existing
+        files on disk if present.
+        """
+        if not parsedCmd.noVersions:
+            task.writePackageVersions(parsedCmd.butler, clobber=parsedCmd.clobberVersions)
+        task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+        task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+
     def precall(self, parsedCmd):
         """!Hook for code that should run exactly once, before multiprocessing is invoked.
 
@@ -275,17 +287,16 @@ class TaskRunner(object):
         @warning Implementations must take care to ensure that no unpicklable attributes are added to
         the TaskRunner itself, for compatibility with multiprocessing.
 
-        The default implementation writes schemas and configs, or compares them to existing
-        files on disk if present.
+        The default implementation writes package versions, schemas and configs, or compares
+        them to existing files on disk if present.
         """
         task = self.makeTask(parsedCmd=parsedCmd)
+
         if self.doRaise:
-            task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
-            task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+            self._precallImpl(task, parsedCmd)
         else:
             try:
-                task.writeConfig(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
-                task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
+                self._precallImpl(task, parsedCmd)
             except Exception, e:
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
@@ -547,6 +558,47 @@ class CmdLineTask(Task):
                 dataRef.put(self.getFullMetadata(), metadataName)
         except Exception, e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
+
+    def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):
+        """!Compare and write package versions
+
+        We retrieve the persisted list of packages and compare with what we're currently using.
+        We raise TaskError if there's a version mismatch.
+
+        Note that this operation is subject to a race condition.
+
+        @param[in] butler  data butler used to read/write the package versions
+        @param[in] clobber  overwrite any existing config? no comparison will be made
+        @param[in] doBackup  if clobbering, should we backup the old files?
+        @param[in] dataset  name of dataset to read/write
+        """
+        packages = Packages.fromSystem()
+
+        if clobber:
+            return butler.put(packages, dataset, doBackup=doBackup)
+        if not butler.datasetExists(dataset):
+            return butler.put(packages, dataset)
+
+        try:
+            old = butler.get(dataset, immediate=True)
+        except Exception as exc:
+            raise type(exc)("Unable to read stored version dataset %s (%s); "
+                            "consider using --clobber-verisons or --no-versions" %
+                            (dataset, exc))
+        # Note that because we can only detect python modules that have been imported, the stored
+        # list of products may be more or less complete than what we have now.  What's important is
+        # that the products that are in common have the same version.
+        diff = packages.difference(old)
+        if diff:
+            raise TaskError(
+                "Version mismatch (" +
+                "; ".join("%s: %s vs %s" % (pkg, diff[pkg][1], diff[pkg][0]) for pkg in diff) +
+                "); consider using --clobber-verisons or --no-versions")
+        # Update the old set of packages in case we have more packages that haven't been persisted.
+        extra = packages.extra(old)
+        if extra:
+            old.update(packages)
+            butler.put(old, dataset, doBackup=doBackup)
 
     def _getConfigName(self):
         """!Return the name of the config dataset type, or None if config is not to be persisted

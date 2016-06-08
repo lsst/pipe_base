@@ -340,6 +340,11 @@ class ArgumentParser(argparse.ArgumentParser):
                                 "(safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--no-backup-config", action="store_true", dest="noBackupConfig", default=False,
                           help="Don't copy config to file~N backup.")
+        self.add_argument("--clobber-versions", action="store_true", dest="clobberVersions", default=False,
+                          help=("backup and then overwrite existing package versions instead of checking"
+                                "them (safe with -j, but not all other forms of parallel execution)"))
+        self.add_argument("--no-versions", action="store_true", dest="noVersions", default=False,
+                          help="don't check package versions; useful for development")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
         ContainerClass=DataIdContainer):
