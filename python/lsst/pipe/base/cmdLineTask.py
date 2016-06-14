@@ -507,8 +507,8 @@ class CmdLineTask(Task):
             try:
                 oldConfig = butler.get(configName, immediate=True)
             except Exception as exc:
-                raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
-                                (configName, exc))
+                raise IOError("Unable to read stored config file %s (%s); consider using --clobber-config" %
+                                 (configName, exc))
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
