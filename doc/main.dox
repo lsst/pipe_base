@@ -8,6 +8,7 @@ namespace lsst { namespace pipe { namespace base {
 - \ref pipeBase_introduction
 - \ref pipeBase_argumentParser
   - \ref pipeBase_argumentParser_dataIDs
+  - \ref pipeBase_argumentParser_rerun
   - \ref pipeBase_argumentParser_argumentFiles
   - \ref pipeBase_argumentParser_configOverride
   - \ref pipeBase_argumentParser_retargetSubtasks
@@ -121,36 +122,33 @@ plus all sensors for one raft of two other visits for calibrated lsstSim data:
 
 \subsection pipeBase_argumentParser_rerun The --rerun Option
 
-The `--rerun` option is a convenient shortcut for specifying the output directory of a command line task and
-serves the same purpose as the `--output` argument. However, the value supplied to `--rerun` is relative to
-the "rerun" directory of the root input data repository (i.e. follow the "_parent" chain all the way back,
-then add "rerun" to that). `--rerun` saves the user from typing in the input repository twice. For example:
+The `--rerun` option is an alternate way to specify the output (and optionally the input) repositories for a
+command line task. Unlike `--output`, the value supplied to --rerun is relative to the "rerun" directory of 
+the root input data repository (i.e. follow the "_parent" chain all the way back, then add "rerun" to that).
+`--rerun` saves the user from typing in the input repository twice. For example:
 
-`processCcd.py $root/hsc --output $root/hsc/rerun/vpk24/DM-4443`
+`processCcd.py $root/hsc --output $root/hsc/rerun/Vishal/aRerun`
 
 which will run processesCcd on the (HSC) data in "$root/hsc" and put the output in 
-"$root/hsc/rerun/vpk24/DM-4443" can be shortened by using `--rerun` to
+"$root/hsc/rerun/Vishal/aRerun" can be shortened by using `--rerun` to
 
-`processCcd.py $root/hsc ----rerun vpk24/DM-4443`
+`processCcd.py $root/hsc ----rerun Vishal/aRerun`
 
 This is useful because outputs from the pipeline usually go within the camera-level root repository into a
-subdirectory of a "rerun" directory present in the camera-level root repository. These output sub-directories
-should usually be named using JIRA issue numbers and dates, again with a distinction between public and
-private reruns. For example:
+subdirectory of a "rerun" directory present in the camera-level root repository. For example:
 
-`$root/hsc/rerun/DM-3456_20150607`   # a public rerun useful for many people
+`$root/hsc/rerun/public`   # a public rerun useful for many people
 
-`$root/hsc/rerun/jbosch/DM-7890/fixed-psf`   # one of several private reruns used to debug a single issue
+`$root/hsc/rerun/Jim/aTicket/fixed-psf`   # one of several private reruns used to debug a single issue
 
-`$root/lsstSim/krughoff/DM-5678/rerun/jbosch/DM-5679`   # simulated by Simon, processed by Jim
+`$root/lsstSim/Simon/aTicket/rerun/jbosch/anotherTicket`   # simulated by Simon, processed by Jim
 
-As with any other output repository, reruns can be chained, but keep in mind that the name of the parent rerun
-is not generally recorded in the name of the child. Chaining is made easy by supporting a two-value 
-form separated by a colon, which specifies both a parent rerun and the new output directory. For example:
+`--rerun path1:path2 will read from the rerun specified by path1 and write to the rerun specified by path2. 
+This is referred to as chaining reruns. For example:
 
-`processCcd.py $root/hsc --rerun price/DM-5680 ...`   # Paul processes some CCDs
+`processCcd.py $root/hsc --rerun Paul/procCcds ...`   # Paul processes some CCDs
 
-`makeCoaddTempExp.py $root/hsc --rerun price/DM-5680:jbosch/DM-5681 ...`   # Jim uses Paul's CCD processing to
+`makeCoaddTempExp.py $root/hsc --rerun Paul/procCcds:Jim/coaddRerun ...`   # Jim uses Paul's CCD processing to
 start a coadd.
 
 The `--rerun` can also specify a path, part of which can be a symbolic link. For example, if 
