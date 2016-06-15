@@ -122,38 +122,47 @@ plus all sensors for one raft of two other visits for calibrated lsstSim data:
 
 \subsection pipeBase_argumentParser_rerun The --rerun Option
 
-The `--rerun` option is an alternate way to specify the output (and optionally the input) repositories for a
-command line task. Unlike `--output`, the value supplied to --rerun is relative to the "rerun" directory of 
-the root input data repository (i.e. follow the "_parent" chain all the way back, then add "rerun" to that).
-`--rerun` saves the user from typing in the input repository twice. For example:
+The `--rerun` option is an alternate way to specify the output and, optionally, input repositories for a
+command line task. Unlike `--output`, the value supplied to `--rerun` is relative to the `rerun` directory of
+the root input data repository (i.e. follow the chain of parent repositories—indicated by files in the
+repository root named `_parent`—all the way back, then add `rerun` to that). `--rerun` saves the user from
+typing in the input repository twice. For example,
 
-`processCcd.py $root/hsc --output $root/hsc/rerun/Vishal/aRerun`
+\code
+processCcd.py $root/hsc --output $root/hsc/rerun/Vishal/aRerun
+\endcode
 
-which will run processesCcd on the (HSC) data in "$root/hsc" and put the output in 
-"$root/hsc/rerun/Vishal/aRerun" can be shortened by using `--rerun` to
+which (for some semantically insignificant version of `$root`) will run `processCcd.py` on the data in
+`$root/hsc` and put the output in `$root/hsc/rerun/Vishal/aRerun`, can be shortened by using `--rerun` to
 
-`processCcd.py $root/hsc ----rerun Vishal/aRerun`
+\code
+processCcd.py $root/hsc --rerun Vishal/aRerun
+\endcode
 
-This is useful because outputs from the pipeline usually go within the camera-level root repository into a
-subdirectory of a "rerun" directory present in the camera-level root repository. For example:
+This is useful because outputs from the pipeline are conventionally placed in a subdirectory of a "rerun"
+directory present in a per-camera root repository. For example:
 
-`$root/hsc/rerun/public`   # a public rerun useful for many people
+- `$root/hsc/rerun/public`   # camera `hsc`; a public rerun useful for many people.
+- `$root/hsc/rerun/Jim/aTicket/fixed-psf`   # camera `hsc`; one of several private reruns used to debug
+   a single issue.
+- `$root/lsstSim/Simon/aTicket/rerun/Jim/anotherTicket`   # camera `lsstSim`; simulated by user `Simon`;
+   processed by user `Jim`.
 
-`$root/hsc/rerun/Jim/aTicket/fixed-psf`   # one of several private reruns used to debug a single issue
+Additionally, `--rerun path1:path2` will read from the rerun specified by `path1` and write to the rerun
+specified by `path2`. This is referred to as "chaining" reruns. For example:
 
-`$root/lsstSim/Simon/aTicket/rerun/jbosch/anotherTicket`   # simulated by Simon, processed by Jim
+\code
+processCcd.py $root/hsc --rerun Paul/procCcds ...                        # Paul processes some CCDs.
+makeCoaddTempExp.py $root/hsc --rerun Paul/procCcds:Jim/coaddRerun ...   # Jim uses Paul's CCD processing
+                                                                         # to start building a coadd.
+\endcode
 
-`--rerun path1:path2 will read from the rerun specified by path1 and write to the rerun specified by path2. 
-This is referred to as chaining reruns. For example:
+Note that:
 
-`processCcd.py $root/hsc --rerun Paul/procCcds ...`   # Paul processes some CCDs
-
-`makeCoaddTempExp.py $root/hsc --rerun Paul/procCcds:Jim/coaddRerun ...`   # Jim uses Paul's CCD processing to
-start a coadd.
-
-The `--rerun` can also specify a path, part of which can be a symbolic link. For example, if 
-"$root/hsc/rerun/rhl" -> "/other/disk/rhl/rerun", then `--rerun rhl/tmp/foo` creates "/other/disk/rhl/tmp/foo"
-where note that if the path is absolute, it is taken to be the path.
+- If the argument to `--rerun` starts with a `/`, it will be interpreted as an absolute path rather than as
+  being relative to the root input data repository.
+- The argument(s) supplied to `--rerun` may refer to symbolic links to directories; data will be read or
+  written from their targets.
 
 \subsection pipeBase_argumentParser_argumentFiles Argument Files
 
