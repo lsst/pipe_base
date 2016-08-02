@@ -337,6 +337,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
                           help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
                           metavar="LEVEL|COMPONENT=LEVEL")
+        self.add_argument("--longlog", action="store_true", help="use a more verbose format for the logging")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
                           help="raise an exception on error (else log a message and continue)?")
@@ -521,6 +522,16 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 namespace.debug = False
 
         del namespace.loglevel
+
+        if namespace.longlog:
+            lsstLog.configure_prop("""
+log4j.rootLogger=INFO, A1
+log4j.appender.A1=ConsoleAppender
+log4j.appender.A1.Target=System.err
+log4j.appender.A1.layout=PatternLayout
+log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (%X{LABEL})(%F:%L)- %m%n
+""")
+        del namespace.longlog
 
         namespace.config.validate()
         namespace.config.freeze()
