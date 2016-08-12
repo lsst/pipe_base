@@ -114,7 +114,7 @@ class SuperTask(Task):
     _default_name = None
     _parent_name = None
 
-    def __init__(self, config=None, name=None, parent_task=None, log=None, activator=None):
+    def __init__(self, config=None, name=None, parent_task=None, log=None, activator=None, butler=None):
         """
         Creates the SuperTask, the parameters are the same as Task, except by activator which is a
         hook for the class activator that calls this Task, for cmdLineActivator is the only one
