@@ -92,23 +92,13 @@ class StructTestCase(unittest.TestCase):
             self.assertEqual(val, self.valDict[name])
             self.assertRaises(RuntimeError, newS.mergeItems, s, name)
 
+class MyMemoryTestCase(utilsTests.MemoryTestCase):
+    pass
 
-def suite():
-    """Return a suite containing all the test cases in this module.
-    """
+
+def setup_module(module):
     utilsTests.init()
 
-    suites = []
-
-    suites += unittest.makeSuite(StructTestCase)
-    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
-
-    return unittest.TestSuite(suites)
-
-
-def run(shouldExit=False):
-    """Run the tests"""
-    utilsTests.run(suite(), shouldExit)
-
 if __name__ == "__main__":
-    run(True)
+    utilsTests.init()
+    unittest.main()
