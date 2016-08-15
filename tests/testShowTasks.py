@@ -24,7 +24,6 @@ import sys
 import StringIO
 import unittest
 import textwrap
-import re
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
@@ -74,13 +73,13 @@ class ShowTasksTestCase(unittest.TestCase):
         config = MainTaskConfig()
         expectedData = """
         Subtasks:
-        st1: name.TaskWithSubtasks
-        st1.sst1: name.SimpleTask
-        st1.sst2: name.SimpleTask
-        st2: name.TaskWithSubtasks
-        st2.sst1: name.SimpleTask
-        st2.sst2: name.SimpleTask
-        """
+        st1: {0}.TaskWithSubtasks
+        st1.sst1: {0}.SimpleTask
+        st1.sst2: {0}.SimpleTask
+        st2: {0}.TaskWithSubtasks
+        st2.sst1: {0}.SimpleTask
+        st2.sst2: {0}.SimpleTask
+        """.format(__name__)
         tempStdOut = StringIO.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
         try:
@@ -89,7 +88,7 @@ class ShowTasksTestCase(unittest.TestCase):
             sys.stdout = savedStdOut
         formatRead = tempStdOut.getvalue().strip()
         formatExpected = textwrap.dedent(expectedData).strip()
-        self.assertEqual(re.sub('__main__|testShowTasks', 'name', formatRead), formatExpected)
+        self.assertEqual(formatRead, formatExpected)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
