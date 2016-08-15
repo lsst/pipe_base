@@ -25,15 +25,17 @@ import unittest
 import lsst.utils.tests as utilsTests
 import lsst.pipe.base as pipeBase
 
+
 class StructTestCase(unittest.TestCase):
     """A test case for Struct
     """
+
     def setUp(self):
         self.valDict = dict(
-            foo = 1,
-            bar = (1, 2, 3),
-            baz = "value for baz",
-            alist = [3, 5, 7, 9],
+            foo=1,
+            bar=(1, 2, 3),
+            baz="value for baz",
+            alist=[3, 5, 7, 9],
         )
 
     def tearDown(self):
@@ -91,6 +93,7 @@ class StructTestCase(unittest.TestCase):
         for name, val in newS.getDict().iteritems():
             self.assertEqual(val, self.valDict[name])
             self.assertRaises(RuntimeError, newS.mergeItems, s, name)
+
 
 class MyMemoryTestCase(utilsTests.MemoryTestCase):
     pass
