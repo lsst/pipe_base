@@ -29,8 +29,10 @@ import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
+
 class AddConfig(pexConfig.Config):
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
+
 
 class AddTask(pipeBase.Task):
     ConfigClass = AddConfig
@@ -39,11 +41,13 @@ class AddTask(pipeBase.Task):
     def run(self, val):
         self.metadata.add("add", self.config.addend)
         return pipeBase.Struct(
-            val = val + self.config.addend,
+            val=val + self.config.addend,
         )
+
 
 class MultConfig(pexConfig.Config):
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
+
 
 class MultTask(pipeBase.Task):
     ConfigClass = MultConfig
@@ -52,7 +56,7 @@ class MultTask(pipeBase.Task):
     def run(self, val):
         self.metadata.add("mult", self.config.multiplicand)
         return pipeBase.Struct(
-            val = val * self.config.multiplicand,
+            val=val * self.config.multiplicand,
         )
 
 # prove that registry fields can also be used to hold subtasks
@@ -60,15 +64,18 @@ class MultTask(pipeBase.Task):
 multRegistry = pexConfig.makeRegistry("Registry for Mult-like tasks")
 multRegistry.register("stdMult", MultTask)
 
+
 class AddMultConfig(pexConfig.Config):
     add = AddTask.makeField("add task")
     mult = multRegistry.makeField("mult task", default="stdMult")
+
 
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
     _DefaultName = "addMult"
 
     """First add, then multiply"""
+
     def __init__(self, **keyArgs):
         pipeBase.Task.__init__(self, **keyArgs)
         self.makeSubtask("add")
@@ -81,7 +88,7 @@ class AddMultTask(pipeBase.Task):
             multRet = self.mult.run(addRet.val)
             self.metadata.add("addmult", multRet.val)
             return pipeBase.Struct(
-                val = multRet.val,
+                val=multRet.val,
             )
 
     @pipeBase.timeMethod
@@ -96,16 +103,19 @@ class AddMultTask(pipeBase.Task):
         with self.timer("failCtx"):
             raise RuntimeError("failCtx intentional error")
 
+
 class AddTwiceTask(AddTask):
     """Variant of AddTask that adds twice the addend"""
+
     def run(self, val):
         addend = self.config.addend
-        return pipeBase.Struct(val = val + (2 * addend))
+        return pipeBase.Struct(val=val + (2 * addend))
 
 
 class TaskTestCase(unittest.TestCase):
     """A test case for Task
     """
+
     def setUp(self):
         self.valDict = dict()
 
@@ -194,7 +204,6 @@ class TaskTestCase(unittest.TestCase):
         except RuntimeError:
             self.assertIsNotNone(addMultTask.metadata.get("failCtxEndCpuTime", None))
 
-
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
@@ -240,22 +249,13 @@ class TaskTestCase(unittest.TestCase):
         self.assertLessEqual(addMultTask.add.metadata.get("runEndCpuTime"), currCpuTime)
 
 
-def suite():
-    """Return a suite containing all the test cases in this module.
-    """
+class MyMemoryTestCase(utilsTests.MemoryTestCase):
+    pass
+
+
+def setup_module(module):
     utilsTests.init()
 
-    suites = []
-
-    suites += unittest.makeSuite(TaskTestCase)
-    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
-
-    return unittest.TestSuite(suites)
-
-
-def run(shouldExit=False):
-    """Run the tests"""
-    utilsTests.run(suite(), shouldExit)
-
 if __name__ == "__main__":
-    run(True)
+    utilsTests.init()
+    unittest.main()
