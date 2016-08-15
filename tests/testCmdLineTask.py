@@ -26,7 +26,6 @@ import unittest
 import tempfile
 
 import lsst.utils
-import lsst.utils.tests as utilsTests
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 from lsst.obs.test import TestConfig
@@ -34,9 +33,11 @@ from lsst.obs.test import TestConfig
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.join(ObsTestDir, "data", "input")
 
+
 class ExampleTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
     _DefaultName = "test"
+
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
         self.dataRefList = []
@@ -51,14 +52,17 @@ class ExampleTask(pipeBase.CmdLineTask):
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
         return pipeBase.Struct(
-            numProcessed = self.numProcessed,
+            numProcessed=self.numProcessed,
         )
+
 
 class CannotConstructTask(ExampleTask):
     """A task that cannot be constructed; used to test error handling
     """
+
     def __init__(self, *args, **kwargs):
         raise RuntimeError("This task cannot be constructed")
+
 
 class NoMultiprocessTask(ExampleTask):
     """Version of ExampleTask that does not support multiprocessing"""
@@ -68,6 +72,7 @@ class NoMultiprocessTask(ExampleTask):
 class CmdLineTaskTestCase(unittest.TestCase):
     """A test case for CmdLineTask
     """
+
     def setUp(self):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -107,8 +112,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         log = pexLog.Log(defLog, "cmdLineTask")
         retVal = ExampleTask.parseAndRun(
             args=[DataPath, "--output", self.outPath, "--id", "visit=2"],
-            config = config,
-            log = log
+            config=config,
+            log=log
         )
         self.assertEquals(retVal.parsedCmd.config.floatField, -99.9)
         self.assertTrue(retVal.parsedCmd.log is log)
@@ -117,7 +122,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """Test the doReturnResults flag
         """
         retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath,
-                                            "--id", "visit=3", "filter=r"], doReturnResults=True)
+                                               "--id", "visit=3", "filter=r"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 1)
@@ -125,8 +130,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
 
     def testDoReturnResultsOnFailure(self):
         retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath,
-                                            "--id", "visit=3", "filter=r", "--config", "doFail=True",
-                                            "--clobber-config"], doReturnResults=True)
+                                               "--id", "visit=3", "filter=r", "--config", "doFail=True",
+                                               "--clobber-config"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 0)
@@ -138,9 +143,10 @@ class CmdLineTaskTestCase(unittest.TestCase):
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config to ensure backup config file is created
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                   "--config", "floatField=-99.9", "--clobber-config"])
+                                      "--config", "floatField=-99.9", "--clobber-config"])
         # Ensure backup config file was created
-        self.assertTrue(os.path.exists(os.path.join(self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
+        self.assertTrue(os.path.exists(os.path.join(
+            self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
 
     def testNoBackupConfig(self):
         """Test no backup config file creation
@@ -148,10 +154,10 @@ class CmdLineTaskTestCase(unittest.TestCase):
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                   "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+                                      "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
         # Ensure backup config file was NOT created
         self.assertFalse(
-            os.path.exists(os.path.join(self.outPath, "config",ExampleTask._DefaultName + ".py~1")))
+            os.path.exists(os.path.join(self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
 
     def testMultiprocess(self):
         """Test multiprocessing at a very minimal level
@@ -165,7 +171,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """Test error handling when a task cannot be constructed
         """
         for doRaise in (False, True):
-            args=[DataPath, "--output", self.outPath, "--id", "visit=1"]
+            args = [DataPath, "--output", self.outPath, "--id", "visit=1"]
             if doRaise:
                 args.append("--doraise")
             self.assertRaises(RuntimeError, CannotConstructTask.parseAndRun, args=args)
@@ -186,6 +192,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
         """
         task = self.TaskClass(config=self.config, log=self.log)
         return task.run(target)
+
 
 class ExampleMultipleIdTask(pipeBase.CmdLineTask):
     _DefaultName = "test"
@@ -213,6 +220,7 @@ class MultipleIdTaskTestCase(unittest.TestCase):
     Tests implementation of ticket 2144, and demonstrates how
     to get results from multiple identifiers down into a Task.
     """
+
     def setUp(self):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
