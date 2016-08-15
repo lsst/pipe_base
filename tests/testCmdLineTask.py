@@ -115,8 +115,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
             config=config,
             log=log
         )
-        self.assertEquals(retVal.parsedCmd.config.floatField, -99.9)
-        self.assertTrue(retVal.parsedCmd.log is log)
+        self.assertEqual(retVal.parsedCmd.config.floatField, -99.9)
+        self.assertIs(retVal.parsedCmd.log, log)
 
     def testDoReturnResults(self):
         """Test the doReturnResults flag
