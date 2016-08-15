@@ -22,7 +22,7 @@
 #
 import unittest
 
-import lsst.utils.tests as utilsTests
+import lsst.utils.tests
 import lsst.pipe.base as pipeBase
 
 
@@ -95,13 +95,13 @@ class StructTestCase(unittest.TestCase):
             self.assertRaises(RuntimeError, newS.mergeItems, s, name)
 
 
-class MyMemoryTestCase(utilsTests.MemoryTestCase):
+class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
 
 
 def setup_module(module):
-    utilsTests.init()
+    lsst.utils.tests.init()
 
 if __name__ == "__main__":
-    utilsTests.init()
+    lsst.utils.tests.init()
     unittest.main()

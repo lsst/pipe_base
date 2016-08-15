@@ -26,7 +26,7 @@ import unittest
 import tempfile
 
 import lsst.utils
-import lsst.utils.tests as utilsTests
+import lsst.utils.tests
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
@@ -520,13 +520,13 @@ class ArgumentParserTestCase(unittest.TestCase):
             parser.parse_args(config=self.config, args=[DataPath, ])
 
 
-class MyMemoryTestCase(utilsTests.MemoryTestCase):
+class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
 
 
 def setup_module(module):
-    utilsTests.init()
+    lsst.utils.tests.init()
 
 if __name__ == "__main__":
-    utilsTests.init()
+    lsst.utils.tests.init()
     unittest.main()

@@ -24,7 +24,7 @@ import time
 import unittest
 import numbers
 
-import lsst.utils.tests as utilsTests
+import lsst.utils.tests
 import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -249,13 +249,13 @@ class TaskTestCase(unittest.TestCase):
         self.assertLessEqual(addMultTask.add.metadata.get("runEndCpuTime"), currCpuTime)
 
 
-class MyMemoryTestCase(utilsTests.MemoryTestCase):
+class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
 
 
 def setup_module(module):
-    utilsTests.init()
+    lsst.utils.tests.init()
 
 if __name__ == "__main__":
-    utilsTests.init()
+    lsst.utils.tests.init()
     unittest.main()
