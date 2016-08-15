@@ -145,26 +145,26 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.add.getName(), "add")
         self.assertEqual(addMultTask.mult.getName(), "mult")
 
-        self.assertEquals(addMultTask._name, "addMult")
-        self.assertEquals(addMultTask.add._name, "add")
-        self.assertEquals(addMultTask.mult._name, "mult")
+        self.assertEqual(addMultTask._name, "addMult")
+        self.assertEqual(addMultTask.add._name, "add")
+        self.assertEqual(addMultTask.mult._name, "mult")
 
         self.assertEqual(addMultTask.getFullName(), "addMult")
         self.assertEqual(addMultTask.add.getFullName(), "addMult.add")
         self.assertEqual(addMultTask.mult.getFullName(), "addMult.mult")
 
-        self.assertEquals(addMultTask._fullName, "addMult")
-        self.assertEquals(addMultTask.add._fullName, "addMult.add")
-        self.assertEquals(addMultTask.mult._fullName, "addMult.mult")
+        self.assertEqual(addMultTask._fullName, "addMult")
+        self.assertEqual(addMultTask.add._fullName, "addMult.add")
+        self.assertEqual(addMultTask.mult._fullName, "addMult.mult")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
         addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet))
-        self.assertTrue(isinstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet))
+        self.assertIsInstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet)
 
     def testEmptyMetadata(self):
         task = AddMultTask()
@@ -225,11 +225,11 @@ class TaskTestCase(unittest.TestCase):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertTrue(name in addMultTask.metadata.names(),
-                                    name + " is missing from task metadata")
-                    self.assertTrue(isinstance(addMultTask.metadata.get(name), keyType),
-                                    "%s is not of the right type (%s vs %s)" %
-                                    (name, keyType, type(addMultTask.metadata.get(name))))
+                    self.assertIn(name, addMultTask.metadata.names(),
+                                  name + " is missing from task metadata")
+                    self.assertIsInstance(addMultTask.metadata.get(name), keyType,
+                                          "%s is not of the right type (%s vs %s)" %
+                                          (name, keyType, type(addMultTask.metadata.get(name))))
         # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
