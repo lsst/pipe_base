@@ -23,17 +23,22 @@
 import sys
 import StringIO
 import unittest
+import textwrap
+import re
 
-import lsst.utils.tests as utilsTests
+import lsst.utils.tests
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+
 
 class SimpleTaskConfig(pexConfig.Config):
     ff3 = pexConfig.Field(doc="float 1", dtype=float, default=3.1)
     sf3 = pexConfig.Field(doc="str 1", dtype=str, default="default for sf1")
 
+
 class SimpleTask(pipeBase.Task):
     ConfigClass = SimpleTaskConfig
+
 
 class TaskWithSubtasksConfig(pexConfig.Config):
     sst1 = SimpleTask.makeField(doc="sub-subtask 1")
@@ -41,8 +46,10 @@ class TaskWithSubtasksConfig(pexConfig.Config):
     ff2 = pexConfig.Field(doc="float 1", dtype=float, default=3.1)
     sf2 = pexConfig.Field(doc="str 1", dtype=str, default="default for sf1")
 
+
 class TaskWithSubtasks(pipeBase.Task):
     ConfigClass = TaskWithSubtasksConfig
+
 
 class MainTaskConfig(pexConfig.Config):
     st1 = TaskWithSubtasks.makeField(doc="subtask 1")
@@ -60,43 +67,39 @@ c = MainTaskConfig()
 class ShowTasksTestCase(unittest.TestCase):
     """A test case for the code that implements ArgumentParser's --show tasks option
     """
+
     def testBasicShowTaskHierarchy(self):
         """Test basic usage of show
         """
         config = MainTaskConfig()
-        expectedData = """Subtasks:
-st1: __main__.TaskWithSubtasks
-st1.sst1: __main__.SimpleTask
-st1.sst2: __main__.SimpleTask
-st2: __main__.TaskWithSubtasks
-st2.sst1: __main__.SimpleTask
-st2.sst2: __main__.SimpleTask
-"""
+        expectedData = """
+        Subtasks:
+        st1: name.TaskWithSubtasks
+        st1.sst1: name.SimpleTask
+        st1.sst2: name.SimpleTask
+        st2: name.TaskWithSubtasks
+        st2.sst1: name.SimpleTask
+        st2.sst2: name.SimpleTask
+        """
         tempStdOut = StringIO.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
         try:
             pipeBase.argumentParser.showTaskHierarchy(config)
         finally:
             sys.stdout = savedStdOut
-
-        self.assertEqual(tempStdOut.getvalue(), expectedData)
-
-def suite():
-    """Return a suite containing all the test cases in this module.
-    """
-    utilsTests.init()
-
-    suites = []
-
-    suites += unittest.makeSuite(ShowTasksTestCase)
-    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
-
-    return unittest.TestSuite(suites)
+        formatRead = tempStdOut.getvalue().strip()
+        formatExpected = textwrap.dedent(expectedData).strip()
+        self.assertEqual(re.sub('__main__|testShowTasks', 'name', formatRead), formatExpected)
 
 
-def run(shouldExit=False):
-    """Run the tests"""
-    utilsTests.run(suite(), shouldExit)
+class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
+    pass
+
+
+def setup_module(module):
+    lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
-    run(True)
+    lsst.utils.tests.init()
+    unittest.main()
