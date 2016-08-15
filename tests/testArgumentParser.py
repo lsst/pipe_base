@@ -514,16 +514,13 @@ class ArgumentParserTestCase(unittest.TestCase):
             parser.parse_args(config=self.config, args=[DataPath,])
 
 
-def suite():
+class MyMemoryTestCase(utilsTests.MemoryTestCase):
+    pass
+
+
+def setup_module(module):
     utilsTests.init()
 
-    suites = []
-    suites += unittest.makeSuite(ArgumentParserTestCase)
-    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
-    return unittest.TestSuite(suites)
-
-def run(shouldExit = False):
-    utilsTests.run(suite(), shouldExit)
-
-if __name__ == '__main__':
-    run(True)
+if __name__ == "__main__":
+    utilsTests.init()
+    unittest.main()
