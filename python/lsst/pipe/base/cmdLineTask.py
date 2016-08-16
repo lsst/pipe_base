@@ -583,7 +583,7 @@ class CmdLineTask(Task):
             old = butler.get(dataset, immediate=True)
         except Exception as exc:
             raise type(exc)("Unable to read stored version dataset %s (%s); "
-                            "consider using --clobber-verisons or --no-versions" %
+                            "consider using --clobber-versions or --no-versions" %
                             (dataset, exc))
         # Note that because we can only detect python modules that have been imported, the stored
         # list of products may be more or less complete than what we have now.  What's important is
@@ -593,7 +593,7 @@ class CmdLineTask(Task):
             raise TaskError(
                 "Version mismatch (" +
                 "; ".join("%s: %s vs %s" % (pkg, diff[pkg][1], diff[pkg][0]) for pkg in diff) +
-                "); consider using --clobber-verisons or --no-versions")
+                "); consider using --clobber-versions or --no-versions")
         # Update the old set of packages in case we have more packages that haven't been persisted.
         extra = packages.extra(old)
         if extra:
