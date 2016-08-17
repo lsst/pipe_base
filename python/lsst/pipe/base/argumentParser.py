@@ -497,7 +497,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if "data" in namespace.show:
             for dataIdName in self._dataIdArgDict.keys():
                 for dataRef in getattr(namespace, dataIdName).refList:
-                    print(dataIdName + " dataRef.dataId =", dataRef.dataId)
+                    print("%s dataRef.dataId = %s" % (dataIdName, dataRef.dataId))
 
         if namespace.show and "run" not in namespace.show:
             sys.exit(0)
@@ -717,8 +717,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                             self._pattern = re.compile(fnmatch.translate(pattern))
                         else:
                             if pattern != pattern.lower():
-                                print("Matching \"%s\" without regard to case " \
-                                    "(append :NOIGNORECASE to prevent this)" % (pattern,), file=sys.stdout)
+                                print(u"Matching \"%s\" without regard to case "
+                                      "(append :NOIGNORECASE to prevent this)" % (pattern,), file=sys.stdout)
                             self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
@@ -726,7 +726,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         # Strip off doc string line(s) and cut off at "=" for string matching
                         matchStr = showStr.split("\n")[-1].split("=")[0]
                         if self._pattern.search(matchStr):
-                            print("\n" + showStr)
+                            print(u"\n" + showStr)
 
                 fd = FilteredStream(pattern)
             else:
@@ -740,7 +740,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         elif what == "tasks":
             showTaskHierarchy(config)
         else:
-            print("Unknown value for show: %s (choose from '%s')" % \
+            print(u"Unknown value for show: %s (choose from '%s')" % \
                 (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
             sys.exit(1)
 
@@ -753,13 +753,13 @@ def showTaskHierarchy(config):
 
     @param[in] config: configuration to process (an lsst.pex.config.Config)
     """
-    print("Subtasks:")
+    print(u"Subtasks:")
     taskDict = getTaskDict(config=config)
 
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
         taskName = taskDict[fieldName]
-        print("%s: %s" % (fieldName, taskName))
+        print(u"%s: %s" % (fieldName, taskName))
 
 
 class ConfigValueAction(argparse.Action):
