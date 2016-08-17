@@ -26,7 +26,6 @@ import unittest
 import tempfile
 
 import lsst.utils
-import lsst.utils.tests as utilsTests
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
 from lsst.obs.test import TestConfig
@@ -34,9 +33,11 @@ from lsst.obs.test import TestConfig
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.join(ObsTestDir, "data", "input")
 
-class TestTask(pipeBase.CmdLineTask):
+
+class ExampleTask(pipeBase.CmdLineTask):
     ConfigClass = TestConfig
     _DefaultName = "test"
+
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
         self.dataRefList = []
@@ -51,23 +52,27 @@ class TestTask(pipeBase.CmdLineTask):
         self.numProcessed += 1
         self.metadata.set("numProcessed", self.numProcessed)
         return pipeBase.Struct(
-            numProcessed = self.numProcessed,
+            numProcessed=self.numProcessed,
         )
 
-class CannotConstructTask(TestTask):
+
+class CannotConstructTask(ExampleTask):
     """A task that cannot be constructed; used to test error handling
     """
+
     def __init__(self, *args, **kwargs):
         raise RuntimeError("This task cannot be constructed")
 
-class NoMultiprocessTask(TestTask):
-    """Version of TestTask that does not support multiprocessing"""
+
+class NoMultiprocessTask(ExampleTask):
+    """Version of ExampleTask that does not support multiprocessing"""
     canMultiprocess = False
 
 
 class CmdLineTaskTestCase(unittest.TestCase):
     """A test case for CmdLineTask
     """
+
     def setUp(self):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -84,9 +89,9 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testBasics(self):
         """Test basic construction and use of a command-line task
         """
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=1"])
+        retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=1"])
         self.assertEqual(retVal.resultList, [None])
-        task = TestTask(config=retVal.parsedCmd.config)
+        task = ExampleTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
         self.assertEqual(len(parsedCmd.id.refList), 1)
         dataRef = parsedCmd.id.refList[0]
@@ -101,32 +106,32 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testOverrides(self):
         """Test config and log override
         """
-        config = TestTask.ConfigClass()
+        config = ExampleTask.ConfigClass()
         config.floatField = -99.9
         defLog = pexLog.getDefaultLog()
         log = pexLog.Log(defLog, "cmdLineTask")
-        retVal = TestTask.parseAndRun(
+        retVal = ExampleTask.parseAndRun(
             args=[DataPath, "--output", self.outPath, "--id", "visit=2"],
-            config = config,
-            log = log
+            config=config,
+            log=log
         )
-        self.assertEquals(retVal.parsedCmd.config.floatField, -99.9)
-        self.assertTrue(retVal.parsedCmd.log is log)
+        self.assertEqual(retVal.parsedCmd.config.floatField, -99.9)
+        self.assertIs(retVal.parsedCmd.log, log)
 
     def testDoReturnResults(self):
         """Test the doReturnResults flag
         """
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath,
-                                            "--id", "visit=3", "filter=r"], doReturnResults=True)
+        retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                               "--id", "visit=3", "filter=r"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
 
     def testDoReturnResultsOnFailure(self):
-        retVal = TestTask.parseAndRun(args=[DataPath, "--output", self.outPath,
-                                            "--id", "visit=3", "filter=r", "--config", "doFail=True",
-                                            "--clobber-config"], doReturnResults=True)
+        retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                               "--id", "visit=3", "filter=r", "--config", "doFail=True",
+                                               "--clobber-config"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 0)
@@ -135,28 +140,29 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testBackupConfig(self):
         """Test backup config file creation
         """
-        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config to ensure backup config file is created
-        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                   "--config", "floatField=-99.9", "--clobber-config"])
+        ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                      "--config", "floatField=-99.9", "--clobber-config"])
         # Ensure backup config file was created
-        self.assertTrue(os.path.exists(os.path.join(self.outPath, "config", TestTask._DefaultName + ".py~1")))
+        self.assertTrue(os.path.exists(os.path.join(
+            self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
 
     def testNoBackupConfig(self):
         """Test no backup config file creation
         """
-        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
+        ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
-        TestTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                   "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+        ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
+                                      "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
         # Ensure backup config file was NOT created
         self.assertFalse(
-            os.path.exists(os.path.join(self.outPath, "config",TestTask._DefaultName + ".py~1")))
+            os.path.exists(os.path.join(self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
 
     def testMultiprocess(self):
         """Test multiprocessing at a very minimal level
         """
-        for TaskClass in (TestTask, NoMultiprocessTask):
+        for TaskClass in (ExampleTask, NoMultiprocessTask):
             result = TaskClass.parseAndRun(args=[DataPath, "--output", self.outPath,
                                                  "-j", "5", "--id", "visit=2", "filter=r"])
             self.assertEqual(result.taskRunner.numProcesses, 5 if TaskClass.canMultiprocess else 1)
@@ -165,13 +171,13 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """Test error handling when a task cannot be constructed
         """
         for doRaise in (False, True):
-            args=[DataPath, "--output", self.outPath, "--id", "visit=1"]
+            args = [DataPath, "--output", self.outPath, "--id", "visit=1"]
             if doRaise:
                 args.append("--doraise")
             self.assertRaises(RuntimeError, CannotConstructTask.parseAndRun, args=args)
 
 
-class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
+class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
     """TaskRunner to get multiple identifiers down into a Task"""
     @staticmethod
     def getTargetList(parsedCmd):
@@ -187,10 +193,11 @@ class TestMultipleIdTaskRunner(pipeBase.TaskRunner):
         task = self.TaskClass(config=self.config, log=self.log)
         return task.run(target)
 
-class TestMultipleIdTask(pipeBase.CmdLineTask):
+
+class ExampleMultipleIdTask(pipeBase.CmdLineTask):
     _DefaultName = "test"
     ConfigClass = TestConfig
-    RunnerClass = TestMultipleIdTaskRunner
+    RunnerClass = EaxmpleMultipleIdTaskRunner
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -213,6 +220,7 @@ class MultipleIdTaskTestCase(unittest.TestCase):
     Tests implementation of ticket 2144, and demonstrates how
     to get results from multiple identifiers down into a Task.
     """
+
     def setUp(self):
         os.environ.pop("PIPE_INPUT_ROOT", None)
         os.environ.pop("PIPE_CALIB_ROOT", None)
@@ -232,26 +240,18 @@ class MultipleIdTaskTestCase(unittest.TestCase):
                 "--one", "visit=1", "filter=g",
                 "--two", "visit=2", "filter=g",
                 ]
-        retVal = TestMultipleIdTask.parseAndRun(args=args)
+        retVal = ExampleMultipleIdTask.parseAndRun(args=args)
         self.assertEqual(len(retVal.resultList), 1)
 
-def suite():
-    """Return a suite containing all the test cases in this module.
-    """
-    utilsTests.init()
 
-    suites = []
-
-    suites += unittest.makeSuite(CmdLineTaskTestCase)
-    suites += unittest.makeSuite(MultipleIdTaskTestCase)
-    suites += unittest.makeSuite(utilsTests.MemoryTestCase)
-
-    return unittest.TestSuite(suites)
+class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
+    pass
 
 
-def run(shouldExit=False):
-    """Run the tests"""
-    utilsTests.run(suite(), shouldExit)
+def setup_module(module):
+    lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
-    run(True)
+    lsst.utils.tests.init()
+    unittest.main()
