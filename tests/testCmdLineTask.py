@@ -30,14 +30,14 @@ import tempfile
 import lsst.utils
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
-from lsst.obs.test import TestConfig
+import lsst.obs.test
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.join(ObsTestDir, "data", "input")
 
 
 class ExampleTask(pipeBase.CmdLineTask):
-    ConfigClass = TestConfig
+    ConfigClass = lsst.obs.test.TestConfig
     _DefaultName = "test"
 
     def __init__(self, *args, **kwargs):
@@ -198,7 +198,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
 
 class ExampleMultipleIdTask(pipeBase.CmdLineTask):
     _DefaultName = "test"
-    ConfigClass = TestConfig
+    ConfigClass = lsst.obs.test.TestConfig
     RunnerClass = EaxmpleMultipleIdTaskRunner
 
     @classmethod
