@@ -1,4 +1,5 @@
 from __future__ import absolute_import, division
+from builtins import object
 #
 # LSST Data Management System
 # Copyright 2008-2016 AURA/LSST.
@@ -130,7 +131,7 @@ class Task(object):
 
     def emptyMetadata(self):
         """!Empty (clear) the metadata for this Task and all sub-Tasks."""
-        for subtask in self._taskDict.itervalues():
+        for subtask in self._taskDict.values():
             subtask.metadata = dafBase.PropertyList()
 
     def getSchemaCatalogs(self):
@@ -165,7 +166,7 @@ class Task(object):
         Task.getSchemaCatalogs, not this method.
         """
         schemaDict = self.getSchemaCatalogs()
-        for subtask in self._taskDict.itervalues():
+        for subtask in self._taskDict.values():
             schemaDict.update(subtask.getSchemaCatalogs())
         return schemaDict
 
@@ -183,7 +184,7 @@ class Task(object):
             for the top-level task and all subtasks, sub-subtasks, etc.
         """
         fullMetadata = dafBase.PropertySet()
-        for fullName, task in self.getTaskDict().iteritems():
+        for fullName, task in self.getTaskDict().items():
             fullMetadata.set(fullName.replace(".", ":"), task.metadata)
         return fullMetadata
 

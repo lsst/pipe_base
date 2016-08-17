@@ -1,4 +1,6 @@
 from __future__ import absolute_import, division
+from builtins import str
+from builtins import object
 #
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
@@ -539,7 +541,7 @@ class CmdLineTask(Task):
         then some schemas may have been saved successfully and others may not, and there is no easy way to
         tell which is which.
         """
-        for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
+        for dataset, catalog in self.getAllSchemaCatalogs().items():
             schemaDataset = dataset + "_schema"
             if clobber:
                 butler.put(catalog, schemaDataset, doBackup=doBackup)

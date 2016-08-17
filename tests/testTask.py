@@ -1,3 +1,4 @@
+from past.builtins import basestring
 #!/usr/bin/env python
 #
 # LSST Data Management System

@@ -21,6 +21,9 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 import itertools
 import os
 import unittest
@@ -49,7 +52,7 @@ import contextlib
 @contextlib.contextmanager
 def capture():
     import sys
-    from cStringIO import StringIO
+    from io import StringIO
     oldout, olderr = sys.stdout, sys.stderr
     try:
         out = [StringIO(), StringIO()]
@@ -145,7 +148,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(len(namespace.id.idList), 6)
         predValList = itertools.product(filterList, visitList)
-        for id, predVal in itertools.izip(namespace.id.idList, predValList):
+        for id, predVal in zip(namespace.id.idList, predValList):
             idVal = tuple(id[key] for key in ("filter", "visit"))
             self.assertEqual(idVal, predVal)
         self.assertEqual(len(namespace.id.refList), 3)  # only have data for three of these

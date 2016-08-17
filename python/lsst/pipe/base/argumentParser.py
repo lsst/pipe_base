@@ -1,5 +1,9 @@
 from __future__ import absolute_import, division
 from __future__ import print_function
+from builtins import zip
+from builtins import str
+from builtins import range
+from builtins import object
 #
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
@@ -37,6 +41,7 @@ import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
+from future.utils import with_metaclass
 
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
            "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
@@ -98,7 +103,7 @@ class DataIdContainer(object):
             raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
 
         for dataDict in self.idList:
-            for key, strVal in dataDict.iteritems():
+            for key, strVal in dataDict.items():
                 try:
                     keyType = idKeyTypeDict[key]
                 except KeyError:
@@ -173,10 +178,9 @@ class DataIdArgument(object):
             return self.datasetType
 
 
-class DynamicDatasetType(object):
+class DynamicDatasetType(with_metaclass(abc.ABCMeta, object)):
     """!Abstract base class for a dataset type determined from parsed command-line arguments
     """
-    __metaclass__ = abc.ABCMeta
 
     def addArgument(self, parser, idName):
         """!Add a command-line argument to specify dataset type name, if wanted
@@ -451,7 +455,7 @@ class ArgumentParser(argparse.ArgumentParser):
             override(namespace.config)
 
         # Add data ID containers to namespace
-        for dataIdArgument in self._dataIdArgDict.itervalues():
+        for dataIdArgument in self._dataIdArgDict.values():
             setattr(namespace, dataIdArgument.name, dataIdArgument.ContainerClass(level=dataIdArgument.level))
 
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
@@ -491,7 +495,7 @@ class ArgumentParser(argparse.ArgumentParser):
         # because it takes a long time to construct a butler
         self._processDataIds(namespace)
         if "data" in namespace.show:
-            for dataIdName in self._dataIdArgDict.iterkeys():
+            for dataIdName in self._dataIdArgDict.keys():
                 for dataRef in getattr(namespace, dataIdName).refList:
                     print(dataIdName + " dataRef.dataId =", dataRef.dataId)
 
@@ -576,7 +580,7 @@ class ArgumentParser(argparse.ArgumentParser):
             and modifies these attributes:
             - \<name> for each data ID argument registered using add_id_argument
         """
-        for dataIdArgument in self._dataIdArgDict.itervalues():
+        for dataIdArgument in self._dataIdArgDict.values():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
             dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
             if dataIdArgument.doMakeDataRefList:
@@ -661,7 +665,7 @@ def getTaskDict(config, taskDict=None, baseName=""):
     """
     if taskDict is None:
         taskDict = dict()
-    for fieldName, field in config.iteritems():
+    for fieldName, field in config.items():
         if hasattr(field, "value") and hasattr(field, "target"):
             subConfig = field.value
             if isinstance(subConfig, pexConfig.Config):
@@ -868,9 +872,8 @@ class IdValueAction(argparse.Action):
                 else:
                     idDict[name].append(v)
 
-        keyList = idDict.keys()
-        iterList = [idDict[key] for key in keyList]
-        idDictList = [collections.OrderedDict(zip(keyList, valList))
+        iterList = [idDict[key] for key in idDict.keys()]
+        idDictList = [collections.OrderedDict(zip(idDict.keys(), valList))
                       for valList in itertools.product(*iterList)]
 
         argName = option_string.lstrip("-")

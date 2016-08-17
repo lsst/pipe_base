@@ -47,14 +47,14 @@ class StructTestCase(unittest.TestCase):
         s = pipeBase.Struct(**self.valDict)
         self.assertEqual(self.valDict, s.getDict())
 
-        for name, val in self.valDict.iteritems():
+        for name, val in self.valDict.items():
             self.assertEqual(getattr(s, name), val)
 
     def testSet(self):
         """Test adding values via struct.name=val
         """
         s = pipeBase.Struct()
-        for name, val in self.valDict.iteritems():
+        for name, val in self.valDict.items():
             setattr(s, name, val)
 
         self.assertEqual(self.valDict, s.getDict())
@@ -90,7 +90,7 @@ class StructTestCase(unittest.TestCase):
         newS.mergeItems(s, "baz", "alist")
         self.assertEqual(len(newS), 4)
 
-        for name, val in newS.getDict().iteritems():
+        for name, val in newS.getDict().items():
             self.assertEqual(val, self.valDict[name])
             self.assertRaises(RuntimeError, newS.mergeItems, s, name)
 

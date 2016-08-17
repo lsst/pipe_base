@@ -1,4 +1,5 @@
 from __future__ import absolute_import, division
+from builtins import object
 #
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -57,7 +58,7 @@ class Struct(object):
         @param[in] **keyArgs    keyword arguments specifying name=value pairs
         """
         object.__init__(self)
-        for name, val in keyArgs.iteritems():
+        for name, val in keyArgs.items():
             self.__safeAdd(name, val)
 
     def __safeAdd(self, name, val):
@@ -108,5 +109,5 @@ class Struct(object):
         return len(self.__dict__)
 
     def __repr__(self):
-        itemList = ["%s=%r" % (name, val) for name, val in self.getDict().iteritems()]
+        itemList = ["%s=%r" % (name, val) for name, val in self.getDict().items()]
         return "%s(%s)" % (self.__class__.__name__, "; ".join(itemList))

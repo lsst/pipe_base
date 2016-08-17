@@ -21,6 +21,7 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 from __future__ import print_function
+from builtins import zip
 import os
 import shutil
 import unittest
@@ -183,7 +184,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
     @staticmethod
     def getTargetList(parsedCmd):
         """We want our Task to process one dataRef from each identifier at a time"""
-        return zip(parsedCmd.one.refList, parsedCmd.two.refList)
+        return list(zip(parsedCmd.one.refList, parsedCmd.two.refList))
 
     def __call__(self, target):
         """Send results from the Task back so we can inspect
