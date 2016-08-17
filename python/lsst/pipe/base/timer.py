@@ -31,6 +31,7 @@ from lsst.pex.logging import Log
 
 __all__ = ["logInfo", "timeMethod"]
 
+
 def logPairs(obj, pairs, logLevel=Log.DEBUG):
     """!Log (name, value) pairs to obj.metadata and obj.log
 
@@ -45,10 +46,11 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
         try:
             obj.metadata.add(name, value)
         except Exception, e:
-            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" % \
-                (type(obj).__name__, name, value, e))
+            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" %
+                          (type(obj).__name__, name, value, e))
         strList.append("%s=%s" % (name, value))
     obj.log.log(logLevel, "; ".join(strList))
+
 
 def logInfo(obj, prefix, logLevel=Log.DEBUG):
     """!Log timer information to obj.metadata and obj.log
@@ -71,22 +73,23 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     cpuTime = time.clock()
     utcStr = datetime.datetime.utcnow().isoformat()
     res = resource.getrusage(resource.RUSAGE_SELF)
-    obj.metadata.add(name = prefix + "Utc", value = utcStr) # log messages already have timestamps
-    logPairs(obj = obj,
-        pairs = [
-            (prefix + "CpuTime", cpuTime),
-            (prefix + "UserTime", res.ru_utime),
-            (prefix + "SystemTime", res.ru_stime),
-            (prefix + "MaxResidentSetSize", long(res.ru_maxrss)),
-            (prefix + "MinorPageFaults", long(res.ru_minflt)),
-            (prefix + "MajorPageFaults", long(res.ru_majflt)),
-            (prefix + "BlockInputs", long(res.ru_inblock)),
-            (prefix + "BlockOutputs", long(res.ru_oublock)),
-            (prefix + "VoluntaryContextSwitches", long(res.ru_nvcsw)),
-            (prefix + "InvoluntaryContextSwitches", long(res.ru_nivcsw)),
-        ],
-        logLevel = logLevel,
-    )
+    obj.metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
+    logPairs(obj=obj,
+             pairs=[
+                 (prefix + "CpuTime", cpuTime),
+                 (prefix + "UserTime", res.ru_utime),
+                 (prefix + "SystemTime", res.ru_stime),
+                 (prefix + "MaxResidentSetSize", long(res.ru_maxrss)),
+                 (prefix + "MinorPageFaults", long(res.ru_minflt)),
+                 (prefix + "MajorPageFaults", long(res.ru_majflt)),
+                 (prefix + "BlockInputs", long(res.ru_inblock)),
+                 (prefix + "BlockOutputs", long(res.ru_oublock)),
+                 (prefix + "VoluntaryContextSwitches", long(res.ru_nvcsw)),
+                 (prefix + "InvoluntaryContextSwitches", long(res.ru_nivcsw)),
+             ],
+             logLevel=logLevel,
+             )
+
 
 def timeMethod(func):
     """!Decorator to measure duration of a task method
@@ -113,10 +116,10 @@ def timeMethod(func):
     """
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):
-        logInfo(obj = self, prefix = func.__name__ + "Start")
+        logInfo(obj=self, prefix=func.__name__ + "Start")
         try:
             res = func(self, *args, **keyArgs)
         finally:
-            logInfo(obj = self, prefix = func.__name__ + "End")
+            logInfo(obj=self, prefix=func.__name__ + "End")
         return res
     return wrapper

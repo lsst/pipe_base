@@ -22,6 +22,7 @@ from __future__ import absolute_import, division
 #
 __all__ = ["Struct"]
 
+
 class Struct(object):
     """!A struct to which you can add any fields
 
@@ -41,6 +42,7 @@ class Struct(object):
     all the safety advantages of Struct. In addition, named tuples are clumsy to define and Structs
     are much more mutable (e.g. one can trivially combine Structs and add additional fields).
     """
+
     def __init__(self, **keyArgs):
         """!Create a Struct with the specified field names and values
 
