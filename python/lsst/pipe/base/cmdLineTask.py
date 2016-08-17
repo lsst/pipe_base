@@ -205,7 +205,7 @@ class TaskRunner(object):
             if len(targetList) > 0:
                 with profile(profileName, log):
                     # Run the task using self.__call__
-                    resultList = mapFunc(self, targetList)
+                    resultList = list(mapFunc(self, targetList))
             else:
                 log.warn("Not running the task because there is no data to process; "
                          "you may preview data using \"--show data\"")
