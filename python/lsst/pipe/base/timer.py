@@ -45,7 +45,7 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
     for name, value in pairs:
         try:
             obj.metadata.add(name, value)
-        except Exception, e:
+        except Exception as e:
             obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s" %
                           (type(obj).__name__, name, value, e))
         strList.append("%s=%s" % (name, value))

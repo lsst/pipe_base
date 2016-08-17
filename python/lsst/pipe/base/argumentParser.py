@@ -1,4 +1,5 @@
 from __future__ import absolute_import, division
+from __future__ import print_function
 #
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
@@ -492,7 +493,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if "data" in namespace.show:
             for dataIdName in self._dataIdArgDict.iterkeys():
                 for dataRef in getattr(namespace, dataIdName).refList:
-                    print dataIdName + " dataRef.dataId =", dataRef.dataId
+                    print(dataIdName + " dataRef.dataId =", dataRef.dataId)
 
         if namespace.show and "run" not in namespace.show:
             sys.exit(0)
@@ -712,8 +713,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                             self._pattern = re.compile(fnmatch.translate(pattern))
                         else:
                             if pattern != pattern.lower():
-                                print >> sys.stdout, "Matching \"%s\" without regard to case " \
-                                    "(append :NOIGNORECASE to prevent this)" % (pattern,)
+                                print("Matching \"%s\" without regard to case " \
+                                    "(append :NOIGNORECASE to prevent this)" % (pattern,), file=sys.stdout)
                             self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
@@ -721,7 +722,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         # Strip off doc string line(s) and cut off at "=" for string matching
                         matchStr = showStr.split("\n")[-1].split("=")[0]
                         if self._pattern.search(matchStr):
-                            print "\n" + showStr
+                            print("\n" + showStr)
 
                 fd = FilteredStream(pattern)
             else:
@@ -735,8 +736,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         elif what == "tasks":
             showTaskHierarchy(config)
         else:
-            print >> sys.stderr, "Unknown value for show: %s (choose from '%s')" % \
-                (what, "', '".join("config[=XXX] data tasks run".split()))
+            print("Unknown value for show: %s (choose from '%s')" % \
+                (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
             sys.exit(1)
 
     if exit and "run" not in showOpts:
@@ -748,13 +749,13 @@ def showTaskHierarchy(config):
 
     @param[in] config: configuration to process (an lsst.pex.config.Config)
     """
-    print "Subtasks:"
+    print("Subtasks:")
     taskDict = getTaskDict(config=config)
 
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
         taskName = taskDict[fieldName]
-        print "%s: %s" % (fieldName, taskName)
+        print("%s: %s" % (fieldName, taskName))
 
 
 class ConfigValueAction(argparse.Action):
@@ -790,7 +791,7 @@ class ConfigValueAction(argparse.Action):
                     parser.error("cannot parse %r as a value for %s" % (valueStr, name))
                 try:
                     setDottedAttr(namespace.config, name, value)
-                except Exception, e:
+                except Exception as e:
                     parser.error("cannot set config.%s=%r: %s" % (name, value, e))
 
 
@@ -813,7 +814,7 @@ class ConfigFileAction(argparse.Action):
         for configfile in values:
             try:
                 namespace.config.load(configfile)
-            except Exception, e:
+            except Exception as e:
                 parser.error("cannot load config file %r: %s" % (configfile, e))
 
 

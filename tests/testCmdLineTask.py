@@ -20,6 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import print_function
 import os
 import shutil
 import unittest
@@ -83,7 +84,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         try:
             shutil.rmtree(self.outPath)
         except Exception:
-            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+            print("WARNING: failed to remove temporary dir %r" % (self.outPath,))
         del self.outPath
 
     def testBasics(self):
@@ -231,7 +232,7 @@ class MultipleIdTaskTestCase(unittest.TestCase):
         try:
             shutil.rmtree(self.outPath)
         except Exception:
-            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+            print("WARNING: failed to remove temporary dir %r" % (self.outPath,))
         del self.outPath
 
     def testMultiple(self):

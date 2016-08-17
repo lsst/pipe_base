@@ -301,7 +301,7 @@ class TaskRunner(object):
         else:
             try:
                 self._precallImpl(task, parsedCmd)
-            except Exception, e:
+            except Exception as e:
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
@@ -342,7 +342,7 @@ class TaskRunner(object):
         else:
             try:
                 result = task.run(dataRef, **kwargs)
-            except Exception, e:
+            except Exception as e:
                 # don't use a try block as we need to preserve the original exception
                 if hasattr(dataRef, "dataId"):
                     task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -563,7 +563,7 @@ class CmdLineTask(Task):
             metadataName = self._getMetadataName()
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
-        except Exception, e:
+        except Exception as e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):

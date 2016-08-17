@@ -30,6 +30,7 @@ when pipe_base is setup):
 ./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --show data
 ./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --config oneFloat=1.5 --show config
 """
+from __future__ import print_function
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -74,4 +75,4 @@ config = ExampleConfig()
 parsedCmd = parser.parse_args(config=config)
 pcDict = parsedCmd.__dict__
 for key in sorted(pcDict):
-    print "parsedCmd.%s=%r" % (key, pcDict[key])
+    print("parsedCmd.%s=%r" % (key, pcDict[key]))

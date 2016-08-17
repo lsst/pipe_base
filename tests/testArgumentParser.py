@@ -20,6 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import print_function
 import itertools
 import os
 import unittest
@@ -312,7 +313,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --loglevel"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
             intLevel = getattr(pexLog.Log, logLevel.upper())
-            print "testing logLevel=%r" % (logLevel,)
+            print("testing logLevel=%r" % (logLevel,))
             namespace = self.ap.parse_args(
                 config=self.config,
                 args=[DataPath, "--loglevel", logLevel],
@@ -380,7 +381,7 @@ class ArgumentParserTestCase(unittest.TestCase):
                     args=[helpArg],
                 )
                 self.fail("should have raised SystemExit")
-            except SystemExit, e:
+            except SystemExit as e:
                 self.assertEqual(e.code, 0)
 
     def testDatasetArgumentBasics(self):
