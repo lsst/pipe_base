@@ -1,4 +1,3 @@
-from past.builtins import basestring
 #!/usr/bin/env python
 #
 # LSST Data Management System
@@ -24,6 +23,8 @@ from past.builtins import basestring
 import time
 import unittest
 import numbers
+
+from past.builtins import basestring
 
 import lsst.utils.tests
 import lsst.daf.base as dafBase

@@ -21,13 +21,14 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 from __future__ import print_function
-from future import standard_library
-standard_library.install_aliases()
-from builtins import str
 import itertools
 import os
 import unittest
 import tempfile
+
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 
 import lsst.utils
 import lsst.utils.tests

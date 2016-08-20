@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division
-from builtins import object
 #
 # LSST Data Management System
 # Copyright 2008-2016 AURA/LSST.
@@ -21,7 +19,10 @@ from builtins import object
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import absolute_import, division
 import contextlib
+
+from builtins import object
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField

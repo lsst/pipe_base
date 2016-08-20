@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division
 #
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -22,6 +21,7 @@ from __future__ import absolute_import, division
 #
 """Utilities for measuring execution time.
 """
+from __future__ import absolute_import, division
 import functools
 import resource
 import time

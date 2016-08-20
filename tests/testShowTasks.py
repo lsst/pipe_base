@@ -1,5 +1,3 @@
-from future import standard_library
-standard_library.install_aliases()
 #!/usr/bin/env python
 #
 # LSST Data Management System
@@ -26,6 +24,9 @@ import sys
 import io
 import unittest
 import textwrap
+
+from future import standard_library
+standard_library.install_aliases()
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
