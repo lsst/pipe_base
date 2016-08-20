@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division
 #
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
@@ -20,14 +19,17 @@ from __future__ import absolute_import, division
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import absolute_import, division
 import sys
 import traceback
 import functools
 import contextlib
 
+from builtins import str
+from builtins import object
+
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
-
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
@@ -35,6 +37,7 @@ from lsst.pex.logging import getDefaultLog
 from lsst.base import Packages
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
+
 
 def _poolFunctionWrapper(function, arg):
     """Wrapper around function to catch exceptions that don't inherit from Exception
@@ -45,13 +48,14 @@ def _poolFunctionWrapper(function, arg):
     try:
         return function(arg)
     except Exception:
-        raise # No worries
+        raise  # No worries
     except:
         # Need to wrap the exception with something multiprocessing will recognise
         cls, exc, tb = sys.exc_info()
         log = getDefaultLog()
         log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
         raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
+
 
 def _runPool(pool, timeout, function, iterable):
     """Wrapper around pool.map_async, to handle timeout
@@ -63,6 +67,7 @@ def _runPool(pool, timeout, function, iterable):
     that don't inherit from Exception.
     """
     return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
+
 
 @contextlib.contextmanager
 def profile(filename, log=None):
@@ -128,7 +133,8 @@ class TaskRunner(object):
     [1] http://bugs.python.org/issue8296
     [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT = 9999 # Default timeout (sec) for multiprocessing
+    TIMEOUT = 9999  # Default timeout (sec) for multiprocessing
+
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
 
@@ -199,10 +205,10 @@ class TaskRunner(object):
             if len(targetList) > 0:
                 with profile(profileName, log):
                     # Run the task using self.__call__
-                    resultList = mapFunc(self, targetList)
+                    resultList = list(mapFunc(self, targetList))
             else:
                 log.warn("Not running the task because there is no data to process; "
-                    "you may preview data using \"--show data\"")
+                         "you may preview data using \"--show data\"")
 
         if pool is not None:
             pool.close()
@@ -297,7 +303,7 @@ class TaskRunner(object):
         else:
             try:
                 self._precallImpl(task, parsedCmd)
-            except Exception, e:
+            except Exception as e:
                 task.log.fatal("Failed in task initialization: %s" % e)
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
@@ -332,13 +338,13 @@ class TaskRunner(object):
         elif isinstance(dataRef, (list, tuple)):
             self.log.addLabel(str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
-        result = None # in case the task fails
+        result = None  # in case the task fails
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:
             try:
                 result = task.run(dataRef, **kwargs)
-            except Exception, e:
+            except Exception as e:
                 # don't use a try block as we need to preserve the original exception
                 if hasattr(dataRef, "dataId"):
                     task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
@@ -354,15 +360,17 @@ class TaskRunner(object):
 
         if self.doReturnResults:
             return Struct(
-                dataRef = dataRef,
-                metadata = task.metadata,
-                result = result,
+                dataRef=dataRef,
+                metadata=task.metadata,
+                result=result,
             )
+
 
 class ButlerInitializedTaskRunner(TaskRunner):
     """!A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
     their constructor.
     """
+
     def makeTask(self, parsedCmd=None, args=None):
         """!A variant of the base version that passes a butler argument to the task's constructor
 
@@ -380,6 +388,7 @@ class ButlerInitializedTaskRunner(TaskRunner):
         else:
             raise RuntimeError("parsedCmd or args must be specified")
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
+
 
 class CmdLineTask(Task):
     """!Base class for command-line tasks: tasks that may be executed from the command line
@@ -462,10 +471,10 @@ class CmdLineTask(Task):
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
         return Struct(
-            argumentParser = argumentParser,
-            parsedCmd = parsedCmd,
-            taskRunner = taskRunner,
-            resultList = resultList,
+            argumentParser=argumentParser,
+            parsedCmd=parsedCmd,
+            taskRunner=taskRunner,
+            resultList=resultList,
         )
 
     @classmethod
@@ -484,7 +493,7 @@ class CmdLineTask(Task):
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument(name="--id", datasetType="raw",
-            help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
+                               help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
         return parser
 
     def writeConfig(self, butler, clobber=False, doBackup=True):
@@ -512,8 +521,8 @@ class CmdLineTask(Task):
             output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
             if not self.config.compare(oldConfig, shortcut=False, output=output):
                 raise TaskError(
-                    ("Config does not match existing task config %r on disk; tasks configurations " + \
-                    "must be consistent within the same output repo (override with --clobber-config)") % \
+                    ("Config does not match existing task config %r on disk; tasks configurations " +
+                     "must be consistent within the same output repo (override with --clobber-config)") %
                     (configName,))
         else:
             butler.put(self.config, configName)
@@ -532,7 +541,7 @@ class CmdLineTask(Task):
         then some schemas may have been saved successfully and others may not, and there is no easy way to
         tell which is which.
         """
-        for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
+        for dataset, catalog in self.getAllSchemaCatalogs().items():
             schemaDataset = dataset + "_schema"
             if clobber:
                 butler.put(catalog, schemaDataset, doBackup=doBackup)
@@ -540,8 +549,8 @@ class CmdLineTask(Task):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
-                        ("New schema does not match schema %r on disk; schemas must be " + \
-                        " consistent within the same output repo (override with --clobber-config)") % \
+                        ("New schema does not match schema %r on disk; schemas must be " +
+                         " consistent within the same output repo (override with --clobber-config)") %
                         (dataset,))
             else:
                 butler.put(catalog, schemaDataset)
@@ -556,7 +565,7 @@ class CmdLineTask(Task):
             metadataName = self._getMetadataName()
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
-        except Exception, e:
+        except Exception as e:
             self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):

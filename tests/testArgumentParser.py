@@ -20,10 +20,15 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import print_function
 import itertools
 import os
 import unittest
 import tempfile
+
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 
 import lsst.utils
 import lsst.utils.tests
@@ -48,7 +53,7 @@ import contextlib
 @contextlib.contextmanager
 def capture():
     import sys
-    from cStringIO import StringIO
+    from io import StringIO
     oldout, olderr = sys.stdout, sys.stderr
     try:
         out = [StringIO(), StringIO()]
@@ -144,7 +149,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         )
         self.assertEqual(len(namespace.id.idList), 6)
         predValList = itertools.product(filterList, visitList)
-        for id, predVal in itertools.izip(namespace.id.idList, predValList):
+        for id, predVal in zip(namespace.id.idList, predValList):
             idVal = tuple(id[key] for key in ("filter", "visit"))
             self.assertEqual(idVal, predVal)
         self.assertEqual(len(namespace.id.refList), 3)  # only have data for three of these
@@ -312,7 +317,7 @@ class ArgumentParserTestCase(unittest.TestCase):
         """Test --loglevel"""
         for logLevel in ("debug", "Info", "WARN", "fatal"):
             intLevel = getattr(pexLog.Log, logLevel.upper())
-            print "testing logLevel=%r" % (logLevel,)
+            print("testing logLevel=%r" % (logLevel,))
             namespace = self.ap.parse_args(
                 config=self.config,
                 args=[DataPath, "--loglevel", logLevel],
@@ -380,7 +385,7 @@ class ArgumentParserTestCase(unittest.TestCase):
                     args=[helpArg],
                 )
                 self.fail("should have raised SystemExit")
-            except SystemExit, e:
+            except SystemExit as e:
                 self.assertEqual(e.code, 0)
 
     def testDatasetArgumentBasics(self):

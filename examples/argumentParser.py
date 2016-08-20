@@ -30,41 +30,43 @@ when pipe_base is setup):
 ./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --show data
 ./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --config oneFloat=1.5 --show config
 """
+from __future__ import print_function
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+
 
 class ExampleConfig(pexConfig.Config):
     """Config for argument parser example
     """
     oneInt = pexConfig.Field(
-        dtype = int,
-        doc = "Example integer value",
-        default = 1,
+        dtype=int,
+        doc="Example integer value",
+        default=1,
     )
     oneFloat = pexConfig.Field(
-        dtype = float,
-        doc = "Example float value",
-        default = 3.14159265358979,
+        dtype=float,
+        doc="Example float value",
+        default=3.14159265358979,
     )
     oneStr = pexConfig.Field(
-        dtype = str,
-        doc = "Example string value",
-        default = "default value",
+        dtype=str,
+        doc="Example string value",
+        default="default value",
     )
     intList = pexConfig.ListField(
-        dtype = int,
-        doc = "example list of integers",
-        default = [-1, 0, 1],
+        dtype=int,
+        doc="example list of integers",
+        default=[-1, 0, 1],
     )
     floatList = pexConfig.ListField(
-        dtype = float,
-        doc = "example list of floats",
-        default = [-2.7, 0, 3.7e42],
+        dtype=float,
+        doc="example list of floats",
+        default=[-2.7, 0, 3.7e42],
     )
     strList = pexConfig.ListField(
-        dtype = str,
-        doc = "example list of strings",
-        default = ["a", "bb", "ccc"],
+        dtype=str,
+        doc="example list of strings",
+        default=["a", "bb", "ccc"],
     )
 
 parser = pipeBase.ArgumentParser(name="argumentParser")
@@ -73,4 +75,4 @@ config = ExampleConfig()
 parsedCmd = parser.parse_args(config=config)
 pcDict = parsedCmd.__dict__
 for key in sorted(pcDict):
-        print "parsedCmd.%s=%r" % (key, pcDict[key])
+    print("parsedCmd.%s=%r" % (key, pcDict[key]))

@@ -3,6 +3,7 @@ setupRequired(pex_logging)
 setupRequired(pex_config)
 setupRequired(utils)
 setupRequired(afw)
+setupRequired(python_future)
 
 setupOptional(obs_test) # for unit tests
 

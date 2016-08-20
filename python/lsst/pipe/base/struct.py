@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division
 #
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -20,7 +19,12 @@ from __future__ import absolute_import, division
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import absolute_import, division
+
+from builtins import object
+
 __all__ = ["Struct"]
+
 
 class Struct(object):
     """!A struct to which you can add any fields
@@ -41,6 +45,7 @@ class Struct(object):
     all the safety advantages of Struct. In addition, named tuples are clumsy to define and Structs
     are much more mutable (e.g. one can trivially combine Structs and add additional fields).
     """
+
     def __init__(self, **keyArgs):
         """!Create a Struct with the specified field names and values
 
@@ -55,7 +60,7 @@ class Struct(object):
         @param[in] **keyArgs    keyword arguments specifying name=value pairs
         """
         object.__init__(self)
-        for name, val in keyArgs.iteritems():
+        for name, val in keyArgs.items():
             self.__safeAdd(name, val)
 
     def __safeAdd(self, name, val):
@@ -106,5 +111,5 @@ class Struct(object):
         return len(self.__dict__)
 
     def __repr__(self):
-        itemList = ["%s=%r" % (name, val) for name, val in self.getDict().iteritems()]
+        itemList = ["%s=%r" % (name, val) for name, val in self.getDict().items()]
         return "%s(%s)" % (self.__class__.__name__, "; ".join(itemList))

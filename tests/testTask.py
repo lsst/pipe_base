@@ -24,6 +24,8 @@ import time
 import unittest
 import numbers
 
+from past.builtins import basestring
+
 import lsst.utils.tests
 import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig

@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division
 #
 # LSST Data Management System
 # Copyright 2008-2016 AURA/LSST.
@@ -20,7 +19,10 @@ from __future__ import absolute_import, division
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import absolute_import, division
 import contextlib
+
+from builtins import object
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField
@@ -30,6 +32,7 @@ from .timer import logInfo
 
 __all__ = ["Task", "TaskError"]
 
+
 class TaskError(Exception):
     """!Use to report errors for which a traceback is not useful.
 
@@ -38,6 +41,7 @@ class TaskError(Exception):
     - coadd finds no valid images in the specified patch.
     """
     pass
+
 
 class Task(object):
     """!Base class for data processing tasks
@@ -76,6 +80,7 @@ class Task(object):
     Tasks intended to be run from the command line should be subclasses of \ref cmdLineTask.CmdLineTask
     "CmdLineTask", not Task.
     """
+
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         """!Create a Task
 
@@ -127,7 +132,7 @@ class Task(object):
 
     def emptyMetadata(self):
         """!Empty (clear) the metadata for this Task and all sub-Tasks."""
-        for subtask in self._taskDict.itervalues():
+        for subtask in self._taskDict.values():
             subtask.metadata = dafBase.PropertyList()
 
     def getSchemaCatalogs(self):
@@ -162,7 +167,7 @@ class Task(object):
         Task.getSchemaCatalogs, not this method.
         """
         schemaDict = self.getSchemaCatalogs()
-        for subtask in self._taskDict.itervalues():
+        for subtask in self._taskDict.values():
             schemaDict.update(subtask.getSchemaCatalogs())
         return schemaDict
 
@@ -180,7 +185,7 @@ class Task(object):
             for the top-level task and all subtasks, sub-subtasks, etc.
         """
         fullMetadata = dafBase.PropertySet()
-        for fullName, task in self.getTaskDict().iteritems():
+        for fullName, task in self.getTaskDict().items():
             fullMetadata.set(fullName.replace(".", ":"), task.metadata)
         return fullMetadata
 
@@ -228,7 +233,7 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel = pexLog.Log.DEBUG):
+    def timer(self, name, logLevel=pexLog.Log.DEBUG):
         """!Context manager to log performance data for an arbitrary block of code
 
         @param[in] name         name of code being timed;
@@ -243,11 +248,11 @@ class Task(object):
 
         See timer.logInfo for the information logged
         """
-        logInfo(obj = self, prefix = name + "Start", logLevel = logLevel)
+        logInfo(obj=self, prefix=name + "Start", logLevel=logLevel)
         try:
             yield
         finally:
-            logInfo(obj = self, prefix = name + "End",   logLevel = logLevel)
+            logInfo(obj=self, prefix=name + "End", logLevel=logLevel)
 
     @classmethod
     def makeField(cls, doc):

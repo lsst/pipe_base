@@ -21,9 +21,12 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
-import StringIO
+import io
 import unittest
 import textwrap
+
+from future import standard_library
+standard_library.install_aliases()
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
@@ -80,7 +83,7 @@ class ShowTasksTestCase(unittest.TestCase):
         st2.sst1: {0}.SimpleTask
         st2.sst2: {0}.SimpleTask
         """.format(__name__)
-        tempStdOut = StringIO.StringIO()
+        tempStdOut = io.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
         try:
             pipeBase.argumentParser.showTaskHierarchy(config)

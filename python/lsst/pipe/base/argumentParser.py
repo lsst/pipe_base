@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division
 #
 # LSST Data Management System
 # Copyright 2008-2015 AURA/LSST.
@@ -20,6 +19,7 @@ from __future__ import absolute_import, division
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import absolute_import, division, print_function
 import abc
 import argparse
 import collections
@@ -32,10 +32,17 @@ import sys
 import shutil
 import textwrap
 
+from builtins import zip
+from builtins import str
+from builtins import range
+from builtins import object
+
+
 import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.daf.persistence as dafPersist
+from future.utils import with_metaclass
 
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
            "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
@@ -43,6 +50,7 @@ __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdCon
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
 DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
+
 
 def _fixPath(defName, path):
     """!Apply environment variable as default root, if present, and abspath
@@ -70,9 +78,10 @@ class DataIdContainer(object):
     (If you don't want the argument parser to compute data references, you may use this class
     and specify doMakeDataRefList=False in add_id_argument.)
     """
+
     def __init__(self, level=None):
         """!Construct a DataIdContainer"""
-        self.datasetType = None # the actual dataset type, as specified on the command line (if dynamic)
+        self.datasetType = None  # the actual dataset type, as specified on the command line (if dynamic)
         self.level = level
         self.idList = []
         self.refList = []
@@ -95,7 +104,7 @@ class DataIdContainer(object):
             raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
 
         for dataDict in self.idList:
-            for key, strVal in dataDict.iteritems():
+            for key, strVal in dataDict.items():
                 try:
                     keyType = idKeyTypeDict[key]
                 except KeyError:
@@ -123,14 +132,16 @@ class DataIdContainer(object):
             # exclude nonexistent data
             # this is a recursive test, e.g. for the sake of "raw" data
             refList = [dr for dr in refList if dataExists(butler=butler, datasetType=self.datasetType,
-                                                                  dataRef=dr)]
+                                                          dataRef=dr)]
             if not refList:
                 namespace.log.warn("No data found for dataId=%s" % (dataId,))
                 continue
             self.refList += refList
 
+
 class DataIdArgument(object):
     """!Glorified struct for data about id arguments, used by ArgumentParser.add_id_argument"""
+
     def __init__(self, name, datasetType, level, doMakeDataRefList=True, ContainerClass=DataIdContainer):
         """!Constructor
 
@@ -168,10 +179,9 @@ class DataIdArgument(object):
             return self.datasetType
 
 
-class DynamicDatasetType(object):
+class DynamicDatasetType(with_metaclass(abc.ABCMeta, object)):
     """!Abstract base class for a dataset type determined from parsed command-line arguments
     """
-    __metaclass__ = abc.ABCMeta
 
     def addArgument(self, parser, idName):
         """!Add a command-line argument to specify dataset type name, if wanted
@@ -195,11 +205,12 @@ class DynamicDatasetType(object):
 class DatasetArgument(DynamicDatasetType):
     """!A dataset type specified by a command-line argument.
     """
+
     def __init__(self,
-        name=None,
-        help="dataset type to process from input data repository",
-        default=None,
-    ):
+                 name=None,
+                 help="dataset type to process from input data repository",
+                 default=None,
+                 ):
         """!Construct a DatasetArgument
 
         @param[in] name  name of command-line argument (including leading "--", if appropriate)
@@ -233,17 +244,18 @@ class DatasetArgument(DynamicDatasetType):
             self.name = "--%s_dstype" % (idName,)
         requiredDict = dict()
         if self.name.startswith("-"):
-            requiredDict = dict(required = self.default is None)
+            requiredDict = dict(required=self.default is None)
         parser.add_argument(
             self.name,
-            default = self.default,
-            help = help,
-            **requiredDict) # cannot specify required=None for positional arguments
+            default=self.default,
+            help=help,
+            **requiredDict)  # cannot specify required=None for positional arguments
 
 
 class ConfigDatasetType(DynamicDatasetType):
     """!A dataset type specified by a config parameter
     """
+
     def __init__(self, name):
         """!Construct a ConfigDatasetType
 
@@ -268,6 +280,7 @@ class ConfigDatasetType(DynamicDatasetType):
                 raise RuntimeError("Cannot find config parameter %r" % (self.name,))
         return value
 
+
 class ArgumentParser(argparse.ArgumentParser):
     """!An argument parser for pipeline tasks that is based on argparse.ArgumentParser
 
@@ -281,7 +294,7 @@ class ArgumentParser(argparse.ArgumentParser):
     """
     requireOutput = True  # Require an output directory to be specified?
 
-    def __init__(self, name, usage = "%(prog)s input [options]", **kwargs):
+    def __init__(self, name, usage="%(prog)s input [options]", **kwargs):
         """!Construct an ArgumentParser
 
         @param[in] name     name of top-level task; used to identify camera-specific override files
@@ -289,11 +302,11 @@ class ArgumentParser(argparse.ArgumentParser):
         @param[in] **kwargs additional keyword arguments for argparse.ArgumentParser
         """
         self._name = name
-        self._dataIdArgDict = {} # Dict of data identifier specifications, by argument name
+        self._dataIdArgDict = {}  # Dict of data identifier specifications, by argument name
         argparse.ArgumentParser.__init__(self,
-            usage = usage,
-            fromfile_prefix_chars = '@',
-            epilog = textwrap.dedent("""Notes:
+                                         usage=usage,
+                                         fromfile_prefix_chars='@',
+                                         epilog=textwrap.dedent("""Notes:
             * --config, --configfile, --id, --loglevel and @file may appear multiple times;
                 all values are used, in order left to right
             * @file reads command-line options from the specified file:
@@ -304,31 +317,35 @@ class ArgumentParser(argparse.ArgumentParser):
                 * right: --configfile foo bar
                 * wrong: --configfile=foo bar
             """),
-            formatter_class = argparse.RawDescriptionHelpFormatter,
-        **kwargs)
+                                         formatter_class=argparse.RawDescriptionHelpFormatter,
+                                         **kwargs)
         self.add_argument(metavar='input', dest="rawInput",
-            help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
+                          help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
         self.add_argument("--calib", dest="rawCalib",
-            help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
+                          help="path to input calibration repository, relative to $%s" %
+                          (DEFAULT_CALIB_NAME,))
         self.add_argument("--output", dest="rawOutput",
-            help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
+                          help="path to output data repository (need not exist), relative to $%s" %
+                          (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
-            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; optionally sets ROOT to ROOT/rerun/INPUT")
+                          help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; "
+                               "optionally sets ROOT to ROOT/rerun/INPUT")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
-            help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
+                          help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
-            help="config override file(s)")
+                          help="config override file(s)")
         self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
-            help="logging level; supported levels are [debug|info|warn|fatal] or an integer; "
-                "trace level is negative log level, e.g. use level -3 for trace level 3",
-            metavar="LEVEL|COMPONENT=LEVEL")
+                          help="logging level; supported levels are [debug|info|warn|fatal] or an integer; "
+                          "trace level is negative log level, e.g. use level -3 for trace level 3",
+                          metavar="LEVEL|COMPONENT=LEVEL")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
-            help="raise an exception on error (else log a message and continue)?")
+                          help="raise an exception on error (else log a message and continue)?")
         self.add_argument("--profile", help="Dump cProfile statistics to filename")
         self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="+", default=(),
-            help="display the specified information to stdout and quit (unless run is specified).")
+                          help="display the specified information to stdout and quit "
+                               "(unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("-t", "--timeout", type=float,
                           help="Timeout for multiprocessing; maximum wall time (sec)")
@@ -347,7 +364,7 @@ class ArgumentParser(argparse.ArgumentParser):
                           help="don't check package versions; useful for development")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
-        ContainerClass=DataIdContainer):
+                        ContainerClass=DataIdContainer):
         """!Add a data ID argument
 
         Add an argument to specify data IDs. If datasetType is an instance of DatasetArgument,
@@ -378,11 +395,11 @@ class ArgumentParser(argparse.ArgumentParser):
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
 
         dataIdArgument = DataIdArgument(
-            name = argName,
-            datasetType = datasetType,
-            level = level,
-            doMakeDataRefList = doMakeDataRefList,
-            ContainerClass = ContainerClass,
+            name=argName,
+            datasetType=datasetType,
+            level=level,
+            doMakeDataRefList=doMakeDataRefList,
+            ContainerClass=ContainerClass,
         )
 
         if dataIdArgument.isDynamicDatasetType:
@@ -443,7 +460,7 @@ class ArgumentParser(argparse.ArgumentParser):
             override(namespace.config)
 
         # Add data ID containers to namespace
-        for dataIdArgument in self._dataIdArgDict.itervalues():
+        for dataIdArgument in self._dataIdArgDict.values():
             setattr(namespace, dataIdArgument.name, dataIdArgument.ContainerClass(level=dataIdArgument.level))
 
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
@@ -460,8 +477,8 @@ class ArgumentParser(argparse.ArgumentParser):
                 namespace.log.info("Removing output repo %s for --clobber-output" % namespace.output)
                 shutil.rmtree(namespace.output)
 
-        namespace.log.info("input=%s"  % (namespace.input,))
-        namespace.log.info("calib=%s"  % (namespace.calib,))
+        namespace.log.info("input=%s" % (namespace.input,))
+        namespace.log.info("calib=%s" % (namespace.calib,))
         namespace.log.info("output=%s" % (namespace.output,))
 
         obeyShowArgument(namespace.show, namespace.config, exit=False)
@@ -473,9 +490,9 @@ class ArgumentParser(argparse.ArgumentParser):
                        "command-line arguments.\n")
 
         namespace.butler = dafPersist.Butler(
-            root = namespace.input,
-            calibRoot = namespace.calib,
-            outputRoot = namespace.output,
+            root=namespace.input,
+            calibRoot=namespace.calib,
+            outputRoot=namespace.output,
         )
 
         # convert data in each of the identifier lists to proper types
@@ -483,9 +500,9 @@ class ArgumentParser(argparse.ArgumentParser):
         # because it takes a long time to construct a butler
         self._processDataIds(namespace)
         if "data" in namespace.show:
-            for dataIdName in self._dataIdArgDict.iterkeys():
+            for dataIdName in self._dataIdArgDict.keys():
                 for dataRef in getattr(namespace, dataIdName).refList:
-                    print dataIdName + " dataRef.dataId =", dataRef.dataId
+                    print("%s dataRef.dataId = %s" % (dataIdName, dataRef.dataId))
 
         if namespace.show and "run" not in namespace.show:
             sys.exit(0)
@@ -493,7 +510,7 @@ class ArgumentParser(argparse.ArgumentParser):
         if namespace.debug:
             try:
                 import debug
-                assert debug # silence pyflakes
+                assert debug  # silence pyflakes
             except ImportError:
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
@@ -514,8 +531,8 @@ class ArgumentParser(argparse.ArgumentParser):
         This allows for hacking the directories, e.g., to include a "rerun".
         Modifications are made to the 'namespace' object in-place.
         """
-        mapperClass = dafPersist.Butler.getMapperClass(_fixPath(DEFAULT_INPUT_NAME,namespace.rawInput))
-        namespace.calib = _fixPath(DEFAULT_CALIB_NAME,  namespace.rawCalib)
+        mapperClass = dafPersist.Butler.getMapperClass(_fixPath(DEFAULT_INPUT_NAME, namespace.rawInput))
+        namespace.calib = _fixPath(DEFAULT_CALIB_NAME, namespace.rawCalib)
 
         # If an output directory is specified, process it and assign it to the namespace
         if namespace.rawOutput:
@@ -568,12 +585,12 @@ class ArgumentParser(argparse.ArgumentParser):
             and modifies these attributes:
             - \<name> for each data ID argument registered using add_id_argument
         """
-        for dataIdArgument in self._dataIdArgDict.itervalues():
+        for dataIdArgument in self._dataIdArgDict.values():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
             dataIdContainer.setDatasetType(dataIdArgument.getDatasetType(namespace))
             if dataIdArgument.doMakeDataRefList:
                 try:
-                    dataIdContainer.castDataIds(butler = namespace.butler)
+                    dataIdContainer.castDataIds(butler=namespace.butler)
                 except (KeyError, TypeError) as e:
                     # failure of castDataIds indicates invalid command args
                     self.error(e)
@@ -653,7 +670,7 @@ def getTaskDict(config, taskDict=None, baseName=""):
     """
     if taskDict is None:
         taskDict = dict()
-    for fieldName, field in config.iteritems():
+    for fieldName, field in config.items():
         if hasattr(field, "value") and hasattr(field, "target"):
             subConfig = field.value
             if isinstance(subConfig, pexConfig.Config):
@@ -665,6 +682,7 @@ def getTaskDict(config, taskDict=None, baseName=""):
                 taskDict[subBaseName] = taskName
                 getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
     return taskDict
+
 
 def obeyShowArgument(showOpts, config=None, exit=False):
     """!Process arguments specified with --show (but ignores "data")
@@ -694,6 +712,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 
                     N.b. Newlines are silently discarded and reinserted;  crude but effective.
                     """
+
                     def __init__(self, pattern):
                         # obey case if pattern isn't lowecase or requests NOIGNORECASE
                         mat = re.search(r"(.*):NOIGNORECASE$", pattern)
@@ -703,8 +722,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                             self._pattern = re.compile(fnmatch.translate(pattern))
                         else:
                             if pattern != pattern.lower():
-                                print >> sys.stdout, "Matching \"%s\" without regard to case " \
-                                    "(append :NOIGNORECASE to prevent this)" % (pattern,)
+                                print(u"Matching \"%s\" without regard to case "
+                                      "(append :NOIGNORECASE to prevent this)" % (pattern,), file=sys.stdout)
                             self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
@@ -712,7 +731,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         # Strip off doc string line(s) and cut off at "=" for string matching
                         matchStr = showStr.split("\n")[-1].split("=")[0]
                         if self._pattern.search(matchStr):
-                            print "\n" + showStr
+                            print(u"\n" + showStr)
 
                 fd = FilteredStream(pattern)
             else:
@@ -726,29 +745,32 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         elif what == "tasks":
             showTaskHierarchy(config)
         else:
-            print >> sys.stderr, "Unknown value for show: %s (choose from '%s')" % \
-                (what, "', '".join("config[=XXX] data tasks run".split()))
+            print(u"Unknown value for show: %s (choose from '%s')" %
+                  (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
             sys.exit(1)
 
     if exit and "run" not in showOpts:
         sys.exit(0)
+
 
 def showTaskHierarchy(config):
     """!Print task hierarchy to stdout
 
     @param[in] config: configuration to process (an lsst.pex.config.Config)
     """
-    print "Subtasks:"
+    print(u"Subtasks:")
     taskDict = getTaskDict(config=config)
 
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
         taskName = taskDict[fieldName]
-        print "%s: %s" % (fieldName, taskName)
+        print(u"%s: %s" % (fieldName, taskName))
+
 
 class ConfigValueAction(argparse.Action):
     """!argparse action callback to override config parameters using name=value pairs from the command line
     """
+
     def __call__(self, parser, namespace, values, option_string):
         """!Override one or more config name value pairs
 
@@ -778,12 +800,14 @@ class ConfigValueAction(argparse.Action):
                     parser.error("cannot parse %r as a value for %s" % (valueStr, name))
                 try:
                     setDottedAttr(namespace.config, name, value)
-                except Exception, e:
+                except Exception as e:
                     parser.error("cannot set config.%s=%r: %s" % (name, value, e))
+
 
 class ConfigFileAction(argparse.Action):
     """!argparse action to load config overrides from one or more files
     """
+
     def __call__(self, parser, namespace, values, option_string=None):
         """!Load one or more files of config overrides
 
@@ -799,12 +823,14 @@ class ConfigFileAction(argparse.Action):
         for configfile in values:
             try:
                 namespace.config.load(configfile)
-            except Exception, e:
+            except Exception as e:
                 parser.error("cannot load config file %r: %s" % (configfile, e))
+
 
 class IdValueAction(argparse.Action):
     """!argparse action callback to process a data ID into a dict
     """
+
     def __call__(self, parser, namespace, values, option_string):
         """!Parse --id data and append results to namespace.\<argument>.idList
 
@@ -851,18 +877,19 @@ class IdValueAction(argparse.Action):
                 else:
                     idDict[name].append(v)
 
-        keyList = idDict.keys()
-        iterList = [idDict[key] for key in keyList]
-        idDictList = [collections.OrderedDict(zip(keyList, valList))
-            for valList in itertools.product(*iterList)]
+        iterList = [idDict[key] for key in idDict.keys()]
+        idDictList = [collections.OrderedDict(zip(idDict.keys(), valList))
+                      for valList in itertools.product(*iterList)]
 
         argName = option_string.lstrip("-")
         ident = getattr(namespace, argName)
         ident.idList += idDictList
 
+
 class LogLevelAction(argparse.Action):
     """!argparse action to set log level
     """
+
     def __call__(self, parser, namespace, values, option_string):
         """!Set trace level
 
@@ -893,6 +920,7 @@ class LogLevelAction(argparse.Action):
             else:
                 namespace.log.setThresholdFor(component, logLevel)
 
+
 def setDottedAttr(item, name, value):
     """!Like setattr, but accepts hierarchical names, e.g. foo.bar.baz
 
@@ -908,6 +936,7 @@ def setDottedAttr(item, name, value):
         subitem = getattr(subitem, subname)
     setattr(subitem, subnameList[-1], value)
 
+
 def getDottedAttr(item, name):
     """!Like getattr, but accepts hierarchical names, e.g. foo.bar.baz
 
@@ -920,6 +949,7 @@ def getDottedAttr(item, name):
     for subname in name.split("."):
         subitem = getattr(subitem, subname)
     return subitem
+
 
 def dataExists(butler, datasetType, dataRef):
     """!Return True if data exists at the current level or any data exists at a deeper level, False otherwise
@@ -937,4 +967,4 @@ def dataExists(butler, datasetType, dataRef):
                 return True
         return False
     else:
-        return butler.datasetExists(datasetType = datasetType, dataId = dataRef.dataId)
+        return butler.datasetExists(datasetType=datasetType, dataId=dataRef.dataId)

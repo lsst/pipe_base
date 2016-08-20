@@ -20,22 +20,25 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+from __future__ import print_function
 import os
 import shutil
 import unittest
 import tempfile
 
+from builtins import zip
+
 import lsst.utils
 import lsst.pex.logging as pexLog
 import lsst.pipe.base as pipeBase
-from lsst.obs.test import TestConfig
+import lsst.obs.test
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.join(ObsTestDir, "data", "input")
 
 
 class ExampleTask(pipeBase.CmdLineTask):
-    ConfigClass = TestConfig
+    ConfigClass = lsst.obs.test.TestConfig
     _DefaultName = "test"
 
     def __init__(self, *args, **kwargs):
@@ -83,7 +86,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         try:
             shutil.rmtree(self.outPath)
         except Exception:
-            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+            print("WARNING: failed to remove temporary dir %r" % (self.outPath,))
         del self.outPath
 
     def testBasics(self):
@@ -154,7 +157,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                      "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+                                      "--config", "floatField=-99.9", "--clobber-config",
+                                      "--no-backup-config"])
         # Ensure backup config file was NOT created
         self.assertFalse(
             os.path.exists(os.path.join(self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
@@ -182,7 +186,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
     @staticmethod
     def getTargetList(parsedCmd):
         """We want our Task to process one dataRef from each identifier at a time"""
-        return zip(parsedCmd.one.refList, parsedCmd.two.refList)
+        return list(zip(parsedCmd.one.refList, parsedCmd.two.refList))
 
     def __call__(self, target):
         """Send results from the Task back so we can inspect
@@ -196,7 +200,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
 
 class ExampleMultipleIdTask(pipeBase.CmdLineTask):
     _DefaultName = "test"
-    ConfigClass = TestConfig
+    ConfigClass = lsst.obs.test.TestConfig
     RunnerClass = EaxmpleMultipleIdTaskRunner
 
     @classmethod
@@ -231,7 +235,7 @@ class MultipleIdTaskTestCase(unittest.TestCase):
         try:
             shutil.rmtree(self.outPath)
         except Exception:
-            print "WARNING: failed to remove temporary dir %r" % (self.outPath,)
+            print("WARNING: failed to remove temporary dir %r" % (self.outPath,))
         del self.outPath
 
     def testMultiple(self):
