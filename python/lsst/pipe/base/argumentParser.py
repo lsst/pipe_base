@@ -321,11 +321,14 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument(metavar='input', dest="rawInput",
                           help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
         self.add_argument("--calib", dest="rawCalib",
-                          help="path to input calibration repository, relative to $%s" % (DEFAULT_CALIB_NAME,))
+                          help="path to input calibration repository, relative to $%s" %
+                          (DEFAULT_CALIB_NAME,))
         self.add_argument("--output", dest="rawOutput",
-                          help="path to output data repository (need not exist), relative to $%s" % (DEFAULT_OUTPUT_NAME,))
+                          help="path to output data repository (need not exist), relative to $%s" %
+                          (DEFAULT_OUTPUT_NAME,))
         self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
-                          help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; optionally sets ROOT to ROOT/rerun/INPUT")
+                          help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; "
+                               "optionally sets ROOT to ROOT/rerun/INPUT")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
                           help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
@@ -340,7 +343,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument("--profile", help="Dump cProfile statistics to filename")
         self.add_argument("--logdest", help="logging destination")
         self.add_argument("--show", nargs="+", default=(),
-                          help="display the specified information to stdout and quit (unless run is specified).")
+                          help="display the specified information to stdout and quit "
+                               "(unless run is specified).")
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
         self.add_argument("-t", "--timeout", type=float,
                           help="Timeout for multiprocessing; maximum wall time (sec)")
@@ -740,8 +744,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         elif what == "tasks":
             showTaskHierarchy(config)
         else:
-            print(u"Unknown value for show: %s (choose from '%s')" % \
-                (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
+            print(u"Unknown value for show: %s (choose from '%s')" %
+                  (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
             sys.exit(1)
 
     if exit and "run" not in showOpts:

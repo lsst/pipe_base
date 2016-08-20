@@ -156,7 +156,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r"])
         # Rerun with --clobber-config and --no-backup-config to ensure backup config file is NOT created
         ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=3", "filter=r",
-                                      "--config", "floatField=-99.9", "--clobber-config", "--no-backup-config"])
+                                      "--config", "floatField=-99.9", "--clobber-config",
+                                      "--no-backup-config"])
         # Ensure backup config file was NOT created
         self.assertFalse(
             os.path.exists(os.path.join(self.outPath, "config", ExampleTask._DefaultName + ".py~1")))
