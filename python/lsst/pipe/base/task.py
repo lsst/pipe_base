@@ -111,7 +111,7 @@ class Task(object):
             if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
-            self.log = Log.getLogger(parentTask.log.getName() + '.' + name)
+            loggerName = parentTask.log.getName() + '.' + name
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -123,11 +123,11 @@ class Task(object):
             if config is None:
                 config = self.ConfigClass()
             self._taskDict = dict()
-            if log is not None and isinstance(log, Log):
-                self.log = Log.getLogger(log.getName() + '.' + self._fullName)
-            else:
-                self.log = Log.getLogger(self._fullName)
+            loggerName = self._fullName
+            if log is not None:
+                loggerName = log.getName() + '.' + loggerName
 
+        self.log = Log.getLogger(loggerName)
         self.config = config
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
