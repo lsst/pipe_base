@@ -94,6 +94,7 @@ class Task(object):
             - If not None (a subtask) then you must specify name
         @param[in] log          lsst.log Log; if None then the default is used;
             in either case the full task name is used in the logger name.
+            Ignored if parentTask is specified (parentTask.log is used).
 
         @throw RuntimeError if parentTask is None and config is None.
         @throw RuntimeError if parentTask is not None and name is None.
