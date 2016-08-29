@@ -92,7 +92,8 @@ class StructTestCase(unittest.TestCase):
 
         for name, val in newS.getDict().items():
             self.assertEqual(val, self.valDict[name])
-            self.assertRaises(RuntimeError, newS.mergeItems, s, name)
+            with self.assertRaises(RuntimeError):
+                newS.mergeItems(s, name)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

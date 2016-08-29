@@ -155,10 +155,10 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def testIdDuplicate(self):
         """Verify that each ID name can only appear once in a given ID argument"""
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--id", "visit=1", "visit=2"],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--id", "visit=1", "visit=2"],
+                               )
 
     def testConfigBasics(self):
         """Test --config"""
@@ -186,10 +186,10 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def testConfigWrongNames(self):
         """Verify that incorrect names for config fields are caught"""
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--config", "missingItem=-67.1"],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--config", "missingItem=-67.1"],
+                               )
 
     def testShow(self):
         """Test --show"""
@@ -211,15 +211,14 @@ class ArgumentParserTestCase(unittest.TestCase):
             res = out[0]
             self.assertIn("config.multiDocItem", res)
 
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--show", "config"],
-                          )
-
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--show", "config=X"],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--show", "config"],
+                               )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--show", "config=X"],
+                               )
 
         # Test show with glob for single and multi-line doc strings
         for configStr, assertStr in ("*strItem*", "strDefault"), ("*multiDocItem", "multiLineDoc"):
@@ -234,14 +233,14 @@ class ArgumentParserTestCase(unittest.TestCase):
             self.assertEqual(len(answer), 2)       # only 1 config item matches (+ 1 \n entry per doc string)
             self.assertIn(assertStr, answer[1])
 
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--show", "badname", "run"],
-                          )
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--show"],  # no --show arguments
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--show", "badname", "run"],
+                               )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--show"],  # no --show arguments
+                               )
 
         # Test show with and without case sensitivity
         for configStr, shouldMatch in [("*multiDocItem*", True),
@@ -281,10 +280,10 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def testConfigFileMissingFiles(self):
         """Verify that missing config override files are caught"""
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--configfile", "missingFile"],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--configfile", "missingFile"],
+                               )
 
     def testAtFile(self):
         """Test @file"""
@@ -322,17 +321,15 @@ class ArgumentParserTestCase(unittest.TestCase):
             self.assertEqual(lsstLog.Log.getLogger("foo.bar").getLevel(), intLevel)
             self.assertEqual(lsstLog.Log.getLogger("baz").getLevel(), getattr(lsstLog.Log, bazLevel))
 
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath, "--loglevel", "1234"],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--loglevel", "1234"],
+                               )
 
-        self.assertRaises(SystemExit, self.ap.parse_args,
-                          config=self.config,
-                          args=[DataPath,
-                                "--loglevel", "INVALID_LEVEL",
-                                ],
-                          )
+        with self.assertRaises(SystemExit):
+            self.ap.parse_args(config=self.config,
+                               args=[DataPath, "--loglevel", "INVALID_LEVEL"],
+                               )
 
     def testPipeVars(self):
         """Test handling of $PIPE_x_ROOT environment variables, where x is INPUT, CALIB or OUTPUT

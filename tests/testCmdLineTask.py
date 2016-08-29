@@ -177,7 +177,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
             args = [DataPath, "--output", self.outPath, "--id", "visit=1"]
             if doRaise:
                 args.append("--doraise")
-            self.assertRaises(RuntimeError, CannotConstructTask.parseAndRun, args=args)
+            with self.assertRaises(RuntimeError):
+                CannotConstructTask.parseAndRun(args=args)
 
 
 class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
