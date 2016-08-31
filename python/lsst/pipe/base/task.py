@@ -92,9 +92,10 @@ class Task(object):
         @param[in] parentTask   the parent task of this subtask, if any.
             - If None (a top-level task) then you must specify config and name is ignored.
             - If not None (a subtask) then you must specify name
-        @param[in] log          lsst.log Log; if None then the default is used;
-            in either case the full task name is used in the logger name.
-            Ignored if parentTask is specified (parentTask.log is used).
+        @param[in] log          log (an lsst.log.Log) whose name is used as a log name prefix,
+            or None for no prefix. Ignored if parentTask specifie, in which case parentTask.log's
+            name is used as a prefix.
+            The task's log name is `prefix + "." + name` if a prefix exists, else `name`.
 
         @throw RuntimeError if parentTask is None and config is None.
         @throw RuntimeError if parentTask is not None and name is None.
