@@ -39,7 +39,7 @@ Each task is configured using the \ref secConfigIntro "pex_config package", usin
 subclass of pex.config.config.Config. The task's configuration includes all subtasks that the task may call.
 As a result, it is easy to replace (or "retarget") one subtask with another. A common use for this is to
 provide a camera-specific variant of a particular task, e.g. use one version for SDSS imager data
-and another version for Subaru Hyper Superime-Cam data).
+and another version for Subaru Hyper Suprime-Cam data).
   
 Tasks may process multiple items of data in parallel, using Python's `multiprocessing` library.
 Support for this is built into the \ref argumentParser.ArgumentParser "ArgumentParser"
