@@ -96,6 +96,8 @@ class Task(object):
             or None for no prefix. Ignored if parentTask specifie, in which case parentTask.log's
             name is used as a prefix.
             The task's log name is `prefix + "." + name` if a prefix exists, else `name`.
+            The task's log is then a child logger of parentTask.log (if parentTask specified),
+            or a child logger of the log from the argument (if log is not None).
 
         @throw RuntimeError if parentTask is None and config is None.
         @throw RuntimeError if parentTask is not None and name is None.
