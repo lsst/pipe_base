@@ -127,7 +127,7 @@ class Task(object):
                 config = self.ConfigClass()
             self._taskDict = dict()
             loggerName = self._fullName
-            if log is not None:
+            if log is not None and log.getName():
                 loggerName = log.getName() + '.' + loggerName
 
         self.log = Log.getLogger(loggerName)
