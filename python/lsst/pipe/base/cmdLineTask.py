@@ -33,8 +33,8 @@ import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
-from lsst.pex.logging import getDefaultLog
 from lsst.base import Packages
+from lsst.log import Log
 
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
@@ -52,7 +52,7 @@ def _poolFunctionWrapper(function, arg):
     except:
         # Need to wrap the exception with something multiprocessing will recognise
         cls, exc, tb = sys.exc_info()
-        log = getDefaultLog()
+        log = Log.getDefaultLogger()
         log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
         raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
 
@@ -332,11 +332,11 @@ class TaskRunner(object):
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = getDefaultLog()
+            self.log = getDefaultLogger()
         if hasattr(dataRef, "dataId"):
-            self.log.addLabel(str(dataRef.dataId))
+            self.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
-            self.log.addLabel(str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
+            self.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
         result = None  # in case the task fails
         if self.doRaise:
@@ -450,7 +450,7 @@ class CmdLineTask(Task):
         @param cls      the class object
         @param args     list of command-line arguments; if `None` use sys.argv
         @param config   config for task (instance of pex_config Config); if `None` use cls.ConfigClass()
-        @param log      log (instance of lsst.pex.logging.Log); if `None` use the default log
+        @param log      log (instance of lsst.log.Log); if `None` use the default log
         @param doReturnResults  Return the collected results from each invocation of the task?
             This is only intended for unit tests and similar use.
             It can easily exhaust memory (if the task returns enough data and you call it enough times)

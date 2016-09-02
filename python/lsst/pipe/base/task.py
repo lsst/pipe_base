@@ -26,7 +26,7 @@ from builtins import object
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField
-import lsst.pex.logging as pexLog
+from lsst.log import Log
 import lsst.daf.base as dafBase
 from .timer import logInfo
 
@@ -52,7 +52,7 @@ class Task(object):
     then look at the main page of pipe_tasks documentation for a link.
 
     Useful attributes include:
-    * log: an lsst.pex.logging.Log
+    * log: an lsst.log.Log
     * config: task-specific configuration; an instance of ConfigClass (see below)
     * metadata: an lsst.daf.base.PropertyList for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
@@ -92,8 +92,12 @@ class Task(object):
         @param[in] parentTask   the parent task of this subtask, if any.
             - If None (a top-level task) then you must specify config and name is ignored.
             - If not None (a subtask) then you must specify name
-        @param[in] log          pexLog log; if None then the default is used;
-            in either case a copy is made using the full task name.
+        @param[in] log          log (an lsst.log.Log) whose name is used as a log name prefix,
+            or None for no prefix. Ignored if parentTask specifie, in which case parentTask.log's
+            name is used as a prefix.
+            The task's log name is `prefix + "." + name` if a prefix exists, else `name`.
+            The task's log is then a child logger of parentTask.log (if parentTask specified),
+            or a child logger of the log from the argument (if log is not None).
 
         @throw RuntimeError if parentTask is None and config is None.
         @throw RuntimeError if parentTask is not None and name is None.
@@ -110,7 +114,7 @@ class Task(object):
             if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
-            self.log = pexLog.Log(parentTask.log, name)
+            loggerName = parentTask.log.getName() + '.' + name
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -122,10 +126,11 @@ class Task(object):
             if config is None:
                 config = self.ConfigClass()
             self._taskDict = dict()
-            if log is None:
-                log = pexLog.getDefaultLog()
-            self.log = pexLog.Log(log, self._fullName)
+            loggerName = self._fullName
+            if log is not None and log.getName():
+                loggerName = log.getName() + '.' + loggerName
 
+        self.log = Log.getLogger(loggerName)
         self.config = config
         self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
@@ -233,12 +238,12 @@ class Task(object):
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel=pexLog.Log.DEBUG):
+    def timer(self, name, logLevel=Log.DEBUG):
         """!Context manager to log performance data for an arbitrary block of code
 
         @param[in] name         name of code being timed;
             data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
-        @param[in] logLevel     one of the lsst.pex.logging.Log level constants
+        @param[in] logLevel     one of the lsst.log.Log level constants
 
         Example of use:
         \code
