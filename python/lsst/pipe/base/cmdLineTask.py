@@ -332,7 +332,7 @@ class TaskRunner(object):
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = getDefaultLogger()
+            self.log = Log.getDefaultLogger()
         if hasattr(dataRef, "dataId"):
             self.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
