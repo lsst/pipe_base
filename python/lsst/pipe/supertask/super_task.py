@@ -4,6 +4,7 @@ for SuperTask. Documentation and examnple use can be found at
 http://dmtn-002.lsst.io
 """
 from __future__ import absolute_import, division, print_function
+from builtins import str
 #
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -290,7 +291,7 @@ class SuperTask(Task):
         if self.list_config is None:
             self.list_config = []
         root_name = self.name + '.'
-        for key, val in self.config.iteritems():
+        for key, val in self.config.items():
             self.list_config.append(root_name + 'config.' + key + ' = ' + str(val))
         return self.list_config
 
