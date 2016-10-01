@@ -28,6 +28,7 @@ import contextlib
 from builtins import str
 from builtins import object
 
+import lsst.utils
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 from .task import Task, TaskError
@@ -464,10 +465,19 @@ class CmdLineTask(Task):
             This will typically be a list of `None` unless doReturnResults is `True`;
             see cls.RunnerClass (TaskRunner by default) for more information.
         """
+        if args is None:
+            commandAsStr = " ".join(sys.argv)
+            args = sys.argv[1:]
+        else:
+            commandAsStr = "{}{}".format(lsst.utils.get_caller_name(skip=1), tuple(args))
+
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
+        # print this message after parsing the command so the log is fully configured
+        parsedCmd.log.info("Running: {}".format(commandAsStr))
+
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
         return Struct(
