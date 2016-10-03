@@ -528,8 +528,11 @@ class CmdLineTask(Task):
             except Exception as exc:
                 raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
                                 (configName, exc))
-            output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
-            if not self.config.compare(oldConfig, shortcut=False, output=output):
+
+            def logConfigMismatch(msg):
+                self.log.fatal("Comparing configuration: " + msg)
+
+            if not self.config.compare(oldConfig, shortcut=False, output=logConfigMismatch):
                 raise TaskError(
                     ("Config does not match existing task config %r on disk; tasks configurations " +
                      "must be consistent within the same output repo (override with --clobber-config)") %

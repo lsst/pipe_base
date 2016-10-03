@@ -24,9 +24,9 @@ from __future__ import print_function
 import itertools
 import os
 import unittest
+import contextlib
 
 from future import standard_library
-standard_library.install_aliases()
 from builtins import str
 
 import lsst.utils
@@ -35,22 +35,23 @@ import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
+standard_library.install_aliases()
+
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.realpath(os.path.join(ObsTestDir, "data", "input"))
 LocalDataPath = os.path.join(os.path.dirname(__file__), "data")
-#
-# Context manager to intercept stdout/err
-#  http://stackoverflow.com/questions/5136611/capture-stdout-from-a-script-in-python
-#
-# Use as:
-#   with capture() as out:
-#      print 'hi'
-#
-import contextlib
 
 
 @contextlib.contextmanager
 def capture():
+    """Context manager to intercept stdout/err
+
+    Use as:
+      with capture() as out:
+         print 'hi'
+
+    http://stackoverflow.com/questions/5136611/capture-stdout-from-a-script-in-python
+    """
     import sys
     from io import StringIO
     oldout, olderr = sys.stdout, sys.stderr

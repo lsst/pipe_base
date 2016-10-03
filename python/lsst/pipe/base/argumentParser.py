@@ -37,7 +37,6 @@ from builtins import str
 from builtins import range
 from builtins import object
 
-
 import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.log as lsstLog

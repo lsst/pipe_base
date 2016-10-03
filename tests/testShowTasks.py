@@ -26,11 +26,12 @@ import unittest
 import textwrap
 
 from future import standard_library
-standard_library.install_aliases()
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+
+standard_library.install_aliases()
 
 
 class SimpleTaskConfig(pexConfig.Config):
