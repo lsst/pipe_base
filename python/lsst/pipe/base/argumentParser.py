@@ -37,7 +37,6 @@ from builtins import str
 from builtins import range
 from builtins import object
 
-
 import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.log as lsstLog
@@ -134,7 +133,7 @@ class DataIdContainer(object):
             refList = [dr for dr in refList if dataExists(butler=butler, datasetType=self.datasetType,
                                                           dataRef=dr)]
             if not refList:
-                namespace.log.warn("No data found for dataId=%s" % (dataId,))
+                namespace.log.warn("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
 
@@ -480,12 +479,12 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             elif namespace.output == namespace.input:
                 self.error("--clobber-output is not valid when the output and input repos are the same")
             if os.path.exists(namespace.output):
-                namespace.log.info("Removing output repo %s for --clobber-output" % namespace.output)
+                namespace.log.info("Removing output repo %s for --clobber-output", namespace.output)
                 shutil.rmtree(namespace.output)
 
-        namespace.log.info("input=%s" % (namespace.input,))
-        namespace.log.info("calib=%s" % (namespace.calib,))
-        namespace.log.info("output=%s" % (namespace.output,))
+        namespace.log.info("input=%s", namespace.input)
+        namespace.log.info("calib=%s", namespace.calib)
+        namespace.log.info("output=%s", namespace.output)
 
         obeyShowArgument(namespace.show, namespace.config, exit=False)
 
@@ -630,10 +629,10 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
             os.path.join(obsPkgDir, "config", namespace.camera, fileName),
         ):
             if os.path.exists(filePath):
-                namespace.log.info("Loading config overrride file %r" % (filePath,))
+                namespace.log.info("Loading config overrride file %r", filePath)
                 namespace.config.load(filePath)
             else:
-                namespace.log.info("Config override file does not exist: %r" % (filePath,))
+                namespace.log.info("Config override file does not exist: %r", filePath)
 
     def handleCamera(self, namespace):
         """!Perform camera-specific operations before parsing the command line.

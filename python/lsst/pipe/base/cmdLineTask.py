@@ -28,6 +28,7 @@ import contextlib
 from builtins import str
 from builtins import object
 
+import lsst.utils
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 from .task import Task, TaskError
@@ -304,7 +305,7 @@ class TaskRunner(object):
             try:
                 self._precallImpl(task, parsedCmd)
             except Exception as e:
-                task.log.fatal("Failed in task initialization: %s" % e)
+                task.log.fatal("Failed in task initialization: %s", e)
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
                 return False
@@ -347,12 +348,12 @@ class TaskRunner(object):
             except Exception as e:
                 # don't use a try block as we need to preserve the original exception
                 if hasattr(dataRef, "dataId"):
-                    task.log.fatal("Failed on dataId=%s: %s" % (dataRef.dataId, e))
+                    task.log.fatal("Failed on dataId=%s: %s", dataRef.dataId, e)
                 elif isinstance(dataRef, (list, tuple)):
-                    task.log.fatal("Failed on dataId=[%s]: %s" %
-                                   (",".join([str(_.dataId) for _ in dataRef]), e))
+                    task.log.fatal("Failed on dataId=[%s]: %s",
+                                   ", ".join(str(ref.dataId) for ref in dataRef), e)
                 else:
-                    task.log.fatal("Failed on dataRef=%s: %s" % (dataRef, e))
+                    task.log.fatal("Failed on dataRef=%s: %s", dataRef, e)
 
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
@@ -464,10 +465,19 @@ class CmdLineTask(Task):
             This will typically be a list of `None` unless doReturnResults is `True`;
             see cls.RunnerClass (TaskRunner by default) for more information.
         """
+        if args is None:
+            commandAsStr = " ".join(sys.argv)
+            args = sys.argv[1:]
+        else:
+            commandAsStr = "{}{}".format(lsst.utils.get_caller_name(skip=1), tuple(args))
+
         argumentParser = cls._makeArgumentParser()
         if config is None:
             config = cls.ConfigClass()
         parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, override=cls.applyOverrides)
+        # print this message after parsing the command so the log is fully configured
+        parsedCmd.log.info("Running: %s", commandAsStr)
+
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
         return Struct(
@@ -518,8 +528,11 @@ class CmdLineTask(Task):
             except Exception as exc:
                 raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
                                 (configName, exc))
-            output = lambda msg: self.log.fatal("Comparing configuration: " + msg)
-            if not self.config.compare(oldConfig, shortcut=False, output=output):
+
+            def logConfigMismatch(msg):
+                self.log.fatal("Comparing configuration: %s", msg)
+
+            if not self.config.compare(oldConfig, shortcut=False, output=logConfigMismatch):
                 raise TaskError(
                     ("Config does not match existing task config %r on disk; tasks configurations " +
                      "must be consistent within the same output repo (override with --clobber-config)") %
@@ -566,7 +579,7 @@ class CmdLineTask(Task):
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
         except Exception as e:
-            self.log.warn("Could not persist metadata for dataId=%s: %s" % (dataRef.dataId, e,))
+            self.log.warn("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):
         """!Compare and write package versions
