@@ -39,6 +39,7 @@ from builtins import object
 
 import lsst.utils
 import lsst.pex.config as pexConfig
+import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
 from future.utils import with_metaclass
@@ -705,6 +706,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 
     Supports the following options in showOpts:
     - config[=PAT]   Dump all the config entries, or just the ones that match the glob pattern
+    - history=PAT    Show where the config entries that match the glob pattern were set
     - tasks      Show task hierarchy
     - data       Ignored; to be processed by caller
     - run        Keep going (the default behaviour is to exit if --show is specified)
@@ -715,9 +717,11 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         return
 
     for what in showOpts:
-        mat = re.search(r"^config(?:=(.+))?", what)
-        if mat:
-            pattern = mat.group(1)
+        showCommand, showArgs = what.split("=", 1) if "=" in what else (what, "")
+
+        if showCommand == "config":
+            matConfig = re.search(r"^(?:config.)?(.+)?", showArgs)
+            pattern = matConfig.group(1)
             if pattern:
                 class FilteredStream(object):
                     """A file object that only prints lines that match the glob "pattern"
@@ -750,15 +754,40 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                 fd = sys.stdout
 
             config.saveToStream(fd, "config")
-        elif what == "data":
+        elif showCommand == "history":
+            matHistory = re.search(r"^(?:config.)?(.+)?", showArgs)
+            pattern = matHistory.group(1)
+            if not pattern:
+                print("Please provide a value with --show history (e.g. history=XXX)", file=sys.stderr)
+                sys.exit(1)                
+
+            pattern = pattern.split(".")
+            cpath, cname = pattern[:-1], pattern[-1]
+            hconfig = config            # the config that we're interested in
+            for i, cpt in enumerate(cpath):
+                try:
+                    hconfig = getattr(hconfig, cpt)
+                except AttributeError:
+                    print("Error: configuration %s has no subconfig %s" %
+                          (".".join(["config"] + cpath[:i]), cpt), file=sys.stderr)
+
+                    sys.exit(1)                
+
+            try:
+                print(pexConfig.history.format(hconfig, cname))
+            except KeyError:
+                print("Error: %s has no field %s" % (".".join(["config"] + cpath), cname), file=sys.stderr)
+                sys.exit(1)                
+
+        elif showCommand == "data":
             pass
-        elif what == "run":
+        elif showCommand == "run":
             pass
-        elif what == "tasks":
+        elif showCommand == "tasks":
             showTaskHierarchy(config)
         else:
             print(u"Unknown value for show: %s (choose from '%s')" %
-                  (what, "', '".join("config[=XXX] data tasks run".split())), file=sys.stderr)
+                  (what, "', '".join("config[=XXX] data history=XXX tasks run".split())), file=sys.stderr)
             sys.exit(1)
 
     if exit and "run" not in showOpts:
