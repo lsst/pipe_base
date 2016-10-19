@@ -483,9 +483,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 namespace.log.info("Removing output repo %s for --clobber-output", namespace.output)
                 shutil.rmtree(namespace.output)
 
-        namespace.log.info("input=%s", namespace.input)
-        namespace.log.info("calib=%s", namespace.calib)
-        namespace.log.info("output=%s", namespace.output)
+        namespace.log.debug("input=%s", namespace.input)
+        namespace.log.debug("calib=%s", namespace.calib)
+        namespace.log.debug("output=%s", namespace.output)
 
         obeyShowArgument(namespace.show, namespace.config, exit=False)
 
@@ -633,7 +633,7 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
                 namespace.log.info("Loading config overrride file %r", filePath)
                 namespace.config.load(filePath)
             else:
-                namespace.log.info("Config override file does not exist: %r", filePath)
+                namespace.log.debug("Config override file does not exist: %r", filePath)
 
     def handleCamera(self, namespace):
         """!Perform camera-specific operations before parsing the command line.
