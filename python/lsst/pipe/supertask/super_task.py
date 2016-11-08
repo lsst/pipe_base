@@ -46,14 +46,9 @@ class SuperTask(Task):
     execute() which for now takes a dataRef as input where the information is extracted and
     prepared to be parsed to run() which actually performs the operation
 
-    The name is taken from _default_name (a more pythonic way to deal with variable names) but is
-    still backwards compatible with Task.
-
     Ideally all Task should be (and will be) SuperTasks, which provides the abstraction and
     expose the run method of the Task itself.
     """
-
-    _default_name = None
 
     def __init__(self, config=None, name=None, parent_task=None, log=None, butler=None):
         """
@@ -67,7 +62,7 @@ class SuperTask(Task):
                               - If parentTask specified then defaults to parentTask.config.name
                               - If parentTask is None then defaults to self.ConfigClass()
         :param name:        brief name of super_task, or None; if None then defaults to
-                            self._default_name or self._DefaultName
+                            self._DefaultName
         :param parent_task: the parent task of this subtask, if any.
                              - If None (a top-level task) then you must specify config and name is
                                ignored.
@@ -80,10 +75,12 @@ class SuperTask(Task):
         :return: The SuperTask Class
         """
 
+        # No spaces allowed in names for SuperTasks
+        # TO DO: need better validation here, some other characters may be disallowed
         if name is None:
-            name = getattr(self, "_default_name", None)
+            name = getattr(self, "_DefaultName", None)
         if name is not None:
-            name = name.replace(" ", "_")  # No spaces allowed in names for SuperTasks
+            name = name.replace(" ", "_")
         super(SuperTask, self).__init__(config, name, parent_task, log)  # Initiate Task
 
         self._completed = False  # Hook to indicate whether a SuperTask was completed
@@ -184,13 +181,7 @@ class SuperTask(Task):
 
         TO DO: we need more generic method which can work with all activators.
         """
-        # Allow either _default_name or _DefaultName
-        task_name = cls._default_name
-        if task_name is None:
-            task_name = getattr(cls, "_DefaultName", None)
-        if task_name is None:
-            raise RuntimeError("_default_name or _DefaultName is required for a task")
-        parser = ArgumentParser(name=task_name)
+        parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
         return parser
 
