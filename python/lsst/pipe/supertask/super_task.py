@@ -55,13 +55,11 @@ class SuperTask(Task):
 
     _default_name = None
 
-    def __init__(self, config=None, name=None, parent_task=None, log=None, activator=None, butler=None):
+    def __init__(self, config=None, name=None, parent_task=None, log=None, butler=None):
         """
-        Creates the SuperTask, the parameters are the same as Task, except by activator which is a
-        hook for the class activator that calls this Task, for cmdLineActivator is the only one
-        available
+        Creates the SuperTask, the parameters are the same as Task.
 
-          The inputs are (some of them taken from task.py):
+        The inputs are (some of them taken from task.py):
 
         :param config:      configuration for this task (an instance of self.ConfigClass,
                             which is a task-specific subclass of lsst.pex.config.Config), or None.
@@ -77,7 +75,6 @@ class SuperTask(Task):
         :param log:         log (an lsst.log.Log) whose name is used as a log name prefix,
                             or None for no prefix. Ignored if parentTask specified, in which case
                             parentTask.log's name is used as a prefix.
-        :param activator:   (deprecated) name of activator calling this task, default is None.
         :param butler:      data butler instance (this is not used by this class, it should
                             probably be removed)
         :return: The SuperTask Class
