@@ -149,30 +149,15 @@ class SuperTask(Task):
         """
         pass
 
-    def get_conf_list(self):
-        """
-        Get the configuration items for this (Super)Task.
-
-        TODO: Review the format of the returned strings or get rid of this methof altogether
-        (or make it private).
-
-        :return: list of configuration and their values for this task
-        """
-        if self._list_config is None:
-            self._list_config = [self.name + '.config.' + key + ' = ' + str(val)
-                                 for key, val in self.config.items()]
-        return self._list_config
-
     def print_config(self):
+        """Print configuration parameters for this (Super)Task.
+
+        TO DO: Not clear how generic this method is, it looks like it was used
+        for testing, it may disappear or be replaced with something else.
         """
-        Print Configuration parameters for this (Super)Task
-        :return:
-        """
-        print()
-        print('* Configuration * :')
-        print()
-        for branch in self.get_conf_list():
-            print(branch)
+        print('\n* Configuration * :\n')
+        for key, val in self.config.items():
+            print(self.name + '.config.' + key + ' = ' + str(val))
         print()
 
     @classmethod
@@ -197,7 +182,6 @@ class SuperTask(Task):
 
     def write_config(self, butler, clobber=False, do_backup=True):
         """!Write the configuration used for processing the data, or check that an existing
-
         one is equal to the new one if present.
 
         @param[in] butler   data butler used to write the config.
@@ -244,10 +228,10 @@ class SuperTask(Task):
         for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
             schema_dataset = dataset + "_schema"
             if clobber:
-                print("Writing schema %s" % schema_dataset)
+                self.log.info("Writing schema %s", schema_dataset)
                 butler.put(catalog, schema_dataset, doBackup=do_backup)
             elif butler.datasetExists(schema_dataset):
-                print("Getting schema %s" % schema_dataset)
+                self.log.info("Getting schema %s", schema_dataset)
                 old_schema = butler.get(schema_dataset, immediate=True).getSchema()
                 if not old_schema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
@@ -255,7 +239,7 @@ class SuperTask(Task):
                          " consistent within the same output repo (override with --clobber-config)") %
                         (dataset,))
             else:
-                print("Writing schema %s" % schema_dataset)
+                self.log.info("Writing schema %s" % schema_dataset)
                 butler.put(catalog, schema_dataset)
 
     def _get_config_name(self):
