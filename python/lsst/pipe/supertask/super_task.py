@@ -176,10 +176,20 @@ class SuperTask(Task):
         print()
 
     @classmethod
-    def _makeArgumentParser(cls):
-        """Create argument parser used by command line activator.
+    def makeArgumentParser(cls):
+        """Instantiate argument parser used by activators.
 
-        TO DO: we need more generic method which can work with all activators.
+        Even though ArgumentParser is usually associated with command line
+        parsing it can also be used to parse generated set of arguments or
+        arguments stored in a file. In this way it can be used even by
+        other activator types, not only command-line activators.
+
+        Default implementation creates standard ArgumentParser and adds a
+        single DataId argument with a "raw" dataset type. If specific
+        SuperTask needs to customize parser or use different type of input
+        then it should override this method in a subclass.
+
+        :return: Instance of pipe.base.ArgumentParser type or its subtype.
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
