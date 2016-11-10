@@ -50,7 +50,7 @@ class SuperTask(Task):
     expose the run method of the Task itself.
     """
 
-    def __init__(self, config=None, name=None, parent_task=None, log=None, butler=None):
+    def __init__(self, config=None, name=None, parentTask=None, log=None, butler=None):
         """
         Creates the SuperTask, the parameters are the same as Task.
 
@@ -63,7 +63,7 @@ class SuperTask(Task):
                               - If parentTask is None then defaults to self.ConfigClass()
         :param name:        brief name of super_task, or None; if None then defaults to
                             self._DefaultName
-        :param parent_task: the parent task of this subtask, if any.
+        :param parentTask:  the parent task of this subtask, if any.
                              - If None (a top-level task) then you must specify config and name is
                                ignored.
                              - If not None (a subtask) then you must specify name
@@ -81,7 +81,7 @@ class SuperTask(Task):
             name = getattr(self, "_DefaultName", None)
         if name is not None:
             name = name.replace(" ", "_")
-        super(SuperTask, self).__init__(config, name, parent_task, log)  # Initiate Task
+        super(SuperTask, self).__init__(config=config, name=name, parentTask=parentTask, log=log)
 
         self._completed = False  # Hook to indicate whether a SuperTask was completed
         self._list_config = None  # List of configuration items
