@@ -23,6 +23,8 @@
 from __future__ import print_function
 import itertools
 import os
+import shutil
+import tempfile
 import unittest
 import contextlib
 
@@ -486,13 +488,15 @@ class ArgumentParserTestCase(unittest.TestCase):
         parser = pipeBase.ArgumentParser(name="argumentParser")
         self.assertTrue(parser.requireOutput)
 
-        path = os.path.join(DataPath, "testOutputs")
-
         # Specified by "--output"
-        args = parser.parse_args(config=self.config, args=[DataPath, "--output", path])
-        self.assertEqual(args.input, DataPath)
-        self.assertEqual(args.output, path)
-        self.assertIsNone(args.rerun)
+        path = tempfile.mkdtemp()
+        try:
+            args = parser.parse_args(config=self.config, args=[DataPath, "--output", path])
+            self.assertEqual(args.input, DataPath)
+            self.assertEqual(args.output, path)
+            self.assertIsNone(args.rerun)
+        finally:
+            shutil.rmtree(path)
 
         # Specified by rerun
         args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo"])
@@ -505,6 +509,17 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.assertEqual(args.input, os.path.join(DataPath, "rerun", "foo"))
         self.assertEqual(args.output, os.path.join(DataPath, "rerun", "bar"))
         self.assertEqual(args.rerun, ["foo", "bar"])
+
+        # Specified by rerun with an existing empty rerun folder
+        path = tempfile.mkdtemp(dir=os.path.join(DataPath, "rerun"))
+        rerun = os.path.basename(path)
+        try:
+            args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", rerun])
+            self.assertEqual(args.input, DataPath)
+            self.assertEqual(args.output, os.path.join(DataPath, "rerun", rerun))
+            self.assertEqual(args.rerun, [rerun])
+        finally:
+            shutil.rmtree(path)
 
         # Unspecified
         with self.assertRaises(SystemExit):
