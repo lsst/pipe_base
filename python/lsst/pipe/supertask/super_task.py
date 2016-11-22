@@ -231,6 +231,47 @@ class SuperTask(Task):
         """
         return getattr(self.config, "resources", None)
 
+    def get_sub_tasks(self, leaf_only=False, whole_pipeline=True):
+        """Return the list of tasks in a pipeline.
+
+        If `leaf_only` is True then only leaf sub-tasks are returned (tasks
+        that do not have other sub-tasks), otherwise all tasks are returned.
+        If `whole_pipeline` is True (default) then tasks from the whole
+        pipeline are returned, otehrwise only sub-tasks of this task
+        (including this task too) are returned.
+        """
+
+        def is_sub_task(my_full_name, other_name):
+            """Returns True if other_name is a subtask of my_full_name
+            """
+            # include myself
+            return other_name.startswith(my_full_name + '.') or other_name == my_full_name
+
+        def is_parent_task(parent, task_names):
+            """Returns true if parent is a name of parent task for any task in the list
+            """
+            return any(name.startswith(parent + '.') for name in task_names)
+
+        # this is based on _taksDict which contains all tasks with their full names
+        task_dict = self.getTaskDict()
+
+        # taskDict is a copy but we don't want to modify it anyways
+        # in case it becomes a reference to something else in the future
+        task_names = task_dict.keys()
+
+        if not whole_pipeline:
+            # remove anything which is not below current task full name
+            my_full_name = self.getFullName()
+            task_names = [name for name in task_names if is_sub_task(my_full_name, name)]
+
+        if leaf_only:
+            # remove all tasks which are parents to some task
+            task_names = [name for name in task_names if not is_parent_task(name, task_names)]
+
+        # return only tasks themselves
+        task_names = set(task_names)
+        return [task_dict[name] for name in task_names]
+
     def _get_config_name(self):
         """!Return the name of the config dataset type, or None if config is not to be persisted
         @note The name may depend on the config; that is why this is not a class method.
