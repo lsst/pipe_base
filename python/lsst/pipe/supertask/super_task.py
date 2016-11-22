@@ -223,6 +223,14 @@ class SuperTask(Task):
                 self.log.info("Writing schema %s" % schema_dataset)
                 butler.put(catalog, schema_dataset)
 
+    def get_resource_config(self):
+        """Return resource configuration for this task.
+
+        Returns object of type `resource_config.ResourceConfig`or None if resource configuration
+        is not defined for this task.
+        """
+        return getattr(self.config, "resources", None)
+
     def _get_config_name(self):
         """!Return the name of the config dataset type, or None if config is not to be persisted
         @note The name may depend on the config; that is why this is not a class method.
