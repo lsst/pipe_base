@@ -231,6 +231,62 @@ class SuperTask(Task):
         """
         return getattr(self.config, "resources", None)
 
+    def get_data_types(self, intermediates=False):
+        """Return input and output dataset types.
+
+        Returns a tuple containing two elements - set (iterable) of input
+        dataset types and set (iterable) of output dataset types. For leaf
+        tasks these two sets will not overlap. For parent task these sets
+        will include a union of corresponding sets of their sub-tasks unless
+        `intermediates` is set to False. If `intermediates` is False then
+        dataset types appearing in output of some sub-task will be removed
+        from returned input set.
+
+        Default implementation implements logic of the parent task which
+        combines data types of its subtasks. Leaf tasks will have to override
+        this method, ``NotImplementedError`` exception is thrown if leaf
+        tasks fails to override it. Current logic in this method does not
+        check for correct ordering of the sub-task with respect to their
+        input/output data types.
+        """
+
+        def is_parent_task(parent, task_names):
+            """Returns true if parent is a name of parent task for any task in the list
+            """
+            return any(name.startswith(parent + '.') for name in task_names)
+
+        def is_sub_task(my_full_name, other_name):
+            """Returns True if other_name is a subtask of my_full_name
+            """
+            # should look like <my_full_name>.<no_dot_in_name>
+            return other_name.startswith(my_full_name + '.') and other_name.rfind('.') == len(my_full_name)
+
+        # this is based on _taksDict which contains all tasks with their full names
+        task_dict = self.getTaskDict()
+
+        # check that we are not leaf task
+        my_full_name = self.getFullName()
+        if not is_parent_task(my_full_name, task_dict.keys()):
+            raise NotImplementedError("SuperTask.get_data_types() method has to be reimplemented in " +
+                                      my_full_name + " class")
+
+        # find my direct sub-tasks
+        sub_tasks = [val for key, val in task_dict.items() if is_sub_task(my_full_name, key)]
+
+        # combine it together
+        inputs = set()
+        outputs = set()
+        for task in sub_tasks:
+            sub_in, sub_out = task.get_data_types()
+            inputs |= set(sub_in)
+            outputs |= set(sub_out)
+
+        # remove intermediates if requested
+        if not intermediates:
+            inputs -= outputs
+
+        return inputs, outputs
+
     def get_sub_tasks(self, leaf_only=False, whole_pipeline=True):
         """Return the list of tasks in a pipeline.
 
