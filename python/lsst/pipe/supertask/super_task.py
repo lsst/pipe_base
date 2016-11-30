@@ -236,7 +236,7 @@ class SuperTask(Task):
 
         Returns a tuple containing two elements - set (iterable) of input
         dataset types and set (iterable) of output dataset types. For leaf
-        tasks these two sets will not overlap. For parent task these sets
+        tasks these two sets will not overlap. For parent tasks these sets
         will include a union of corresponding sets of their sub-tasks unless
         `intermediates` is set to False. If `intermediates` is False then
         dataset types appearing in output of some sub-task will be removed
