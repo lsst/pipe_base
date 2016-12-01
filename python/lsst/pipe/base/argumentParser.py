@@ -567,7 +567,7 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
                 modifiedInput = True
             elif len(rerunDir) == 1:
                 namespace.output = rerunDir[0]
-                if os.path.exists(namespace.output):
+                if os.path.exists(os.path.join(namespace.output, "_parent")):
                     namespace.input = os.path.realpath(os.path.join(namespace.output, "_parent"))
                     modifiedInput = True
             else:
