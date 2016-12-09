@@ -20,6 +20,7 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 from __future__ import absolute_import, division
+import os
 import sys
 import traceback
 import functools
@@ -334,6 +335,7 @@ class TaskRunner(object):
         dataRef, kwargs = args
         if self.log is None:
             self.log = Log.getDefaultLogger()
+        self.log.MDC("PID", str(os.getpid()))
         if hasattr(dataRef, "dataId"):
             self.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
