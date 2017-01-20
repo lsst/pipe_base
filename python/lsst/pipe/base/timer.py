@@ -27,7 +27,7 @@ import resource
 import time
 import datetime
 
-from lsst.log import Log
+from lsst.log import Log, log
 
 __all__ = ["logInfo", "timeMethod"]
 
@@ -49,7 +49,7 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
             obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s",
                           type(obj).__name__, name, value, e)
         strList.append("%s=%s" % (name, value))
-    obj.log._log(logLevel, "; ".join(strList))
+    log(obj.log.getName(), logLevel, "; ".join(strList))
 
 
 def logInfo(obj, prefix, logLevel=Log.DEBUG):
