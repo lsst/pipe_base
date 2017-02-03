@@ -19,6 +19,7 @@ import lsst.pex.config as pexConfig
 # Exported definitions --
 #------------------------
 
+
 class ResourceConfig(pexConfig.Config):
     """Configuration for resource requirements.
 
@@ -37,6 +38,7 @@ class ResourceConfig(pexConfig.Config):
                                     doc="Minimal memory needed by task, can be None if estimate is unknown.")
     min_num_cores = pexConfig.Field(dtype=int, default=1,
                                     doc="Minimal number of cores needed by task.")
+
 
 class ConfigWithResource(pexConfig.Config):
     """Configuration class which includes resource requirements.

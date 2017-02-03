@@ -206,7 +206,7 @@ class SuperTask(Task):
         then some schemas may have been saved successfully and others may not, and there is no easy way to
         tell which is which.
         """
-        for dataset, catalog in self.getAllSchemaCatalogs().iteritems():
+        for dataset, catalog in self.getAllSchemaCatalogs().items():
             schema_dataset = dataset + "_schema"
             if clobber:
                 self.log.info("Writing schema %s", schema_dataset)
