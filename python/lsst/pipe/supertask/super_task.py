@@ -48,7 +48,12 @@ class SuperTask(Task):
 
     Ideally all Task should be (and will be) SuperTasks, which provides the abstraction and
     expose the run method of the Task itself.
+
+    Subclasses may also specify the following class variables:
+    * `canMultiprocess`: the default is True; set False if your task does not support multiprocessing.
     """
+
+    canMultiprocess = True
 
     def __init__(self, config=None, name=None, parentTask=None, log=None, butler=None):
         """
@@ -59,7 +64,7 @@ class SuperTask(Task):
         :param config:      configuration for this task (an instance of self.ConfigClass,
                             which is a task-specific subclass of lsst.pex.config.Config), or None.
                             If None:
-                              - If parentTask specified then defaults to parentTask.config.\<name>
+                              - If parentTask specified then defaults to parentTask.config.`name`
                               - If parentTask is None then defaults to self.ConfigClass()
         :param name:        brief name of super_task, or None; if None then defaults to
                             self._DefaultName
@@ -116,7 +121,7 @@ class SuperTask(Task):
         """
         pass
 
-    def execute(self, dataRef):
+    def execute(self, dataRef, **kwargs):
         """
         Retrieve data and run task algorithm on it.
 
@@ -160,6 +165,54 @@ class SuperTask(Task):
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
         return parser
+
+    @classmethod
+    def makeTargetList(cls, refList, dataRefMap=None):
+        """Create list of targets for execute() method.
+
+        This method takes a list of `ButlerDataRef`s passed to a SuperTask
+        activator (e.g. on command line) and returns a list of "targets".
+        Each target corresponds to a single execution of a task and represents
+        set of arguments for task `execute()` method.
+
+        Default implementaton returns a list containing `(refList[i], kwargs)
+        or, if `refList` is empty, a list with single element
+        `[(None, kwargs)]`.
+
+        SuperTask sub-classes which need different level of grouping of
+        dataRefs (or their combinations with non-id dataRefs) will have to
+        override this method.
+
+        .. note:: This is a temporary solution until we have new scheduling
+                system for supertask.
+
+        Parameters
+        ----------
+        refList : `list` of `ButlerDataRef` or `None`
+            List of butler dataRefs (possibly empty) which correspond to
+            the "--id" argument defined in `makeArgumentParser()` method.
+            `refList` is None if "--id" argument is not defined. In current
+            implementation each dataRef in `refList` represents
+            most-specific data ID, there are no wild-cards or partial IDs.
+        dataRefMap : `dict`, optional
+            If `makeArgumentParser` defines "data ID" arguments other
+            than "--id" then this parameter is a dictionary which maps
+            argument name (with dashes stripped) to a list of its
+            corresponding `ButlerDataRef`s.
+
+        Returns
+        -------
+        List of tuples `(dataRef, kwargs)`. `dataRef` can be `None`, a
+        single `ButlerDataRef` or a list of `ButlerDataRef`, it will be
+        passed without change as a positional argument to `execute()`
+        method. `kwargs`, if not `None`, is a dictionary of keyword
+        arguments for `execute()`.
+        """
+        dataRefMap = dict() if dataRefMap is None else dataRefMap.copy()
+        if refList:
+            return [(ref, dataRefMap) for ref in refList]
+        else:
+            return [(None, dataRefMap)]
 
     def write_config(self, butler, clobber=False, do_backup=True):
         """!Write the configuration used for processing the data, or check that an existing
