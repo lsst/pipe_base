@@ -809,8 +809,15 @@ def showTaskHierarchy(config):
 
 
 class ConfigValueAction(argparse.Action):
-    """!argparse action callback to override config parameters using name=value pairs from the command line
+    """argparse callback to set config parameters from command-line
+
+    name=value pairs from the command line are used to override
+    config parameters.
+
+    The particular config variable in the parser namespace being
+    overridden is specified by the "TARGET" class variable.
     """
+    TARGET = "config"
 
     def __call__(self, parser, namespace, values, option_string):
         """!Override one or more config name value pairs
@@ -822,7 +829,8 @@ class ConfigValueAction(argparse.Action):
         @param[in] values           a list of configItemName=value pairs
         @param[in] option_string    option value specified by the user (a str)
         """
-        if namespace.config is None:
+        config = getattr(namespace, self.TARGET)
+        if config is None:
             return
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
@@ -831,7 +839,7 @@ class ConfigValueAction(argparse.Action):
 
             # see if setting the string value works; if not, try eval
             try:
-                setDottedAttr(namespace.config, name, valueStr)
+                setDottedAttr(config, name, valueStr)
             except AttributeError:
                 parser.error("no config field: %s" % (name,))
             except Exception:
@@ -840,14 +848,18 @@ class ConfigValueAction(argparse.Action):
                 except Exception:
                     parser.error("cannot parse %r as a value for %s" % (valueStr, name))
                 try:
-                    setDottedAttr(namespace.config, name, value)
+                    setDottedAttr(config, name, value)
                 except Exception as e:
                     parser.error("cannot set config.%s=%r: %s" % (name, value, e))
 
 
 class ConfigFileAction(argparse.Action):
     """!argparse action to load config overrides from one or more files
+
+    The particular config variable in the parser namespace being
+    overridden is specified by the "TARGET" class variable.
     """
+    TARGET = "config"
 
     def __call__(self, parser, namespace, values, option_string=None):
         """!Load one or more files of config overrides
@@ -859,11 +871,12 @@ class ConfigFileAction(argparse.Action):
         @param[in] values           a list of data config file paths
         @param[in] option_string    option value specified by the user (a str)
         """
-        if namespace.config is None:
+        config = getattr(namespace, self.TARGET)
+        if config is None:
             return
         for configfile in values:
             try:
-                namespace.config.load(configfile)
+                config.load(configfile)
             except Exception as e:
                 parser.error("cannot load config file %r: %s" % (configfile, e))
 
