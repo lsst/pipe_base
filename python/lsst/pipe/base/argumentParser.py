@@ -495,11 +495,17 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                        "An output directory must be specified with the --output or --rerun\n"
                        "command-line arguments.\n")
 
-        namespace.butler = dafPersist.Butler(
-            root=namespace.input,
-            calibRoot=namespace.calib,
-            outputRoot=namespace.output,
-        )
+        if namespace.output:
+            outputs = {'root': namespace.output, 'mode': 'rw'}
+            inputs = {'root': namespace.input}
+            if namespace.calib:
+                inputs['mapperArgs'] = {'calibRoot': namespace.calib}
+            namespace.butler = dafPersist.Butler(inputs=inputs, outputs=outputs)
+        else:
+            outputs = {'root': namespace.input, 'mode': 'rw'}
+            if namespace.calib:
+                outputs['mapperArgs'] = {'calibRoot': namespace.calib}
+            namespace.butler = dafPersist.Butler(outputs=outputs)
 
         # convert data in each of the identifier lists to proper types
         # this is done after constructing the butler, hence after parsing the command line,
@@ -759,7 +765,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             pattern = matHistory.group(1)
             if not pattern:
                 print("Please provide a value with --show history (e.g. history=XXX)", file=sys.stderr)
-                sys.exit(1)                
+                sys.exit(1)
 
             pattern = pattern.split(".")
             cpath, cname = pattern[:-1], pattern[-1]
@@ -771,13 +777,13 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     print("Error: configuration %s has no subconfig %s" %
                           (".".join(["config"] + cpath[:i]), cpt), file=sys.stderr)
 
-                    sys.exit(1)                
+                    sys.exit(1)
 
             try:
                 print(pexConfig.history.format(hconfig, cname))
             except KeyError:
                 print("Error: %s has no field %s" % (".".join(["config"] + cpath), cname), file=sys.stderr)
-                sys.exit(1)                
+                sys.exit(1)
 
         elif showCommand == "data":
             pass
