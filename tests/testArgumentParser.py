@@ -488,40 +488,45 @@ class ArgumentParserTestCase(unittest.TestCase):
         parser = pipeBase.ArgumentParser(name="argumentParser")
         self.assertTrue(parser.requireOutput)
 
-        # Specified by "--output"
-        path = tempfile.mkdtemp()
+        # Location of our working repository
+        # We'll start by creating this, then use it as the basis for further tests
+        # It's removed at the end of the try/finally block below
+        repositoryPath = tempfile.mkdtemp()
         try:
-            args = parser.parse_args(config=self.config, args=[DataPath, "--output", path])
+            # Given input at DataPath, demonstrate that we can create a new
+            # output repository at repositoryPath
+            args = parser.parse_args(config=self.config, args=[DataPath, "--output", repositoryPath])
             self.assertEqual(args.input, DataPath)
-            self.assertEqual(args.output, path)
+            self.assertEqual(args.output, repositoryPath)
             self.assertIsNone(args.rerun)
+
+            # Now based on our new output repository, demonstrate that we can create a rerun at rerun/foo
+            args = parser.parse_args(config=self.config, args=[repositoryPath, "--rerun", "foo"])
+            self.assertEqual(args.input, repositoryPath)
+            self.assertEqual(args.output, os.path.join(repositoryPath, "rerun", "foo"))
+            self.assertEqual(args.rerun, ["foo"])
+
+            # Now check that that we can chain the above rerun into another
+            args = parser.parse_args(config=self.config, args=[repositoryPath, "--rerun", "foo:bar"])
+            self.assertEqual(args.input, os.path.join(repositoryPath, "rerun", "foo"))
+            self.assertEqual(args.output, os.path.join(repositoryPath, "rerun", "bar"))
+            self.assertEqual(args.rerun, ["foo", "bar"])
+
+            # Finally, check that the above also works if the rerun directory already exists
+            rerunPath = tempfile.mkdtemp(dir=os.path.join(repositoryPath, "rerun"))
+            rerun = os.path.basename(rerunPath)
+            try:
+                args = parser.parse_args(config=self.config, args=[repositoryPath, "--rerun", rerun])
+                self.assertEqual(args.input, repositoryPath)
+                self.assertEqual(args.output, os.path.join(repositoryPath, "rerun", rerun))
+                self.assertEqual(args.rerun, [rerun])
+            finally:
+                shutil.rmtree(rerunPath)
+
         finally:
-            shutil.rmtree(path)
+            shutil.rmtree(repositoryPath)
 
-        # Specified by rerun
-        args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo"])
-        self.assertEqual(args.input, DataPath)
-        self.assertEqual(args.output, os.path.join(DataPath, "rerun", "foo"))
-        self.assertEqual(args.rerun, ["foo"])
-
-        # Specified by multiple reruns
-        args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", "foo:bar"])
-        self.assertEqual(args.input, os.path.join(DataPath, "rerun", "foo"))
-        self.assertEqual(args.output, os.path.join(DataPath, "rerun", "bar"))
-        self.assertEqual(args.rerun, ["foo", "bar"])
-
-        # Specified by rerun with an existing empty rerun folder
-        path = tempfile.mkdtemp(dir=os.path.join(DataPath, "rerun"))
-        rerun = os.path.basename(path)
-        try:
-            args = parser.parse_args(config=self.config, args=[DataPath, "--rerun", rerun])
-            self.assertEqual(args.input, DataPath)
-            self.assertEqual(args.output, os.path.join(DataPath, "rerun", rerun))
-            self.assertEqual(args.rerun, [rerun])
-        finally:
-            shutil.rmtree(path)
-
-        # Unspecified
+        # Finally, check that we raise an appropriate error if we don't specify an output location at all
         with self.assertRaises(SystemExit):
             parser.parse_args(config=self.config, args=[DataPath, ])
 
