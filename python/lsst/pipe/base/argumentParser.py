@@ -108,8 +108,14 @@ class DataIdContainer(object):
                 try:
                     keyType = idKeyTypeDict[key]
                 except KeyError:
-                    validKeys = sorted(idKeyTypeDict.keys())
-                    raise KeyError("Unrecognized ID key %r; valid keys are: %s" % (key, validKeys))
+                    # OK, assume that it's a valid key and guess that it's a string
+                    keyType = str
+                    
+                    log = lsstLog.Log.getDefaultLogger()
+                    log.warn("Unexpected ID %s; guessing type is \"%s\"" %
+                             (key, 'str' if keyType == str else keyType))
+                    idKeyTypeDict[key] = keyType
+
                 if keyType != str:
                     try:
                         castVal = keyType(strVal)
