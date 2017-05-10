@@ -40,7 +40,7 @@ subclass of pex.config.config.Config. The task's configuration includes all subt
 As a result, it is easy to replace (or "retarget") one subtask with another. A common use for this is to
 provide a camera-specific variant of a particular task, e.g. use one version for SDSS imager data
 and another version for Subaru Hyper Suprime-Cam data).
-  
+
 Tasks may process multiple items of data in parallel, using Python's `multiprocessing` library.
 Support for this is built into the \ref argumentParser.ArgumentParser "ArgumentParser"
 and \ref cmdLineTask.TaskRunner "TaskRunner".
@@ -49,7 +49,7 @@ Most tasks have a `run` method that performs the primary data processing. Each t
 should return a \ref struct.Struct "Struct". This allows named access to returned data, which provides
 safer evolution than relying on the order of returned values. All task methods that return more
 than one or two items of data should return the data in a \ref struct.Struct "Struct".
-  
+
 Many tasks are found in the `pipe_tasks` package, especially tasks that use many different packages and don't
 seem to belong in any one of them. Tasks that are associated with a particular package should be in that
 package; for example the instrument signature removal task ip.isr.isrTask.IsrTask is in the ip_isr package.
@@ -167,19 +167,19 @@ Note that:
 \subsection pipeBase_argumentParser_argumentFiles Argument Files
 
 You may specify long or repetitive command-line arguments in text files and reference those files
-using @@path.
+using `@`<i>path</i>.
 
 The contents of the files are identical to the command line, except that long lines
-must not have a \\ continuation character. For example if the file `foo` contains:
+must not have a \\ continuation character. For example if the file `foo.txt` contains:
 \code
     --id visit=54123^55523 raft=1,1^2,1
     --config someParam=someValue --configfile configOverrideFilePath
 \endcode
 
-you can then reference it with `@@foo` and mix that with other command-line arguments
+you can then reference it with `@foo.txt` and mix that with other command-line arguments
 (including `--id` and `--config`):
 \code
-myTask.py inputPath @@foo --config anotherParam=anotherValue --output outputPath
+myTask.py inputPath @foo.txt --config anotherParam=anotherValue --output outputPath
 \endcode
 
 \subsection pipeBase_argumentParser_configOverride Overriding Configuration Parameters
@@ -250,29 +250,31 @@ notation. Here is an example:
 you lose all configuration overrides for both the old and new task. This limitation is not
 shared by \ref lsst.pex.config.registry.RegistryField "lsst.pex.config.RegistryField".
 
-To retarget a subtask is specified as an
+To retarget a subtask specified as an
 \ref lsst.pex.config.registry.RegistryField "lsst.pex.config.RegistryField"
-set the `name` property of the field. Overriding config parameters is a bit more complicated
-than for \ref lsst.pex.config.configurableField.ConfigurableField "lsst.pex.config.ConfigurableField":
-you can set the `active` attribute of the field to override the currently active subtask,
-or use dictionary access notation to override any registered subtask. On the other hand,
-retargeting does not lose any config overrides for any registered subtask.
-Here is an example that assumes the same FooTask is defined
-in module .../foo.py and registered using name "foo":
+set the `name` property of the field. There are two ways to override configuration parameters for tasks
+in a registry: you may set parameters for the active task using the registry field's `active`
+parameter, and you may set parameters for any registered task using dictionary notation and the name
+by which the task is registered. Here is an example that assumes a task `FooTask` is defined
+in module `.../foo.py` and registered using name "foo". :
 
 <pre>
     # Example of retargeting a subtask and overriding its configuration
     # for a subtask specified by an lsst.pex.config.RegistryField
 
-    # import the task's module, so the task registers itself,
-    # then set the name property of the field to the name in the registry
+    # Import the task's module, so the task registers itself,
+    # then set the name property of the field to the name by which FooTask is registered:
     import .../foo.py
     config.registrySubtask.name = "foo"
 
-    # you can override the active subtask's configuration using attribute `active`
+    # You can override the active subtask's configuration using attribute `active`
     config.registrySubtask.active.subtaskParam1 = newValue
 
-    # and/or you can override parameters in any subtask in the registry using dictionary access:
+    # Such overrides can also be specified on the command line, e.g.
+    # --config registrySubtask.active.subtaskParam1 = newValue
+
+    # You can also override parameters in any subtask in the registry using dictionary access,
+    # but this can only be done in a config override file, not on the command line:
     config.registrySubtask["foo"].subtaskParam1 = newValue
 </pre>
 
@@ -296,7 +298,7 @@ for multiple cameras). These files may override configuration parameters or even
 
 where the path elements are:
 - <em>task_name</em>: the name of the pipeline task (the value of its `_DefaultName` class variable),
-  e.g. "processCcd" for lsst.pipe.tasks.processCcd.ProcessCcdTask.  
+  e.g. "processCcd" for lsst.pipe.tasks.processCcd.ProcessCcdTask.
 - <em>camera_name</em>: the name of the camera, e.g. "lsstSim"
 - <em>obs_path</em>: the path to the obs_ package for the camera, e.g. the path to obs_lsstSim
 

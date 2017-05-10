@@ -513,8 +513,9 @@ class CmdLineTask(Task):
         @param[in] butler   data butler used to write the config.
             The config is written to dataset type self._getConfigName()
         @param[in] clobber  a boolean flag that controls what happens if a config already has been saved:
-            - True: overwrite the existing config
+            - True: overwrite or rename the existing config, depending on `doBackup`
             - False: raise TaskError if this config does not match the existing config
+        @param[in] doBackup  if clobbering, should we backup the old files?
         """
         configName = self._getConfigName()
         if configName is None:
@@ -547,8 +548,9 @@ class CmdLineTask(Task):
             Each schema is written to the dataset type specified as the key in the dict returned by
             \ref task.Task.getAllSchemaCatalogs "getAllSchemaCatalogs".
         @param[in] clobber  a boolean flag that controls what happens if a schema already has been saved:
-            - True: overwrite the existing schema
+            - True: overwrite or rename the existing schema, depending on `doBackup`
             - False: raise TaskError if this schema does not match the existing schema
+        @param[in] doBackup  if clobbering, should we backup the old files?
 
         @warning if clobber is False and an existing schema does not match a current schema,
         then some schemas may have been saved successfully and others may not, and there is no easy way to
@@ -590,7 +592,9 @@ class CmdLineTask(Task):
         Note that this operation is subject to a race condition.
 
         @param[in] butler  data butler used to read/write the package versions
-        @param[in] clobber  overwrite any existing config? no comparison will be made
+        @param[in] clobber  a boolean flag that controls what happens if versions already have been saved:
+            - True: overwrite or rename the existing version info, depending on `doBackup`
+            - False: raise TaskError if this version info does not match the existing
         @param[in] doBackup  if clobbering, should we backup the old files?
         @param[in] dataset  name of dataset to read/write
         """
