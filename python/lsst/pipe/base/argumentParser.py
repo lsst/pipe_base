@@ -501,16 +501,18 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                        "An output directory must be specified with the --output or --rerun\n"
                        "command-line arguments.\n")
 
+        butlerArgs = {}  # common arguments for butler elements
+        if namespace.calib:
+            butlerArgs = {'mapperArgs': {'calibRoot': namespace.calib}}
         if namespace.output:
             outputs = {'root': namespace.output, 'mode': 'rw'}
             inputs = {'root': namespace.input}
-            if namespace.calib:
-                inputs['mapperArgs'] = {'calibRoot': namespace.calib}
+            inputs.update(butlerArgs)
+            outputs.update(butlerArgs)
             namespace.butler = dafPersist.Butler(inputs=inputs, outputs=outputs)
         else:
             outputs = {'root': namespace.input, 'mode': 'rw'}
-            if namespace.calib:
-                outputs['mapperArgs'] = {'calibRoot': namespace.calib}
+            outputs.update(butlerArgs)
             namespace.butler = dafPersist.Butler(outputs=outputs)
 
         # convert data in each of the identifier lists to proper types
