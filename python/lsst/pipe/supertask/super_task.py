@@ -121,41 +121,34 @@ class SuperTask(Task):
         """
         pass
 
-    def define_quanta(self, inputs, outputs, butler):
+    def defineQuanta(self, datasets):
         """Produce set of execution quanta.
 
         Purpose of this method is to split the whole workload (as defined
-        inputs/outputs) into individual units of work that SuprtTask can
-        handle. Inputs is a set of input dataset types and dataIds, output
-        is a set of output dataset types and dataIds. Presently only one of
-        them can be given to this method (in the future we can allow both
-        present).
-
-        Dataset types given in parameters may include types that are not
-        used or produced by this task, they should be ignored. Returned set
-        of quanta should contain only dataset types and dataIds that are
-        used or produced by `run_quantum()` method.
+        by already existing data in `datasets`) into individual units of
+        work that SuperTask can handle.
 
         Task is allowed to add task-specific data to returned quanta which
-        may be useful for `run_quantum()` method. Any type of serializable
+        may be useful for `runQuantum()` method. Any type of serializable
         data object can be added as `extras` attribute of quanta.
 
         Parameters
         ----------
-        inputs : `dict` of '{str: iterable}`
-            Maps dataset type name into collection of corresponding DataIds.
-        outputs : `dict` of '{str: iterable}`
-            Maps dataset type name into collection of corresponding DataIds.
-        butler : object
-            Data butler instance, can be used for metadata-only lookups.
+        datasets : DatasetGraph
+            A DatasetGraph containing only Units matching the data ID
+            expression supplied by the user and Datasets that should be
+            present in the repository when all previous SuperTasks in the same
+            pipeline have been run.  Any Datasets produced by this SuperTask
+            should be added to the graph on return.
 
         Returns
         -------
-        List of `Quantum` instances.
+        Return a list of Quantum objects representing the inputs and outputs
+        of a single invocation of runQuantum().
         """
-        raise NotImplementedError("define_quanta() is not implemented")
+        raise NotImplementedError("defineQuanta() is not implemented")
 
-    def run_quantum(self, quantum, butler):
+    def runQuantum(self, quantum, butler):
         """Execute SuperTask algorithm on single quantum of data.
 
         Typical implementation of this method will use inputs from quantum
@@ -168,7 +161,7 @@ class SuperTask(Task):
         This method does not return anything to the caller, on errors
         corresponding exception is raised.
 
-        Note that `define_quanta()` and `run_quantum()` in general will be
+        Note that `defineQuanta()` and `runQuantum()` in general will be
         executed by the different instances of SuperTask, very likely in
         separate processes or hosts. Thus it is not possible to share
         information between these methods via instance or class members,
@@ -187,7 +180,33 @@ class SuperTask(Task):
         ------
         Any exceptions that happen in data butler or in `run()` method.
         """
-        raise NotImplementedError("run_quantum() is not implemented")
+        raise NotImplementedError("runQuantum() is not implemented")
+
+
+    def getDatasetClasses(self):
+        """Return a dict containing all of the concrete Dataset classes used
+        by this SuperTask.
+        """
+        # code below needs DatasetField class which I have no idea yet
+        # as to where it comes from, for now say it's not implemented
+        raise NotImplementedError("getDatasetClasses() is not implemented")
+        result = {}
+        for fieldName in self.config:
+            cls = getattr(self.ConfigClass, fieldName)
+            if issubclass(cls, DatasetField):
+                p = getattr(self.config, fieldName)
+                result[p.name] = p.type
+        return result
+
+    def getUnitClasses(self):
+        """Return a dict containing all of the concrete Unit classes used
+        by this SuperTask.
+        """
+        result = {}
+        for DatasetClass in self.getDatasetClasses().values():
+            for UnitClass in DatasetClass.UnitClasses:
+                result[UnitClass.name] = UnitClass
+        return result
 
     def execute(self, dataRef, **kwargs):
         """
