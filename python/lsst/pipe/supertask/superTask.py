@@ -106,7 +106,7 @@ class SuperTask(Task):
         """
         pass
 
-    def defineQuanta(self, datasets):
+    def defineQuanta(self, datasets, butler):
         """Produce set of execution quanta.
 
         Purpose of this method is to split the whole workload (as defined
@@ -125,6 +125,8 @@ class SuperTask(Task):
             present in the repository when all previous SuperTasks in the same
             pipeline have been run.  Any Datasets produced by this SuperTask
             should be added to the graph on return.
+        butler : object
+            Data butler instance.
 
         Returns
         -------
