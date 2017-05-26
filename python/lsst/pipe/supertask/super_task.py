@@ -184,28 +184,44 @@ class SuperTask(Task):
 
 
     def getDatasetClasses(self):
-        """Return a dict containing all of the concrete Dataset classes used
-        by this SuperTask.
+        """Return a pair of dictionaries containing all of the concrete Dataset
+        classes used by this SuperTask as inputs and outputs.
+
+        Either inputs or outputs can be empty.
+
+        Returns
+        -------
+        inputs : dict {str : type}
+            Dictionary mapping Dataset type name onto Dataset class for all
+            input datasets.
+        outputs : dict {str : type}
+            Dictionary mapping Dataset type name onto Dataset class for all
+            output datasets.
         """
         # code below needs DatasetField class which I have no idea yet
         # as to where it comes from, for now say it's not implemented
         raise NotImplementedError("getDatasetClasses() is not implemented")
-        result = {}
+        inputs = {}
+        outputs = {}
         for fieldName in self.config:
             cls = getattr(self.ConfigClass, fieldName)
             if issubclass(cls, DatasetField):
                 p = getattr(self.config, fieldName)
-                result[p.name] = p.type
-        return result
+                if p.mode == 'r':
+                    inputs[p.name] = p.type
+                else:
+                    outputs[p.name] = p.type
+        return inputs, outputs
 
     def getUnitClasses(self):
         """Return a dict containing all of the concrete Unit classes used
         by this SuperTask.
         """
         result = {}
-        for DatasetClass in self.getDatasetClasses().values():
-            for UnitClass in DatasetClass.UnitClasses:
-                result[UnitClass.name] = UnitClass
+        for dsDict in self.getDatasetClasses():
+            for DatasetClass in dsDict.values():
+                for UnitClass in DatasetClass.UnitClasses:
+                    result[UnitClass.name] = UnitClass
         return result
 
     def execute(self, dataRef, **kwargs):
