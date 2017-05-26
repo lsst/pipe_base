@@ -200,17 +200,6 @@ class SuperTask(Task):
                     outputs[p.name] = p.type
         return inputs, outputs
 
-    def getUnitClasses(self):
-        """Return a dict containing all of the concrete Unit classes used
-        by this SuperTask.
-        """
-        result = {}
-        for dsDict in self.getDatasetClasses():
-            for DatasetClass in dsDict.values():
-                for UnitClass in DatasetClass.UnitClasses:
-                    result[UnitClass.name] = UnitClass
-        return result
-
     def write_config(self, butler, clobber=False, do_backup=True):
         """!Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
