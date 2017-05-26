@@ -1,5 +1,8 @@
 """Module which defines ConfigOverrides class and related methods.
 """
+
+__all__ = ["ConfigOverrides"]
+
 from builtins import object
 
 

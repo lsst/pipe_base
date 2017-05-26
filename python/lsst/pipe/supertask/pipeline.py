@@ -24,6 +24,11 @@
 Module defining Pipeline class and related methods.
 """
 
+from __future__ import absolute_import, division, print_function
+
+# "exported" names
+__all__ = ["Pipeline"]
+
 #--------------------------------
 #  Imports of standard modules --
 #--------------------------------
