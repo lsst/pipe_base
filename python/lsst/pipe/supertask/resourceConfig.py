@@ -2,6 +2,11 @@
 Module defining ResourceConfig class and related methods.
 """
 
+from __future__ import absolute_import, division, print_function
+
+# "exported" names
+__all__ = ["ResourceConfig", "ConfigWithResource"]
+
 #--------------------------------
 #  Imports of standard modules --
 #--------------------------------

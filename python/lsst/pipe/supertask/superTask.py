@@ -1,10 +1,3 @@
-"""
-super_task, base module that includes all classes and functions
-for SuperTask. Documentation and examnple use can be found at
-http://dmtn-002.lsst.io
-"""
-from __future__ import absolute_import, division, print_function
-from builtins import str
 #
 # LSST Data Management System
 # Copyright 2008, 2009, 2010, 2011 LSST Corporation.
@@ -26,12 +19,22 @@ from builtins import str
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+
+"""
+superTask, base module that includes all classes and functions
+for SuperTask. Documentation and example use can be found at
+http://dmtn-002.lsst.io
+"""
+
+from __future__ import absolute_import, division, print_function
+
+__all__ = ["SuperTask"]  # Classes in this module
+
+from builtins import str
+
 import lsst.afw.table as afwTable
 from lsst.pipe.base.argumentParser import ArgumentParser
 from lsst.pipe.base.task import Task, TaskError
-
-
-__all__ = ["SuperTask"]  # Classes in this module
 
 
 class SuperTask(Task):
