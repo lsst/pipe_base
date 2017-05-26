@@ -33,7 +33,6 @@ __all__ = ["SuperTask"]  # Classes in this module
 from builtins import str
 
 import lsst.afw.table as afwTable
-from lsst.pipe.base.argumentParser import ArgumentParser
 from lsst.pipe.base.task import Task, TaskError
 
 
@@ -94,23 +93,6 @@ class SuperTask(Task):
         self._completed = False  # Hook to indicate whether a SuperTask was completed
         self._list_config = None  # List of configuration items
         self._task_kind = 'SuperTask'  # To differentiate between this and Task
-
-    @property
-    def completed(self):
-        """
-        Status of (Super)Task, True if task has completed.
-        """
-        return self._completed
-
-    @completed.setter
-    def completed(self, completed):
-        """
-        Sets the status of (Super)Task. The Task should be able to report whether it ran
-        successfully or not, this is useful for workflow and freeze-dry runs or to make checkpoints.
-
-        :param completed: New task completion status.
-        """
-        self._completed = completed
 
     def run(self, *args, **kwargs):
         """
@@ -227,99 +209,6 @@ class SuperTask(Task):
                     result[UnitClass.name] = UnitClass
         return result
 
-    def execute(self, dataRef, **kwargs):
-        """
-        Retrieve data and run task algorithm on it.
-
-        This method is responsible for handling access to external data. It retrieves (probably
-        lazily) data defined by `dataRef`, calls `run()` method on that data, and stores
-        resulting data in butler. This method needs to be overriden by subclasses.
-
-        :param dataRef: Butler dataRef (or list of dataRef eventually) which will be inspected to
-        get necessary inputs for run.
-        :return: the results from run()
-        """
-        pass
-
-    def print_config(self):
-        """Print configuration parameters for this (Super)Task.
-
-        TO DO: Not clear how generic this method is, it looks like it was used
-        for testing, it may disappear or be replaced with something else.
-        """
-        print('\n* Configuration * :\n')
-        for key, val in self.config.items():
-            print(self.getName() + '.config.' + key + ' = ' + str(val))
-        print()
-
-    @classmethod
-    def makeArgumentParser(cls):
-        """Instantiate argument parser used by activators.
-
-        Even though ArgumentParser is usually associated with command line
-        parsing it can also be used to parse generated set of arguments or
-        arguments stored in a file. In this way it can be used even by
-        other activator types, not only command-line activators.
-
-        Default implementation creates standard ArgumentParser and adds a
-        single DataId argument with a "raw" dataset type. If specific
-        SuperTask needs to customize parser or use different type of input
-        then it should override this method in a subclass.
-
-        :return: Instance of pipe.base.ArgumentParser type or its subtype.
-        """
-        parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument("--id", "raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
-        return parser
-
-    @classmethod
-    def makeTargetList(cls, refList, dataRefMap=None):
-        """Create list of targets for execute() method.
-
-        This method takes a list of `ButlerDataRef`s passed to a SuperTask
-        activator (e.g. on command line) and returns a list of "targets".
-        Each target corresponds to a single execution of a task and represents
-        set of arguments for task `execute()` method.
-
-        Default implementaton returns a list containing `(refList[i], kwargs)
-        or, if `refList` is empty, a list with single element
-        `[(None, kwargs)]`.
-
-        SuperTask sub-classes which need different level of grouping of
-        dataRefs (or their combinations with non-id dataRefs) will have to
-        override this method.
-
-        .. note:: This is a temporary solution until we have new scheduling
-                system for supertask.
-
-        Parameters
-        ----------
-        refList : `list` of `ButlerDataRef` or `None`
-            List of butler dataRefs (possibly empty) which correspond to
-            the "--id" argument defined in `makeArgumentParser()` method.
-            `refList` is None if "--id" argument is not defined. In current
-            implementation each dataRef in `refList` represents
-            most-specific data ID, there are no wild-cards or partial IDs.
-        dataRefMap : `dict`, optional
-            If `makeArgumentParser` defines "data ID" arguments other
-            than "--id" then this parameter is a dictionary which maps
-            argument name (with dashes stripped) to a list of its
-            corresponding `ButlerDataRef`s.
-
-        Returns
-        -------
-        List of tuples `(dataRef, kwargs)`. `dataRef` can be `None`, a
-        single `ButlerDataRef` or a list of `ButlerDataRef`, it will be
-        passed without change as a positional argument to `execute()`
-        method. `kwargs`, if not `None`, is a dictionary of keyword
-        arguments for `execute()`.
-        """
-        dataRefMap = dict() if dataRefMap is None else dataRefMap.copy()
-        if refList:
-            return [(ref, dataRefMap) for ref in refList]
-        else:
-            return [(None, dataRefMap)]
-
     def write_config(self, butler, clobber=False, do_backup=True):
         """!Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
@@ -390,103 +279,6 @@ class SuperTask(Task):
         is not defined for this task.
         """
         return getattr(self.config, "resources", None)
-
-    def get_data_types(self, intermediates=False):
-        """Return input and output dataset types.
-
-        Returns a tuple containing two elements - set (iterable) of input
-        dataset types and set (iterable) of output dataset types. For leaf
-        tasks these two sets will not overlap. For parent tasks these sets
-        will include a union of corresponding sets of their sub-tasks unless
-        `intermediates` is set to False. If `intermediates` is False then
-        dataset types appearing in output of some sub-task will be removed
-        from returned input set.
-
-        Default implementation implements logic of the parent task which
-        combines data types of its subtasks. Leaf tasks will have to override
-        this method, ``NotImplementedError`` exception is thrown if leaf
-        tasks fails to override it. Current logic in this method does not
-        check for correct ordering of the sub-task with respect to their
-        input/output data types.
-        """
-
-        def is_parent_task(parent, task_names):
-            """Returns true if parent is a name of parent task for any task in the list
-            """
-            return any(name.startswith(parent + '.') for name in task_names)
-
-        def is_sub_task(my_full_name, other_name):
-            """Returns True if other_name is a subtask of my_full_name
-            """
-            # should look like <my_full_name>.<no_dot_in_name>
-            return other_name.startswith(my_full_name + '.') and other_name.rfind('.') == len(my_full_name)
-
-        # this is based on _taksDict which contains all tasks with their full names
-        task_dict = self.getTaskDict()
-
-        # check that we are not leaf task
-        my_full_name = self.getFullName()
-        if not is_parent_task(my_full_name, task_dict.keys()):
-            raise NotImplementedError("SuperTask.get_data_types() method has to be reimplemented in " +
-                                      my_full_name + " class")
-
-        # find my direct sub-tasks
-        sub_tasks = [val for key, val in task_dict.items() if is_sub_task(my_full_name, key)]
-
-        # combine it together
-        inputs = set()
-        outputs = set()
-        for task in sub_tasks:
-            sub_in, sub_out = task.get_data_types()
-            inputs |= set(sub_in)
-            outputs |= set(sub_out)
-
-        # remove intermediates if requested
-        if not intermediates:
-            inputs -= outputs
-
-        return inputs, outputs
-
-    def get_sub_tasks(self, leaf_only=False, whole_pipeline=True):
-        """Return the list of tasks in a pipeline.
-
-        If `leaf_only` is True then only leaf sub-tasks are returned (tasks
-        that do not have other sub-tasks), otherwise all tasks are returned.
-        If `whole_pipeline` is True (default) then tasks from the whole
-        pipeline are returned, otehrwise only sub-tasks of this task
-        (including this task too) are returned.
-        """
-
-        def is_sub_task(my_full_name, other_name):
-            """Returns True if other_name is a subtask of my_full_name
-            """
-            # include myself
-            return other_name.startswith(my_full_name + '.') or other_name == my_full_name
-
-        def is_parent_task(parent, task_names):
-            """Returns true if parent is a name of parent task for any task in the list
-            """
-            return any(name.startswith(parent + '.') for name in task_names)
-
-        # this is based on _taksDict which contains all tasks with their full names
-        task_dict = self.getTaskDict()
-
-        # taskDict is a copy but we don't want to modify it anyways
-        # in case it becomes a reference to something else in the future
-        task_names = task_dict.keys()
-
-        if not whole_pipeline:
-            # remove anything which is not below current task full name
-            my_full_name = self.getFullName()
-            task_names = [name for name in task_names if is_sub_task(my_full_name, name)]
-
-        if leaf_only:
-            # remove all tasks which are parents to some task
-            task_names = [name for name in task_names if not is_parent_task(name, task_names)]
-
-        # return only tasks themselves
-        task_names = set(task_names)
-        return [task_dict[name] for name in task_names]
 
     def _get_config_name(self):
         """!Return the name of the config dataset type, or None if config is not to be persisted
