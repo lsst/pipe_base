@@ -174,7 +174,7 @@ class SuperTask(Task):
         """Return a pair of dictionaries containing all of the concrete Dataset
         classes used by this SuperTask as inputs and outputs.
 
-        Either inputs or outputs can be empty.
+        Either inputs or outputs can be empty or None.
 
         Returns
         -------
@@ -187,6 +187,7 @@ class SuperTask(Task):
         """
         # code below needs DatasetField class which I have no idea yet
         # as to where it comes from, for now say it's not implemented
+        # and subclasses need to implement it.
         raise NotImplementedError("getDatasetClasses() is not implemented")
         inputs = {}
         outputs = {}
