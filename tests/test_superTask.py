@@ -269,16 +269,6 @@ class TaskTestCase(unittest.TestCase):
         )
         self.assertLessEqual(addMultTask.add.metadata.get("runEndCpuTime"), currCpuTime)
 
-    def testCompleted(self):
-        """Test the SuperTask.completed property.
-        """
-        addMultTask = AddMultTask()
-        self.assertFalse(addMultTask.completed)
-        addMultTask.completed = True
-        self.assertTrue(addMultTask.completed)
-        addMultTask.completed = False
-        self.assertFalse(addMultTask.completed)
-
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
