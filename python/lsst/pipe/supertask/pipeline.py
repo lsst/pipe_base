@@ -20,14 +20,13 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-"""
-Module defining Pipeline class and related methods.
+"""Module defining Pipeline class and related methods.
 """
 
 from __future__ import absolute_import, division, print_function
 
 # "exported" names
-__all__ = ["Pipeline"]
+__all__ = ["Pipeline", "TaskInfo"]
 
 #--------------------------------
 #  Imports of standard modules --
@@ -45,16 +44,42 @@ __all__ = ["Pipeline"]
 # Exported definitions --
 #------------------------
 
+class TaskInfo(object):
+    """TaskInfo is a collection of information about task needed by Pipeline.
+
+    The information includes task name, configuration object and optional
+    task class. This class is just a collection of attributes and it exposes
+    all of them so that attributes could potentially be modified in place
+    (e.g. if configuration needs extra overrides).
+
+    Attributes
+    ----------
+    taskName : str
+        SuperTask class name, currently it is not specified whether this is a
+        fully-qualified name or partial name (e.g. ``module.TaskClass``).
+        Framework should be prepared to handle all cases.
+    config : `pex_config.Config`
+        Instance of the configuration class corresponding to this task class,
+        usually with all overrides applied.
+    taskClass : type or None
+        SuperTask class object, can be None. If None then framework will have
+        to locate and load class.
+    """
+    def __init__(self, taskName, config, taskClass=None):
+        self.taskName = taskName
+        self.config = config
+        self.taskClass = taskClass
+
+    def __str__(self):
+        return "TaskInfo({})".format(self.taskName)
+
+
 class Pipeline(list):
-    """Pipeline is a sequence of SuperTasks and their corresponding
-    configuration objects.
+    """Pipeline is a sequence of TaskInfo objects.
 
     Pipeline is given as one of the inputs to a supervising framework
     which builds execution graph out of it. Pipeline contains a sequence
-    of SuperTasks and their configuration objects. SuperTask in a
-    pipeline is just a name of a SuperTask class. Configuration is
-    usually a `pex_config.Config` instance with all necessary overrides
-    applied.
+    of `TaskInfo` instances.
 
     Main purpose of this class is to provide a mechanism to pass pipeline
     definition from users to supervising framework. That mechanism is
@@ -66,13 +91,16 @@ class Pipeline(list):
     and one can use all list methods on pipeline. Content of the pipeline
     can be modified, it is up to the client to verify that modifications
     leave pipeline in a consistent state. One could modify container
-    directly by adding or removing its elements which are tuples of
-    (task_name, config_instance).
+    directly by adding or removing its elements.
 
     Parameters
     ----------
-    pipeline : iterable of (taskName, config) tuples, optional
-        Initial pipeline.
+    pipeline : iterable of `TaskInfo` instances, optional
+        Initial sequence of tasks.
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
+
+    def __str__(self):
+        infos = [str(tinfo) for tinfo in self]
+        return "Pipeline({})".format(", ".join(infos))
