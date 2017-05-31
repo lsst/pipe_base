@@ -105,54 +105,64 @@ def profile(filename, log=None):
 
 
 class TaskRunner(object):
-    """!Run a command-line task, using multiprocessing if requested.
+    """Run a command-line task, using multiprocessing if requested.
 
-    Each command-line task (subclass of CmdLineTask) has a task runner. By default it is
-    this class, but some tasks require a subclass. See the manual "how to write a command-line task"
-    in the pipe_tasks documentation for more information.
-    See CmdLineTask.parseAndRun to see how a task runner is used.
+    Each command-line task (subclass of CmdLineTask) has a task runner. By
+    default it is this class, but some tasks require a subclass. See the
+    manual "how to write a command-line task" in the pipe_tasks documentation
+    for more information. See CmdLineTask.parseAndRun to see how a task runner
+    is used.
 
-    You may use this task runner for your command-line task if your task has a run method
-    that takes exactly one argument: a butler data reference. Otherwise you must
-    provide a task-specific subclass of this runner for your task's `RunnerClass`
-    that overrides TaskRunner.getTargetList and possibly TaskRunner.\_\_call\_\_.
-    See TaskRunner.getTargetList for details.
+    You may use this task runner for your command-line task if your task has
+    a run method that takes exactly one argument: a butler data reference.
+    Otherwise you must provide a task-specific subclass of this runner for
+    your task's `RunnerClass` that overrides TaskRunner.getTargetList and
+    possibly TaskRunner.\_\_call\_\_. See TaskRunner.getTargetList for
+    details.
 
-    This design matches the common pattern for command-line tasks: the run method takes a single
-    data reference, of some suitable name. Additional arguments are rare, and if present, require
-    a subclass of TaskRunner that calls these additional arguments by name.
+    This design matches the common pattern for command-line tasks: the run
+    method takes a single data reference, of some suitable name. Additional
+    arguments are rare, and if present, require a subclass of TaskRunner that
+    calls these additional arguments by name.
 
-    Instances of this class must be picklable in order to be compatible with multiprocessing.
-    If multiprocessing is requested (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
-    to jettison optional non-picklable elements. If your task runner is not compatible with multiprocessing
-    then indicate this in your task by setting class variable canMultiprocess=False.
+    Instances of this class must be picklable in order to be compatible with
+    multiprocessing. If multiprocessing is requested
+    (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
+    to jettison optional non-picklable elements. If your task runner is not
+    compatible with multiprocessing then indicate this in your task by setting
+    class variable canMultiprocess=False.
 
-    Due to a python bug [1], handling a KeyboardInterrupt properly requires specifying a timeout [2]. This
-    timeout (in sec) can be specified as the "timeout" element in the output from ArgumentParser
-    (the "parsedCmd"), if available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
+    Due to a python bug [1], handling a KeyboardInterrupt properly requires
+    specifying a timeout [2]. This timeout (in sec) can be specified as the
+    "timeout" element in the output from ArgumentParser (the "parsedCmd"), if
+    available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
 
     [1] http://bugs.python.org/issue8296
     [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT = 9999  # Default timeout (sec) for multiprocessing
+    TIMEOUT = 999999999999  # Default timeout (sec) for multiprocessing
 
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
 
-        @warning Do not store parsedCmd, as this instance is pickled (if multiprocessing) and parsedCmd may
-        contain non-picklable elements. It certainly contains more data than we need to send to each
+        @warning Do not store parsedCmd, as this instance is pickled (if
+        multiprocessing) and parsedCmd may contain non-picklable elements.
+        It certainly contains more data than we need to send to each
         instance of the task.
 
         @param TaskClass    The class of the task to run
-        @param parsedCmd    The parsed command-line arguments, as returned by the task's argument parser's
-                            parse_args method.
-        @param doReturnResults    Should run return the collected result from each invocation of the task?
-            This is only intended for unit tests and similar use.
-            It can easily exhaust memory (if the task returns enough data and you call it enough times)
-            and it will fail when using multiprocessing if the returned data cannot be pickled.
+        @param parsedCmd    The parsed command-line arguments, as returned by
+                            the task's argument parser's parse_args method.
+        @param doReturnResults    Should run return the collected result from
+            each invocation of the task? This is only intended for unit tests
+            and similar use. It can easily exhaust memory (if the task
+            returns enough data and you call it enough times) and it will
+            fail when using multiprocessing if the returned data cannot be
+            pickled.
 
-        @throws ImportError if multiprocessing requested (and the task supports it)
-        but the multiprocessing library cannot be imported.
+        @throws ImportError if multiprocessing requested (and the task
+            supports it) but the multiprocessing library cannot be
+            imported.
         """
         self.TaskClass = TaskClass
         self.doReturnResults = bool(doReturnResults)
@@ -173,7 +183,9 @@ class TaskRunner(object):
                 self.numProcesses = 1
 
     def prepareForMultiProcessing(self):
-        """!Prepare this instance for multiprocessing by removing optional non-picklable elements.
+        """Prepare this instance for multiprocessing
+
+        Optional non-picklable elements are removed.
 
         This is only called if the task is run under multiprocessing.
         """
@@ -182,11 +194,13 @@ class TaskRunner(object):
     def run(self, parsedCmd):
         """!Run the task on all targets.
 
-        The task is run under multiprocessing if numProcesses > 1; otherwise processing is serial.
+        The task is run under multiprocessing if numProcesses > 1; otherwise
+        processing is serial.
 
-        @return a list of results returned by TaskRunner.\_\_call\_\_, or an empty list if
-        TaskRunner.\_\_call\_\_ is not called (e.g. if TaskRunner.precall returns `False`).
-        See TaskRunner.\_\_call\_\_ for details.
+        @return a list of results returned by TaskRunner.\_\_call\_\_, or an
+            empty list if TaskRunner.\_\_call\_\_ is not called (e.g. if
+            TaskRunner.precall returns `False`). See TaskRunner.\_\_call\_\_
+            for details.
         """
         resultList = []
         if self.numProcesses > 1:
@@ -219,30 +233,39 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
-        """!Return a list of (dataRef, kwargs) to be used as arguments for TaskRunner.\_\_call\_\_.
+        """!Return a list of (dataRef, kwargs) for TaskRunner.\_\_call\_\_.
 
-        @param parsedCmd    the parsed command object (an argparse.Namespace) returned by
-            \ref argumentParser.ArgumentParser.parse_args "ArgumentParser.parse_args".
-        @param **kwargs     any additional keyword arguments. In the default TaskRunner
-            this is an empty dict, but having it simplifies overriding TaskRunner for tasks
-            whose run method takes additional arguments (see case (1) below).
+        @param parsedCmd    the parsed command object (an argparse.Namespace)
+            returned by \ref argumentParser.ArgumentParser.parse_args
+            "ArgumentParser.parse_args".
+        @param **kwargs     any additional keyword arguments. In the default
+            TaskRunner this is an empty dict, but having it simplifies
+            overriding TaskRunner for tasks whose run method takes additional
+            arguments (see case (1) below).
 
-        The default implementation of TaskRunner.getTargetList and TaskRunner.\_\_call\_\_ works for any
-        command-line task whose run method takes exactly one argument: a data reference.
-        Otherwise you must provide a variant of TaskRunner that overrides TaskRunner.getTargetList
-        and possibly TaskRunner.\_\_call\_\_. There are two cases:
+        The default implementation of TaskRunner.getTargetList and
+        TaskRunner.\_\_call\_\_ works for any command-line task whose run
+        method takes exactly one argument: a data reference. Otherwise you
+        must provide a variant of TaskRunner that overrides
+        TaskRunner.getTargetList and possibly TaskRunner.\_\_call\_\_.
+        There are two cases:
 
-        (1) If your command-line task has a `run` method that takes one data reference followed by additional
-        arguments, then you need only override TaskRunner.getTargetList to return the additional arguments as
-        an argument dict. To make this easier, your overridden version of getTargetList may call
-        TaskRunner.getTargetList with the extra arguments as keyword arguments. For example,
-        the following adds an argument dict containing a single key: "calExpList", whose value is the list
-        of data IDs for the calexp ID argument:
+        (1) If your command-line task has a `run` method that takes one data
+        reference followed by additional arguments, then you need only
+        override TaskRunner.getTargetList to return the additional arguments
+        as an argument dict. To make this easier, your overridden version of
+        getTargetList may call TaskRunner.getTargetList with the extra
+        arguments as keyword arguments. For example, the following adds an
+        argument dict containing a single key: "calExpList", whose value is
+        the list of data IDs for the calexp ID argument:
 
         \code
         \@staticmethod
         def getTargetList(parsedCmd):
-            return TaskRunner.getTargetList(parsedCmd, calExpList=parsedCmd.calexp.idList)
+            return TaskRunner.getTargetList(
+                parsedCmd,
+                calExpList=parsedCmd.calexp.idList
+            )
         \endcode
 
         It is equivalent to this slightly longer version:
@@ -254,32 +277,36 @@ class TaskRunner(object):
             return [(dataId, argDict) for dataId in parsedCmd.id.idList]
         \endcode
 
-        (2) If your task does not meet condition (1) then you must override both TaskRunner.getTargetList
-        and TaskRunner.\_\_call\_\_. You may do this however you see fit, so long as TaskRunner.getTargetList
-        returns a list, each of whose elements is sent to TaskRunner.\_\_call\_\_, which runs your task.
+        (2) If your task does not meet condition (1) then you must override
+        both TaskRunner.getTargetList and TaskRunner.\_\_call\_\_. You may do
+        this however you see fit, so long as TaskRunner.getTargetList
+        returns a list, each of whose elements is sent to
+        TaskRunner.\_\_call\_\_, which runs your task.
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
     def makeTask(self, parsedCmd=None, args=None):
         """!Create a Task instance
 
-        @param[in] parsedCmd    parsed command-line options (used for extra task args by some task runners)
-        @param[in] args         args tuple passed to TaskRunner.\_\_call\_\_ (used for extra task arguments
-            by some task runners)
+        @param[in] parsedCmd    parsed command-line options (used for extra
+            task args by some task runners)
+        @param[in] args         args tuple passed to TaskRunner.\_\_call\_\_
+            (used for extra task arguments by some task runners)
 
-        makeTask() can be called with either the 'parsedCmd' argument or 'args' argument set to None,
-        but it must construct identical Task instances in either case.
+        makeTask() can be called with either the 'parsedCmd' argument or
+        'args' argument set to None, but it must construct identical Task
+        instances in either case.
 
-        Subclasses may ignore this method entirely if they reimplement both TaskRunner.precall and
-        TaskRunner.\_\_call\_\_
+        Subclasses may ignore this method entirely if they reimplement
+        both TaskRunner.precall and TaskRunner.\_\_call\_\_
         """
         return self.TaskClass(config=self.config, log=self.log)
 
     def _precallImpl(self, task, parsedCmd):
         """The main work of 'precall'
 
-        We write package versions, schemas and configs, or compare these to existing
-        files on disk if present.
+        We write package versions, schemas and configs, or compare these to
+        existing files on disk if present.
         """
         if not parsedCmd.noVersions:
             task.writePackageVersions(parsedCmd.butler, clobber=parsedCmd.clobberVersions)
@@ -287,15 +314,17 @@ class TaskRunner(object):
         task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
 
     def precall(self, parsedCmd):
-        """!Hook for code that should run exactly once, before multiprocessing is invoked.
+        """Hook for code that should run exactly once, before multiprocessing
 
-        Must return True if TaskRunner.\_\_call\_\_ should subsequently be called.
+        Must return True if TaskRunner.\_\_call\_\_ should subsequently be
+        called.
 
-        @warning Implementations must take care to ensure that no unpicklable attributes are added to
-        the TaskRunner itself, for compatibility with multiprocessing.
+        @warning Implementations must take care to ensure that no unpicklable
+            attributes are added to the TaskRunner itself, for compatibility
+            with multiprocessing.
 
-        The default implementation writes package versions, schemas and configs, or compares
-        them to existing files on disk if present.
+        The default implementation writes package versions, schemas and
+        configs, or compares them to existing files on disk if present.
         """
         task = self.makeTask(parsedCmd=parsedCmd)
 
@@ -317,8 +346,8 @@ class TaskRunner(object):
         This default implementation assumes that the 'args' is a tuple
         containing a data reference and a dict of keyword arguments.
 
-        @warning if you override this method and wish to return something when
-        doReturnResults is false, then it must be picklable to support
+        @warning if you override this method and wish to return something
+        when doReturnResults is false, then it must be picklable to support
         multiprocessing and it should be small enough that pickling and
         unpickling do not add excessive overhead.
 
