@@ -135,12 +135,12 @@ class TaskRunner(object):
     Due to a python bug [1], handling a KeyboardInterrupt properly requires
     specifying a timeout [2]. This timeout (in sec) can be specified as the
     "timeout" element in the output from ArgumentParser (the "parsedCmd"), if
-    available, otherwise we use TaskRunner.TIMEOUT_DEFAULT.
+    available, otherwise we use TaskRunner.TIMEOUT.
 
     [1] http://bugs.python.org/issue8296
     [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
     """
-    TIMEOUT = 999999999999  # Default timeout (sec) for multiprocessing
+    TIMEOUT = 3600*24*30  # Default timeout (sec) for multiprocessing
 
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
         """!Construct a TaskRunner
