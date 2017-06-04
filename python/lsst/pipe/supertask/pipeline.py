@@ -26,7 +26,7 @@
 from __future__ import absolute_import, division, print_function
 
 # "exported" names
-__all__ = ["Pipeline", "TaskInfo"]
+__all__ = ["Pipeline", "TaskDef"]
 
 #--------------------------------
 #  Imports of standard modules --
@@ -44,8 +44,8 @@ __all__ = ["Pipeline", "TaskInfo"]
 # Exported definitions --
 #------------------------
 
-class TaskInfo(object):
-    """TaskInfo is a collection of information about task needed by Pipeline.
+class TaskDef(object):
+    """TaskDef is a collection of information about task needed by Pipeline.
 
     The information includes task name, configuration object and optional
     task class. This class is just a collection of attributes and it exposes
@@ -64,22 +64,29 @@ class TaskInfo(object):
     taskClass : type or None
         SuperTask class object, can be None. If None then framework will have
         to locate and load class.
+    label : str, optional
+        SuperTask class object, can be None. If None then framework will have
+        to locate and load class.
     """
-    def __init__(self, taskName, config, taskClass=None):
+    def __init__(self, taskName, config, taskClass=None, label=""):
         self.taskName = taskName
         self.config = config
         self.taskClass = taskClass
+        self.label = label
 
     def __str__(self):
-        return "TaskInfo({})".format(self.taskName)
-
+        rep = "TaskDef(" + self.taskName
+        if self.label:
+            rep += ", label=" + self.label
+        rep += ")"
+        return rep
 
 class Pipeline(list):
-    """Pipeline is a sequence of TaskInfo objects.
+    """Pipeline is a sequence of TaskDef objects.
 
     Pipeline is given as one of the inputs to a supervising framework
     which builds execution graph out of it. Pipeline contains a sequence
-    of `TaskInfo` instances.
+    of `TaskDef` instances.
 
     Main purpose of this class is to provide a mechanism to pass pipeline
     definition from users to supervising framework. That mechanism is
@@ -87,7 +94,7 @@ class Pipeline(list):
     pickle. Note that pipeline serialization is not guaranteed to be
     compatible between different versions or releases.
 
-    In current implementation Pipeline is a list (it inherits from list)
+    In current implementation Pipeline is a list (it inherits from `list`)
     and one can use all list methods on pipeline. Content of the pipeline
     can be modified, it is up to the client to verify that modifications
     leave pipeline in a consistent state. One could modify container
@@ -95,12 +102,12 @@ class Pipeline(list):
 
     Parameters
     ----------
-    pipeline : iterable of `TaskInfo` instances, optional
+    pipeline : iterable of `TaskDef` instances, optional
         Initial sequence of tasks.
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
 
     def __str__(self):
-        infos = [str(tinfo) for tinfo in self]
+        infos = [str(tdef) for tdef in self]
         return "Pipeline({})".format(", ".join(infos))
