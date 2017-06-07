@@ -388,6 +388,9 @@ class TaskRunner(object):
                     traceback.print_exc(file=sys.stderr)
         task.writeMetadata(dataRef)
 
+        # remove MDC so it does not show up outside of task context
+        self.log.MDCRemove("LABEL")
+
         if self.doReturnResults:
             return Struct(
                 dataRef=dataRef,
