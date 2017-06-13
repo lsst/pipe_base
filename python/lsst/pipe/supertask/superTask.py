@@ -106,7 +106,7 @@ class SuperTask(Task):
         """
         pass
 
-    def defineQuanta(self, datasets, butler):
+    def defineQuanta(self, repoGraph, butler):
         """Produce set of execution quanta.
 
         Purpose of this method is to split the whole workload (as defined
@@ -119,8 +119,8 @@ class SuperTask(Task):
 
         Parameters
         ----------
-        datasets : DatasetGraph
-            A DatasetGraph containing only Units matching the data ID
+        repoGraph : `obs.base.repodb.RepoGraph`
+            A RepoGraph containing only Units matching the data ID
             expression supplied by the user and Datasets that should be
             present in the repository when all previous SuperTasks in the same
             pipeline have been run.  Any Datasets produced by this SuperTask
