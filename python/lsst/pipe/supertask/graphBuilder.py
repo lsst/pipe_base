@@ -36,10 +36,7 @@ __all__ = ['GraphBuilder']
 # Imports for other modules --
 #-----------------------------
 import lsst.log as lsstLog
-import lsst.obs.base.repodb.tests as repodbTest
-from lsst.pipe.base.task import TaskError
-from .taskFactory import TaskFactory
-from .taskLoader import (TaskLoader, KIND_SUPERTASK)
+from .graph import GraphTaskNodes, GraphOfTasks
 
 #----------------------------------
 # Local non-exported definitions --
@@ -84,8 +81,7 @@ class GraphBuilder(object):
 
         Returns
         -------
-        List of tuples (taskDef, quanta), `taskDef` is a `TaskDef` as present
-        in pipeline, and `quanta` is a sequence of `Quantum` instances.
+        `GraphOfTasks` instance.
 
         Raises
         ------
@@ -181,7 +177,7 @@ class GraphBuilder(object):
 
         Returns
         -------
-        Same value as `makeGraph()`.
+        `GraphOfTasks` instance.
 
         Raises
         ------
@@ -189,7 +185,7 @@ class GraphBuilder(object):
         """
         # get all quanta from each task, add it to the list and say
         # that list is a graph (one of the million possible representations)
-        graph = []
+        graph = GraphOfTasks()
         for task, taskDef in taskList:
 
             # call task to make its quanta
@@ -205,6 +201,6 @@ class GraphBuilder(object):
 #                     existing |= datasets
 
             # store in a graph
-            graph.append((taskDef, quanta))
+            graph.append(GraphTaskNodes(taskDef, quanta))
 
         return graph
