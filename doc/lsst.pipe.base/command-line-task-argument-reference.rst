@@ -80,7 +80,7 @@ Other named arguments are optional.
 
    **Backup and overwrite existing config files.**
 
-   Normally a command line task checks existing config files in a Butler repository to ensure that the current configurations are consistent with previous pipeline executions.
+   Normally a command-line task checks existing config files in a Butler repository to ensure that the current configurations are consistent with previous pipeline executions.
    This argument disables this check, which may be useful for development.
 
    This argument is safe with :option:`-j` multiprocessing, but not necessarily with other forms of parallel execution.
@@ -95,7 +95,7 @@ Other named arguments are optional.
 
    **Backup and then overwrite existing package version provenance.**
 
-   Normally a command line task checks that the Science Pipelines package versions are the same as for previous executions that wrote to an output repository or rerun.
+   Normally a command-line task checks that the Science Pipelines package versions are the same as for previous executions that wrote to an output repository or rerun.
    This argument disables this check, which may be useful for development.
 
    This argument is safe with :option:`-j` multiprocessing, but not necessarily with other forms of parallel execution.
@@ -104,8 +104,8 @@ Other named arguments are optional.
 
    **Print help.**
 
-   The help is equivalent to this documentation page, describing command line arguments.
-   This help does not describe the command line task's specific functionality.
+   The help is equivalent to this documentation page, describing command-line arguments.
+   This help does not describe the command-line task's specific functionality.
 
 .. option:: --id [[<dataid>] ...]
 
@@ -164,7 +164,7 @@ Other named arguments are optional.
 
 .. option:: --output <output_repo>
 
-   **Output data repository path.**
+   **Output data repository URI or path.**
 
    The output data repository will be created if it does not exist.
 
@@ -172,7 +172,8 @@ Other named arguments are optional.
    See :ref:`command-line-task-envvar-examples`.
 
    ``--output`` may not be used with the :option:`--rerun` argument.
-   See :option:`--rerun` for writing outputs to a rerun directory *inside* the input data repository.
+
+   See :doc:`command-line-task-data-repo-howto` for background.
 
 .. option:: -j <processes>, --processes <processes>
 
@@ -190,19 +191,20 @@ Other named arguments are optional.
 
 .. option:: --rerun <[input:]output>
 
-   **Specify output (and input) rerun (and optionally the input rerun as well).**
+   **Specify output rerun (and optionally the input rerun as well).**
 
-   Reruns are named data repositories inside the :file:`rerun` directory of the root data repository (:option:`REPOPATH`).
-
+   Reruns are data repositories relative to the root repository, :option:`REPOPATH`.
    ``--rerun output`` is equivalent to ``--output REPOPATH/rerun/output``.
 
    An input rerun can also, optionally, be specified.
-   ``--rerun input:output`` sets the input repository path to ``ROOT/rerun/input`` the output repository path to ``REPOPATH/rerun/output``.
+   ``--rerun input:output`` sets the input repository path to ``REPOPATH/rerun/input`` the output repository path to ``REPOPATH/rerun/output``.
 
    If an argument to `--rerun` starts with a `/`, it will be interpreted as an absolute path rather than as being relative to the root input data repository.
 
    The arguments supplied to `--rerun` may refer to symbolic links to directories.
    Data will be read or written from the links' targets.
+
+   See :doc:`command-line-task-data-repo-howto` for more information.
 
 .. option:: --show <config|data|tasks|run>
 

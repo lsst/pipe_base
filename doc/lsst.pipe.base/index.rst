@@ -11,10 +11,11 @@ Some tasks, called command-line tasks, are also packaged into data processing pi
 
 .. _using-command-line-tasks:
 
-Using command line tasks
+Using command-line tasks
 ========================
 
 .. toctree::
    :maxdepth: 1
 
+   command-line-task-data-repo-howto.rst
    command-line-task-argument-reference.rst
