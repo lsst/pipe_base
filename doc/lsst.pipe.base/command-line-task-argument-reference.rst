@@ -113,12 +113,14 @@ Other named arguments are optional.
 
    Specify data IDs to process using data ID syntax.
    For example, ``--id visit=12345 ccd=1,2^0,3``.
+   For more information, see :ref:`command-line-task-dataid-howto`.
 
-   An ``--id`` argument without values indicates that **all** data available in the input repository will be processed.
+   An ``--id`` argument without values indicates that **all** data available in the input repository will be processed (see :ref:`command-line-task-dataid-howto-wildcard`).
 
    For many-to-one processing tasks the ``--id`` argument specifies **output** data IDs, while :option:`--selectId` is used for **input** data IDs.
 
    The ``--id`` argument can appear multiple times.
+   See :ref:`command-line-task-dataid-howto-multi-arg`.
 
 .. option:: -L <level|component=level> [level|component=level...], --loglevel <level|component=level> [level|component=level...]
 
@@ -231,6 +233,8 @@ Other named arguments are optional.
 
    For many-to-one processing tasks, such as coaddition, the :option:`--selectId` argument is used to specify input data IDs, while :option:`--id` is used to specify *output* data IDs.
    The syntax for :option:`--selectId` is identical to that of :option:`--id`.
+
+   For more information about dataId selection syntax, see :ref:`command-line-task-dataid-howto`.
 
 .. option:: -t timeout, --timeout timeout
 

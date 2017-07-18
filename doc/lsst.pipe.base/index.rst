@@ -18,4 +18,5 @@ Using command-line tasks
    :maxdepth: 1
 
    command-line-task-data-repo-howto.rst
+   command-line-task-dataid-howto.rst
    command-line-task-argument-reference.rst
