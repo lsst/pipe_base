@@ -21,4 +21,5 @@ Using command-line tasks
    command-line-task-dataid-howto.rst
    command-line-task-logging-howto.rst
    command-line-task-prov-howto.rst
+   command-line-task-parallel-howto.rst
    command-line-task-argument-reference.rst
