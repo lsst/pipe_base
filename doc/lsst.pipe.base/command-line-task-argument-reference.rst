@@ -85,6 +85,8 @@ Other named arguments are optional.
 
    This argument is safe with :option:`-j` multiprocessing, but not necessarily with other forms of parallel execution.
 
+   See :ref:`command-line-task-prov-howto-config` for more information.
+
 .. option:: --clobber-output
 
    **Remove and re-create the output repository if it already exists.**
@@ -99,6 +101,8 @@ Other named arguments are optional.
    This argument disables this check, which may be useful for development.
 
    This argument is safe with :option:`-j` multiprocessing, but not necessarily with other forms of parallel execution.
+
+   See :ref:`command-line-task-prov-howto-versions` for more information.
 
 .. option:: -h, --help
 
@@ -167,6 +171,8 @@ Other named arguments are optional.
    This mode is useful for development should not be used in production processing.
 
    See also :option:`--clobber-versions`.
+
+   See :ref:`command-line-task-prov-howto-versions` for more information.
 
 .. option:: --output <output_repo>
 
