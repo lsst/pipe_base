@@ -93,7 +93,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         """Test basic construction and use of a command-line task
         """
         retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath, "--id", "visit=1"])
-        self.assertEqual(retVal.resultList, [None])
+        self.assertEqual(retVal.resultList, [pipeBase.Struct(exitStatus=0)])
         task = ExampleTask(config=retVal.parsedCmd.config)
         parsedCmd = retVal.parsedCmd
         self.assertEqual(len(parsedCmd.id.refList), 1)
@@ -133,7 +133,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
     def testDoReturnResultsOnFailure(self):
         retVal = ExampleTask.parseAndRun(args=[DataPath, "--output", self.outPath,
                                                "--id", "visit=3", "filter=r", "--config", "doFail=True",
-                                               "--clobber-config"], doReturnResults=True)
+                                               "--clobber-config", "--noExit"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
         self.assertEqual(result.metadata.get("numProcessed"), 0)
