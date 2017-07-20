@@ -160,6 +160,10 @@ class TaskRunner(object):
             fail when using multiprocessing if the returned data cannot be
             pickled.
 
+            Note that even if doReturnResults is False a struct with a single
+            member "exitStatus" is returned, with value 0 or 1 to be returned
+            to the unix shell.
+
         @throws ImportError if multiprocessing requested (and the task
             supports it) but the multiprocessing library cannot be
             imported.
@@ -368,13 +372,17 @@ class TaskRunner(object):
         elif isinstance(dataRef, (list, tuple)):
             self.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
-        result = None  # in case the task fails
+        result = None                   # in case the task fails
+        exitStatus = 0                  # exit status for the shell
         if self.doRaise:
             result = task.run(dataRef, **kwargs)
         else:
             try:
                 result = task.run(dataRef, **kwargs)
             except Exception as e:
+                exitStatus = 1          # n.b. The shell exit value is the number of dataRefs returning
+                                        # non-zero, so the actual value used here is lost
+                
                 # don't use a try block as we need to preserve the original exception
                 if hasattr(dataRef, "dataId"):
                     task.log.fatal("Failed on dataId=%s: %s", dataRef.dataId, e)
@@ -393,9 +401,14 @@ class TaskRunner(object):
 
         if self.doReturnResults:
             return Struct(
+                exitStatus=exitStatus,
                 dataRef=dataRef,
                 metadata=task.metadata,
                 result=result,
+            )
+        else:
+            return Struct(
+                exitStatus=exitStatus,
             )
 
 
@@ -496,6 +509,10 @@ class CmdLineTask(Task):
         - resultList: results returned by the task runner's run method, one entry per invocation.
             This will typically be a list of `None` unless doReturnResults is `True`;
             see cls.RunnerClass (TaskRunner by default) for more information.
+
+        If one or more of the dataIds fails then this routine will exit (with a status giving the
+        number of failed dataIds) rather than returning this struct;  this behaviour can be
+        overridden by specifying the --noExit option.
         """
         if args is None:
             commandAsStr = " ".join(sys.argv)
@@ -512,6 +529,19 @@ class CmdLineTask(Task):
 
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
+
+        try:
+            nFailed = sum(((res.exitStatus != 0) for res in resultList))
+        except Exception as e:
+            parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
+            nFailed = 0
+
+        if nFailed > 0:
+            if parsedCmd.noExit:
+                parsedCmd.log.warn("%d dataRefs failed; not exiting as --noExit was set", nFailed)
+            else:
+                sys.exit(nFailed)
+            
         return Struct(
             argumentParser=argumentParser,
             parsedCmd=parsedCmd,
