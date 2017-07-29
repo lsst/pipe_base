@@ -53,14 +53,20 @@ DEFAULT_OUTPUT_NAME = "PIPE_OUTPUT_ROOT"
 
 
 def _fixPath(defName, path):
-    """!Apply environment variable as default root, if present, and abspath
+    """Apply environment variable as default root, if present, and abspath.
 
-    @param[in] defName  name of environment variable containing default root path;
-        if the environment variable does not exist then the path is relative
-        to the current working directory
-    @param[in] path     path relative to default root path
-    @return abspath: path that has been expanded, or None if the environment variable does not exist
-        and path is None
+    Parameters
+    ----------
+    defName : `str`
+        Name of environment variable containing default root path; if the environment variable does not exist
+        then the path is relative to the current working directory
+    path : `str`
+        Path relative to default root path.
+
+    Returns
+    -------
+    abspath : `str`
+        Path that has been expanded, or `None` if the environment variable does not exist and path is `None`.
     """
     defRoot = os.environ.get(defName)
     if defRoot is None:
@@ -71,30 +77,44 @@ def _fixPath(defName, path):
 
 
 class DataIdContainer(object):
-    """!A container for data IDs and associated data references
+    """Container for data IDs and associated data references.
 
-    Override for data IDs that require special handling to be converted to data references,
-    and specify the override class as ContainerClass for add_id_argument.
-    (If you don't want the argument parser to compute data references, you may use this class
-    and specify doMakeDataRefList=False in add_id_argument.)
+    Parameters
+    ----------
+    level
+        Unknown.
+
+    Notes
+    -----
+    Override for data IDs that require special handling to be converted to ``data references``, and specify
+    the override class as ``ContainerClass`` for ``add_id_argument``. (If you don't want the argument parser
+    to compute data references, you may use this class and specify ``doMakeDataRefList=False`` in
+    ``add_id_argument``.)
     """
 
     def __init__(self, level=None):
-        """!Construct a DataIdContainer"""
         self.datasetType = None  # the actual dataset type, as specified on the command line (if dynamic)
         self.level = level
         self.idList = []
         self.refList = []
 
     def setDatasetType(self, datasetType):
-        """!Set actual dataset type, once it is known"""
+        """Set actual dataset type, once it is known.
+
+        Parameters
+        ----------
+        datasetType : `str`
+            Dataset type.
+        """
         self.datasetType = datasetType
 
     def castDataIds(self, butler):
-        """!Validate data IDs and cast them to the correct type (modify idList in place).
+        """Validate data IDs and cast them to the correct type (modify idList in place).
 
-        @param[in] butler       data butler (a \ref lsst.daf.persistence.butler.Butler
-            "lsst.daf.persistence.Butler")
+        Parameters
+        ----------
+        butler : `lsst.daf.persistence.Butler`
+            Data butler.
         """
         if self.datasetType is None:
             raise RuntimeError("Must call setDatasetType first")
@@ -124,11 +144,16 @@ class DataIdContainer(object):
                     dataDict[key] = castVal
 
     def makeDataRefList(self, namespace):
-        """!Compute refList based on idList
+        """Compute refList based on idList.
 
-        Not called if add_id_argument called with doMakeDataRefList=False
+        Parameters
+        ----------
+        namespace
+            Results of parsing command-line (with ``butler`` and ``log`` elements).
 
-        @param[in] namespace    results of parsing command-line (with 'butler' and 'log' elements)
+        Notes
+        -----
+        Not called if ``add_id_argument`` called with ``doMakeDataRefList=False``.
         """
         if self.datasetType is None:
             raise RuntimeError("Must call setDatasetType first")
@@ -146,20 +171,25 @@ class DataIdContainer(object):
 
 
 class DataIdArgument(object):
-    """!Glorified struct for data about id arguments, used by ArgumentParser.add_id_argument"""
+    """data ID argument, used by `ArgumentParser.add_id_argument`.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of identifier (argument name without dashes).
+    datasetType : `str`
+        Type of dataset; specify a string for a fixed dataset type or a `DatasetArgument` for a dynamic
+        dataset type (e.g. one specified by a command-line argument).
+    level
+        Level of dataset, for `~lsst.daf.persistence.Butler`.
+    doMakeDataRefList : `bool`, optional
+        If `True` (default), construct data references.
+    ContainerClass : class, optional
+        Class to contain data IDs and data references; the default class will work for many kinds of data,
+        but you may have to override to compute some kinds of data references. Default is `DataIdContainer`.
+    """
 
     def __init__(self, name, datasetType, level, doMakeDataRefList=True, ContainerClass=DataIdContainer):
-        """!Constructor
-
-        @param[in] name         name of identifier (argument name without dashes)
-        @param[in] datasetType  type of dataset; specify a string for a fixed dataset type
-            or a DatasetArgument for a dynamic dataset type (e.g. one specified by a command-line argument)
-        @param[in] level        level of dataset, for butler
-        @param[in] doMakeDataRefList    construct data references?
-        @param[in] ContainerClass   class to contain data IDs and data references;
-            the default class will work for many kinds of data, but you may have to override
-            to compute some kinds of data references.
-        """
         if name.startswith("-"):
             raise RuntimeError("Name %s must not start with -" % (name,))
         self.name = name
@@ -171,13 +201,21 @@ class DataIdArgument(object):
 
     @property
     def isDynamicDatasetType(self):
-        """!Is the dataset type dynamic (specified on the command line)?"""
+        """`True` if the dataset type is dynamic (that is, specified on the command line)."""
         return isinstance(self.datasetType, DynamicDatasetType)
 
     def getDatasetType(self, namespace):
-        """!Return the dataset type as a string
+        """Get the dataset type as a string.
 
-        @param[in] namespace  parsed command
+        Parameters
+        ----------
+        namespace
+            Parsed command.
+
+        Returns
+        -------
+        datasetType : `str`
+            Dataset type.
         """
         if self.isDynamicDatasetType:
             return self.datasetType.getDatasetType(namespace)
@@ -186,30 +224,52 @@ class DataIdArgument(object):
 
 
 class DynamicDatasetType(with_metaclass(abc.ABCMeta, object)):
-    """!Abstract base class for a dataset type determined from parsed command-line arguments
+    """Abstract base class for a dataset type determined from parsed command-line arguments.
     """
 
     def addArgument(self, parser, idName):
-        """!Add a command-line argument to specify dataset type name, if wanted
+        """Add a command-line argument to specify dataset type name, if wanted.
 
-        @param[in] parser  argument parser to which to add argument
-        @param[in] idName  name of data ID argument, without the leading "--", e.g. "id"
+        Parameters
+        ----------
+        parser : `ArgumentParser`
+            Argument parser to add the argument to.
+        idName : `str`
+            Name of data ID argument, without the leading ``"--"``, e.g. ``"id"``.
 
+        Notes
+        -----
         The default implementation does nothing
         """
         pass
 
     @abc.abstractmethod
     def getDatasetType(self, namespace):
-        """Return the dataset type as a string, based on parsed command-line arguments
+        """Get the dataset type as a string, based on parsed command-line arguments.
 
-        @param[in] namespace  parsed command
+        Returns
+        -------
+        namespace : `str`
+            Parsed command.
         """
         raise NotImplementedError("Subclasses must override")
 
 
 class DatasetArgument(DynamicDatasetType):
-    """!A dataset type specified by a command-line argument.
+    """Dataset type specified by a command-line argument.
+
+    Parameters
+    ----------
+    name : `str`, optional
+        Name of command-line argument (including leading "--", if appropriate) whose value is the dataset
+        type. If `None`, uses ``--idName_dstype`` where idName is the name of the data ID argument (e.g.
+        "id").
+    help : `str`, optional
+        Help string for the command-line argument.
+    default : obj, optional
+        Default value. If `None`, then the command-line option is required. This argument isignored if the
+        command-line argument is positional (name does not start with "-") because positional arguments do
+        not support default values.
     """
 
     def __init__(self,
@@ -217,33 +277,40 @@ class DatasetArgument(DynamicDatasetType):
                  help="dataset type to process from input data repository",
                  default=None,
                  ):
-        """!Construct a DatasetArgument
-
-        @param[in] name  name of command-line argument (including leading "--", if appropriate)
-            whose value is the dataset type; if None, uses --idName_dstype
-            where idName is the name of the data ID argument (e.g. "id")
-        @param[in] help  help string for the command-line argument
-        @param[in] default  default value; if None, then the command-line option is required;
-            ignored if the argument is positional (name does not start with "-")
-            because positional argument do not support default values
-        """
         DynamicDatasetType.__init__(self)
         self.name = name
         self.help = help
         self.default = default
 
     def getDatasetType(self, namespace):
-        """Return the dataset type as a string, from the appropriate command-line argument
+        """Get the dataset type as a string, from the appropriate command-line argument.
 
-        @param[in] namespace  parsed command
+        Parameters
+        ----------
+        namespace
+            Parsed command.
+
+        Returns
+        -------
+        datasetType : `str`
+            Dataset type.
         """
         argName = self.name.lstrip("-")
         return getattr(namespace, argName)
 
     def addArgument(self, parser, idName):
-        """!Add a command-line argument to specify dataset type name
+        """Add a command-line argument to specify the dataset type name.
 
-        Also set self.name if it is None
+        Parameters
+        ----------
+        parser : `ArgumentParser`
+            Argument parser.
+        idName : `str`
+            Data ID.
+
+        Notes
+        -----
+        Also sets the `name` attribute if it is currently `None`.
         """
         help = self.help if self.help else "dataset type for %s" % (idName,)
         if self.name is None:
@@ -259,21 +326,25 @@ class DatasetArgument(DynamicDatasetType):
 
 
 class ConfigDatasetType(DynamicDatasetType):
-    """!A dataset type specified by a config parameter
+    """Dataset type specified by a config parameter.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of config option whose value is the dataset type.
     """
 
     def __init__(self, name):
-        """!Construct a ConfigDatasetType
-
-        @param[in] name  name of config option whose value is the dataset type
-        """
         DynamicDatasetType.__init__(self)
         self.name = name
 
     def getDatasetType(self, namespace):
         """Return the dataset type as a string, from the appropriate config field
 
-        @param[in] namespace  parsed command
+        Parameters
+        ----------
+        namespace : `argparse.Namespace`
+            Parsed command.
         """
         # getattr does not work reliably if the config field name is dotted,
         # so step through one level at a time
@@ -288,25 +359,30 @@ class ConfigDatasetType(DynamicDatasetType):
 
 
 class ArgumentParser(argparse.ArgumentParser):
-    """!An argument parser for pipeline tasks that is based on argparse.ArgumentParser
+    """Argument parser for command-line tasks that is based on `argparse.ArgumentParser`.
 
-    Users may wish to add additional arguments before calling parse_args.
+    Parameters
+    ----------
+    name : `str`
+        Name of top-level task; used to identify camera-specific override files.
+    usage : `str`, optional
+        Command-line usage signature.
+    **kwargs
+        Additional keyword arguments for `argparse.ArgumentParser`.
 
-    @note
-    - I would prefer to check data ID keys and values as they are parsed,
-      but the required information comes from the butler, so I have to construct a butler
-      before I do this checking. Constructing a butler is slow, so I only want do it once,
-      after parsing the command line, so as to catch syntax errors quickly.
+    Notes
+    -----
+    Users may wish to add additional arguments before calling `parse_args`.
     """
-    requireOutput = True  # Require an output directory to be specified?
+    # I would prefer to check data ID keys and values as they are parsed,
+    # but the required information comes from the butler, so I have to construct a butler
+    # before I do this checking. Constructing a butler is slow, so I only want do it once,
+    # after parsing the command line, so as to catch syntax errors quickly.
+
+    requireOutput = True
+    """Require an output directory to be specified (`bool`)."""
 
     def __init__(self, name, usage="%(prog)s input [options]", **kwargs):
-        """!Construct an ArgumentParser
-
-        @param[in] name     name of top-level task; used to identify camera-specific override files
-        @param[in] usage    usage string
-        @param[in] **kwargs additional keyword arguments for argparse.ArgumentParser
-        """
         self._name = name
         self._dataIdArgDict = {}  # Dict of data identifier specifications, by argument name
         argparse.ArgumentParser.__init__(self,
@@ -379,24 +455,37 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
                         ContainerClass=DataIdContainer):
-        """!Add a data ID argument
+        """Add a data ID argument.
 
-        Add an argument to specify data IDs. If datasetType is an instance of DatasetArgument,
-        then add a second argument to specify the dataset type.
 
-        @param[in] name                 data ID argument (including leading dashes, if wanted)
-        @param[in] datasetType          type of dataset; supply a string for a fixed dataset type,
-            or a DynamicDatasetType, such as DatasetArgument, for a dynamically determined dataset type
-        @param[in] help                 help string for the argument
-        @param[in] level                level of dataset, for butler
-        @param[in] doMakeDataRefList    construct data references?
-        @param[in] ContainerClass       data ID container class to use to contain results;
-            override the default if you need a special means of computing data references from data IDs
+        Parameters
+        ----------
+        name : `str`
+            Data ID argument (including leading dashes, if wanted).
+        datasetType : `str` or `DynamicDatasetType`-type
+            Type of dataset. Supply a string for a fixed dataset type. For a dynamically determined dataset
+            type, supply a `DynamicDatasetType`, such a `DatasetArgument`.
+        help : `str`
+            Help string for the argument.
+        level : object, optional
+            Level of dataset, for the `~lsst.daf.persistence.Butler`.
+        doMakeDataRefList : bool, optional
+            If `True` (default), construct data references.
+        ContainerClass : class, optional
+            Data ID container class to use to contain results; override the default if you need a special
+            means of computing data references from data IDs
 
-        The associated data is put into namespace.<dataIdArgument.name> as an instance of ContainerClass;
+        Notes
+        -----
+        If ``datasetType`` is an instance of `DatasetArgument`, then add a second argument to specify the
+        dataset type.
+
+        The associated data is put into ``namespace.<dataIdArgument.name>`` as an instance of ContainerClass;
         the container includes fields:
-        - idList: a list of data ID dicts
-        - refList: a list of butler data references (empty if doMakeDataRefList false)
+
+        - ``idList``: a list of data ID dicts.
+        - ``refList``: a list of `~lsst.daf.persistence.Butler` data references (empty if
+          ``doMakeDataRefList`` is  `False`).
         """
         argName = name.lstrip("-")
 
@@ -422,27 +511,38 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         self._dataIdArgDict[argName] = dataIdArgument
 
     def parse_args(self, config, args=None, log=None, override=None):
-        """!Parse arguments for a pipeline task
+        """Parse arguments for a command-line task.
 
-        @param[in,out] config   config for the task being run
-        @param[in] args         argument list; if None use sys.argv[1:]
-        @param[in] log          log (instance lsst.log Log); if None use the default log
-        @param[in] override     a config override function; it must take the root config object
-            as its only argument and must modify the config in place.
-            This function is called after camera-specific overrides files are applied, and before
-            command-line config overrides are applied (thus allowing the user the final word).
+        Parameters
+        ----------
+        config : `lsst.pex.config.Config`
+            Config for the task being run.
+        args : `list`, optional
+            Argument list; if `None` then ``sys.argv[1:]`` is used.
+        log : `lsst.log.Log`, optional
+            `~lsst.log.Log` instance; if `None` use the default log.
+        override : callable, optional
+            A config override function. It must take the root config object as its only argument and must
+            modify the config in place. This function is called after camera-specific overrides files are
+            applied, and before command-line config overrides are applied (thus allowing the user the final
+            word).
 
-        @return namespace: an argparse.Namespace containing many useful fields including:
-        - camera: camera name
-        - config: the supplied config with all overrides applied, validated and frozen
-        - butler: a butler for the data
-        - an entry for each of the data ID arguments registered by add_id_argument(),
-          the value of which is a DataIdArgument that includes public elements 'idList' and 'refList'
-        - log: a lsst.log Log
-        - an entry for each command-line argument, with the following exceptions:
-          - config is the supplied config, suitably updated
-          - configfile, id and loglevel are all missing
-        - obsPkg: name of obs_ package for this camera
+        Returns
+        -------
+        namespace : `argparse.Namespace`
+            A `~argparse.Namespace` instance containing fields:
+
+            - ``camera``: camera name.
+            - ``config``: the supplied config with all overrides applied, validated and frozen.
+            - ``butler``: a `lsst.daf.persistence.Butler` for the data.
+            - An entry for each of the data ID arguments registered by `add_id_argument`,
+              the value of which is a `~lsst.pipe.base.DataIdArgument` that includes public elements
+              ``idList`` and ``refList``.
+            - ``log``: a `lsst.log` Log.
+            - An entry for each command-line argument, with the following exceptions:
+              - config is the supplied config, suitably updated.
+              - configfile, id and loglevel are all missing.
+            - ``obsPkg``: name of the ``obs_`` package for this camera.
         """
         if args is None:
             args = sys.argv[1:]
@@ -598,21 +698,25 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
         del namespace.rawRerun
 
     def _processDataIds(self, namespace):
-        """!Process the parsed data for each data ID argument
+        """Process the parsed data for each data ID argument in a `~argparse.Namespace`.
 
         Processing includes:
-        - Validate data ID keys
-        - Cast the data ID values to the correct type
-        - Compute data references from data IDs
 
-        @param[in,out] namespace    parsed namespace (an argparse.Namespace);
-            reads these attributes:
-            - butler
-            - log
-            - config, if any dynamic dataset types are set by a config parameter
-            - dataset type arguments (e.g. id_dstype), if any dynamic dataset types are specified by such
-            and modifies these attributes:
-            - \<name> for each data ID argument registered using add_id_argument
+        - Validate data ID keys.
+        - Cast the data ID values to the correct type.
+        - Compute data references from data IDs.
+
+        Parameters
+        ----------
+        namespace : parsed namespace (an argparse.Namespace);
+            Parsed namespace. These attributes are read:
+
+            - ``butler``
+            - ``log``
+            - ``config``, if any dynamic dataset types are set by a config parameter.
+            - Dataset type arguments (e.g. ``id_dstype``), if any dynamic dataset types are specified by such
+              and modifies these attributes:
+            - ``<name>`` for each data ID argument registered using `add_id_argument`.
         """
         for dataIdArgument in self._dataIdArgDict.values():
             dataIdContainer = getattr(namespace, dataIdArgument.name)
@@ -628,16 +732,19 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
                 dataIdContainer.makeDataRefList(namespace)
 
     def _applyInitialOverrides(self, namespace):
-        """!Apply obs-package-specific and camera-specific config override files, if found
+        """Apply obs-package-specific and camera-specific config override files, if found
 
-        @param[in] namespace    parsed namespace (an argparse.Namespace);
-            reads these attributes:
-            - obsPkg
+        Parameters
+        ----------
+        namespace : `argparse.Namespace`
+            Parsed namespace. These attributes are read:
 
-        Look in the package namespace.obsPkg for files:
-        - config/\<task_name>.py
-        - config/\<camera_name>/\<task_name>.py
-        and load if found
+            - ``obsPkg``
+
+            Look in the package namespace.obsPkg for files:
+
+            - ``config/<task_name>.py``
+            - ``config/<camera_name>/<task_name>.py`` and load if found.
         """
         obsPkgDir = lsst.utils.getPackageDir(namespace.obsPkg)
         fileName = self._name + ".py"
@@ -652,22 +759,31 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
                 namespace.log.debug("Config override file does not exist: %r", filePath)
 
     def handleCamera(self, namespace):
-        """!Perform camera-specific operations before parsing the command line.
+        """Perform camera-specific operations before parsing the command-line.
 
+        Parameters
+        ----------
+        namespace : `argparse.Namespace`
+            Namespace (an ) with the following fields:
+
+            - ``camera``: the camera name.
+            - ``config``: the config passed to parse_args, with no overrides applied.
+            - ``obsPkg``: the ``obs_`` package for this camera.
+            - ``log``: a `lsst.log` Log.
+
+        Notes
+        -----
         The default implementation does nothing.
-
-        @param[in,out] namespace    namespace (an argparse.Namespace) with the following fields:
-            - camera: the camera name
-            - config: the config passed to parse_args, with no overrides applied
-            - obsPkg: the obs_ package for this camera
-            - log: a lsst.log Log
         """
         pass
 
     def convert_arg_line_to_args(self, arg_line):
-        """!Allow files of arguments referenced by `@<path>` to contain multiple values on each line
+        """Allow files of arguments referenced by ``@<path>`` to contain multiple values on each line.
 
-        @param[in] arg_line     line of text read from an argument file
+        Parameters
+        ----------
+        arg_line : `str`
+            Line of text read from an argument file.
         """
         arg_line = arg_line.strip()
         if not arg_line or arg_line.startswith("#"):
@@ -679,23 +795,36 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
 
 
 class InputOnlyArgumentParser(ArgumentParser):
-    """An ArgumentParser for pipeline tasks that don't write any output"""
+    """`ArgumentParser` for command-line tasks that don't write any output.
+    """
+
     requireOutput = False  # We're not going to write anything
 
 
 def getTaskDict(config, taskDict=None, baseName=""):
-    """!Get a dictionary of task info for all subtasks in a config
+    """Get a dictionary of task info for all subtasks in a config
 
-    Designed to be called recursively; the user should call with only a config
+    Parameters
+    ----------
+    config : `lsst.pex.config.Config`
+        Configuration to process.
+    taskDict : `dict`, optional
+        Users should not specify this argument. Supports recursion; if provided, taskDict is updated in
+        place, else a new `dict` is started).
+    baseName : `str`, optional
+        Users should not specify this argument. It is only used for recursion: if a non-empty string then a
+        period is appended and the result is used as a prefix for additional entries in taskDict; otherwise
+        no prefix is used.
+
+    Returns
+    -------
+    taskDict : `dict`
+        Keys are config field names, values are task names.
+
+    Notes
+    -----
+    This function is designed to be called recursively. The user should call with only a config
     (leaving taskDict and baseName at their default values).
-
-    @param[in] config           configuration to process, an instance of lsst.pex.config.Config
-    @param[in,out] taskDict     users should not specify this argument;
-        (supports recursion; if provided, taskDict is updated in place, else a new dict is started)
-    @param[in] baseName         users should not specify this argument.
-        (supports recursion: if a non-empty string then a period is appended and the result is used
-        as a prefix for additional entries in taskDict; otherwise no prefix is used)
-    @return taskDict: a dict of config field name: task name
     """
     if taskDict is None:
         taskDict = dict()
@@ -714,20 +843,28 @@ def getTaskDict(config, taskDict=None, baseName=""):
 
 
 def obeyShowArgument(showOpts, config=None, exit=False):
-    """!Process arguments specified with --show (but ignores "data")
+    """Process arguments specified with ``--show`` (but ignores ``"data"``).
 
-    @param showOpts  List of options passed to --show
-    @param config    The provided config
-    @param exit      Exit if "run" isn't included in showOpts
+    Parameters
+    ----------
+    showOpts : `list` of `str`
+        List of options passed to ``--show``.
+    config : optional
+        The provided config.
+    exit : bool, optional
+        Exit if ``"run"`` isn't included in ``showOpts``.
 
+    Parameters
+    ----------
     Supports the following options in showOpts:
-    - config[=PAT]   Dump all the config entries, or just the ones that match the glob pattern
-    - history=PAT    Show where the config entries that match the glob pattern were set
-    - tasks      Show task hierarchy
-    - data       Ignored; to be processed by caller
-    - run        Keep going (the default behaviour is to exit if --show is specified)
 
-    Calls sys.exit(1) if any other option found.
+    - ``config[=PAT]``. Dump all the config entries, or just the ones that match the glob pattern.
+    - ``history=PAT``. Show where the config entries that match the glob pattern were set.
+    - ``tasks``. Show task hierarchy.
+    - ``data``. Ignored; to be processed by caller.
+    - ``run``. Keep going (the default behaviour is to exit if --show is specified).
+
+    Calls ``sys.exit(1)`` if any other option found.
     """
     if not showOpts:
         return
@@ -811,9 +948,12 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 
 
 def showTaskHierarchy(config):
-    """!Print task hierarchy to stdout
+    """Print task hierarchy to stdout.
 
-    @param[in] config: configuration to process (an lsst.pex.config.Config)
+    Parameters
+    ----------
+    config : `lsst.pex.config.Config`
+        Configuration to process.
     """
     print(u"Subtasks:")
     taskDict = getTaskDict(config=config)
@@ -825,18 +965,22 @@ def showTaskHierarchy(config):
 
 
 class ConfigValueAction(argparse.Action):
-    """!argparse action callback to override config parameters using name=value pairs from the command line
+    """argparse action callback to override config parameters using name=value pairs from the command-line.
     """
 
     def __call__(self, parser, namespace, values, option_string):
-        """!Override one or more config name value pairs
+        """Override one or more config name value pairs.
 
-        @param[in] parser           argument parser (instance of ArgumentParser)
-        @param[in,out] namespace    parsed command (an instance of argparse.Namespace);
-            updated values:
-            - namespace.config
-        @param[in] values           a list of configItemName=value pairs
-        @param[in] option_string    option value specified by the user (a str)
+        Parameters
+        ----------
+        parser : `argparse.ArgumentParser`
+            Argument parser.
+        namespace : `argparse.Namespace`
+            Parsed command. The ``namespace.config`` attribute is updated.
+        values : `list`
+            A list of ``configItemName=value`` pairs.
+        option_string : `str`
+            Option value specified by the user.
         """
         if namespace.config is None:
             return
@@ -862,18 +1006,22 @@ class ConfigValueAction(argparse.Action):
 
 
 class ConfigFileAction(argparse.Action):
-    """!argparse action to load config overrides from one or more files
+    """argparse action to load config overrides from one or more files.
     """
 
     def __call__(self, parser, namespace, values, option_string=None):
-        """!Load one or more files of config overrides
+        """Load one or more files of config overrides.
 
-        @param[in] parser           argument parser (instance of ArgumentParser)
-        @param[in,out] namespace    parsed command (an instance of argparse.Namespace);
-            updated values:
-            - namespace.config
-        @param[in] values           a list of data config file paths
-        @param[in] option_string    option value specified by the user (a str)
+        Parameters
+        ----------
+        parser : `argparse.ArgumentParser`
+            Argument parser.
+        namespace : `argparse.Namespace`
+            Parsed command. The following attributes are updated by this method: ``namespace.config``.
+        values : `list`
+            A list of data config file paths.
+        option_string : `str`, optional
+            Option value specified by the user.
         """
         if namespace.config is None:
             return
@@ -885,30 +1033,43 @@ class ConfigFileAction(argparse.Action):
 
 
 class IdValueAction(argparse.Action):
-    """!argparse action callback to process a data ID into a dict
+    """argparse action callback to process a data ID into a dict.
     """
 
     def __call__(self, parser, namespace, values, option_string):
-        """!Parse --id data and append results to namespace.\<argument>.idList
+        """Parse ``--id`` data and append results to ``namespace.<argument>.idList``.
 
-        @param[in] parser           argument parser (instance of ArgumentParser)
-        @param[in,out] namespace    parsed command (an instance of argparse.Namespace);
-            updated values:
-            - \<idName>.idList, where \<idName> is the name of the ID argument,
-                for instance "id" for ID argument --id
-        @param[in] values           a list of data IDs; see data format below
-        @param[in] option_string    option value specified by the user (a str)
+        Parameters
+        ----------
+        parser : `ArgumentParser`
+            Argument parser.
+        namespace : `argparse.Namespace`
+            Parsed command (an instance of argparse.Namespace). The following attributes are updated:
 
-        The data format is:
-        key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
+            - ``<idName>.idList``, where ``<idName>`` is the name of the ID argument, for instance ``"id"``
+              for ID argument ``--id``.
+        values : `list`
+            A list of data IDs; see Notes below.
+        option_string : `str`
+            Option value specified by the user.
 
-        The values (e.g. value1_1) may either be a string, or of the form "int..int" (e.g. "1..3")
-        which is interpreted as "1^2^3" (inclusive, unlike a python range). So "0^2..4^7..9" is
-        equivalent to "0^2^3^4^7^8^9".  You may also specify a stride: "1..5:2" is "1^3^5"
+        Notes
+        -----
+        The data format is::
 
-        The cross product is computed for keys with multiple values. For example:
+            key1=value1_1[^value1_2[^value1_3...] key2=value2_1[^value2_2[^value2_3...]...
+
+        The values (e.g. ``value1_1``) may either be a string, or of the form ``"int..int"``
+        (e.g. ``"1..3"``) which is interpreted as ``"1^2^3"`` (inclusive, unlike a python range).
+        So ``"0^2..4^7..9"`` is equivalent to ``"0^2^3^4^7^8^9"``.  You may also specify a stride:
+        ``"1..5:2"`` is ``"1^3^5"``.
+
+        The cross product is computed for keys with multiple values. For example::
+
             --id visit 1^2 ccd 1,1^2,2
-        results in the following data ID dicts being appended to namespace.\<argument>.idList:
+
+        results in the following data ID dicts being appended to ``namespace.<argument>.idList``:
+
             {"visit":1, "ccd":"1,1"}
             {"visit":2, "ccd":"1,1"}
             {"visit":1, "ccd":"2,2"}
@@ -944,18 +1105,23 @@ class IdValueAction(argparse.Action):
 
 
 class LogLevelAction(argparse.Action):
-    """!argparse action to set log level
+    """argparse action to set log level.
     """
 
     def __call__(self, parser, namespace, values, option_string):
-        """!Set trace level
+        """Set trace level.
 
-        @param[in] parser       argument parser (instance of ArgumentParser)
-        @param[in] namespace    parsed command (an instance of argparse.Namespace); ignored
-        @param[in] values       a list of trace levels;
-            each item must be of the form 'component_name=level' or 'level',
-            where level is a keyword (not case sensitive) or an integer
-        @param[in] option_string    option value specified by the user (a str)
+        Parameters
+        ----------
+        parser : `ArgumentParser`
+            Argument parser.
+        namespace : `argparse.Namespace`
+            Parsed command. This argument is not used.
+        values : `list`
+            List of trace levels; each item must be of the form ``component_name=level`` or ``level``,
+            where ``level`` is a keyword (not case sensitive) or an integer.
+        option_string : `str`
+            Option value specified by the user.
         """
         permittedLevelList = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')
         permittedLevelSet = set(permittedLevelList)
@@ -975,13 +1141,20 @@ class LogLevelAction(argparse.Action):
 
 
 def setDottedAttr(item, name, value):
-    """!Like setattr, but accepts hierarchical names, e.g. foo.bar.baz
+    """Set an instance attribute (like `setattr` but accepting hierarchical names such as ``foo.bar.baz``).
 
-    @param[in,out] item     object whose attribute is to be set
-    @param[in] name         name of item to set
-    @param[in] value        new value for the item
+    Parameters
+    ----------
+    item : obj
+        Object whose attribute is to be set.
+    name : `str`
+        Name of attribute to set.
+    value : obj
+        New value for the attribute.
 
-    For example if name is foo.bar.baz then item.foo.bar.baz is set to the specified value.
+    Notes
+    -----
+    For example if name is ``foo.bar.baz`` then ``item.foo.bar.baz`` is set to the specified value.
     """
     subitem = item
     subnameList = name.split(".")
@@ -991,12 +1164,19 @@ def setDottedAttr(item, name, value):
 
 
 def getDottedAttr(item, name):
-    """!Like getattr, but accepts hierarchical names, e.g. foo.bar.baz
+    """Get an attribute (like `getattr` but accepts hierarchical names such as ``foo.bar.baz``).
 
-    @param[in] item         object whose attribute is to be returned
-    @param[in] name         name of item to get
+    Parameters
+    ----------
+    item : obj
+        Object whose attribute is to be returned.
+    name : `str`
+        Name of the attribute to get.
 
-    For example if name is foo.bar.baz then returns item.foo.bar.baz
+    Returns
+    -------
+    itemAttr : obj
+        If name is ``foo.bar.baz then the return value is ``item.foo.bar.baz``.
     """
     subitem = item
     for subname in name.split("."):
@@ -1005,13 +1185,21 @@ def getDottedAttr(item, name):
 
 
 def dataExists(butler, datasetType, dataRef):
-    """!Return True if data exists at the current level or any data exists at a deeper level, False otherwise
+    """Determine if data exists at the current level or any data exists at a deeper level.
 
-    @param[in] butler       data butler (a \ref lsst.daf.persistence.butler.Butler
-        "lsst.daf.persistence.Butler")
-    @param[in] datasetType  dataset type (a str)
-    @param[in] dataRef      butler data reference (a \ref lsst.daf.persistence.butlerSubset.ButlerDataRef
-        "lsst.daf.persistence.ButlerDataRef")
+    Parameters
+    ----------
+    butler : `lsst.daf.persistence.Butler`
+        The Butler.
+    datasetType : `str`
+        Dataset type.
+    dataRef : `lsst.daf.persistence.ButlerDataRef`
+        Butler data reference.
+
+    Returns
+    -------
+    exists : `bool`
+        Return value is `True` if data exists, `False` otherwise.
     """
     subDRList = dataRef.subItems()
     if subDRList:
