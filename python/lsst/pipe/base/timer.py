@@ -33,13 +33,21 @@ __all__ = ["logInfo", "timeMethod"]
 
 
 def logPairs(obj, pairs, logLevel=Log.DEBUG):
-    """!Log (name, value) pairs to obj.metadata and obj.log
+    """Log ``(name, value)`` pairs to ``obj.metadata`` and ``obj.log``
 
-    @param obj      a \ref task.Task "Task", or any other object with these two attributes:
-    * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.log.Log
-    @param pairs    a collection of (name, value) pairs
-    @param logLevel log level (an lsst.log level constant, such as lsst.log.Log.DEBUG)
+    Parameters
+    ----------
+    obj : `lsst.pipe.base.Task`-type
+        A `~lsst.pipe.base.Task` or any other object with these two attributes:
+
+        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other object with
+          ``add(name, value)`` method).
+        - ``log`` an instance of `lsst.log.Log`.
+
+    pairs : sequence
+        A sequence of ``(name, value)`` pairs.
+    logLevel : optional
+        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
     """
     strList = []
     for name, value in pairs:
@@ -53,22 +61,32 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
 
 
 def logInfo(obj, prefix, logLevel=Log.DEBUG):
-    """!Log timer information to obj.metadata and obj.log
+    """Log timer information to ``obj.metadata`` and ``obj.log``.
 
-    @param obj      a \ref task.Task "Task", or any other object with these two attributes:
-    * metadata an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log an instance of lsst.log.Log
-    @param prefix   name prefix, the resulting entries are \<prefix>CpuTime, etc.
-        For example timeMethod uses prefix = \<methodName>Start
-        when the method begins and prefix = \<methodName>End when the method ends.
-    @param logLevel log level (an lsst.log level, constant such as lsst.log.Log.DEBUG)
+    Parameters
+    ----------
+    obj : `lsst.pipe.base.Task`-type
+        A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
+        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other object with
+          ``add(name, value)`` method).
+        - ``log`` an instance of `lsst.log.Log`.
 
+    prefix
+        Name prefix, the resulting entries are ``CpuTime``, etc.. For example timeMethod uses
+        ``prefix = Start`` when the method begins and ``prefix = End`` when the method ends.
+    logLevel : optional
+        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+
+    Notes
+    -----
     Logged items include:
-    * Utc:      UTC date in ISO format (only in metadata since log entries have timestamps)
-    * CpuTime:  CPU time (seconds)
-    * MaxRss:   maximum resident set size
-    All logged resource information is only for the current process; child processes are excluded
+
+    - ``Utc``: UTC date in ISO format (only in metadata since log entries have timestamps).
+    - ``CpuTime``: CPU time (seconds).
+    - ``MaxRss``: maximum resident set size.
+
+    All logged resource information is only for the current process; child processes are excluded.
     """
     cpuTime = time.clock()
     utcStr = datetime.datetime.utcnow().isoformat()
@@ -92,28 +110,39 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
 
 
 def timeMethod(func):
-    """!Decorator to measure duration of a task method
+    """Decorator to measure duration of a task method.
 
-    Writes various measures of time and possibly memory usage to the task's metadata;
-    all items are prefixed with the function name.
+    Parameters
+    ----------
+    func
+        The method to wrap.
 
-    To use:
-    \code
-    import lsst.pipe.base as pipeBase
-    class FooTask(pipeBase.Task):
-        ...
+    Notes
+    -----
+    Writes various measures of time and possibly memory usage to the task's metadata; all items are prefixed
+    with the function name.
 
-        @pipeBase.timeMethod
-        def run(self, ...): # or any other instance method you want to time
-            ...
-    \endcode
+    .. warning::
 
-    @param func the method to wrap
+       This decorator only works with instance methods of Task, or any class with these attributes:
 
-    @warning This decorator only works with instance methods of Task, or any class with these attributes:
-    * metadata: an instance of lsst.daf.base.PropertyList (or other object with add(name, value) method)
-    * log: an instance of lsst.log.Log
+       - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other object with
+         ``add(name, value)`` method).
+       - ``log``: an instance of `lsst.log.Log`.
+
+    Examples
+    --------
+    To use::
+
+        import lsst.pipe.base as pipeBase
+        class FooTask(pipeBase.Task):
+            pass
+
+            @pipeBase.timeMethod
+            def run(self, ...): # or any other instance method you want to time
+                pass
     """
+
     @functools.wraps(func)
     def wrapper(self, *args, **keyArgs):
         logInfo(obj=self, prefix=func.__name__ + "Start")
