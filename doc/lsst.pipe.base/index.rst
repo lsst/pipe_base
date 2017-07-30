@@ -45,3 +45,8 @@ Developing tasks and command-line tasks
 
    creating-a-task.rst
    creating-a-command-line-task.rst
+
+Python API reference
+====================
+
+.. automodapi:: lsst.pipe.base
