@@ -30,6 +30,7 @@ Using command-line tasks
    command-line-task-data-repo-howto.rst
    command-line-task-dataid-howto.rst
    command-line-task-config-howto.rst
+   command-line-task-retargeting-howto.rst
    command-line-task-prov-howto.rst
    command-line-task-logging-howto.rst
    command-line-task-parallel-howto.rst
