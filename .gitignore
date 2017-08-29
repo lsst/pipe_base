@@ -13,6 +13,8 @@ doc/*.tag
 doc/html
 doc/doxygen.conf
 doc/xml
+doc/_build
+doc/py-api/
 python/lsst/pipe/base/version.py
 tests/.tests
 ups/*.cfgc

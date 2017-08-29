@@ -41,10 +41,10 @@ __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
 
 def _poolFunctionWrapper(function, arg):
-    """Wrapper around function to catch exceptions that don't inherit from Exception
+    """Wrapper around function to catch exceptions that don't inherit from `Exception`.
 
-    Such exceptions aren't caught by multiprocessing, which causes the slave
-    process to crash and you end up hitting the timeout.
+    Such exceptions aren't caught by multiprocessing, which causes the slave process to crash and you end up
+    hitting the timeout.
     """
     try:
         return function(arg)
@@ -59,23 +59,28 @@ def _poolFunctionWrapper(function, arg):
 
 
 def _runPool(pool, timeout, function, iterable):
-    """Wrapper around pool.map_async, to handle timeout
+    """Wrapper around ``pool.map_async``, to handle timeout
 
     This is required so as to trigger an immediate interrupt on the KeyboardInterrupt (Ctrl-C); see
     http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
 
-    Further wraps the function in _poolFunctionWrapper to catch exceptions
-    that don't inherit from Exception.
+    Further wraps the function in ``_poolFunctionWrapper`` to catch exceptions
+    that don't inherit from `Exception`.
     """
     return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
 
 
 @contextlib.contextmanager
 def profile(filename, log=None):
-    """!Context manager for profiling with cProfile
+    """Context manager for profiling with cProfile.
 
-    @param filename     filename to which to write profile (profiling disabled if None or empty)
-    @param log          log object for logging the profile operations
+
+    Parameters
+    ----------
+    filename : `str`
+        Filename to which to write profile (profiling disabled if `None` or empty).
+    log : `lsst.log.Log`, optional
+        Log object for logging the profile operations.
 
     If profiling is enabled, the context manager returns the cProfile.Profile object (otherwise
     it returns None), which allows additional control over profiling.  You can obtain this using
@@ -84,7 +89,7 @@ def profile(filename, log=None):
         with profile(filename) as prof:
             runYourCodeHere()
 
-    The output cumulative profile can be printed with a command-line like:
+    The output cumulative profile can be printed with a command-line like::
 
         python -c 'import pstats; pstats.Stats("<filename>").sort_stats("cumtime").print_stats(30)'
     """
@@ -105,69 +110,68 @@ def profile(filename, log=None):
 
 
 class TaskRunner(object):
-    """Run a command-line task, using multiprocessing if requested.
+    """Run a command-line task, using `multiprocessing` if requested.
 
-    Each command-line task (subclass of CmdLineTask) has a task runner. By
-    default it is this class, but some tasks require a subclass. See the
-    manual "how to write a command-line task" in the pipe_tasks documentation
-    for more information. See CmdLineTask.parseAndRun to see how a task runner
-    is used.
+    Parameters
+    ----------
+    TaskClass : `lsst.pipe.base.Task` subclass
+        The class of the task to run.
+    parsedCmd : `argparse.Namespace`
+        The parsed command-line arguments, as returned by the task's argument parser's
+        `~lsst.pipe.base.ArgumentParser.parse_args` method.
 
-    You may use this task runner for your command-line task if your task has
-    a run method that takes exactly one argument: a butler data reference.
-    Otherwise you must provide a task-specific subclass of this runner for
-    your task's `RunnerClass` that overrides TaskRunner.getTargetList and
-    possibly TaskRunner.\_\_call\_\_. See TaskRunner.getTargetList for
-    details.
+        .. warning::
 
-    This design matches the common pattern for command-line tasks: the run
-    method takes a single data reference, of some suitable name. Additional
-    arguments are rare, and if present, require a subclass of TaskRunner that
-    calls these additional arguments by name.
+           Do not store ``parsedCmd``, as this instance is pickled (if multiprocessing) and parsedCmd may
+           contain non-picklable elements. It certainly contains more data than we need to send to each
+           instance of the task.
+    doReturnResults : `bool`, optional
+        Should run return the collected result from each invocation of the task? This is only intended for
+        unit tests and similar use. It can easily exhaust memory (if the task returns enough data and you
+        call it enough times) and it will fail when using multiprocessing if the returned data cannot be
+        pickled.
 
-    Instances of this class must be picklable in order to be compatible with
-    multiprocessing. If multiprocessing is requested
-    (parsedCmd.numProcesses > 1) then run() calls prepareForMultiProcessing
-    to jettison optional non-picklable elements. If your task runner is not
-    compatible with multiprocessing then indicate this in your task by setting
-    class variable canMultiprocess=False.
+        Note that even if ``doReturnResults`` is False a struct with a single member "exitStatus" is returned,
+        with value 0 or 1 to be returned to the unix shell.
 
-    Due to a python bug [1], handling a KeyboardInterrupt properly requires
-    specifying a timeout [2]. This timeout (in sec) can be specified as the
-    "timeout" element in the output from ArgumentParser (the "parsedCmd"), if
-    available, otherwise we use TaskRunner.TIMEOUT.
+    Raises
+    ------
+    ImportError
+        If multiprocessing is requested (and the task supports it) but the multiprocessing library cannot be
+        imported.
 
-    [1] http://bugs.python.org/issue8296
-    [2] http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool)
+    Notes
+    -----
+    Each command-line task (subclass of `lsst.pipe.base.CmdLineTask`) has a task runner. By default it is this
+    class, but some tasks require a subclass. See the manual :ref:`creating-a-command-line-task` for more
+    information. See `CmdLineTask.parseAndRun` to see how a task runner is used.
+
+    You may use this task runner for your command-line task if your task has a run method that takes exactly
+    one argument: a butler data reference. Otherwise you must provide a task-specific subclass of this runner
+    for your task's ``RunnerClass`` that overrides `TaskRunner.getTargetList` and possibly
+    `TaskRunner.__call__`. See `TaskRunner.getTargetList` for details.
+
+    This design matches the common pattern for command-line tasks: the run method takes a single data
+    reference, of some suitable name. Additional arguments are rare, and if present, require a subclass of
+    `TaskRunner` that calls these additional arguments by name.
+
+    Instances of this class must be picklable in order to be compatible with multiprocessing. If
+    multiprocessing is requested (``parsedCmd.numProcesses > 1``) then `run` calls `prepareForMultiProcessing`
+    to jettison optional non-picklable elements. If your task runner is not compatible with multiprocessing
+    then indicate this in your task by setting class variable ``canMultiprocess=False``.
+
+    Due to a `python bug`__, handling a `KeyboardInterrupt` properly `requires specifying a timeout`__. This
+    timeout (in sec) can be specified as the ``timeout`` element in the output from
+    `~lsst.pipe.base.ArgumentParser` (the ``parsedCmd``), if available, otherwise we use `TaskRunner.TIMEOUT`.
+
+    .. __: http://bugs.python.org/issue8296
+    .. __:  http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
     """
-    TIMEOUT = 3600*24*30  # Default timeout (sec) for multiprocessing
+
+    TIMEOUT = 3600*24*30
+    """Default timeout (seconds) for multiprocessing."""
 
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
-        """!Construct a TaskRunner
-
-        @warning Do not store parsedCmd, as this instance is pickled (if
-        multiprocessing) and parsedCmd may contain non-picklable elements.
-        It certainly contains more data than we need to send to each
-        instance of the task.
-
-        @param TaskClass    The class of the task to run
-        @param parsedCmd    The parsed command-line arguments, as returned by
-                            the task's argument parser's parse_args method.
-        @param doReturnResults    Should run return the collected result from
-            each invocation of the task? This is only intended for unit tests
-            and similar use. It can easily exhaust memory (if the task
-            returns enough data and you call it enough times) and it will
-            fail when using multiprocessing if the returned data cannot be
-            pickled.
-
-            Note that even if doReturnResults is False a struct with a single
-            member "exitStatus" is returned, with value 0 or 1 to be returned
-            to the unix shell.
-
-        @throws ImportError if multiprocessing requested (and the task
-            supports it) but the multiprocessing library cannot be
-            imported.
-        """
         self.TaskClass = TaskClass
         self.doReturnResults = bool(doReturnResults)
         self.config = parsedCmd.config
@@ -196,15 +200,24 @@ class TaskRunner(object):
         self.log = None
 
     def run(self, parsedCmd):
-        """!Run the task on all targets.
+        """Run the task on all targets.
 
-        The task is run under multiprocessing if numProcesses > 1; otherwise
-        processing is serial.
+        Parameters
+        ----------
+        parsedCmd : `argparse.Namespace`
+            Parsed command `argparse.Namespace`.
 
-        @return a list of results returned by TaskRunner.\_\_call\_\_, or an
-            empty list if TaskRunner.\_\_call\_\_ is not called (e.g. if
-            TaskRunner.precall returns `False`). See TaskRunner.\_\_call\_\_
+        Returns
+        -------
+        resultList : `list`
+            A list of results returned by `TaskRunner.__call__`, or an empty list if `TaskRunner.__call__`
+            is not called (e.g. if `TaskRunner.precall` returns `False`). See `TaskRunner.__call__`
             for details.
+
+        Notes
+        -----
+        The task is run under multiprocessing if `TaskRunner.numProcesses` is more than 1; otherwise
+        processing is serial.
         """
         resultList = []
         if self.numProcesses > 1:
@@ -237,80 +250,78 @@ class TaskRunner(object):
 
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
-        """!Return a list of (dataRef, kwargs) for TaskRunner.\_\_call\_\_.
+        """Get a list of (dataRef, kwargs) for `TaskRunner.__call__`.
 
-        @param parsedCmd    the parsed command object (an argparse.Namespace)
-            returned by \ref argumentParser.ArgumentParser.parse_args
-            "ArgumentParser.parse_args".
-        @param **kwargs     any additional keyword arguments. In the default
-            TaskRunner this is an empty dict, but having it simplifies
-            overriding TaskRunner for tasks whose run method takes additional
-            arguments (see case (1) below).
+        Parameters
+        ----------
+        parsedCmd : `argparse.Namespace`
+            The parsed command object returned by `lsst.pipe.base.argumentParser.ArgumentParser.parse_args`.
+        kwargs
+            Any additional keyword arguments. In the default `TaskRunner` this is an empty dict, but having
+            it simplifies overriding `TaskRunner` for tasks whose run method takes additional arguments
+            (see case (1) below).
 
-        The default implementation of TaskRunner.getTargetList and
-        TaskRunner.\_\_call\_\_ works for any command-line task whose run
-        method takes exactly one argument: a data reference. Otherwise you
-        must provide a variant of TaskRunner that overrides
-        TaskRunner.getTargetList and possibly TaskRunner.\_\_call\_\_.
-        There are two cases:
+        Notes
+        -----
+        The default implementation of `TaskRunner.getTargetList` and `TaskRunner.__call__` works for any
+        command-line task whose run method takes exactly one argument: a data reference. Otherwise you
+        must provide a variant of TaskRunner that overrides `TaskRunner.getTargetList` and possibly
+        `TaskRunner.__call__`. There are two cases.
 
-        (1) If your command-line task has a `run` method that takes one data
-        reference followed by additional arguments, then you need only
-        override TaskRunner.getTargetList to return the additional arguments
-        as an argument dict. To make this easier, your overridden version of
-        getTargetList may call TaskRunner.getTargetList with the extra
-        arguments as keyword arguments. For example, the following adds an
-        argument dict containing a single key: "calExpList", whose value is
-        the list of data IDs for the calexp ID argument:
+        **Case 1**
 
-        \code
-        \@staticmethod
-        def getTargetList(parsedCmd):
-            return TaskRunner.getTargetList(
-                parsedCmd,
-                calExpList=parsedCmd.calexp.idList
-            )
-        \endcode
+        If your command-line task has a ``run`` method that takes one data reference followed by additional
+        arguments, then you need only override `TaskRunner.getTargetList` to return the additional arguments
+        as an argument dict. To make this easier, your overridden version of `~TaskRunner.getTargetList` may
+        call `TaskRunner.getTargetList` with the extra arguments as keyword arguments. For example, the
+        following adds an argument dict containing a single key: "calExpList", whose value is the list of data
+        IDs for the calexp ID argument::
 
-        It is equivalent to this slightly longer version:
+            def getTargetList(parsedCmd):
+                return TaskRunner.getTargetList(
+                    parsedCmd,
+                    calExpList=parsedCmd.calexp.idList
+                )
 
-        \code
-        \@staticmethod
-        def getTargetList(parsedCmd):
-            argDict = dict(calExpList=parsedCmd.calexp.idList)
-            return [(dataId, argDict) for dataId in parsedCmd.id.idList]
-        \endcode
+        It is equivalent to this slightly longer version::
 
-        (2) If your task does not meet condition (1) then you must override
-        both TaskRunner.getTargetList and TaskRunner.\_\_call\_\_. You may do
-        this however you see fit, so long as TaskRunner.getTargetList
-        returns a list, each of whose elements is sent to
-        TaskRunner.\_\_call\_\_, which runs your task.
+            @staticmethod
+            def getTargetList(parsedCmd):
+                argDict = dict(calExpList=parsedCmd.calexp.idList)
+                return [(dataId, argDict) for dataId in parsedCmd.id.idList]
+
+        **Case 2**
+
+        If your task does not meet condition (1) then you must override both TaskRunner.getTargetList and
+        `TaskRunner.__call__`. You may do this however you see fit, so long as `TaskRunner.getTargetList`
+        returns a list, each of whose elements is sent to `TaskRunner.__call__`, which runs your task.
         """
         return [(ref, kwargs) for ref in parsedCmd.id.refList]
 
     def makeTask(self, parsedCmd=None, args=None):
-        """!Create a Task instance
+        """Create a Task instance.
 
-        @param[in] parsedCmd    parsed command-line options (used for extra
-            task args by some task runners)
-        @param[in] args         args tuple passed to TaskRunner.\_\_call\_\_
-            (used for extra task arguments by some task runners)
+        Parameters
+        ----------
+        parsedCmd
+            Parsed command-line options (used for extra task args by some task runners).
+        args
+            Args tuple passed to `TaskRunner.__call__` (used for extra task arguments by some task runners).
 
-        makeTask() can be called with either the 'parsedCmd' argument or
-        'args' argument set to None, but it must construct identical Task
-        instances in either case.
+        Notes
+        -----
+        ``makeTask`` can be called with either the ``parsedCmd`` argument or ``args`` argument set to None,
+        but it must construct identical Task instances in either case.
 
-        Subclasses may ignore this method entirely if they reimplement
-        both TaskRunner.precall and TaskRunner.\_\_call\_\_
+        Subclasses may ignore this method entirely if they reimplement both `TaskRunner.precall` and
+        `TaskRunner.__call__`.
         """
         return self.TaskClass(config=self.config, log=self.log)
 
     def _precallImpl(self, task, parsedCmd):
-        """The main work of 'precall'
+        """The main work of `precall`.
 
-        We write package versions, schemas and configs, or compare these to
-        existing files on disk if present.
+        We write package versions, schemas and configs, or compare these to existing files on disk if present.
         """
         if not parsedCmd.noVersions:
             task.writePackageVersions(parsedCmd.butler, clobber=parsedCmd.clobberVersions)
@@ -318,17 +329,20 @@ class TaskRunner(object):
         task.writeSchemas(parsedCmd.butler, clobber=self.clobberConfig, doBackup=self.doBackup)
 
     def precall(self, parsedCmd):
-        """Hook for code that should run exactly once, before multiprocessing
+        """Hook for code that should run exactly once, before multiprocessing.
 
-        Must return True if TaskRunner.\_\_call\_\_ should subsequently be
-        called.
+        Notes
+        -----
+        Must return True if `TaskRunner.__call__` should subsequently be called.
 
-        @warning Implementations must take care to ensure that no unpicklable
-            attributes are added to the TaskRunner itself, for compatibility
-            with multiprocessing.
+        .. warning::
 
-        The default implementation writes package versions, schemas and
-        configs, or compares them to existing files on disk if present.
+           Implementations must take care to ensure that no unpicklable
+           attributes are added to the TaskRunner itself, for compatibility
+           with multiprocessing.
+
+        The default implementation writes package versions, schemas and configs, or compares them to existing
+        files on disk if present.
         """
         task = self.makeTask(parsedCmd=parsedCmd)
 
@@ -345,24 +359,36 @@ class TaskRunner(object):
         return True
 
     def __call__(self, args):
-        """!Run the Task on a single target.
+        """Run the Task on a single target.
 
-        This default implementation assumes that the 'args' is a tuple
+        Parameters
+        ----------
+        args
+            Arguments for Task.run()
+
+        Returns
+        -------
+        struct : `lsst.pipe.base.Struct`
+            Contains these fields if ``doReturnResults`` is `True`:
+
+            - ``dataRef``: the provided data reference.
+            - ``metadata``: task metadata after execution of run.
+            - ``result``: result returned by task run, or `None` if the task fails.
+
+            If ``doReturnResults`` is `False` the struct contains:
+
+            - ``exitStatus``.
+
+        Notes
+        -----
+        This default implementation assumes that the ``args`` is a tuple
         containing a data reference and a dict of keyword arguments.
 
-        @warning if you override this method and wish to return something
-        when doReturnResults is false, then it must be picklable to support
-        multiprocessing and it should be small enough that pickling and
-        unpickling do not add excessive overhead.
+        .. warning::
 
-        @param args     Arguments for Task.run()
-
-        @return:
-        - None if doReturnResults false
-        - A pipe_base Struct containing these fields if doReturnResults true:
-            - dataRef: the provided data reference
-            - metadata: task metadata after execution of run
-            - result: result returned by task run, or None if the task fails
+           If you override this method and wish to return something when ``doReturnResults`` is `False`,
+           then it must be picklable to support multiprocessing and it should be small enough that pickling
+           and unpickling do not add excessive overhead.
         """
         dataRef, kwargs = args
         if self.log is None:
@@ -413,18 +439,25 @@ class TaskRunner(object):
 
 
 class ButlerInitializedTaskRunner(TaskRunner):
-    """!A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
+    """A TaskRunner for `CmdLineTask`\ s that require a ``butler`` keyword argument to be passed to
     their constructor.
     """
 
     def makeTask(self, parsedCmd=None, args=None):
-        """!A variant of the base version that passes a butler argument to the task's constructor
+        """A variant of the base version that passes a butler argument to the task's constructor.
 
-        @param[in] parsedCmd    parsed command-line options, as returned by the argument parser;
-            if specified then args is ignored
-        @param[in] args         other arguments; if parsedCmd is None then this must be specified
+        Parameters
+        ----------
+        parsedCmd : `argparse.Namespace`
+            Parsed command-line options, as returned by the `~lsst.pipe.base.ArgumentParser`; if specified
+            then args is ignored.
+        args
+            Other arguments; if ``parsedCmd`` is `None` then this must be specified.
 
-        @throw RuntimeError if parsedCmd and args are both None
+        Raises
+        ------
+        RuntimeError
+            Raised if ``parsedCmd`` and ``args`` are both `None`.
         """
         if parsedCmd is not None:
             butler = parsedCmd.butler
@@ -437,82 +470,101 @@ class ButlerInitializedTaskRunner(TaskRunner):
 
 
 class CmdLineTask(Task):
-    """!Base class for command-line tasks: tasks that may be executed from the command line
+    """Base class for command-line tasks: tasks that may be executed from the command-line.
 
-    See \ref pipeBase_introduction "pipe_base introduction" to learn what tasks are,
-    and \ref pipeTasks_writeCmdLineTask "how to write a command-line task" for more information
-    about writing command-line tasks.
-    If the second link is broken (as it will be before the documentation is cross-linked)
-    then look at the main page of pipe_tasks documentation for a link.
+    Notes
+    -----
+    See :ref:`task-framework-overview` to learn what tasks are and :ref:`creating-a-command-line-task` for
+    more information about writing command-line tasks.
 
     Subclasses must specify the following class variables:
-    * ConfigClass: configuration class for your task (a subclass of \ref lsst.pex.config.config.Config
-        "lsst.pex.config.Config", or if your task needs no configuration, then
-        \ref lsst.pex.config.config.Config "lsst.pex.config.Config" itself)
-    * _DefaultName: default name used for this task (a str)
+
+    - ``ConfigClass``: configuration class for your task (a subclass of `lsst.pex.config.Config`, or if your
+      task needs no configuration, then `lsst.pex.config.Config` itself).
+    - ``_DefaultName``: default name used for this task (a str).
 
     Subclasses may also specify the following class variables:
-    * RunnerClass: a task runner class. The default is TaskRunner, which works for any task
-      with a run method that takes exactly one argument: a data reference. If your task does
-      not meet this requirement then you must supply a variant of TaskRunner; see TaskRunner
-      for more information.
-    * canMultiprocess: the default is True; set False if your task does not support multiprocessing.
 
-    Subclasses must specify a method named "run":
-    - By default `run` accepts a single butler data reference, but you can specify an alternate task runner
-        (subclass of TaskRunner) as the value of class variable `RunnerClass` if your run method needs
-        something else.
-    - `run` is expected to return its data in a Struct. This provides safety for evolution of the task
-        since new values may be added without harming existing code.
-    - The data returned by `run` must be picklable if your task is to support multiprocessing.
+    - ``RunnerClass``: a task runner class. The default is ``TaskRunner``, which works for any task
+      with a run method that takes exactly one argument: a data reference. If your task does
+      not meet this requirement then you must supply a variant of ``TaskRunner``; see ``TaskRunner``
+      for more information.
+    - ``canMultiprocess``: the default is `True`; set `False` if your task does not support multiprocessing.
+
+    Subclasses must specify a method named ``run``:
+
+    - By default ``run`` accepts a single butler data reference, but you can specify an alternate task runner
+      (subclass of ``TaskRunner``) as the value of class variable ``RunnerClass`` if your run method needs
+      something else.
+    - ``run`` is expected to return its data in a `lsst.pipe.base.Struct`. This provides safety for evolution
+      of the task since new values may be added without harming existing code.
+    - The data returned by ``run`` must be picklable if your task is to support multiprocessing.
     """
     RunnerClass = TaskRunner
     canMultiprocess = True
 
     @classmethod
     def applyOverrides(cls, config):
-        """!A hook to allow a task to change the values of its config *after* the camera-specific
+        """A hook to allow a task to change the values of its config *after* the camera-specific
         overrides are loaded but before any command-line overrides are applied.
 
+        Parameters
+        ----------
+        config : instance of task's ``ConfigClass``
+            Task configuration.
+
+        Notes
+        -----
         This is necessary in some cases because the camera-specific overrides may retarget subtasks,
         wiping out changes made in ConfigClass.setDefaults. See LSST Trac ticket #2282 for more discussion.
 
-        @warning This is called by CmdLineTask.parseAndRun; other ways of constructing a config
-        will not apply these overrides.
+        .. warning::
 
-        @param[in] cls      the class object
-        @param[in] config   task configuration (an instance of cls.ConfigClass)
+           This is called by CmdLineTask.parseAndRun; other ways of constructing a config will not apply
+           these overrides.
         """
         pass
 
     @classmethod
     def parseAndRun(cls, args=None, config=None, log=None, doReturnResults=False):
-        """!Parse an argument list and run the command
+        """Parse an argument list and run the command.
 
+        Parameters
+        ----------
+        args : `list`, optional
+            List of command-line arguments; if `None` use `sys.argv`.
+        config : `lsst.pex.config.Config`-type, optional
+            Config for task. If `None` use `Task.ConfigClass`.
+        log : `lsst.log.Log`-type, optional
+            Log. If `None` use the default log.
+        doReturnResults : `bool`, optional
+            If `True`, return the results of this task. Default is `False`. This is only intended for
+            unit tests and similar use. It can easily exhaust memory (if the task returns enough data and you
+            call it enough times) and it will fail when using multiprocessing if the returned data cannot be
+            pickled.
+
+        Returns
+        -------
+        struct : `lsst.pipe.base.Struct`
+            Fields are:
+
+            - ``argumentParser``: the argument parser.
+            - ``parsedCmd``: the parsed command returned by the argument parser's
+              `lsst.pipe.base.ArgumentParser.parse_args` method.
+            - ``taskRunner``: the task runner used to run the task (an instance of `Task.RunnerClass`).
+            - ``resultList``: results returned by the task runner's ``run`` method, one entry per invocation.
+                This will typically be a list of `None` unless ``doReturnResults`` is `True`;
+                see `Task.RunnerClass` (`TaskRunner` by default) for more information.
+
+        Notes
+        -----
         Calling this method with no arguments specified is the standard way to run a command-line task
-        from the command line. For an example see pipe_tasks `bin/makeSkyMap.py` or almost any other
+        from the command-line. For an example see ``pipe_tasks`` ``bin/makeSkyMap.py`` or almost any other
         file in that directory.
-
-        @param cls      the class object
-        @param args     list of command-line arguments; if `None` use sys.argv
-        @param config   config for task (instance of pex_config Config); if `None` use cls.ConfigClass()
-        @param log      log (instance of lsst.log.Log); if `None` use the default log
-        @param doReturnResults  Return the collected results from each invocation of the task?
-            This is only intended for unit tests and similar use.
-            It can easily exhaust memory (if the task returns enough data and you call it enough times)
-            and it will fail when using multiprocessing if the returned data cannot be pickled.
-
-        @return a Struct containing:
-        - argumentParser: the argument parser
-        - parsedCmd: the parsed command returned by the argument parser's parse_args method
-        - taskRunner: the task runner used to run the task (an instance of cls.RunnerClass)
-        - resultList: results returned by the task runner's run method, one entry per invocation.
-            This will typically be a list of `None` unless doReturnResults is `True`;
-            see cls.RunnerClass (TaskRunner by default) for more information.
 
         If one or more of the dataIds fails then this routine will exit (with a status giving the
         number of failed dataIds) rather than returning this struct;  this behaviour can be
-        overridden by specifying the --noExit option.
+        overridden by specifying the ``--noExit`` command-line option.
         """
         if args is None:
             commandAsStr = " ".join(sys.argv)
@@ -541,7 +593,7 @@ class CmdLineTask(Task):
                 parsedCmd.log.warn("%d dataRefs failed; not exiting as --noExit was set", nFailed)
             else:
                 sys.exit(nFailed)
-            
+
         return Struct(
             argumentParser=argumentParser,
             parsedCmd=parsedCmd,
@@ -551,12 +603,17 @@ class CmdLineTask(Task):
 
     @classmethod
     def _makeArgumentParser(cls):
-        """!Create and return an argument parser
+        """Create and return an argument parser.
 
-        @param[in] cls      the class object
-        @return the argument parser for this task.
+        Returns
+        -------
+        parser : `lsst.pipe.base.ArgumentParser`
+            The argument parser for this task.
 
-        By default this returns an ArgumentParser with one ID argument named `--id`  of dataset type "raw".
+        Notes
+        -----
+        By default this returns an `~lsst.pipe.base.ArgumentParser` with one ID argument named `--id` of
+        dataset type ``raw``.
 
         Your task subclass may need to override this method to change the dataset type or data ref level,
         or to add additional data ID arguments. If you add additional data ID arguments or your task's
@@ -569,15 +626,20 @@ class CmdLineTask(Task):
         return parser
 
     def writeConfig(self, butler, clobber=False, doBackup=True):
-        """!Write the configuration used for processing the data, or check that an existing
+        """Write the configuration used for processing the data, or check that an existing
         one is equal to the new one if present.
 
-        @param[in] butler   data butler used to write the config.
-            The config is written to dataset type self._getConfigName()
-        @param[in] clobber  a boolean flag that controls what happens if a config already has been saved:
-            - True: overwrite or rename the existing config, depending on `doBackup`
-            - False: raise TaskError if this config does not match the existing config
-        @param[in] doBackup  if clobbering, should we backup the old files?
+        Parameters
+        ----------
+        butler : `lsst.daf.persistence.Butler`
+            Data butler used to write the config. The config is written to dataset type
+            `CmdLineTask._getConfigName`.
+        clobber : `bool`, optional
+            A boolean flag that controls what happens if a config already has been saved:
+            - `True`: overwrite or rename the existing config, depending on ``doBackup``.
+            - `False`: raise `TaskError` if this config does not match the existing config.
+        doBackup : bool, optional
+            Set to `True` to backup the config files if clobbering.
         """
         configName = self._getConfigName()
         if configName is None:
@@ -604,17 +666,23 @@ class CmdLineTask(Task):
             butler.put(self.config, configName)
 
     def writeSchemas(self, butler, clobber=False, doBackup=True):
-        """!Write the schemas returned by \ref task.Task.getAllSchemaCatalogs "getAllSchemaCatalogs"
+        """Write the schemas returned by `lsst.pipe.base.Task.getAllSchemaCatalogs`.
 
-        @param[in] butler   data butler used to write the schema.
-            Each schema is written to the dataset type specified as the key in the dict returned by
-            \ref task.Task.getAllSchemaCatalogs "getAllSchemaCatalogs".
-        @param[in] clobber  a boolean flag that controls what happens if a schema already has been saved:
-            - True: overwrite or rename the existing schema, depending on `doBackup`
-            - False: raise TaskError if this schema does not match the existing schema
-        @param[in] doBackup  if clobbering, should we backup the old files?
+        Parameters
+        ----------
+        butler : `lsst.daf.persistence.Butler`
+            Data butler used to write the schema. Each schema is written to the dataset type specified as the
+            key in the dict returned by `~lsst.pipe.base.Task.getAllSchemaCatalogs`.
+        clobber : `bool`, optional
+            A boolean flag that controls what happens if a schema already has been saved:
+            - `True`: overwrite or rename the existing schema, depending on ``doBackup``.
+            - `False`: raise `TaskError` if this schema does not match the existing schema.
+        doBackup : `bool`, optional
+            Set to `True` to backup the schema files if clobbering.
 
-        @warning if clobber is False and an existing schema does not match a current schema,
+        Notes
+        -----
+        If ``clobber`` is `False` and an existing schema does not match a current schema,
         then some schemas may have been saved successfully and others may not, and there is no easy way to
         tell which is which.
         """
@@ -633,10 +701,13 @@ class CmdLineTask(Task):
                 butler.put(catalog, schemaDataset)
 
     def writeMetadata(self, dataRef):
-        """!Write the metadata produced from processing the data
+        """Write the metadata produced from processing the data.
 
-        @param[in] dataRef  butler data reference used to write the metadata.
-            The metadata is written to dataset type self._getMetadataName()
+        Parameters
+        ----------
+        dataRef
+            Butler data reference used to write the metadata.
+            The metadata is written to dataset type `CmdLineTask._getMetadataName`.
         """
         try:
             metadataName = self._getMetadataName()
@@ -646,19 +717,29 @@ class CmdLineTask(Task):
             self.log.warn("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):
-        """!Compare and write package versions
+        """Compare and write package versions.
 
-        We retrieve the persisted list of packages and compare with what we're currently using.
-        We raise TaskError if there's a version mismatch.
+        Parameters
+        ----------
+        butler : `lsst.daf.persistence.Butler`
+            Data butler used to read/write the package versions.
+        clobber : `bool`, optional
+            A boolean flag that controls what happens if versions already have been saved:
+            - `True`: overwrite or rename the existing version info, depending on ``doBackup``.
+            - `False`: raise `TaskError` if this version info does not match the existing.
+        doBackup : `bool`, optional
+            If `True` and clobbering, old package version files are backed up.
+        dataset : `str`, optional
+            Name of dataset to read/write.
 
+        Raises
+        ------
+        TaskError
+            Raised if there is a version mismatch with current and persisted lists of package versions.
+
+        Notes
+        -----
         Note that this operation is subject to a race condition.
-
-        @param[in] butler  data butler used to read/write the package versions
-        @param[in] clobber  a boolean flag that controls what happens if versions already have been saved:
-            - True: overwrite or rename the existing version info, depending on `doBackup`
-            - False: raise TaskError if this version info does not match the existing
-        @param[in] doBackup  if clobbering, should we backup the old files?
-        @param[in] dataset  name of dataset to read/write
         """
         packages = Packages.fromSystem()
 
@@ -689,15 +770,19 @@ class CmdLineTask(Task):
             butler.put(old, dataset, doBackup=doBackup)
 
     def _getConfigName(self):
-        """!Return the name of the config dataset type, or None if config is not to be persisted
+        """Get the name of the config dataset type, or `None` if config is not to be persisted.
 
-        @note The name may depend on the config; that is why this is not a class method.
+        Notes
+        -----
+        The name may depend on the config; that is why this is not a class method.
         """
         return self._DefaultName + "_config"
 
     def _getMetadataName(self):
-        """!Return the name of the metadata dataset type, or None if metadata is not to be persisted
+        """Get the name of the metadata dataset type, or `None` if metadata is not to be persisted.
 
-        @note The name may depend on the config; that is why this is not a class method.
+        Notes
+        -----
+        The name may depend on the config; that is why this is not a class method.
         """
         return self._DefaultName + "_metadata"

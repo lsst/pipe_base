@@ -34,9 +34,12 @@ __all__ = ["Task", "TaskError"]
 
 
 class TaskError(Exception):
-    """!Use to report errors for which a traceback is not useful.
+    """Use to report errors for which a traceback is not useful.
 
+    Notes
+    -----
     Examples of such errors:
+
     - processCcd is asked to run detection, but not calibration, and no calexp is found.
     - coadd finds no valid images in the specified patch.
     """
@@ -44,65 +47,79 @@ class TaskError(Exception):
 
 
 class Task(object):
-    """!Base class for data processing tasks
+    """Base class for data processing tasks.
 
-    See \ref pipeBase_introduction "pipe_base introduction" to learn what tasks are,
-    and \ref pipeTasks_writeTask "how to write a task" for more information about writing tasks.
-    If the second link is broken (as it will be before the documentation is cross-linked)
-    then look at the main page of pipe_tasks documentation for a link.
+    See :ref:`task-framework-overview` to learn what tasks are, and :ref:`creating-a-task` for more
+    information about writing tasks.
 
+    Parameters
+    ----------
+    config : `Task.ConfigClass` instance, optional
+        Configuration for this task (an instance of Task.ConfigClass, which is a task-specific subclass of
+        `lsst.pex.config.Config`, or `None`. If `None`:
+
+        - If parentTask specified then defaults to parentTask.config.\<name>
+        - If parentTask is None then defaults to self.ConfigClass()
+
+    name : `str`, optional
+        Brief name of task, or `None`; if `None` then defaults to `Task._DefaultName`
+    parentTask : `Task`-type, optional
+        The parent task of this subtask, if any.
+
+        - If `None` (a top-level task) then you must specify config and name is ignored.
+        - If not `None` (a subtask) then you must specify name.
+    log : `lsst.log.Log`, optional
+        Log whose name is used as a log name prefix, or `None` for no prefix. Ignored if is parentTask
+        specified, in which case ``parentTask.log``\ ’s name is used as a prefix. The task's log name is
+        ``prefix + "." + name`` if a prefix exists, else ``name``. The task's log is then a child logger of
+        ``parentTask.log`` (if ``parentTask`` specified), or a child logger of the log from the argument
+        (if ``log`` is not `None`).
+
+    Raises
+    ------
+    RuntimeError
+        Raised under these circumstances:
+
+        - If ``parentTask`` is `None` and ``config`` is `None`.
+        - If ``parentTask`` is not `None` and ``name`` is `None`.
+        - If ``name`` is `None` and ``_DefaultName`` does not exist.
+
+    Notes
+    -----
     Useful attributes include:
-    * log: an lsst.log.Log
-    * config: task-specific configuration; an instance of ConfigClass (see below)
-    * metadata: an lsst.daf.base.PropertyList for collecting task-specific metadata,
+
+    - ``log``: an lsst.log.Log
+    - ``config``: task-specific configuration; an instance of ``ConfigClass`` (see below).
+    - ``metadata``: an `lsst.daf.base.PropertyList` for collecting task-specific metadata,
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used by the task.
 
-    Subclasses typically have a method named "run" to perform the main data processing. Details:
-    * run should process the minimum reasonable amount of data, typically a single CCD.
+    Subclasses typically have a method named ``run`` to perform the main data processing. Details:
+
+    - ``run`` should process the minimum reasonable amount of data, typically a single CCD.
       Iteration, if desired, is performed by a caller of the run method. This is good design and allows
       multiprocessing without the run method having to support it directly.
-    * If "run" can persist or unpersist data:
-        * "run" should accept a butler data reference (or a collection of data references, if appropriate,
-            e.g. coaddition).
-        * There should be a way to run the task without persisting data. Typically the run method returns all
-            data, even if it is persisted, and the task's config method offers a flag to disable persistence.
+    - If ``run`` can persist or unpersist data:
+      - ``run`` should accept a butler data reference (or a collection of data references, if appropriate,
+        e.g. coaddition).
+      - There should be a way to run the task without persisting data. Typically the run method returns all
+        data, even if it is persisted, and the task's config method offers a flag to disable persistence.
 
-    \deprecated Tasks other than cmdLineTask.CmdLineTask%s should \em not accept a blob such as a butler data
-    reference.  How we will handle data references is still TBD, so don't make changes yet! RHL 2014-06-27
+    **Deprecated:** Tasks other than cmdLineTask.CmdLineTask%s should *not* accept a blob such as a butler
+    data reference.  How we will handle data references is still TBD, so don't make changes yet!
+    RHL 2014-06-27
 
-    Subclasses must also have an attribute ConfigClass that is a subclass of lsst.pex.config.Config
-    which configures the task. Subclasses should also have an attribute _DefaultName:
-    the default name if there is no parent task. _DefaultName is required for subclasses of
-    \ref cmdLineTask.CmdLineTask "CmdLineTask" and recommended for subclasses of Task because it simplifies
-    construction (e.g. for unit tests).
+    Subclasses must also have an attribute ``ConfigClass`` that is a subclass of `lsst.pex.config.Config`
+    which configures the task. Subclasses should also have an attribute ``_DefaultName``:
+    the default name if there is no parent task. ``_DefaultName`` is required for subclasses of
+    `~lsst.pipe.base.CmdLineTask` and recommended for subclasses of Task because it simplifies construction
+    (e.g. for unit tests).
 
-    Tasks intended to be run from the command line should be subclasses of \ref cmdLineTask.CmdLineTask
-    "CmdLineTask", not Task.
+    Tasks intended to be run from the command line should be subclasses of `~lsst.pipe.base.CmdLineTask`
+    not Task.
     """
 
     def __init__(self, config=None, name=None, parentTask=None, log=None):
-        """!Create a Task
-
-        @param[in] config       configuration for this task (an instance of self.ConfigClass,
-            which is a task-specific subclass of lsst.pex.config.Config), or None. If None:
-            - If parentTask specified then defaults to parentTask.config.\<name>
-            - If parentTask is None then defaults to self.ConfigClass()
-        @param[in] name         brief name of task, or None; if None then defaults to self._DefaultName
-        @param[in] parentTask   the parent task of this subtask, if any.
-            - If None (a top-level task) then you must specify config and name is ignored.
-            - If not None (a subtask) then you must specify name
-        @param[in] log          log (an lsst.log.Log) whose name is used as a log name prefix,
-            or None for no prefix. Ignored if parentTask specifie, in which case parentTask.log's
-            name is used as a prefix.
-            The task's log name is `prefix + "." + name` if a prefix exists, else `name`.
-            The task's log is then a child logger of parentTask.log (if parentTask specified),
-            or a child logger of the log from the argument (if log is not None).
-
-        @throw RuntimeError if parentTask is None and config is None.
-        @throw RuntimeError if parentTask is not None and name is None.
-        @throw RuntimeError if name is None and _DefaultName does not exist.
-        """
         self.metadata = dafBase.PropertyList()
         self._parentTask = parentTask
 
@@ -136,40 +153,56 @@ class Task(object):
         self._taskDict[self._fullName] = self
 
     def emptyMetadata(self):
-        """!Empty (clear) the metadata for this Task and all sub-Tasks."""
+        """Empty (clear) the metadata for this Task and all sub-Tasks.
+        """
         for subtask in self._taskDict.values():
             subtask.metadata = dafBase.PropertyList()
 
     def getSchemaCatalogs(self):
-        """!Return the schemas generated by this task
+        """Get the schemas generated by this task.
 
-        @warning Subclasses the use schemas must override this method. The default implemenation
-        returns an empty dict.
+        Returns
+        -------
+        schemaCatalogs : `dict`
+            Keys are butler dataset type, values are an empty catalog (an instance of the appropriate
+            `lsst.afw.table` Catalog type) for this task.
 
-        @return a dict of butler dataset type: empty catalog (an instance of the appropriate
-            lsst.afw.table Catalog type) for this task
+        Notes
+        -----
 
-        This method may be called at any time after the Task is constructed, which means that
-        all task schemas should be computed at construction time, __not__ when data is actually
-        processed. This reflects the philosophy that the schema should not depend on the data.
+        .. warning::
+
+           Subclasses that use schemas must override this method. The default implemenation returns
+           an empty dict.
+
+        This method may be called at any time after the Task is constructed, which means that all task
+        schemas should be computed at construction time, *not* when data is actually processed. This
+        reflects the philosophy that the schema should not depend on the data.
 
         Returning catalogs rather than just schemas allows us to save e.g. slots for SourceCatalog as well.
 
-        See also Task.getAllSchemaCatalogs
+        See also
+        --------
+        Task.getAllSchemaCatalogs
         """
         return {}
 
     def getAllSchemaCatalogs(self):
-        """!Call getSchemaCatalogs() on all tasks in the hiearchy, combining the results into a single dict.
+        """Get schema catalogs for all tasks in the hierarchy, combining the results into a single dict.
 
-        @return a dict of butler dataset type: empty catalog (an instance of the appropriate
+        Returns
+        -------
+        schemacatalogs : `dict`
+            Keys are butler dataset type, values are a empty catalog (an instance of the appropriate
             lsst.afw.table Catalog type) for all tasks in the hierarchy, from the top-level task down
-            through all subtasks
+            through all subtasks.
 
+        Notes
+        -----
         This method may be called on any task in the hierarchy; it will return the same answer, regardless.
 
         The default implementation should always suffice. If your subtask uses schemas the override
-        Task.getSchemaCatalogs, not this method.
+        `Task.getSchemaCatalogs`, not this method.
         """
         schemaDict = self.getSchemaCatalogs()
         for subtask in self._taskDict.values():
@@ -177,17 +210,24 @@ class Task(object):
         return schemaDict
 
     def getFullMetadata(self):
-        """!Get metadata for all tasks
+        """Get metadata for all tasks.
 
-        The returned metadata includes timing information (if \@timer.timeMethod is used)
+        Returns
+        -------
+        metadata : `lsst.daf.base.PropertySet`
+            The `~lsst.daf.base.PropertySet` keys are the full task name. Values are metadata
+            for the top-level task and all subtasks, sub-subtasks, etc..
+
+        Notes
+        -----
+        The returned metadata includes timing information (if ``@timer.timeMethod`` is used)
         and any metadata set by the task. The name of each item consists of the full task name
-        with "." replaced by ":", followed by "." and the name of the item, e.g.:
-            topLeveltTaskName:subtaskName:subsubtaskName.itemName
-        using ":" in the full task name disambiguates the rare situation that a task has a subtask
-        and a metadata item with the same name.
+        with ``.`` replaced by ``:``, followed by ``.`` and the name of the item, e.g.::
 
-        @return metadata: an lsst.daf.base.PropertySet containing full task name: metadata
-            for the top-level task and all subtasks, sub-subtasks, etc.
+            topLevelTaskName:subtaskName:subsubtaskName.itemName
+
+        using ``:`` in the full task name disambiguates the rare situation that a task has a subtask
+        and a metadata item with the same name.
         """
         fullMetadata = dafBase.PropertySet()
         for fullName, task in self.getTaskDict().items():
@@ -195,41 +235,63 @@ class Task(object):
         return fullMetadata
 
     def getFullName(self):
-        """!Return the task name as a hierarchical name including parent task names
+        """Get the task name as a hierarchical name including parent task names.
 
-        The full name consists of the name of the parent task and each subtask separated by periods.
-        For example:
-        - The full name of top-level task "top" is simply "top"
-        - The full name of subtask "sub" of top-level task "top" is "top.sub"
-        - The full name of subtask "sub2" of subtask "sub" of top-level task "top" is "top.sub.sub2".
+        Returns
+        -------
+        fullName : `str`
+            The full name consists of the name of the parent task and each subtask separated by periods.
+            For example:
+
+            - The full name of top-level task "top" is simply "top".
+            - The full name of subtask "sub" of top-level task "top" is "top.sub".
+            - The full name of subtask "sub2" of subtask "sub" of top-level task "top" is "top.sub.sub2".
         """
         return self._fullName
 
     def getName(self):
-        """!Return the name of the task
+        """Get the name of the task.
 
-        See getFullName to get a hierarchical name including parent task names
+        Returns
+        -------
+        taskName : `str`
+            Name of the task.
+
+        See also
+        --------
+        getFullName
         """
         return self._name
 
     def getTaskDict(self):
-        """!Return a dictionary of all tasks as a shallow copy.
+        """Get a dictionary of all tasks as a shallow copy.
 
-        @return taskDict: a dict containing full task name: task object
-            for the top-level task and all subtasks, sub-subtasks, etc.
+        Returns
+        -------
+        taskDict : `dict`
+            Dictionary containing full task name: task object for the top-level task and all subtasks,
+            sub-subtasks, etc..
         """
         return self._taskDict.copy()
 
     def makeSubtask(self, name, **keyArgs):
-        """!Create a subtask as a new instance self.\<name>
+        """Create a subtask as a new instance as the ``name`` attribute of this task.
 
-        The subtask must be defined by self.config.\<name>, an instance of pex_config ConfigurableField
+        Parameters
+        ----------
+        name : `str`
+            Brief name of the subtask.
+        keyArgs
+            Extra keyword arguments used to construct the task. The following arguments are automatically
+            provided and cannot be overridden:
+
+            - "config".
+            - "parentTask".
+
+        Notes
+        -----
+        The subtask must be defined by ``Task.config.name``, an instance of pex_config ConfigurableField
         or RegistryField.
-
-        @param name         brief name of subtask
-        @param **keyArgs    extra keyword arguments used to construct the task.
-            The following arguments are automatically provided and cannot be overridden:
-            "config" and "parentTask".
         """
         taskField = getattr(self.config, name, None)
         if taskField is None:
@@ -239,19 +301,25 @@ class Task(object):
 
     @contextlib.contextmanager
     def timer(self, name, logLevel=Log.DEBUG):
-        """!Context manager to log performance data for an arbitrary block of code
+        """Context manager to log performance data for an arbitrary block of code.
 
-        @param[in] name         name of code being timed;
-            data will be logged using item name: \<name>Start\<item> and \<name>End\<item>
-        @param[in] logLevel     one of the lsst.log.Log level constants
+        Parameters
+        ----------
+        name : `str`
+            Name of code being timed; data will be logged using item name: ``Start`` and ``End``.
+        logLevel
+            A `lsst.log` level constant.
 
-        Example of use:
-        \code
-        with self.timer("someCodeToTime"):
-            ...code to time...
-        \endcode
+        Examples
+        --------
+        Creating a timer context::
 
-        See timer.logInfo for the information logged
+            with self.timer("someCodeToTime"):
+                pass  # code to time
+
+        See also
+        --------
+        timer.logInfo
         """
         logInfo(obj=self, prefix=name + "Start", logLevel=logLevel)
         try:
@@ -261,32 +329,50 @@ class Task(object):
 
     @classmethod
     def makeField(cls, doc):
-        """!Make an lsst.pex.config.ConfigurableField for this task
+        """Make a `lsst.pex.config.ConfigurableField` for this task.
 
+        Parameters
+        ----------
+        doc : `str`
+            Help text for the field.
+
+        Returns
+        -------
+        configurableField : `lsst.pex.config.ConfigurableField`
+            A `~ConfigurableField` for this task.
+
+        Examples
+        --------
         Provides a convenient way to specify this task is a subtask of another task.
-        Here is an example of use:
-        \code
-        class OtherTaskConfig(lsst.pex.config.Config)
-            aSubtask = ATaskClass.makeField("a brief description of what this task does")
-        \endcode
 
-        @param[in] cls      this class
-        @param[in] doc      help text for the field
-        @return a lsst.pex.config.ConfigurableField for this task
+        Here is an example of use::
+
+            class OtherTaskConfig(lsst.pex.config.Config)
+                aSubtask = ATaskClass.makeField("a brief description of what this task does")
         """
         return ConfigurableField(doc=doc, target=cls)
 
     def _computeFullName(self, name):
-        """!Compute the full name of a subtask or metadata item, given its brief name
+        """Compute the full name of a subtask or metadata item, given its brief name.
 
+        Parameters
+        ----------
+        name : `str`
+            Brief name of subtask or metadata item.
+
+        Returns
+        -------
+        fullName : `str`
+            The full name: the ``name`` argument prefixed by the full task name and a period.
+
+        Notes
+        -----
         For example: if the full name of this task is "top.sub.sub2"
-        then _computeFullName("subname") returns "top.sub.sub2.subname".
-
-        @param[in] name     brief name of subtask or metadata item
-        @return the full name: the "name" argument prefixed by the full task name and a period.
+        then ``_computeFullName("subname")`` returns ``"top.sub.sub2.subname"``.
         """
         return "%s.%s" % (self._fullName, name)
 
     def __reduce__(self):
-        """Pickler"""
+        """Pickler.
+        """
         return self.__class__, (self.config, self._name, self._parentTask, None)
