@@ -70,7 +70,7 @@ class Task(object):
         - If not `None` (a subtask) then you must specify name.
     log : `lsst.log.Log`, optional
         Log whose name is used as a log name prefix, or `None` for no prefix. Ignored if is parentTask
-        specified, in which case ``parentTask.log``\ ’s name is used as a prefix. The task's log name is
+        specified, in which case ``parentTask.log``\ 's name is used as a prefix. The task's log name is
         ``prefix + "." + name`` if a prefix exists, else ``name``. The task's log is then a child logger of
         ``parentTask.log`` (if ``parentTask`` specified), or a child logger of the log from the argument
         (if ``log`` is not `None`).
