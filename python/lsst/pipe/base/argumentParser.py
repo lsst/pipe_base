@@ -448,7 +448,7 @@ class ArgumentParser(argparse.ArgumentParser):
         lsstLog.configure_prop("""
 log4j.rootLogger=INFO, A1
 log4j.appender.A1=ConsoleAppender
-log4j.appender.A1.Target=System.err
+log4j.appender.A1.Target=System.out
 log4j.appender.A1.layout=PatternLayout
 log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 """)
@@ -643,7 +643,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             lsstLog.configure_prop("""
 log4j.rootLogger=INFO, A1
 log4j.appender.A1=ConsoleAppender
-log4j.appender.A1.Target=System.err
+log4j.appender.A1.Target=System.out
 log4j.appender.A1.layout=PatternLayout
 log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (%X{LABEL})(%F:%L)- %m%n
 """)
