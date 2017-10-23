@@ -164,6 +164,11 @@ class TaskRunner(object):
     timeout (in sec) can be specified as the ``timeout`` element in the output from
     `~lsst.pipe.base.ArgumentParser` (the ``parsedCmd``), if available, otherwise we use `TaskRunner.TIMEOUT`.
 
+    By default, we disable "implicit" threading -- ie, as provided by underlying numerical libraries such as
+    MKL or BLAS. This is designed to avoid thread contention both when a single command line task spawns
+    multiple processes and when multiple users are running on a shared system. Users can override this
+    behaviour by setting the ``LSST_ALLOW_IMPLICIT_THREADS`` environment variable.
+
     .. __: http://bugs.python.org/issue8296
     .. __:  http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
     """
@@ -220,8 +225,8 @@ class TaskRunner(object):
         processing is serial.
         """
         resultList = []
+        disableImplicitThreading()  # To prevent thread contention
         if self.numProcesses > 1:
-            disableImplicitThreading()  # To prevent thread contention
             import multiprocessing
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
