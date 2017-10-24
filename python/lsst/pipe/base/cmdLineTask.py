@@ -584,7 +584,8 @@ class CmdLineTask(Task):
 
         try:
             nFailed = sum(((res.exitStatus != 0) for res in resultList))
-        except Exception as e:
+        except (TypeError, AttributeError) as e:
+            # NOTE: TypeError if resultList is None, AttributeError if it doesn't have exitStatus.
             parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
             nFailed = 0
 
