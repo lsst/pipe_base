@@ -592,7 +592,7 @@ class CmdLineTask(Task):
 
         if nFailed > 0:
             if parsedCmd.noExit:
-                parsedCmd.log.warn("%d dataRefs failed; not exiting as --noExit was set", nFailed)
+                parsedCmd.log.error("%d dataRefs failed; not exiting as --noExit was set", nFailed)
             else:
                 sys.exit(nFailed)
 
