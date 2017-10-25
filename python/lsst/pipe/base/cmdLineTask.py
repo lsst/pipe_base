@@ -407,9 +407,10 @@ class TaskRunner(object):
             try:
                 result = task.run(dataRef, **kwargs)
             except Exception as e:
-                exitStatus = 1          # n.b. The shell exit value is the number of dataRefs returning
-                                        # non-zero, so the actual value used here is lost
-                
+                # The shell exit value will be the number of dataRefs returning
+                # non-zero, so the actual value used here is lost.
+                exitStatus = 1
+
                 # don't use a try block as we need to preserve the original exception
                 eName = type(e).__name__
                 if hasattr(dataRef, "dataId"):
