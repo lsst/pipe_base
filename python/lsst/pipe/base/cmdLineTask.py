@@ -411,13 +411,14 @@ class TaskRunner(object):
                                         # non-zero, so the actual value used here is lost
                 
                 # don't use a try block as we need to preserve the original exception
+                eName = type(e).__name__
                 if hasattr(dataRef, "dataId"):
-                    task.log.fatal("Failed on dataId=%s: %s", dataRef.dataId, e)
+                    task.log.fatal("Failed on dataId=%s: %s: %s", dataRef.dataId, eName, e)
                 elif isinstance(dataRef, (list, tuple)):
-                    task.log.fatal("Failed on dataId=[%s]: %s",
-                                   ", ".join(str(ref.dataId) for ref in dataRef), e)
+                    task.log.fatal("Failed on dataIds=[%s]: %s: %s",
+                                   ", ".join(str(ref.dataId) for ref in dataRef), eName, e)
                 else:
-                    task.log.fatal("Failed on dataRef=%s: %s", dataRef, e)
+                    task.log.fatal("Failed on dataRef=%s: %s: %s", dataRef, eName, e)
 
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
