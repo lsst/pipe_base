@@ -374,10 +374,11 @@ class TaskRunner(object):
             - ``dataRef``: the provided data reference.
             - ``metadata``: task metadata after execution of run.
             - ``result``: result returned by task run, or `None` if the task fails.
+            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
 
             If ``doReturnResults`` is `False` the struct contains:
 
-            - ``exitStatus``.
+            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
 
         Notes
         -----
