@@ -374,10 +374,11 @@ class TaskRunner(object):
             - ``dataRef``: the provided data reference.
             - ``metadata``: task metadata after execution of run.
             - ``result``: result returned by task run, or `None` if the task fails.
+            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
 
             If ``doReturnResults`` is `False` the struct contains:
 
-            - ``exitStatus``.
+            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
 
         Notes
         -----
@@ -406,17 +407,19 @@ class TaskRunner(object):
             try:
                 result = task.run(dataRef, **kwargs)
             except Exception as e:
-                exitStatus = 1          # n.b. The shell exit value is the number of dataRefs returning
-                                        # non-zero, so the actual value used here is lost
-                
+                # The shell exit value will be the number of dataRefs returning
+                # non-zero, so the actual value used here is lost.
+                exitStatus = 1
+
                 # don't use a try block as we need to preserve the original exception
+                eName = type(e).__name__
                 if hasattr(dataRef, "dataId"):
-                    task.log.fatal("Failed on dataId=%s: %s", dataRef.dataId, e)
+                    task.log.fatal("Failed on dataId=%s: %s: %s", dataRef.dataId, eName, e)
                 elif isinstance(dataRef, (list, tuple)):
-                    task.log.fatal("Failed on dataId=[%s]: %s",
-                                   ", ".join(str(ref.dataId) for ref in dataRef), e)
+                    task.log.fatal("Failed on dataIds=[%s]: %s: %s",
+                                   ", ".join(str(ref.dataId) for ref in dataRef), eName, e)
                 else:
-                    task.log.fatal("Failed on dataRef=%s: %s", dataRef, e)
+                    task.log.fatal("Failed on dataRef=%s: %s: %s", dataRef, eName, e)
 
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
@@ -584,13 +587,14 @@ class CmdLineTask(Task):
 
         try:
             nFailed = sum(((res.exitStatus != 0) for res in resultList))
-        except Exception as e:
+        except (TypeError, AttributeError) as e:
+            # NOTE: TypeError if resultList is None, AttributeError if it doesn't have exitStatus.
             parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
             nFailed = 0
 
         if nFailed > 0:
             if parsedCmd.noExit:
-                parsedCmd.log.warn("%d dataRefs failed; not exiting as --noExit was set", nFailed)
+                parsedCmd.log.error("%d dataRefs failed; not exiting as --noExit was set", nFailed)
             else:
                 sys.exit(nFailed)
 
