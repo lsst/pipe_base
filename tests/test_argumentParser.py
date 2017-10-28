@@ -529,6 +529,24 @@ class ArgumentParserTestCase(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(config=self.config, args=[DataPath, ])
 
+    def testReuseOption(self):
+        self.ap.addReuseOption(["a", "b", "c"])
+        namespace = self.ap.parse_args(
+            config=self.config,
+            args=[DataPath, "--reuse-outputs-from", "b"],
+        )
+        self.assertEqual(namespace.reuse, ["a", "b"])
+        namespace = self.ap.parse_args(
+            config=self.config,
+            args=[DataPath, "--reuse-outputs-from", "all"],
+        )
+        self.assertEqual(namespace.reuse, ["a", "b", "c"])
+        namespace = self.ap.parse_args(
+            config=self.config,
+            args=[DataPath],
+        )
+        self.assertEqual(namespace.reuse, [])
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
