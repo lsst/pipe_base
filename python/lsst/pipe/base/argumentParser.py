@@ -793,6 +793,36 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (
                 continue
             yield arg
 
+    def addReuseOption(self, choices):
+        """Add a "--reuse-outputs-from SUBTASK" option to the argument parser.
+
+        CmdLineTasks that can be restarted at an intermediate step using outputs
+        from earlier (but still internal) steps should use this method to allow
+        the user to control whether that happens when outputs from earlier steps
+        are present.
+
+        Parameters
+        ----------
+        choices : sequence
+            A sequence of string names (by convention, top-level subtasks) that
+            identify the steps that could be skipped when their outputs are
+            already present.  The list is ordered, so when the user specifies
+            one step on the command line, all previous steps may be skipped as
+            well.  In addition to the choices provided, users may pass "all"
+            to indicate that all steps may be thus skipped.
+
+        When this method is called, the ``namespace`` object returned by
+        ``parse_args`` will contain a ``reuse`` attribute containing a list of
+        all steps that should be skipped if their outputs are already present.
+        If no steps should be skipped, the ``reuse`` will be an empty list.
+        """
+        choices = list(choices)
+        choices.append("all")
+        self.add_argument("--reuse-outputs-from", dest="reuse", choices=choices,
+                          default=[], action=ReuseAction,
+                          help=("Skip the given subtask and its predecessors and reuse their outputs "
+                                "if those outputs already exist.  Use 'all' to specify all subtasks."))
+
 
 class InputOnlyArgumentParser(ArgumentParser):
     """`ArgumentParser` for command-line tasks that don't write any output.
@@ -1138,6 +1168,16 @@ class LogLevelAction(argparse.Action):
                 namespace.log.setLevel(logLevel)
             else:
                 lsstLog.Log.getLogger(component).setLevel(logLevel)
+
+
+class ReuseAction(argparse.Action):
+    """argparse action associated with ArgumentPraser.addReuseOption."""
+
+    def __call__(self, parser, namespace, value, option_string):
+        if value == "all":
+            value = self.choices[-2]
+        index = self.choices.index(value)
+        namespace.reuse = self.choices[:index+1]
 
 
 def setDottedAttr(item, name, value):
