@@ -650,7 +650,7 @@ class CmdLineTask(Task):
             return
         if clobber:
             butler.put(self.config, configName, doBackup=doBackup)
-        elif butler.datasetExists(configName):
+        elif butler.datasetExists(configName, write=True):
             # this may be subject to a race condition; see #2789
             try:
                 oldConfig = butler.get(configName, immediate=True)
@@ -694,7 +694,7 @@ class CmdLineTask(Task):
             schemaDataset = dataset + "_schema"
             if clobber:
                 butler.put(catalog, schemaDataset, doBackup=doBackup)
-            elif butler.datasetExists(schemaDataset):
+            elif butler.datasetExists(schemaDataset, write=True):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
@@ -749,7 +749,7 @@ class CmdLineTask(Task):
 
         if clobber:
             return butler.put(packages, dataset, doBackup=doBackup)
-        if not butler.datasetExists(dataset):
+        if not butler.datasetExists(dataset, write=True):
             return butler.put(packages, dataset)
 
         try:
