@@ -23,8 +23,9 @@
 """Simple unit test for Pipeline.
 """
 
-import unittest
 from collections import namedtuple
+import io
+import unittest
 
 import lsst.pex.config as pexConfig
 from lsst.pipe import supertask
@@ -71,6 +72,12 @@ def _makeConfig(inputName, outputName):
         config.output2.name = outputName[1] if len(outputName) > 1 else ""
     else:
         config.output1.name = outputName
+
+    units = ["Visit", "Sensor"]
+    config.input1.units = units
+    config.input2.units = units
+    config.output1.units = units
+    config.output2.units = units
 
     return config
 
@@ -261,6 +268,25 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   ("D", "A", "task4")])
         with self.assertRaises(pipeTools.PipelineDataCycleError):
             pipeline = pipeTools.orderPipeline(pipeline)
+
+    def testPipeline2gv(self):
+        """Tests for pipeTools.pipeline2gv method
+        """
+        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
+                                  ("C", "E", "task2"),
+                                  ("B", "D", "task3"),
+                                  (("D", "E"), "F", "task4")])
+        file = io.StringIO()
+        pipeTools.pipeline2gv(pipeline, file)
+
+        # it's hard to validate complete output, just checking few basic things,
+        # even that is not terribly stable
+        lines = file.getvalue().strip().split('\n')
+        ndatasets = 6
+        ntasks = 4
+        nedges = 10
+        nextra = 2  # graph header and closing
+        self.assertEqual(len(lines), ndatasets + ntasks + nedges + nextra)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

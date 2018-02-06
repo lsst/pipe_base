@@ -224,3 +224,93 @@ def orderPipeline(pipeline, taskFactory=None):
         raise PipelineDataCycleError("Pipeline has data cycles")
 
     return Pipeline(pipeline[idx] for idx in result)
+
+
+def pipeline2gv(pipeline, file, taskFactory=None):
+    """Convert Pipeline into GraphViz digraph.
+
+    This method is mostly for documentation/presentation purposes.
+    Unlike other methods this method does not validate graph consistency.
+
+    Parameters
+    ----------
+    pipeline : `pipe.supertask.Pipeline`
+        Pipeline description.
+    file : str or file object
+        File where GraphViz graph (DOT language) is written, can be a file name
+        or file object.
+    taskFactory: `pipe.supertask.TaskFactory`, optional
+        Instance of an object which knows how to import task classes. It is only
+        used if pipeline task definitions do not define task classes.
+
+    Raises
+    ------
+    `OSError` is raised when output file cannot be open.
+    `ImportError` is raised when task class cannot be imported.
+    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
+    provided.
+    """
+
+    def _renderTaskNode(nodeName, taskDef, file):
+        """Render GV node for a task"""
+        label = [taskDef.taskName, "index: {}".format(idx)]
+        if taskDef.label:
+            label += ["label: {}".format(taskDef.label)]
+        label = r'\n'.join(label)
+        attrib = dict(shape="box",
+                      style="filled,bold",
+                      fillcolor="gray70",
+                      label=label)
+        attrib = ['{}="{}"'.format(key, val) for key, val in attrib.items()]
+        print("{} [{}];".format(nodeName, ", ".join(attrib)), file=file)
+
+    def _renderDSNode(dsType, file):
+        """Render GV node for a dataset type"""
+        label = [dsType.name]
+        if dsType.units:
+            label += ["Units: " + ", ".join(dsType.units)]
+        label = r'\n'.join(label)
+        attrib = dict(shape="box",
+                      style="rounded,filled",
+                      fillcolor="gray90",
+                      label=label)
+        attrib = ['{}="{}"'.format(key, val) for key, val in attrib.items()]
+        print("{} [{}];".format(dsType.name, ", ".join(attrib)), file=file)
+
+    # open a file if needed
+    close = False
+    if not hasattr(file, "write"):
+        file = open(file, "w")
+        close = True
+
+    print("digraph Pipeline {", file=file)
+
+    allDatasets = set()
+    for idx, taskDef in enumerate(pipeline):
+
+        # node for a task
+        taskNodeName = "task{}".format(idx)
+        _renderTaskNode(taskNodeName, taskDef, file)
+
+        # we will need task class for next operations, make sure it is loaded
+        taskClass = _loadTaskClass(taskDef, taskFactory)
+
+        # task inputs
+        dsMap = taskClass.getInputDatasetTypes(taskDef.config)
+        for dsType in dsMap.values():
+            if dsType.name not in allDatasets:
+                _renderDSNode(dsType, file)
+                allDatasets.add(dsType.name)
+            print("{} -> {};".format(dsType.name, taskNodeName), file=file)
+
+        # task outputs
+        dsMap = taskClass.getOutputDatasetTypes(taskDef.config)
+        for dsType in dsMap.values():
+            if dsType.name not in allDatasets:
+                _renderDSNode(dsType, file)
+                allDatasets.add(dsType.name)
+            print("{} -> {};".format(taskNodeName, dsType.name), file=file)
+
+    print("}", file=file)
+    if close:
+        file.close()
