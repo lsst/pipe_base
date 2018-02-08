@@ -37,7 +37,7 @@ from lsst.obs.base import repodb
 from lsst.obs.base.repodb.graph import RepoGraph
 
 
-class TestIntUnit(repodb.Unit):
+class IntTestUnit(repodb.Unit):
     """Special Unit class for testing
     """
     value = repodb.IntField()
@@ -82,9 +82,9 @@ class AddTask(SuperTask):
     def __init__(self, **kwargs):
         SuperTask.__init__(self, **kwargs)
         self.InputCatalog = repodb.Dataset.subclass(self.config.inputCatalog,
-                                                    number=TestIntUnit)
+                                                    number=IntTestUnit)
         self.OutputCatalog = repodb.Dataset.subclass(self.config.outputCatalog,
-                                                     number=TestIntUnit)
+                                                     number=IntTestUnit)
 
     def defineQuanta(self, repoGraph, butler):
         quanta = []
@@ -129,8 +129,8 @@ class SuperTaskTestCase(unittest.TestCase):
         """
         units = set()
         for i in range(1000):
-            units.add(TestIntUnit(id=i, value=i))
-        return {TestIntUnit: units}
+            units.add(IntTestUnit(id=i, value=i))
+        return {IntTestUnit: units}
 
     def _makeRepoGraph(self, task, task2=None):
         """Create initial RepoGraph with units and all empty datasets
@@ -151,7 +151,7 @@ class SuperTaskTestCase(unittest.TestCase):
 
         # one input dataset
         repoGraph = self._makeRepoGraph(task)
-        repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=5, value=5))
+        repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=5, value=5))
 
         print('testing with 1 dataset')
         quanta = task.defineQuanta(repoGraph, butler)
@@ -165,9 +165,9 @@ class SuperTaskTestCase(unittest.TestCase):
 
         # three input datasets
         repoGraph = self._makeRepoGraph(task)
-        repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=5, value=5))
-        repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=10, value=10))
-        repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=100, value=100))
+        repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=5, value=5))
+        repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=10, value=10))
+        repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=100, value=100))
 
         print('testing with 3 datasets')
         quanta = task.defineQuanta(repoGraph, butler)
@@ -180,7 +180,7 @@ class SuperTaskTestCase(unittest.TestCase):
         # many input datasets
         repoGraph = self._makeRepoGraph(task)
         for i in range(10):
-            repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=i, value=i))
+            repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=i, value=i))
 
         print('testing with many datasets')
         quanta = task.defineQuanta(repoGraph, butler)
@@ -194,7 +194,7 @@ class SuperTaskTestCase(unittest.TestCase):
 
         # one input dataset
         repoGraph = self._makeRepoGraph(task)
-        ds = repoGraph.addDataset(task.InputCatalog, number=TestIntUnit(id=5, value=5))
+        ds = repoGraph.addDataset(task.InputCatalog, number=IntTestUnit(id=5, value=5))
         ds.put(butler, ds.number.value)
 
         quanta = task.defineQuanta(repoGraph, butler)
@@ -220,7 +220,7 @@ class SuperTaskTestCase(unittest.TestCase):
 
         # one input dataset
         repoGraph = self._makeRepoGraph(task1, task2)
-        ds = repoGraph.addDataset(task1.InputCatalog, number=TestIntUnit(id=5, value=5))
+        ds = repoGraph.addDataset(task1.InputCatalog, number=IntTestUnit(id=5, value=5))
         ds.put(butler, ds.number.value)
 
         quanta1 = task1.defineQuanta(repoGraph, butler)
