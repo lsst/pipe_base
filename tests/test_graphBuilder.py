@@ -38,7 +38,7 @@ from lsst.obs.base import repodb
 from lsst.obs.base.repodb.graph import RepoGraph
 
 
-class TestIntUnit(repodb.Unit):
+class IntTestUnit(repodb.Unit):
     """Special Unit class for testing
     """
     value = repodb.IntField()
@@ -47,9 +47,11 @@ class TestIntUnit(repodb.Unit):
     def getDataIdValue(self):
         return self.id
 
-Dataset1 = repodb.Dataset.subclass("ds1", number=TestIntUnit)
-Dataset2 = repodb.Dataset.subclass("ds2", number=TestIntUnit)
-Dataset3 = repodb.Dataset.subclass("ds3", number=TestIntUnit)
+
+Dataset1 = repodb.Dataset.subclass("ds1", number=IntTestUnit)
+Dataset2 = repodb.Dataset.subclass("ds2", number=IntTestUnit)
+Dataset3 = repodb.Dataset.subclass("ds3", number=IntTestUnit)
+
 
 class ButlerMock(object):
     """Mock version of butler, only usable for this test
@@ -146,7 +148,7 @@ class RepoDbMock(object):
         # for "query" we support a list of numbers
         if where is not None:
             where = set([int(x) for x in where.split()])
-        for unit in units[TestIntUnit]:
+        for unit in units[IntTestUnit]:
             if where is None or unit.value in where:
                 for DS in NeededDatasets:
                     repoGraph.addDataset(DS, number=unit)
@@ -158,8 +160,9 @@ class RepoDbMock(object):
         """
         units = set()
         for i in range(10):
-            units.add(TestIntUnit(id=i, value=i))
-        return {TestIntUnit: units}
+            units.add(IntTestUnit(id=i, value=i))
+        return {IntTestUnit: units}
+
 
 class GraphBuilderTestCase(unittest.TestCase):
     """A test case for GraphBuilder class
@@ -215,7 +218,8 @@ class GraphBuilderTestCase(unittest.TestCase):
         graph = gbuilder.makeGraph(pipeline)
 
         self.assertEqual(len(graph), 2)
-        taskDef, quanta = graph[0]
+        taskDef = graph[0].taskDef
+        quanta = graph[0].quanta
         self.assertEqual(len(quanta), 10)
         self.assertEqual(taskDef.taskName, "TaskOne")
         self.assertEqual(taskDef.taskClass, TaskOne)
@@ -223,7 +227,8 @@ class GraphBuilderTestCase(unittest.TestCase):
             self._checkQuantum(quantum.inputs, Dataset1, range(10))
             self._checkQuantum(quantum.outputs, Dataset2, range(10))
 
-        taskDef, quanta = graph[1]
+        taskDef = graph[1].taskDef
+        quanta = graph[1].quanta
         self.assertEqual(len(quanta), 10)
         self.assertEqual(taskDef.taskName, "TaskTwo")
         self.assertEqual(taskDef.taskClass, TaskTwo)
@@ -245,7 +250,8 @@ class GraphBuilderTestCase(unittest.TestCase):
         graph = gbuilder.makeGraph(pipeline)
 
         self.assertEqual(len(graph), 2)
-        taskDef, quanta = graph[0]
+        taskDef = graph[0].taskDef
+        quanta = graph[0].quanta
         self.assertEqual(taskDef.taskName, "TaskOne")
         self.assertEqual(taskDef.taskClass, TaskOne)
         self.assertEqual(len(quanta), 3)
@@ -253,7 +259,8 @@ class GraphBuilderTestCase(unittest.TestCase):
             self._checkQuantum(quantum.inputs, Dataset1, [1, 5, 9])
             self._checkQuantum(quantum.outputs, Dataset2, [1, 5, 9])
             
-        taskDef, quanta = graph[1]
+        taskDef = graph[1].taskDef
+        quanta = graph[1].quanta
         self.assertEqual(taskDef.taskName, "TaskTwo")
         self.assertEqual(taskDef.taskClass, TaskTwo)
         self.assertEqual(len(quanta), 3)
