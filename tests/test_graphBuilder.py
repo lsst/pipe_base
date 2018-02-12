@@ -120,9 +120,9 @@ class TaskTwo(OneToOneTask):
 class TaskFactoryMock(object):
     def loadTaskClass(self, taskName):
         if taskName == "TaskOne":
-            return TaskOne
+            return TaskOne, "TaskOne"
         elif taskName == "TaskTwo":
-            return TaskTwo
+            return TaskTwo, "TaskTwo"
 
     def makeTask(self, taskClass, config, overrides, butler):
         if config is None:

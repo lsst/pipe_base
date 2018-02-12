@@ -108,6 +108,14 @@ class Pipeline(list):
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
 
+    def labelIndex(self, label):
+        """Return task index given its label, returns -1 if label is not found
+        """
+        for idx, taskDef in enumerate(self):
+            if taskDef.label == label:
+                return idx
+        return -1
+
     def __str__(self):
         infos = [str(tdef) for tdef in self]
         return "Pipeline({})".format(", ".join(infos))
