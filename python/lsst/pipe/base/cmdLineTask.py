@@ -428,6 +428,11 @@ class TaskRunner(object):
 
                 if not isinstance(e, TaskError):
                     traceback.print_exc(file=sys.stderr)
+
+        # Ensure all errors have been logged and aren't hanging around in a buffer
+        sys.stdout.flush()
+        sys.stderr.flush()
+
         task.writeMetadata(dataRef)
 
         # remove MDC so it does not show up outside of task context
