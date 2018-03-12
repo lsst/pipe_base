@@ -36,7 +36,7 @@ __all__ = ['GraphBuilder']
 # Imports for other modules --
 #-----------------------------
 import lsst.log as lsstLog
-from .graph import GraphTaskNodes, GraphOfTasks
+from .graph import QuantumGraphNodes, QuantumGraph
 
 #----------------------------------
 # Local non-exported definitions --
@@ -56,151 +56,123 @@ class GraphBuilder(object):
     ----------
     taskFactory : `TaskFactory`
         Factory object used to load/instantiate SuperTasks
-    butler : `DataButler`
+    registry : :py:class:`daf.butler.Registry`
         Data butler instance.
-    repoDb : `repodb.RepoDatabase`
-        Data butler instance.
-    repoQuery : `str`
-        String which is passed to `RepoDatabase.makeGraph()`, should be empty
-        or `None` if there is no restrictions on data selection.
+    userQuery : `str`
+        String which defunes user-defined selection for registry, should be
+        empty or `None` if there is no restrictions on data selection.
     """
 
-    def __init__(self, taskFactory, butler, repoDb, repoQuery):
+    def __init__(self, taskFactory, registry, userQuery):
         self.taskFactory = taskFactory
-        self.butler = butler
-        self.repoDb = repoDb
-        self.repoQuery = repoQuery
+        self.registry = registry
+        self.userQuery = userQuery
+
+    def _loadTaskClass(self, taskDef):
+        """Make sure task class is loaded.
+
+        Load task class, update task name to make sure it is fully-qualified,
+        do not update original taskDef in a Pipeline though.
+
+        Parameters
+        ----------
+        taskDef : `TaskDef`
+
+        Returns
+        -------
+        `TaskDef` instance, may be the same as parameter if task class is
+        already loaded.
+        """
+        if taskDef.taskClass is None:
+            tClass, tName = self.taskFactory.loadTaskClass(taskDef.taskName)
+            taskDef = copy.copy(taskDef)
+            taskDef.taskClass = tClass
+            taskDef.taskName = tName
+        return taskDef
 
     def makeGraph(self, pipeline):
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
-        pipeline : `supertask.Pipeline`
+        pipeline : :py:class:`Pipeline`
             Pipeline definition, task names/classes and their configs.
 
         Returns
         -------
-        `GraphOfTasks` instance.
+        :py:class:`QuantumGraph` instance.
 
         Raises
         ------
-        Exceptions will be raised
+        Exceptions will be raised on errors.
         """
 
-        # make all task instances
-        taskList = []
-        for taskDef in pipeline:
-            if taskDef.taskClass is None:
-                # load task class, update task name to make sure it is fully-qualified,
-                # do not update original taskDef in a Pipeline though
-                tClass, tName = self.taskFactory.loadTaskClass(taskDef.taskName)
-                taskDef = copy.copy(taskDef)
-                taskDef.taskClass = tClass
-                taskDef.taskName = tName
-
-            task = self.taskFactory.makeTask(taskDef.taskClass, taskDef.config,
-                                             None, self.butler)
-            taskList += [(task, taskDef)]
+        # make sure all task classes are loaded
+        taskList = [self._loadTaskClass(taskDef) for taskDef in pipeline]
 
         # build initial dataset graph
-        inputClasses, outputClasses = self.buildIOClasses([task for task, _ in taskList])
+        inputs, outputs = self.buildIODatasets(taskList)
 
-        # make dataset graph
-        repoGraph = self.makeRepoGraph(inputClasses, outputClasses)
+        # make a graph
+        return self._makeGraph(taskList, inputs, outputs)
 
-        return self.makeGraphFromRepoGraph(taskList, repoGraph)
-
-    def buildIOClasses(self, tasks):
+    def buildIODatasets(self, tasks):
         """Returns input and output dataset classes for all tasks.
 
         Parameters
         ----------
-        tasks : sequence of `SuperTask`
+        tasks : sequence of `TaskDef`
             All tasks that form a pipeline.
 
         Returns
         -------
-        inputClasses : set of `type`
-            Dataset classes (subsclasses of `repodb.Dataset`) used as inputs
-            by the pipeline.
-        outputClasses : set of `type`
-            Dataset classes produced by the pipeline.
+        inputs : set of `butler.core.datasets.DatasetType`
+            Datasets used as inputs by the pipeline.
+        outputs : set of `butler.core.datasets.DatasetType`
+            Datasets produced by the pipeline.
         """
         # to build initial dataset graph we have to collect info about all
         # datasets to be used by this pipeline
-        inputs = {}
-        outputs = {}
-        for task in tasks:
-            taskInputs, taskOutputs = task.getDatasetClasses()
+        allDatasetTypes = {}
+        inputs = set()
+        outputs = set()
+        for taskDef in tasks:
+            taksClass = taskDef.taskClass
+            taskInputs = taksClass.getInputDatasetTypes(taskDef.config)
+            taskOutputs = taksClass.getOutputDatasetTypes(taskDef.config)
             if taskInputs:
-                inputs.update(taskInputs)
+                for dsType in taskInputs.values():
+                    inputs.add(dsType.name)
+                    allDatasetTypes[dsType.name] = dsType
             if taskOutputs:
-                outputs.update(taskOutputs)
+                for dsType in taskOutputs.values():
+                    outputs.add(dsType.name)
+                    allDatasetTypes[dsType.name] = dsType
 
         # remove outputs from inputs
-        inputClasses = set(inputs.values())
-        outputClasses = set(outputs.values())
-        inputClasses -= outputClasses
+        inputs -= outputs
 
-        return (inputClasses, outputClasses)
+        inputs = set(allDatasetTypes[name] for name in inputs)
+        outputs = set(allDatasetTypes[name] for name in outputs)
+        return (inputs, outputs)
 
-    def makeRepoGraph(self, inputClasses, ouputClasses):
+    def _makeGraph(self, tasks, inputs, outputs):
         """Make initial dataset graph instance.
 
         Parameters
         ----------
-        inputClasses : list of type
-            List contains sub-classes (type objects) of Dataset which
-            should already exist in input repository
-        outputClasses : list of type
-            List contains sub-classes (type objects) of Dataset which
-            will be created by tasks
+        tasks : sequence of `TaskDef`
+            All tasks that form a pipeline.
+        inputs : set of `DatasetType`
+            Datasets which should already exist in input repository
+        outputs : set of `DatasetType`
+            Datasets which will be created by tasks
 
         Returns
         -------
-        `repodb.graph.RepoGraph` instance.
+        `QuantumGraph` instance.
         """
-        repoGraph = self.repoDb.makeGraph(where=self.repoQuery,
-                                          NeededDatasets=inputClasses,
-                                          FutureDatasets=ouputClasses)
-        return repoGraph
 
-    def makeGraphFromRepoGraph(self, taskList, repoGraph):
-        """Build execution graph for a pipeline.
-
-        Parameters
-        ----------
-        taskList : list of tuples
-            Each list item is a tuple (task, taskDef)
-        repoGraph : `repodb.graph.RepoGraph`
-
-        Returns
-        -------
-        `GraphOfTasks` instance.
-
-        Raises
-        ------
-        Any exception raised in `defineQuanta()` is forwarded to caller.
-        """
-        # get all quanta from each task, add it to the list and say
-        # that list is a graph (one of the million possible representations)
-        graph = GraphOfTasks()
-        for task, taskDef in taskList:
-
-            # call task to make its quanta
-            quanta = task.defineQuanta(repoGraph, self.butler)
-
-            # undefined yet: dataset graph needs to be updated with the
-            # outputs produced by this task. We can do it in the task
-            # itself or we can do it here by scanning quanta outputs
-            # and adding them to dataset graph
-#             for quantum in quanta:
-#                 for dsTypeName, datasets in quantum.outputs.items():
-#                     existing = repoGraph.datasets.setdefault(dsTypeName, set())
-#                     existing |= datasets
-
-            # store in a graph
-            graph.append(GraphTaskNodes(taskDef, quanta))
-
+        # TODO: Actual implementation is needed
+        graph = None
         return graph

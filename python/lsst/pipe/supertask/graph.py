@@ -1,6 +1,6 @@
 #
 # LSST Data Management System
-# Copyright 2017 AURA/LSST.
+# Copyright 2017-2018 AURA/LSST.
 #
 # This product includes software developed by the
 # LSST Project (http://www.lsst.org/).
@@ -20,19 +20,19 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-"""Module defining execution graph classes and related methods.
+"""Module defining quantum graph classes and related methods.
 
-There could be different representations of the pipeline execution
-graph depending on the client needs. Presently this module contains
-graph implementation which is based on requirements of command-line
-environment. In the future we could add other implementations and
-methods to convert between those representations.
+There could be different representations of the quantum graph depending
+on the client needs. Presently this module contains graph implementation
+which is based on requirements of command-line environment. In the future
+we could add other implementations and methods to convert between those
+representations.
 """
 
 from __future__ import absolute_import, division, print_function
 
 # "exported" names
-__all__ = ["GraphOfTasks", "GraphTaskNodes"]
+__all__ = ["QuantumGraphNodes", "QuantumGraph"]
 
 #--------------------------------
 #  Imports of standard modules --
@@ -50,25 +50,25 @@ __all__ = ["GraphOfTasks", "GraphTaskNodes"]
 # Exported definitions --
 #------------------------
 
-class GraphTaskNodes(object):
-    """GraphTaskNodes represents a bunch of nodes in an execution graph.
+class QuantumGraphNodes(object):
+    """QuantumGraphNodes represents a bunch of nodes in an quantum graph.
 
-    The node in SuperTask execution graph is represented by the SuperTask
-    and a single Quantum instance. One possible representation of the graph
-    is just a list of nodes without edges (edges can be deduced from nodes'
-    quantum inputs and outputs if needed). That representation can be
-    reduced to the list of SuperTasks and the corresponding list of Quanta.
+    The node in quantum graph is represented by the `SuperTask` and a single
+    `Quantum` instance. One possible representation of the graph is just a
+    list of nodes without edges (edges can be deduced from nodes' quantum
+    inputs and outputs if needed). That representation can be reduced to
+    the list of SuperTasks and the corresponding list of Quanta.
     This class defines this reduced representation.
 
     Different frameworks may use different graph representation, this
     representation was based mostly on requirements of command-line
-    "activator" which does not need explicit edges information.
+    executor which does not need explicit edges information.
 
     Attributes
     ----------
-    taskDef : `TaskDef`
+    taskDef : :py:class:`TaskDef`
         Task defintion for this set of nodes.
-    quanta : `list` of `Quanta`
+    quanta : `list` of :py:class:`lsst.daf.butler.Quantum`
         List of quanta corresponding to the task.
     """
     def __init__(self, taskDef, quanta):
@@ -76,8 +76,8 @@ class GraphTaskNodes(object):
         self.quanta = quanta
 
 
-class GraphOfTasks(list):
-    """Graph is a sequence of GraphTaskNodes objects.
+class QuantumGraph(list):
+    """QuantumGraph is a sequence of QuantumGraphNodes objects.
 
     Typically the order of the tasks in the list will be the same as the
     order of tasks in a pipeline (obviously depends on the code which
@@ -85,7 +85,7 @@ class GraphOfTasks(list):
 
     Parameters
     ----------
-    iterable : iterable of `GraphTaskNodes` instances, optional
+    iterable : iterable of :py:class:`QuantumGraphNodes` instances, optional
         Initial sequence of per-task nodes.
     """
     def __init__(self, iterable=None):

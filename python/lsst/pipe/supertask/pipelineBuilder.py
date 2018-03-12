@@ -39,7 +39,6 @@ import os
 from .configOverrides import ConfigOverrides
 from .pipeline import Pipeline, TaskDef
 from . import pipeTools
-import lsst.daf.persistence as dafPersist
 import lsst.log as lsstLog
 import lsst.utils
 
@@ -87,9 +86,10 @@ class PipelineBuilder(object):
         obsPkg = None
         camera = None
         if args.camera_overrides:
-            mapperClass = dafPersist.Butler.getMapperClass(args.input)
-            camera = mapperClass.getCameraName()
-            obsPkg = mapperClass.getPackageName()
+#             mapperClass = dafPersist.Butler.getMapperClass(args.input)
+#             camera = mapperClass.getCameraName()
+#             obsPkg = mapperClass.getPackageName()
+            pass
 
         if args.pipeline:
 
