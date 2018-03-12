@@ -28,10 +28,12 @@ from __future__ import absolute_import, division, print_function
 
 __all__ = ["SuperTask"]  # Classes in this module
 
-from builtins import str
-
 import lsst.afw.table as afwTable
 from lsst.pipe.base.task import Task, TaskError
+from lsst.daf.butler.core.datasets import DatasetType
+from lsst.daf.butler.core.storageClass import StorageClassFactory
+import lsst.daf.butler.core.units as coreUnits
+from .config import InputDatasetConfig, OutputDatasetConfig
 
 
 class SuperTask(Task):
@@ -51,10 +53,7 @@ class SuperTask(Task):
     into memory, calls `run()` method with that data, examines returned
     `Struct` object and saves some or all of that data back to data butler.
     `runQuantum()` method receives `Quantum` instance which defines all input
-    and output data (in terms of butler) for a single invocation of SuperTask.
-    `defineQuanta()` is another important method to be defined in a sub-class
-    which receives complete set of data to be processed and splits that set
-    into individual pieces (quanta) that the SuperTask can operate upon.
+    and output datasets for a single invocation of SuperTask.
 
     Attributes
     ----------
@@ -72,20 +71,72 @@ class SuperTask(Task):
         Logger instance whose name is used as a log name prefix,
         or None for no prefix. Ignored if parentTask specified, in which case
         parentTask.log's name is used as a prefix.
-    butler : `Butler`, optional
-        Data butler instance, this object is not used by this class and is
-        kept for simplicity of implementing of sub-class constructor.
     """
 
     canMultiprocess = True
 
-    def __init__(self, config=None, log=None, butler=None):
+    # TODO: temporary hack, I think factory should be global
+    storageClassFactory = StorageClassFactory()
 
-        super(SuperTask, self).__init__(config=config, log=log)
+    def __init__(self, config=None, log=None):
+        super().__init__(config=config, log=log)
+
+    @classmethod
+    def getInputDatasetTypes(cls, config):
+        """Return input dataset types for this task.
+
+        Default implementation finds all fields of type `InputDatasetConfig`
+        in configuration (non-recursively) and uses them for constructing
+        `DatasetType` instances. The keys of these fields are used as keys
+        in returned dictionary. Subclasses can override this behavior.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        Dictionary where key is the name (arbitrary) of the input dataset and
+        value is the `butler.core.datasets.DatasetType` instance. Default
+        implementation uses configuration field name as dictionary key.
+        """
+        dsTypes = {}
+        for key, value in config.items():
+            if isinstance(value, InputDatasetConfig):
+                dsTypes[key] = cls.makeDatasetType(value)
+        return dsTypes
+
+    @classmethod
+    def getOutputDatasetTypes(cls, config):
+        """Return output dataset types for this task.
+
+        Default implementation finds all fields of type `OutputDatasetConfig`
+        in configuration (non-recursively) and uses them for constructing
+        `DatasetType` instances. The keys of these fields are used as keys
+        in returned dictionary. Subclasses can override this behavior.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        Dictionary where key is the name (arbitrary) of the output dataset and
+        value is the `butler.core.datasets.DatasetType` instance. Default
+        implementation uses configuration field name as dictionary key.
+        """
+        dsTypes = {}
+        for key, value in config.items():
+            if isinstance(value, OutputDatasetConfig):
+                dsTypes[key] = cls.makeDatasetType(value)
+        return dsTypes
 
     def run(self, *args, **kwargs):
-        """
-        Run task algorithm on in-memory data.
+        """Run task algorithm on in-memory data.
 
         This function is the one that actually operates on the data and usually
         returning a `Struct` with the produced results. This method will be
@@ -93,57 +144,41 @@ class SuperTask(Task):
         (or data proxies) and cannot access any external data such as data
         butler or databases. All interaction with external data happens in
         `runQuantum` method.
+
+        With default implementation of `runQuantum()` this method will
+        receive keyword arguments whose names will be the same as names
+        of configuration fields describing input and output dataset types.
+        For input dataset types argument values will be lists of the data
+        object retrieved from data butler. For output dataset types argument
+        values will be the lists of units from DataRefs in a Quantum.
         """
-        pass
-
-    def defineQuanta(self, repoGraph, butler):
-        """Produce set of execution quanta.
-
-        Purpose of this method is to split the whole workload (as defined
-        by already existing data in `datasets`) into individual units of
-        work that SuperTask can handle.
-
-        Task is allowed to add task-specific data to returned quanta which
-        may be useful for `runQuantum()` method. Any type of serializable
-        data object can be added as `extras` attribute of quanta.
-
-        Parameters
-        ----------
-        repoGraph : `obs.base.repodb.RepoGraph`
-            A RepoGraph containing only Units matching the data ID
-            expression supplied by the user and Datasets that should be
-            present in the repository when all previous SuperTasks in the same
-            pipeline have been run.  Any Datasets produced by this SuperTask
-            should be added to the graph on return.
-        butler : object
-            Data butler instance.
-
-        Returns
-        -------
-        Return a list of Quantum objects representing the inputs and outputs
-        of a single invocation of runQuantum().
-        """
-        raise NotImplementedError("defineQuanta() is not implemented")
+        raise NotImplementedError("run() is not implemented")
 
     def runQuantum(self, quantum, butler):
         """Execute SuperTask algorithm on single quantum of data.
 
         Typical implementation of this method will use inputs from quantum
         to retrieve Python-domain objects from data butler and call `run()`
-        method on that data. Extra information in quantum can be passed to
-        `run()` method as well. On return from `run()` this method will
+        method on that data. On return from `run()` this method will
         extract data from returned `Struct` instance and save that data
         to butler.
 
+        Default implementaion retrieves all input data in quantum graph
+        and calls `run()` method with keyword arguments where name of the
+        keyword argument is the same as the name of the configuration field
+        defining input DatasetType. Additionally it also passes keyword
+        arguments that correspond to output dataset types, each keyword
+        argument will have the list of units for corresponding output DataRefs.
+
+        The `Struct` returned from `run()` is expected to contain data
+        attributes with the names equal to the names of the configuration
+        fields defining output dataset types. The values of the data
+        attributes must be lists of data bjects corresponding to the units
+        passed as keyword arguments. All data objects will be saved in butler
+        using DataRefs from Quantum's output dictionary.
+
         This method does not return anything to the caller, on errors
         corresponding exception is raised.
-
-        Note that `defineQuanta()` and `runQuantum()` in general will be
-        executed by the different instances of SuperTask, very likely in
-        separate processes or hosts. Thus it is not possible to share
-        information between these methods via instance or class members,
-        the only way to propagate knowledge from one method to another is
-        by using `Quantum.extras` member.
 
         Parameters
         ----------
@@ -157,38 +192,65 @@ class SuperTask(Task):
         ------
         Any exceptions that happen in data butler or in `run()` method.
         """
-        raise NotImplementedError("runQuantum() is not implemented")
+        # get all data from butler
+        inputs = {}
+        for key, value in self.config.items():
+            if isinstance(value, InputDatasetConfig):
+                dataRefs = quantum.predictedInputs[value.name]
+                inputs[key] = [butler.get(dataRef) for dataRef in dataRefs]
 
-    def getDatasetClasses(self):
-        """Return a pair of dictionaries containing all of the concrete Dataset
-        classes used by this SuperTask as inputs and outputs.
+        # lists of units for output datasets
+        outUnits = {}
+        for key, value in self.config.items():
+            if isinstance(value, OutputDatasetConfig):
+                dataRefs = quantum.outputs[value.name]
+                outUnits[key] = [dataRef.dataId for dataRef in dataRefs]
 
-        Either inputs or outputs can be empty or None.
+        # call run method with keyword arguments
+        struct = self.run(**inputs, **outUnits)
+
+        # save data in butler, convention is that returned struct
+        # has data field(s) with the same names as the config fields
+        # defining DatasetTypes
+        structDict = struct.getDict()
+        for key, value in self.config.items():
+            if isinstance(value, OutputDatasetConfig):
+                dataList = structDict[key]
+                dataRefs = quantum.outputs[value.name]
+                # TODO: check that data objects and data refs are aligned
+                for dataRef, data in zip(dataRefs, dataList):
+                    butler.put(dataRef, data)
+
+    @classmethod
+    def makeDatasetType(cls, dsConfig):
+        """Create new instance of the `DatasetType` from task config.
+
+        Parameters
+        ----------
+        dsConfig : `pexConfig.Config`
+            Instance of the `supertask.InputDatasetConfig` or
+            `supertask.OutputDatasetConfig`
 
         Returns
         -------
-        inputs : dict {str : type}
-            Dictionary mapping Dataset type name onto Dataset class for all
-            input datasets.
-        outputs : dict {str : type}
-            Dictionary mapping Dataset type name onto Dataset class for all
-            output datasets.
+        `butler.core.datasets.DatasetType` instance.
+
+        Raises
+        ------
+        `KeyError` is raised if unit configuration uses incorrect unit name.
         """
-        # code below needs DatasetField class which I have no idea yet
-        # as to where it comes from, for now say it's not implemented
-        # and subclasses need to implement it.
-        raise NotImplementedError("getDatasetClasses() is not implemented")
-        inputs = {}
-        outputs = {}
-        for fieldName in self.config:
-            cls = getattr(self.ConfigClass, fieldName)
-            if issubclass(cls, DatasetField):
-                p = getattr(self.config, fieldName)
-                if p.mode == 'r':
-                    inputs[p.name] = p.type
-                else:
-                    outputs[p.name] = p.type
-        return inputs, outputs
+        # make a dict of {className: UnitCLass} for all unit classes
+        unitsDict = dict((k, v) for k, v in vars(coreUnits).items()
+                         if isinstance(v, type) and issubclass(v, coreUnits.DataUnit))
+        # map unit names to classes, this will throw if unit name is unknown
+        units = [unitsDict[unit] for unit in dsConfig.units]
+        # make unit set
+        units = coreUnits.DataUnitSet(units)
+
+        # map storage class name to storage class
+        storageClass = cls.storageClassFactory.getStorageClass(dsConfig.storageClass)
+
+        return DatasetType(name=dsConfig.name, dataUnits=units, storageClass=storageClass)
 
     def write_config(self, butler, clobber=False, do_backup=True):
         """Write the configuration used for processing the data, or check that
@@ -221,6 +283,7 @@ class SuperTask(Task):
                                 (config_name, exc))
 
             def output(msg): return self.log.fatal("Comparing configuration: " + msg)
+
             if not self.config.compare(old_config, shortcut=False, output=output):
                 raise TaskError(
                     ("Config does not match existing task config %r on disk; tasks configurations " +
