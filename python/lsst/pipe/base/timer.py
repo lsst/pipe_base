@@ -45,17 +45,17 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
         - ``log`` an instance of `lsst.log.Log`.
 
     pairs : sequence
-        A sequence of ``(name, value)`` pairs.
+        A sequence of ``(name, value)`` pairs, with value typically numeric.
     logLevel : optional
         Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
     """
     strList = []
     for name, value in pairs:
         try:
+            # Use LongLong explicitly here in case an early value in the sequence is int-sized
+            obj.metadata.addLongLong(name, value)
+        except TypeError as e:
             obj.metadata.add(name, value)
-        except Exception as e:
-            obj.log.fatal("%s.metadata.add(name=%r, value=%r) failed with error=%s",
-                          type(obj).__name__, name, value, e)
         strList.append("%s=%s" % (name, value))
     log(obj.log.getName(), logLevel, "; ".join(strList))
 
