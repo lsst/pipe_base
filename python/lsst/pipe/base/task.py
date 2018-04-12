@@ -100,6 +100,7 @@ class Task(object):
       Iteration, if desired, is performed by a caller of the run method. This is good design and allows
       multiprocessing without the run method having to support it directly.
     - If ``run`` can persist or unpersist data:
+
       - ``run`` should accept a butler data reference (or a collection of data references, if appropriate,
         e.g. coaddition).
       - There should be a way to run the task without persisting data. Typically the run method returns all

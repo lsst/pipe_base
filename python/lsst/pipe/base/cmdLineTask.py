@@ -379,11 +379,11 @@ class TaskRunner(object):
             - ``dataRef``: the provided data reference.
             - ``metadata``: task metadata after execution of run.
             - ``result``: result returned by task run, or `None` if the task fails.
-            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
+            - ``exitStatus``: 0 if the task completed successfully, 1 otherwise.
 
             If ``doReturnResults`` is `False` the struct contains:
 
-            - ``exitStatus`: 0 if the task completed successfully, 1 otherwise.
+            - ``exitStatus``: 0 if the task completed successfully, 1 otherwise.
 
         Notes
         -----
@@ -452,7 +452,7 @@ class TaskRunner(object):
 
 
 class ButlerInitializedTaskRunner(TaskRunner):
-    """A TaskRunner for `CmdLineTask`\ s that require a ``butler`` keyword argument to be passed to
+    """A `TaskRunner` for `CmdLineTask`\ s that require a ``butler`` keyword argument to be passed to
     their constructor.
     """
 
