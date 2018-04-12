@@ -471,10 +471,16 @@ class ArgumentParser(argparse.ArgumentParser):
                           help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
         self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
                           help="config override file(s)")
-        self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
+        self.add_argument("-L", "--loglevel", nargs="*", action="store",
                           help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
                           metavar="LEVEL|COMPONENT=LEVEL")
         self.add_argument("--longlog", action="store_true", help="use a more verbose format for the logging")
+        self.add_argument("--logdest", action="store",
+                          help="direct log output to FILE", metavar="FILE",
+                          default="System.out")
+        self.add_argument("--logconfig", action="store",
+                          help="use a log configuration override file",
+                          metavar="OVERRIDE")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument("--doraise", action="store_true",
                           help="raise an exception on error (else log a message and continue)?")
@@ -500,13 +506,6 @@ class ArgumentParser(argparse.ArgumentParser):
                                 "them (safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--no-versions", action="store_true", dest="noVersions", default=False,
                           help="don't check package versions; useful for development")
-        lsstLog.configure_prop("""
-log4j.rootLogger=INFO, A1
-log4j.appender.A1=ConsoleAppender
-log4j.appender.A1.Target=System.out
-log4j.appender.A1.layout=PatternLayout
-log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
-""")
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
                         ContainerClass=DataIdContainer):
@@ -631,12 +630,13 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             self.error("Error: input=%r not found" % (namespace.input,))
 
         namespace.config = config
-        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getPackageName()
 
         self.handleCamera(namespace)
+
+        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
 
         self._applyInitialOverrides(namespace)
         if override is not None:
@@ -648,6 +648,39 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
         namespace = argparse.ArgumentParser.parse_args(self, args=args, namespace=namespace)
         del namespace.configfile
+
+        # Logging options
+
+        logProps = "log4j.rootLogger=INFO, A1\n"
+        if namespace.logdest == "System.out" or namespace.logdest == "System.err":
+            logProps += "log4j.appender.A1 = ConsoleAppender\n"
+            logProps += "log4j.appender.A1.Target=" + namespace.logdest + "\n"
+        else:
+            logProps += "log4j.appender.A1 = FileAppender\n"
+            logProps += "log4j.appender.A1.File=" + namespace.logdest + "\n"
+        del namespace.logdest
+
+        logProps += "log4j.appender.A1.layout=PatternLayout\n"
+        if namespace.longlog:
+            logProps += "log4j.appender.A1.layout.ConversionPattern=%-5p " \
+                        "%d{yyyy-MM-ddTHH:mm:ss.sssZ} %c (%X{LABEL})(%F:%L)- %m%n"
+        else:
+            logProps += "log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n\n"
+        del namespace.longlog
+
+        if namespace.logconfig:
+            with open(namespace.logconfig) as f:
+                logProps += "".join(f.readlines())
+        del namespace.logconfig
+
+        lsstLog.configure_prop(logProps)
+	# Re-fetch reconfigured log if needed
+        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
+
+        if namespace.loglevel:
+            obeyLogLevelArgument(self, namespace)
+        del namespace.loglevel
+
 
         self._parseDirectories(namespace)
 
@@ -707,17 +740,6 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 sys.stderr.write("Warning: no 'debug' module found\n")
                 namespace.debug = False
 
-        del namespace.loglevel
-
-        if namespace.longlog:
-            lsstLog.configure_prop("""
-log4j.rootLogger=INFO, A1
-log4j.appender.A1=ConsoleAppender
-log4j.appender.A1.Target=System.out
-log4j.appender.A1.layout=PatternLayout
-log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddThh:mm:ss.sss} %c (%X{LABEL})(%F:%L)- %m%n
-""")
-        del namespace.longlog
 
         namespace.config.validate()
         namespace.config.freeze()
@@ -959,6 +981,37 @@ def getTaskDict(config, taskDict=None, baseName=""):
                 taskDict[subBaseName] = taskName
                 getTaskDict(config=subConfig, taskDict=taskDict, baseName=subBaseName)
     return taskDict
+
+
+def obeyLogLevelArgument(parser, namespace):
+    """Set log level.
+
+    Parameters
+    ----------
+    parser : `ArgumentParser`
+        Argument parser.
+    namespace : `argparse.Namespace`
+        Parsed command. This argument is not used.
+    values : `list`
+        List of trace levels; each item must be of the form
+        ``component_name=level`` or ``level``, where ``level``
+        is a keyword (not case sensitive) or an integer.
+    """
+    permittedLevelList = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')
+    permittedLevelSet = set(permittedLevelList)
+    for componentLevel in namespace.loglevel:
+        component, sep, levelStr = componentLevel.partition("=")
+        if not levelStr:
+            levelStr, component = component, None
+        logLevelUpr = levelStr.upper()
+        if logLevelUpr in permittedLevelSet:
+            logLevel = getattr(lsstLog.Log, logLevelUpr)
+        else:
+            parser.error("loglevel=%r not one of %s" % (levelStr, permittedLevelList))
+        if component is None:
+            namespace.log.setLevel(logLevel)
+        else:
+            lsstLog.Log.getLogger(component).setLevel(logLevel)
 
 
 def obeyShowArgument(showOpts, config=None, exit=False):
@@ -1236,43 +1289,6 @@ class IdValueAction(argparse.Action):
         argName = option_string.lstrip("-")
         ident = getattr(namespace, argName)
         ident.idList += idDictList
-
-
-class LogLevelAction(argparse.Action):
-    """argparse action to set log level.
-    """
-
-    def __call__(self, parser, namespace, values, option_string):
-        """Set trace level.
-
-        Parameters
-        ----------
-        parser : `ArgumentParser`
-            Argument parser.
-        namespace : `argparse.Namespace`
-            Parsed command. This argument is not used.
-        values : `list`
-            List of trace levels; each item must be of the form
-            ``component_name=level`` or ``level``, where ``level``
-            is a keyword (not case sensitive) or an integer.
-        option_string : `str`
-            Option value specified by the user.
-        """
-        permittedLevelList = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')
-        permittedLevelSet = set(permittedLevelList)
-        for componentLevel in values:
-            component, sep, levelStr = componentLevel.partition("=")
-            if not levelStr:
-                levelStr, component = component, None
-            logLevelUpr = levelStr.upper()
-            if logLevelUpr in permittedLevelSet:
-                logLevel = getattr(lsstLog.Log, logLevelUpr)
-            else:
-                parser.error("loglevel=%r not one of %s" % (levelStr, permittedLevelList))
-            if component is None:
-                namespace.log.setLevel(logLevel)
-            else:
-                lsstLog.Log.getLogger(component).setLevel(logLevel)
 
 
 class ReuseAction(argparse.Action):
