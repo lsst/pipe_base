@@ -28,14 +28,13 @@ from __future__ import absolute_import, division, print_function
 import unittest
 
 import lsst.utils.tests
-from lsst.log import Log
 from lsst.daf.butler.core.datasets import DatasetRef
 from lsst.daf.butler.core.quantum import Quantum
 from lsst.daf.butler.core.run import Run
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.pipe import supertask
-from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass
+from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass  # noqa: F401
 
 
 class ButlerMock():
@@ -204,6 +203,7 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
 
 def setup_module(module):
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

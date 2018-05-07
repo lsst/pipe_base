@@ -28,22 +28,23 @@ from __future__ import absolute_import, division, print_function
 __all__ = ["QuantumConfig", "InputDatasetConfig", "OutputDatasetConfig",
            "SuperTaskConfig"]
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 import lsst.pex.config as pexConfig
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
+
 
 class QuantumConfig(pexConfig.Config):
     """Configuration class which defines SuperTask quanta units.

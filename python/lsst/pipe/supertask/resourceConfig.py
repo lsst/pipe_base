@@ -7,22 +7,22 @@ from __future__ import absolute_import, division, print_function
 # "exported" names
 __all__ = ["ResourceConfig", "ConfigWithResource"]
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 import lsst.pex.config as pexConfig
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
 
 
 class ResourceConfig(pexConfig.Config):

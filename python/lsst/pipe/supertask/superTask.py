@@ -271,7 +271,8 @@ class SuperTask(Task):
                 raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
                                 (config_name, exc))
 
-            def output(msg): return self.log.fatal("Comparing configuration: " + msg)
+            def output(msg):
+                return self.log.fatal("Comparing configuration: " + msg)
 
             if not self.config.compare(old_config, shortcut=False, output=output):
                 raise TaskError(
