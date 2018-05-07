@@ -32,7 +32,6 @@ import lsst.afw.table as afwTable
 from lsst.pipe.base.task import Task, TaskError
 from lsst.daf.butler.core.datasets import DatasetType
 from lsst.daf.butler.core.storageClass import StorageClassFactory
-import lsst.daf.butler.core.units as coreUnits
 from .config import InputDatasetConfig, OutputDatasetConfig
 
 
@@ -234,23 +233,13 @@ class SuperTask(Task):
         Returns
         -------
         `butler.core.datasets.DatasetType` instance.
-
-        Raises
-        ------
-        `KeyError` is raised if unit configuration uses incorrect unit name.
         """
-        # make a dict of {className: UnitCLass} for all unit classes
-        unitsDict = dict((k, v) for k, v in vars(coreUnits).items()
-                         if isinstance(v, type) and issubclass(v, coreUnits.DataUnit))
-        # map unit names to classes, this will throw if unit name is unknown
-        units = [unitsDict[unit] for unit in dsConfig.units]
-        # make unit set
-        units = coreUnits.DataUnitSet(units)
-
         # map storage class name to storage class
         storageClass = cls.storageClassFactory.getStorageClass(dsConfig.storageClass)
 
-        return DatasetType(name=dsConfig.name, dataUnits=units, storageClass=storageClass)
+        return DatasetType(name=dsConfig.name,
+                           dataUnits=dsConfig.units,
+                           storageClass=storageClass)
 
     def write_config(self, butler, clobber=False, do_backup=True):
         """Write the configuration used for processing the data, or check that

@@ -32,7 +32,6 @@ from lsst.log import Log
 from lsst.daf.butler.core.datasets import DatasetRef
 from lsst.daf.butler.core.quantum import Quantum
 from lsst.daf.butler.core.run import Run
-from lsst.daf.butler.core import units
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.pipe import supertask
@@ -49,7 +48,7 @@ class ButlerMock():
     def key(ref):
         """Make a dict key out of ref.
         """
-        key = (ref.dataId["Camera"].name, ref.dataId["Visit"].visitId)
+        key = (ref.dataId["camera"], ref.dataId["visit"])
         return tuple(key)
 
     def get(self, ref, parameters=None):
@@ -107,10 +106,10 @@ class SuperTaskTestCase(unittest.TestCase):
 
     def _makeDSRefVisit(self, dstype, visitId):
             return DatasetRef(datasetType=dstype,
-                              dataId=dict(Camera=units.Camera("X"),
-                                          Visit=units.Visit(visitId),
-                                          PhysicalFilter=units.PhysicalFilter(),
-                                          AbstractFilter=units.AbstractFilter()))
+                              dataId=dict(camera="X",
+                                          visit=visitId,
+                                          physical_filter='a',
+                                          abstract_filter='b'))
 
     def _makeQuanta(self, config):
         """Create set of Quanta
