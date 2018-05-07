@@ -24,7 +24,6 @@
 """
 
 import unittest
-import pickle
 from collections import namedtuple
 
 import lsst.pex.config as pexConfig
@@ -45,13 +44,13 @@ def makeDatasetType(dsConfig):
 
 class ExampleSuperTaskConfig(supertask.SuperTaskConfig):
     input1 = pexConfig.ConfigField(dtype=supertask.InputDatasetConfig,
-                                  doc="Input for this task")
+                                   doc="Input for this task")
     input2 = pexConfig.ConfigField(dtype=supertask.InputDatasetConfig,
-                                  doc="Input for this task")
+                                   doc="Input for this task")
     output1 = pexConfig.ConfigField(dtype=supertask.OutputDatasetConfig,
-                                   doc="Output for this task")
+                                    doc="Output for this task")
     output2 = pexConfig.ConfigField(dtype=supertask.OutputDatasetConfig,
-                                   doc="Output for this task")
+                                    doc="Output for this task")
 
 
 def _makeConfig(inputName, outputName):

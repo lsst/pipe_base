@@ -35,6 +35,7 @@ import lsst.utils.tests
 class AddConfig(pexConfig.Config):
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
+
 class AddTask(SuperTask):
     ConfigClass = AddConfig
 
@@ -44,8 +45,10 @@ class AddTask(SuperTask):
             val=val + self.config.addend,
         )
 
+
 class MultConfig(pexConfig.Config):
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
+
 
 class MultTask(SuperTask):
     ConfigClass = MultConfig
@@ -127,6 +130,7 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
 
 def setup_module(module):
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

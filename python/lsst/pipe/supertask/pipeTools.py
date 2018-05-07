@@ -27,18 +27,19 @@ from __future__ import absolute_import, division, print_function
 
 __all__ = ["isPipelineOrdered"]
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 from .pipeline import Pipeline
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
+
 
 def _loadTaskClass(taskDef, taskFactory):
     """Import task class if necessary.
@@ -56,9 +57,9 @@ def _loadTaskClass(taskDef, taskFactory):
         taskClass = taskFactory.loadTaskClass(taskDef.taskName)
     return taskClass
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
 
 
 class MissingTaskFactoryError(Exception):

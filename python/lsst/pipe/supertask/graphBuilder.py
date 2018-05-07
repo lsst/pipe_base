@@ -28,23 +28,22 @@ from builtins import object
 
 __all__ = ['GraphBuilder']
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
+import copy
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
-import lsst.log as lsstLog
-from .graph import QuantumGraphNodes, QuantumGraph
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
 
 
 class GraphBuilder(object):

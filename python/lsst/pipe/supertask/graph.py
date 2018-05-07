@@ -34,21 +34,22 @@ from __future__ import absolute_import, division, print_function
 # "exported" names
 __all__ = ["QuantumGraphNodes", "QuantumGraph"]
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
+
 
 class QuantumGraphNodes(object):
     """QuantumGraphNodes represents a bunch of nodes in an quantum graph.

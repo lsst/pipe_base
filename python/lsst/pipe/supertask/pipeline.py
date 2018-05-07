@@ -28,21 +28,22 @@ from __future__ import absolute_import, division, print_function
 # "exported" names
 __all__ = ["Pipeline", "TaskDef"]
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
+
 
 class TaskDef(object):
     """TaskDef is a collection of information about task needed by Pipeline.
@@ -80,6 +81,7 @@ class TaskDef(object):
             rep += ", label=" + self.label
         rep += ")"
         return rep
+
 
 class Pipeline(list):
     """Pipeline is a sequence of TaskDef objects.

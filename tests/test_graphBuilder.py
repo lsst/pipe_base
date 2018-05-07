@@ -29,15 +29,12 @@ import unittest
 from builtins import object
 
 import lsst.utils.tests
-from lsst.daf.butler.core.quantum import Quantum
-from lsst.daf.butler.core.registry import Registry
-from lsst.log import Log
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.pipe.supertask import (GraphBuilder, Pipeline, SuperTask, TaskDef,
                                  SuperTaskConfig, InputDatasetConfig,
                                  OutputDatasetConfig)
-from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass
+from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass  # noqa: F401
 
 
 class OneToOneTaskConfig(SuperTaskConfig):
@@ -210,6 +207,7 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
 
 def setup_module(module):
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

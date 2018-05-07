@@ -28,27 +28,28 @@ from builtins import object
 
 __all__ = ['PipelineBuilder']
 
-#--------------------------------
+# -------------------------------
 #  Imports of standard modules --
-#--------------------------------
+# -------------------------------
 import os
+import pickle
 
-#-----------------------------
-# Imports for other modules --
-#-----------------------------
+# -----------------------------
+#  Imports for other modules --
+# -----------------------------
 from .configOverrides import ConfigOverrides
 from .pipeline import Pipeline, TaskDef
 from . import pipeTools
 import lsst.log as lsstLog
 import lsst.utils
 
-#----------------------------------
-# Local non-exported definitions --
-#----------------------------------
+# ----------------------------------
+#  Local non-exported definitions --
+# ----------------------------------
 
-#------------------------
-# Exported definitions --
-#------------------------
+# ------------------------
+#  Exported definitions --
+# ------------------------
 
 
 class PipelineBuilder(object):
@@ -86,9 +87,9 @@ class PipelineBuilder(object):
         obsPkg = None
         camera = None
         if args.camera_overrides:
-#             mapperClass = dafPersist.Butler.getMapperClass(args.input)
-#             camera = mapperClass.getCameraName()
-#             obsPkg = mapperClass.getPackageName()
+            # mapperClass = dafPersist.Butler.getMapperClass(args.input)
+            # camera = mapperClass.getCameraName()
+            # obsPkg = mapperClass.getPackageName()
             pass
 
         if args.pipeline:
@@ -99,7 +100,8 @@ class PipelineBuilder(object):
 
             # check type
             if not isinstance(pipeline, Pipeline):
-                raise TypeError("Pickle file `{}' contains something other than Pipeline".format(args.pipeline))
+                msg = "Pickle file `{}' contains something other than Pipeline"
+                raise TypeError(msg.format(args.pipeline))
 
         else:
             # start with empty one

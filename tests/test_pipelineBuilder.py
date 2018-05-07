@@ -32,7 +32,6 @@ import unittest
 from builtins import object
 
 import lsst.utils.tests
-from lsst.log import Log
 import lsst.pex.config as pexConfig
 from lsst.pipe.supertask import PipelineBuilder, SuperTask, SuperTaskConfig, parser
 
@@ -44,15 +43,17 @@ class SimpleConfig(SuperTaskConfig):
 class TaskOne(SuperTask):
     ConfigClass = SimpleConfig
     _DefaultName = "taskOne"
+
     def __init__(self, **kwargs):
-        OneToOneTask.__init__(self, Dataset1, Dataset2, **kwargs)
+        SuperTask.__init__(self, **kwargs)
 
 
 class TaskTwo(SuperTask):
     ConfigClass = SimpleConfig
     _DefaultName = "taskTwo"
+
     def __init__(self, **kwargs):
-        OneToOneTask.__init__(self, Dataset2, Dataset3, **kwargs)
+        SuperTask.__init__(self, **kwargs)
 
 
 class TaskFactoryMock(object):
@@ -329,8 +330,8 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
 
 
 def setup_module(module):
-    actions = []
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()
