@@ -44,6 +44,9 @@ import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
 from future.utils import with_metaclass
 
+from lsst.utils import getPackageDir
+from lsst.daf.butler import Config, Butler, ShimButler
+
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
            "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
 
@@ -442,6 +445,8 @@ class ArgumentParser(argparse.ArgumentParser):
                                 "them (safe with -j, but not all other forms of parallel execution)"))
         self.add_argument("--no-versions", action="store_true", dest="noVersions", default=False,
                           help="don't check package versions; useful for development")
+        self.add_argument("--use-shim-butler", action="store_true", dest="useShimButler", default=True,
+                          help="use a ShimButler to mimic a Gen2 Butler on top of a Gen3 Butler")
         lsstLog.configure_prop("""
 log4j.rootLogger=INFO, A1
 log4j.appender.A1=ConsoleAppender
@@ -600,6 +605,15 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                        "An output directory must be specified with the --output or --rerun\n"
                        "command-line arguments.\n")
 
+        # TODO avoid hardcoding ShimButler configuration to ci_hsc here
+        if namespace.useShimButler:
+            butlerConfig = Config()
+            butlerConfig["run"] = "ci_hsc"
+            butlerConfig["registry.cls"] = "lsst.daf.butler.registries.sqliteRegistry.SqliteRegistry"
+            butlerConfig["registry.db"] = "sqlite:///{}/gen3.sqlite3".format(namespace.input)
+            butlerConfig["datastore.cls"] = "lsst.daf.butler.datastores.posixDatastore.PosixDatastore"
+            butlerConfig["datastore.root"] = namespace.input
+
         butlerArgs = {}  # common arguments for butler elements
         if namespace.calib:
             butlerArgs = {'mapperArgs': {'calibRoot': namespace.calib}}
@@ -608,11 +622,20 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             inputs = {'root': namespace.input}
             inputs.update(butlerArgs)
             outputs.update(butlerArgs)
-            namespace.butler = dafPersist.Butler(inputs=inputs, outputs=outputs)
+            if namespace.useShimButler:
+                namespace.butler = ShimButler(butler=Butler(butlerConfig),
+                                              fallbackButler=dafPersist.Butler(inputs=inputs,
+                                                                               outputs=outputs))
+            else:
+                namespace.butler = dafPersist.Butler(inputs=inputs, outputs=outputs)
         else:
             outputs = {'root': namespace.input, 'mode': 'rw'}
             outputs.update(butlerArgs)
-            namespace.butler = dafPersist.Butler(outputs=outputs)
+            if namespace.useShimButler:
+                namespace.butler = ShimButler(butler=Butler(butlerConfig),
+                                              fallbackButler=dafPersist.Butler(outputs=outputs))
+            else:
+                namespace.butler = dafPersist.Butler(outputs=outputs)
 
         # convert data in each of the identifier lists to proper types
         # this is done after constructing the butler, hence after parsing the command line,
