@@ -61,6 +61,7 @@ class MultTask(pipeBase.Task):
             val=val * self.config.multiplicand,
         )
 
+
 # prove that registry fields can also be used to hold subtasks
 # by using a registry to hold MultTask
 multRegistry = pexConfig.makeRegistry("Registry for Mult-like tasks")
@@ -269,6 +270,7 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
 
 def setup_module(module):
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

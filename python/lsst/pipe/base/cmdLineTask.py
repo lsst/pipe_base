@@ -50,7 +50,7 @@ def _poolFunctionWrapper(function, arg):
         return function(arg)
     except Exception:
         raise  # No worries
-    except:
+    except:  # noqa E722
         # Need to wrap the exception with something multiprocessing will recognise
         cls, exc, tb = sys.exc_info()
         log = Log.getDefaultLogger()

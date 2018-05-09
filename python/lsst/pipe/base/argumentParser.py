@@ -130,7 +130,7 @@ class DataIdContainer(object):
                 except KeyError:
                     # OK, assume that it's a valid key and guess that it's a string
                     keyType = str
-                    
+
                     log = lsstLog.Log.getDefaultLogger()
                     log.warn("Unexpected ID %s; guessing type is \"%s\"" %
                              (key, 'str' if keyType == str else keyType))
@@ -1177,7 +1177,7 @@ class ReuseAction(argparse.Action):
         if value == "all":
             value = self.choices[-2]
         index = self.choices.index(value)
-        namespace.reuse = self.choices[:index+1]
+        namespace.reuse = self.choices[:index + 1]
 
 
 def setDottedAttr(item, name, value):
