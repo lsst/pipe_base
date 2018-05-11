@@ -63,6 +63,7 @@ class MainTaskConfig(pexConfig.Config):
 class MainTask(pipeBase.Task):
     ConfigClass = MainTaskConfig
 
+
 c = MainTaskConfig()
 
 

@@ -18,3 +18,5 @@ doc/py-api/
 python/lsst/pipe/base/version.py
 tests/.tests
 ups/*.cfgc
+.cache
+pytest_session.txt

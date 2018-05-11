@@ -69,6 +69,7 @@ class ExampleConfig(pexConfig.Config):
         default=["a", "bb", "ccc"],
     )
 
+
 parser = pipeBase.ArgumentParser(name="argumentParser")
 parser.add_id_argument("--id", "raw", "data identifier", level="sensor")
 config = ExampleConfig()

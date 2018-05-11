@@ -40,24 +40,6 @@ from lsst.log import Log
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
 
-def _poolFunctionWrapper(function, arg):
-    """Wrapper around function to catch exceptions that don't inherit from `Exception`.
-
-    Such exceptions aren't caught by multiprocessing, which causes the slave process to crash and you end up
-    hitting the timeout.
-    """
-    try:
-        return function(arg)
-    except Exception:
-        raise  # No worries
-    except:
-        # Need to wrap the exception with something multiprocessing will recognise
-        cls, exc, tb = sys.exc_info()
-        log = Log.getDefaultLogger()
-        log.warn("Unhandled exception %s (%s):\n%s" % (cls.__name__, exc, traceback.format_exc()))
-        raise Exception("Unhandled exception: %s (%s)" % (cls.__name__, exc))
-
-
 def _runPool(pool, timeout, function, iterable):
     """Wrapper around ``pool.map_async``, to handle timeout
 
@@ -67,7 +49,7 @@ def _runPool(pool, timeout, function, iterable):
     Further wraps the function in ``_poolFunctionWrapper`` to catch exceptions
     that don't inherit from `Exception`.
     """
-    return pool.map_async(functools.partial(_poolFunctionWrapper, function), iterable).get(timeout)
+    return pool.map_async(function, iterable).get(timeout)
 
 
 @contextlib.contextmanager
