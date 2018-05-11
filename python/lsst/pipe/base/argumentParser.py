@@ -159,11 +159,8 @@ class DataIdContainer(object):
             raise RuntimeError("Must call setDatasetType first")
         butler = namespace.butler
         for dataId in self.idList:
-            refList = list(butler.subset(datasetType=self.datasetType, level=self.level, dataId=dataId))
-            # exclude nonexistent data
-            # this is a recursive test, e.g. for the sake of "raw" data
-            refList = [dr for dr in refList if dataExists(butler=butler, datasetType=self.datasetType,
-                                                          dataRef=dr)]
+            refList = dafPersist.searchDataRefs(butler, datasetType=self.datasetType,
+                                                level=self.level, dataId=dataId)
             if not refList:
                 namespace.log.warn("No data found for dataId=%s", dataId)
                 continue
@@ -1222,30 +1219,3 @@ def getDottedAttr(item, name):
     for subname in name.split("."):
         subitem = getattr(subitem, subname)
     return subitem
-
-
-def dataExists(butler, datasetType, dataRef):
-    """Determine if data exists at the current level or any data exists at a deeper level.
-
-    Parameters
-    ----------
-    butler : `lsst.daf.persistence.Butler`
-        The Butler.
-    datasetType : `str`
-        Dataset type.
-    dataRef : `lsst.daf.persistence.ButlerDataRef`
-        Butler data reference.
-
-    Returns
-    -------
-    exists : `bool`
-        Return value is `True` if data exists, `False` otherwise.
-    """
-    subDRList = dataRef.subItems()
-    if subDRList:
-        for subDR in subDRList:
-            if dataExists(butler, datasetType, subDR):
-                return True
-        return False
-    else:
-        return butler.datasetExists(datasetType=datasetType, dataId=dataRef.dataId)
