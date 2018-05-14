@@ -45,9 +45,6 @@ def _runPool(pool, timeout, function, iterable):
 
     This is required so as to trigger an immediate interrupt on the KeyboardInterrupt (Ctrl-C); see
     http://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool
-
-    Further wraps the function in ``_poolFunctionWrapper`` to catch exceptions
-    that don't inherit from `Exception`.
     """
     return pool.map_async(function, iterable).get(timeout)
 
