@@ -33,7 +33,8 @@ from builtins import object
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.supertask import PipelineBuilder, SuperTask, SuperTaskConfig, parser
+from lsst.pipe.supertask import (PipelineBuilder, SuperTask, SuperTaskConfig,
+                                 cmdLineParser)
 
 
 class SimpleConfig(SuperTaskConfig):
@@ -85,7 +86,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case adding tasks to a pipeline
         """
         # create a task with default label
-        actions = [parser._ACTION_ADD_TASK("TaskOne")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -97,7 +98,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertIs(pipeline[0].taskClass, TaskOne)
 
         # create a task, give it a label
-        actions = [parser._ACTION_ADD_TASK("TaskOne:label")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:label")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -109,8 +110,8 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertIs(pipeline[0].taskClass, TaskOne)
 
         # two different tasks
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskTwo")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -125,10 +126,10 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertIs(pipeline[1].taskClass, TaskTwo)
 
         # more than one instance of each class
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskTwo"),
-                   parser._ACTION_ADD_TASK("TaskOne:label"),
-                   parser._ACTION_ADD_TASK("TaskTwo:label2")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -147,8 +148,8 @@ class PipelineBuilderTestCase(unittest.TestCase):
     def test_LabelExceptions(self):
         """Simple test case adding tasks with identical labels
         """
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskOne")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskOne")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -156,8 +157,8 @@ class PipelineBuilderTestCase(unittest.TestCase):
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
-        args.pipeline_actions = [parser._ACTION_ADD_TASK("TaskOne:label"),
-                                 parser._ACTION_ADD_TASK("TaskTwo:label")]
+        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
+                                 cmdLineParser._ACTION_ADD_TASK("TaskTwo:label")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
@@ -165,10 +166,10 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case removing tasks
         """
         # make short pipeline
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskTwo"),
-                   parser._ACTION_ADD_TASK("TaskOne:label"),
-                   parser._ACTION_ADD_TASK("TaskTwo:label2")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -176,23 +177,23 @@ class PipelineBuilderTestCase(unittest.TestCase):
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(len(pipeline), 4)
 
-        args.pipeline_actions += [parser._ACTION_DELETE_TASK("label")]
+        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("label")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(len(pipeline), 3)
 
-        args.pipeline_actions += [parser._ACTION_DELETE_TASK("TaskTwo")]
+        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("TaskTwo")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(len(pipeline), 2)
 
-        args.pipeline_actions += [parser._ACTION_DELETE_TASK("TaskOne"),
-                                  parser._ACTION_DELETE_TASK("label2")]
+        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("TaskOne"),
+                                  cmdLineParser._ACTION_DELETE_TASK("label2")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(len(pipeline), 0)
 
         # unknown label should raise LookupError
-        args.pipeline_actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                                 parser._ACTION_ADD_TASK("TaskTwo"),
-                                 parser._ACTION_DELETE_TASK("label2")]
+        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                                 cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
+                                 cmdLineParser._ACTION_DELETE_TASK("label2")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
@@ -200,10 +201,10 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case moving tasks
         """
         # make short pipeline
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskTwo"),
-                   parser._ACTION_ADD_TASK("TaskOne:label"),
-                   parser._ACTION_ADD_TASK("TaskTwo:label2")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -212,30 +213,30 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "TaskTwo", "label", "label2"])
 
-        args.pipeline_actions += [parser._ACTION_MOVE_TASK("label:1")]
+        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:1")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "label", "TaskTwo", "label2"])
 
         # negatives are accepted but may be non-intuitive
-        args.pipeline_actions += [parser._ACTION_MOVE_TASK("TaskOne:-1")]
+        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("TaskOne:-1")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual([t.label for t in pipeline],
                          ["label", "TaskTwo", "TaskOne", "label2"])
 
         # position larger than list size moves to end
-        args.pipeline_actions += [parser._ACTION_MOVE_TASK("label:100")]
+        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:100")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual([t.label for t in pipeline],
                          ["TaskTwo", "TaskOne", "label2", "label"])
 
-        args.pipeline_actions += [parser._ACTION_MOVE_TASK("label:0")]
+        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:0")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual([t.label for t in pipeline],
                          ["label", "TaskTwo", "TaskOne", "label2"])
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [parser._ACTION_MOVE_TASK("unlabel:0")]
+        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("unlabel:0")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
@@ -243,10 +244,10 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case re-labeling tasks
         """
         # make short pipeline
-        actions = [parser._ACTION_ADD_TASK("TaskOne"),
-                   parser._ACTION_ADD_TASK("TaskTwo"),
-                   parser._ACTION_ADD_TASK("TaskOne:label"),
-                   parser._ACTION_ADD_TASK("TaskTwo:label2")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
+                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -255,18 +256,18 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "TaskTwo", "label", "label2"])
 
-        args.pipeline_actions += [parser._ACTION_LABEL_TASK("TaskOne:label0")]
+        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("TaskOne:label0")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual([t.label for t in pipeline],
                          ["label0", "TaskTwo", "label", "label2"])
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [parser._ACTION_LABEL_TASK("unlabel:label3")]
+        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("unlabel:label3")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
         # duplicate label should raise LookupError
-        args.pipeline_actions += [parser._ACTION_LABEL_TASK("label2:label0")]
+        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("label2:label0")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
@@ -274,7 +275,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case for config overrides
         """
         # make simple pipeline
-        actions = [parser._ACTION_ADD_TASK("TaskOne:task")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -283,12 +284,12 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertIsInstance(pipeline[0].config, SimpleConfig)
         self.assertIsNone(pipeline[0].config.field)
 
-        args.pipeline_actions += [parser._ACTION_CONFIG("task.field=value")]
+        args.pipeline_actions += [cmdLineParser._ACTION_CONFIG("task.field=value")]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(pipeline[0].config.field, "value")
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [parser._ACTION_CONFIG("label.field=value")]
+        args.pipeline_actions += [cmdLineParser._ACTION_CONFIG("label.field=value")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
@@ -296,8 +297,8 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """Simple test case for config overrides in file
         """
         # make simple pipeline
-        actions = [parser._ACTION_ADD_TASK("TaskOne:task"),
-                   parser._ACTION_CONFIG("task.field=value")]
+        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
+                   cmdLineParser._ACTION_CONFIG("task.field=value")]
         args = Namespace(camera_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
@@ -311,16 +312,16 @@ class PipelineBuilderTestCase(unittest.TestCase):
         fname = overrides.name
         del overrides
 
-        args.pipeline_actions = [parser._ACTION_ADD_TASK("TaskOne:task"),
-                                 parser._ACTION_CONFIG_FILE("task:" + fname)]
+        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
+                                 cmdLineParser._ACTION_CONFIG_FILE("task:" + fname)]
         pipeline = self.builder.makePipeline(args)
         self.assertEqual(pipeline[0].config.field, "value")
 
         os.unlink(fname)
 
         # unknown label should raise LookupError
-        args.pipeline_actions = [parser._ACTION_ADD_TASK("TaskOne:task"),
-                                 parser._ACTION_CONFIG_FILE("label:/dev/null")]
+        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
+                                 cmdLineParser._ACTION_CONFIG_FILE("label:/dev/null")]
         with self.assertRaises(LookupError):
             self.builder.makePipeline(args)
 
