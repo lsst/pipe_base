@@ -196,7 +196,8 @@ class SuperTask(Task):
         for key, value in self.config.items():
             if isinstance(value, InputDatasetConfig):
                 dataRefs = quantum.predictedInputs[value.name]
-                inputs[key] = [butler.get(dataRef) for dataRef in dataRefs]
+                inputs[key] = [butler.get(dataRef.datasetType.name, dataRef.dataId)
+                               for dataRef in dataRefs]
 
         # lists of units for output datasets
         outUnits = {}
