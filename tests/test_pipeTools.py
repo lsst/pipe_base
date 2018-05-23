@@ -30,6 +30,7 @@ import unittest
 import lsst.pex.config as pexConfig
 from lsst.pipe import supertask
 from lsst.pipe.supertask import pipeTools
+from lsst.pipe.supertask.dotTools import pipeline2dot
 import lsst.utils.tests
 
 # mock for actual dataset type
@@ -277,7 +278,7 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   ("B", "D", "task3"),
                                   (("D", "E"), "F", "task4")])
         file = io.StringIO()
-        pipeTools.pipeline2dot(pipeline, file)
+        pipeline2dot(pipeline, file)
 
         # it's hard to validate complete output, just checking few basic things,
         # even that is not terribly stable
