@@ -95,7 +95,7 @@ class PipelineBuilder(object):
         if args.pipeline:
 
             # load it from a pickle file, will raise on error
-            with open(args.pipeline) as pickleFile:
+            with open(args.pipeline, 'rb') as pickleFile:
                 pipeline = pickle.load(pickleFile)
 
             # check type

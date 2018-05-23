@@ -267,8 +267,8 @@ def pipeline2gv(pipeline, file, taskFactory=None):
     def _renderDSNode(dsType, file):
         """Render GV node for a dataset type"""
         label = [dsType.name]
-        if dsType.units:
-            label += ["Units: " + ", ".join(dsType.units)]
+        if dsType.dataUnits:
+            label += ["Units: " + ", ".join(dsType.dataUnits)]
         label = r'\n'.join(label)
         attrib = dict(shape="box",
                       style="rounded,filled",
