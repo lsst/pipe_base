@@ -219,7 +219,7 @@ class SuperTask(Task):
                 dataRefs = quantum.outputs[value.name]
                 # TODO: check that data objects and data refs are aligned
                 for dataRef, data in zip(dataRefs, dataList):
-                    butler.put(dataRef, data)
+                    butler.put(data, dataRef.datasetType.name, dataRef.dataId)
 
     @classmethod
     def makeDatasetType(cls, dsConfig):

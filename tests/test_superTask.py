@@ -44,24 +44,24 @@ class ButlerMock():
         self.datasets = {}
 
     @staticmethod
-    def key(ref):
-        """Make a dict key out of ref.
+    def key(dataId):
+        """Make a dict key out of dataId.
         """
-        key = (ref.dataId["camera"], ref.dataId["visit"])
+        key = (dataId["camera"], dataId["visit"])
         return tuple(key)
 
-    def get(self, ref, parameters=None):
-        key = self.key(ref)
+    def get(self, dsTypeName, dataId, parameters=None):
+        key = self.key(dataId)
 #         print("butler.get: name={} key={}".format(ref.datasetType.name, key))
-        dsdata = self.datasets.get(ref.datasetType.name)
+        dsdata = self.datasets.get(dsTypeName)
         if dsdata:
             return dsdata.get(key)
         return None
 
-    def put(self, ref, inMemoryDataset, producer=None):
-        key = self.key(ref)
+    def put(self, inMemoryDataset, dsTypeName, dataId, producer=None):
+        key = self.key(dataId)
 #         print("butler.put: {} -> name={} key={}".format(inMemoryDataset, ref.datasetType.name, key))
-        dsdata = self.datasets.setdefault(ref.datasetType.name, {})
+        dsdata = self.datasets.setdefault(dsTypeName, {})
         dsdata[key] = inMemoryDataset
 
 
@@ -140,7 +140,7 @@ class SuperTaskTestCase(unittest.TestCase):
         dstype0 = supertask.SuperTask.makeDatasetType(task.config.input)
         for i, quantum in enumerate(quanta):
             ref = quantum.predictedInputs[dstype0.name][0]
-            butler.put(ref, 100 + i)
+            butler.put(100 + i, dstype0.name, ref.dataId)
 
         # run task on each quanta
         for quantum in quanta:
@@ -152,7 +152,7 @@ class SuperTaskTestCase(unittest.TestCase):
         self.assertEqual(len(dsdata), len(quanta))
         for i, quantum in enumerate(quanta):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref)], 100 + i + 3)
+            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3)
 
     def testChain2(self):
         """Test for two-task chain.
@@ -173,7 +173,7 @@ class SuperTaskTestCase(unittest.TestCase):
         dstype0 = supertask.SuperTask.makeDatasetType(task1.config.input)
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]
-            butler.put(ref, 100 + i)
+            butler.put(100 + i, dstype0.name, ref.dataId)
 
         # run task on each quanta
         for quantum in quanta1:
@@ -187,14 +187,14 @@ class SuperTaskTestCase(unittest.TestCase):
         self.assertEqual(len(dsdata), len(quanta1))
         for i, quantum in enumerate(quanta1):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref)], 100 + i + 3)
+            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3)
 
         outputName = task2.config.output.name
         dsdata = butler.datasets[outputName]
         self.assertEqual(len(dsdata), len(quanta2))
         for i, quantum in enumerate(quanta2):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref)], 100 + i + 3 + 200)
+            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3 + 200)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
