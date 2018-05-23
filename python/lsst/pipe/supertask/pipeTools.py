@@ -226,7 +226,7 @@ def orderPipeline(pipeline, taskFactory=None):
     return Pipeline(pipeline[idx] for idx in result)
 
 
-def pipeline2gv(pipeline, file, taskFactory=None):
+def pipeline2dot(pipeline, file, taskFactory=None):
     """Convert Pipeline into GraphViz digraph.
 
     This method is mostly for documentation/presentation purposes.
@@ -251,7 +251,7 @@ def pipeline2gv(pipeline, file, taskFactory=None):
     provided.
     """
 
-    def _renderTaskNode(nodeName, taskDef, file):
+    def _renderTaskNode(nodeName, taskDef, idx, file):
         """Render GV node for a task"""
         label = [taskDef.taskName, "index: {}".format(idx)]
         if taskDef.label:
@@ -290,7 +290,7 @@ def pipeline2gv(pipeline, file, taskFactory=None):
 
         # node for a task
         taskNodeName = "task{}".format(idx)
-        _renderTaskNode(taskNodeName, taskDef, file)
+        _renderTaskNode(taskNodeName, taskDef, idx, file)
 
         # we will need task class for next operations, make sure it is loaded
         taskClass = _loadTaskClass(taskDef, taskFactory)

@@ -33,14 +33,14 @@ from lsst.pipe.supertask import pipeTools
 import lsst.utils.tests
 
 # mock for actual dataset type
-DS = namedtuple("DS", "name units")
+DS = namedtuple("DS", "name dataUnits")
 
 
 # This method is used by SuperTask to instanciate DatasetType, normally this
 # should come from some other module but we have not defined that yet, so I
 # stick a trivial (mock) implementation here.
 def makeDatasetType(dsConfig):
-    return DS(name=dsConfig.name, units=dsConfig.units)
+    return DS(name=dsConfig.name, dataUnits=dsConfig.units)
 
 
 class ExampleSuperTaskConfig(supertask.SuperTaskConfig):
@@ -269,15 +269,15 @@ class PipelineToolsTestCase(unittest.TestCase):
         with self.assertRaises(pipeTools.PipelineDataCycleError):
             pipeline = pipeTools.orderPipeline(pipeline)
 
-    def testPipeline2gv(self):
-        """Tests for pipeTools.pipeline2gv method
+    def testPipeline2dot(self):
+        """Tests for pipeTools.pipeline2dot method
         """
         pipeline = _makePipeline([("A", ("B", "C"), "task1"),
                                   ("C", "E", "task2"),
                                   ("B", "D", "task3"),
                                   (("D", "E"), "F", "task4")])
         file = io.StringIO()
-        pipeTools.pipeline2gv(pipeline, file)
+        pipeTools.pipeline2dot(pipeline, file)
 
         # it's hard to validate complete output, just checking few basic things,
         # even that is not terribly stable
