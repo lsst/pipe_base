@@ -169,7 +169,7 @@ class GraphBuilderTestCase(unittest.TestCase):
     def test_makeGraphSelect(self):
         """Test for makeGraph() implementation with subset of data.
         """
-        userQuery = "1 5 9"
+        userQuery = "1 = 1"
         taskFactory = TaskFactoryMock()
         registry = RegistryMock()
         pipeline = self._makePipeline()
