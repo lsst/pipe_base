@@ -26,14 +26,15 @@
 from __future__ import absolute_import, division, print_function
 
 import unittest
-from builtins import object
 
 import lsst.utils.tests
+from lsst.daf.butler import Registry, RegistryConfig, SchemaConfig
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.pipe.supertask import (GraphBuilder, Pipeline, SuperTask, TaskDef,
                                  SuperTaskConfig, InputDatasetConfig,
                                  OutputDatasetConfig)
+from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
 from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass  # noqa: F401
 
 
@@ -60,24 +61,48 @@ class OneToOneTaskConfig(SuperTaskConfig):
         self.output.storageClass = "example"
 
 
-class OneToOneTask(SuperTask):
+class VisitToPatchTaskConfig(SuperTaskConfig):
+    input = pexConfig.ConfigField(dtype=InputDatasetConfig,
+                                  doc="Input dataset type for this task")
+    output = pexConfig.ConfigField(dtype=OutputDatasetConfig,
+                                   doc="Output dataset type for this task")
+
+    def setDefaults(self):
+        # set units of a quantum, this task uses per-visit quanta and it
+        # expects dataset units to be the same
+        self.quantum.units = ["SkyMap", "Tract", "Patch"]
+        self.quantum.sql = None
+
+        # default config for input dataset type
+        self.input.name = "input"
+        self.input.units = ["Camera", "Visit"]
+        self.input.storageClass = "example"
+
+        # default config for output dataset type
+        self.output.name = "output"
+        self.output.units = ["SkyMap", "Tract", "Patch"]
+        self.output.storageClass = "example"
+
+
+class TaskOne(SuperTask):
     ConfigClass = OneToOneTaskConfig
-    _DefaultName = "1to1_task"
+    _DefaultName = "task_one"
 
     def run(self, input, output):
-        output = [val + self.config.addend for val in input]
+        output = []
         return pipeBase.Struct(output=output)
 
 
-class TaskOne(OneToOneTask):
-    _DefaultName = "task_one"
-
-
-class TaskTwo(OneToOneTask):
+class TaskTwo(SuperTask):
+    ConfigClass = VisitToPatchTaskConfig
     _DefaultName = "task_two"
 
+    def run(self, input, output):
+        output = []
+        return pipeBase.Struct(output=output)
 
-class TaskFactoryMock(object):
+
+class TaskFactoryMock:
     def loadTaskClass(self, taskName):
         if taskName == "TaskOne":
             return TaskOne, "TaskOne"
@@ -92,17 +117,13 @@ class TaskFactoryMock(object):
         return taskClass(config=config)
 
 
-class RegistryMock(object):
-    pass
-
-
 class GraphBuilderTestCase(unittest.TestCase):
     """A test case for GraphBuilder class
     """
 
     def _makePipeline(self):
         config1 = OneToOneTaskConfig()
-        config2 = OneToOneTaskConfig()
+        config2 = VisitToPatchTaskConfig()
         config2.input.name = config1.output.name
         config2.output.name = "output2"
 
@@ -118,16 +139,30 @@ class GraphBuilderTestCase(unittest.TestCase):
             for val in values:
                 self.assertTrue(val.number.value in expectedValues)
 
-    def test_buildIOClasses(self):
-        """Test for buildIOClasses() implementation.
+    def test_makeFullIODatasetTypes(self):
+        """Test for _makeFullIODatasetTypes() implementation.
         """
         taskFactory = TaskFactoryMock()
-        registry = RegistryMock()
-        userQuery = None
-        gbuilder = GraphBuilder(taskFactory, registry, userQuery)
+        reg = Registry.fromConfig(RegistryConfig(), SchemaConfig())
+        gbuilder = GraphBuilder(taskFactory, reg)
 
+        # build a pipeline
         tasks = self._makePipeline()
-        inputs, outputs = gbuilder.buildIODatasets([task for task in tasks])
+
+        # collect inputs/outputs from each task
+        taskDatasets = []
+        for taskDef in tasks:
+            taskClass = taskDef.taskClass
+            taskInputs = taskClass.getInputDatasetTypes(taskDef.config)
+            taskInputs = list(taskInputs.values()) if taskInputs else []
+            taskOutputs = taskClass.getOutputDatasetTypes(taskDef.config)
+            taskOutputs = list(taskOutputs.values()) if taskOutputs else []
+            taskDatasets.append(_TaskDatasetTypes(taskDef=taskDef,
+                                                  inputs=taskInputs,
+                                                  outputs=taskOutputs))
+
+        # make inputs and outputs from per-task dataset types
+        inputs, outputs = gbuilder._makeFullIODatasetTypes(taskDatasets)
 
         self.assertIsInstance(inputs, set)
         self.assertIsInstance(outputs, set)
@@ -138,67 +173,67 @@ class GraphBuilderTestCase(unittest.TestCase):
         """Test for makeGraph() implementation.
         """
         taskFactory = TaskFactoryMock()
-        registry = RegistryMock()
-        userQuery = None
-        gbuilder = GraphBuilder(taskFactory, registry, userQuery)
+        reg = Registry.fromConfig(RegistryConfig(), SchemaConfig())
+        gbuilder = GraphBuilder(taskFactory, reg)
 
         pipeline = self._makePipeline()
-        graph = gbuilder.makeGraph(pipeline)
+        collection = ""
+        userQuery = None
+        graph = gbuilder.makeGraph(pipeline, collection, userQuery)
 
-        # TODO: temporary until we implement makeGraph()
-        self.assertIs(graph, None)
-#         self.assertEqual(len(graph), 2)
-#         taskDef = graph[0].taskDef
-#         quanta = graph[0].quanta
-#         self.assertEqual(len(quanta), 10)
-#         self.assertEqual(taskDef.taskName, "TaskOne")
-#         self.assertEqual(taskDef.taskClass, TaskOne)
-#         for quantum in quanta:
-#             self._checkQuantum(quantum.inputs, Dataset1, range(10))
-#             self._checkQuantum(quantum.outputs, Dataset2, range(10))
-#
-#         taskDef = graph[1].taskDef
-#         quanta = graph[1].quanta
-#         self.assertEqual(len(quanta), 10)
-#         self.assertEqual(taskDef.taskName, "TaskTwo")
-#         self.assertEqual(taskDef.taskClass, TaskTwo)
-#         for quantum in quanta:
-#             self._checkQuantum(quantum.inputs, Dataset2, range(10))
-#             self._checkQuantum(quantum.outputs, Dataset3, range(10))
+        self.assertEqual(len(graph), 2)
+        taskDef = graph[0].taskDef
+        self.assertEqual(taskDef.taskName, "TaskOne")
+        self.assertEqual(taskDef.taskClass, TaskOne)
+        # TODO: temporary until we add some content to regitry
+        # quanta = graph[0].quanta
+        # self.assertEqual(len(quanta), 10)
+        # for quantum in quanta:
+        #     self._checkQuantum(quantum.inputs, Dataset1, range(10))
+        #     self._checkQuantum(quantum.outputs, Dataset2, range(10))
+
+        taskDef = graph[1].taskDef
+        self.assertEqual(taskDef.taskName, "TaskTwo")
+        self.assertEqual(taskDef.taskClass, TaskTwo)
+        # TODO: temporary until we add some content to regitry
+        # quanta = graph[1].quanta
+        # self.assertEqual(len(quanta), 10)
+        # for quantum in quanta:
+        #     self._checkQuantum(quantum.inputs, Dataset2, range(10))
+        #     self._checkQuantum(quantum.outputs, Dataset3, range(10))
 
     def test_makeGraphSelect(self):
         """Test for makeGraph() implementation with subset of data.
         """
-        userQuery = "1 = 1"
         taskFactory = TaskFactoryMock()
-        registry = RegistryMock()
+        reg = Registry.fromConfig(RegistryConfig(), SchemaConfig())
+        gbuilder = GraphBuilder(taskFactory, reg)
+
         pipeline = self._makePipeline()
+        collection = ""
+        userQuery = "1 = 1"
+        graph = gbuilder.makeGraph(pipeline, collection, userQuery)
 
-        gbuilder = GraphBuilder(taskFactory, registry, userQuery)
-
-        graph = gbuilder.makeGraph(pipeline)
-
+        self.assertEqual(len(graph), 2)
+        taskDef = graph[0].taskDef
+        self.assertEqual(taskDef.taskName, "TaskOne")
+        self.assertEqual(taskDef.taskClass, TaskOne)
         # TODO: temporary until we implement makeGraph()
-        self.assertIs(graph, None)
-#
-#         self.assertEqual(len(graph), 2)
-#         taskDef = graph[0].taskDef
-#         quanta = graph[0].quanta
-#         self.assertEqual(taskDef.taskName, "TaskOne")
-#         self.assertEqual(taskDef.taskClass, TaskOne)
-#         self.assertEqual(len(quanta), 3)
-#         for quantum in quanta:
-#             self._checkQuantum(quantum.inputs, Dataset1, [1, 5, 9])
-#             self._checkQuantum(quantum.outputs, Dataset2, [1, 5, 9])
-#
-#         taskDef = graph[1].taskDef
-#         quanta = graph[1].quanta
-#         self.assertEqual(taskDef.taskName, "TaskTwo")
-#         self.assertEqual(taskDef.taskClass, TaskTwo)
-#         self.assertEqual(len(quanta), 3)
-#         for quantum in quanta:
-#             self._checkQuantum(quantum.inputs, Dataset2, [1, 5, 9])
-#             self._checkQuantum(quantum.outputs, Dataset3, [1, 5, 9])
+        # quanta = graph[0].quanta
+        # self.assertEqual(len(quanta), 3)
+        # for quantum in quanta:
+        #     self._checkQuantum(quantum.inputs, Dataset1, [1, 5, 9])
+        #     self._checkQuantum(quantum.outputs, Dataset2, [1, 5, 9])
+
+        taskDef = graph[1].taskDef
+        self.assertEqual(taskDef.taskName, "TaskTwo")
+        self.assertEqual(taskDef.taskClass, TaskTwo)
+        # TODO: temporary until we implement makeGraph()
+        # quanta = graph[1].quanta
+        # self.assertEqual(len(quanta), 3)
+        # for quantum in quanta:
+        #     self._checkQuantum(quantum.inputs, Dataset2, [1, 5, 9])
+        #     self._checkQuantum(quantum.outputs, Dataset3, [1, 5, 9])
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
