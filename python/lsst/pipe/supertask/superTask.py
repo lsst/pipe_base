@@ -28,10 +28,8 @@ from __future__ import absolute_import, division, print_function
 
 __all__ = ["SuperTask"]  # Classes in this module
 
-import lsst.afw.table as afwTable
-from lsst.pipe.base.task import Task, TaskError
-from lsst.daf.butler.core.datasets import DatasetType
-from lsst.daf.butler.core.storageClass import StorageClassFactory
+from lsst.pipe.base.task import Task
+from lsst.daf.butler import DatasetType, StorageClassFactory
 from .config import (InputDatasetConfig, OutputDatasetConfig,
                      InitInputDatasetConfig, InitOutputDatasetConfig)
 
@@ -131,8 +129,8 @@ class SuperTask(Task):
 
         Returns
         -------
-        Dictionary where key is the name (arbitrary) of the input dataset and
-        value is the `butler.core.datasets.DatasetType` instance. Default
+        Dictionary where key is the name (arbitrary) of the input dataset
+        and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
         """
         dsTypes = {}
@@ -158,8 +156,8 @@ class SuperTask(Task):
 
         Returns
         -------
-        Dictionary where key is the name (arbitrary) of the output dataset and
-        value is the `butler.core.datasets.DatasetType` instance. Default
+        Dictionary where key is the name (arbitrary) of the output dataset
+        and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
         """
         dsTypes = {}
@@ -190,8 +188,8 @@ class SuperTask(Task):
 
         Returns
         -------
-        Dictionary where key is the name (arbitrary) of the input dataset and
-        value is the `butler.core.datasets.DatasetType` instance. Default
+        Dictionary where key is the name (arbitrary) of the input dataset
+        and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
 
         When the task requires no initialization inputs, should return an
@@ -225,8 +223,8 @@ class SuperTask(Task):
 
         Returns
         -------
-        Dictionary where key is the name (arbitrary) of the output dataset and
-        value is the `butler.core.datasets.DatasetType` instance. Default
+        Dictionary where key is the name (arbitrary) of the output dataset
+        and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
 
         When the task produces no initialization outputs, should return an
@@ -337,7 +335,7 @@ class SuperTask(Task):
 
         Returns
         -------
-        `butler.core.datasets.DatasetType` instance.
+        `butler.DatasetType` instance.
         """
         # map storage class name to storage class
         storageClass = cls.storageClassFactory.getStorageClass(dsConfig.storageClass)

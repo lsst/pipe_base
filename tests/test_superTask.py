@@ -28,9 +28,7 @@ from __future__ import absolute_import, division, print_function
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler.core.datasets import DatasetRef
-from lsst.daf.butler.core.quantum import Quantum
-from lsst.daf.butler.core.run import Run
+from lsst.daf.butler import DatasetRef, Quantum, Run
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.pipe import supertask
