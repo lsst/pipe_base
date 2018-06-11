@@ -337,20 +337,12 @@ class SuperTask(Task):
                            dataUnits=dsConfig.units,
                            storageClass=storageClass)
 
-    def get_resource_config(self):
+    def getResourceConfig(self):
         """Return resource configuration for this task.
 
         Returns
         -------
-        Object of type `resource_config.ResourceConfig`or None if resource configuration
+        Object of type `resourceConfig.ResourceConfig`or None if resource configuration
         is not defined for this task.
         """
         return getattr(self.config, "resources", None)
-
-    def _get_config_name(self):
-        """Return the name of the config dataset type, or None if config is
-        not to be persisted.
-
-        The name may depend on the config; that is why this is not a class method.
-        """
-        return self.getName() + "_config"

@@ -78,14 +78,14 @@ class TaskTestCase(unittest.TestCase):
         """Test for a task without resource config
         """
         task = NoResourceTask()
-        res_config = task.get_resource_config()
+        res_config = task.getResourceConfig()
         self.assertIs(res_config, None)
 
     def testOneResource(self):
         """Test for a task with resource config
         """
         task = OneTask()
-        res_config = task.get_resource_config()
+        res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
         self.assertIs(res_config.min_memory_MB, None)
         self.assertEqual(res_config.min_num_cores, 1)
@@ -94,7 +94,7 @@ class TaskTestCase(unittest.TestCase):
         """Test for a task with resource config
         """
         task = TwoTask()
-        res_config = task.get_resource_config()
+        res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
         self.assertIs(res_config.min_memory_MB, None)
         self.assertEqual(res_config.min_num_cores, 1)
@@ -103,7 +103,7 @@ class TaskTestCase(unittest.TestCase):
         """Test for a task with resource config and special defaults
         """
         task = ThreeTask()
-        res_config = task.get_resource_config()
+        res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
         self.assertEqual(res_config.min_memory_MB, 1024)
         self.assertEqual(res_config.min_num_cores, 32)
