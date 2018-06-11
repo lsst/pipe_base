@@ -32,7 +32,8 @@ import lsst.afw.table as afwTable
 from lsst.pipe.base.task import Task, TaskError
 from lsst.daf.butler.core.datasets import DatasetType
 from lsst.daf.butler.core.storageClass import StorageClassFactory
-from .config import InputDatasetConfig, OutputDatasetConfig
+from .config import (InputDatasetConfig, OutputDatasetConfig,
+                     InitInputDatasetConfig, InitOutputDatasetConfig)
 
 
 class SuperTask(Task):
@@ -54,6 +55,10 @@ class SuperTask(Task):
     `runQuantum()` method receives `Quantum` instance which defines all input
     and output datasets for a single invocation of SuperTask.
 
+    Subclasses must be constructable with exactly the arguments taken by the
+    SuperTask base class constructor, but may support other signatures as
+    well.
+
     Attributes
     ----------
     canMultiprocess : bool, True by default (class attribute)
@@ -64,12 +69,19 @@ class SuperTask(Task):
     ----------
     config : `pex.config.Config`, optional
         Configuration for this task (an instance of self.ConfigClass,
-        which is a task-specific subclass of lsst.pex.config.Config).
+        which is a task-specific subclass of `SuperTaskConfig`).
         If not specified then it defaults to `self.ConfigClass()`.
     log : `lsst.log.Log`, optional
         Logger instance whose name is used as a log name prefix,
         or None for no prefix. Ignored if parentTask specified, in which case
         parentTask.log's name is used as a prefix.
+    initInputs : `dict`, optional
+        A dictionary of objects needed to construct this SuperTask, with keys
+        matching the keys of the dictionary returned by
+        `getInitInputDatasetTypes` and values equivalent to what would be
+        obtained by calling `Butler.get` with those DatasetTypes and no
+        data IDs.  While it is optional for the base class, subclasses
+        are permitted to require this argument.
     """
 
     canMultiprocess = True
@@ -77,8 +89,27 @@ class SuperTask(Task):
     # TODO: temporary hack, I think factory should be global
     storageClassFactory = StorageClassFactory()
 
-    def __init__(self, config=None, log=None):
-        super().__init__(config=config, log=log)
+    def __init__(self, config=None, log=None, initInputs=None):
+        super().__init__(config=config, log=log,)
+
+    def getInitOutputDatasets(self):
+        """Return persistable outputs that are available immediately after the
+        task has been constructed.
+
+        Subclasses that operate on catalogs should override this method to
+        return the schema(s) of the catalog(s) they produce.
+
+        It is not necessary to return the SuperTask's configuration or other
+        provenance information in order for it to be persisted; that is the
+        responsibility of the execution system.
+
+        Returns
+        -------
+        datasets : `dict`
+            Dictionary with keys that match those of the dict returned by
+            `getInitOutputDatasetTypes` values that can be written by calling
+            `Butler.put` with those DatasetTypes and no data IDs.
+        """
 
     @classmethod
     def getInputDatasetTypes(cls, config):
@@ -131,6 +162,70 @@ class SuperTask(Task):
         dsTypes = {}
         for key, value in config.items():
             if isinstance(value, OutputDatasetConfig):
+                dsTypes[key] = cls.makeDatasetType(value)
+        return dsTypes
+
+    @classmethod
+    def getInitInputDatasetTypes(cls, config):
+        """Return dataset types that can be used to retrieve the ``initInputs``
+        constructor argument.
+
+        Datasets used in initialization may not be associated with any
+        DataUnits (i.e. their data IDs must be empty dictionaries).
+
+        Default implementation finds all fields of type
+        `InputInputDatasetConfig` in configuration (non-recursively) and uses
+        them for constructing `DatasetType` instances. The keys of these
+        fields are used as keys in returned dictionary. Subclasses can
+        override this behavior.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        Dictionary where key is the name (arbitrary) of the input dataset and
+        value is the `butler.core.datasets.DatasetType` instance. Default
+        implementation uses configuration field name as dictionary key.
+        """
+        dsTypes = {}
+        for key, value in config.items():
+            if isinstance(value, InitInputDatasetConfig):
+                dsTypes[key] = cls.makeDatasetType(value)
+        return dsTypes
+
+    @classmethod
+    def getInitOutputDatasetTypes(cls, config):
+        """Return dataset types that can be used to write the objects
+        returned by `getOutputDatasets`.
+
+        Datasets used in initialization may not be associated with any
+        DataUnits (i.e. their data IDs must be empty dictionaries).
+
+        Default implementation finds all fields of type
+        `InitOutputDatasetConfig` in configuration (non-recursively) and uses
+        them for constructing `DatasetType` instances. The keys of these
+        fields are used as keys in returned dictionary. Subclasses can
+        override this behavior.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        Dictionary where key is the name (arbitrary) of the output dataset and
+        value is the `butler.core.datasets.DatasetType` instance. Default
+        implementation uses configuration field name as dictionary key.
+        """
+        dsTypes = {}
+        for key, value in config.items():
+            if isinstance(value, InitOutputDatasetConfig):
                 dsTypes[key] = cls.makeDatasetType(value)
         return dsTypes
 
@@ -228,8 +323,8 @@ class SuperTask(Task):
         Parameters
         ----------
         dsConfig : `pexConfig.Config`
-            Instance of the `supertask.InputDatasetConfig` or
-            `supertask.OutputDatasetConfig`
+            Instance of `InputDatasetConfig`, `OutputDatasetConfig`,
+            `InitInputDatasetConfig`, or `InitOutputDatasetConfig`.
 
         Returns
         -------
@@ -241,85 +336,6 @@ class SuperTask(Task):
         return DatasetType(name=dsConfig.name,
                            dataUnits=dsConfig.units,
                            storageClass=storageClass)
-
-    def write_config(self, butler, clobber=False, do_backup=True):
-        """Write the configuration used for processing the data, or check that
-        an existing one is equal to the new one if present.
-
-        Parameters
-        ----------
-        butler : `Butler`
-            data butler used to write the config. The config is written to
-            dataset type ``self._get_config_name()``.
-        clobber : bool, optional
-            Boolean flag that controls what happens if a config already has
-            been saved. If True then overwrite the existing config, otherwise
-            (default) raise `TaskError` if this config does not match the existing
-            config.
-        do_backup : bool, optional
-            If True then make backup copy when overwriting dataset.
-        """
-        config_name = self._get_config_name()
-        if config_name is None:
-            return
-        if clobber:
-            butler.put(self.config, config_name, doBackup=do_backup)
-        elif butler.datasetExists(config_name):
-            # this may be subject to a race condition; see #2789
-            try:
-                old_config = butler.get(config_name, immediate=True)
-            except Exception as exc:
-                raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
-                                (config_name, exc))
-
-            def output(msg):
-                return self.log.fatal("Comparing configuration: " + msg)
-
-            if not self.config.compare(old_config, shortcut=False, output=output):
-                raise TaskError(
-                    ("Config does not match existing task config %r on disk; tasks configurations " +
-                     "must be consistent within the same output repo (override with --clobber-config)") %
-                    (config_name,))
-        else:
-            butler.put(self.config, config_name)
-
-    def write_schemas(self, butler, clobber=False, do_backup=True):
-        """Write the schemas returned by `getAllSchemaCatalogs` method.
-
-        If `clobber` is False and an existing schema does not match current
-        schema, then some schemas may have been saved successfully and others
-        may not, and there is no easy way to tell which is which.
-
-        Parameters
-        ----------
-        butler : `Butler`
-            Data butler used to write the schema. Each schema is written to
-            the dataset type specified as the key in the dict returned by
-            `getAllSchemaCatalogs`.
-        clobber : bool, optional
-            Boolean flag that controls what happens if a schema already has
-            been saved. If True then overwrite the existing schema, otherwise
-            (default) raise `TaskError` if this schema does not match the
-            existing schema.
-        do_backup : bool, optional
-            If True then make backup copy when overwriting dataset.
-        """
-        for dataset, catalog in self.getAllSchemaCatalogs().items():
-            schema_dataset = dataset + "_schema"
-            if clobber:
-                self.log.info("Writing schema %s", schema_dataset)
-                butler.put(catalog, schema_dataset, doBackup=do_backup)
-            elif butler.datasetExists(schema_dataset):
-                self.log.info("Getting schema %s", schema_dataset)
-                old_schema = butler.get(schema_dataset, immediate=True).getSchema()
-                if not old_schema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
-                    raise TaskError(
-                        ("New schema does not match schema %r on disk; schemas must be " +
-                         " consistent within the same output repo (override with --clobber-config)") %
-                        (dataset,))
-            else:
-                self.log.info("Writing schema %s" % schema_dataset)
-                butler.put(catalog, schema_dataset)
 
     def get_resource_config(self):
         """Return resource configuration for this task.

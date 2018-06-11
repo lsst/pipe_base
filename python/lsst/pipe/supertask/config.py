@@ -26,6 +26,7 @@ Module defining config classes for SuperTask.
 from __future__ import absolute_import, division, print_function
 
 __all__ = ["QuantumConfig", "InputDatasetConfig", "OutputDatasetConfig",
+           "InitInputDatasetConfig", "InitOutputDatasetConfig",
            "SuperTaskConfig"]
 
 # -------------------------------
@@ -60,20 +61,25 @@ class QuantumConfig(pexConfig.Config):
                               optional=True)
 
 
-class _DatasetTypeConfig(pexConfig.Config):
+class _BaseDatasetTypeConfig(pexConfig.Config):
+    """Intermediate base class for dataset type configuration in SuperTask.
+    """
+    name = pexConfig.Field(dtype=str,
+                           doc="name of the DatasetType")
+    storageClass = pexConfig.Field(dtype=str,
+                                   doc="name of the StorageClass")
+
+
+class _DatasetTypeConfig(_BaseDatasetTypeConfig):
     """Configuration class which defines dataset type used by SuperTask.
 
     Consists of DatasetType name, list of DataUnit names and StorageCass name.
     SuperTasks typically define one or more input and output datasets. This
     class should not be used directly, instead one of `InputDatasetConfig` or
-    `OutputDatasetConfig` shoudl be used in SuperTak config.
+    `OutputDatasetConfig` should be used in SuperTask config.
     """
-    name = pexConfig.Field(dtype=str,
-                           doc="name of the DatasetType")
     units = pexConfig.ListField(dtype=str,
                                 doc="list of DataUnits for this DatasetType")
-    storageClass = pexConfig.Field(dtype=str,
-                                   doc="name of the StorageClass")
 
 
 class InputDatasetConfig(_DatasetTypeConfig):
@@ -81,6 +87,31 @@ class InputDatasetConfig(_DatasetTypeConfig):
 
 
 class OutputDatasetConfig(_DatasetTypeConfig):
+    pass
+
+
+class _GlobalDatasetTypeConfig(_BaseDatasetTypeConfig):
+    """Configuration class which defines dataset types used in SuperTask
+    initialization.
+
+    Consists of DatasetType name and StorageCass name, with a read-only
+    ``units`` property that returns an empty tuple, enforcing the constraint
+    that datasets used in initialization are not associated with any
+    DataUnits. This class should not be used directly, instead one of
+    `InitInputDatasetConfig` or `InitOutputDatasetConfig` should be used in
+    SuperTask config.
+    """
+    @property
+    def units(self):
+        """DataUnits associated with this DatasetType (always empty)."""
+        return ()
+
+
+class InitInputDatasetConfig(_GlobalDatasetTypeConfig):
+    pass
+
+
+class InitOutputDatasetConfig(_GlobalDatasetTypeConfig):
     pass
 
 
