@@ -212,12 +212,12 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.failDec()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertIsNotNone(addMultTask.metadata.get("failDecEndCpuTime", None))
+            self.assertTrue(addMultTask.metadata.exists("failDecEndCpuTime"))
         try:
             addMultTask.failCtx()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertIsNotNone(addMultTask.metadata.get("failCtxEndCpuTime", None))
+            self.assertTrue(addMultTask.metadata.exists("failCtxEndCpuTime"))
 
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata

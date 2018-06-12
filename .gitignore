@@ -19,4 +19,6 @@ python/lsst/pipe/base/version.py
 tests/.tests
 ups/*.cfgc
 .cache
+.pytest_cache
 pytest_session.txt
+.coverage
