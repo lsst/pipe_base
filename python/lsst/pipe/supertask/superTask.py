@@ -109,7 +109,10 @@ class SuperTask(Task):
             Dictionary with keys that match those of the dict returned by
             `getInitOutputDatasetTypes` values that can be written by calling
             `Butler.put` with those DatasetTypes and no data IDs.
+            An empty `dict` should be returned by tasks that produce no
+            initialization outputs.
         """
+        return {}
 
     @classmethod
     def getInputDatasetTypes(cls, config):
@@ -174,8 +177,8 @@ class SuperTask(Task):
         DataUnits (i.e. their data IDs must be empty dictionaries).
 
         Default implementation finds all fields of type
-        `InputInputDatasetConfig` in configuration (non-recursively) and uses
-        them for constructing `DatasetType` instances. The keys of these
+        `InitInputInputDatasetConfig` in configuration (non-recursively) and
+        uses them for constructing `DatasetType` instances. The keys of these
         fields are used as keys in returned dictionary. Subclasses can
         override this behavior.
 
@@ -190,6 +193,9 @@ class SuperTask(Task):
         Dictionary where key is the name (arbitrary) of the input dataset and
         value is the `butler.core.datasets.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
+
+        When the task requires no initialization inputs, should return an
+        empty dict.
         """
         dsTypes = {}
         for key, value in config.items():
@@ -222,6 +228,9 @@ class SuperTask(Task):
         Dictionary where key is the name (arbitrary) of the output dataset and
         value is the `butler.core.datasets.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
+
+        When the task produces no initialization outputs, should return an
+        empty dict.
         """
         dsTypes = {}
         for key, value in config.items():
