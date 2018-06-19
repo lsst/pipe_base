@@ -242,26 +242,26 @@ class TaskTestCase(unittest.TestCase):
                     name = method + when + key
                     self.assertIn(name, addMultTask.metadata.names(),
                                   name + " is missing from task metadata")
-                    self.assertIsInstance(addMultTask.metadata.get(name), keyType,
+                    self.assertIsInstance(addMultTask.metadata.getScalar(name), keyType,
                                           "%s is not of the right type (%s vs %s)" %
-                                          (name, keyType, type(addMultTask.metadata.get(name))))
+                                          (name, keyType, type(addMultTask.metadata.getScalar(name))))
         # Some basic sanity checks
         currCpuTime = time.clock()
         self.assertLessEqual(
-            addMultTask.metadata.get("runStartCpuTime"),
-            addMultTask.metadata.get("runEndCpuTime"),
+            addMultTask.metadata.getScalar("runStartCpuTime"),
+            addMultTask.metadata.getScalar("runEndCpuTime"),
         )
-        self.assertLessEqual(addMultTask.metadata.get("runEndCpuTime"), currCpuTime)
+        self.assertLessEqual(addMultTask.metadata.getScalar("runEndCpuTime"), currCpuTime)
         self.assertLessEqual(
-            addMultTask.metadata.get("contextStartCpuTime"),
-            addMultTask.metadata.get("contextEndCpuTime"),
+            addMultTask.metadata.getScalar("contextStartCpuTime"),
+            addMultTask.metadata.getScalar("contextEndCpuTime"),
         )
-        self.assertLessEqual(addMultTask.metadata.get("contextEndCpuTime"), currCpuTime)
+        self.assertLessEqual(addMultTask.metadata.getScalar("contextEndCpuTime"), currCpuTime)
         self.assertLessEqual(
-            addMultTask.add.metadata.get("runStartCpuTime"),
-            addMultTask.metadata.get("runEndCpuTime"),
+            addMultTask.add.metadata.getScalar("runStartCpuTime"),
+            addMultTask.metadata.getScalar("runEndCpuTime"),
         )
-        self.assertLessEqual(addMultTask.add.metadata.get("runEndCpuTime"), currCpuTime)
+        self.assertLessEqual(addMultTask.add.metadata.getScalar("runEndCpuTime"), currCpuTime)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
