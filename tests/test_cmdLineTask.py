@@ -103,7 +103,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
         config = dataRef.get("test_config", immediate=True)
         self.assertEqual(config, task.config)
         metadata = dataRef.get("test_metadata", immediate=True)
-        self.assertEqual(metadata.get("test.numProcessed"), 1)
+        self.assertEqual(metadata.getScalar("test.numProcessed"), 1)
 
     def testOverrides(self):
         """Test config and log override
@@ -126,7 +126,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
                                                "--id", "visit=3", "filter=r"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
-        self.assertEqual(result.metadata.get("numProcessed"), 1)
+        self.assertEqual(result.metadata.getScalar("numProcessed"), 1)
         self.assertEqual(result.result.numProcessed, 1)
 
     def testDoReturnResultsOnFailure(self):
@@ -135,7 +135,7 @@ class CmdLineTaskTestCase(unittest.TestCase):
                                                "--clobber-config", "--noExit"], doReturnResults=True)
         self.assertEqual(len(retVal.resultList), 1)
         result = retVal.resultList[0]
-        self.assertEqual(result.metadata.get("numProcessed"), 0)
+        self.assertEqual(result.metadata.getScalar("numProcessed"), 0)
         self.assertEqual(retVal.resultList[0].result, None)
 
     def testBackupConfig(self):
