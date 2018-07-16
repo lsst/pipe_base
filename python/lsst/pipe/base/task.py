@@ -94,15 +94,15 @@ class Task(object):
         e.g. data quality and performance metrics. This is data that is only meant to be
         persisted, never to be used by the task.
 
-    Subclasses typically have a method named ``run`` to perform the main data processing. Details:
+    Subclasses typically have a method named ``runDataRef`` to perform the main data processing. Details:
 
-    - ``run`` should process the minimum reasonable amount of data, typically a single CCD.
-      Iteration, if desired, is performed by a caller of the run method. This is good design and allows
+    - ``runDataRef`` should process the minimum reasonable amount of data, typically a single CCD.
+      Iteration, if desired, is performed by a caller of the method. This is good design and allows
       multiprocessing without the run method having to support it directly.
-    - If ``run`` can persist or unpersist data:
+    - If ``runDataRef`` can persist or unpersist data:
 
-      - ``run`` should accept a butler data reference (or a collection of data references, if appropriate,
-        e.g. coaddition).
+      - ``runDataRef`` should accept a butler data reference (or a collection of data references,
+        if appropriate, e.g. coaddition).
       - There should be a way to run the task without persisting data. Typically the run method returns all
         data, even if it is persisted, and the task's config method offers a flag to disable persistence.
 

@@ -47,7 +47,7 @@ class ExampleTask(pipeBase.CmdLineTask):
         self.metadata.set("numProcessed", self.numProcessed)
 
     @pipeBase.timeMethod
-    def run(self, dataRef):
+    def runDataRef(self, dataRef):
         if self.config.doFail:
             raise pipeBase.TaskError("Failed by request: config.doFail is true")
         self.dataRefList.append(dataRef)
@@ -69,6 +69,19 @@ class CannotConstructTask(ExampleTask):
 class NoMultiprocessTask(ExampleTask):
     """Version of ExampleTask that does not support multiprocessing"""
     canMultiprocess = False
+
+
+class LegacyTask(ExampleTask):
+    """Version of ExampleTask with `run` as entry point rather than
+       `runDataRef`
+    """
+    RunnerClass = pipeBase.LegacyTaskRunner
+
+    def run(self, dataRef):
+        results = self.runDataRef(dataRef)
+        resultsToBeAdded = pipeBase.Struct(didEnterRun=True)
+        results.mergeItems(resultsToBeAdded, "didEnterRun")
+        return results
 
 
 class CmdLineTaskTestCase(unittest.TestCase):
@@ -179,6 +192,13 @@ class CmdLineTaskTestCase(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 CannotConstructTask.parseAndRun(args=args)
 
+    def testLegacyTask(self):
+        """Test error handling when a task cannot be constructed
+        """
+        retVal = LegacyTask.parseAndRun(args=[DataPath, "--output", self.outPath,
+                                              "--id", "visit=3", "filter=r"], doReturnResults=True)
+        self.assertEqual(retVal.resultList[0].result.didEnterRun, True)
+
 
 class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
     """TaskRunner to get multiple identifiers down into a Task"""
@@ -194,7 +214,7 @@ class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
         and small, so returning something is not a problem.
         """
         task = self.TaskClass(config=self.config, log=self.log)
-        return task.run(target)
+        return task.runDataRef(target)
 
 
 class ExampleMultipleIdTask(pipeBase.CmdLineTask):
@@ -210,7 +230,7 @@ class ExampleMultipleIdTask(pipeBase.CmdLineTask):
         parser.add_id_argument("--two", "raw", "data identifier two", level="sensor")
         return parser
 
-    def run(self, data):
+    def runDataRef(self, data):
         """Our Task just spits back what's in the dataRefs."""
         oneRef = data[0]
         twoRef = data[1]
