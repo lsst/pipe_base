@@ -49,6 +49,12 @@ class StructTestCase(unittest.TestCase):
         for name, val in self.valDict.items():
             self.assertEqual(getattr(s, name), val)
 
+    def testInitException(self):
+        """Test that struct key names cannot start with double underscores.
+        """
+        with self.assertRaises(RuntimeError):
+            pipeBase.Struct(__foo=13)
+
     def testSet(self):
         """Test adding values via struct.name=val
         """
