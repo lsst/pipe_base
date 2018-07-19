@@ -120,8 +120,9 @@ class DataIdContainer(object):
             raise RuntimeError("Must call setDatasetType first")
         try:
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
-        except KeyError:
-            raise KeyError("Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level))
+        except KeyError as e:
+            msg = "Cannot get keys for datasetType %s at level %s: %s" % (self.datasetType, self.level)
+            raise KeyError(msg) from e
 
         for dataDict in self.idList:
             for key, strVal in dataDict.items():
