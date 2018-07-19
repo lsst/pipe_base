@@ -121,7 +121,7 @@ class DataIdContainer(object):
         try:
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
         except KeyError as e:
-            msg = "Cannot get keys for datasetType %s at level %s: %s" % (self.datasetType, self.level)
+            msg = "Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level)
             raise KeyError(msg) from e
 
         for dataDict in self.idList:
