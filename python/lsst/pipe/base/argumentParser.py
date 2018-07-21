@@ -83,8 +83,12 @@ class DataIdContainer(object):
 
     Parameters
     ----------
-    level
-        Unknown.
+    level : `str`
+        The lowest hierarchy level to descend to for this dataset type,
+        for example `"amp"` for `"raw"` or `"ccd"` for `"calexp"`.
+        Use `""` to use the mapper's default for the dataset type.
+        This class does not support `None`, but if it did, `None`
+        would mean the level should not be restricted.
 
     Notes
     -----
@@ -97,10 +101,23 @@ class DataIdContainer(object):
     """
 
     def __init__(self, level=None):
-        self.datasetType = None  # the actual dataset type, as specified on the command line (if dynamic)
+        self.datasetType = None
+        """Dataset type of the data references (`str`).
+        """
         self.level = level
+        """See parameter ``level`` (`str`).
+        """
         self.idList = []
+        """List of data IDs specified on the command line for the
+        appropriate data ID argument (`list` of `dict`).
+        """
         self.refList = []
+        """List of data references for the data IDs in ``idList``
+        (`list` of `lsst.daf.persistence.ButlerDataRef`).
+        Elements will be omitted if the corresponding data is not found.
+        The list will be empty when returned by ``parse_args`` if
+        ``doMakeDataRefList=False`` was specified in ``add_id_argument``.
+        """
 
     def setDatasetType(self, datasetType):
         """Set actual dataset type, once it is known.
@@ -109,12 +126,24 @@ class DataIdContainer(object):
         ----------
         datasetType : `str`
             Dataset type.
+
+        Notes
+        -----
+        The reason ``datasetType`` is not a constructor argument is that
+        some subclasses do not know the dataset type until the command
+        is parsed. Thus, to reduce special cases in the code,
+        ``datasetType`` is always set after the command is parsed.
         """
         self.datasetType = datasetType
 
     def castDataIds(self, butler):
         """Validate data IDs and cast them to the correct type
         (modify idList in place).
+
+        This code casts the values in the data IDs dicts in `dataIdList`
+        to the type required by the butler. Data IDs are read from the
+        command line as `str`, but the butler requires some values to be
+        other types. For example "visit" values should be `int`.
 
         Parameters
         ----------
@@ -186,6 +215,13 @@ class DataIdArgument(object):
         Type of dataset; specify a string for a fixed dataset type
         or a `DatasetArgument` for a dynamic dataset type (e.g.
         one specified by a command-line argument).
+    level : `str`
+        The lowest hierarchy level to descend to for this dataset type,
+        for example `"amp"` for `"raw"` or `"ccd"` for `"calexp"`.
+        Use `""` to use the mapper's default for the dataset type.
+        Some container classes may also support `None`, which means
+        the level should not be restricted; however the default class,
+        `DataIdContainer`, does not support `None`.
     doMakeDataRefList : `bool`, optional
         If `True` (default), construct data references.
     ContainerClass : `class`, optional
@@ -487,8 +523,13 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             a `DynamicDatasetType`, such a `DatasetArgument`.
         help : `str`
             Help string for the argument.
-        level : object, optional
-            Level of dataset, for the `~lsst.daf.persistence.Butler`.
+        level : `str`
+            The lowest hierarchy level to descend to for this dataset type,
+            for example `"amp"` for `"raw"` or `"ccd"` for `"calexp"`.
+            Use `""` to use the mapper's default for the dataset type.
+            Some container classes may also support `None`, which means
+            the level should not be restricted; however the default class,
+            `DataIdContainer`, does not support `None`.
         doMakeDataRefList : bool, optional
             If `True` (default), construct data references.
         ContainerClass : `class`, optional
