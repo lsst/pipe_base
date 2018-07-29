@@ -33,28 +33,22 @@ from builtins import object
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.supertask import (PipelineBuilder, SuperTask, SuperTaskConfig,
-                                 cmdLineParser)
+from lsst.pipe.base import PipelineTask, PipelineTaskConfig
+from lsst.pipe.supertask import PipelineBuilder, cmdLineParser
 
 
-class SimpleConfig(SuperTaskConfig):
+class SimpleConfig(PipelineTaskConfig):
     field = pexConfig.Field(dtype=str, doc="arbitrary string")
 
 
-class TaskOne(SuperTask):
+class TaskOne(PipelineTask):
     ConfigClass = SimpleConfig
     _DefaultName = "taskOne"
 
-    def __init__(self, **kwargs):
-        SuperTask.__init__(self, **kwargs)
 
-
-class TaskTwo(SuperTask):
+class TaskTwo(PipelineTask):
     ConfigClass = SimpleConfig
     _DefaultName = "taskTwo"
-
-    def __init__(self, **kwargs):
-        SuperTask.__init__(self, **kwargs)
 
 
 class TaskFactoryMock(object):

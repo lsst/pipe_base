@@ -56,18 +56,18 @@ class TaskDef(object):
     Attributes
     ----------
     taskName : str
-        SuperTask class name, currently it is not specified whether this is a
-        fully-qualified name or partial name (e.g. ``module.TaskClass``).
+        PipelineTask class name, currently it is not specified whether this
+        is a fully-qualified name or partial name (e.g. ``module.TaskClass``).
         Framework should be prepared to handle all cases.
     config : `pex_config.Config`
         Instance of the configuration class corresponding to this task class,
         usually with all overrides applied.
     taskClass : type or None
-        SuperTask class object, can be None. If None then framework will have
-        to locate and load class.
+        PipelineTask class object, can be None. If None then framework will
+        have to locate and load class.
     label : str, optional
-        SuperTask class object, can be None. If None then framework will have
-        to locate and load class.
+        PipelineTask class object, can be None. If None then framework will
+        have to locate and load class.
     """
     def __init__(self, taskName, config, taskClass=None, label=""):
         self.taskName = taskName

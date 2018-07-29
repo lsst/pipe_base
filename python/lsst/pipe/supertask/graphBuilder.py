@@ -86,7 +86,7 @@ class GraphBuilder(object):
     Parameters
     ----------
     taskFactory : `TaskFactory`
-        Factory object used to load/instantiate SuperTasks
+        Factory object used to load/instantiate PipelineTasks
     registry : :py:class:`daf.butler.Registry`
         Data butler instance.
     """

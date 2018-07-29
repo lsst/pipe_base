@@ -20,7 +20,7 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-"""Simple unit test for SuperTask.
+"""Simple unit test for GraphBuilder class.
 """
 
 from __future__ import absolute_import, division, print_function
@@ -28,78 +28,62 @@ from __future__ import absolute_import, division, print_function
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler import Registry, RegistryConfig, SchemaConfig
-import lsst.pex.config as pexConfig
-import lsst.pipe.base as pipeBase
-from lsst.pipe.supertask import (GraphBuilder, Pipeline, SuperTask, TaskDef,
-                                 SuperTaskConfig, InputDatasetConfig,
-                                 OutputDatasetConfig)
+from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
+                             StorageClass, StorageClassFactory)
+from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
+                            InputDatasetField, OutputDatasetField)
+from lsst.pipe.supertask import GraphBuilder, Pipeline, TaskDef
 from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
-from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass  # noqa: F401
 
 
-class OneToOneTaskConfig(SuperTaskConfig):
-    input = pexConfig.ConfigField(dtype=InputDatasetConfig,
-                                  doc="Input dataset type for this task")
-    output = pexConfig.ConfigField(dtype=OutputDatasetConfig,
-                                   doc="Output dataset type for this task")
+class OneToOneTaskConfig(PipelineTaskConfig):
+    input = InputDatasetField(name="input",
+                              units=["Camera", "Visit"],
+                              storageClass="example",
+                              doc="Input dataset type for this task")
+    output = OutputDatasetField(name="output",
+                                units=["Camera", "Visit"],
+                                storageClass = "example",
+                                doc="Output dataset type for this task")
 
     def setDefaults(self):
         # set units of a quantum, this task uses per-visit quanta and it
         # expects dataset units to be the same
         self.quantum.units = ["Camera", "Visit"]
-        self.quantum.sql = None
-
-        # default config for input dataset type
-        self.input.name = "input"
-        self.input.units = ["Camera", "Visit"]
-        self.input.storageClass = "example"
-
-        # default config for output dataset type
-        self.output.name = "output"
-        self.output.units = ["Camera", "Visit"]
-        self.output.storageClass = "example"
 
 
-class VisitToPatchTaskConfig(SuperTaskConfig):
-    input = pexConfig.ConfigField(dtype=InputDatasetConfig,
-                                  doc="Input dataset type for this task")
-    output = pexConfig.ConfigField(dtype=OutputDatasetConfig,
-                                   doc="Output dataset type for this task")
+class VisitToPatchTaskConfig(PipelineTaskConfig):
+    input = InputDatasetField(name="input",
+                              units=["Camera", "Visit"],
+                              storageClass="example",
+                              doc="Input dataset type for this task")
+    output = OutputDatasetField(name="output",
+                                units=["SkyMap", "Tract", "Patch"],
+                                storageClass = "example",
+                                doc="Output dataset type for this task")
 
     def setDefaults(self):
         # set units of a quantum, this task uses per-visit quanta and it
         # expects dataset units to be the same
         self.quantum.units = ["SkyMap", "Tract", "Patch"]
-        self.quantum.sql = None
-
-        # default config for input dataset type
-        self.input.name = "input"
-        self.input.units = ["Camera", "Visit"]
-        self.input.storageClass = "example"
-
-        # default config for output dataset type
-        self.output.name = "output"
-        self.output.units = ["SkyMap", "Tract", "Patch"]
-        self.output.storageClass = "example"
 
 
-class TaskOne(SuperTask):
+class TaskOne(PipelineTask):
     ConfigClass = OneToOneTaskConfig
     _DefaultName = "task_one"
 
     def run(self, input, output):
         output = []
-        return pipeBase.Struct(output=output)
+        return Struct(output=output)
 
 
-class TaskTwo(SuperTask):
+class TaskTwo(PipelineTask):
     ConfigClass = VisitToPatchTaskConfig
     _DefaultName = "task_two"
 
     def run(self, input, output):
         output = []
-        return pipeBase.Struct(output=output)
+        return Struct(output=output)
 
 
 class TaskFactoryMock:
@@ -120,6 +104,11 @@ class TaskFactoryMock:
 class GraphBuilderTestCase(unittest.TestCase):
     """A test case for GraphBuilder class
     """
+
+    @classmethod
+    def setUpClass(cls):
+        # make a storage class with example name
+        StorageClassFactory().registerStorageClass(StorageClass("example"))
 
     def _makePipeline(self):
         config1 = OneToOneTaskConfig()

@@ -27,35 +27,35 @@ import unittest
 import pickle
 
 import lsst.pex.config as pexConfig
-import lsst.pipe.base as pipeBase
-from lsst.pipe.supertask import Pipeline, SuperTask, TaskDef
+from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig
+from lsst.pipe.supertask import Pipeline, TaskDef
 import lsst.utils.tests
 
 
-class AddConfig(pexConfig.Config):
+class AddConfig(PipelineTaskConfig):
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
 
-class AddTask(SuperTask):
+class AddTask(PipelineTask):
     ConfigClass = AddConfig
 
     def run(self, val):
         self.metadata.add("add", self.config.addend)
-        return pipeBase.Struct(
+        return Struct(
             val=val + self.config.addend,
         )
 
 
-class MultConfig(pexConfig.Config):
+class MultConfig(PipelineTaskConfig):
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
 
 
-class MultTask(SuperTask):
+class MultTask(PipelineTask):
     ConfigClass = MultConfig
 
     def run(self, val):
         self.metadata.add("mult", self.config.multiplicand)
-        return pipeBase.Struct(
+        return Struct(
             val=val * self.config.multiplicand,
         )
 

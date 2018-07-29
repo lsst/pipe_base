@@ -27,9 +27,9 @@ from collections import namedtuple
 import io
 import unittest
 
-import lsst.pex.config as pexConfig
-from lsst.pipe import supertask
-from lsst.pipe.supertask import pipeTools
+from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
+                            InputDatasetField, OutputDatasetField)
+from lsst.pipe.supertask import Pipeline, TaskDef, pipeTools
 from lsst.pipe.supertask.dotTools import pipeline2dot
 import lsst.utils.tests
 
@@ -37,22 +37,30 @@ import lsst.utils.tests
 DS = namedtuple("DS", "name dataUnits")
 
 
-# This method is used by SuperTask to instanciate DatasetType, normally this
+# This method is used by PipelineTask to instanciate DatasetType, normally this
 # should come from some other module but we have not defined that yet, so I
 # stick a trivial (mock) implementation here.
 def makeDatasetType(dsConfig):
     return DS(name=dsConfig.name, dataUnits=dsConfig.units)
 
 
-class ExampleSuperTaskConfig(supertask.SuperTaskConfig):
-    input1 = pexConfig.ConfigField(dtype=supertask.InputDatasetConfig,
-                                   doc="Input for this task")
-    input2 = pexConfig.ConfigField(dtype=supertask.InputDatasetConfig,
-                                   doc="Input for this task")
-    output1 = pexConfig.ConfigField(dtype=supertask.OutputDatasetConfig,
-                                    doc="Output for this task")
-    output2 = pexConfig.ConfigField(dtype=supertask.OutputDatasetConfig,
-                                    doc="Output for this task")
+class ExamplePipelineTaskConfig(PipelineTaskConfig):
+    input1 = InputDatasetField(name="",
+                               units=[],
+                               storageClass="example",
+                               doc="Input for this task")
+    input2 = InputDatasetField(name="",
+                               units=[],
+                               storageClass="example",
+                               doc="Input for this task")
+    output1 = OutputDatasetField(name="",
+                                 units=[],
+                                 storageClass="example",
+                                 doc="Output for this task")
+    output2 = OutputDatasetField(name="",
+                                 units=[],
+                                 storageClass="example",
+                                 doc="Output for this task")
 
 
 def _makeConfig(inputName, outputName):
@@ -61,7 +69,7 @@ def _makeConfig(inputName, outputName):
     inputName and outputName can be either string or tuple of strings
     with two items max.
     """
-    config = ExampleSuperTaskConfig()
+    config = ExamplePipelineTaskConfig()
     if isinstance(inputName, tuple):
         config.input1.name = inputName[0]
         config.input2.name = inputName[1] if len(inputName) > 1 else ""
@@ -83,8 +91,8 @@ def _makeConfig(inputName, outputName):
     return config
 
 
-class ExampleSuperTask(supertask.SuperTask):
-    ConfigClass = ExampleSuperTaskConfig
+class ExamplePipelineTask(PipelineTask):
+    ConfigClass = ExamplePipelineTaskConfig
 
     @classmethod
     def getInputDatasetTypes(cls, config):
@@ -117,14 +125,14 @@ def _makePipeline(tasks):
     -------
     Pipeline instance
     """
-    pipe = supertask.Pipeline()
+    pipe = Pipeline()
     for task in tasks:
         inputs = task[0]
         outputs = task[1]
         label = task[2]
-        klass = task[3] if len(task) > 3 else ExampleSuperTask
+        klass = task[3] if len(task) > 3 else ExamplePipelineTask
         config = _makeConfig(inputs, outputs)
-        pipe.append(supertask.TaskDef("ExampleSuperTask", config, klass, label))
+        pipe.append(TaskDef("ExamplePipelineTask", config, klass, label))
     return pipe
 
 

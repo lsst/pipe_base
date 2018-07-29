@@ -60,7 +60,7 @@ class PipelineBuilder(object):
     Parameters
     ----------
     taskFactory : `TaskFactory`
-        Factory object used to load/instantiate SuperTasks
+        Factory object used to load/instantiate PipelineTasks
     """
 
     def __init__(self, taskFactory):

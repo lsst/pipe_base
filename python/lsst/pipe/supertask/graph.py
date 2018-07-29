@@ -54,11 +54,11 @@ __all__ = ["QuantumGraphNodes", "QuantumGraph"]
 class QuantumGraphNodes(object):
     """QuantumGraphNodes represents a bunch of nodes in an quantum graph.
 
-    The node in quantum graph is represented by the `SuperTask` and a single
-    `Quantum` instance. One possible representation of the graph is just a
-    list of nodes without edges (edges can be deduced from nodes' quantum
-    inputs and outputs if needed). That representation can be reduced to
-    the list of SuperTasks and the corresponding list of Quanta.
+    The node in quantum graph is represented by the `PipelineTask` and a
+    single `Quantum` instance. One possible representation of the graph is
+    just a list of nodes without edges (edges can be deduced from nodes'
+    quantum inputs and outputs if needed). That representation can be reduced
+    to the list of PipelineTasks and the corresponding list of Quanta.
     This class defines this reduced representation.
 
     Different frameworks may use different graph representation, this
