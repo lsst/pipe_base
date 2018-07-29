@@ -1,9 +1,10 @@
+# This file is part of pipe_base.
 #
-# LSST Data Management System
-# Copyright 2016-2018 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,98 +16,90 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
-This module defines SuperTask class and related methods.
+"""This module defines PipelineTask class and related methods.
 """
 
-from __future__ import absolute_import, division, print_function
+__all__ = ["PipelineTask"]  # Classes in this module
 
-__all__ = ["SuperTask"]  # Classes in this module
-
-from lsst.pipe.base.task import Task
 from lsst.daf.butler import DatasetType, StorageClassFactory
 from .config import (InputDatasetConfig, OutputDatasetConfig,
                      InitInputDatasetConfig, InitOutputDatasetConfig)
+from .task import Task
 
 
-class SuperTask(Task):
-    """Base class for all SuperTasks.
+class PipelineTask(Task):
+    """Base class for all pipeline tasks.
 
-    This is an abstract base class for SuperTasks which represents an
-    algorithm executed by SuperTask framework(s) on data which comes
-    from data butler, resulting data is also stored in a data butler.
+    This is an abstract base class for PipelineTasks which represents an
+    algorithm executed by framework(s) on data which comes from data butler,
+    resulting data is also stored in a data butler.
 
-    SuperTask inherits from a `pipe.base.Task` and uses the same configuration
-    mechanism based on `pex.config`. SuperTask sub-class typically implements
-    `run()` method which receives Python-domain data objects and returns
-    `pipe.base.Struct` object with resulting data. `run()` method is not
-    supposed to perform any I/O, it operates entirely on in-memory objects.
-    `runQuantum()` is the method (also to be implemented in sub-class) where
-    all necessary I/O is performed, it reads all input data from data butler
-    into memory, calls `run()` method with that data, examines returned
-    `Struct` object and saves some or all of that data back to data butler.
-    `runQuantum()` method receives `Quantum` instance which defines all input
-    and output datasets for a single invocation of SuperTask.
+    PipelineTask inherits from a `pipe.base.Task` and uses the same
+    configuration mechanism based on `pex.config`. PipelineTask sub-class
+    typically implements `run()` method which receives Python-domain data
+    objects and returns `pipe.base.Struct` object with resulting data.
+    `run()` method is not supposed to perform any I/O, it operates entirely
+    on in-memory objects. `runQuantum()` is the method (can be re-implemented
+    in sub-class) where all necessary I/O is performed, it reads all input
+    data from data butler into memory, calls `run()` method with that data,
+    examines returned `Struct` object and saves some or all of that data back
+    to data butler. `runQuantum()` method receives `daf.butler.Quantum`
+    instance which defines all input and output datasets for a single
+    invocation of PipelineTask.
 
     Subclasses must be constructable with exactly the arguments taken by the
-    SuperTask base class constructor, but may support other signatures as
+    PipelineTask base class constructor, but may support other signatures as
     well.
 
     Attributes
     ----------
     canMultiprocess : bool, True by default (class attribute)
         This class attribute is checked by execution framework, sub-classes
-        can set it to `False` in case task does not support multiprocessing.
+        can set it to ``False`` in case task does not support multiprocessing.
 
     Parameters
     ----------
     config : `pex.config.Config`, optional
-        Configuration for this task (an instance of self.ConfigClass,
-        which is a task-specific subclass of `SuperTaskConfig`).
+        Configuration for this task (an instance of ``self.ConfigClass``,
+        which is a task-specific subclass of `PipelineTaskConfig`).
         If not specified then it defaults to `self.ConfigClass()`.
     log : `lsst.log.Log`, optional
-        Logger instance whose name is used as a log name prefix,
-        or None for no prefix. Ignored if parentTask specified, in which case
-        parentTask.log's name is used as a prefix.
+        Logger instance whose name is used as a log name prefix, or ``None``
+        for no prefix.
     initInputs : `dict`, optional
-        A dictionary of objects needed to construct this SuperTask, with keys
-        matching the keys of the dictionary returned by
-        `getInitInputDatasetTypes` and values equivalent to what would be
-        obtained by calling `Butler.get` with those DatasetTypes and no
-        data IDs.  While it is optional for the base class, subclasses
-        are permitted to require this argument.
+        A dictionary of objects needed to construct this PipelineTask, with
+        keys matching the keys of the dictionary returned by
+        :py:meth:`getInitInputDatasetTypes` and values equivalent to what
+        would be obtained by calling `Butler.get` with those DatasetTypes and
+        no data IDs.  While it is optional for the base class, subclasses are
+        permitted to require this argument.
     """
 
     canMultiprocess = True
-
-    # TODO: temporary hack, I think factory should be global
-    storageClassFactory = StorageClassFactory()
 
     def __init__(self, config=None, log=None, initInputs=None):
         super().__init__(config=config, log=log,)
 
     def getInitOutputDatasets(self):
-        """Return persistable outputs that are available immediately after the
-        task has been constructed.
+        """Return persistable outputs that are available immediately after
+        the task has been constructed.
 
         Subclasses that operate on catalogs should override this method to
         return the schema(s) of the catalog(s) they produce.
 
-        It is not necessary to return the SuperTask's configuration or other
-        provenance information in order for it to be persisted; that is the
-        responsibility of the execution system.
+        It is not necessary to return the PipelineTask's configuration or
+        other provenance information in order for it to be persisted; that is
+        the responsibility of the execution system.
 
         Returns
         -------
         datasets : `dict`
             Dictionary with keys that match those of the dict returned by
-            `getInitOutputDatasetTypes` values that can be written by calling
-            `Butler.put` with those DatasetTypes and no data IDs.
+            :py:meth:`getInitOutputDatasetTypes` values that can be written
+            by calling `Butler.put` with those DatasetTypes and no data IDs.
             An empty `dict` should be returned by tasks that produce no
             initialization outputs.
         """
@@ -133,11 +126,7 @@ class SuperTask(Task):
         and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
         """
-        dsTypes = {}
-        for key, value in config.items():
-            if isinstance(value, InputDatasetConfig):
-                dsTypes[key] = cls.makeDatasetType(value)
-        return dsTypes
+        return cls.getDatasetTypes(config, InputDatasetConfig)
 
     @classmethod
     def getOutputDatasetTypes(cls, config):
@@ -160,16 +149,12 @@ class SuperTask(Task):
         and value is the `butler.DatasetType` instance. Default
         implementation uses configuration field name as dictionary key.
         """
-        dsTypes = {}
-        for key, value in config.items():
-            if isinstance(value, OutputDatasetConfig):
-                dsTypes[key] = cls.makeDatasetType(value)
-        return dsTypes
+        return cls.getDatasetTypes(config, OutputDatasetConfig)
 
     @classmethod
     def getInitInputDatasetTypes(cls, config):
-        """Return dataset types that can be used to retrieve the ``initInputs``
-        constructor argument.
+        """Return dataset types that can be used to retrieve the
+        ``initInputs`` constructor argument.
 
         Datasets used in initialization may not be associated with any
         DataUnits (i.e. their data IDs must be empty dictionaries).
@@ -195,11 +180,7 @@ class SuperTask(Task):
         When the task requires no initialization inputs, should return an
         empty dict.
         """
-        dsTypes = {}
-        for key, value in config.items():
-            if isinstance(value, InitInputDatasetConfig):
-                dsTypes[key] = cls.makeDatasetType(value)
-        return dsTypes
+        return cls.getDatasetTypes(config, InitInputDatasetConfig)
 
     @classmethod
     def getInitOutputDatasetTypes(cls, config):
@@ -230,9 +211,36 @@ class SuperTask(Task):
         When the task produces no initialization outputs, should return an
         empty dict.
         """
+        return cls.getDatasetTypes(config, InitOutputDatasetConfig)
+
+    @classmethod
+    def getDatasetTypes(cls, config, configClass):
+        """Return dataset types defined in task configuration .
+
+        This method can be used by other methods that need to extract dataset
+        types from task configuration (e.g. :py:method:`getInputDatasetTypes`
+        or sub-class methods).
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+        configClass : `type`
+            Class of the configuration object which defines dataset type.
+
+        Returns
+        -------
+        Dictionary where key is the name (arbitrary) of the output dataset
+        and value is the `butler.DatasetType` instance. Default
+        implementation uses configuration field name as dictionary key.
+
+        When the task produces no initialization outputs, should return an
+        empty dict.
+        """
         dsTypes = {}
         for key, value in config.items():
-            if isinstance(value, InitOutputDatasetConfig):
+            if isinstance(value, configClass):
                 dsTypes[key] = cls.makeDatasetType(value)
         return dsTypes
 
@@ -256,7 +264,7 @@ class SuperTask(Task):
         raise NotImplementedError("run() is not implemented")
 
     def runQuantum(self, quantum, butler):
-        """Execute SuperTask algorithm on single quantum of data.
+        """Execute PipelineTask algorithm on single quantum of data.
 
         Typical implementation of this method will use inputs from quantum
         to retrieve Python-domain objects from data butler and call `run()`
@@ -285,7 +293,7 @@ class SuperTask(Task):
         ----------
         quantum : `Quantum`
             Object describing input and output corresponding to this
-            invocation of SuperTask instance.
+            invocation of PipelineTask instance.
         butler : object
             Data butler instance.
 
@@ -338,7 +346,7 @@ class SuperTask(Task):
         `butler.DatasetType` instance.
         """
         # map storage class name to storage class
-        storageClass = cls.storageClassFactory.getStorageClass(dsConfig.storageClass)
+        storageClass = StorageClassFactory().getStorageClass(dsConfig.storageClass)
 
         return DatasetType(name=dsConfig.name,
                            dataUnits=dsConfig.units,
@@ -349,7 +357,7 @@ class SuperTask(Task):
 
         Returns
         -------
-        Object of type `resourceConfig.ResourceConfig`or None if resource configuration
-        is not defined for this task.
+        Object of type `~config.ResourceConfig` or ``None`` if resource
+        configuration is not defined for this task.
         """
         return getattr(self.config, "resources", None)

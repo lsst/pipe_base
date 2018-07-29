@@ -1,9 +1,10 @@
+# This file is part of pipe_base.
 #
-# LSST Data Management System
-# Copyright 2016-2017 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,24 +16,19 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Simple unit test for supertask.SuperTask.
+"""Simple unit test for PipelineTask.
 """
-
-from __future__ import absolute_import, division, print_function
 
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef, Quantum, Run
+from lsst.daf.butler import (DatasetRef, Quantum, Run, StorageClass,
+                             StorageClassFactory)
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.pipe import supertask
-from lsst.pipe.supertask.examples.exampleStorageClass import ExampleStorageClass  # noqa: F401
 
 
 class ButlerMock():
@@ -63,11 +59,11 @@ class ButlerMock():
         dsdata[key] = inMemoryDataset
 
 
-class AddConfig(supertask.SuperTaskConfig):
+class AddConfig(pipeBase.PipelineTaskConfig):
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
-    input = pexConfig.ConfigField(dtype=supertask.InputDatasetConfig,
+    input = pexConfig.ConfigField(dtype=pipeBase.InputDatasetConfig,
                                   doc="Input dataset type for this task")
-    output = pexConfig.ConfigField(dtype=supertask.OutputDatasetConfig,
+    output = pexConfig.ConfigField(dtype=pipeBase.OutputDatasetConfig,
                                    doc="Output dataset type for this task")
 
     def setDefaults(self):
@@ -87,7 +83,7 @@ class AddConfig(supertask.SuperTaskConfig):
         self.output.storageClass = "example"
 
 
-class AddTask(supertask.SuperTask):
+class AddTask(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
@@ -97,24 +93,28 @@ class AddTask(supertask.SuperTask):
         return pipeBase.Struct(output=output)
 
 
-class SuperTaskTestCase(unittest.TestCase):
-    """A test case for supertask.SuperTask
+class PipelineTaskTestCase(unittest.TestCase):
+    """A test case for PipelineTask
     """
 
+    @classmethod
+    def setUpClass(cls):
+        StorageClassFactory().registerStorageClass(StorageClass("example"))
+
     def _makeDSRefVisit(self, dstype, visitId):
-            return DatasetRef(datasetType=dstype,
-                              dataId=dict(camera="X",
-                                          visit=visitId,
-                                          physical_filter='a',
-                                          abstract_filter='b'))
+        return DatasetRef(datasetType=dstype,
+                          dataId=dict(camera="X",
+                                      visit=visitId,
+                                      physical_filter='a',
+                                      abstract_filter='b'))
 
     def _makeQuanta(self, config):
         """Create set of Quanta
         """
         run = Run(collection=1, environment=None, pipeline=None)
 
-        dstype0 = supertask.SuperTask.makeDatasetType(config.input)
-        dstype1 = supertask.SuperTask.makeDatasetType(config.output)
+        dstype0 = pipeBase.PipelineTask.makeDatasetType(config.input)
+        dstype1 = pipeBase.PipelineTask.makeDatasetType(config.output)
 
         quanta = []
         for visit in range(100):
@@ -135,7 +135,7 @@ class SuperTaskTestCase(unittest.TestCase):
         quanta = self._makeQuanta(task.config)
 
         # add input data to butler
-        dstype0 = supertask.SuperTask.makeDatasetType(task.config.input)
+        dstype0 = pipeBase.PipelineTask.makeDatasetType(task.config.input)
         for i, quantum in enumerate(quanta):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)
@@ -168,7 +168,7 @@ class SuperTaskTestCase(unittest.TestCase):
         quanta2 = self._makeQuanta(task2.config)
 
         # add input data to butler
-        dstype0 = supertask.SuperTask.makeDatasetType(task1.config.input)
+        dstype0 = pipeBase.PipelineTask.makeDatasetType(task1.config.input)
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)

@@ -1,9 +1,10 @@
+# This file is part of pipe_base.
 #
-# LSST Data Management System
-# Copyright 2018 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,20 +16,17 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
-"""
-Module defining config classes for SuperTask.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Module defining config classes for PipelineTask.
 """
 
-from __future__ import absolute_import, division, print_function
-
-__all__ = ["InputDatasetField", "OutputDatasetField", "InitInputDatasetField",
-           "InitOutputDatasetField", "QuantumConfig", "InputDatasetConfig",
-           "OutputDatasetConfig", "InitInputDatasetConfig",
-           "InitOutputDatasetConfig", "SuperTaskConfig"]
+__all__ = ["InputDatasetConfig", "InputDatasetField",
+           "OutputDatasetConfig", "OutputDatasetField",
+           "InitInputDatasetConfig", "InitInputDatasetField",
+           "InitOutputDatasetConfig", "InitOutputDatasetField",
+           "ResourceConfig", "QuantumConfig", "PipelineTaskConfig"]
 
 # -------------------------------
 #  Imports of standard modules --
@@ -186,7 +184,7 @@ def _makeDatasetField(name, dtype):
 
 
 class QuantumConfig(pexConfig.Config):
-    """Configuration class which defines SuperTask quanta units.
+    """Configuration class which defines PipelineTask quanta units.
 
     In addition to a list of dataUnit names this also includes optional list of
     SQL statements to be executed against Registry database. Exact meaning and
@@ -200,7 +198,7 @@ class QuantumConfig(pexConfig.Config):
 
 
 class _BaseDatasetTypeConfig(pexConfig.Config):
-    """Intermediate base class for dataset type configuration in SuperTask.
+    """Intermediate base class for dataset type configuration in PipelineTask.
     """
     name = pexConfig.Field(dtype=str,
                            doc="name of the DatasetType")
@@ -209,12 +207,12 @@ class _BaseDatasetTypeConfig(pexConfig.Config):
 
 
 class _DatasetTypeConfig(_BaseDatasetTypeConfig):
-    """Configuration class which defines dataset type used by SuperTask.
+    """Configuration class which defines dataset type used by PipelineTask.
 
     Consists of DatasetType name, list of DataUnit names and StorageCass name.
-    SuperTasks typically define one or more input and output datasets. This
+    PipelineTasks typically define one or more input and output datasets. This
     class should not be used directly, instead one of `InputDatasetConfig` or
-    `OutputDatasetConfig` should be used in SuperTask config.
+    `OutputDatasetConfig` should be used in PipelineTask config.
     """
     units = pexConfig.ListField(dtype=str,
                                 doc="list of DataUnits for this DatasetType")
@@ -229,7 +227,7 @@ class OutputDatasetConfig(_DatasetTypeConfig):
 
 
 class _GlobalDatasetTypeConfig(_BaseDatasetTypeConfig):
-    """Configuration class which defines dataset types used in SuperTask
+    """Configuration class which defines dataset types used in PipelineTask
     initialization.
 
     Consists of DatasetType name and StorageCass name, with a read-only
@@ -237,7 +235,7 @@ class _GlobalDatasetTypeConfig(_BaseDatasetTypeConfig):
     that datasets used in initialization are not associated with any
     DataUnits. This class should not be used directly, instead one of
     `InitInputDatasetConfig` or `InitOutputDatasetConfig` should be used in
-    SuperTask config.
+    PipelineTask config.
     """
     @property
     def units(self):
@@ -253,15 +251,35 @@ class InitOutputDatasetConfig(_GlobalDatasetTypeConfig):
     pass
 
 
-class SuperTaskConfig(pexConfig.Config):
-    """Base class for all SuperTask configurations.
+class ResourceConfig(pexConfig.Config):
+    """Configuration for resource requirements.
 
-    This class defines fields that must be defined for every SuperTask.
-    It will be used as a base class for all SuperTask configurations instead
+    This configuration class will be used by some activators to estimate
+    resource use by pipeline. Additionally some tasks could use it to adjust
+    their resource use (e.g. reduce the number of threads).
+
+    For some resources their limit can be estimated by corresponding task,
+    in that case task could set the field value. For many fields defined in
+    this class their associated resource used by a task will depend on the
+    size of the data and is not known in advance. For these resources their
+    value will be configured through overrides based on some external
+    estimates.
+    """
+    minMemoryMB = pexConfig.Field(dtype=int, default=None, optional=True,
+                                  doc="Minimal memory needed by task, can be None if estimate is unknown.")
+    minNumCores = pexConfig.Field(dtype=int, default=1,
+                                  doc="Minimal number of cores needed by task.")
+
+
+class PipelineTaskConfig(pexConfig.Config):
+    """Base class for all PipelineTask configurations.
+
+    This class defines fields that must be defined for every PipelineTask.
+    It will be used as a base class for all PipelineTask configurations instead
     of `pex.config.Config`.
     """
     quantum = pexConfig.ConfigField(dtype=QuantumConfig,
-                                    doc="configuration for SuperTask quantum")
+                                    doc="configuration for PipelineTask quantum")
 
 
 InputDatasetField = _makeDatasetField("InputDatasetField", InputDatasetConfig)

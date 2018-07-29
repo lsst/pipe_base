@@ -1,11 +1,10 @@
-"""Simple unit test for ResourceConfig.
-"""
+# This file is part of pipe_base.
 #
-# LSST Data Management System
-# Copyright 2016 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,51 +16,46 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Simple unit test for ResourceConfig.
+"""
 
 import unittest
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe import supertask
+import lsst.pipe.base as pipeBase
 
 
-class NoResourceTask(supertask.SuperTask):
+class NoResourceTask(pipeBase.PipelineTask):
     _DefaultName = "no_resource_task"
     ConfigClass = pexConfig.Config
 
 
-class OneConfig(supertask.ConfigWithResource):
-    pass
+class OneConfig(pexConfig.Config):
+    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
+                                      doc="Resource configuration")
 
 
-class OneTask(supertask.SuperTask):
+class OneTask(pipeBase.PipelineTask):
     _DefaultName = "one_task"
     ConfigClass = OneConfig
 
 
 class TwoConfig(pexConfig.Config):
-    resources = pexConfig.ConfigField(dtype=supertask.ResourceConfig, doc=supertask.ResourceConfig.__doc__)
-
-
-class TwoTask(supertask.SuperTask):
-    _DefaultName = "two_task"
-    ConfigClass = OneConfig
-
-
-class ThreeConfig(supertask.ConfigWithResource):
+    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
+                                      doc="Resource configuration")
 
     def setDefaults(self):
-        self.resources.min_memory_MB = 1024
-        self.resources.min_num_cores = 32
+        self.resources.minMemoryMB = 1024
+        self.resources.minNumCores = 32
 
 
-class ThreeTask(supertask.SuperTask):
+class TwoTask(pipeBase.PipelineTask):
     _DefaultName = "three_task"
-    ConfigClass = ThreeConfig
+    ConfigClass = TwoConfig
 
 
 class TaskTestCase(unittest.TestCase):
@@ -87,26 +81,17 @@ class TaskTestCase(unittest.TestCase):
         task = OneTask()
         res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
-        self.assertIs(res_config.min_memory_MB, None)
-        self.assertEqual(res_config.min_num_cores, 1)
+        self.assertIs(res_config.minMemoryMB, None)
+        self.assertEqual(res_config.minNumCores, 1)
 
     def testTwoResource(self):
-        """Test for a task with resource config
+        """Test for a task with resource config and special defaults
         """
         task = TwoTask()
         res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
-        self.assertIs(res_config.min_memory_MB, None)
-        self.assertEqual(res_config.min_num_cores, 1)
-
-    def testThreeResource(self):
-        """Test for a task with resource config and special defaults
-        """
-        task = ThreeTask()
-        res_config = task.getResourceConfig()
-        self.assertIsNot(res_config, None)
-        self.assertEqual(res_config.min_memory_MB, 1024)
-        self.assertEqual(res_config.min_num_cores, 32)
+        self.assertEqual(res_config.minMemoryMB, 1024)
+        self.assertEqual(res_config.minNumCores, 32)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
