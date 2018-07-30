@@ -26,6 +26,7 @@ import unittest
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
+from lsst.daf.butler import StorageClass, StorageClassFactory
 import lsst.pipe.base as pipeBase
 
 
@@ -54,19 +55,39 @@ class TwoConfig(pexConfig.Config):
 
 
 class TwoTask(pipeBase.PipelineTask):
-    _DefaultName = "three_task"
+    _DefaultName = "two_task"
     ConfigClass = TwoConfig
+
+
+class ConfigWithDatasets(pexConfig.Config):
+    input1 = pipeBase.InputDatasetField(name="in1",
+                                        units=["UnitA"],
+                                        storageClass="SCA",
+                                        doc="")
+    input2 = pipeBase.InputDatasetField(name="in2",
+                                        units=["UnitA", "UnitB"],
+                                        storageClass="SCB",
+                                        doc="")
+    output = pipeBase.OutputDatasetField(name="out",
+                                         units=["UnitB", "UnitC"],
+                                         storageClass="SCC",
+                                         doc="")
+    initInput = pipeBase.InitInputDatasetField(name="init_input",
+                                               storageClass="SCX",
+                                               doc="")
+    initOutput = pipeBase.InitOutputDatasetField(name="init_output",
+                                                 storageClass="SCY",
+                                                 doc="")
 
 
 class TaskTestCase(unittest.TestCase):
     """A test case for Task
     """
 
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
+    @classmethod
+    def setUpClass(cls):
+        for name in ("SCA", "SCB", "SCC", "SCX", "SCY"):
+            StorageClassFactory().registerStorageClass(StorageClass(name))
 
     def testNoResource(self):
         """Test for a task without resource config
@@ -92,6 +113,52 @@ class TaskTestCase(unittest.TestCase):
         self.assertIsNot(res_config, None)
         self.assertEqual(res_config.minMemoryMB, 1024)
         self.assertEqual(res_config.minNumCores, 32)
+
+    def testEmptyDatasetConfig(self):
+        """Test for a config without datasets
+        """
+        config = pexConfig.Config()
+        self.assertEqual(pipeBase.PipelineTask.getInputDatasetTypes(config), {})
+        self.assertEqual(pipeBase.PipelineTask.getOutputDatasetTypes(config), {})
+        self.assertEqual(pipeBase.PipelineTask.getInitInputDatasetTypes(config), {})
+        self.assertEqual(pipeBase.PipelineTask.getInitOutputDatasetTypes(config), {})
+
+    def testDatasetConfig(self):
+        """Test for a config with datasets
+        """
+        config = ConfigWithDatasets()
+
+        dsTypes = pipeBase.PipelineTask.getInputDatasetTypes(config)
+        self.assertCountEqual(dsTypes.keys(), ["input1", "input2"])
+        dsType = dsTypes["input1"]
+        self.assertEqual(dsType.name, config.input1.name)
+        self.assertCountEqual(dsType.dataUnits, config.input1.units)
+        self.assertEqual(dsType.storageClass.name, config.input1.storageClass)
+        dsType = dsTypes["input2"]
+        self.assertEqual(dsType.name, config.input2.name)
+        self.assertCountEqual(dsType.dataUnits, config.input2.units)
+        self.assertEqual(dsType.storageClass.name, config.input2.storageClass)
+
+        dsTypes = pipeBase.PipelineTask.getOutputDatasetTypes(config)
+        self.assertCountEqual(dsTypes.keys(), ["output"])
+        dsType = dsTypes["output"]
+        self.assertEqual(dsType.name, config.output.name)
+        self.assertCountEqual(dsType.dataUnits, config.output.units)
+        self.assertEqual(dsType.storageClass.name, config.output.storageClass)
+
+        dsTypes = pipeBase.PipelineTask.getInitInputDatasetTypes(config)
+        self.assertCountEqual(dsTypes.keys(), ["initInput"])
+        dsType = dsTypes["initInput"]
+        self.assertEqual(dsType.name, config.initInput.name)
+        self.assertEqual(len(dsType.dataUnits), 0)
+        self.assertEqual(dsType.storageClass.name, config.initInput.storageClass)
+
+        dsTypes = pipeBase.PipelineTask.getInitOutputDatasetTypes(config)
+        self.assertCountEqual(dsTypes.keys(), ["initOutput"])
+        dsType = dsTypes["initOutput"]
+        self.assertEqual(dsType.name, config.initOutput.name)
+        self.assertEqual(len(dsType.dataUnits), 0)
+        self.assertEqual(dsType.storageClass.name, config.initOutput.storageClass)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
