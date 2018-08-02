@@ -72,9 +72,9 @@ class PipelineTask(Task):
     initInputs : `dict`, optional
         A dictionary of objects needed to construct this PipelineTask, with
         keys matching the keys of the dictionary returned by
-        :py:meth:`getInitInputDatasetTypes` and values equivalent to what
-        would be obtained by calling `Butler.get` with those DatasetTypes and
-        no data IDs.  While it is optional for the base class, subclasses are
+        `getInitInputDatasetTypes` and values equivalent to what would be
+        obtained by calling `Butler.get` with those DatasetTypes and no data
+        IDs.  While it is optional for the base class, subclasses are
         permitted to require this argument.
     """
 
@@ -98,10 +98,10 @@ class PipelineTask(Task):
         -------
         datasets : `dict`
             Dictionary with keys that match those of the dict returned by
-            :py:meth:`getInitOutputDatasetTypes` values that can be written
-            by calling `Butler.put` with those DatasetTypes and no data IDs.
-            An empty `dict` should be returned by tasks that produce no
-            initialization outputs.
+            `getInitOutputDatasetTypes` values that can be written by calling
+            `Butler.put` with those DatasetTypes and no data IDs. An empty
+            `dict` should be returned by tasks that produce no initialization
+            outputs.
         """
         return {}
 
@@ -244,22 +244,82 @@ class PipelineTask(Task):
                 dsTypes[key] = cls.makeDatasetType(value)
         return dsTypes
 
-    def run(self, *args, **kwargs):
+    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds):
         """Run task algorithm on in-memory data.
 
-        This function is the one that actually operates on the data and usually
-        returning a `Struct` with the produced results. This method will be
-        overridden by every subclass. It operates on in-memory data structures
-        (or data proxies) and cannot access any external data such as data
-        butler or databases. All interaction with external data happens in
-        `runQuantum` method.
+        This method is called by `runQuantum` to operate on input in-memory
+        data and produce coressponding output in-memory data. It receives
+        arguments which are dictionaries with input data and input/output
+        DataIds. Many simple tasks do not need to know DataIds so default
+        implementation of this method calls `run` method passing input data
+        objects as keyword arguments. Most simple tasks will implement `run`
+        method, more complex tasks that need to know about output DataIds
+        will override this method instead.
 
-        With default implementation of `runQuantum()` this method will
-        receive keyword arguments whose names will be the same as names
-        of configuration fields describing input and output dataset types.
-        For input dataset types argument values will be lists of the data
-        object retrieved from data butler. For output dataset types argument
-        values will be the lists of units from DataRefs in a Quantum.
+        The method returns `Struct` instance with attributes matching the
+        configuration fields for output dataset types. Values stored in
+        returned struct are lists, if tasks produces more than one object
+        for some dataset type then data objects returned in ``struct`` must
+        match in count and order corresponding DataIds in ``outputDataIds``.
+
+        Parameters
+        ----------
+        inputData : `dict`
+            Dictionary whose keys are the names of the configuration fields
+            describing input dataset types and values are lists of
+            Python-domain data objects retrieved from data butler.
+        inputDataIds : `dict`
+            Dictionary whose keys are the names of the configuration fields
+            describing input dataset types and values are lists of DataIds
+            (units) that task consumes for corresponding dataset type.
+            DataIds are guaranteed to match data objects in ``inputData``
+        outputDataIds : `dict`
+            Dictionary whose keys are the names of the configuration fields
+            describing output dataset types and values are lists of DataIds
+            (units) that task is to produce for corresponding dataset type.
+
+        Returns
+        -------
+        struct : `Struct`
+            Standard convention is that this method should return `Struct`
+            instance containing all output data. Struct attribute names
+            should correspond to the names of the configuration fields
+            describing task output dataset types. If something different
+            is returned then `saveStruct` method has to be re-implemented
+            accordingly.
+        """
+        return self.run(**inputData)
+
+    def run(self, **kwargs):
+        """Run task algorithm on in-memory data.
+
+        This method should be implemented in a subclass unless tasks overrides
+        `adaptArgsAndRun` to do something different from its default
+        implementation. With default implementation of `adaptArgsAndRun` this
+        method will receive keyword arguments whose names will be the same as
+        names of configuration fields describing input dataset types. Argument
+        values will be lists of the data object retrieved from data butler.
+        If the task also needs to know its output DataIds then it needs to
+        override `adaptArgsAndRun` method instead.
+
+        Returns
+        -------
+        struct : `Struct`
+            See description of `adaptArgsAndRun` method.
+
+        Examples
+        --------
+        Typical implementation of this method may look like::
+
+            def run(self, input, calib):
+                # "input", "calib", and "output" are the names of the config fields
+
+                # Do something with inputs and calibs lists, produce output image.
+                assert len(input) == 1 and len(calib) == 1
+                image = self.makeImage(input[0], calib[0])
+
+                return Struct(output=[image])
+
         """
         raise NotImplementedError("run() is not implemented")
 
@@ -267,24 +327,17 @@ class PipelineTask(Task):
         """Execute PipelineTask algorithm on single quantum of data.
 
         Typical implementation of this method will use inputs from quantum
-        to retrieve Python-domain objects from data butler and call `run()`
-        method on that data. On return from `run()` this method will
-        extract data from returned `Struct` instance and save that data
-        to butler.
+        to retrieve Python-domain objects from data butler and call
+        `adaptArgsAndRun` method on that data. On return from
+        `adaptArgsAndRun` this method will extract data from returned
+        `Struct` instance and save that data to butler.
 
-        Default implementaion retrieves all input data in quantum graph
-        and calls `run()` method with keyword arguments where name of the
-        keyword argument is the same as the name of the configuration field
-        defining input DatasetType. Additionally it also passes keyword
-        arguments that correspond to output dataset types, each keyword
-        argument will have the list of units for corresponding output DataRefs.
-
-        The `Struct` returned from `run()` is expected to contain data
-        attributes with the names equal to the names of the configuration
-        fields defining output dataset types. The values of the data
-        attributes must be lists of data bjects corresponding to the units
-        passed as keyword arguments. All data objects will be saved in butler
-        using DataRefs from Quantum's output dictionary.
+        The `Struct` returned from `adaptArgsAndRun` is expected to contain
+        data attributes with the names equal to the names of the
+        configuration fields defining output dataset types. The values of
+        the data attributes must be lists of data objects corresponding to
+        the DataIds of output dataset types. All data objects will be
+        saved in butler using DataRefs from Quantum's output dictionary.
 
         This method does not return anything to the caller, on errors
         corresponding exception is raised.
@@ -299,34 +352,60 @@ class PipelineTask(Task):
 
         Raises
         ------
-        Any exceptions that happen in data butler or in `run()` method.
+        Any exceptions that happen in data butler or in `adaptArgsAndRun`
+        method.
         """
         # get all data from butler
+        inputDataIds = {}
         inputs = {}
         for key, value in self.config.items():
             if isinstance(value, InputDatasetConfig):
                 dataRefs = quantum.predictedInputs[value.name]
+                inputDataIds[key] = [dataRef.dataId for dataRef in dataRefs]
                 inputs[key] = [butler.get(dataRef.datasetType.name, dataRef.dataId)
                                for dataRef in dataRefs]
 
-        # lists of units for output datasets
-        outUnits = {}
+        # lists of DataRefs/DataIds for output datasets
+        outputDataRefs = {}
+        outputDataIds = {}
         for key, value in self.config.items():
             if isinstance(value, OutputDatasetConfig):
                 dataRefs = quantum.outputs[value.name]
-                outUnits[key] = [dataRef.dataId for dataRef in dataRefs]
+                outputDataRefs[key] = dataRefs
+                outputDataIds[key] = [dataRef.dataId for dataRef in dataRefs]
 
         # call run method with keyword arguments
-        struct = self.run(**inputs, **outUnits)
+        struct = self.adaptArgsAndRun(inputs, inputDataIds, outputDataIds)
 
-        # save data in butler, convention is that returned struct
-        # has data field(s) with the same names as the config fields
-        # defining DatasetTypes
+        # store produced ouput data
+        self.saveStruct(struct, outputDataRefs, butler)
+
+    def saveStruct(self, struct, outputDataRefs, butler):
+        """Save data in butler.
+
+        Convention is that struct returned from ``run()`` method has data
+        field(s) with the same names as the config fields defining
+        output DatasetTypes. Subclasses may override this method to implement
+        different convention for `Struct` content or in case any
+        post-processing of data may be needed.
+
+        Parameters
+        ----------
+        struct : `Struct`
+            Data produced by the task packed into `Struct` instance
+        outputDataRefs : `dict`
+            Dictionary whose keys are the names of the configuration fields
+            describing output dataset types and values are lists of DataRefs.
+            DataRefs must match corresponding data objects in ``struct`` in
+            number and order.
+        butler : object
+            Data butler instance.
+        """
         structDict = struct.getDict()
         for key, value in self.config.items():
             if isinstance(value, OutputDatasetConfig):
                 dataList = structDict[key]
-                dataRefs = quantum.outputs[value.name]
+                dataRefs = outputDataRefs[key]
                 # TODO: check that data objects and data refs are aligned
                 for dataRef, data in zip(dataRefs, dataList):
                     butler.put(data, dataRef.datasetType.name, dataRef.dataId)
