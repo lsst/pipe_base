@@ -40,10 +40,12 @@ class OneToOneTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
                               units=["Camera", "Visit"],
                               storageClass="example",
+                              scalar=True,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 units=["Camera", "Visit"],
                                 storageClass = "example",
+                                scalar=True,
                                 doc="Output dataset type for this task")
 
     def setDefaults(self):
@@ -56,10 +58,12 @@ class VisitToPatchTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
                               units=["Camera", "Visit"],
                               storageClass="example",
+                              scalar=False,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 units=["SkyMap", "Tract", "Patch"],
                                 storageClass = "example",
+                                scalar=True,
                                 doc="Output dataset type for this task")
 
     def setDefaults(self):
@@ -72,7 +76,7 @@ class TaskOne(PipelineTask):
     ConfigClass = OneToOneTaskConfig
     _DefaultName = "task_one"
 
-    def run(self, input, output):
+    def run(self, input):
         output = []
         return Struct(output=output)
 
@@ -81,7 +85,7 @@ class TaskTwo(PipelineTask):
     ConfigClass = VisitToPatchTaskConfig
     _DefaultName = "task_two"
 
-    def run(self, input, output):
+    def run(self, input):
         output = []
         return Struct(output=output)
 
