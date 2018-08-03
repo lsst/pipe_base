@@ -37,7 +37,7 @@ from .argumentParser import ArgumentParser
 from lsst.base import Packages
 from lsst.log import Log
 
-__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
+__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
 
 
 def _runPool(pool, timeout, function, iterable):
@@ -125,19 +125,20 @@ class TaskRunner(object):
     class, but some tasks require a subclass. See the manual :ref:`creating-a-command-line-task` for more
     information. See `CmdLineTask.parseAndRun` to see how a task runner is used.
 
-    You may use this task runner for your command-line task if your task has a run method that takes exactly
-    one argument: a butler data reference. Otherwise you must provide a task-specific subclass of this runner
-    for your task's ``RunnerClass`` that overrides `TaskRunner.getTargetList` and possibly
+    You may use this task runner for your command-line task if your task has a runDataRef method that takes
+    exactly one argument: a butler data reference. Otherwise you must provide a task-specific subclass of
+    this runner for your task's ``RunnerClass`` that overrides `TaskRunner.getTargetList` and possibly
     `TaskRunner.__call__`. See `TaskRunner.getTargetList` for details.
 
-    This design matches the common pattern for command-line tasks: the run method takes a single data
+    This design matches the common pattern for command-line tasks: the runDataRef method takes a single data
     reference, of some suitable name. Additional arguments are rare, and if present, require a subclass of
     `TaskRunner` that calls these additional arguments by name.
 
     Instances of this class must be picklable in order to be compatible with multiprocessing. If
-    multiprocessing is requested (``parsedCmd.numProcesses > 1``) then `run` calls `prepareForMultiProcessing`
-    to jettison optional non-picklable elements. If your task runner is not compatible with multiprocessing
-    then indicate this in your task by setting class variable ``canMultiprocess=False``.
+    multiprocessing is requested (``parsedCmd.numProcesses > 1``) then `runDataRef` calls
+    `prepareForMultiProcessing` to jettison optional non-picklable elements. If your task runner is not
+    compatible with multiprocessing then indicate this in your task by setting class variable
+    ``canMultiprocess=False``.
 
     Due to a `python bug`__, handling a `KeyboardInterrupt` properly `requires specifying a timeout`__. This
     timeout (in sec) can be specified as the ``timeout`` element in the output from
@@ -242,24 +243,24 @@ class TaskRunner(object):
             The parsed command object returned by `lsst.pipe.base.argumentParser.ArgumentParser.parse_args`.
         kwargs
             Any additional keyword arguments. In the default `TaskRunner` this is an empty dict, but having
-            it simplifies overriding `TaskRunner` for tasks whose run method takes additional arguments
+            it simplifies overriding `TaskRunner` for tasks whose runDataRef method takes additional arguments
             (see case (1) below).
 
         Notes
         -----
         The default implementation of `TaskRunner.getTargetList` and `TaskRunner.__call__` works for any
-        command-line task whose run method takes exactly one argument: a data reference. Otherwise you
+        command-line task whose runDataRef method takes exactly one argument: a data reference. Otherwise you
         must provide a variant of TaskRunner that overrides `TaskRunner.getTargetList` and possibly
         `TaskRunner.__call__`. There are two cases.
 
         **Case 1**
 
-        If your command-line task has a ``run`` method that takes one data reference followed by additional
-        arguments, then you need only override `TaskRunner.getTargetList` to return the additional arguments
-        as an argument dict. To make this easier, your overridden version of `~TaskRunner.getTargetList` may
-        call `TaskRunner.getTargetList` with the extra arguments as keyword arguments. For example, the
-        following adds an argument dict containing a single key: "calExpList", whose value is the list of data
-        IDs for the calexp ID argument::
+        If your command-line task has a ``runDataRef`` method that takes one data reference followed by
+        additional arguments, then you need only override `TaskRunner.getTargetList` to return the additional
+        arguments as an argument dict. To make this easier, your overridden version of
+        `~TaskRunner.getTargetList` may call `TaskRunner.getTargetList` with the extra arguments as keyword
+        arguments. For example, the following adds an argument dict containing a single key: "calExpList",
+        whose value is the list of data IDs for the calexp ID argument::
 
             def getTargetList(parsedCmd):
                 return TaskRunner.getTargetList(
@@ -321,9 +322,8 @@ class TaskRunner(object):
 
         .. warning::
 
-           Implementations must take care to ensure that no unpicklable
-           attributes are added to the TaskRunner itself, for compatibility
-           with multiprocessing.
+           Implementations must take care to ensure that no unpicklable attributes are added to the
+           TaskRunner itself, for compatibility with multiprocessing.
 
         The default implementation writes package versions, schemas and configs, or compares them to existing
         files on disk if present.
@@ -348,7 +348,7 @@ class TaskRunner(object):
         Parameters
         ----------
         args
-            Arguments for Task.run()
+            Arguments for Task.runDataRef()
 
         Returns
         -------
@@ -366,8 +366,8 @@ class TaskRunner(object):
 
         Notes
         -----
-        This default implementation assumes that the ``args`` is a tuple
-        containing a data reference and a dict of keyword arguments.
+        This default implementation assumes that the ``args`` is a tuple containing a data reference and a
+        dict of keyword arguments.
 
         .. warning::
 
@@ -386,10 +386,10 @@ class TaskRunner(object):
         result = None                   # in case the task fails
         exitStatus = 0                  # exit status for the shell
         if self.doRaise:
-            result = task.run(dataRef, **kwargs)
+            result = self.runTask(task, dataRef, kwargs)
         else:
             try:
-                result = task.run(dataRef, **kwargs)
+                result = self.runTask(task, dataRef, kwargs)
             except Exception as e:
                 # The shell exit value will be the number of dataRefs returning
                 # non-zero, so the actual value used here is lost.
@@ -428,6 +428,38 @@ class TaskRunner(object):
             return Struct(
                 exitStatus=exitStatus,
             )
+
+    def runTask(self, task, dataRef, kwargs):
+        """Make the actual call to `runDataRef` for this task.
+
+        Parameters
+        ----------
+        task : `lsst.pipe.base.CmdLineTask` class
+            The class of the task to run.
+        dataRef
+            Butler data reference that contains the data the task will process.
+        kwargs
+            Any additional keyword arguments.  See `TaskRunner.getTargetList` above.
+
+        Notes
+        -----
+        The default implementation of `TaskRunner.runTask` works for any command-line task which has a
+        runDataRef method that takes a data reference and an optional set of additional keyword arguments.
+        This method returns the results generated by the task's `runDataRef` method.
+
+        """
+        return task.runDataRef(dataRef, **kwargs)
+
+
+class LegacyTaskRunner(TaskRunner):
+    """A `TaskRunner` for `CmdLineTask`\ s which calls the `Task`\ 's `run` method on a `dataRef` rather
+    than the `runDataRef` method.
+    """
+
+    def runTask(self, task, dataRef, kwargs):
+        """Call `run` for this task instead of `runDataRef`.  See `TaskRunner.runTask` above for details.
+        """
+        return task.run(dataRef, **kwargs)
 
 
 class ButlerInitializedTaskRunner(TaskRunner):
@@ -478,19 +510,19 @@ class CmdLineTask(Task):
     Subclasses may also specify the following class variables:
 
     - ``RunnerClass``: a task runner class. The default is ``TaskRunner``, which works for any task
-      with a run method that takes exactly one argument: a data reference. If your task does
+      with a runDataRef method that takes exactly one argument: a data reference. If your task does
       not meet this requirement then you must supply a variant of ``TaskRunner``; see ``TaskRunner``
       for more information.
     - ``canMultiprocess``: the default is `True`; set `False` if your task does not support multiprocessing.
 
-    Subclasses must specify a method named ``run``:
+    Subclasses must specify a method named ``runDataRef``:
 
-    - By default ``run`` accepts a single butler data reference, but you can specify an alternate task runner
-      (subclass of ``TaskRunner``) as the value of class variable ``RunnerClass`` if your run method needs
-      something else.
-    - ``run`` is expected to return its data in a `lsst.pipe.base.Struct`. This provides safety for evolution
-      of the task since new values may be added without harming existing code.
-    - The data returned by ``run`` must be picklable if your task is to support multiprocessing.
+    - By default ``runDataRef`` accepts a single butler data reference, but you can specify an alternate
+      task runner (subclass of ``TaskRunner``) as the value of class variable ``RunnerClass`` if your run
+      method needs something else.
+    - ``runDataRef`` is expected to return its data in a `lsst.pipe.base.Struct`. This provides safety for
+      evolution of the task since new values may be added without harming existing code.
+    - The data returned by ``runDataRef`` must be picklable if your task is to support multiprocessing.
     """
     RunnerClass = TaskRunner
     canMultiprocess = True
@@ -610,8 +642,8 @@ class CmdLineTask(Task):
 
         Your task subclass may need to override this method to change the dataset type or data ref level,
         or to add additional data ID arguments. If you add additional data ID arguments or your task's
-        run method takes more than a single data reference then you will also have to provide a task-specific
-        task runner (see TaskRunner for more information).
+        runDataRef method takes more than a single data reference then you will also have to provide a
+        task-specific task runner (see TaskRunner for more information).
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument(name="--id", datasetType="raw",

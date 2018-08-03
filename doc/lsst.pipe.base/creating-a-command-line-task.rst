@@ -29,15 +29,15 @@ Command-line tasks have the following key attributes, in addition to the attribu
 
 - They are subclasses of `lsst.pipe.base.CmdLineTask`, whereas regular tasks are subclasses of `lsst.pipe.base.Task`.
 - They have an associated :ref:`run script <creating-a-command-line-task-run-script>` to run them from the command-line as pipelines (this is common, but not required, for regular tasks).
-- They have a ``run`` method which performs the full pipeline data processing.
-- By default the ``run`` method takes exactly one argument: a data reference for the item of data to be processed.
+- They have a ``runDataRef`` method which performs the full pipeline data processing.
+- By default the ``runDataRef`` method takes exactly one argument: a data reference for the item of data to be processed.
   Variations are possible, but require that you provide a :ref:`custom argument parser <creating-a-command-line-task-custom-argparse>` and often a :ref:`custom task runner <creating-a-command-line-task-custom-task-runner>`.
 - When run from the command line, most command-line tasks save the configuration used and the metadata generated.
   See :ref:`creating-a-command-line-task-persisting-config-and-metadata` for more information.
 - They have an additional :ref:`class variable <creating-a-task-class-variables>`, ``RunnerClass``, that specifies a "task runner" for the task.
   The task runner takes a parsed command and runs the task.
-  The default task runner will work for any script whose `run` method accepts a single data reference, such as ``ExampleCmdLineTask``.
-  If your task's `run` method needs something else then you will have to provide a :ref:`custom task runner <creating-a-command-line-task-custom-task-runner>`.
+  The default task runner will work for any script whose ``runDataRef`` method accepts a single data reference, such as ``ExampleCmdLineTask``.
+  If your task's `runDataRef` method needs something else then you will have to provide a :ref:`custom task runner <creating-a-command-line-task-custom-task-runner>`.
 - They have an additional :ref:`class variable <creating-a-task-class-variables>` ``canMultiprocess``, which defaults to `True`.
   If your task runner cannot run your task with multiprocessing then set it `False`.
   Note: multiprocessing only affects how the task runner calls the top-level task; thus it is ignored when a task is used as a subtask.
@@ -52,7 +52,7 @@ This is usually a trivial script which merely calls the task's ``parseAndRun`` m
 
 - Parses the command line, which includes determining the :ref:`configuration <creating-a-task-configuration>` for the task and which data items to process.
 - Constructs the task.
-- Calls the task's ``run`` method once for each data item to process.
+- Calls the task's ``runDataRef`` method once for each data item to process.
 
 ``examples/exampleCmdLineTask.py``, the runner script for ``ExampleCmdLineTask``, is typical:
 
@@ -72,7 +72,7 @@ Remember to make your run script executable using :command:`chmod +x`.
 Reading and Writing Data
 ========================
 
-The :ref:`run method <creating-a-command-line-task-intro>` typically receives a single data reference, as mentioned above.
+The :ref:`runDataRef method <creating-a-command-line-task-intro>` typically receives a single data reference, as mentioned above.
 It read and writes data using this data reference (or the underlying butler, if necessary).
 
 .. _creating-a-command-line-task-dataset-types:
@@ -128,7 +128,7 @@ To disable saving configuration and metadata, define task methods ``_getConfigNa
 Custom Argument Parser
 ======================
 
-The default `lsst.pipe.base.argumentParser.ArgumentParser`-type returned by `CmdLineTask._makeArgumentParser` assumes that your task's :ref:`run method <creating-a-task-class-run-method>` processes raw or calibrated images.
+The default `lsst.pipe.base.argumentParser.ArgumentParser`-type returned by `CmdLineTask._makeArgumentParser` assumes that your task's :ref:`runDataRef method <creating-a-task-class-run-method>` processes raw or calibrated images.
 If this is not the case you can easily provide a modified argument parser.
 
 Typically this consists of constructing an instance of `lsst.pipe.base.ArgumentParser` and then adding some ID arguments to it using `~lsst.pipe.base.argumentParser.ArgumentParser.add_id_argument`.
@@ -143,7 +143,7 @@ Learning one set of arguments suffices to use many tasks.
 
 Here are some examples:
 
-- A task's ``run`` method requires a data reference of some kind other than a raw or calibrated image.
+- A task's ``runDataRef`` method requires a data reference of some kind other than a raw or calibrated image.
   This is a common case, and easily solved.
   For example the ``processCoadd.ProcessCoaddTask`` processes co-adds, which are specified by sky map patch.
   Here is ``ProcessCoaddTask._makeArgumentParser``:
@@ -171,7 +171,7 @@ Here are some examples:
     This happens automatically for ``raw`` and ``calexp`` dataset types, but not most other dataset types.
     Examine the code in `~lsst.coadd.utils.coaddDataIdContainer.CoaddDataIdContainer` to see how it works.
 
-- A task's ``run`` method requires more than one kind of data reference.
+- A task's ``runDataRef`` method requires more than one kind of data reference.
   An example is co-addition, which requires the user to specify the co-add as a sky map patch, and optionally allows the user to specify a list of exposures to co-add.
   `CoaddBaseTask._makeArgumentParser` is a straightforward example of specifying two data IDs arguments: one for the sky map patch, and an optional ID argument for which exposures to co-add:
 
@@ -190,7 +190,7 @@ Here are some examples:
 
   In this case the custom container class `~lsst.pipe.tasks.coaddBase.SelectDataIdContainer` adds additional information for the task, to save processing time.
 
-- A task's `run` method requires no data references at all.
+- A task's `runDataRef` method requires no data references at all.
   An example is ``makeSkyMap.MakeSkyMapTask``, which makes a sky map for a set of co-adds.
   ``makeSkyMap.MakeSkyMapTask._makeArgumentParser`` is trivial:
 
@@ -209,13 +209,14 @@ Custom Task Runner
 ==================
 
 The standard task runner is `lsst.pipe.base.TaskRunner`.
-It assumes that your task's ``run`` method wants a single data reference and nothing else.
-If that is not the case then you will have to provide a custom task runner for your task.
+It assumes that your task's ``runDataRef`` method wants a single data reference and nothing else.
+If your task uses the pre-2018 naming convention and has a ``run`` method that operates on a data references instead of a ``runDataRef`` method, you can still use this as a ``CmdLineTask`` by using the `~lsst.pipe.base.LegacyTaskRunner`, which will call your task's ``run`` method.
+If neither of those are the case then you will have to provide a custom task runner for your task.
 This involves writing a subclass of `lsst.pipe.base.TaskRunner` and specifying it in your task using the ``RunnerClass`` :ref:`class variable <creating-a-task-class-variables>`.
 
 Here are some situations where a custom task runner is required:
 
-- The task's ``run`` method requires extra arguments.
+- The task's ``runDataRef`` method requires extra arguments.
   An example is co-addition, which optionally accepts a list of images to co-add.
   The custom task runner is ``coaddBase.CoaddTaskRunner`` and is pleasantly simple:
 
@@ -241,10 +242,10 @@ Here are some situations where a custom task runner is required:
          def __call__(self, butler):
              task = self.TaskClass(config=self.config, log=self.log)
              if self.doRaise:
-                 results = task.run(butler)
+                 results = task.runDataRef(butler)
              else:
                  try:
-                     results = task.run(butler)
+                     results = task.runDataRef(butler)
                  except Exception as e:
                      task.log.fatal("Failed: %s" % e)
                      if not isinstance(e, pipeBase.TaskError):

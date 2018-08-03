@@ -191,29 +191,29 @@ Both of these are constants, and thus are the same for each invocation of the ``
 The run method
 --------------
 
-Most tasks have a ``run`` method which perform the task's data processing operation.
+Most tasks have a ``runDataRef`` method which perform the task's data processing operation.
 This is required for command-line tasks and strongly recommended for most other tasks.
 One exception is if your task needs different methods to handle different data types (C++ handles this using overloaded functions, but the standard technique is Python is to provide different methods for different call signatures).
 
-If your task's processing can be divided into logical units, then we recommend that you provide methods for each unit. ``run`` can then call each method to do its work.
+If your task's processing can be divided into logical units, then we recommend that you provide methods for each unit. ``runDataRef`` can then call each method to do its work.
 This allows your task to be more easily adapted: a subclass can override just a few methods.
 
 We strongly recommend that you make your task stateless, by not using instance variables as part of your data processing. Pass data between methods by calling and returning it.
 This makes the task much easier to reason about, since processing one item of data cannot affect future items of data.
 
-The ``run`` method should always return its results in an `lsst.pipe.base.struct.Struct` object, with a named field for each item of data.
+The ``runDataRef`` method should always return its results in an `lsst.pipe.base.struct.Struct` object, with a named field for each item of data.
 This is safer than returning a tuple of items, and allows adding fields without affecting existing code.
 Other methods should also return `~lsst.pipe.base.struct.Struct`\ s if they return more than one or two items.
 
 Any method that is likely to take significant time or memory should be preceded by this python decorator: `lsst.pipe.base.timeMethod`.
 This automatically records the execution time and memory of the method in the task's ``metadata`` attribute.
 
-The example ``exampleCmdLineTask.ExampleCmdLineTask`` is so simple that it needs no other methods; ``run`` does everything:
+The example ``exampleCmdLineTask.ExampleCmdLineTask`` is so simple that it needs no other methods; ``runDataRef`` does everything:
 
 .. code-block:: python
 
    @pipeBase.timeMethod
-   def run(self, dataRef):
+   def runDataRef(self, dataRef):
        """Compute a few statistics on the image plane of an exposure
        @param dataRef: data reference for a calibrated science exposure ("calexp")
        @return a pipeBase Struct containing:
