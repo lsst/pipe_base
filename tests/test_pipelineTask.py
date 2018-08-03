@@ -44,7 +44,12 @@ class ButlerMock():
         key = (dataId["camera"], dataId["visit"])
         return tuple(key)
 
-    def get(self, dsTypeName, dataId, parameters=None):
+    def get(self, datasetRefOrType, dataId=None):
+        if isinstance(datasetRefOrType, DatasetRef):
+            dataId = datasetRefOrType.dataId
+            dsTypeName = datasetRefOrType.datasetType.name
+        else:
+            dsTypeName = datasetRefOrType
         key = self.key(dataId)
 #         print("butler.get: name={} key={}".format(ref.datasetType.name, key))
         dsdata = self.datasets.get(dsTypeName)

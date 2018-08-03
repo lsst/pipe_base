@@ -30,6 +30,22 @@ from .config import (InputDatasetConfig, OutputDatasetConfig,
 from .task import Task
 
 
+class ScalarError(TypeError):
+    """Exception raised when dataset type is configured as scalar
+    but there are multiple DataIds in a Quantum for that dataset.
+
+    Parameters
+    ----------
+    key : `str`
+        Name of the configuration field for dataset type.
+    numDataIds : `int`
+        Actual number of DataIds in a Quantum for this dataset type.
+    """
+    def __init__(self, key, numDataIds):
+        super().__init__(("Expected scalar for output dataset field {}, "
+                          "received {} DataIds").format(key, numDataIds))
+
+
 class PipelineTask(Task):
     """Base class for all pipeline tasks.
 
@@ -256,9 +272,18 @@ class PipelineTask(Task):
         method, more complex tasks that need to know about output DataIds
         will override this method instead.
 
+        All three arguments to this method are dictionaries with keys equal
+        to the name of the configuration fields for dataset type. If dataset
+        type is configured with ``scalar`` fiels set to ``True`` then it is
+        expected that only one dataset appears on input or output for that
+        dataset type and dictionary value will be a single data object or
+        DataId. Otherwise if ``scalar`` is ``False`` (default) then value
+        will be a list (even if only one item is in the list).
+
         The method returns `Struct` instance with attributes matching the
         configuration fields for output dataset types. Values stored in
-        returned struct are lists, if tasks produces more than one object
+        returned struct are single object if ``scalar`` is ``True`` or
+        list of objects otherwise. If tasks produces more than one object
         for some dataset type then data objects returned in ``struct`` must
         match in count and order corresponding DataIds in ``outputDataIds``.
 
@@ -266,17 +291,18 @@ class PipelineTask(Task):
         ----------
         inputData : `dict`
             Dictionary whose keys are the names of the configuration fields
-            describing input dataset types and values are lists of
-            Python-domain data objects retrieved from data butler.
+            describing input dataset types and values are Python-domain data
+            objects (or lists of objects) retrieved from data butler.
         inputDataIds : `dict`
             Dictionary whose keys are the names of the configuration fields
-            describing input dataset types and values are lists of DataIds
-            (units) that task consumes for corresponding dataset type.
+            describing input dataset types and values are DataIds (or lists
+            of DataIds) that task consumes for corresponding dataset type.
             DataIds are guaranteed to match data objects in ``inputData``
         outputDataIds : `dict`
             Dictionary whose keys are the names of the configuration fields
-            describing output dataset types and values are lists of DataIds
-            (units) that task is to produce for corresponding dataset type.
+            describing output dataset types and values are DataIds (or lists
+            of DataIds) that task is to produce for corresponding dataset
+            type.
 
         Returns
         -------
@@ -298,8 +324,11 @@ class PipelineTask(Task):
         implementation. With default implementation of `adaptArgsAndRun` this
         method will receive keyword arguments whose names will be the same as
         names of configuration fields describing input dataset types. Argument
-        values will be lists of the data object retrieved from data butler.
-        If the task also needs to know its output DataIds then it needs to
+        values will be data objects retrieved from data butler. If a dataset
+        type is configured with ``scalar`` field set to ``True`` then argument
+        value will be a single object, otherwise it will be a list of objects.
+
+        If the task needs to know its input or output DataIds then it has to
         override `adaptArgsAndRun` method instead.
 
         Returns
@@ -314,11 +343,12 @@ class PipelineTask(Task):
             def run(self, input, calib):
                 # "input", "calib", and "output" are the names of the config fields
 
-                # Do something with inputs and calibs lists, produce output image.
-                assert len(input) == 1 and len(calib) == 1
-                image = self.makeImage(input[0], calib[0])
+                # Assuming that input/calib datasets are `scalar` they are simple objects,
+                # do something with inputs and calibs, produce output image.
+                image = self.makeImage(input, calib)
 
-                return Struct(output=[image])
+                # If output dataset is `scalar` then return object, not list
+                return Struct(output=image)
 
         """
         raise NotImplementedError("run() is not implemented")
@@ -335,7 +365,7 @@ class PipelineTask(Task):
         The `Struct` returned from `adaptArgsAndRun` is expected to contain
         data attributes with the names equal to the names of the
         configuration fields defining output dataset types. The values of
-        the data attributes must be lists of data objects corresponding to
+        the data attributes must be data objects corresponding to
         the DataIds of output dataset types. All data objects will be
         saved in butler using DataRefs from Quantum's output dictionary.
 
@@ -352,8 +382,9 @@ class PipelineTask(Task):
 
         Raises
         ------
-        Any exceptions that happen in data butler or in `adaptArgsAndRun`
-        method.
+        `ScalarError` if a dataset type is configured as scalar but receives
+        multiple DataIds in `quantum`. Any exceptions that happen in data
+        butler or in `adaptArgsAndRun` method.
         """
         # get all data from butler
         inputDataIds = {}
@@ -361,9 +392,16 @@ class PipelineTask(Task):
         for key, value in self.config.items():
             if isinstance(value, InputDatasetConfig):
                 dataRefs = quantum.predictedInputs[value.name]
-                inputDataIds[key] = [dataRef.dataId for dataRef in dataRefs]
-                inputs[key] = [butler.get(dataRef.datasetType.name, dataRef.dataId)
-                               for dataRef in dataRefs]
+                dataIds = [dataRef.dataId for dataRef in dataRefs]
+                data = [butler.get(dataRef) for dataRef in dataRefs]
+                if value.scalar:
+                    # unpack single-item lists
+                    if len(dataRefs) != 1:
+                        raise ScalarError(key, len(dataRefs))
+                    data = data[0]
+                    dataIds = dataIds[0]
+                inputDataIds[key] = dataIds
+                inputs[key] = data
 
         # lists of DataRefs/DataIds for output datasets
         outputDataRefs = {}
@@ -371,8 +409,15 @@ class PipelineTask(Task):
         for key, value in self.config.items():
             if isinstance(value, OutputDatasetConfig):
                 dataRefs = quantum.outputs[value.name]
+                dataIds = [dataRef.dataId for dataRef in dataRefs]
+                if value.scalar:
+                    # unpack single-item lists
+                    if len(dataRefs) != 1:
+                        raise ScalarError(key, len(dataRefs))
+                    dataRefs = dataRefs[0]
+                    dataIds = dataIds[0]
                 outputDataRefs[key] = dataRefs
-                outputDataIds[key] = [dataRef.dataId for dataRef in dataRefs]
+                outputDataIds[key] = dataIds
 
         # call run method with keyword arguments
         struct = self.adaptArgsAndRun(inputs, inputDataIds, outputDataIds)
@@ -406,6 +451,10 @@ class PipelineTask(Task):
             if isinstance(value, OutputDatasetConfig):
                 dataList = structDict[key]
                 dataRefs = outputDataRefs[key]
+                if not isinstance(dataRefs, list):
+                    # scalar outputs, make them lists again
+                    dataRefs = [dataRefs]
+                    dataList = [dataList]
                 # TODO: check that data objects and data refs are aligned
                 for dataRef, data in zip(dataRefs, dataList):
                     butler.put(data, dataRef.datasetType.name, dataRef.dataId)
