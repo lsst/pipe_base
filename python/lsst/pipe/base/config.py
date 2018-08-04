@@ -121,21 +121,26 @@ def _makeDatasetField(name, dtype):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # This factory does not take a units argument, so set the variables for the
         # units documentation to empty python strings
-        unitsDoc = ""
-        unitsString = ""
+        extraDoc = ""
+        extraFields = ""
     elif issubclass(dtype, _DatasetTypeConfig):
         # Handle dataset types like InputDatasetConfig, note these take a units argument
-        def wrappedFunc(doc, name, units, storageClass, check=None):
+        def wrappedFunc(doc, name, units, storageClass, scalar=False, check=None):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # Set the string corresponding to the units parameter documentation
         # formatting is to support final output of the docstring variable
-        unitsDoc = """
+        extraDoc = """
             units : iterable of `str`
-                Iterable of DataUnits for this `~lsst.daf.butler.DatasetType`"""
+                Iterable of DataUnits for this `~lsst.daf.butler.DatasetType`
+            scalar : `bool`, optional
+                If set to True then only a single dataset is expected on input or
+                produced on output. In that case list of objects/DataIds will be
+                unpacked before calling task methods, returned data is expected
+                to contain single objects as well."""
         # Set a string to add the units argument to the list of arguments in the
         # docstring explanation section formatting is to support final output
         # of the docstring variable
-        unitsString = ", units,"
+        extraFields = ", units, scalar,"
     else:
         # if someone tries to create a config factory for a type that is not
         # handled raise and exception
@@ -154,7 +159,7 @@ def _makeDatasetField(name, dtype):
 
     The input arguments for this class are a combination of the arguments for
     `~lsst.pex.config.ConfigField` and `{dtype.__name__}`. The arguments
-    doc and check come from `~lsst.pex.config.ConfigField`, while name{unitsString}
+    doc and check come from `~lsst.pex.config.ConfigField`, while name{extraFields}
     and storageClass come from `{dtype.__name__}`.
 
     Parameters
@@ -163,7 +168,7 @@ def _makeDatasetField(name, dtype):
         Documentation string for the `{dtype.__name__}`
     name : `str`
         Name of the `~lsst.daf.butler.DatasetType` in the returned
-        `{dtype.__name__}`{indent(dedent(unitsDoc), " " * 4)}
+        `{dtype.__name__}`{indent(dedent(extraDoc), " " * 4)}
     storageClass : `str`
         Name of the `~lsst.daf.butler.StorageClass` in the `{dtype.__name__}`
     check : callable
@@ -216,6 +221,14 @@ class _DatasetTypeConfig(_BaseDatasetTypeConfig):
     """
     units = pexConfig.ListField(dtype=str,
                                 doc="list of DataUnits for this DatasetType")
+    scalar = pexConfig.Field(dtype=bool,
+                             default=False,
+                             optional=True,
+                             doc=("If set to True then only a single dataset is expected "
+                                  "on input or produced on output. In that case list of "
+                                  "objects/DataIds will be unpacked before calling task "
+                                  "methods, returned data is expected to contain single "
+                                  "objects as well."))
 
 
 class InputDatasetConfig(_DatasetTypeConfig):

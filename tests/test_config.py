@@ -67,10 +67,12 @@ class ConfigWithDatasets(pexConfig.Config):
     input2 = pipeBase.InputDatasetField(name="in2",
                                         units=["UnitA", "UnitB"],
                                         storageClass="SCB",
+                                        scalar=True,
                                         doc="")
     output = pipeBase.OutputDatasetField(name="out",
                                          units=["UnitB", "UnitC"],
                                          storageClass="SCC",
+                                         scalar=False,
                                          doc="")
     initInput = pipeBase.InitInputDatasetField(name="init_input",
                                                storageClass="SCX",

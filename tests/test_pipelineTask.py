@@ -44,7 +44,12 @@ class ButlerMock():
         key = (dataId["camera"], dataId["visit"])
         return tuple(key)
 
-    def get(self, dsTypeName, dataId, parameters=None):
+    def get(self, datasetRefOrType, dataId=None):
+        if isinstance(datasetRefOrType, DatasetRef):
+            dataId = datasetRefOrType.dataId
+            dsTypeName = datasetRefOrType.datasetType.name
+        else:
+            dsTypeName = datasetRefOrType
         key = self.key(dataId)
 #         print("butler.get: name={} key={}".format(ref.datasetType.name, key))
         dsdata = self.datasets.get(dsTypeName)
@@ -83,12 +88,25 @@ class AddConfig(pipeBase.PipelineTaskConfig):
         self.output.storageClass = "example"
 
 
+# example task which overrides run() method
 class AddTask(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
-    def run(self, input, output):
+    def run(self, input):
         self.metadata.add("add", self.config.addend)
+        output = [val + self.config.addend for val in input]
+        return pipeBase.Struct(output=output)
+
+
+# example task which overrides adaptArgsAndRun() method
+class AddTask2(pipeBase.PipelineTask):
+    ConfigClass = AddConfig
+    _DefaultName = "add_task"
+
+    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds):
+        self.metadata.add("add", self.config.addend)
+        input = inputData["input"]
         output = [val + self.config.addend for val in input]
         return pipeBase.Struct(output=output)
 
@@ -161,7 +179,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         config2.addend = 200
         config2.input.name = task1.config.output.name
         config2.output.name = "add_output_2"
-        task2 = AddTask(config=config2)
+        task2 = AddTask2(config=config2)
 
         # make all quanta
         quanta1 = self._makeQuanta(task1.config)
