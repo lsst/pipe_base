@@ -1035,27 +1035,35 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             config.saveToStream(fd, "config")
         elif showCommand == "history":
             matHistory = re.search(r"^(?:config.)?(.+)?", showArgs)
-            pattern = matHistory.group(1)
-            if not pattern:
-                print("Please provide a value with --show history (e.g. history=XXX)", file=sys.stderr)
+            globPattern = matHistory.group(1)
+            if not globPattern:
+                print("Please provide a value with --show history (e.g. history=*.doXXX)", file=sys.stderr)
                 sys.exit(1)
 
-            pattern = pattern.split(".")
-            cpath, cname = pattern[:-1], pattern[-1]
-            hconfig = config            # the config that we're interested in
-            for i, cpt in enumerate(cpath):
+            error = False
+            for i, pattern in enumerate(fnmatch.filter(config.names(), globPattern)):
+                if i > 0:
+                    print("")
+
+                pattern = pattern.split(".")
+                cpath, cname = pattern[:-1], pattern[-1]
+                hconfig = config            # the config that we're interested in
+                for i, cpt in enumerate(cpath):
+                    try:
+                        hconfig = getattr(hconfig, cpt)
+                    except AttributeError:
+                        print("Error: configuration %s has no subconfig %s" %
+                              (".".join(["config"] + cpath[:i]), cpt), file=sys.stderr)
+                        error = True
+
                 try:
-                    hconfig = getattr(hconfig, cpt)
-                except AttributeError:
-                    print("Error: configuration %s has no subconfig %s" %
-                          (".".join(["config"] + cpath[:i]), cpt), file=sys.stderr)
+                    print(pexConfig.history.format(hconfig, cname))
+                except KeyError:
+                    print("Error: %s has no field %s" % (".".join(["config"] + cpath), cname),
+                          file=sys.stderr)
+                    error = True
 
-                    sys.exit(1)
-
-            try:
-                print(pexConfig.history.format(hconfig, cname))
-            except KeyError:
-                print("Error: %s has no field %s" % (".".join(["config"] + cpath), cname), file=sys.stderr)
+            if error:
                 sys.exit(1)
 
         elif showCommand == "data":
