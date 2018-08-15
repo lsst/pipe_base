@@ -21,7 +21,6 @@
 #
 """Utilities for measuring execution time.
 """
-from __future__ import absolute_import, division
 import functools
 import resource
 import time
