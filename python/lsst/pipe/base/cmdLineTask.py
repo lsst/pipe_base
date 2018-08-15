@@ -19,6 +19,8 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
+
 import sys
 import traceback
 import functools
@@ -32,8 +34,6 @@ from .struct import Struct
 from .argumentParser import ArgumentParser
 from lsst.base import Packages
 from lsst.log import Log
-
-__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
 
 
 def _runPool(pool, timeout, function, iterable):

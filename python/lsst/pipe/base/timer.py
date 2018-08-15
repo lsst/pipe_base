@@ -21,14 +21,14 @@
 #
 """Utilities for measuring execution time.
 """
+__all__ = ["logInfo", "timeMethod"]
+
 import functools
 import resource
 import time
 import datetime
 
 from lsst.log import Log, log
-
-__all__ = ["logInfo", "timeMethod"]
 
 
 def logPairs(obj, pairs, logLevel=Log.DEBUG):

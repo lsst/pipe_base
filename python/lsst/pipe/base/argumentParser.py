@@ -19,6 +19,9 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
+           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
+
 import abc
 import argparse
 import collections
@@ -36,9 +39,6 @@ import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
-
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
-           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"

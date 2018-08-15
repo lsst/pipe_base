@@ -19,6 +19,8 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+__all__ = ["Task", "TaskError"]
+
 import contextlib
 
 import lsstDebug
@@ -26,8 +28,6 @@ from lsst.pex.config import ConfigurableField
 from lsst.log import Log
 import lsst.daf.base as dafBase
 from .timer import logInfo
-
-__all__ = ["Task", "TaskError"]
 
 
 class TaskError(Exception):
