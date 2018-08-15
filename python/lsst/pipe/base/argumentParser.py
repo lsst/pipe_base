@@ -19,7 +19,9 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import absolute_import, division, print_function
+__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
+           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
+
 import abc
 import argparse
 import collections
@@ -32,20 +34,11 @@ import sys
 import shutil
 import textwrap
 
-from builtins import zip
-from builtins import str
-from builtins import range
-from builtins import object
-
 import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
-from future.utils import with_metaclass
-
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
-           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -78,7 +71,7 @@ def _fixPath(defName, path):
     return os.path.abspath(os.path.join(defRoot, path or ""))
 
 
-class DataIdContainer(object):
+class DataIdContainer:
     """Container for data IDs and associated data references.
 
     Parameters
@@ -204,7 +197,7 @@ class DataIdContainer(object):
             self.refList += refList
 
 
-class DataIdArgument(object):
+class DataIdArgument:
     """data ID argument, used by `ArgumentParser.add_id_argument`.
 
     Parameters
@@ -267,7 +260,7 @@ class DataIdArgument(object):
             return self.datasetType
 
 
-class DynamicDatasetType(with_metaclass(abc.ABCMeta, object)):
+class DynamicDatasetType(metaclass=abc.ABCMeta):
     """Abstract base class for a dataset type determined from parsed
     command-line arguments.
     """
@@ -999,7 +992,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             matConfig = re.search(r"^(?:config.)?(.+)?", showArgs)
             pattern = matConfig.group(1)
             if pattern:
-                class FilteredStream(object):
+                class FilteredStream:
                     """A file object that only prints lines
                     that match the glob "pattern".
 

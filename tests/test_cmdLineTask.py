@@ -19,13 +19,10 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import print_function
 import os
 import shutil
 import unittest
 import tempfile
-
-from builtins import zip
 
 import lsst.utils
 import lsst.pipe.base as pipeBase

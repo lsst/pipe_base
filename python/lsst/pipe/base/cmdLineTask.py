@@ -19,14 +19,12 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import absolute_import, division
+__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
+
 import sys
 import traceback
 import functools
 import contextlib
-
-from builtins import str
-from builtins import object
 
 import lsst.utils
 from lsst.base import disableImplicitThreading
@@ -36,8 +34,6 @@ from .struct import Struct
 from .argumentParser import ArgumentParser
 from lsst.base import Packages
 from lsst.log import Log
-
-__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
 
 
 def _runPool(pool, timeout, function, iterable):
@@ -88,7 +84,7 @@ def profile(filename, log=None):
         log.info("cProfile stats written to %s" % filename)
 
 
-class TaskRunner(object):
+class TaskRunner:
     """Run a command-line task, using `multiprocessing` if requested.
 
     Parameters

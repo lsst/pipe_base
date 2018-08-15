@@ -19,7 +19,6 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import print_function
 import itertools
 import os
 import shutil
@@ -27,16 +26,11 @@ import tempfile
 import unittest
 import contextlib
 
-from future import standard_library
-from builtins import str
-
 import lsst.utils
 import lsst.utils.tests
 import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-
-standard_library.install_aliases()
 
 ObsTestDir = lsst.utils.getPackageDir("obs_test")
 DataPath = os.path.realpath(os.path.join(ObsTestDir, "data", "input"))

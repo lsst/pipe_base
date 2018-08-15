@@ -19,14 +19,11 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import absolute_import, division
-
-from builtins import object
 
 __all__ = ["Struct"]
 
 
-class Struct(object):
+class Struct:
     """A container to which you can add fields as attributes.
 
     Parameters
@@ -62,7 +59,6 @@ class Struct(object):
     """
 
     def __init__(self, **keyArgs):
-        object.__init__(self)
         for name, val in keyArgs.items():
             self.__safeAdd(name, val)
 

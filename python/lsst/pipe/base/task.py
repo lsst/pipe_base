@@ -19,18 +19,15 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-from __future__ import absolute_import, division
-import contextlib
+__all__ = ["Task", "TaskError"]
 
-from builtins import object
+import contextlib
 
 import lsstDebug
 from lsst.pex.config import ConfigurableField
 from lsst.log import Log
 import lsst.daf.base as dafBase
 from .timer import logInfo
-
-__all__ = ["Task", "TaskError"]
 
 
 class TaskError(Exception):
@@ -46,7 +43,7 @@ class TaskError(Exception):
     pass
 
 
-class Task(object):
+class Task:
     """Base class for data processing tasks.
 
     See :ref:`task-framework-overview` to learn what tasks are, and :ref:`creating-a-task` for more
