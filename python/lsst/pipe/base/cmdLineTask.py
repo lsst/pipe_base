@@ -84,7 +84,7 @@ def profile(filename, log=None):
         log.info("cProfile stats written to %s" % filename)
 
 
-class TaskRunner(object):
+class TaskRunner:
     """Run a command-line task, using `multiprocessing` if requested.
 
     Parameters

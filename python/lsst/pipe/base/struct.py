@@ -23,7 +23,7 @@
 __all__ = ["Struct"]
 
 
-class Struct(object):
+class Struct:
     """A container to which you can add fields as attributes.
 
     Parameters

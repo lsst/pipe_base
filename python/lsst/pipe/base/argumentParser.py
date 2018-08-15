@@ -71,7 +71,7 @@ def _fixPath(defName, path):
     return os.path.abspath(os.path.join(defRoot, path or ""))
 
 
-class DataIdContainer(object):
+class DataIdContainer:
     """Container for data IDs and associated data references.
 
     Parameters
@@ -197,7 +197,7 @@ class DataIdContainer(object):
             self.refList += refList
 
 
-class DataIdArgument(object):
+class DataIdArgument:
     """data ID argument, used by `ArgumentParser.add_id_argument`.
 
     Parameters
@@ -992,7 +992,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             matConfig = re.search(r"^(?:config.)?(.+)?", showArgs)
             pattern = matConfig.group(1)
             if pattern:
-                class FilteredStream(object):
+                class FilteredStream:
                     """A file object that only prints lines
                     that match the glob "pattern".
 

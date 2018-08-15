@@ -43,7 +43,7 @@ class TaskError(Exception):
     pass
 
 
-class Task(object):
+class Task:
     """Base class for data processing tasks.
 
     See :ref:`task-framework-overview` to learn what tasks are, and :ref:`creating-a-task` for more
