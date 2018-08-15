@@ -20,8 +20,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from builtins import object
-
 __all__ = ["Struct"]
 
 
@@ -61,7 +59,6 @@ class Struct(object):
     """
 
     def __init__(self, **keyArgs):
-        object.__init__(self)
         for name, val in keyArgs.items():
             self.__safeAdd(name, val)
 

@@ -31,17 +31,11 @@ import sys
 import shutil
 import textwrap
 
-from builtins import zip
-from builtins import str
-from builtins import range
-from builtins import object
-
 import lsst.utils
 import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
-from future.utils import with_metaclass
 
 __all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
            "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
@@ -266,7 +260,7 @@ class DataIdArgument(object):
             return self.datasetType
 
 
-class DynamicDatasetType(with_metaclass(abc.ABCMeta, object)):
+class DynamicDatasetType(metaclass=abc.ABCMeta):
     """Abstract base class for a dataset type determined from parsed
     command-line arguments.
     """

@@ -23,8 +23,6 @@ import time
 import unittest
 import numbers
 
-from past.builtins import basestring
-
 import lsst.utils.tests
 import lsst.daf.base as dafBase
 from lsst.log import Log
@@ -225,7 +223,7 @@ class TaskTestCase(unittest.TestCase):
         addMultTask = AddMultTask()
         addMultTask.run(val=1.1)
         # Check existence and type
-        for key, keyType in (("Utc", basestring),
+        for key, keyType in (("Utc", str),
                              ("CpuTime", float),
                              ("UserTime", float),
                              ("SystemTime", float),

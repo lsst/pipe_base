@@ -24,8 +24,6 @@ import shutil
 import unittest
 import tempfile
 
-from builtins import zip
-
 import lsst.utils
 import lsst.pipe.base as pipeBase
 import lsst.obs.test

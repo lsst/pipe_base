@@ -21,8 +21,6 @@
 #
 import contextlib
 
-from builtins import object
-
 import lsstDebug
 from lsst.pex.config import ConfigurableField
 from lsst.log import Log

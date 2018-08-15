@@ -24,9 +24,6 @@ import traceback
 import functools
 import contextlib
 
-from builtins import str
-from builtins import object
-
 import lsst.utils
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
