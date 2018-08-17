@@ -40,7 +40,7 @@ from collections import namedtuple
 from .expr_parser.parserYacc import ParserYacc, ParserYaccError
 from .graph import QuantumGraphNodes, QuantumGraph
 import lsst.log as lsstLog
-from lsst.daf.butler import DatasetRef, Quantum
+from lsst.daf.butler import Quantum
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -94,6 +94,7 @@ class GraphBuilder(object):
     def __init__(self, taskFactory, registry):
         self.taskFactory = taskFactory
         self.registry = registry
+        self.dataUnits = registry._schema.dataUnits
 
     @staticmethod
     def _parseUserQuery(userQuery):
@@ -240,8 +241,7 @@ class GraphBuilder(object):
         """
         parsedQuery = self._parseUserQuery(userQuery or "")
         expr = None if parsedQuery is None else str(parsedQuery)
-        header, rows = self.registry.selectDataUnits([collection], expr, inputs, outputs)
-        _LOG.debug("header: %s", header)
+        rows = self.registry.selectDataUnits([collection], expr, inputs, outputs)
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass
@@ -250,40 +250,39 @@ class GraphBuilder(object):
             _LOG.debug("row: %s", row)
             unitVerse.append(row)
 
-        def _unitColumns(units):
-            """Returns indices of columns (in header) corresponding to a set of `units`"""
-            return [col for col, (unit, link) in enumerate(header) if unit in units]
-
         # Next step is to group by task quantum units
         qgraph = QuantumGraph()
         for taskDss in taskDatasets:
             taskQuantaInputs = {}    # key is the quantum dataId (as tuple)
             taskQuantaOutputs = {}   # key is the quantum dataId (as tuple)
-            qunits = taskDss.taskDef.config.quantum.units
-            qcolumns = _unitColumns(qunits)
-            _LOG.debug("qunits: %s -> %s", qunits, qcolumns)
+            qlinks = []
+            for dataUnitName in taskDss.taskDef.config.quantum.units:
+                dataUnit = self.dataUnits[dataUnitName]
+                qlinks += dataUnit.link
+            _LOG.debug("task %s qunits: %s", taskDss.taskDef.label, qlinks)
 
             # some rows will be non-unique for subset of units, create
             # temporary structure to remove duplicates
             for row in unitVerse:
-                qkey = tuple((header[col][1], row[col]) for col in qcolumns)
+                qkey = tuple((col, row.dataId[col]) for col in qlinks)
                 _LOG.debug("qkey: %s", qkey)
+
+                def _dataRefKey(dataRef):
+                    return tuple(sorted(dataRef.dataId.items()))
 
                 qinputs = taskQuantaInputs.setdefault(qkey, {})
                 for dsType in taskDss.inputs:
-                    dataIds = qinputs.setdefault(dsType, set())
-                    ucolumns = _unitColumns(dsType.dataUnits)
-                    dataId = tuple((header[col][1], row[col]) for col in ucolumns)
-                    dataIds.add(dataId)
-                    _LOG.debug("add input dataId: %s %s", dsType.name, dataId)
+                    dataRefs = qinputs.setdefault(dsType, {})
+                    dataRef = row.datasetRefs[dsType]
+                    dataRefs[_dataRefKey(dataRef)] = dataRef
+                    _LOG.debug("add input dataRef: %s %s", dsType.name, dataRef)
 
                 qoutputs = taskQuantaOutputs.setdefault(qkey, {})
                 for dsType in taskDss.outputs:
-                    dataIds = qoutputs.setdefault(dsType, set())
-                    ucolumns = _unitColumns(dsType.dataUnits)
-                    dataId = tuple((header[col][1], row[col]) for col in ucolumns)
-                    dataIds.add(dataId)
-                    _LOG.debug("add output dataId: %s %s", dsType.name, dataId)
+                    dataRefs = qoutputs.setdefault(dsType, {})
+                    dataRef = row.datasetRefs[dsType]
+                    dataRefs[_dataRefKey(dataRef)] = dataRef
+                    _LOG.debug("add output dataRef: %s %s", dsType.name, dataRef)
 
             # all nodes for this task
             quanta = []
@@ -291,14 +290,12 @@ class GraphBuilder(object):
                 # taskQuantaInputs and taskQuantaOutputs have the same keys
                 _LOG.debug("make quantum for qkey: %s", qkey)
                 quantum = Quantum(run=None, task=None)
-                for dsType, dataIds in taskQuantaInputs[qkey].items():
-                    for dataId in dataIds:
-                        ref = DatasetRef(dsType, dict(dataId))
+                for dsType, dataRefs in taskQuantaInputs[qkey].items():
+                    for ref in dataRefs.values():
                         quantum.addPredictedInput(ref)
                         _LOG.debug("add input: %s", ref)
-                for dsType, dataIds in taskQuantaOutputs[qkey].items():
-                    for dataId in dataIds:
-                        ref = DatasetRef(dsType, dict(dataId))
+                for dsType, dataRefs in taskQuantaOutputs[qkey].items():
+                    for ref in dataRefs.values():
                         quantum.addOutput(ref)
                         _LOG.debug("add output: %s", ref)
                 quanta.append(quantum)
