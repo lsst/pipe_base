@@ -140,15 +140,17 @@ class GraphBuilder(object):
             taskDef.taskName = tName
         return taskDef
 
-    def makeGraph(self, pipeline, collection, userQuery):
+    def makeGraph(self, pipeline, inputCollections, outputCollection, userQuery):
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
         pipeline : :py:class:`Pipeline`
             Pipeline definition, task names/classes and their configs.
-        collection : `str`
-            Input collection name.
+        inputCollections : `list` of `str`
+            Input collection names.
+        outputCollection : `str`
+            Output collection name.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
@@ -181,7 +183,8 @@ class GraphBuilder(object):
         inputs, outputs = self._makeFullIODatasetTypes(taskDatasets)
 
         # make a graph
-        return self._makeGraph(taskDatasets, inputs, outputs, collection, userQuery)
+        return self._makeGraph(taskDatasets, inputs, outputs,
+                               inputCollections, outputCollection, userQuery)
 
     def _makeFullIODatasetTypes(self, taskDatasets):
         """Returns full set of input and output dataset types for all tasks.
@@ -218,7 +221,7 @@ class GraphBuilder(object):
         outputs = set(allDatasetTypes[name] for name in outputs)
         return (inputs, outputs)
 
-    def _makeGraph(self, taskDatasets, inputs, outputs, collection, userQuery):
+    def _makeGraph(self, taskDatasets, inputs, outputs, inputCollections, outputCollection, userQuery):
         """Make QuantumGraph instance.
 
         Parameters
@@ -229,8 +232,10 @@ class GraphBuilder(object):
             Datasets which should already exist in input repository
         outputs : `set` of `DatasetType`
             Datasets which will be created by tasks
-        collection : `str`
-            Input collection name.
+        inputCollections : `list` of `str`
+            Input collection names.
+        outputCollection : `str`
+            Output collection name.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
@@ -241,7 +246,7 @@ class GraphBuilder(object):
         """
         parsedQuery = self._parseUserQuery(userQuery or "")
         expr = None if parsedQuery is None else str(parsedQuery)
-        rows = self.registry.selectDataUnits([collection], expr, inputs, outputs)
+        rows = self.registry.selectDataUnits(inputCollections, outputCollection, expr, inputs, outputs)
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass

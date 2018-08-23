@@ -172,7 +172,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         pipeline = self._makePipeline()
         collection = ""
         userQuery = None
-        graph = gbuilder.makeGraph(pipeline, collection, userQuery)
+        graph = gbuilder.makeGraph(pipeline, [collection], collection, userQuery)
 
         self.assertEqual(len(graph), 2)
         taskDef = graph[0].taskDef
@@ -205,7 +205,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         pipeline = self._makePipeline()
         collection = ""
         userQuery = "1 = 1"
-        graph = gbuilder.makeGraph(pipeline, collection, userQuery)
+        graph = gbuilder.makeGraph(pipeline, [collection], collection, userQuery)
 
         self.assertEqual(len(graph), 2)
         taskDef = graph[0].taskDef
