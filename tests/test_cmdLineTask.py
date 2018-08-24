@@ -199,8 +199,8 @@ class CmdLineTaskTestCase(unittest.TestCase):
 
 class EaxmpleMultipleIdTaskRunner(pipeBase.TaskRunner):
     """TaskRunner to get multiple identifiers down into a Task"""
-    @staticmethod
-    def getTargetList(parsedCmd):
+    @classmethod
+    def getTargetList(cls, parsedCmd):
         """We want our Task to process one dataRef from each identifier at a time"""
         return list(zip(parsedCmd.one.refList, parsedCmd.two.refList))
 

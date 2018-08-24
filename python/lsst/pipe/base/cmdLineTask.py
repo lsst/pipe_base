@@ -229,8 +229,8 @@ class TaskRunner:
 
         return resultList
 
-    @staticmethod
-    def getTargetList(parsedCmd, **kwargs):
+    @classmethod
+    def getTargetList(cls, parsedCmd, **kwargs):
         """Get a list of (dataRef, kwargs) for `TaskRunner.__call__`.
 
         Parameters
