@@ -23,9 +23,6 @@
 Module defining GraphBuilder class and related methods.
 """
 
-from __future__ import print_function
-from builtins import object
-
 __all__ = ['GraphBuilder']
 
 # -------------------------------
@@ -33,6 +30,7 @@ __all__ = ['GraphBuilder']
 # -------------------------------
 import copy
 from collections import namedtuple
+from itertools import chain
 
 # -----------------------------
 #  Imports for other modules --
@@ -73,6 +71,16 @@ class UserExpressionError(GraphBuilderError):
         GraphBuilderError.__init__(self, msg)
 
 
+class OutputExistsError(GraphBuilderError):
+    """Exception generated when output datasets already exist.
+    """
+
+    def __init__(self, taskName, refs):
+        refs = ', '.join(str(ref) for ref in refs)
+        msg = "Output datasets already exist for task {}: {}".format(taskName, refs)
+        GraphBuilderError.__init__(self, msg)
+
+
 # ------------------------
 #  Exported definitions --
 # ------------------------
@@ -89,12 +97,16 @@ class GraphBuilder(object):
         Factory object used to load/instantiate PipelineTasks
     registry : :py:class:`daf.butler.Registry`
         Data butler instance.
+    skipExisting : `bool`, optional
+        If ``True`` (default) then Quantum is not created if all its outputs
+        already exist, otherwise exception is raised.
     """
 
-    def __init__(self, taskFactory, registry):
+    def __init__(self, taskFactory, registry, skipExisting=True):
         self.taskFactory = taskFactory
         self.registry = registry
         self.dataUnits = registry._schema.dataUnits
+        self.skipExisting = skipExisting
 
     @staticmethod
     def _parseUserQuery(userQuery):
@@ -159,7 +171,9 @@ class GraphBuilder(object):
 
         Raises
         ------
-        Exceptions will be raised on errors.
+        `UserExpressionError` is raised when user expression cannot be parsed.
+        `OutputExistsError` is raised when output datasets already exist.
+        Other exceptions may be raised by underlying registry classes.
         """
 
         # make sure all task classes are loaded
@@ -291,14 +305,27 @@ class GraphBuilder(object):
                 # taskQuantaInputs and taskQuantaOutputs have the same keys
                 _LOG.debug("make quantum for qkey: %s", qkey)
                 quantum = Quantum(run=None, task=None)
-                for dsType, dataRefs in taskQuantaInputs[qkey].items():
+
+                # add all outputs, but check first that outputs don't exist
+                outputs = list(chain.from_iterable(dataRefs.values()
+                                                   for dataRefs in taskQuantaOutputs[qkey].values()))
+                for ref in outputs:
+                    _LOG.debug("add output: %s", ref)
+                if self.skipExisting and all(ref.id is not None for ref in outputs):
+                    _LOG.debug("all output dataRefs already exist, skip quantum")
+                    continue
+                if any(ref.id is not None for ref in outputs):
+                    # some outputs exist, can't override them
+                    raise OutputExistsError(taskDss.taskDef.taskName, outputs)
+                for ref in outputs:
+                    quantum.addOutput(ref)
+
+                # add all inputs
+                for dataRefs in taskQuantaInputs[qkey].values():
                     for ref in dataRefs.values():
                         quantum.addPredictedInput(ref)
                         _LOG.debug("add input: %s", ref)
-                for dsType, dataRefs in taskQuantaOutputs[qkey].items():
-                    for ref in dataRefs.values():
-                        quantum.addOutput(ref)
-                        _LOG.debug("add output: %s", ref)
+
                 quanta.append(quantum)
 
             qgraph.append(QuantumGraphNodes(taskDss.taskDef, quanta))
