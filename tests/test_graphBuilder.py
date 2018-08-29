@@ -29,7 +29,7 @@ import unittest
 
 import lsst.utils.tests
 from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
-                             PreFlightCollectionsDef,
+                             DatasetOriginInfoDef,
                              StorageClass, StorageClassFactory)
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField)
@@ -173,7 +173,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         pipeline = self._makePipeline()
         collection = ""
         userQuery = None
-        coll = PreFlightCollectionsDef([collection], collection)
+        coll = DatasetOriginInfoDef([collection], collection)
         graph = gbuilder.makeGraph(pipeline, coll, userQuery)
 
         self.assertEqual(len(graph), 2)
@@ -207,7 +207,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         pipeline = self._makePipeline()
         collection = ""
         userQuery = "1 = 1"
-        coll = PreFlightCollectionsDef([collection], collection)
+        coll = DatasetOriginInfoDef([collection], collection)
         graph = gbuilder.makeGraph(pipeline, coll, userQuery)
 
         self.assertEqual(len(graph), 2)

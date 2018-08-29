@@ -152,14 +152,14 @@ class GraphBuilder(object):
             taskDef.taskName = tName
         return taskDef
 
-    def makeGraph(self, pipeline, collections, userQuery):
+    def makeGraph(self, pipeline, originInfo, userQuery):
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
         pipeline : :py:class:`Pipeline`
             Pipeline definition, task names/classes and their configs.
-        collections : `PreFlightCollections`
+        originInfo : `DatasetOriginInfo`
             Object which provides names of the input/output collections.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
@@ -196,7 +196,7 @@ class GraphBuilder(object):
 
         # make a graph
         return self._makeGraph(taskDatasets, inputs, outputs,
-                               collections, userQuery)
+                               originInfo, userQuery)
 
     def _makeFullIODatasetTypes(self, taskDatasets):
         """Returns full set of input and output dataset types for all tasks.
@@ -233,7 +233,7 @@ class GraphBuilder(object):
         outputs = set(allDatasetTypes[name] for name in outputs)
         return (inputs, outputs)
 
-    def _makeGraph(self, taskDatasets, inputs, outputs, collections, userQuery):
+    def _makeGraph(self, taskDatasets, inputs, outputs, originInfo, userQuery):
         """Make QuantumGraph instance.
 
         Parameters
@@ -244,7 +244,7 @@ class GraphBuilder(object):
             Datasets which should already exist in input repository
         outputs : `set` of `DatasetType`
             Datasets which will be created by tasks
-        collections : `PreFlightCollections`
+        originInfo : `DatasetOriginInfo`
             Object which provides names of the input/output collections.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
@@ -256,7 +256,7 @@ class GraphBuilder(object):
         """
         parsedQuery = self._parseUserQuery(userQuery or "")
         expr = None if parsedQuery is None else str(parsedQuery)
-        rows = self.registry.selectDataUnits(collections, expr, inputs, outputs)
+        rows = self.registry.selectDataUnits(originInfo, expr, inputs, outputs)
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass
