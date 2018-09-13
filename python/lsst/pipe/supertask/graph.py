@@ -91,3 +91,18 @@ class QuantumGraph(list):
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
+
+    def quanta(self):
+        """Iterator over quanta in a graph.
+
+        Yields
+        ------
+        taskDef : `TaskDef`
+            Task definition for a Quantum.
+        quantum : `Quantum`
+            Single quantum.
+        """
+        for taskNodes in self:
+            taskDef = taskNodes.taskDef
+            for quantum in taskNodes.quanta:
+                yield taskDef, quantum
