@@ -134,9 +134,11 @@ class PipelineBuilder(object):
 
                 self._configOverrideFile(pipeline, action.label, action.value)
 
-        # re-order pipeline if requested, this also checks for possible errors
+        # conditionally re-order pipeline if requested, but unconditionally
+        # check for possible errors
+        orderedPipeline = pipeTools.orderPipeline(pipeline, self.taskFactory)
         if args.order_pipeline:
-            pipeline = pipeTools.orderPipeline(pipeline, self.taskFactory)
+            pipeline = orderedPipeline
 
         return pipeline
 

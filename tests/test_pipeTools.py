@@ -271,6 +271,11 @@ class PipelineToolsTestCase(unittest.TestCase):
             pipeline = pipeTools.orderPipeline(pipeline)
 
         # cycle in a graph should throw ValueError
+        pipeline = _makePipeline([("A", ("A", "B"), "task1")])
+        with self.assertRaises(pipeTools.PipelineDataCycleError):
+            pipeline = pipeTools.orderPipeline(pipeline)
+
+        # another kind of cycle in a graph
         pipeline = _makePipeline([("A", "B", "task1"),
                                   ("B", "C", "task2"),
                                   ("C", "D", "task3"),

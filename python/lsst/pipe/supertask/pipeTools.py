@@ -221,6 +221,13 @@ def orderPipeline(pipeline, taskFactory=None):
 
     # if there is something left it means cycles
     if inputs:
-        raise PipelineDataCycleError("Pipeline has data cycles")
+        # format it in usable way
+        loops = []
+        for idx, inputNames in inputs.items():
+            taskName = pipeline[idx].label
+            outputNames = outputs[idx]
+            edge = "   {} -> {} -> {}".format(inputNames, taskName, outputNames)
+            loops.append(edge)
+        raise PipelineDataCycleError("Pipeline has data cycles:\n" + "\n".join(loops))
 
     return Pipeline(pipeline[idx] for idx in result)
