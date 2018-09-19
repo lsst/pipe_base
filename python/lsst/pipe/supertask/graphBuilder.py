@@ -105,7 +105,7 @@ class GraphBuilder(object):
     def __init__(self, taskFactory, registry, skipExisting=True):
         self.taskFactory = taskFactory
         self.registry = registry
-        self.dataUnits = registry._schema.dataUnits
+        self.dataUnits = registry._dataUnits
         self.skipExisting = skipExisting
 
     @staticmethod
