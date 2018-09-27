@@ -96,8 +96,8 @@ class PipelineTask(Task):
 
     canMultiprocess = True
 
-    def __init__(self, config=None, log=None, initInputs=None):
-        super().__init__(config=config, log=log,)
+    def __init__(self, *, config=None, log=None, initInputs=None, **kwargs):
+        super().__init__(config=config, log=log, **kwargs)
 
     def getInitOutputDatasets(self):
         """Return persistable outputs that are available immediately after
