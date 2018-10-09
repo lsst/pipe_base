@@ -299,6 +299,15 @@ class GraphBuilder(object):
                     dataRefs[_dataRefKey(dataRef)] = dataRef
                     _LOG.debug("add output dataRef: %s %s", dsType.name, dataRef)
 
+            # pre-flight does not fill dataset components, and graph users
+            # may need to know that, re-retrieve all input datasets to have
+            # their components properly filled.
+            for qinputs in taskQuantaInputs.values():
+                for dataRefs in qinputs.values():
+                    for key in dataRefs.keys():
+                        if dataRefs[key].id is not None:
+                            dataRefs[key] = self.registry.getDataset(dataRefs[key].id)
+
             # all nodes for this task
             quanta = []
             for qkey in taskQuantaInputs:
