@@ -31,6 +31,7 @@ __all__ = ['PipelineBuilder']
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+import logging
 import os
 import pickle
 
@@ -40,12 +41,13 @@ import pickle
 from .configOverrides import ConfigOverrides
 from .pipeline import Pipeline, TaskDef
 from . import pipeTools
-import lsst.log as lsstLog
 import lsst.utils
 
 # ----------------------------------
 #  Local non-exported definitions --
 # ----------------------------------
+
+_LOG = logging.getLogger(__name__.partition(".")[2])
 
 # ------------------------
 #  Exported definitions --
@@ -186,10 +188,10 @@ class PipelineBuilder(object):
                 os.path.join(obsPkgDir, "config", instrument, fileName),
             ):
                 if os.path.exists(filePath):
-                    lsstLog.info("Loading config overrride file %r", filePath)
+                    _LOG.info("Loading config overrride file %r", filePath)
                     overrides.addFileOverride(filePath)
                 else:
-                    lsstLog.debug("Config override file does not exist: %r", filePath)
+                    _LOG.debug("Config override file does not exist: %r", filePath)
 
             overrides.applyTo(config)
 

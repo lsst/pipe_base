@@ -31,20 +31,20 @@ __all__ = ['GraphBuilder']
 import copy
 from collections import namedtuple
 from itertools import chain
+import logging
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
 from .expr_parser.parserYacc import ParserYacc, ParserYaccError
 from .graph import QuantumGraphNodes, QuantumGraph
-import lsst.log as lsstLog
 from lsst.daf.butler import Quantum
 
 # ----------------------------------
 #  Local non-exported definitions --
 # ----------------------------------
 
-_LOG = lsstLog.Log.getLogger(__name__)
+_LOG = logging.getLogger(__name__.partition(".")[2])
 
 # Tuple containing TaskDef, its input dataset types and output dataset types
 #
