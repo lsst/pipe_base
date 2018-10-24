@@ -53,7 +53,7 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
         try:
             # Use LongLong explicitly here in case an early value in the sequence is int-sized
             obj.metadata.addLongLong(name, value)
-        except TypeError as e:
+        except TypeError:
             obj.metadata.add(name, value)
         strList.append("%s=%s" % (name, value))
     log(obj.log.getName(), logLevel, "; ".join(strList))
