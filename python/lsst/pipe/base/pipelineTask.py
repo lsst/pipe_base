@@ -22,7 +22,7 @@
 """This module defines PipelineTask class and related methods.
 """
 
-__all__ = ["PipelineTask"]  # Classes in this module
+__all__ = ["DatasetTypeDescriptor", "PipelineTask"]  # Classes in this module
 
 from lsst.daf.butler import DatasetType, StorageClassFactory
 from .config import (InputDatasetConfig, OutputDatasetConfig,
@@ -44,6 +44,62 @@ class ScalarError(TypeError):
     def __init__(self, key, numDataIds):
         super().__init__(("Expected scalar for output dataset field {}, "
                           "received {} DataIds").format(key, numDataIds))
+
+
+class DatasetTypeDescriptor:
+    """Describe DatasetType and its options for PipelineTask.
+
+    This class contains DatasetType and all relevant options that are used by
+    PipelineTask. Typically this is derived from configuration classes but
+    sub-classes of PipelineTask can also define additional DatasetTypes that
+    are not part of the task configuration.
+
+    Parameters
+    ----------
+    datasetType : `DatasetType`
+    scalar : `bool`
+        `True` if this is a scalar dataset.
+    """
+
+    def __init__(self, datasetType, scalar):
+        self._datasetType = datasetType
+        self._scalar = scalar
+
+    @classmethod
+    def fromConfig(cls, datasetConfig):
+        """Make DatasetTypeDescriptor instance from configuration object.
+
+        Parameters
+        ----------
+        datasetConfig : `lsst.pex.config.Config`
+            Instance of one the `InputDatasetConfig`, `OutputDatasetConfig`,
+            `InitInputDatasetConfig`, or `InitOutputDatasetConfig` types
+
+        Returns
+        -------
+        descriptor : `DatasetTypeDescriptor`
+        """
+        # map storage class name to storage class
+        storageClass = StorageClassFactory().getStorageClass(datasetConfig.storageClass)
+
+        datasetType = DatasetType(name=datasetConfig.name,
+                                  dataUnits=datasetConfig.units,
+                                  storageClass=storageClass)
+        # Use scalar=True for Init dataset types
+        scalar = getattr(datasetConfig, 'scalar', True)
+        return cls(datasetType=datasetType, scalar=scalar)
+
+    @property
+    def datasetType(self):
+        """`DatasetType` instance.
+        """
+        return self._datasetType
+
+    @property
+    def scalar(self):
+        """`True` if this is a scalar dataset.
+        """
+        return self._scalar
 
 
 class PipelineTask(Task):
@@ -123,12 +179,12 @@ class PipelineTask(Task):
 
     @classmethod
     def getInputDatasetTypes(cls, config):
-        """Return input dataset types for this task.
+        """Return input dataset type descriptors for this task.
 
         Default implementation finds all fields of type `InputDatasetConfig`
         in configuration (non-recursively) and uses them for constructing
-        `DatasetType` instances. The keys of these fields are used as keys
-        in returned dictionary. Subclasses can override this behavior.
+        `DatasetTypeDescriptor` instances. The names of these fields are used
+        as keys in returned dictionary. Subclasses can override this behavior.
 
         Parameters
         ----------
@@ -139,19 +195,19 @@ class PipelineTask(Task):
         Returns
         -------
         Dictionary where key is the name (arbitrary) of the input dataset
-        and value is the `butler.DatasetType` instance. Default
+        and value is the `DatasetTypeDescriptor` instance. Default
         implementation uses configuration field name as dictionary key.
         """
         return cls.getDatasetTypes(config, InputDatasetConfig)
 
     @classmethod
     def getOutputDatasetTypes(cls, config):
-        """Return output dataset types for this task.
+        """Return output dataset type descriptors for this task.
 
         Default implementation finds all fields of type `OutputDatasetConfig`
         in configuration (non-recursively) and uses them for constructing
-        `DatasetType` instances. The keys of these fields are used as keys
-        in returned dictionary. Subclasses can override this behavior.
+        `DatasetTypeDescriptor` instances. The keys of these fields are used
+        as keys in returned dictionary. Subclasses can override this behavior.
 
         Parameters
         ----------
@@ -162,14 +218,14 @@ class PipelineTask(Task):
         Returns
         -------
         Dictionary where key is the name (arbitrary) of the output dataset
-        and value is the `butler.DatasetType` instance. Default
+        and value is the `DatasetTypeDescriptor` instance. Default
         implementation uses configuration field name as dictionary key.
         """
         return cls.getDatasetTypes(config, OutputDatasetConfig)
 
     @classmethod
     def getInitInputDatasetTypes(cls, config):
-        """Return dataset types that can be used to retrieve the
+        """Return dataset type descriptors that can be used to retrieve the
         ``initInputs`` constructor argument.
 
         Datasets used in initialization may not be associated with any
@@ -177,9 +233,9 @@ class PipelineTask(Task):
 
         Default implementation finds all fields of type
         `InitInputInputDatasetConfig` in configuration (non-recursively) and
-        uses them for constructing `DatasetType` instances. The keys of these
-        fields are used as keys in returned dictionary. Subclasses can
-        override this behavior.
+        uses them for constructing `DatasetTypeDescriptor` instances. The
+        names of these fields are used as keys in returned dictionary.
+        Subclasses can override this behavior.
 
         Parameters
         ----------
@@ -190,7 +246,7 @@ class PipelineTask(Task):
         Returns
         -------
         Dictionary where key is the name (arbitrary) of the input dataset
-        and value is the `butler.DatasetType` instance. Default
+        and value is the `DatasetTypeDescriptor` instance. Default
         implementation uses configuration field name as dictionary key.
 
         When the task requires no initialization inputs, should return an
@@ -200,16 +256,16 @@ class PipelineTask(Task):
 
     @classmethod
     def getInitOutputDatasetTypes(cls, config):
-        """Return dataset types that can be used to write the objects
-        returned by `getOutputDatasets`.
+        """Return dataset type descriptors that can be used to write the
+        objects returned by `getOutputDatasets`.
 
         Datasets used in initialization may not be associated with any
         DataUnits (i.e. their data IDs must be empty dictionaries).
 
         Default implementation finds all fields of type
         `InitOutputDatasetConfig` in configuration (non-recursively) and uses
-        them for constructing `DatasetType` instances. The keys of these
-        fields are used as keys in returned dictionary. Subclasses can
+        them for constructing `DatasetTypeDescriptor` instances. The names of
+        these fields are used as keys in returned dictionary. Subclasses can
         override this behavior.
 
         Parameters
@@ -221,7 +277,7 @@ class PipelineTask(Task):
         Returns
         -------
         Dictionary where key is the name (arbitrary) of the output dataset
-        and value is the `butler.DatasetType` instance. Default
+        and value is the `DatasetTypeDescriptor` instance. Default
         implementation uses configuration field name as dictionary key.
 
         When the task produces no initialization outputs, should return an
@@ -231,11 +287,11 @@ class PipelineTask(Task):
 
     @classmethod
     def getDatasetTypes(cls, config, configClass):
-        """Return dataset types defined in task configuration .
+        """Return dataset type descriptors defined in task configuration.
 
         This method can be used by other methods that need to extract dataset
-        types from task configuration (e.g. :py:method:`getInputDatasetTypes`
-        or sub-class methods).
+        types from task configuration (e.g. `getInputDatasetTypes` or
+        sub-class methods).
 
         Parameters
         ----------
@@ -248,16 +304,15 @@ class PipelineTask(Task):
         Returns
         -------
         Dictionary where key is the name (arbitrary) of the output dataset
-        and value is the `butler.DatasetType` instance. Default
+        and value is the `DatasetTypeDescriptor` instance. Default
         implementation uses configuration field name as dictionary key.
-
-        When the task produces no initialization outputs, should return an
-        empty dict.
+        Returns empty dict if configuration has no fields with the specified
+        ``configClass``.
         """
         dsTypes = {}
         for key, value in config.items():
             if isinstance(value, configClass):
-                dsTypes[key] = cls.makeDatasetType(value)
+                dsTypes[key] = DatasetTypeDescriptor.fromConfig(value)
         return dsTypes
 
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds):
@@ -386,38 +441,65 @@ class PipelineTask(Task):
         multiple DataIds in `quantum`. Any exceptions that happen in data
         butler or in `adaptArgsAndRun` method.
         """
-        # get all data from butler
-        inputDataIds = {}
-        inputs = {}
-        for key, value in self.config.items():
-            if isinstance(value, InputDatasetConfig):
-                dataRefs = quantum.predictedInputs[value.name]
-                dataIds = [dataRef.dataId for dataRef in dataRefs]
-                data = [butler.get(dataRef) for dataRef in dataRefs]
-                if value.scalar:
+
+        def makeDataRefs(descriptors, refMap):
+            """Generate map of DatasetRefs and DataIds.
+
+            Given a map of DatasetTypeDescriptor and a map of Quantum
+            DatasetRefs makes maps of DataIds and and DatasetRefs.
+            For scalar dataset types unpacks DatasetRefs and DataIds.
+
+            Parameters
+            ----------
+            descriptors : `dict`
+                Map of (dataset key, DatasetTypeDescriptor).
+            refMap : `dict`
+                Map of (dataset type name, DatasetRefs).
+
+            Returns
+            -------
+            dataIds : `dict`
+                Map of (dataset key, DataIds)
+            dataRefs : `dict`
+                Map of (dataset key, DatasetRefs)
+
+            Raises
+            ------
+            ScalarError
+                Raised if dataset type is configured as scalar but more than
+                one DatasetRef exists for it.
+            """
+            dataIds = {}
+            dataRefs = {}
+            for key, descriptor in descriptors.items():
+                keyDataRefs = refMap[descriptor.datasetType.name]
+                keyDataIds = [dataRef.dataId for dataRef in keyDataRefs]
+                if descriptor.scalar:
                     # unpack single-item lists
-                    if len(dataRefs) != 1:
-                        raise ScalarError(key, len(dataRefs))
-                    data = data[0]
-                    dataIds = dataIds[0]
-                inputDataIds[key] = dataIds
-                inputs[key] = data
+                    if len(keyDataRefs) != 1:
+                        raise ScalarError(key, len(keyDataRefs))
+                    keyDataRefs = keyDataRefs[0]
+                    keyDataIds = keyDataIds[0]
+                dataIds[key] = keyDataIds
+                dataRefs[key] = keyDataRefs
+            return dataIds, dataRefs
+
+        # lists of DataRefs/DataIds for input datasets
+        descriptors = self.getInputDatasetTypes(self.config)
+        inputDataIds, inputDataRefs = makeDataRefs(descriptors, quantum.predictedInputs)
+
+        # get all data from butler
+        inputs = {}
+        for key, dataRefs in inputDataRefs.items():
+            if isinstance(dataRefs, list):
+                inputs[key] = [butler.get(dataRef) for dataRef in dataRefs]
+            else:
+                inputs[key] = butler.get(dataRefs)
+        del inputDataRefs
 
         # lists of DataRefs/DataIds for output datasets
-        outputDataRefs = {}
-        outputDataIds = {}
-        for key, value in self.config.items():
-            if isinstance(value, OutputDatasetConfig):
-                dataRefs = quantum.outputs[value.name]
-                dataIds = [dataRef.dataId for dataRef in dataRefs]
-                if value.scalar:
-                    # unpack single-item lists
-                    if len(dataRefs) != 1:
-                        raise ScalarError(key, len(dataRefs))
-                    dataRefs = dataRefs[0]
-                    dataIds = dataIds[0]
-                outputDataRefs[key] = dataRefs
-                outputDataIds[key] = dataIds
+        descriptors = self.getOutputDatasetTypes(self.config)
+        outputDataIds, outputDataRefs = makeDataRefs(descriptors, quantum.outputs)
 
         # call run method with keyword arguments
         struct = self.adaptArgsAndRun(inputs, inputDataIds, outputDataIds)
@@ -447,38 +529,17 @@ class PipelineTask(Task):
             Data butler instance.
         """
         structDict = struct.getDict()
-        for key, value in self.config.items():
-            if isinstance(value, OutputDatasetConfig):
-                dataList = structDict[key]
-                dataRefs = outputDataRefs[key]
-                if not isinstance(dataRefs, list):
-                    # scalar outputs, make them lists again
-                    dataRefs = [dataRefs]
-                    dataList = [dataList]
-                # TODO: check that data objects and data refs are aligned
-                for dataRef, data in zip(dataRefs, dataList):
-                    butler.put(data, dataRef.datasetType.name, dataRef.dataId)
-
-    @classmethod
-    def makeDatasetType(cls, dsConfig):
-        """Create new instance of the `DatasetType` from task config.
-
-        Parameters
-        ----------
-        dsConfig : `pexConfig.Config`
-            Instance of `InputDatasetConfig`, `OutputDatasetConfig`,
-            `InitInputDatasetConfig`, or `InitOutputDatasetConfig`.
-
-        Returns
-        -------
-        `butler.DatasetType` instance.
-        """
-        # map storage class name to storage class
-        storageClass = StorageClassFactory().getStorageClass(dsConfig.storageClass)
-
-        return DatasetType(name=dsConfig.name,
-                           dataUnits=dsConfig.units,
-                           storageClass=storageClass)
+        descriptors = self.getOutputDatasetTypes(self.config)
+        for key in descriptors.keys():
+            dataList = structDict[key]
+            dataRefs = outputDataRefs[key]
+            if not isinstance(dataRefs, list):
+                # scalar outputs, make them lists again
+                dataRefs = [dataRefs]
+                dataList = [dataList]
+            # TODO: check that data objects and data refs are aligned
+            for dataRef, data in zip(dataRefs, dataList):
+                butler.put(data, dataRef.datasetType.name, dataRef.dataId)
 
     def getResourceConfig(self):
         """Return resource configuration for this task.

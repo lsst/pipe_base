@@ -130,37 +130,42 @@ class TaskTestCase(unittest.TestCase):
         """
         config = ConfigWithDatasets()
 
-        dsTypes = pipeBase.PipelineTask.getInputDatasetTypes(config)
-        self.assertCountEqual(dsTypes.keys(), ["input1", "input2"])
-        dsType = dsTypes["input1"]
-        self.assertEqual(dsType.name, config.input1.name)
-        self.assertCountEqual(dsType.dataUnits, config.input1.units)
-        self.assertEqual(dsType.storageClass.name, config.input1.storageClass)
-        dsType = dsTypes["input2"]
-        self.assertEqual(dsType.name, config.input2.name)
-        self.assertCountEqual(dsType.dataUnits, config.input2.units)
-        self.assertEqual(dsType.storageClass.name, config.input2.storageClass)
+        descriptors = pipeBase.PipelineTask.getInputDatasetTypes(config)
+        self.assertCountEqual(descriptors.keys(), ["input1", "input2"])
+        descriptor = descriptors["input1"]
+        self.assertEqual(descriptor.datasetType.name, config.input1.name)
+        self.assertCountEqual(descriptor.datasetType.dataUnits, config.input1.units)
+        self.assertEqual(descriptor.datasetType.storageClass.name, config.input1.storageClass)
+        self.assertFalse(descriptor.scalar)
+        descriptor = descriptors["input2"]
+        self.assertEqual(descriptor.datasetType.name, config.input2.name)
+        self.assertCountEqual(descriptor.datasetType.dataUnits, config.input2.units)
+        self.assertEqual(descriptor.datasetType.storageClass.name, config.input2.storageClass)
+        self.assertTrue(descriptor.scalar)
 
-        dsTypes = pipeBase.PipelineTask.getOutputDatasetTypes(config)
-        self.assertCountEqual(dsTypes.keys(), ["output"])
-        dsType = dsTypes["output"]
-        self.assertEqual(dsType.name, config.output.name)
-        self.assertCountEqual(dsType.dataUnits, config.output.units)
-        self.assertEqual(dsType.storageClass.name, config.output.storageClass)
+        descriptors = pipeBase.PipelineTask.getOutputDatasetTypes(config)
+        self.assertCountEqual(descriptors.keys(), ["output"])
+        descriptor = descriptors["output"]
+        self.assertEqual(descriptor.datasetType.name, config.output.name)
+        self.assertCountEqual(descriptor.datasetType.dataUnits, config.output.units)
+        self.assertEqual(descriptor.datasetType.storageClass.name, config.output.storageClass)
+        self.assertFalse(descriptor.scalar)
 
-        dsTypes = pipeBase.PipelineTask.getInitInputDatasetTypes(config)
-        self.assertCountEqual(dsTypes.keys(), ["initInput"])
-        dsType = dsTypes["initInput"]
-        self.assertEqual(dsType.name, config.initInput.name)
-        self.assertEqual(len(dsType.dataUnits), 0)
-        self.assertEqual(dsType.storageClass.name, config.initInput.storageClass)
+        descriptors = pipeBase.PipelineTask.getInitInputDatasetTypes(config)
+        self.assertCountEqual(descriptors.keys(), ["initInput"])
+        descriptor = descriptors["initInput"]
+        self.assertEqual(descriptor.datasetType.name, config.initInput.name)
+        self.assertEqual(len(descriptor.datasetType.dataUnits), 0)
+        self.assertEqual(descriptor.datasetType.storageClass.name, config.initInput.storageClass)
+        self.assertTrue(descriptor.scalar)
 
-        dsTypes = pipeBase.PipelineTask.getInitOutputDatasetTypes(config)
-        self.assertCountEqual(dsTypes.keys(), ["initOutput"])
-        dsType = dsTypes["initOutput"]
-        self.assertEqual(dsType.name, config.initOutput.name)
-        self.assertEqual(len(dsType.dataUnits), 0)
-        self.assertEqual(dsType.storageClass.name, config.initOutput.storageClass)
+        descriptors = pipeBase.PipelineTask.getInitOutputDatasetTypes(config)
+        self.assertCountEqual(descriptors.keys(), ["initOutput"])
+        descriptor = descriptors["initOutput"]
+        self.assertEqual(descriptor.datasetType.name, config.initOutput.name)
+        self.assertEqual(len(descriptor.datasetType.dataUnits), 0)
+        self.assertEqual(descriptor.datasetType.storageClass.name, config.initOutput.storageClass)
+        self.assertTrue(descriptor.scalar)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

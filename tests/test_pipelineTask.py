@@ -25,8 +25,8 @@
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler import (DatasetRef, Quantum, Run, StorageClass,
-                             StorageClassFactory)
+from lsst.daf.butler import (DatasetRef, DatasetType, Quantum, Run,
+                             StorageClass, StorageClassFactory)
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -66,26 +66,20 @@ class ButlerMock():
 
 class AddConfig(pipeBase.PipelineTaskConfig):
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
-    input = pexConfig.ConfigField(dtype=pipeBase.InputDatasetConfig,
-                                  doc="Input dataset type for this task")
-    output = pexConfig.ConfigField(dtype=pipeBase.OutputDatasetConfig,
-                                   doc="Output dataset type for this task")
+    input = pipeBase.InputDatasetField(name="add_input",
+                                       units=["Camera", "Visit"],
+                                       storageClass="example",
+                                       doc="Input dataset type for this task")
+    output = pipeBase.OutputDatasetField(name="add_output",
+                                         units=["Camera", "Visit"],
+                                         storageClass="example",
+                                         doc="Output dataset type for this task")
 
     def setDefaults(self):
         # set units of a quantum, this task uses per-visit quanta and it
         # expects dataset units to be the same
         self.quantum.units = ["Camera", "Visit"]
         self.quantum.sql = None
-
-        # default config for input dataset type
-        self.input.name = "add_input"
-        self.input.units = ["Camera", "Visit"]
-        self.input.storageClass = "example"
-
-        # default config for output dataset type
-        self.output.name = "add_output"
-        self.output.units = ["Camera", "Visit"]
-        self.output.storageClass = "example"
 
 
 # example task which overrides run() method
@@ -111,6 +105,46 @@ class AddTask2(pipeBase.PipelineTask):
         return pipeBase.Struct(output=output)
 
 
+class DatasetTypeDescriptorTestCase(unittest.TestCase):
+    """A test case for DatasetTypeDescriptor
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        StorageClassFactory().registerStorageClass(StorageClass("example"))
+
+    def testConstructor(self):
+        """Test DatasetTypeDescriptor init
+        """
+        storageClass = StorageClassFactory().getStorageClass("example")
+        datasetType = DatasetType(name="testDataset",
+                                  dataUnits=["UnitA"],
+                                  storageClass=storageClass)
+        descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
+                                                    scalar=False)
+        self.assertIs(descriptor.datasetType, datasetType)
+        self.assertFalse(descriptor.scalar)
+
+        descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
+                                                    scalar=True)
+        self.assertIs(descriptor.datasetType, datasetType)
+        self.assertTrue(descriptor.scalar)
+
+    def testFromConfig(self):
+        """Test DatasetTypeDescriptor.fromConfig()
+        """
+        config = AddConfig()
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
+        self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
+        self.assertEqual(descriptor.datasetType.name, "add_input")
+        self.assertFalse(descriptor.scalar)
+
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
+        self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
+        self.assertEqual(descriptor.datasetType.name, "add_output")
+        self.assertFalse(descriptor.scalar)
+
+
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask
     """
@@ -131,8 +165,10 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         run = Run(collection=1, environment=None, pipeline=None)
 
-        dstype0 = pipeBase.PipelineTask.makeDatasetType(config.input)
-        dstype1 = pipeBase.PipelineTask.makeDatasetType(config.output)
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
+        dstype0 = descriptor.datasetType
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
+        dstype1 = descriptor.datasetType
 
         quanta = []
         for visit in range(100):
@@ -153,7 +189,8 @@ class PipelineTaskTestCase(unittest.TestCase):
         quanta = self._makeQuanta(task.config)
 
         # add input data to butler
-        dstype0 = pipeBase.PipelineTask.makeDatasetType(task.config.input)
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task.config.input)
+        dstype0 = descriptor.datasetType
         for i, quantum in enumerate(quanta):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)
@@ -186,7 +223,8 @@ class PipelineTaskTestCase(unittest.TestCase):
         quanta2 = self._makeQuanta(task2.config)
 
         # add input data to butler
-        dstype0 = pipeBase.PipelineTask.makeDatasetType(task1.config.input)
+        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task1.config.input)
+        dstype0 = descriptor.datasetType
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)
