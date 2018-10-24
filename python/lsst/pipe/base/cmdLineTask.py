@@ -448,7 +448,7 @@ class TaskRunner:
 
 
 class LegacyTaskRunner(TaskRunner):
-    """A `TaskRunner` for `CmdLineTask`\ s which calls the `Task`\ 's `run` method on a `dataRef` rather
+    r"""A `TaskRunner` for `CmdLineTask`\ s which calls the `Task`\ 's `run` method on a `dataRef` rather
     than the `runDataRef` method.
     """
 
@@ -459,7 +459,7 @@ class LegacyTaskRunner(TaskRunner):
 
 
 class ButlerInitializedTaskRunner(TaskRunner):
-    """A `TaskRunner` for `CmdLineTask`\ s that require a ``butler`` keyword argument to be passed to
+    r"""A `TaskRunner` for `CmdLineTask`\ s that require a ``butler`` keyword argument to be passed to
     their constructor.
     """
 

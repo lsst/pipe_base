@@ -44,7 +44,7 @@ class TaskError(Exception):
 
 
 class Task:
-    """Base class for data processing tasks.
+    r"""Base class for data processing tasks.
 
     See :ref:`task-framework-overview` to learn what tasks are, and :ref:`creating-a-task` for more
     information about writing tasks.
