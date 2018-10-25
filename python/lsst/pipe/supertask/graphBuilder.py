@@ -183,10 +183,10 @@ class GraphBuilder(object):
         taskDatasets = []
         for taskDef in taskList:
             taskClass = taskDef.taskClass
-            taskInputs = taskClass.getInputDatasetTypes(taskDef.config)
-            taskInputs = list(taskInputs.values()) if taskInputs else []
-            taskOutputs = taskClass.getOutputDatasetTypes(taskDef.config)
-            taskOutputs = list(taskOutputs.values()) if taskOutputs else []
+            taskInputs = taskClass.getInputDatasetTypes(taskDef.config) or {}
+            taskInputs = [dsTypeDescr.datasetType for dsTypeDescr in taskInputs.values()]
+            taskOutputs = taskClass.getOutputDatasetTypes(taskDef.config) or {}
+            taskOutputs = [dsTypeDescr.datasetType for dsTypeDescr in taskOutputs.values()]
             taskDatasets.append(_TaskDatasetTypes(taskDef=taskDef,
                                                   inputs=taskInputs,
                                                   outputs=taskOutputs))

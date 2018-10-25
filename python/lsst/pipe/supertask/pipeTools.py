@@ -116,7 +116,8 @@ def isPipelineOrdered(pipeline, taskFactory=None):
 
         # get task output DatasetTypes, this can only be done via class method
         outputs = taskDef.taskClass.getOutputDatasetTypes(taskDef.config)
-        for dsType in outputs.values():
+        for dsTypeDescr in outputs.values():
+            dsType = dsTypeDescr.datasetType
             if dsType.name in producerIndex:
                 raise DuplicateOutputError("DatasetType `{}' appears more than "
                                            "once as" " output".format(dsType.name))
@@ -127,7 +128,8 @@ def isPipelineOrdered(pipeline, taskFactory=None):
 
         # get task input DatasetTypes, this can only be done via class method
         inputs = taskDef.taskClass.getInputDatasetTypes(taskDef.config)
-        for dsType in inputs.values():
+        for dsTypeDescr in inputs.values():
+            dsType = dsTypeDescr.datasetType
             # all pre-existing datasets have effective index -1
             prodIdx = producerIndex.get(dsType.name, -1)
             if prodIdx >= idx:
@@ -178,16 +180,17 @@ def orderPipeline(pipeline, taskFactory=None):
 
         # task outputs
         dsMap = taskClass.getOutputDatasetTypes(taskDef.config)
-        for dsType in dsMap.values():
+        for dsTypeDescr in dsMap.values():
+            dsType = dsTypeDescr.datasetType
             if dsType.name in allOutputs:
                 raise DuplicateOutputError("DatasetType `{}' appears more than "
                                            "once as" " output".format(dsType.name))
-        outputs[idx] = set(dsType.name for dsType in dsMap.values())
+        outputs[idx] = set(dsTypeDescr.datasetType.name for dsTypeDescr in dsMap.values())
         allOutputs.update(outputs[idx])
 
         # task inputs
         dsMap = taskClass.getInputDatasetTypes(taskDef.config)
-        inputs[idx] = set(dsType.name for dsType in dsMap.values())
+        inputs[idx] = set(dsTypeDescr.datasetType.name for dsTypeDescr in dsMap.values())
         allInputs.update(inputs[idx])
 
     # for simplicity add pseudo-node which is a producer for all pre-existing

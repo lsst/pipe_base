@@ -28,7 +28,8 @@ import io
 import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
-                            InputDatasetField, OutputDatasetField)
+                            InputDatasetField, OutputDatasetField,
+                            DatasetTypeDescriptor)
 from lsst.pipe.supertask import Pipeline, TaskDef, pipeTools
 from lsst.pipe.supertask.dotTools import pipeline2dot
 import lsst.utils.tests
@@ -40,8 +41,9 @@ DS = namedtuple("DS", "name dataUnits")
 # This method is used by PipelineTask to instanciate DatasetType, normally this
 # should come from some other module but we have not defined that yet, so I
 # stick a trivial (mock) implementation here.
-def makeDatasetType(dsConfig):
-    return DS(name=dsConfig.name, dataUnits=dsConfig.units)
+def makeDatasetTypeDescr(dsConfig):
+    datasetType = DS(name=dsConfig.name, dataUnits=dsConfig.units)
+    return DatasetTypeDescriptor(datasetType, scalar=False)
 
 
 class ExamplePipelineTaskConfig(PipelineTaskConfig):
@@ -96,16 +98,16 @@ class ExamplePipelineTask(PipelineTask):
 
     @classmethod
     def getInputDatasetTypes(cls, config):
-        types = {"input1": makeDatasetType(config.input1)}
+        types = {"input1": makeDatasetTypeDescr(config.input1)}
         if config.input2.name:
-            types["input2"] = makeDatasetType(config.input2)
+            types["input2"] = makeDatasetTypeDescr(config.input2)
         return types
 
     @classmethod
     def getOutputDatasetTypes(cls, config):
-        types = {"output1": makeDatasetType(config.output1)}
+        types = {"output1": makeDatasetTypeDescr(config.output1)}
         if config.output2.name:
-            types["output2"] = makeDatasetType(config.output2)
+            types["output2"] = makeDatasetTypeDescr(config.output2)
         return types
 
 
