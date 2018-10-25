@@ -83,12 +83,12 @@ class PipelineBuilder(object):
         Exceptions will be raised for any kind of error conditions.
         """
 
-        # need camera/package name to find overrides
+        # need instrument/package name to find overrides
         obsPkg = None
-        camera = None
-        if args.camera_overrides:
+        instrument = None
+        if args.instrument_overrides:
             # mapperClass = dafPersist.Butler.getMapperClass(args.input)
-            # camera = mapperClass.getCameraName()
+            # instrument = mapperClass.getCameraName()
             # obsPkg = mapperClass.getPackageName()
             pass
 
@@ -112,7 +112,7 @@ class PipelineBuilder(object):
 
             if action.action == "new_task":
 
-                self._newTask(pipeline, action.value, action.label, obsPkg, camera)
+                self._newTask(pipeline, action.value, action.label, obsPkg, instrument)
 
             elif action.action == "delete_task":
 
@@ -142,7 +142,7 @@ class PipelineBuilder(object):
 
         return pipeline
 
-    def _newTask(self, pipeline, taskName, label=None, obsPkg=None, camera=None):
+    def _newTask(self, pipeline, taskName, label=None, obsPkg=None, instrument=None):
         """Append new task to a pipeline.
 
         Parameters
@@ -159,8 +159,8 @@ class PipelineBuilder(object):
         obsPkg : `str`, optional
             Name of the package to look for task overrides, if None then
             overrides are not used.
-        camera : `str`, optional
-            Camera name, used for camera-specific overrides an only if
+        instrument : `str`, optional
+            Instrument name, used for instrument-specific overrides an only if
             `obsPkg` is not `None`.
         """
         # load task class, will throw on errors
@@ -175,7 +175,7 @@ class PipelineBuilder(object):
         # make config instance with defaults
         config = taskClass.ConfigClass()
 
-        # apply camera/package overrides
+        # apply instrument/package overrides
         if obsPkg:
             obsPkgDir = lsst.utils.getPackageDir(obsPkg)
             configName = taskClass._DefaultName
@@ -183,7 +183,7 @@ class PipelineBuilder(object):
             overrides = ConfigOverrides()
             for filePath in (
                 os.path.join(obsPkgDir, "config", fileName),
-                os.path.join(obsPkgDir, "config", camera, fileName),
+                os.path.join(obsPkgDir, "config", instrument, fileName),
             ):
                 if os.path.exists(filePath):
                     lsstLog.info("Loading config overrride file %r", filePath)

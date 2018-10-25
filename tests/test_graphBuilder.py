@@ -39,12 +39,12 @@ from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
 
 class OneToOneTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              units=["Camera", "Visit"],
+                              units=["Instrument", "Visit"],
                               storageClass="example",
                               scalar=True,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
-                                units=["Camera", "Visit"],
+                                units=["Instrument", "Visit"],
                                 storageClass = "example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
@@ -52,12 +52,12 @@ class OneToOneTaskConfig(PipelineTaskConfig):
     def setDefaults(self):
         # set units of a quantum, this task uses per-visit quanta and it
         # expects dataset units to be the same
-        self.quantum.units = ["Camera", "Visit"]
+        self.quantum.units = ["Instrument", "Visit"]
 
 
 class VisitToPatchTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              units=["Camera", "Visit"],
+                              units=["Instrument", "Visit"],
                               storageClass="example",
                               scalar=False,
                               doc="Input dataset type for this task")

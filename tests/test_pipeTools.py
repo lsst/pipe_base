@@ -82,7 +82,7 @@ def _makeConfig(inputName, outputName):
     else:
         config.output1.name = outputName
 
-    units = ["Visit", "Sensor"]
+    units = ["Visit", "Detector"]
     config.input1.units = units
     config.input2.units = units
     config.output1.units = units

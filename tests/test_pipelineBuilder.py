@@ -81,7 +81,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """
         # create a task with default label
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -93,7 +93,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
 
         # create a task, give it a label
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:label")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -106,7 +106,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         # two different tasks
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -124,7 +124,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
                    cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -144,7 +144,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
                    cmdLineParser._ACTION_ADD_TASK("TaskOne")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -164,7 +164,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
                    cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -199,7 +199,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
                    cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -242,7 +242,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
                    cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
                    cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -270,7 +270,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         """
         # make simple pipeline
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
@@ -293,7 +293,7 @@ class PipelineBuilderTestCase(unittest.TestCase):
         # make simple pipeline
         actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
                    cmdLineParser._ACTION_CONFIG("task.field=value")]
-        args = Namespace(camera_overrides=False,
+        args = Namespace(instrument_overrides=False,
                          pipeline=None,
                          pipeline_actions=actions,
                          order_pipeline=False)
