@@ -29,8 +29,7 @@ import unittest
 
 import lsst.utils.tests
 from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
-                             DatasetOriginInfoDef,
-                             StorageClass, StorageClassFactory)
+                             DatasetOriginInfoDef)
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField)
 from lsst.pipe.supertask import GraphBuilder, Pipeline, TaskDef
@@ -109,11 +108,6 @@ class TaskFactoryMock:
 class GraphBuilderTestCase(unittest.TestCase):
     """A test case for GraphBuilder class
     """
-
-    @classmethod
-    def setUpClass(cls):
-        # make a storage class with example name
-        StorageClassFactory().registerStorageClass(StorageClass("example"))
 
     def _makePipeline(self):
         config1 = OneToOneTaskConfig()
