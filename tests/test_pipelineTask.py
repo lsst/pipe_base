@@ -25,8 +25,7 @@
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler import (DatasetRef, DatasetType, Quantum, Run,
-                             StorageClass, StorageClassFactory)
+from lsst.daf.butler import DatasetRef, DatasetType, Quantum, Run
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -51,7 +50,6 @@ class ButlerMock():
         else:
             dsTypeName = datasetRefOrType
         key = self.key(dataId)
-#         print("butler.get: name={} key={}".format(ref.datasetType.name, key))
         dsdata = self.datasets.get(dsTypeName)
         if dsdata:
             return dsdata.get(key)
@@ -59,7 +57,6 @@ class ButlerMock():
 
     def put(self, inMemoryDataset, dsTypeName, dataId, producer=None):
         key = self.key(dataId)
-#         print("butler.put: {} -> name={} key={}".format(inMemoryDataset, ref.datasetType.name, key))
         dsdata = self.datasets.setdefault(dsTypeName, {})
         dsdata[key] = inMemoryDataset
 
@@ -109,17 +106,12 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
     """A test case for DatasetTypeDescriptor
     """
 
-    @classmethod
-    def setUpClass(cls):
-        StorageClassFactory().registerStorageClass(StorageClass("example"))
-
     def testConstructor(self):
         """Test DatasetTypeDescriptor init
         """
-        storageClass = StorageClassFactory().getStorageClass("example")
         datasetType = DatasetType(name="testDataset",
                                   dataUnits=["UnitA"],
-                                  storageClass=storageClass)
+                                  storageClass="example")
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
                                                     scalar=False)
         self.assertIs(descriptor.datasetType, datasetType)
@@ -148,10 +140,6 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask
     """
-
-    @classmethod
-    def setUpClass(cls):
-        StorageClassFactory().registerStorageClass(StorageClass("example"))
 
     def _makeDSRefVisit(self, dstype, visitId):
         return DatasetRef(datasetType=dstype,
