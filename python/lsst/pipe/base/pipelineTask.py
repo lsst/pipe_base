@@ -24,7 +24,7 @@
 
 __all__ = ["DatasetTypeDescriptor", "PipelineTask"]  # Classes in this module
 
-from lsst.daf.butler import DatasetType, StorageClassFactory
+from lsst.daf.butler import DatasetType
 from .config import (InputDatasetConfig, OutputDatasetConfig,
                      InitInputDatasetConfig, InitOutputDatasetConfig)
 from .task import Task
@@ -79,12 +79,9 @@ class DatasetTypeDescriptor:
         -------
         descriptor : `DatasetTypeDescriptor`
         """
-        # map storage class name to storage class
-        storageClass = StorageClassFactory().getStorageClass(datasetConfig.storageClass)
-
         datasetType = DatasetType(name=datasetConfig.name,
                                   dataUnits=datasetConfig.units,
-                                  storageClass=storageClass)
+                                  storageClass=datasetConfig.storageClass)
         # Use scalar=True for Init dataset types
         scalar = getattr(datasetConfig, 'scalar', True)
         return cls(datasetType=datasetType, scalar=scalar)
