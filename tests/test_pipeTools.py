@@ -35,32 +35,32 @@ from lsst.pipe.supertask.dotTools import pipeline2dot
 import lsst.utils.tests
 
 # mock for actual dataset type
-DS = namedtuple("DS", "name dataUnits")
+DS = namedtuple("DS", "name dimensions")
 
 
 # This method is used by PipelineTask to instanciate DatasetType, normally this
 # should come from some other module but we have not defined that yet, so I
 # stick a trivial (mock) implementation here.
 def makeDatasetTypeDescr(dsConfig):
-    datasetType = DS(name=dsConfig.name, dataUnits=dsConfig.units)
+    datasetType = DS(name=dsConfig.name, dimensions=dsConfig.dimensions)
     return DatasetTypeDescriptor(datasetType, scalar=False)
 
 
 class ExamplePipelineTaskConfig(PipelineTaskConfig):
     input1 = InputDatasetField(name="",
-                               units=[],
+                               dimensions=[],
                                storageClass="example",
                                doc="Input for this task")
     input2 = InputDatasetField(name="",
-                               units=[],
+                               dimensions=[],
                                storageClass="example",
                                doc="Input for this task")
     output1 = OutputDatasetField(name="",
-                                 units=[],
+                                 dimensions=[],
                                  storageClass="example",
                                  doc="Output for this task")
     output2 = OutputDatasetField(name="",
-                                 units=[],
+                                 dimensions=[],
                                  storageClass="example",
                                  doc="Output for this task")
 
@@ -84,11 +84,11 @@ def _makeConfig(inputName, outputName):
     else:
         config.output1.name = outputName
 
-    units = ["Visit", "Detector"]
-    config.input1.units = units
-    config.input2.units = units
-    config.output1.units = units
-    config.output2.units = units
+    dimensions = ["Visit", "Detector"]
+    config.input1.dimensions = dimensions
+    config.input2.dimensions = dimensions
+    config.output1.dimensions = dimensions
+    config.output2.dimensions = dimensions
 
     return config
 

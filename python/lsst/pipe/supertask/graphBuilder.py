@@ -105,7 +105,7 @@ class GraphBuilder(object):
     def __init__(self, taskFactory, registry, skipExisting=True):
         self.taskFactory = taskFactory
         self.registry = registry
-        self.dataUnits = registry._dataUnits
+        self.dimensions = registry.dimensions
         self.skipExisting = skipExisting
 
     @staticmethod
@@ -256,29 +256,29 @@ class GraphBuilder(object):
         """
         parsedQuery = self._parseUserQuery(userQuery or "")
         expr = None if parsedQuery is None else str(parsedQuery)
-        rows = self.registry.selectDataUnits(originInfo, expr, inputs, outputs)
+        rows = self.registry.selectDimensions(originInfo, expr, inputs, outputs)
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass
-        unitVerse = []
+        dimensionVerse = []
         for row in rows:
             _LOG.debug("row: %s", row)
-            unitVerse.append(row)
+            dimensionVerse.append(row)
 
-        # Next step is to group by task quantum units
+        # Next step is to group by task quantum dimensions
         qgraph = QuantumGraph()
         for taskDss in taskDatasets:
             taskQuantaInputs = {}    # key is the quantum dataId (as tuple)
             taskQuantaOutputs = {}   # key is the quantum dataId (as tuple)
             qlinks = []
-            for dataUnitName in taskDss.taskDef.config.quantum.units:
-                dataUnit = self.dataUnits[dataUnitName]
-                qlinks += dataUnit.link
-            _LOG.debug("task %s qunits: %s", taskDss.taskDef.label, qlinks)
+            for dimensionName in taskDss.taskDef.config.quantum.dimensions:
+                dimension = self.dimensions[dimensionName]
+                qlinks += dimension.link
+            _LOG.debug("task %s qdimensions: %s", taskDss.taskDef.label, qlinks)
 
-            # some rows will be non-unique for subset of units, create
+            # some rows will be non-unique for subset of dimensions, create
             # temporary structure to remove duplicates
-            for row in unitVerse:
+            for row in dimensionVerse:
                 qkey = tuple((col, row.dataId[col]) for col in qlinks)
                 _LOG.debug("qkey: %s", qkey)
 

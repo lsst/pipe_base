@@ -38,38 +38,38 @@ from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
 
 class OneToOneTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              units=["Instrument", "Visit"],
+                              dimensions=["Instrument", "Visit"],
                               storageClass="example",
                               scalar=True,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
-                                units=["Instrument", "Visit"],
+                                dimensions=["Instrument", "Visit"],
                                 storageClass = "example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
 
     def setDefaults(self):
-        # set units of a quantum, this task uses per-visit quanta and it
-        # expects dataset units to be the same
-        self.quantum.units = ["Instrument", "Visit"]
+        # set dimensions of a quantum, this task uses per-visit quanta and it
+        # expects dataset dimensions to be the same
+        self.quantum.dimensions = ["Instrument", "Visit"]
 
 
 class VisitToPatchTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              units=["Instrument", "Visit"],
+                              dimensions=["Instrument", "Visit"],
                               storageClass="example",
                               scalar=False,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
-                                units=["SkyMap", "Tract", "Patch"],
+                                dimensions=["SkyMap", "Tract", "Patch"],
                                 storageClass = "example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
 
     def setDefaults(self):
-        # set units of a quantum, this task uses per-visit quanta and it
-        # expects dataset units to be the same
-        self.quantum.units = ["SkyMap", "Tract", "Patch"]
+        # set dimensions of a quantum, this task uses per-visit quanta and it
+        # expects dataset dimensions to be the same
+        self.quantum.dimensions = ["SkyMap", "Tract", "Patch"]
 
 
 class TaskOne(PipelineTask):
