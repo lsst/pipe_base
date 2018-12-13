@@ -594,10 +594,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 validated and frozen.
             - ``butler``: a `lsst.daf.persistence.Butler` for the data.
             - An entry for each of the data ID arguments registered by
-                `add_id_argument`,  the value of which is an
-                `~lsst.pipe.base.DataIdArgument` that includes public
-                elements.
-              ``idList`` and ``refList``.
+                `add_id_argument`, of the type passed to its ``ContainerClass``
+                keyword (`~lsst.pipe.base.DataIdContainer` by default). It
+                includes public elements ``idList`` and ``refList``.
             - ``log``: a `lsst.log` Log.
             - An entry for each command-line argument,
                 with the following exceptions:
