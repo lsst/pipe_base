@@ -116,31 +116,31 @@ def _makeDatasetField(name, dtype):
     # the factories take differ between base class types
     if issubclass(dtype, _GlobalDatasetTypeConfig):
         # Handle global dataset types like InitInputDatasetConfig, these types have
-        # a function signature with no units variable
+        # a function signature with no dimensions variable
         def wrappedFunc(doc, name, storageClass, check=None):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
-        # This factory does not take a units argument, so set the variables for the
-        # units documentation to empty python strings
+        # This factory does not take a dimensions argument, so set the
+        # variables for the dimensions documentation to empty python strings
         extraDoc = ""
         extraFields = ""
     elif issubclass(dtype, _DatasetTypeConfig):
-        # Handle dataset types like InputDatasetConfig, note these take a units argument
-        def wrappedFunc(doc, name, units, storageClass, scalar=False, check=None):
+        # Handle dataset types like InputDatasetConfig, note these take a dimensions argument
+        def wrappedFunc(doc, name, dimensions, storageClass, scalar=False, check=None):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
-        # Set the string corresponding to the units parameter documentation
+        # Set the string corresponding to the dimensions parameter documentation
         # formatting is to support final output of the docstring variable
         extraDoc = """
-            units : iterable of `str`
-                Iterable of DataUnits for this `~lsst.daf.butler.DatasetType`
+            dimensions : iterable of `str`
+                Iterable of Dimensions for this `~lsst.daf.butler.DatasetType`
             scalar : `bool`, optional
                 If set to True then only a single dataset is expected on input or
                 produced on output. In that case list of objects/DataIds will be
                 unpacked before calling task methods, returned data is expected
                 to contain single objects as well."""
-        # Set a string to add the units argument to the list of arguments in the
+        # Set a string to add the dimensions argument to the list of arguments in the
         # docstring explanation section formatting is to support final output
         # of the docstring variable
-        extraFields = ", units, scalar,"
+        extraFields = ", dimensions, scalar,"
     else:
         # if someone tries to create a config factory for a type that is not
         # handled raise and exception
@@ -189,14 +189,14 @@ def _makeDatasetField(name, dtype):
 
 
 class QuantumConfig(pexConfig.Config):
-    """Configuration class which defines PipelineTask quanta units.
+    """Configuration class which defines PipelineTask quanta dimensions.
 
     In addition to a list of dataUnit names this also includes optional list of
     SQL statements to be executed against Registry database. Exact meaning and
     format of SQL will be determined at later point.
     """
-    units = pexConfig.ListField(dtype=str,
-                                doc="list of DataUnits which define quantum")
+    dimensions = pexConfig.ListField(dtype=str,
+                                     doc="list of Dimensions which define quantum")
     sql = pexConfig.ListField(dtype=str,
                               doc="sequence of SQL statements",
                               optional=True)
@@ -214,13 +214,13 @@ class _BaseDatasetTypeConfig(pexConfig.Config):
 class _DatasetTypeConfig(_BaseDatasetTypeConfig):
     """Configuration class which defines dataset type used by PipelineTask.
 
-    Consists of DatasetType name, list of DataUnit names and StorageCass name.
+    Consists of DatasetType name, list of Dimension names and StorageCass name.
     PipelineTasks typically define one or more input and output datasets. This
     class should not be used directly, instead one of `InputDatasetConfig` or
     `OutputDatasetConfig` should be used in PipelineTask config.
     """
-    units = pexConfig.ListField(dtype=str,
-                                doc="list of DataUnits for this DatasetType")
+    dimensions = pexConfig.ListField(dtype=str,
+                                     doc="list of Dimensions for this DatasetType")
     scalar = pexConfig.Field(dtype=bool,
                              default=False,
                              optional=True,
@@ -244,15 +244,15 @@ class _GlobalDatasetTypeConfig(_BaseDatasetTypeConfig):
     initialization.
 
     Consists of DatasetType name and StorageCass name, with a read-only
-    ``units`` property that returns an empty tuple, enforcing the constraint
-    that datasets used in initialization are not associated with any
-    DataUnits. This class should not be used directly, instead one of
+    ``dimensions`` property that returns an empty tuple, enforcing the
+    constraint that datasets used in initialization are not associated with
+    any Dimensions. This class should not be used directly, instead one of
     `InitInputDatasetConfig` or `InitOutputDatasetConfig` should be used in
     PipelineTask config.
     """
     @property
-    def units(self):
-        """DataUnits associated with this DatasetType (always empty)."""
+    def dimensions(self):
+        """Dimensions associated with this DatasetType (always empty)."""
         return ()
 
 

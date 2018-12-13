@@ -80,7 +80,7 @@ class DatasetTypeDescriptor:
         descriptor : `DatasetTypeDescriptor`
         """
         datasetType = DatasetType(name=datasetConfig.name,
-                                  dataUnits=datasetConfig.units,
+                                  dimensions=datasetConfig.dimensions,
                                   storageClass=datasetConfig.storageClass)
         # Use scalar=True for Init dataset types
         scalar = getattr(datasetConfig, 'scalar', True)
@@ -226,7 +226,7 @@ class PipelineTask(Task):
         ``initInputs`` constructor argument.
 
         Datasets used in initialization may not be associated with any
-        DataUnits (i.e. their data IDs must be empty dictionaries).
+        Dimension (i.e. their data IDs must be empty dictionaries).
 
         Default implementation finds all fields of type
         `InitInputInputDatasetConfig` in configuration (non-recursively) and
@@ -257,7 +257,7 @@ class PipelineTask(Task):
         objects returned by `getOutputDatasets`.
 
         Datasets used in initialization may not be associated with any
-        DataUnits (i.e. their data IDs must be empty dictionaries).
+        Dimension (i.e. their data IDs must be empty dictionaries).
 
         Default implementation finds all fields of type
         `InitOutputDatasetConfig` in configuration (non-recursively) and uses

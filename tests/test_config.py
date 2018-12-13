@@ -61,16 +61,16 @@ class TwoTask(pipeBase.PipelineTask):
 
 class ConfigWithDatasets(pexConfig.Config):
     input1 = pipeBase.InputDatasetField(name="in1",
-                                        units=["UnitA"],
+                                        dimensions=["UnitA"],
                                         storageClass="SCA",
                                         doc="")
     input2 = pipeBase.InputDatasetField(name="in2",
-                                        units=["UnitA", "UnitB"],
+                                        dimensions=["UnitA", "UnitB"],
                                         storageClass="SCB",
                                         scalar=True,
                                         doc="")
     output = pipeBase.OutputDatasetField(name="out",
-                                         units=["UnitB", "UnitC"],
+                                         dimensions=["UnitB", "UnitC"],
                                          storageClass="SCC",
                                          scalar=False,
                                          doc="")
@@ -134,12 +134,12 @@ class TaskTestCase(unittest.TestCase):
         self.assertCountEqual(descriptors.keys(), ["input1", "input2"])
         descriptor = descriptors["input1"]
         self.assertEqual(descriptor.datasetType.name, config.input1.name)
-        self.assertCountEqual(descriptor.datasetType.dataUnits, config.input1.units)
+        self.assertCountEqual(descriptor.datasetType.dimensions.names, config.input1.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.input1.storageClass)
         self.assertFalse(descriptor.scalar)
         descriptor = descriptors["input2"]
         self.assertEqual(descriptor.datasetType.name, config.input2.name)
-        self.assertCountEqual(descriptor.datasetType.dataUnits, config.input2.units)
+        self.assertCountEqual(descriptor.datasetType.dimensions.names, config.input2.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.input2.storageClass)
         self.assertTrue(descriptor.scalar)
 
@@ -147,7 +147,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertCountEqual(descriptors.keys(), ["output"])
         descriptor = descriptors["output"]
         self.assertEqual(descriptor.datasetType.name, config.output.name)
-        self.assertCountEqual(descriptor.datasetType.dataUnits, config.output.units)
+        self.assertCountEqual(descriptor.datasetType.dimensions.names, config.output.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.output.storageClass)
         self.assertFalse(descriptor.scalar)
 
@@ -155,7 +155,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertCountEqual(descriptors.keys(), ["initInput"])
         descriptor = descriptors["initInput"]
         self.assertEqual(descriptor.datasetType.name, config.initInput.name)
-        self.assertEqual(len(descriptor.datasetType.dataUnits), 0)
+        self.assertEqual(len(descriptor.datasetType.dimensions), 0)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.initInput.storageClass)
         self.assertTrue(descriptor.scalar)
 
@@ -163,7 +163,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertCountEqual(descriptors.keys(), ["initOutput"])
         descriptor = descriptors["initOutput"]
         self.assertEqual(descriptor.datasetType.name, config.initOutput.name)
-        self.assertEqual(len(descriptor.datasetType.dataUnits), 0)
+        self.assertEqual(len(descriptor.datasetType.dimensions), 0)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.initOutput.storageClass)
         self.assertTrue(descriptor.scalar)
 

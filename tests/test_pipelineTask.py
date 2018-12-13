@@ -64,18 +64,18 @@ class ButlerMock():
 class AddConfig(pipeBase.PipelineTaskConfig):
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
     input = pipeBase.InputDatasetField(name="add_input",
-                                       units=["Camera", "Visit"],
+                                       dimensions=["Camera", "Visit"],
                                        storageClass="example",
                                        doc="Input dataset type for this task")
     output = pipeBase.OutputDatasetField(name="add_output",
-                                         units=["Camera", "Visit"],
+                                         dimensions=["Camera", "Visit"],
                                          storageClass="example",
                                          doc="Output dataset type for this task")
 
     def setDefaults(self):
-        # set units of a quantum, this task uses per-visit quanta and it
-        # expects dataset units to be the same
-        self.quantum.units = ["Camera", "Visit"]
+        # set dimensions of a quantum, this task uses per-visit quanta and it
+        # expects dataset dimensions to be the same
+        self.quantum.dimensions = ["Camera", "Visit"]
         self.quantum.sql = None
 
 
@@ -110,7 +110,7 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
         """Test DatasetTypeDescriptor init
         """
         datasetType = DatasetType(name="testDataset",
-                                  dataUnits=["UnitA"],
+                                  dimensions=["UnitA"],
                                   storageClass="example")
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
                                                     scalar=False)
