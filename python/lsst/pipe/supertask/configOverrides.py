@@ -4,6 +4,8 @@
 __all__ = ["ConfigOverrides"]
 
 from builtins import object
+import lsst.pex.config as pexConfig
+import lsst.pex.exceptions as pexExceptions
 
 
 class ConfigOverrides(object):
@@ -81,6 +83,18 @@ class ConfigOverrides(object):
                 obj = config
                 for attr in field[:-1]:
                     obj = getattr(obj, attr)
+                # If the type of the object to set is a list field, the value to assign
+                # is most likely a list, and we will eval it to get a python list object
+                # which will be used to set the objects value
+                # This must be done before the try, as it will otherwise set a string which
+                # is a valid iterable object when a list is the intended object
+                if isinstance(getattr(obj, field[-1]), pexConfig.listField.List) and isinstance(value, str):
+                    try:
+                        value = eval(value, {})
+                    except Exception:
+                        # Something weird happened here, try passing, and seeing if further
+                        # code can handle this
+                        raise pexExceptions.RuntimeError(f"Unable to parse {value} into a valid list")
                 try:
                     setattr(obj, field[-1], value)
                 except TypeError:
