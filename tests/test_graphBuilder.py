@@ -31,7 +31,8 @@ import lsst.utils.tests
 from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
                              DatasetOriginInfoDef)
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
-                            InputDatasetField, OutputDatasetField)
+                            InputDatasetField, OutputDatasetField,
+                            InitInputDatasetField, InitOutputDatasetField)
 from lsst.pipe.supertask import GraphBuilder, Pipeline, TaskDef
 from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
 
@@ -47,6 +48,12 @@ class OneToOneTaskConfig(PipelineTaskConfig):
                                 storageClass = "example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
+    initInput = InitInputDatasetField(name="initInput",
+                                      storageClass="example",
+                                      doc="InitInput test")
+    initOutput = InitOutputDatasetField(name="initOutput",
+                                        storageClass="example",
+                                        doc="InitOutput test")
 
     def setDefaults(self):
         # set dimensions of a quantum, this task uses per-visit quanta and it
@@ -105,6 +112,7 @@ class TaskFactoryMock:
         return taskClass(config=config)
 
 
+@unittest.skip("Registry missing, Will be fixed in DM-16833")
 class GraphBuilderTestCase(unittest.TestCase):
     """A test case for GraphBuilder class
     """
@@ -145,17 +153,29 @@ class GraphBuilderTestCase(unittest.TestCase):
             taskInputs = [dsTypeDescr.datasetType for dsTypeDescr in taskInputs.values()]
             taskOutputs = taskClass.getOutputDatasetTypes(taskDef.config) or {}
             taskOutputs = [dsTypeDescr.datasetType for dsTypeDescr in taskOutputs.values()]
+
+            taskInitInputs = taskClass.getInitInputDatasetTypes(taskDef.config) or {}
+            taskInitInputs = [dsTypeDescr.datasetType for dsTypeDescr in taskInitInputs.values()]
+
+            taskInitOutputs = taskClass.getInitOutputDatasetTypes(taskDef.config) or {}
+            taskInitOutputs = [dsTypeDescr.datasetType for dsTypeDescr in taskInitOutputs.values()]
             taskDatasets.append(_TaskDatasetTypes(taskDef=taskDef,
                                                   inputs=taskInputs,
-                                                  outputs=taskOutputs))
+                                                  outputs=taskOutputs,
+                                                  initInputs=taskInitInputs,
+                                                  initOutputs=taskInitOutputs))
 
         # make inputs and outputs from per-task dataset types
-        inputs, outputs = gbuilder._makeFullIODatasetTypes(taskDatasets)
+        inputs, outputs, initInputs, initOutputs = gbuilder._makeFullIODatasetTypes(taskDatasets)
 
         self.assertIsInstance(inputs, set)
         self.assertIsInstance(outputs, set)
+        self.assertIsInstance(initInputs, set)
+        self.assertIsInstance(initOutputs, set)
         self.assertEqual([x.name for x in inputs], ["input"])
         self.assertEqual(set(x.name for x in outputs), set(["output", "output2"]))
+        self.assertEqual([x.name for x in initInputs], ['initInput'])
+        self.assertEqual([x.name for x in initOutputs], ['initOutputs'])
 
     def test_makeGraph(self):
         """Test for makeGraph() implementation.

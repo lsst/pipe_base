@@ -38,7 +38,7 @@ import logging
 # -----------------------------
 from .expr_parser.parserYacc import ParserYacc, ParserYaccError
 from .graph import QuantumGraphNodes, QuantumGraph
-from lsst.daf.butler import Quantum
+from lsst.daf.butler import Quantum, DatasetRef
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -53,7 +53,7 @@ _LOG = logging.getLogger(__name__.partition(".")[2])
 # taskDef : `TaskDef`
 # inputs : `list` of `DatasetType`
 # outputs : `list` of `DatasetType`
-_TaskDatasetTypes = namedtuple("_TaskDatasetTypes", "taskDef inputs outputs")
+_TaskDatasetTypes = namedtuple("_TaskDatasetTypes", "taskDef inputs outputs initInputs initOutputs")
 
 
 class GraphBuilderError(Exception):
@@ -183,19 +183,18 @@ class GraphBuilder(object):
         taskDatasets = []
         for taskDef in taskList:
             taskClass = taskDef.taskClass
-            taskInputs = taskClass.getInputDatasetTypes(taskDef.config) or {}
-            taskInputs = [dsTypeDescr.datasetType for dsTypeDescr in taskInputs.values()]
-            taskOutputs = taskClass.getOutputDatasetTypes(taskDef.config) or {}
-            taskOutputs = [dsTypeDescr.datasetType for dsTypeDescr in taskOutputs.values()]
-            taskDatasets.append(_TaskDatasetTypes(taskDef=taskDef,
-                                                  inputs=taskInputs,
-                                                  outputs=taskOutputs))
+            taskIo = []
+            for attr in ("Input", "Output", "InitInput", "InitOutput"):
+                getter = getattr(taskClass, f"get{attr}DatasetType")
+                ioObject = getter(taskDef.config) or {}
+                taskIo.append([dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()])
+            taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo))
 
         # build initial dataset graph
-        inputs, outputs = self._makeFullIODatasetTypes(taskDatasets)
+        inputs, outputs, initInputs, initOutputs = self._makeFullIODatasetTypes(taskDatasets)
 
         # make a graph
-        return self._makeGraph(taskDatasets, inputs, outputs,
+        return self._makeGraph(taskDatasets, inputs, outputs, initInputs, initOutputs,
                                originInfo, userQuery)
 
     def _makeFullIODatasetTypes(self, taskDatasets):
@@ -204,7 +203,7 @@ class GraphBuilder(object):
         Parameters
         ----------
         taskDatasets : sequence of `_TaskDatasetTypes`
-            Tasks with their inputs and outputs.
+            Tasks with their inputs, outputs, initInputs and initOutputs.
 
         Returns
         -------
@@ -212,28 +211,37 @@ class GraphBuilder(object):
             Datasets used as inputs by the pipeline.
         outputs : `set` of `butler.DatasetType`
             Datasets produced by the pipeline.
+        initInputs : `set` of `butler.DatasetType`
+            Datasets used as init method inputs by the pipeline.
+        initOutputs : `set` of `butler.DatasetType`
+            Datasets used as init method outputs by the pipeline.
         """
         # to build initial dataset graph we have to collect info about all
         # datasets to be used by this pipeline
         allDatasetTypes = {}
         inputs = set()
         outputs = set()
+        initInputs = set()
+        initOutputs = set()
         for taskDs in taskDatasets:
-            for dsType in taskDs.inputs:
-                inputs.add(dsType.name)
-                allDatasetTypes[dsType.name] = dsType
-            for dsType in taskDs.outputs:
-                outputs.add(dsType.name)
-                allDatasetTypes[dsType.name] = dsType
-
+            for ioType, ioSet in zip(("inputs", "outputs", "initInputs", "initOutputs"),
+                                     (inputs, outputs, initInputs, initOutputs)):
+                for dsType in getattr(taskDs, ioType):
+                    ioSet.add(dsType.name)
+                    allDatasetTypes[dsType.name] = dsType
         # remove outputs from inputs
         inputs -= outputs
 
+        # remove initOutputs from initInputs
+        initInputs -= initOutputs
+
         inputs = set(allDatasetTypes[name] for name in inputs)
         outputs = set(allDatasetTypes[name] for name in outputs)
-        return (inputs, outputs)
+        initInputs = set(allDatasetTypes[name] for name in initInputs)
+        initOutputs = set(allDatasetTypes[name] for name in initOutputs)
+        return inputs, outputs, initInputs, initOutputs
 
-    def _makeGraph(self, taskDatasets, inputs, outputs, originInfo, userQuery):
+    def _makeGraph(self, taskDatasets, inputs, outputs, initInputs, initOutputs, originInfo, userQuery):
         """Make QuantumGraph instance.
 
         Parameters
@@ -244,6 +252,11 @@ class GraphBuilder(object):
             Datasets which should already exist in input repository
         outputs : `set` of `DatasetType`
             Datasets which will be created by tasks
+        initInputs : `set` of `DatasetType`
+            Datasets which should exist in input repository, and will be used
+            in task initialization
+        initOutputs : `set` of `DatasetType`
+            Datasets which which will be created in task initialization
         originInfo : `DatasetOriginInfo`
             Object which provides names of the input/output collections.
         userQuery : `str`
@@ -267,6 +280,18 @@ class GraphBuilder(object):
 
         # Next step is to group by task quantum dimensions
         qgraph = QuantumGraph()
+        for dsType in initInputs:
+            for collection in originInfo.getInputCollections(dsType.name):
+                result = self.registry.find(collection, dsType)
+                if result is not None:
+                    qgraph.initInputs.append(result)
+                    break
+            else:
+                raise GraphBuilderError(f"Could not find initInput {dsType.name} in any input"
+                                        " collection")
+        for dsType in initOutputs:
+            qgraph.initOutputs.append(DatasetRef(dsType, {}))
+
         for taskDss in taskDatasets:
             taskQuantaInputs = {}    # key is the quantum dataId (as tuple)
             taskQuantaOutputs = {}   # key is the quantum dataId (as tuple)

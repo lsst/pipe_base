@@ -91,6 +91,8 @@ class QuantumGraph(list):
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
+        self.initInputs = []
+        self.initOutputs = []
 
     def quanta(self):
         """Iterator over quanta in a graph.
