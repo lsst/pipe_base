@@ -185,7 +185,7 @@ class GraphBuilder(object):
             taskClass = taskDef.taskClass
             taskIo = []
             for attr in ("Input", "Output", "InitInput", "InitOutput"):
-                getter = getattr(taskClass, f"get{attr}DatasetType")
+                getter = getattr(taskClass, f"get{attr}DatasetTypes")
                 ioObject = getter(taskDef.config) or {}
                 taskIo.append([dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()])
             taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo))
