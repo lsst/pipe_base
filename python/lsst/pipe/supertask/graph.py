@@ -93,6 +93,8 @@ class QuantumGraph(list):
         list.__init__(self, iterable or [])
         self.initInputs = []
         self.initOutputs = []
+        self._inputDatasetTypes = set()
+        self._outputDatasetTypes = set()
 
     def quanta(self):
         """Iterator over quanta in a graph.
@@ -108,3 +110,17 @@ class QuantumGraph(list):
             taskDef = taskNodes.taskDef
             for quantum in taskNodes.quanta:
                 yield taskDef, quantum
+
+    def getDatasetTypes(self, initInputs=True, initOutputs=True, inputs=True, outputs=True):
+        total = set()
+        if initInputs:
+            for dsRef in self.initInputs:
+                total.add(dsRef.datasetType)
+        if initOutputs:
+            for dsRef in self.initOutputs:
+                total.add(dsRef.datasetType)
+        if inputs:
+            total |= self._inputDatasetTypes
+        if outputs:
+            total |= self._outputDatasetTypes
+        return total
