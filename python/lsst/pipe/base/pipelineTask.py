@@ -312,7 +312,7 @@ class PipelineTask(Task):
                 dsTypes[key] = DatasetTypeDescriptor.fromConfig(value)
         return dsTypes
 
-    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds):
+    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
         """Run task algorithm on in-memory data.
 
         This method is called by `runQuantum` to operate on input in-memory
@@ -499,7 +499,7 @@ class PipelineTask(Task):
         outputDataIds, outputDataRefs = makeDataRefs(descriptors, quantum.outputs)
 
         # call run method with keyword arguments
-        struct = self.adaptArgsAndRun(inputs, inputDataIds, outputDataIds)
+        struct = self.adaptArgsAndRun(inputs, inputDataIds, outputDataIds, butler)
 
         # store produced ouput data
         self.saveStruct(struct, outputDataRefs, butler)
