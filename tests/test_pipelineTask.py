@@ -95,7 +95,7 @@ class AddTask2(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
-    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds):
+    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
         self.metadata.add("add", self.config.addend)
         input = inputData["input"]
         output = [val + self.config.addend for val in input]
