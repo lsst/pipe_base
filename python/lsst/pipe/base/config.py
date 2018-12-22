@@ -46,6 +46,8 @@ import lsst.pex.config as pexConfig
 #  Exported definitions --
 # ------------------------
 
+PIPELINETASK_CONFIG_TEMPLATE_DICT = {}
+
 
 def _makeDatasetField(name, dtype):
     """ Function to make callables which produce ConfigField objects
@@ -117,7 +119,7 @@ def _makeDatasetField(name, dtype):
     if issubclass(dtype, _GlobalDatasetTypeConfig):
         # Handle global dataset types like InitInputDatasetConfig, these types have
         # a function signature with no dimensions variable
-        def wrappedFunc(doc, name, storageClass, check=None):
+        def wrappedFunc(*, doc, storageClass, check=None, name="", nameTemplate=''):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # This factory does not take a dimensions argument, so set the
         # variables for the dimensions documentation to empty python strings
@@ -125,7 +127,7 @@ def _makeDatasetField(name, dtype):
         extraFields = ""
     elif issubclass(dtype, _DatasetTypeConfig):
         # Handle dataset types like InputDatasetConfig, note these take a dimensions argument
-        def wrappedFunc(doc, name, dimensions, storageClass, scalar=False, check=None):
+        def wrappedFunc(*, doc, dimensions, storageClass, name="", scalar=False, check=None, nameTemplate=''):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # Set the string corresponding to the dimensions parameter documentation
         # formatting is to support final output of the docstring variable
@@ -136,11 +138,16 @@ def _makeDatasetField(name, dtype):
                 If set to True then only a single dataset is expected on input or
                 produced on output. In that case list of objects/DataIds will be
                 unpacked before calling task methods, returned data is expected
-                to contain single objects as well."""
+                to contain single objects as well.
+            nameTemplate : `str`, optional
+                Template for the `name` field which is specified as a python formattable
+                string. The template is formatted during the configuration of a Config
+                class with a user defined string. Defaults to empty string, in which
+                case no formatting is done."""
         # Set a string to add the dimensions argument to the list of arguments in the
         # docstring explanation section formatting is to support final output
         # of the docstring variable
-        extraFields = ", dimensions, scalar,"
+        extraFields = ", dimensions, scalar, nameTemplate"
     else:
         # if someone tries to create a config factory for a type that is not
         # handled raise and exception
@@ -209,6 +216,12 @@ class _BaseDatasetTypeConfig(pexConfig.Config):
                            doc="name of the DatasetType")
     storageClass = pexConfig.Field(dtype=str,
                                    doc="name of the StorageClass")
+    nameTemplate = pexConfig.Field(dtype=str,
+                                   default='',
+                                   optional=True,
+                                   doc=("Templated name of string, used to set name "
+                                        "field according to a shared substring when "
+                                        "formatTemplateNames is called"))
 
 
 class _DatasetTypeConfig(_BaseDatasetTypeConfig):
@@ -293,6 +306,15 @@ class PipelineTaskConfig(pexConfig.Config):
     """
     quantum = pexConfig.ConfigField(dtype=QuantumConfig,
                                     doc="configuration for PipelineTask quantum")
+
+    def formatTemplateNames(self, templateParamsDict):
+        # Look up the stored parameters for the specific instance of this config
+        # class
+        storedParamsDict = PIPELINETASK_CONFIG_TEMPLATE_DICT.setdefault(id(self), {})
+        storedParamsDict.update(templateParamsDict)
+        for key, value in self.items():
+            if isinstance(value, _BaseDatasetTypeConfig) and value.nameTemplate != '':
+                value.name = value.nameTemplate.format(**storedParamsDict)
 
 
 InputDatasetField = _makeDatasetField("InputDatasetField", InputDatasetConfig)
