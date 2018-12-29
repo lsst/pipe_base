@@ -24,7 +24,6 @@
 """
 
 from collections import namedtuple
-import io
 import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,

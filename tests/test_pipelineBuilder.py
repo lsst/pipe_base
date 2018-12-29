@@ -23,17 +23,13 @@
 """Simple unit test for PipelineBuilder.
 """
 
-from __future__ import absolute_import, division, print_function
-
-from argparse import Namespace
-from tempfile import NamedTemporaryFile
 import os
 import unittest
-from builtins import object
+from tempfile import NamedTemporaryFile
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import PipelineTask, PipelineTaskConfig, PipelineBuilder
+from lsst.pipe.base import (PipelineTask, PipelineTaskConfig, PipelineBuilder)
 
 
 class SimpleConfig(PipelineTaskConfig):
@@ -69,47 +65,32 @@ class PipelineBuilderTestCase(unittest.TestCase):
     """A test case for PipelineBuilder class
     """
 
-    def setUp(self):
-        self.builder = PipelineBuilder(TaskFactoryMock())
-
-    def tearDown(self):
-        del self.builder
-
     def test_AddTasks(self):
         """Simple test case adding tasks to a pipeline
         """
         # create a task with default label
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 1)
         self.assertEqual(pipeline[0].taskName, "TaskOne")
         self.assertEqual(pipeline[0].label, "TaskOne")
         self.assertIs(pipeline[0].taskClass, TaskOne)
 
         # create a task, give it a label
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:label")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne", "label")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 1)
         self.assertEqual(pipeline[0].taskName, "TaskOne")
         self.assertEqual(pipeline[0].label, "label")
         self.assertIs(pipeline[0].taskClass, TaskOne)
 
         # two different tasks
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne")
+        builder.addTask("TaskTwo")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 2)
         self.assertEqual(pipeline[0].taskName, "TaskOne")
         self.assertEqual(pipeline[0].label, "TaskOne")
@@ -119,15 +100,14 @@ class PipelineBuilderTestCase(unittest.TestCase):
         self.assertIs(pipeline[1].taskClass, TaskTwo)
 
         # more than one instance of each class
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder = PipelineBuilder(TaskFactoryMock())
+        tasks = [("TaskOne",),
+                 ("TaskTwo",),
+                 ("TaskOne", "label"),
+                 ("TaskTwo", "label2")]
+        for task in tasks:
+            builder.addTask(*task)
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].taskName, "TaskOne")
         self.assertEqual(pipeline[0].label, "TaskOne")
@@ -141,162 +121,144 @@ class PipelineBuilderTestCase(unittest.TestCase):
     def test_LabelExceptions(self):
         """Simple test case adding tasks with identical labels
         """
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskOne")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne")
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.addTask("TaskOne")
 
-        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
-                                 cmdLineParser._ACTION_ADD_TASK("TaskTwo:label")]
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne", "label")
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.addTask("TaskTwo", "label")
 
     def test_DeleteTask(self):
         """Simple test case removing tasks
         """
+        builder = PipelineBuilder(TaskFactoryMock())
         # make short pipeline
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        tasks = [("TaskOne",),
+                 ("TaskTwo",),
+                 ("TaskOne", "label"),
+                 ("TaskTwo", "label2")]
+        for task in tasks:
+            builder.addTask(*task)
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 4)
 
-        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("label")]
-        pipeline = self.builder.makePipeline(args)
+        builder.deleteTask("label")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 3)
 
-        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("TaskTwo")]
-        pipeline = self.builder.makePipeline(args)
+        builder.deleteTask("TaskTwo")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 2)
 
-        args.pipeline_actions += [cmdLineParser._ACTION_DELETE_TASK("TaskOne"),
-                                  cmdLineParser._ACTION_DELETE_TASK("label2")]
-        pipeline = self.builder.makePipeline(args)
+        builder.deleteTask("TaskOne")
+        builder.deleteTask("label2")
+        pipeline = builder.pipeline()
         self.assertEqual(len(pipeline), 0)
 
         # unknown label should raise LookupError
-        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                                 cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
-                                 cmdLineParser._ACTION_DELETE_TASK("label2")]
+        builder.addTask("TaskOne")
+        builder.addTask("TaskTwo")
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.deleteTask("label2")
 
     def test_MoveTask(self):
         """Simple test case moving tasks
         """
+        builder = PipelineBuilder(TaskFactoryMock())
         # make short pipeline
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        tasks = [("TaskOne",),
+                 ("TaskTwo",),
+                 ("TaskOne", "label"),
+                 ("TaskTwo", "label2")]
+        for task in tasks:
+            builder.addTask(*task)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "TaskTwo", "label", "label2"])
 
-        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:1")]
-        pipeline = self.builder.makePipeline(args)
+        builder.moveTask("label", 1)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "label", "TaskTwo", "label2"])
 
         # negatives are accepted but may be non-intuitive
-        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("TaskOne:-1")]
-        pipeline = self.builder.makePipeline(args)
+        builder.moveTask("TaskOne", -1)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["label", "TaskTwo", "TaskOne", "label2"])
 
         # position larger than list size moves to end
-        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:100")]
-        pipeline = self.builder.makePipeline(args)
+        builder.moveTask("label", 100)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["TaskTwo", "TaskOne", "label2", "label"])
 
-        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("label:0")]
-        pipeline = self.builder.makePipeline(args)
+        builder.moveTask("label", 0)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["label", "TaskTwo", "TaskOne", "label2"])
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [cmdLineParser._ACTION_MOVE_TASK("unlabel:0")]
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.moveTask("unlabel", 0)
 
     def test_LabelTask(self):
         """Simple test case re-labeling tasks
         """
+        builder = PipelineBuilder(TaskFactoryMock())
         # make short pipeline
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskOne:label"),
-                   cmdLineParser._ACTION_ADD_TASK("TaskTwo:label2")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        tasks = [("TaskOne",),
+                 ("TaskTwo",),
+                 ("TaskOne", "label"),
+                 ("TaskTwo", "label2")]
+        for task in tasks:
+            builder.addTask(*task)
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["TaskOne", "TaskTwo", "label", "label2"])
 
-        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("TaskOne:label0")]
-        pipeline = self.builder.makePipeline(args)
+        builder.labelTask("TaskOne", "label0")
+        pipeline = builder.pipeline()
         self.assertEqual([t.label for t in pipeline],
                          ["label0", "TaskTwo", "label", "label2"])
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("unlabel:label3")]
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.labelTask("unlabel", "label3")
 
         # duplicate label should raise LookupError
-        args.pipeline_actions += [cmdLineParser._ACTION_LABEL_TASK("label2:label0")]
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.labelTask("label2", "label0")
 
     def test_ConfigTask(self):
         """Simple test case for config overrides
         """
+        builder = PipelineBuilder(TaskFactoryMock())
         # make simple pipeline
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder.addTask("TaskOne", "task")
+        pipeline = builder.pipeline()
         self.assertIsInstance(pipeline[0].config, SimpleConfig)
         self.assertIsNone(pipeline[0].config.field)
 
-        args.pipeline_actions += [cmdLineParser._ACTION_CONFIG("task.field=value")]
-        pipeline = self.builder.makePipeline(args)
+        builder.configOverride("task", "field=value")
+        pipeline = builder.pipeline()
         self.assertEqual(pipeline[0].config.field, "value")
 
         # unknown label should raise LookupError
-        args.pipeline_actions += [cmdLineParser._ACTION_CONFIG("label.field=value")]
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.configOverride("label", "field=value")
 
     def test_ConfigFileTask(self):
         """Simple test case for config overrides in file
         """
+        builder = PipelineBuilder(TaskFactoryMock())
         # make simple pipeline
-        actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
-                   cmdLineParser._ACTION_CONFIG("task.field=value")]
-        args = Namespace(instrument_overrides=False,
-                         pipeline=None,
-                         pipeline_actions=actions,
-                         order_pipeline=False)
-        pipeline = self.builder.makePipeline(args)
+        builder.addTask("TaskOne", "task")
+        builder.configOverride("task", "field=value")
+        pipeline = builder.pipeline()
         self.assertEqual(pipeline[0].config.field, "value")
 
         # save config to file for next test
@@ -305,18 +267,17 @@ class PipelineBuilderTestCase(unittest.TestCase):
         fname = overrides.name
         del overrides
 
-        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
-                                 cmdLineParser._ACTION_CONFIG_FILE("task:" + fname)]
-        pipeline = self.builder.makePipeline(args)
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne", "task")
+        builder.configOverrideFile("task", fname)
+        pipeline = builder.pipeline()
         self.assertEqual(pipeline[0].config.field, "value")
 
         os.unlink(fname)
 
         # unknown label should raise LookupError
-        args.pipeline_actions = [cmdLineParser._ACTION_ADD_TASK("TaskOne:task"),
-                                 cmdLineParser._ACTION_CONFIG_FILE("label:/dev/null")]
         with self.assertRaises(LookupError):
-            self.builder.makePipeline(args)
+            builder.configOverrideFile("label", "/dev/null")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

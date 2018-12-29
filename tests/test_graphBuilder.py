@@ -45,7 +45,7 @@ class OneToOneTaskConfig(PipelineTaskConfig):
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 dimensions=["Instrument", "Visit"],
-                                storageClass = "example",
+                                storageClass="example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
     initInput = InitInputDatasetField(name="initInput",
@@ -69,7 +69,7 @@ class VisitToPatchTaskConfig(PipelineTaskConfig):
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 dimensions=["SkyMap", "Tract", "Patch"],
-                                storageClass = "example",
+                                storageClass="example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
 
