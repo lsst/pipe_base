@@ -33,7 +33,7 @@ from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField,
                             InitInputDatasetField, InitOutputDatasetField,
-                            GraphBuilder, Pipeline, TaskDef)
+                            GraphBuilder, Pipeline, TaskDef, TaskFactory)
 from lsst.pipe.base.graphBuilder import _TaskDatasetTypes
 
 
@@ -97,14 +97,14 @@ class TaskTwo(PipelineTask):
         return Struct(output=output)
 
 
-class TaskFactoryMock:
+class TaskFactoryMock(TaskFactory):
     def loadTaskClass(self, taskName):
         if taskName == "TaskOne":
             return TaskOne, "TaskOne"
         elif taskName == "TaskTwo":
             return TaskTwo, "TaskTwo"
 
-    def makeTask(self, taskClass, config, overrides):
+    def makeTask(self, taskClass, config, overrides, butler):
         if config is None:
             config = taskClass.ConfigClass()
             if overrides:

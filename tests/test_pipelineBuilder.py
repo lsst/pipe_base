@@ -29,7 +29,7 @@ from tempfile import NamedTemporaryFile
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import (PipelineTask, PipelineTaskConfig, PipelineBuilder)
+from lsst.pipe.base import (PipelineTask, PipelineTaskConfig, PipelineBuilder, TaskFactory)
 
 
 class SimpleConfig(PipelineTaskConfig):
@@ -46,7 +46,7 @@ class TaskTwo(PipelineTask):
     _DefaultName = "taskTwo"
 
 
-class TaskFactoryMock(object):
+class TaskFactoryMock(TaskFactory):
     def loadTaskClass(self, taskName):
         if taskName == "TaskOne":
             return TaskOne, "TaskOne"
