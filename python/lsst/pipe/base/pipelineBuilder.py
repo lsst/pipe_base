@@ -51,7 +51,7 @@ class PipelineBuilder:
     """PipelineBuilder class is responsible for building task pipeline.
 
     The class provides a set of methods to manipulate pipeline by adding,
-    deleting, re-ordering tasks in pipeline and chaning their labels or
+    deleting, re-ordering tasks in pipeline and changing their labels or
     configuration.
 
     Parameters
@@ -108,7 +108,7 @@ class PipelineBuilder:
             package and module, or just a class name to be searched in
             known packages and modules.
         label : `str`, optional
-            Label for new task, if `None` the n task class name is used as
+            Label for new task, if `None` then task class name is used as
             label.
         """
         # load task class, will throw on errors
@@ -180,7 +180,8 @@ class PipelineBuilder:
         label : `str`
             Label of the task.
         value : `str`
-            String in the form "param=value".
+            String in the form ``"param=value"`` or ``"parm.subpar=value"``,
+            ``value`` can be a Python constant or a list of constants.
         """
         idx = self._pipeline.labelIndex(label)
         if idx < 0:

@@ -85,7 +85,7 @@ class OutputExistsError(GraphBuilderError):
 # ------------------------
 
 
-class GraphBuilder:
+class GraphBuilder(object):
     """
     GraphBuilder class is responsible for building task execution graph from
     a Pipeline.
@@ -94,7 +94,7 @@ class GraphBuilder:
     ----------
     taskFactory : `TaskFactory`
         Factory object used to load/instantiate PipelineTasks
-    registry : :py:class:`daf.butler.Registry`
+    registry : `~lsst.daf.butler.Registry`
         Data butler instance.
     skipExisting : `bool`, optional
         If ``True`` (default) then Quantum is not created if all its outputs
@@ -156,9 +156,9 @@ class GraphBuilder:
 
         Parameters
         ----------
-        pipeline : :py:class:`Pipeline`
+        pipeline : `Pipeline`
             Pipeline definition, task names/classes and their configs.
-        originInfo : `DatasetOriginInfo`
+        originInfo : `~lsst.daf.butler.DatasetOriginInfo`
             Object which provides names of the input/output collections.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
@@ -166,13 +166,17 @@ class GraphBuilder:
 
         Returns
         -------
-        :py:class:`QuantumGraph` instance.
+        graph : `QuantumGraph`
 
         Raises
         ------
-        `UserExpressionError` is raised when user expression cannot be parsed.
-        `OutputExistsError` is raised when output datasets already exist.
-        Other exceptions may be raised by underlying registry classes.
+        UserExpressionError
+            Raised when user expression cannot be parsed.
+        OutputExistsError
+            Raised when output datasets already exist.
+        Exception
+            Other exceptions types may be raised by underlying registry
+            classes.
         """
 
         # make sure all task classes are loaded

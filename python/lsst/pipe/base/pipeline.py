@@ -51,19 +51,18 @@ class TaskDef:
 
     Attributes
     ----------
-    taskName : str
-        PipelineTask class name, currently it is not specified whether this
+    taskName : `str`
+        `PipelineTask` class name, currently it is not specified whether this
         is a fully-qualified name or partial name (e.g. ``module.TaskClass``).
         Framework should be prepared to handle all cases.
-    config : `pex_config.Config`
+    config : `lsst.pex.config.Config`
         Instance of the configuration class corresponding to this task class,
         usually with all overrides applied.
-    taskClass : type or None
-        PipelineTask class object, can be None. If None then framework will
-        have to locate and load class.
-    label : str, optional
-        PipelineTask class object, can be None. If None then framework will
-        have to locate and load class.
+    taskClass : `type` or ``None``
+        `PipelineTask` class object, can be ``None``. If ``None`` then
+        framework will have to locate and load class.
+    label : `str`, optional
+        Task label, usually a short string unique in a pipeline.
     """
     def __init__(self, taskName, config, taskClass=None, label=""):
         self.taskName = taskName
@@ -80,7 +79,7 @@ class TaskDef:
 
 
 class Pipeline(list):
-    """Pipeline is a sequence of TaskDef objects.
+    """Pipeline is a sequence of `TaskDef` objects.
 
     Pipeline is given as one of the inputs to a supervising framework
     which builds execution graph out of it. Pipeline contains a sequence
@@ -89,7 +88,7 @@ class Pipeline(list):
     Main purpose of this class is to provide a mechanism to pass pipeline
     definition from users to supervising framework. That mechanism is
     implemented using simple serialization and de-serialization via
-    pickle. Note that pipeline serialization is not guaranteed to be
+    `pickle`. Note that pipeline serialization is not guaranteed to be
     compatible between different versions or releases.
 
     In current implementation Pipeline is a list (it inherits from `list`)
@@ -107,7 +106,17 @@ class Pipeline(list):
         list.__init__(self, iterable or [])
 
     def labelIndex(self, label):
-        """Return task index given its label, returns -1 if label is not found
+        """Return task index given its label.
+
+        Parameters
+        ----------
+        label : `str`
+            Task label.
+
+        Returns
+        -------
+        index : `int`
+            Task index, or -1 if label is not found.
         """
         for idx, taskDef in enumerate(self):
             if taskDef.label == label:
