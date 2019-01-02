@@ -133,7 +133,7 @@ class ShimButler:
         fullDataId = self._makeDataId(dataId, **rest)
         if datasetType.endswith("_sub"):
             import lsst.afw.image
-            datasetType = datasetType[:len("_sub")]
+            datasetType = datasetType[:-len("_sub")]
             parameters = dict(bbox=fullDataId.pop("bbox"))
             origin = fullDataId.pop("origin", lsst.afw.image.PARENT)
             parameters["origin"] = origin
