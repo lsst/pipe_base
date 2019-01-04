@@ -36,9 +36,9 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .expr_parser.parserYacc import ParserYacc, ParserYaccError
 from .graph import QuantumGraphNodes, QuantumGraph
 from lsst.daf.butler import Quantum, DatasetRef
+from lsst.daf.butler.exprParser import ParserYacc, ParserYaccError
 
 # ----------------------------------
 #  Local non-exported definitions --

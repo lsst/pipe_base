@@ -33,8 +33,7 @@ from builtins import object
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import PipelineTask, PipelineTaskConfig
-from lsst.pipe.supertask import PipelineBuilder, cmdLineParser
+from lsst.pipe.base import PipelineTask, PipelineTaskConfig, PipelineBuilder
 
 
 class SimpleConfig(PipelineTaskConfig):

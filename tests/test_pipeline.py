@@ -27,8 +27,7 @@ import unittest
 import pickle
 
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig
-from lsst.pipe.supertask import Pipeline, TaskDef
+from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef
 import lsst.utils.tests
 
 
@@ -73,14 +72,14 @@ class TaskTestCase(unittest.TestCase):
     def testTaskDef(self):
         """Tests for TaskDef structure
         """
-        task1 = TaskDef("lsst.pipe.supertask.tests.Add", AddConfig())
-        self.assertEqual(task1.taskName, "lsst.pipe.supertask.tests.Add")
+        task1 = TaskDef("lsst.pipe.base.tests.Add", AddConfig())
+        self.assertEqual(task1.taskName, "lsst.pipe.base.tests.Add")
         self.assertIsInstance(task1.config, AddConfig)
         self.assertIsNone(task1.taskClass)
         self.assertEqual(task1.label, "")
 
-        task2 = TaskDef("lsst.pipe.supertask.tests.Mult", MultConfig(), MultTask, "mult_task")
-        self.assertEqual(task2.taskName, "lsst.pipe.supertask.tests.Mult")
+        task2 = TaskDef("lsst.pipe.base.tests.Mult", MultConfig(), MultTask, "mult_task")
+        self.assertEqual(task2.taskName, "lsst.pipe.base.tests.Mult")
         self.assertIsInstance(task2.config, MultConfig)
         self.assertIs(task2.taskClass, MultTask)
         self.assertEqual(task2.label, "mult_task")
@@ -96,32 +95,32 @@ class TaskTestCase(unittest.TestCase):
         """
         pipeline = Pipeline()
         self.assertEqual(len(pipeline), 0)
-        pipeline.append(TaskDef("lsst.pipe.supertask.tests.Add", AddConfig()))
-        pipeline.append(TaskDef("lsst.pipe.supertask.tests.Mult", MultConfig()))
+        pipeline.append(TaskDef("lsst.pipe.base.tests.Add", AddConfig()))
+        pipeline.append(TaskDef("lsst.pipe.base.tests.Mult", MultConfig()))
         self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.supertask.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.supertask.tests.Mult")
+        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
+        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
 
     def testInitial(self):
         """Testing constructor with initial data
         """
-        pipeline = Pipeline([TaskDef("lsst.pipe.supertask.tests.Add", AddConfig()),
-                             TaskDef("lsst.pipe.supertask.tests.Mult", MultConfig())])
+        pipeline = Pipeline([TaskDef("lsst.pipe.base.tests.Add", AddConfig()),
+                             TaskDef("lsst.pipe.base.tests.Mult", MultConfig())])
         self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.supertask.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.supertask.tests.Mult")
+        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
+        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
 
     def testPickle(self):
         """Test pickling/unpickling.
         """
-        pipeline = Pipeline([TaskDef("lsst.pipe.supertask.tests.Add", AddConfig()),
-                             TaskDef("lsst.pipe.supertask.tests.Mult", MultConfig())])
+        pipeline = Pipeline([TaskDef("lsst.pipe.base.tests.Add", AddConfig()),
+                             TaskDef("lsst.pipe.base.tests.Mult", MultConfig())])
         blob = pickle.dumps(pipeline)
         pipeline = pickle.loads(blob)
         self.assertIsInstance(pipeline, Pipeline)
         self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.supertask.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.supertask.tests.Mult")
+        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
+        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

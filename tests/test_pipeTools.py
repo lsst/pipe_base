@@ -29,9 +29,8 @@ import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField,
-                            DatasetTypeDescriptor)
-from lsst.pipe.supertask import Pipeline, TaskDef, pipeTools
-from lsst.pipe.supertask.dotTools import pipeline2dot
+                            DatasetTypeDescriptor, Pipeline,
+                            TaskDef, pipeTools)
 import lsst.utils.tests
 
 # mock for actual dataset type
@@ -284,25 +283,6 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   ("D", "A", "task4")])
         with self.assertRaises(pipeTools.PipelineDataCycleError):
             pipeline = pipeTools.orderPipeline(pipeline)
-
-    def testPipeline2dot(self):
-        """Tests for pipeTools.pipeline2dot method
-        """
-        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
-                                  ("C", "E", "task2"),
-                                  ("B", "D", "task3"),
-                                  (("D", "E"), "F", "task4")])
-        file = io.StringIO()
-        pipeline2dot(pipeline, file)
-
-        # it's hard to validate complete output, just checking few basic things,
-        # even that is not terribly stable
-        lines = file.getvalue().strip().split('\n')
-        ndatasets = 6
-        ntasks = 4
-        nedges = 10
-        nextra = 2  # graph header and closing
-        self.assertEqual(len(lines), ndatasets + ntasks + nedges + nextra)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

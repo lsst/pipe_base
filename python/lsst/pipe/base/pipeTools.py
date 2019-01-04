@@ -89,9 +89,9 @@ def isPipelineOrdered(pipeline, taskFactory=None):
 
     Parameters
     ----------
-    pipeline : `pipe.supertask.Pipeline`
+    pipeline : `pipe.base.Pipeline`
         Pipeline description.
-    taskFactory: `pipe.supertask.TaskFactory`, optional
+    taskFactory: `pipe.base.TaskFactory`, optional
         Instance of an object which knows how to import task classes. It is only
         used if pipeline task definitions do not define task classes.
 
@@ -146,15 +146,15 @@ def orderPipeline(pipeline, taskFactory=None):
 
     Parameters
     ----------
-    pipeline : `pipe.supertask.Pipeline`
+    pipeline : `pipe.base.Pipeline`
         Pipeline description.
-    taskFactory: `pipe.supertask.TaskFactory`, optional
+    taskFactory: `pipe.base.TaskFactory`, optional
         Instance of an object which knows how to import task classes. It is only
         used if pipeline task definitions do not define task classes.
 
     Returns
     -------
-    Correctly ordered pipeline (`pipe.supertask.Pipeline` instance).
+    Correctly ordered pipeline (`pipe.base.Pipeline` instance).
 
     Raises
     ------

@@ -32,9 +32,9 @@ from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
                              DatasetOriginInfoDef)
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField,
-                            InitInputDatasetField, InitOutputDatasetField)
-from lsst.pipe.supertask import GraphBuilder, Pipeline, TaskDef
-from lsst.pipe.supertask.graphBuilder import _TaskDatasetTypes
+                            InitInputDatasetField, InitOutputDatasetField,
+                            GraphBuilder, Pipeline, TaskDef)
+from lsst.pipe.base.graphBuilder import _TaskDatasetTypes
 
 
 class OneToOneTaskConfig(PipelineTaskConfig):
