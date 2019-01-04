@@ -303,7 +303,7 @@ class GraphBuilder(object):
             qlinks = []
             for dimensionName in taskDss.taskDef.config.quantum.dimensions:
                 dimension = self.dimensions[dimensionName]
-                qlinks += dimension.link
+                qlinks += dimension.links()
             _LOG.debug("task %s qdimensions: %s", taskDss.taskDef.label, qlinks)
 
             # some rows will be non-unique for subset of dimensions, create
