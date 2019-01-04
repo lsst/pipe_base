@@ -1,9 +1,10 @@
+# This file is part of pipe_base.
 #
-# LSST Data Management System
-# Copyright 2017 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,12 +16,10 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
-"""
-Module defining GraphBuilder class and related methods.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Module defining GraphBuilder class and related methods.
 """
 
 __all__ = ['GraphBuilder']
@@ -86,7 +85,7 @@ class OutputExistsError(GraphBuilderError):
 # ------------------------
 
 
-class GraphBuilder(object):
+class GraphBuilder:
     """
     GraphBuilder class is responsible for building task execution graph from
     a Pipeline.
