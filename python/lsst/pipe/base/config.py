@@ -54,9 +54,10 @@ def _makeDatasetField(name, dtype):
 
     This is factory function which produces factory functions. The factories
     returned by this function are used to simplify the process of creating
-    pex config ConfigFields which have dtypes derived from either
-    _DatasetTypeConfig, or _GlobalDatasetTypeConfig. These functions can
-    then be used in a mannor similar to other ConfigField constructors.
+    `lsst.pex.config.ConfigField` which have dtypes derived from either
+    `_DatasetTypeConfig`, or `_GlobalDatasetTypeConfig`. These functions can
+    then be used in a mannor similar to other `~lsst.pex.config.ConfigField`
+    constructors.
 
     Below is a flow diagram to explain the use of this function visually,
     where arrows indicate processing flow.
@@ -79,7 +80,8 @@ def _makeDatasetField(name, dtype):
     Parameters
     ----------
     name : `str`
-        The name to use as the final output Field constructor
+        The name to use as the final output `~lsst.pex.config.Field`
+        constructor
     dtype : Configuration Object
         This is the python type to set as the dtype in the ConfigField
         construction
@@ -88,7 +90,7 @@ def _makeDatasetField(name, dtype):
     -------
     func : function
         Python callable function which can be used to produce instances of
-        ConfigFields of type dtype.
+        `~lsst.pex.config.ConfigField` of type dtype.
 
     Raises
     ------
@@ -157,12 +159,12 @@ def _makeDatasetField(name, dtype):
     docstring = f"""    Factory function to create `~lsst.pex.config.Config` class instances
     of `{dtype.__name__}`
 
-    This function servers as syntactic sugar for creating Configurable fields
-    which are `{dtype.__name__}`. The naming of this function violates the
-    normal convention of a lowercase first letter in the function name, as
-    this function is intended to sit in the same place as
-    `~lsst.pex.config.ConfigField` classes, and consistency in declaration
-    syntax is important.
+    This function servers as syntactic sugar for creating
+    `~lsst.pex.config.ConfigField` which are `{dtype.__name__}`. The naming of
+    this function violates the normal convention of a lowercase first letter
+    in the function name, as this function is intended to sit in the same
+    place as `~lsst.pex.config.ConfigField` classes, and consistency in
+    declaration syntax is important.
 
     The input arguments for this class are a combination of the arguments for
     `~lsst.pex.config.ConfigField` and `{dtype.__name__}`. The arguments
@@ -221,7 +223,8 @@ class _BaseDatasetTypeConfig(pexConfig.Config):
                                    optional=True,
                                    doc=("Templated name of string, used to set name "
                                         "field according to a shared substring when "
-                                        "formatTemplateNames is called"))
+                                        "`~PipelineTaskConfig.formatTemplateNames` "
+                                        "is called"))
 
 
 class _DatasetTypeConfig(_BaseDatasetTypeConfig):
@@ -300,9 +303,10 @@ class ResourceConfig(pexConfig.Config):
 class PipelineTaskConfig(pexConfig.Config):
     """Base class for all PipelineTask configurations.
 
-    This class defines fields that must be defined for every PipelineTask.
-    It will be used as a base class for all PipelineTask configurations instead
-    of `pex.config.Config`.
+    This class defines fields that must be defined for every
+    `~lsst.pipe.base.PipelineTask`. It will be used as a base class for all
+    `~lsst.pipe.base.PipelineTask` configurations instead of
+    `pex.config.Config`.
     """
     quantum = pexConfig.ConfigField(dtype=QuantumConfig,
                                     doc="configuration for PipelineTask quantum")
