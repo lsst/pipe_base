@@ -24,8 +24,9 @@
 
 __all__ = ["ConfigOverrides"]
 
+import ast
+
 from lsst.pipe.base import PipelineTaskConfig
-import lsst.pex.config as pexConfig
 import lsst.pex.exceptions as pexExceptions
 
 
@@ -119,26 +120,22 @@ class ConfigOverrides:
                 obj = config
                 for attr in field[:-1]:
                     obj = getattr(obj, attr)
-                # If the type of the object to set is a list field, the value to assign
-                # is most likely a list, and we will eval it to get a python list object
-                # which will be used to set the objects value
-                # This must be done before the try, as it will otherwise set a string which
-                # is a valid iterable object when a list is the intended object
-                if isinstance(getattr(obj, field[-1]), pexConfig.listField.List) and isinstance(value, str):
+                # If input is a string and field type is not a string then we
+                # have to convert string to an expected type. Implementing
+                # full string parser is non-trivial so we take a shortcut here
+                # and `eval` the string and assign the resulting value to a
+                # field. Type erroes can happen during both `eval` and field
+                # assignment.
+                if isinstance(value, str) and obj._fields[field[-1]].dtype is not str:
                     try:
-                        value = eval(value, {})
+                        # use safer ast.literal_eval, it only supports literals
+                        value = ast.literal_eval(value)
                     except Exception:
-                        # Something weird happened here, try passing, and seeing if further
-                        # code can handle this
-                        raise pexExceptions.RuntimeError(f"Unable to parse {value} into a valid list")
-                try:
-                    setattr(obj, field[-1], value)
-                except TypeError:
-                    if not isinstance(value, str):
-                        raise
-                    # this can throw
-                    value = eval(value, {})
-                    setattr(obj, field[-1], value)
+                        # eval failed, wrap exception with more user-friendly message
+                        raise pexExceptions.RuntimeError(f"Unable to parse `{value}' into a Python object")
+
+                # this can throw in case of type mismatch
+                setattr(obj, field[-1], value)
             elif otype == 'namesDict':
                 if not isinstance(config, PipelineTaskConfig):
                     raise pexExceptions.RuntimeError("Dataset name substitution can only be used on Tasks "
