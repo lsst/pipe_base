@@ -27,7 +27,6 @@ __all__ = ["PipelineBuilder"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
-import ast
 import logging
 
 # -----------------------------
@@ -36,7 +35,6 @@ import logging
 from .configOverrides import ConfigOverrides
 from .pipeline import Pipeline, TaskDef
 from . import pipeTools
-import lsst.pex.exceptions as pexExceptions
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -211,26 +209,19 @@ class PipelineBuilder:
         overrides.applyTo(self._pipeline[idx].config)
 
     def substituteDatatypeNames(self, label, value):
-        """Apply name string formatting to config file
+        """Apply name string formatting to config file.
+
         Parameters
         ----------
         label : `str`
             Label of the task.
-        value : `str`
-            String of the form of a dictionary of template keyword to value
+        value : `dict`
+            A python dict used in formatting nameTemplates.
         """
         idx = self._pipeline.labelIndex(label)
         if idx < 0:
             raise LookupError("Task label is not found: " + label)
 
-        try:
-            parsedNamesDict = ast.literal_eval(value)
-            if not isinstance(parsedNamesDict, dict):
-                raise ValueError()
-        except ValueError:
-            raise pexExceptions.RuntimeError(f"Unable parse --dataset-name-substitution {value} "
-                                             "into a valid dict")
-
         overrides = ConfigOverrides()
-        overrides.addDatasetNameSubstitution(parsedNamesDict)
+        overrides.addDatasetNameSubstitution(value)
         overrides.applyTo(self._pipeline[idx].config)
