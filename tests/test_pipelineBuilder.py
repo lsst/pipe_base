@@ -28,11 +28,19 @@ from tempfile import NamedTemporaryFile
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import (PipelineTask, PipelineTaskConfig, PipelineBuilder, TaskFactory)
+from lsst.pipe.base import (PipelineTask, PipelineTaskConfig, PipelineBuilder, TaskFactory,
+                            InitInputDatasetField)
 
 
 class SimpleConfig(PipelineTaskConfig):
     field = pexConfig.Field(dtype=str, doc="arbitrary string")
+    schema = InitInputDatasetField(doc="Schema", name="",
+                                   nameTemplate="{template}schema",
+                                   storageClass="SourceCatalog")
+
+    def setDefaults(self):
+        PipelineTaskConfig.setDefaults(self)
+        self.formatTemplateNames({"template": ""})
 
 
 class TaskOne(PipelineTask):
@@ -277,6 +285,20 @@ class PipelineBuilderTestCase(unittest.TestCase):
         # unknown label should raise LookupError
         with self.assertRaises(LookupError):
             builder.configOverrideFile("label", "/dev/null")
+
+    def test_substituteDatatypeNames(self):
+        """Simple test case for substituteDatatypeNames method
+        """
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne", "task")
+        pipeline = builder.pipeline()
+        self.assertEqual(pipeline[0].config.schema.name, "schema")
+
+        builder = PipelineBuilder(TaskFactoryMock())
+        builder.addTask("TaskOne", "task")
+        builder.substituteDatatypeNames("task", {"template": "extra_"})
+        pipeline = builder.pipeline()
+        self.assertEqual(pipeline[0].config.schema.name, "extra_schema")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
