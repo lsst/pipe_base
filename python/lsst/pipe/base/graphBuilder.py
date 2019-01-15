@@ -35,7 +35,7 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .graph import QuantumGraphNodes, QuantumGraph
+from .graph import QuantumGraphTaskNodes, QuantumGraph
 from lsst.daf.butler import Quantum, DatasetRef
 from lsst.daf.butler.exprParser import ParserYacc, ParserYaccError
 
@@ -367,6 +367,6 @@ class GraphBuilder(object):
 
                 quanta.append(quantum)
 
-            qgraph.append(QuantumGraphNodes(taskDss.taskDef, quanta))
+            qgraph.append(QuantumGraphTaskNodes(taskDss.taskDef, quanta))
 
         return qgraph
