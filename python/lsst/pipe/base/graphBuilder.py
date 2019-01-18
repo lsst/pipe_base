@@ -337,6 +337,7 @@ class GraphBuilder(object):
                     for key in dataRefs.keys():
                         if dataRefs[key].id is not None:
                             dataRefs[key] = self.registry.getDataset(dataRefs[key].id)
+                            self.registry.expandDataId(dataRefs[key].dataId, region=True)
 
             # all nodes for this task
             quanta = []
