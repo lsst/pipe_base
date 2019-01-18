@@ -29,15 +29,19 @@ representations.
 """
 
 # "exported" names
-__all__ = ["QuantumGraphNodes", "QuantumGraph"]
+__all__ = ["QuantumGraph", "QuantumGraphTaskNodes", "QuantumIterData"]
 
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+from itertools import chain
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
+from .pipeline import Pipeline
+from .pipeTools import orderPipeline
+from lsst.daf.butler import DataId
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -48,15 +52,53 @@ __all__ = ["QuantumGraphNodes", "QuantumGraph"]
 # ------------------------
 
 
-class QuantumGraphNodes:
-    """QuantumGraphNodes represents a bunch of nodes in an quantum graph.
+class QuantumIterData:
+    """Helper class for iterating over quanta in a graph.
+
+    `QuantumGraph.traverse` method needs to return topologically ordered
+    Quanta together with their dependencies. This class is used as a value
+    for iterator, it contains enumerated Quantum and its prerequisites.
+
+    Parameters
+    ----------
+    quantumId : `int`
+        Index of this Quantum, unique but arbitrary integer.
+    quantum : `~lsst.daf.butler.Quantum`
+        Quantum corresponding to a graph node.
+    taskDef : `TaskDef`
+        Task to be run on this quantum.
+    prerequisites : iterable of `int`
+        Possibly empty sequence of indices of prerequisites for this Quantum.
+        Prerequisites include other nodes in a graph, they do not reflect
+        data already in butler (there are no graph nodes for those).
+    """
+
+    __slots__ = ["quantumId", "quantum", "taskDef", "prerequisites"]
+
+    def __init__(self, quantumId, quantum, taskDef, prerequisites):
+        self.quantumId = quantumId
+        self.quantum = quantum
+        self.taskDef = taskDef
+        self.prerequisites = frozenset(prerequisites)
+
+    def __str__(self):
+        return "QuantumIterData({}, {}, {})".format(self.quantumId,
+                                                    self.taskDef,
+                                                    self.prerequisites)
+
+
+class QuantumGraphTaskNodes:
+    """QuantumGraphTaskNodes represents a bunch of nodes in an quantum graph
+    corresponding to a single task.
 
     The node in quantum graph is represented by the `PipelineTask` and a
-    single `Quantum` instance. One possible representation of the graph is
-    just a list of nodes without edges (edges can be deduced from nodes'
-    quantum inputs and outputs if needed). That representation can be reduced
-    to the list of PipelineTasks and the corresponding list of Quanta.
-    This class defines this reduced representation.
+    single `~lsst.daf.butler.Quantum` instance. One possible representation
+    of the graph is just a list of nodes without edges (edges can be deduced
+    from nodes' quantum inputs and outputs if needed). That representation can
+    be reduced to the list of PipelineTasks (or their corresponding TaskDefs)
+    and the corresponding list of Quanta. This class is used in this reduced
+    representation for a single task, and full `QuantumGraph` is a sequence of
+    tinstances of this class for one or more tasks.
 
     Different frameworks may use different graph representation, this
     representation was based mostly on requirements of command-line
@@ -64,9 +106,9 @@ class QuantumGraphNodes:
 
     Attributes
     ----------
-    taskDef : :py:class:`TaskDef`
+    taskDef : `TaskDef`
         Task defintion for this set of nodes.
-    quanta : `list` of :py:class:`lsst.daf.butler.Quantum`
+    quanta : `list` of `~lsst.daf.butler.Quantum`
         List of quanta corresponding to the task.
     """
     def __init__(self, taskDef, quanta):
@@ -75,7 +117,7 @@ class QuantumGraphNodes:
 
 
 class QuantumGraph(list):
-    """QuantumGraph is a sequence of QuantumGraphNodes objects.
+    """QuantumGraph is a sequence of `QuantumGraphTaskNodes` objects.
 
     Typically the order of the tasks in the list will be the same as the
     order of tasks in a pipeline (obviously depends on the code which
@@ -83,7 +125,7 @@ class QuantumGraph(list):
 
     Parameters
     ----------
-    iterable : iterable of :py:class:`QuantumGraphNodes` instances, optional
+    iterable : iterable of `QuantumGraphTaskNodes`, optional
         Initial sequence of per-task nodes.
     """
     def __init__(self, iterable=None):
@@ -96,17 +138,72 @@ class QuantumGraph(list):
     def quanta(self):
         """Iterator over quanta in a graph.
 
+        Quanta are returned in unspecified order.
+
         Yields
         ------
         taskDef : `TaskDef`
             Task definition for a Quantum.
-        quantum : `Quantum`
+        quantum : `~lsst.daf.butler.Quantum`
             Single quantum.
         """
         for taskNodes in self:
             taskDef = taskNodes.taskDef
             for quantum in taskNodes.quanta:
                 yield taskDef, quantum
+
+    def traverse(self):
+        """Return topologically ordered Quanta and their prerequisites.
+
+        This method iterates over all Quanta in topological order, enumerating
+        them during iteration. Returned `QuantumIterData` object contains
+        Quantum instance, its ``quantumId`` and ``quantumId`` of all its
+        prerequsites (Quanta that produce inputs for this Quantum):
+        - the ``quantumId`` values are generated by an iteration of a
+          QuantumGraph, and are not intrinsic to the QuantumGraph
+        - during iteration, each ID will appear in quantumId before it ever
+          appears in prerequisites.
+
+        Yields
+        ------
+        quantumData : `QuantumIterData`
+        """
+
+        def orderedTaskNodes(graph):
+            """Return topologically ordered task nodes.
+
+            Yields
+            ------
+            nodes : `QuantumGraphTaskNodes`
+            """
+            # Tasks in a graph are probably topologically sorted already but there
+            # is no guarantee for that. Just re-construct Pipeline and order tasks
+            # in a pipeline using existing method.
+            nodesMap = {id(item.taskDef): item for item in graph}
+            pipeline = orderPipeline(Pipeline(item.taskDef for item in graph))
+            for taskDef in pipeline:
+                yield nodesMap[id(taskDef)]
+
+        index = 0
+        outputs = {}  # maps (DatasetType.name, DataId) to its producing quantum index
+        for nodes in orderedTaskNodes(self):
+            for quantum in nodes.quanta:
+
+                # Find quantum prerequisites (must be in `outputs` already)
+                prereq = []
+                for dataRef in chain.from_iterable(quantum.predictedInputs.values()):
+                    # if data exists in butler then `id` is not None
+                    if dataRef.id is None:
+                        key = (dataRef.datasetType.name, DataId(dataRef.dataId))
+                        prereq.append(outputs[key])
+
+                # Update `outputs` with this quantum outputs
+                for dataRef in chain.from_iterable(quantum.outputs.values()):
+                    key = (dataRef.datasetType.name, DataId(dataRef.dataId))
+                    outputs[key] = index
+
+                yield QuantumIterData(index, quantum, nodes.taskDef, prereq)
+                index += 1
 
     def getDatasetTypes(self, initInputs=True, initOutputs=True, inputs=True, outputs=True):
         total = set()
