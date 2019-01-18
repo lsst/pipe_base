@@ -61,9 +61,10 @@ class DatasetTypeDescriptor:
         `True` if this is a scalar dataset.
     """
 
-    def __init__(self, datasetType, scalar):
+    def __init__(self, datasetType, scalar, manualLoad):
         self._datasetType = datasetType
         self._scalar = scalar
+        self._manualLoad = manualLoad
 
     @classmethod
     def fromConfig(cls, datasetConfig):
@@ -84,7 +85,8 @@ class DatasetTypeDescriptor:
                                   storageClass=datasetConfig.storageClass)
         # Use scalar=True for Init dataset types
         scalar = getattr(datasetConfig, 'scalar', True)
-        return cls(datasetType=datasetType, scalar=scalar)
+        manualLoad = getattr(datasetConfig, 'manualLoad', False)
+        return cls(datasetType=datasetType, scalar=scalar, manualLoad=manualLoad)
 
     @property
     def datasetType(self):
@@ -97,6 +99,12 @@ class DatasetTypeDescriptor:
         """`True` if this is a scalar dataset.
         """
         return self._scalar
+
+    @property
+    def manualLoad(self):
+        """`True` if the task will handle loading the data
+        """
+        return self._manualLoad
 
 
 class PipelineTask(Task):
@@ -478,7 +486,8 @@ class PipelineTask(Task):
                     keyDataRefs = keyDataRefs[0]
                     keyDataIds = keyDataIds[0]
                 dataIds[key] = keyDataIds
-                dataRefs[key] = keyDataRefs
+                if not descriptor.manualLoad:
+                    dataRefs[key] = keyDataRefs
             return dataIds, dataRefs
 
         # lists of DataRefs/DataIds for input datasets
