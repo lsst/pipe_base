@@ -129,7 +129,8 @@ def _makeDatasetField(name, dtype):
         extraFields = ""
     elif issubclass(dtype, _DatasetTypeConfig):
         # Handle dataset types like InputDatasetConfig, note these take a dimensions argument
-        def wrappedFunc(*, doc, dimensions, storageClass, name="", scalar=False, check=None, nameTemplate=''):
+        def wrappedFunc(*, doc, dimensions, storageClass, name="", scalar=False, check=None, nameTemplate='',
+                        manualLoad=False):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # Set the string corresponding to the dimensions parameter documentation
         # formatting is to support final output of the docstring variable
@@ -145,11 +146,15 @@ def _makeDatasetField(name, dtype):
                 Template for the `name` field which is specified as a python formattable
                 string. The template is formatted during the configuration of a Config
                 class with a user defined string. Defaults to empty string, in which
-                case no formatting is done."""
+                case no formatting is done.
+            manualLoad : `bool`
+                Indicates runQuantum will not load the data from the butler, and that
+                the task intends to do the loading itself. Defaults to False
+            """
         # Set a string to add the dimensions argument to the list of arguments in the
         # docstring explanation section formatting is to support final output
         # of the docstring variable
-        extraFields = ", dimensions, scalar, nameTemplate"
+        extraFields = ", dimensions, scalar, nameTemplate, manualLoad"
     else:
         # if someone tries to create a config factory for a type that is not
         # handled raise and exception
@@ -245,6 +250,13 @@ class _DatasetTypeConfig(_BaseDatasetTypeConfig):
                                   "objects/DataIds will be unpacked before calling task "
                                   "methods, returned data is expected to contain single "
                                   "objects as well."))
+    manualLoad = pexConfig.Field(dtype=bool,
+                                 default=False,
+                                 optional=True,
+                                 doc=("If this is set to True, the class intends to load "
+                                      "the data associated with this Configurable Field "
+                                      "manually, and runQuantum should not load it. Should "
+                                      "not be set by configuration override"))
 
 
 class InputDatasetConfig(_DatasetTypeConfig):

@@ -113,12 +113,14 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
                                   dimensions=["UnitA"],
                                   storageClass="example")
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
-                                                    scalar=False)
+                                                    scalar=False,
+                                                    manualLoad=False)
         self.assertIs(descriptor.datasetType, datasetType)
         self.assertFalse(descriptor.scalar)
 
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
-                                                    scalar=True)
+                                                    scalar=True,
+                                                    manualLoad=False)
         self.assertIs(descriptor.datasetType, datasetType)
         self.assertTrue(descriptor.scalar)
 
