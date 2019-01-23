@@ -195,7 +195,17 @@ class QuantumGraph(list):
                     # if data exists in butler then `id` is not None
                     if dataRef.id is None:
                         key = (dataRef.datasetType.name, DataId(dataRef.dataId))
-                        prereq.append(outputs[key])
+                        try:
+                            prereq.append(outputs[key])
+                        except KeyError:
+                            # The Quantum that makes our inputs is not in the graph,
+                            # this could happen if we run on a "split graph" which is
+                            # usually just one quantum. Check for number of Quanta
+                            # in a graph and ignore error if it's just one.
+                            # TODO: This code has to be removed or replaced with
+                            # something more generic
+                            if not (len(self) == 1 and len(self[0].quanta) == 1):
+                                raise
 
                 # Update `outputs` with this quantum outputs
                 for dataRef in chain.from_iterable(quantum.outputs.values()):
