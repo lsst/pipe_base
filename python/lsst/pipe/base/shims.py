@@ -135,7 +135,7 @@ class ShimButler:
             import lsst.afw.image
             datasetType = datasetType[:-len("_sub")]
             parameters = dict(bbox=fullDataId.pop("bbox"))
-            origin = fullDataId.pop("origin", lsst.afw.image.PARENT)
+            origin = fullDataId.pop("imageOrigin", lsst.afw.image.PARENT)
             parameters["origin"] = origin
         else:
             parameters = {}
