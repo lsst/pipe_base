@@ -27,6 +27,7 @@ import argparse
 import collections
 import fnmatch
 import itertools
+import logging
 import os
 import re
 import shlex
@@ -500,6 +501,11 @@ log4j.appender.A1.Target=System.out
 log4j.appender.A1.layout=PatternLayout
 log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 """)
+
+        # Forward all Python logging to lsst.log
+        lgr = logging.getLogger()
+        lgr.setLevel(logging.DEBUG)
+        lgr.addHandler(lsstLog.LogHandler())
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
                         ContainerClass=DataIdContainer):
