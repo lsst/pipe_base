@@ -263,7 +263,7 @@ class GraphBuilder(object):
         originInfo : `DatasetOriginInfo`
             Object which provides names of the input/output collections.
         userQuery : `str`
-            String which defunes user-defined selection for registry, should be
+            String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
 
         Returns
@@ -328,16 +328,6 @@ class GraphBuilder(object):
                     dataRef = row.datasetRefs[dsType]
                     dataRefs[_dataRefKey(dataRef)] = dataRef
                     _LOG.debug("add output dataRef: %s %s", dsType.name, dataRef)
-
-            # pre-flight does not fill dataset components, and graph users
-            # may need to know that, re-retrieve all input datasets to have
-            # their components properly filled.
-            for qinputs in taskQuantaInputs.values():
-                for dataRefs in qinputs.values():
-                    for key in dataRefs.keys():
-                        if dataRefs[key].id is not None:
-                            dataRefs[key] = self.registry.getDataset(dataRefs[key].id)
-                            self.registry.expandDataId(dataRefs[key].dataId, region=True)
 
             # all nodes for this task
             quanta = []
