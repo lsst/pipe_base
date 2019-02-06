@@ -504,7 +504,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
         # Forward all Python logging to lsst.log
         lgr = logging.getLogger()
-        lgr.setLevel(logging.DEBUG)
+        lgr.setLevel(logging.INFO)  # same as in log4cxx config above
         lgr.addHandler(lsstLog.LogHandler())
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
@@ -1279,6 +1279,10 @@ class LogLevelAction(argparse.Action):
                 namespace.log.setLevel(logLevel)
             else:
                 lsstLog.Log.getLogger(component).setLevel(logLevel)
+            # Python logging levels are same as lsst.log divided by 1000,
+            # logging does not have TRACE level by default but it is OK to use
+            # that numeric level and we may even add TRACE later.
+            logging.getLogger(component).setLevel(logLevel//1000)
 
 
 class ReuseAction(argparse.Action):
