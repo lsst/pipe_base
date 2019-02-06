@@ -1279,10 +1279,9 @@ class LogLevelAction(argparse.Action):
                 namespace.log.setLevel(logLevel)
             else:
                 lsstLog.Log.getLogger(component).setLevel(logLevel)
-            # Python logging levels are same as lsst.log divided by 1000,
-            # logging does not have TRACE level by default but it is OK to use
-            # that numeric level and we may even add TRACE later.
-            logging.getLogger(component).setLevel(logLevel//1000)
+            # set logging level for Python logging
+            pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
+            logging.getLogger(component).setLevel(pyLevel)
 
 
 class ReuseAction(argparse.Action):
