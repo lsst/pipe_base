@@ -504,7 +504,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
         # Forward all Python logging to lsst.log
         lgr = logging.getLogger()
-        lgr.setLevel(logging.DEBUG)
+        lgr.setLevel(logging.INFO)  # same as in log4cxx config above
         lgr.addHandler(lsstLog.LogHandler())
 
     def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
@@ -1279,6 +1279,9 @@ class LogLevelAction(argparse.Action):
                 namespace.log.setLevel(logLevel)
             else:
                 lsstLog.Log.getLogger(component).setLevel(logLevel)
+            # set logging level for Python logging
+            pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
+            logging.getLogger(component).setLevel(pyLevel)
 
 
 class ReuseAction(argparse.Action):
