@@ -1,3 +1,5 @@
+.. py:currentmodule:: lsst.pipe.base
+
 .. _lsst.pipe.base:
 
 ##############
@@ -9,10 +11,15 @@ Tasks package the algorithmic units of the LSST Science Pipelines.
 You can create, configure, and run tasks with their Python APIs.
 Some tasks, called command-line tasks, are also packaged into data processing pipelines that you can run from the command line.
 
+.. _lsst.pipe.base-using:
+
+Using lsst.pipe.base
+====================
+
 .. _lsst-pipe-base-overview:
 
 Overview
-========
+--------
 
 .. toctree::
    :maxdepth: 1
@@ -22,7 +29,7 @@ Overview
 .. _using-command-line-tasks:
 
 Using command-line tasks
-========================
+------------------------
 
 .. toctree::
    :maxdepth: 1
@@ -39,7 +46,7 @@ Using command-line tasks
 .. _lsst-pipe-base-developing-tasks:
 
 Developing tasks and command-line tasks
-=======================================
+---------------------------------------
 
 .. toctree::
    :maxdepth: 1
@@ -47,7 +54,18 @@ Developing tasks and command-line tasks
    creating-a-task.rst
    creating-a-command-line-task.rst
 
+.. _lsst.pipe.base-contributing:
+
+Contributing
+============
+
+``lsst.pipe.base`` is developed at https://github.com/lsst/pipe_base.
+You can find Jira issues for this module under the `pipe_base <https://jira.lsstcorp.org/issues/?jql=project%20%3D%20DM%20AND%20component%20%3D%20pipe_base>`_ component.
+
+.. _lsst.pipe.base-pyapi:
+
 Python API reference
 ====================
 
 .. automodapi:: lsst.pipe.base
+   :no-main-docstr:
