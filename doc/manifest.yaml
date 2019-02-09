@@ -1,5 +1,2 @@
-package: "pipe_base"
 modules:
   - "lsst.pipe.base"
-statics:
-  - "_static/pipe_base"
