@@ -36,7 +36,7 @@ import logging
 #  Imports for other modules --
 # -----------------------------
 from .graph import QuantumGraphTaskNodes, QuantumGraph
-from lsst.daf.butler import Quantum, DatasetRef
+from lsst.daf.butler import Quantum, DatasetRef, DimensionSet
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -51,7 +51,12 @@ _LOG = logging.getLogger(__name__.partition(".")[2])
 # taskDef : `TaskDef`
 # inputs : `list` of `DatasetType`
 # outputs : `list` of `DatasetType`
-_TaskDatasetTypes = namedtuple("_TaskDatasetTypes", "taskDef inputs outputs initInputs initOutputs")
+# initTnputs : `list` of `DatasetType`
+# initOutputs : `list` of `DatasetType`
+# perDatasetTypeDimensions : `~lsst.daf.butler.DimensionSet`
+_TaskDatasetTypes = namedtuple("_TaskDatasetTypes", ("taskDef", "inputs", "outputs",
+                                                     "initInputs", "initOutputs",
+                                                     "perDatasetTypeDimensions"))
 
 
 class GraphBuilderError(Exception):
@@ -159,14 +164,65 @@ class GraphBuilder(object):
                 getter = getattr(taskClass, f"get{attr}DatasetTypes")
                 ioObject = getter(taskDef.config) or {}
                 taskIo.append([dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()])
-            taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo))
+            perDatasetTypeDimensions = DimensionSet(self.registry.dimensions,
+                                                    taskClass.getPerDatasetTypeDimensions(taskDef.config))
+            taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo,
+                                                  perDatasetTypeDimensions=perDatasetTypeDimensions))
+
+        perDatasetTypeDimensions = self._extractPerDatasetTypeDimensions(taskDatasets)
 
         # build initial dataset graph
         inputs, outputs, initInputs, initOutputs = self._makeFullIODatasetTypes(taskDatasets)
 
         # make a graph
         return self._makeGraph(taskDatasets, inputs, outputs, initInputs, initOutputs,
-                               originInfo, userQuery)
+                               originInfo, userQuery, perDatasetTypeDimensions=perDatasetTypeDimensions)
+
+    def _extractPerDatasetTypeDimensions(self, taskDatasets):
+        """Return the complete set of all per-DatasetType dimensions declared
+        by any task.
+
+        Per-DatasetType dimensions are those that need not have the same values
+        for different Datasets within a Quantum.
+
+        Parameters
+        ----------
+        taskDatasets : sequence of `_TaskDatasetTypes`
+            Information for each task in the pipeline.
+
+        Returns
+        -------
+        perDatasetTypeDimensions : `~lsst.daf.butler.DimensionSet`
+            All per-DatasetType dimensions.
+
+        Raises
+        ------
+        ValueError
+            Raised if tasks disagree on whether a dimension is declared
+            per-DatasetType.
+        """
+        # Empty dimension set, just used to construct more DimensionSets via
+        # union method.
+        noDimensions = DimensionSet(self.registry.dimensions, ())
+        # Construct pipeline-wide perDatasetTypeDimensions set from union of
+        # all Task-level perDatasetTypeDimensions.
+        perDatasetTypeDimensions = noDimensions.union(
+            *[taskDs.perDatasetTypeDimensions for taskDs in taskDatasets]
+        )
+        # Check that no tasks want any of these as common (i.e. not
+        # per-DatasetType) dimensions.
+        for taskDs in taskDatasets:
+            allTaskDimensions = noDimensions.union(
+                *[datasetType.dimensions for datasetType in chain(taskDs.inputs, taskDs.outputs)]
+            )
+            commonTaskDimensions = allTaskDimensions - taskDs.perDatasetTypeDimensions
+            if not commonTaskDimensions.isdisjoint(perDatasetTypeDimensions):
+                overlap = commonTaskDimensions.intersections(perDatasetTypeDimensions)
+                raise ValueError(
+                    f"Task {taskDs.taskDef.taskName} uses dimensions {overlap} without declaring them "
+                    f"per-DatasetType, but they are declared per-DatasetType by another task."
+                )
+        return perDatasetTypeDimensions
 
     def _makeFullIODatasetTypes(self, taskDatasets):
         """Returns full set of input and output dataset types for all tasks.
@@ -212,7 +268,8 @@ class GraphBuilder(object):
         initOutputs = set(allDatasetTypes[name] for name in initOutputs)
         return inputs, outputs, initInputs, initOutputs
 
-    def _makeGraph(self, taskDatasets, inputs, outputs, initInputs, initOutputs, originInfo, userQuery):
+    def _makeGraph(self, taskDatasets, inputs, outputs, initInputs, initOutputs, originInfo, userQuery,
+                   perDatasetTypeDimensions=()):
         """Make QuantumGraph instance.
 
         Parameters
@@ -233,12 +290,16 @@ class GraphBuilder(object):
         userQuery : `str`
             String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
+        perDatasetTypeDimensions : iterable of `Dimension` or `str`
+            Dimensions (or names thereof) that may have different values for
+            different dataset types within the same quantum.
 
         Returns
         -------
         `QuantumGraph` instance.
         """
-        rows = self.registry.selectDimensions(originInfo, userQuery, inputs, outputs)
+        rows = self.registry.selectDimensions(originInfo, userQuery, inputs, outputs,
+                                              perDatasetTypeDimensions=perDatasetTypeDimensions)
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass

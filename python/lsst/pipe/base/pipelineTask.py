@@ -320,6 +320,37 @@ class PipelineTask(Task):
                 dsTypes[key] = DatasetTypeDescriptor.fromConfig(value)
         return dsTypes
 
+    @classmethod
+    def getPerDatasetTypeDimensions(cls, config):
+        """Return any Dimensions that are permitted to have different values
+        for different DatasetTypes within the same quantum.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task.
+
+        Returns
+        -------
+        dimensions : `~collections.abc.Set` of `Dimension` or `str`
+            The dimensions or names thereof that should be considered
+            per-DatasetType.
+
+        Notes
+        -----
+        Any Dimension declared to be per-DatasetType by a PipelineTask must
+        also be declared to be per-DatasetType by other PipelineTasks in the
+        same Pipeline.
+
+        The classic example of a per-DatasetType dimension is the
+        ``CalibrationLabel`` dimension that maps to a validity range for
+        master calibrations.  When running Instrument Signature Removal, one
+        does not care that different dataset types like flat, bias, and dark
+        have different validity ranges, as long as those validity ranges all
+        overlap the relevant observation.
+        """
+        return frozenset()
+
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
         """Run task algorithm on in-memory data.
 
