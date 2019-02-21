@@ -339,22 +339,22 @@ class GraphBuilder(object):
                 qkey = tuple((col, row.dataId[col]) for col in qlinks)
                 _LOG.debug("qkey: %s", qkey)
 
-                def _dataRefKey(dataRef):
-                    return tuple(sorted(dataRef.dataId.items()))
+                def _datasetRefKey(datasetRef):
+                    return tuple(sorted(datasetRef.dataId.items()))
 
                 qinputs = taskQuantaInputs.setdefault(qkey, {})
                 for dsType in taskDss.inputs:
-                    dataRefs = qinputs.setdefault(dsType, {})
-                    dataRef = row.datasetRefs[dsType]
-                    dataRefs[_dataRefKey(dataRef)] = dataRef
-                    _LOG.debug("add input dataRef: %s %s", dsType.name, dataRef)
+                    datasetRefs = qinputs.setdefault(dsType, {})
+                    datasetRef = row.datasetRefs[dsType]
+                    datasetRefs[_datasetRefKey(datasetRef)] = datasetRef
+                    _LOG.debug("add input datasetRef: %s %s", dsType.name, datasetRef)
 
                 qoutputs = taskQuantaOutputs.setdefault(qkey, {})
                 for dsType in taskDss.outputs:
-                    dataRefs = qoutputs.setdefault(dsType, {})
-                    dataRef = row.datasetRefs[dsType]
-                    dataRefs[_dataRefKey(dataRef)] = dataRef
-                    _LOG.debug("add output dataRef: %s %s", dsType.name, dataRef)
+                    datasetRefs = qoutputs.setdefault(dsType, {})
+                    datasetRef = row.datasetRefs[dsType]
+                    datasetRefs[_datasetRefKey(datasetRef)] = datasetRef
+                    _LOG.debug("add output datasetRef: %s %s", dsType.name, datasetRef)
 
             # all nodes for this task
             quanta = []
@@ -364,12 +364,12 @@ class GraphBuilder(object):
                 quantum = Quantum(run=None, task=None)
 
                 # add all outputs, but check first that outputs don't exist
-                outputs = list(chain.from_iterable(dataRefs.values()
-                                                   for dataRefs in taskQuantaOutputs[qkey].values()))
+                outputs = list(chain.from_iterable(datasetRefs.values()
+                                                   for datasetRefs in taskQuantaOutputs[qkey].values()))
                 for ref in outputs:
                     _LOG.debug("add output: %s", ref)
                 if self.skipExisting and all(ref.id is not None for ref in outputs):
-                    _LOG.debug("all output dataRefs already exist, skip quantum")
+                    _LOG.debug("all output datasetRefs already exist, skip quantum")
                     continue
                 if any(ref.id is not None for ref in outputs):
                     # some outputs exist, can't override them
@@ -378,8 +378,8 @@ class GraphBuilder(object):
                     quantum.addOutput(ref)
 
                 # add all inputs
-                for dataRefs in taskQuantaInputs[qkey].values():
-                    for ref in dataRefs.values():
+                for datasetRefs in taskQuantaInputs[qkey].values():
+                    for ref in datasetRefs.values():
                         quantum.addPredictedInput(ref)
                         _LOG.debug("add input: %s", ref)
 
