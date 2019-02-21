@@ -59,6 +59,9 @@ class DatasetTypeDescriptor:
     datasetType : `DatasetType`
     scalar : `bool`
         `True` if this is a scalar dataset.
+    manualLoad : `bool`
+        `True` if this dataset will be manually loaded by a concrete
+        `PipelineTask` instead of loaded automatically by the base class.
     """
 
     def __init__(self, datasetType, scalar, manualLoad):
