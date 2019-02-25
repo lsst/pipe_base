@@ -49,14 +49,15 @@ _LOG = logging.getLogger(__name__.partition(".")[2])
 # Attributes
 # ----------
 # taskDef : `TaskDef`
-# inputs : `list` of `DatasetType`
-# outputs : `list` of `DatasetType`
-# initTnputs : `list` of `DatasetType`
-# initOutputs : `list` of `DatasetType`
+# inputs : `set` of `DatasetType`
+# outputs : `set` of `DatasetType`
+# initTnputs : `set` of `DatasetType`
+# initOutputs : `set` of `DatasetType`
 # perDatasetTypeDimensions : `~lsst.daf.butler.DimensionSet`
+# prerequisite : `set` of `DatasetType`
 _TaskDatasetTypes = namedtuple("_TaskDatasetTypes", ("taskDef", "inputs", "outputs",
                                                      "initInputs", "initOutputs",
-                                                     "perDatasetTypeDimensions"))
+                                                     "perDatasetTypeDimensions", "prerequisite"))
 
 
 class GraphBuilderError(Exception):
@@ -75,9 +76,10 @@ class OutputExistsError(GraphBuilderError):
         GraphBuilderError.__init__(self, msg)
 
 
-# ------------------------
-#  Exported definitions --
-# ------------------------
+class PrerequisiteMissingError(GraphBuilderError):
+    """Exception generated when a prerequisite dataset does not exist.
+    """
+    pass
 
 
 class GraphBuilder(object):
@@ -159,23 +161,25 @@ class GraphBuilder(object):
         taskDatasets = []
         for taskDef in taskList:
             taskClass = taskDef.taskClass
-            taskIo = []
-            for attr in ("Input", "Output", "InitInput", "InitOutput"):
+            inputs = {k: v.datasetType for k, v in taskClass.getInputDatasetTypes(taskDef.config).items()}
+            prerequisite = set(inputs[k] for k in taskClass.getPrerequisiteDatasetTypes(taskDef.config))
+            taskIo = [inputs.values()]
+            for attr in ("Output", "InitInput", "InitOutput"):
                 getter = getattr(taskClass, f"get{attr}DatasetTypes")
                 ioObject = getter(taskDef.config) or {}
-                taskIo.append([dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()])
+                taskIo.append(set(dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()))
             perDatasetTypeDimensions = DimensionSet(self.registry.dimensions,
                                                     taskClass.getPerDatasetTypeDimensions(taskDef.config))
-            taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo,
+            taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo, prerequisite=prerequisite,
                                                   perDatasetTypeDimensions=perDatasetTypeDimensions))
 
         perDatasetTypeDimensions = self._extractPerDatasetTypeDimensions(taskDatasets)
 
-        # build initial dataset graph
-        inputs, outputs, initInputs, initOutputs = self._makeFullIODatasetTypes(taskDatasets)
+        # categorize dataset types for the full Pipeline
+        required, optional, prerequisite, initInputs, initOutputs = self._makeFullIODatasetTypes(taskDatasets)
 
         # make a graph
-        return self._makeGraph(taskDatasets, inputs, outputs, initInputs, initOutputs,
+        return self._makeGraph(taskDatasets, required, optional, prerequisite, initInputs, initOutputs,
                                originInfo, userQuery, perDatasetTypeDimensions=perDatasetTypeDimensions)
 
     def _extractPerDatasetTypeDimensions(self, taskDatasets):
@@ -234,41 +238,55 @@ class GraphBuilder(object):
 
         Returns
         -------
-        inputs : `set` of `butler.DatasetType`
-            Datasets used as inputs by the pipeline.
-        outputs : `set` of `butler.DatasetType`
-            Datasets produced by the pipeline.
-        initInputs : `set` of `butler.DatasetType`
+        required : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that must exist in the repository in order to generate
+            a QuantumGraph node that consumes them.
+        optional : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that will be produced by the graph, but may exist in the
+            repository.  If ``self.skipExisting`` is `True` and all outputs of
+            a particular node already exist, it will be skipped.  Otherwise
+            pre-existing datasets of these types will cause
+            `OutputExistsError` to be raised.
+        prerequisite : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that must exist in the repository, but whose absence
+            should cause `PrerequisiteMissingError` to be raised if they
+            are needed by any graph node that would otherwise be created.
+        initInputs : `set` of `~lsst.daf.butler.DatasetType`
             Datasets used as init method inputs by the pipeline.
-        initOutputs : `set` of `butler.DatasetType`
+        initOutputs : `set` of `~lsst.daf.butler.DatasetType`
             Datasets used as init method outputs by the pipeline.
         """
         # to build initial dataset graph we have to collect info about all
         # datasets to be used by this pipeline
         allDatasetTypes = {}
-        inputs = set()
-        outputs = set()
+        required = set()
+        optional = set()
+        prerequisite = set()
         initInputs = set()
         initOutputs = set()
         for taskDs in taskDatasets:
-            for ioType, ioSet in zip(("inputs", "outputs", "initInputs", "initOutputs"),
-                                     (inputs, outputs, initInputs, initOutputs)):
+            for ioType, ioSet in zip(("inputs", "outputs", "prerequisite", "initInputs", "initOutputs"),
+                                     (required, optional, prerequisite, initInputs, initOutputs)):
                 for dsType in getattr(taskDs, ioType):
                     ioSet.add(dsType.name)
                     allDatasetTypes[dsType.name] = dsType
-        # remove outputs from inputs
-        inputs -= outputs
+
+        # Any dataset the pipeline produces can't be required or prerequisite
+        required -= optional
+        prerequisite -= optional
 
         # remove initOutputs from initInputs
         initInputs -= initOutputs
 
-        inputs = set(allDatasetTypes[name] for name in inputs)
-        outputs = set(allDatasetTypes[name] for name in outputs)
+        required = set(allDatasetTypes[name] for name in required)
+        optional = set(allDatasetTypes[name] for name in optional)
+        prerequisite = set(allDatasetTypes[name] for name in prerequisite)
         initInputs = set(allDatasetTypes[name] for name in initInputs)
         initOutputs = set(allDatasetTypes[name] for name in initOutputs)
-        return inputs, outputs, initInputs, initOutputs
+        return required, optional, prerequisite, initInputs, initOutputs
 
-    def _makeGraph(self, taskDatasets, inputs, outputs, initInputs, initOutputs, originInfo, userQuery,
+    def _makeGraph(self, taskDatasets, required, optional, prerequisite,
+                   initInputs, initOutputs, originInfo, userQuery,
                    perDatasetTypeDimensions=()):
         """Make QuantumGraph instance.
 
@@ -276,10 +294,19 @@ class GraphBuilder(object):
         ----------
         taskDatasets : sequence of `_TaskDatasetTypes`
             Tasks with their inputs and outputs.
-        inputs : `set` of `DatasetType`
-            Datasets which should already exist in input repository
-        outputs : `set` of `DatasetType`
-            Datasets which will be created by tasks
+        required : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that must exist in the repository in order to generate
+            a QuantumGraph node that consumes them.
+        optional : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that will be produced by the graph, but may exist in
+            the repository.  If ``self.skipExisting`` and all outputs of a
+            particular node already exist, it will be skipped.  Otherwise
+            pre-existing datasets of these types will cause
+            `OutputExistsError` to be raised.
+        prerequisite : `set` of `~lsst.daf.butler.DatasetType`
+            Datasets that must exist in the repository, but whose absence
+            should cause `PrerequisiteMissingError` to be raised if they
+            are needed by any graph node that would otherwise be created.
         initInputs : `set` of `DatasetType`
             Datasets which should exist in input repository, and will be used
             in task initialization
@@ -298,20 +325,26 @@ class GraphBuilder(object):
         -------
         `QuantumGraph` instance.
         """
-        rows = self.registry.selectDimensions(originInfo, userQuery, inputs, outputs,
-                                              perDatasetTypeDimensions=perDatasetTypeDimensions)
+        rows = self.registry.selectMultipleDatasetTypes(
+            originInfo, userQuery,
+            required=required, optional=optional, prerequisite=prerequisite,
+            perDatasetTypeDimensions=perDatasetTypeDimensions
+        )
 
         # store result locally for multi-pass algorithm below
         # TODO: change it to single pass
         dimensionVerse = []
-        for row in rows:
-            _LOG.debug("row: %s", row)
-            dimensionVerse.append(row)
+        try:
+            for row in rows:
+                _LOG.debug("row: %s", row)
+                dimensionVerse.append(row)
+        except LookupError as err:
+            raise PrerequisiteMissingError(str(err)) from err
 
         # Next step is to group by task quantum dimensions
         qgraph = QuantumGraph()
-        qgraph._inputDatasetTypes = inputs
-        qgraph._outputDatasetTypes = outputs
+        qgraph._inputDatasetTypes = (required | prerequisite)
+        qgraph._outputDatasetTypes = optional
         for dsType in initInputs:
             for collection in originInfo.getInputCollections(dsType.name):
                 result = self.registry.find(collection, dsType)
@@ -374,6 +407,7 @@ class GraphBuilder(object):
                 if any(ref.id is not None for ref in outputs):
                     # some outputs exist, can't override them
                     raise OutputExistsError(taskDss.taskDef.taskName, outputs)
+
                 for ref in outputs:
                     quantum.addOutput(ref)
 

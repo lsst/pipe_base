@@ -232,6 +232,37 @@ class PipelineTask(Task):
         return cls.getDatasetTypes(config, OutputDatasetConfig)
 
     @classmethod
+    def getPrerequisiteDatasetTypes(cls, config):
+        """Return the local names of input dataset types that should be
+        assumed to exist instead of constraining what data to process with
+        this task.
+
+        Usually, when running a `PipelineTask`, the presence of input datasets
+        constrains the processing to be done (as defined by the `QuantumGraph`
+        generated during "preflight").  "Prerequisites" are special input
+        datasets that do not constrain that graph, but instead cause a hard
+        failure when missing.  Calibration products and reference catalogs
+        are examples of dataset types that should usually be marked as
+        prerequisites.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        prerequisite : `~collections.abc.Set` of `str`
+            The keys in the dictionary returned by `getInputDatasetTypes` that
+            represent dataset types that should be considered prerequisites.
+            Names returned here that are not keys in that dictionary are
+            ignored; that way, if a config option removes an input dataset type
+            only `getInputDatasetTypes` needs to be updated.
+        """
+        return frozenset()
+
+    @classmethod
     def getInitInputDatasetTypes(cls, config):
         """Return dataset type descriptors that can be used to retrieve the
         ``initInputs`` constructor argument.
