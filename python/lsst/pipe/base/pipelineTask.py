@@ -59,6 +59,9 @@ class DatasetTypeDescriptor:
     datasetType : `DatasetType`
     scalar : `bool`
         `True` if this is a scalar dataset.
+    manualLoad : `bool`
+        `True` if this dataset will be manually loaded by a concrete
+        `PipelineTask` instead of loaded automatically by the base class.
     """
 
     def __init__(self, datasetType, scalar, manualLoad):
@@ -229,6 +232,37 @@ class PipelineTask(Task):
         return cls.getDatasetTypes(config, OutputDatasetConfig)
 
     @classmethod
+    def getPrerequisiteDatasetTypes(cls, config):
+        """Return the local names of input dataset types that should be
+        assumed to exist instead of constraining what data to process with
+        this task.
+
+        Usually, when running a `PipelineTask`, the presence of input datasets
+        constrains the processing to be done (as defined by the `QuantumGraph`
+        generated during "preflight").  "Prerequisites" are special input
+        datasets that do not constrain that graph, but instead cause a hard
+        failure when missing.  Calibration products and reference catalogs
+        are examples of dataset types that should usually be marked as
+        prerequisites.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        prerequisite : `~collections.abc.Set` of `str`
+            The keys in the dictionary returned by `getInputDatasetTypes` that
+            represent dataset types that should be considered prerequisites.
+            Names returned here that are not keys in that dictionary are
+            ignored; that way, if a config option removes an input dataset type
+            only `getInputDatasetTypes` needs to be updated.
+        """
+        return frozenset()
+
+    @classmethod
     def getInitInputDatasetTypes(cls, config):
         """Return dataset type descriptors that can be used to retrieve the
         ``initInputs`` constructor argument.
@@ -319,6 +353,37 @@ class PipelineTask(Task):
             if isinstance(value, configClass):
                 dsTypes[key] = DatasetTypeDescriptor.fromConfig(value)
         return dsTypes
+
+    @classmethod
+    def getPerDatasetTypeDimensions(cls, config):
+        """Return any Dimensions that are permitted to have different values
+        for different DatasetTypes within the same quantum.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task.
+
+        Returns
+        -------
+        dimensions : `~collections.abc.Set` of `Dimension` or `str`
+            The dimensions or names thereof that should be considered
+            per-DatasetType.
+
+        Notes
+        -----
+        Any Dimension declared to be per-DatasetType by a PipelineTask must
+        also be declared to be per-DatasetType by other PipelineTasks in the
+        same Pipeline.
+
+        The classic example of a per-DatasetType dimension is the
+        ``CalibrationLabel`` dimension that maps to a validity range for
+        master calibrations.  When running Instrument Signature Removal, one
+        does not care that different dataset types like flat, bias, and dark
+        have different validity ranges, as long as those validity ranges all
+        overlap the relevant observation.
+        """
+        return frozenset()
 
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
         """Run task algorithm on in-memory data.
