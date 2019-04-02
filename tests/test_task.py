@@ -244,7 +244,7 @@ class TaskTestCase(unittest.TestCase):
                                           "%s is not of the right type (%s vs %s)" %
                                           (name, keyType, type(addMultTask.metadata.getScalar(name))))
         # Some basic sanity checks
-        currCpuTime = time.clock()
+        currCpuTime = time.process_time()
         self.assertLessEqual(
             addMultTask.metadata.getScalar("runStartCpuTime"),
             addMultTask.metadata.getScalar("runEndCpuTime"),
