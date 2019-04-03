@@ -82,12 +82,13 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     Logged items include:
 
     - ``Utc``: UTC date in ISO format (only in metadata since log entries have timestamps).
-    - ``CpuTime``: CPU time (seconds).
+    - ``CpuTime``: System + User CPU time (seconds). This should only be used
+        in differential measurements; the time reference point is undefined.
     - ``MaxRss``: maximum resident set size.
 
     All logged resource information is only for the current process; child processes are excluded.
     """
-    cpuTime = time.clock()
+    cpuTime = time.process_time()
     utcStr = datetime.datetime.utcnow().isoformat()
     res = resource.getrusage(resource.RUSAGE_SELF)
     obj.metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
