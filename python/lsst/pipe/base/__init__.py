@@ -11,3 +11,5 @@ from .pipelineBuilder import *
 from .graph import *
 from .graphBuilder import *
 from .taskFactory import *
+
+from . import multiplicity  # symbols intentionally not lifted

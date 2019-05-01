@@ -67,12 +67,10 @@ class ConfigWithDatasets(pexConfig.Config):
     input2 = pipeBase.InputDatasetField(name="in2",
                                         dimensions=["UnitA", "UnitB"],
                                         storageClass="SCB",
-                                        scalar=True,
                                         doc="")
     output = pipeBase.OutputDatasetField(name="out",
                                          dimensions=["UnitB", "UnitC"],
                                          storageClass="SCC",
-                                         scalar=False,
                                          doc="")
     initInput = pipeBase.InitInputDatasetField(name="init_input",
                                                storageClass="SCX",
@@ -136,12 +134,10 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(descriptor.datasetType.name, config.input1.name)
         self.assertCountEqual(descriptor.datasetType.dimensions.names, config.input1.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.input1.storageClass)
-        self.assertFalse(descriptor.scalar)
         descriptor = descriptors["input2"]
         self.assertEqual(descriptor.datasetType.name, config.input2.name)
         self.assertCountEqual(descriptor.datasetType.dimensions.names, config.input2.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.input2.storageClass)
-        self.assertTrue(descriptor.scalar)
 
         descriptors = pipeBase.PipelineTask.getOutputDatasetTypes(config)
         self.assertCountEqual(descriptors.keys(), ["output"])
@@ -149,7 +145,6 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(descriptor.datasetType.name, config.output.name)
         self.assertCountEqual(descriptor.datasetType.dimensions.names, config.output.dimensions)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.output.storageClass)
-        self.assertFalse(descriptor.scalar)
 
         descriptors = pipeBase.PipelineTask.getInitInputDatasetTypes(config)
         self.assertCountEqual(descriptors.keys(), ["initInput"])
@@ -157,7 +152,6 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(descriptor.datasetType.name, config.initInput.name)
         self.assertEqual(len(descriptor.datasetType.dimensions), 0)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.initInput.storageClass)
-        self.assertTrue(descriptor.scalar)
 
         descriptors = pipeBase.PipelineTask.getInitOutputDatasetTypes(config)
         self.assertCountEqual(descriptors.keys(), ["initOutput"])
@@ -165,7 +159,6 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(descriptor.datasetType.name, config.initOutput.name)
         self.assertEqual(len(descriptor.datasetType.dimensions), 0)
         self.assertEqual(descriptor.datasetType.storageClass.name, config.initOutput.storageClass)
-        self.assertTrue(descriptor.scalar)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

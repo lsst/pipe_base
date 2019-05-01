@@ -29,21 +29,7 @@ from .config import (InputDatasetConfig, OutputDatasetConfig,
                      InitInputDatasetConfig, InitOutputDatasetConfig)
 from .task import Task
 
-
-class ScalarError(TypeError):
-    """Exception raised when dataset type is configured as scalar
-    but there are multiple DataIds in a Quantum for that dataset.
-
-    Parameters
-    ----------
-    key : `str`
-        Name of the configuration field for dataset type.
-    numDataIds : `int`
-        Actual number of DataIds in a Quantum for this dataset type.
-    """
-    def __init__(self, key, numDataIds):
-        super().__init__(("Expected scalar for output dataset field {}, "
-                          "received {} DataIds").format(key, numDataIds))
+from . import multiplicity
 
 
 class DatasetTypeDescriptor:
@@ -57,16 +43,13 @@ class DatasetTypeDescriptor:
     Parameters
     ----------
     datasetType : `DatasetType`
-    scalar : `bool`
-        `True` if this is a scalar dataset.
     manualLoad : `bool`
         `True` if this dataset will be manually loaded by a concrete
         `PipelineTask` instead of loaded automatically by the base class.
     """
 
-    def __init__(self, datasetType, scalar, manualLoad):
+    def __init__(self, datasetType, manualLoad):
         self._datasetType = datasetType
-        self._scalar = scalar
         self._manualLoad = manualLoad
 
     @classmethod
@@ -86,22 +69,14 @@ class DatasetTypeDescriptor:
         datasetType = DatasetType(name=datasetConfig.name,
                                   dimensions=datasetConfig.dimensions,
                                   storageClass=datasetConfig.storageClass)
-        # Use scalar=True for Init dataset types
-        scalar = getattr(datasetConfig, 'scalar', True)
         manualLoad = getattr(datasetConfig, 'manualLoad', False)
-        return cls(datasetType=datasetType, scalar=scalar, manualLoad=manualLoad)
+        return cls(datasetType=datasetType, manualLoad=manualLoad)
 
     @property
     def datasetType(self):
         """`DatasetType` instance.
         """
         return self._datasetType
-
-    @property
-    def scalar(self):
-        """`True` if this is a scalar dataset.
-        """
-        return self._scalar
 
     @property
     def manualLoad(self):
@@ -162,6 +137,7 @@ class PipelineTask(Task):
 
     def __init__(self, *, config=None, log=None, initInputs=None, **kwargs):
         super().__init__(config=config, log=log, **kwargs)
+        self._multiplicities = self.getDatasetTypeMultiplicities(self.config)
 
     def getInitOutputDatasets(self):
         """Return persistable outputs that are available immediately after
@@ -261,6 +237,30 @@ class PipelineTask(Task):
             only `getInputDatasetTypes` needs to be updated.
         """
         return frozenset()
+
+    @classmethod
+    def getDatasetTypeMultiplicities(cls, config):
+        """Return the multiplicities of any input and output dataset types
+        for which there is not exactly one instance for each quantum.
+
+        Parameters
+        ----------
+        config : `Config`
+            Configuration for this task. Typically datasets are defined in
+            a task configuration.
+
+        Returns
+        -------
+        multiplicities : `~collections.abc.Mapping`
+            Keys are `str` names present as keys in either
+            `getInputDatasetTypes` or `getOutputDatasetTypes`, and values are
+            instances of `~lsst.pipe.base.multiplicity.Multiplicity`,
+            indicating both how many datasets are expected to be present (of
+            this type) in a quantum, and whether they should be passed as a
+            set or a single object.  Datasets whose multiplicity is
+            ``Scalar(optional=False)`` need not be present.
+        """
+        return dict()
 
     @classmethod
     def getInitInputDatasetTypes(cls, config):
@@ -397,18 +397,16 @@ class PipelineTask(Task):
         method, more complex tasks that need to know about output DataIds
         will override this method instead.
 
-        All three arguments to this method are dictionaries with keys equal
-        to the name of the configuration fields for dataset type. If dataset
-        type is configured with ``scalar`` fiels set to ``True`` then it is
-        expected that only one dataset appears on input or output for that
-        dataset type and dictionary value will be a single data object or
-        DataId. Otherwise if ``scalar`` is ``False`` (default) then value
-        will be a list (even if only one item is in the list).
+        All three arguments to this method are dictionaries with keys equal to
+        the name of the configuration fields for dataset type. If a dataset
+        type is configured with `~lsst.pipe.base.multiplicity.Scalar`
+        multiplicity, the dictionary value will be a single data object or
+        DataId, and a sequence thereof otherwise.
 
         The method returns `Struct` instance with attributes matching the
         configuration fields for output dataset types. Values stored in
-        returned struct are single object if ``scalar`` is ``True`` or
-        list of objects otherwise. If tasks produces more than one object
+        returned struct should be single objects for scalar multiplicity, and
+        a list of objects otherwise. If tasks produces more than one object
         for some dataset type then data objects returned in ``struct`` must
         match in count and order corresponding DataIds in ``outputDataIds``.
 
@@ -450,8 +448,9 @@ class PipelineTask(Task):
         method will receive keyword arguments whose names will be the same as
         names of configuration fields describing input dataset types. Argument
         values will be data objects retrieved from data butler. If a dataset
-        type is configured with ``scalar`` field set to ``True`` then argument
-        value will be a single object, otherwise it will be a list of objects.
+        type is configured with `~lsst.pipe.base.multiplicity.Scalar`
+        multipliciaty, then the argument value will be a single object;
+        otherwise it will be a list of objects.
 
         If the task needs to know its input or output DataIds then it has to
         override `adaptArgsAndRun` method instead.
@@ -468,11 +467,13 @@ class PipelineTask(Task):
             def run(self, input, calib):
                 # "input", "calib", and "output" are the names of the config fields
 
-                # Assuming that input/calib datasets are `scalar` they are simple objects,
-                # do something with inputs and calibs, produce output image.
+                # Assuming that input/calib datasets have scalar multiplicity
+                # they are simple objects, do something with inputs and
+                # calibs, produce output image.
                 image = self.makeImage(input, calib)
 
-                # If output dataset is `scalar` then return object, not list
+                # If output dataset has scalar multiplicity then return
+                # object, not list
                 return Struct(output=image)
 
         """
@@ -507,9 +508,12 @@ class PipelineTask(Task):
 
         Raises
         ------
-        `ScalarError` if a dataset type is configured as scalar but receives
-        multiple DataIds in `quantum`. Any exceptions that happen in data
-        butler or in `adaptArgsAndRun` method.
+        multiplicity.MultiplicityError
+            Raised if the number of datasets for this quantum do not match
+            the declared multiplicities of their dataset types.
+
+        Any exceptions that happen in data butler or in `adaptArgsAndRun`
+        method.
         """
 
         def makeDataRefs(descriptors, refMap):
@@ -535,21 +539,19 @@ class PipelineTask(Task):
 
             Raises
             ------
-            ScalarError
-                Raised if dataset type is configured as scalar but more than
-                one DatasetRef exists for it.
+            multiplicity.MultiplicityError
+                Raised if the number of datasets for this quantum do not match
+                the declared multiplicities of their dataset types.
             """
             dataIds = {}
             dataRefs = {}
             for key, descriptor in descriptors.items():
                 keyDataRefs = refMap[descriptor.datasetType.name]
                 keyDataIds = [dataRef.dataId for dataRef in keyDataRefs]
-                if descriptor.scalar:
-                    # unpack single-item lists
-                    if len(keyDataRefs) != 1:
-                        raise ScalarError(key, len(keyDataRefs))
-                    keyDataRefs = keyDataRefs[0]
-                    keyDataIds = keyDataIds[0]
+                m = self._multiplicities.get(key, multiplicity.Scalar())
+                m.check(len(keyDataRefs), key, descriptor.datasetType.name)
+                keyDataRefs = m.adaptSequenceToArg(keyDataRefs)
+                keyDataIds = m.adaptSequenceToArg(keyDataIds)
                 dataIds[key] = keyDataIds
                 if not descriptor.manualLoad:
                     dataRefs[key] = keyDataRefs
@@ -598,19 +600,26 @@ class PipelineTask(Task):
             number and order.
         butler : object
             Data butler instance.
+
+        Raised
+        ------
+        MultiplicityError
+            Raised if the number of output objects returned for this quantum
+            do not match the declared multiplicities of their dataset types.
         """
         structDict = struct.getDict()
         descriptors = self.getOutputDatasetTypes(self.config)
-        for key in descriptors.keys():
-            dataList = structDict[key]
-            dataRefs = outputDataRefs[key]
-            if not isinstance(dataRefs, list):
-                # scalar outputs, make them lists again
-                dataRefs = [dataRefs]
-                dataList = [dataList]
-            # TODO: check that data objects and data refs are aligned
-            for dataRef, data in zip(dataRefs, dataList):
-                butler.put(data, dataRef.datasetType.name, dataRef.dataId)
+        for key, descriptor in descriptors.items():
+            m = self._multiplicities.get(key, multiplicity.Scalar())
+            dataList = m.adaptResultToSequence(structDict[key])
+            refList = m.adaptResultToSequence(outputDataRefs[key])
+            m.check(len(dataList), key, descriptor.datasetType.name)
+            if len(dataList) != len(refList):
+                raise multiplicity.MultiplicityError(f"Number of output objects {len(dataList)} does not "
+                                                     f"match number of output DatasetRefs {len(refList)} "
+                                                     f"for dataset {key} ({descriptor.datasetType.name}).")
+            for ref, data in zip(refList, dataList):
+                butler.put(data, ref.datasetType.name, ref.dataId)
 
     def getResourceConfig(self):
         """Return resource configuration for this task.

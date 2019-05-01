@@ -84,6 +84,10 @@ class AddTask(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
+    @classmethod
+    def getDatasetTypeMultiplicities(cls, config):
+        return dict(input=pipeBase.multiplicity.Multiple(), output=pipeBase.multiplicity.Multiple())
+
     def run(self, input):
         self.metadata.add("add", self.config.addend)
         output = [val + self.config.addend for val in input]
@@ -94,6 +98,10 @@ class AddTask(pipeBase.PipelineTask):
 class AddTask2(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
+
+    @classmethod
+    def getDatasetTypeMultiplicities(cls, config):
+        return dict(input=pipeBase.multiplicity.Multiple(), output=pipeBase.multiplicity.Multiple())
 
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
         self.metadata.add("add", self.config.addend)
@@ -113,16 +121,12 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
                                   dimensions=["UnitA"],
                                   storageClass="example")
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
-                                                    scalar=False,
                                                     manualLoad=False)
         self.assertIs(descriptor.datasetType, datasetType)
-        self.assertFalse(descriptor.scalar)
 
         descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
-                                                    scalar=True,
                                                     manualLoad=False)
         self.assertIs(descriptor.datasetType, datasetType)
-        self.assertTrue(descriptor.scalar)
 
     def testFromConfig(self):
         """Test DatasetTypeDescriptor.fromConfig()
@@ -131,12 +135,10 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
         self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
         self.assertEqual(descriptor.datasetType.name, "add_input")
-        self.assertFalse(descriptor.scalar)
 
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
         self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
         self.assertEqual(descriptor.datasetType.name, "add_output")
-        self.assertFalse(descriptor.scalar)
 
 
 class PipelineTaskTestCase(unittest.TestCase):

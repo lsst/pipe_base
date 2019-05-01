@@ -129,7 +129,7 @@ def _makeDatasetField(name, dtype):
         extraFields = ""
     elif issubclass(dtype, _DatasetTypeConfig):
         # Handle dataset types like InputDatasetConfig, note these take a dimensions argument
-        def wrappedFunc(*, doc, dimensions, storageClass, name="", scalar=False, check=None, nameTemplate='',
+        def wrappedFunc(*, doc, dimensions, storageClass, name="", check=None, nameTemplate='',
                         manualLoad=False):
             return factory(**{k: v for k, v in locals().items() if k != 'factory'})
         # Set the string corresponding to the dimensions parameter documentation
@@ -137,11 +137,6 @@ def _makeDatasetField(name, dtype):
         extraDoc = """
             dimensions : iterable of `str`
                 Iterable of Dimensions for this `~lsst.daf.butler.DatasetType`
-            scalar : `bool`, optional
-                If set to True then only a single dataset is expected on input or
-                produced on output. In that case list of objects/DataIds will be
-                unpacked before calling task methods, returned data is expected
-                to contain single objects as well.
             nameTemplate : `str`, optional
                 Template for the `name` field which is specified as a python formattable
                 string. The template is formatted during the configuration of a Config
@@ -154,7 +149,7 @@ def _makeDatasetField(name, dtype):
         # Set a string to add the dimensions argument to the list of arguments in the
         # docstring explanation section formatting is to support final output
         # of the docstring variable
-        extraFields = ", dimensions, scalar, nameTemplate, manualLoad"
+        extraFields = ", dimensions, nameTemplate, manualLoad"
     else:
         # if someone tries to create a config factory for a type that is not
         # handled raise and exception
@@ -242,14 +237,6 @@ class _DatasetTypeConfig(_BaseDatasetTypeConfig):
     """
     dimensions = pexConfig.ListField(dtype=str,
                                      doc="list of Dimensions for this DatasetType")
-    scalar = pexConfig.Field(dtype=bool,
-                             default=False,
-                             optional=True,
-                             doc=("If set to True then only a single dataset is expected "
-                                  "on input or produced on output. In that case list of "
-                                  "objects/DataIds will be unpacked before calling task "
-                                  "methods, returned data is expected to contain single "
-                                  "objects as well."))
     manualLoad = pexConfig.Field(dtype=bool,
                                  default=False,
                                  optional=True,

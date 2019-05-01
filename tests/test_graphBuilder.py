@@ -30,7 +30,8 @@ from lsst.daf.butler import (Registry, RegistryConfig, SchemaConfig,
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig,
                             InputDatasetField, OutputDatasetField,
                             InitInputDatasetField, InitOutputDatasetField,
-                            GraphBuilder, Pipeline, TaskDef, TaskFactory)
+                            GraphBuilder, Pipeline, TaskDef, TaskFactory,
+                            multiplicity)
 from lsst.pipe.base.graphBuilder import _TaskDatasetTypes
 
 
@@ -38,12 +39,10 @@ class OneToOneTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
                               dimensions=["instrument", "visit"],
                               storageClass="example",
-                              scalar=True,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 dimensions=["instrument", "visit"],
                                 storageClass="example",
-                                scalar=True,
                                 doc="Output dataset type for this task")
     initInput = InitInputDatasetField(name="initInput",
                                       storageClass="example",
@@ -62,12 +61,10 @@ class VisitToPatchTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
                               dimensions=["instrument", "visit"],
                               storageClass="example",
-                              scalar=False,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
                                 dimensions=["skymap", "tract", "patch"],
                                 storageClass="example",
-                                scalar=True,
                                 doc="Output dataset type for this task")
 
     def setDefaults(self):
@@ -88,6 +85,10 @@ class TaskOne(PipelineTask):
 class TaskTwo(PipelineTask):
     ConfigClass = VisitToPatchTaskConfig
     _DefaultName = "task_two"
+
+    @classmethod
+    def getDatasetTypeMultiplicities(cls, config):
+        return dict(input=multiplicity.Multiple())
 
     def run(self, input):
         output = []
