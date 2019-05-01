@@ -36,12 +36,12 @@ from lsst.pipe.base.graphBuilder import _TaskDatasetTypes
 
 class OneToOneTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              dimensions=["Instrument", "Visit"],
+                              dimensions=["instrument", "visit"],
                               storageClass="example",
                               scalar=True,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
-                                dimensions=["Instrument", "Visit"],
+                                dimensions=["instrument", "visit"],
                                 storageClass="example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
@@ -55,17 +55,17 @@ class OneToOneTaskConfig(PipelineTaskConfig):
     def setDefaults(self):
         # set dimensions of a quantum, this task uses per-visit quanta and it
         # expects dataset dimensions to be the same
-        self.quantum.dimensions = ["Instrument", "Visit"]
+        self.quantum.dimensions = ["instrument", "visit"]
 
 
 class VisitToPatchTaskConfig(PipelineTaskConfig):
     input = InputDatasetField(name="input",
-                              dimensions=["Instrument", "Visit"],
+                              dimensions=["instrument", "visit"],
                               storageClass="example",
                               scalar=False,
                               doc="Input dataset type for this task")
     output = OutputDatasetField(name="output",
-                                dimensions=["SkyMap", "Tract", "Patch"],
+                                dimensions=["skymap", "tract", "patch"],
                                 storageClass="example",
                                 scalar=True,
                                 doc="Output dataset type for this task")
@@ -73,7 +73,7 @@ class VisitToPatchTaskConfig(PipelineTaskConfig):
     def setDefaults(self):
         # set dimensions of a quantum, this task uses per-visit quanta and it
         # expects dataset dimensions to be the same
-        self.quantum.dimensions = ["SkyMap", "Tract", "Patch"]
+        self.quantum.dimensions = ["skymap", "tract", "patch"]
 
 
 class TaskOne(PipelineTask):
