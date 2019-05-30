@@ -631,6 +631,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         namespace.config = config
         namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
+        if mapperClass is None:
+            self.error("Error: no mapper specified for input repo %r" % (namespace.input,))
+
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getPackageName()
 
