@@ -47,16 +47,23 @@ class ScalarError(TypeError):
 
 
 class DatasetTypeDescriptor:
-    """Describe DatasetType and its options for PipelineTask.
+    """Description of an unnormalized proto-DatasetType and its relationship to
+    a PipelineTask.
 
-    This class contains DatasetType and all relevant options that are used by
-    PipelineTask. Typically this is derived from configuration classes but
-    sub-classes of PipelineTask can also define additional DatasetTypes that
-    are not part of the task configuration.
+    This class contains the information needed to construct a `DatasetType`
+    (once a `DimensionUniverse` is available) and all relevant options that are
+    used by PipelineTask. Typically this is derived from configuration classes,
+    but sub-classes of PipelineTask can also define additional DatasetTypes
+    that are not part of the task configuration.
 
     Parameters
     ----------
-    datasetType : `DatasetType`
+    name : `str`
+        Name of the dataset type.
+    dimensionNames: `~collections.abc.Set` of `str`
+        Names of the dimensions used to identify datasets of this type.
+    storageClassName: `str`
+        Name of the `~lsst.daf.butler.StorageClass` for this dataset type.
     scalar : `bool`
         `True` if this is a scalar dataset.
     manualLoad : `bool`
@@ -64,8 +71,10 @@ class DatasetTypeDescriptor:
         `PipelineTask` instead of loaded automatically by the base class.
     """
 
-    def __init__(self, datasetType, scalar, manualLoad):
-        self._datasetType = datasetType
+    def __init__(self, name, dimensionNames, storageClassName, scalar, manualLoad):
+        self._name = name
+        self._dimensionNames = dimensionNames
+        self._storageClassName = storageClassName
         self._scalar = scalar
         self._manualLoad = manualLoad
 
@@ -83,19 +92,35 @@ class DatasetTypeDescriptor:
         -------
         descriptor : `DatasetTypeDescriptor`
         """
-        datasetType = DatasetType(name=datasetConfig.name,
-                                  dimensions=datasetConfig.dimensions,
-                                  storageClass=datasetConfig.storageClass)
         # Use scalar=True for Init dataset types
         scalar = getattr(datasetConfig, 'scalar', True)
         manualLoad = getattr(datasetConfig, 'manualLoad', False)
-        return cls(datasetType=datasetType, scalar=scalar, manualLoad=manualLoad)
+        return cls(name=datasetConfig.name, dimensionNames=datasetConfig.dimensions,
+                   storageClassName=datasetConfig.storageClass, scalar=scalar, manualLoad=manualLoad)
+
+    def makeDatasetType(self, universe):
+        """Construct a true `DatasetType` instance with normalized dimensions.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Set of all known dimensions to be used to normalize the dimension
+            names specified in config.
+
+        Returns
+        -------
+        datasetType : `DatasetType`
+            The `DatasetType` defined by this descriptor.
+        """
+        return DatasetType(self._name,
+                           universe.extract(self._dimensionNames),
+                           self._storageClassName)
 
     @property
-    def datasetType(self):
-        """`DatasetType` instance.
+    def name(self):
+        """Name of the dataset type (`str`).
         """
-        return self._datasetType
+        return self._name
 
     @property
     def scalar(self):
@@ -542,7 +567,8 @@ class PipelineTask(Task):
             dataIds = {}
             dataRefs = {}
             for key, descriptor in descriptors.items():
-                keyDataRefs = refMap[descriptor.datasetType.name]
+                datasetType = descriptor.makeDatasetType(butler.registry.dimensions)
+                keyDataRefs = refMap[datasetType.name]
                 keyDataIds = [dataRef.dataId for dataRef in keyDataRefs]
                 if descriptor.scalar:
                     # unpack single-item lists

@@ -22,7 +22,6 @@
 """Simple unit test for Pipeline.
 """
 
-from collections import namedtuple
 import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
@@ -31,16 +30,13 @@ from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
                             TaskDef, pipeTools)
 import lsst.utils.tests
 
-# mock for actual dataset type
-DS = namedtuple("DS", "name dimensions")
 
-
-# This method is used by PipelineTask to instanciate DatasetType, normally this
+# This method is used by PipelineTask to instantiate DatasetType, normally this
 # should come from some other module but we have not defined that yet, so I
 # stick a trivial (mock) implementation here.
 def makeDatasetTypeDescr(dsConfig):
-    datasetType = DS(name=dsConfig.name, dimensions=dsConfig.dimensions)
-    return DatasetTypeDescriptor(datasetType, scalar=False, manualLoad=False)
+    return DatasetTypeDescriptor(name=dsConfig.name, dimensionNames=dsConfig.dimensions,
+                                 storageClassName="Config", scalar=False, manualLoad=False)
 
 
 class ExamplePipelineTaskConfig(PipelineTaskConfig):
