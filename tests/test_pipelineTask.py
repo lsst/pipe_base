@@ -23,9 +23,10 @@
 """
 
 import unittest
+from types import SimpleNamespace
 
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef, DatasetType, Quantum, Run
+from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -35,6 +36,7 @@ class ButlerMock():
     """
     def __init__(self):
         self.datasets = {}
+        self.registry = SimpleNamespace(dimensions=DimensionUniverse.fromConfig())
 
     @staticmethod
     def key(dataId):
@@ -64,18 +66,18 @@ class ButlerMock():
 class AddConfig(pipeBase.PipelineTaskConfig):
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
     input = pipeBase.InputDatasetField(name="add_input",
-                                       dimensions=["Camera", "Visit"],
-                                       storageClass="example",
+                                       dimensions=["instrument", "visit"],
+                                       storageClass="Catalog",
                                        doc="Input dataset type for this task")
     output = pipeBase.OutputDatasetField(name="add_output",
-                                         dimensions=["Camera", "Visit"],
-                                         storageClass="example",
+                                         dimensions=["instrument", "visit"],
+                                         storageClass="Catalog",
                                          doc="Output dataset type for this task")
 
     def setDefaults(self):
         # set dimensions of a quantum, this task uses per-visit quanta and it
         # expects dataset dimensions to be the same
-        self.quantum.dimensions = ["Camera", "Visit"]
+        self.quantum.dimensions = ["instrument", "visit"]
         self.quantum.sql = None
 
 
@@ -109,33 +111,47 @@ class DatasetTypeDescriptorTestCase(unittest.TestCase):
     def testConstructor(self):
         """Test DatasetTypeDescriptor init
         """
-        datasetType = DatasetType(name="testDataset",
-                                  dimensions=["UnitA"],
-                                  storageClass="example")
-        descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
+        name = "testDataset"
+        dimensionNames = frozenset(["label"])
+        storageClassName = "Catalog"
+        universe = DimensionUniverse.fromConfig()
+        descriptor = pipeBase.DatasetTypeDescriptor(name=name,
+                                                    dimensionNames=dimensionNames,
+                                                    storageClassName=storageClassName,
                                                     scalar=False,
                                                     manualLoad=False)
-        self.assertIs(descriptor.datasetType, datasetType)
+        datasetType = descriptor.makeDatasetType(universe)
+        self.assertEqual(datasetType.name, name)
+        self.assertEqual(datasetType.dimensions.names, dimensionNames)
+        self.assertEqual(datasetType.storageClass.name, storageClassName)
         self.assertFalse(descriptor.scalar)
 
-        descriptor = pipeBase.DatasetTypeDescriptor(datasetType=datasetType,
+        descriptor = pipeBase.DatasetTypeDescriptor(name=name,
+                                                    dimensionNames=dimensionNames,
+                                                    storageClassName=storageClassName,
                                                     scalar=True,
                                                     manualLoad=False)
-        self.assertIs(descriptor.datasetType, datasetType)
+        datasetType = descriptor.makeDatasetType(universe)
+        self.assertEqual(datasetType.name, name)
+        self.assertEqual(datasetType.dimensions.names, dimensionNames)
+        self.assertEqual(datasetType.storageClass.name, storageClassName)
         self.assertTrue(descriptor.scalar)
 
     def testFromConfig(self):
         """Test DatasetTypeDescriptor.fromConfig()
         """
+        universe = DimensionUniverse.fromConfig()
         config = AddConfig()
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
+        datasetType = descriptor.makeDatasetType(universe)
         self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
-        self.assertEqual(descriptor.datasetType.name, "add_input")
+        self.assertEqual(datasetType.name, "add_input")
         self.assertFalse(descriptor.scalar)
 
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
+        datasetType = descriptor.makeDatasetType(universe)
         self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
-        self.assertEqual(descriptor.datasetType.name, "add_output")
+        self.assertEqual(datasetType.name, "add_output")
         self.assertFalse(descriptor.scalar)
 
 
@@ -153,12 +169,13 @@ class PipelineTaskTestCase(unittest.TestCase):
     def _makeQuanta(self, config):
         """Create set of Quanta
         """
+        universe = DimensionUniverse.fromConfig()
         run = Run(collection=1, environment=None, pipeline=None)
 
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
-        dstype0 = descriptor.datasetType
+        dstype0 = descriptor.makeDatasetType(universe)
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
-        dstype1 = descriptor.datasetType
+        dstype1 = descriptor.makeDatasetType(universe)
 
         quanta = []
         for visit in range(100):
@@ -180,7 +197,7 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         # add input data to butler
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task.config.input)
-        dstype0 = descriptor.datasetType
+        dstype0 = descriptor.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)
@@ -214,7 +231,7 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         # add input data to butler
         descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task1.config.input)
-        dstype0 = descriptor.datasetType
+        dstype0 = descriptor.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]
             butler.put(100 + i, dstype0.name, ref.dataId)

@@ -161,13 +161,15 @@ class GraphBuilder(object):
         taskDatasets = []
         for taskDef in taskList:
             taskClass = taskDef.taskClass
-            inputs = {k: v.datasetType for k, v in taskClass.getInputDatasetTypes(taskDef.config).items()}
+            inputs = {k: v.makeDatasetType(self.registry.dimensions)
+                      for k, v in taskClass.getInputDatasetTypes(taskDef.config).items()}
             prerequisite = set(inputs[k] for k in taskClass.getPrerequisiteDatasetTypes(taskDef.config))
             taskIo = [inputs.values()]
             for attr in ("Output", "InitInput", "InitOutput"):
                 getter = getattr(taskClass, f"get{attr}DatasetTypes")
                 ioObject = getter(taskDef.config) or {}
-                taskIo.append(set(dsTypeDescr.datasetType for dsTypeDescr in ioObject.values()))
+                taskIo.append(set(dsTypeDescr.makeDatasetType(self.registry.dimensions)
+                                  for dsTypeDescr in ioObject.values()))
             perDatasetTypeDimensions = DimensionSet(self.registry.dimensions,
                                                     taskClass.getPerDatasetTypeDimensions(taskDef.config))
             taskDatasets.append(_TaskDatasetTypes(taskDef, *taskIo, prerequisite=prerequisite,
