@@ -18,6 +18,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+from __future__ import annotations
 
 """Module defining quantum graph classes and related methods.
 
@@ -35,13 +36,15 @@ __all__ = ["QuantumGraph", "QuantumGraphTaskNodes", "QuantumIterData"]
 #  Imports of standard modules --
 # -------------------------------
 from itertools import chain
+from dataclasses import dataclass
+from typing import List, FrozenSet
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .pipeline import Pipeline
+from .pipeline import Pipeline, TaskDef
 from .pipeTools import orderPipeline
-from lsst.daf.butler import DataId
+from lsst.daf.butler import DataId, Quantum
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -52,41 +55,36 @@ from lsst.daf.butler import DataId
 # ------------------------
 
 
+@dataclass
 class QuantumIterData:
     """Helper class for iterating over quanta in a graph.
 
-    `QuantumGraph.traverse` method needs to return topologically ordered
+    The `QuantumGraph.traverse` method needs to return topologically ordered
     Quanta together with their dependencies. This class is used as a value
-    for iterator, it contains enumerated Quantum and its dependencies.
-
-    Parameters
-    ----------
-    quantumId : `int`
-        Index of this Quantum, unique but arbitrary integer.
-    quantum : `~lsst.daf.butler.Quantum`
-        Quantum corresponding to a graph node.
-    taskDef : `TaskDef`
-        Task to be run on this quantum.
-    dependencies : iterable of `int`
-        Possibly empty sequence of indices of dependencies for this Quantum.
-        Prerequisites include other nodes in the graph; they do not reflect
-        data already in butler (there are no graph nodes for those).
+    for the iterator, it contains enumerated Quantum and its dependencies.
     """
 
     __slots__ = ["quantumId", "quantum", "taskDef", "dependencies"]
 
-    def __init__(self, quantumId, quantum, taskDef, dependencies):
-        self.quantumId = quantumId
-        self.quantum = quantum
-        self.taskDef = taskDef
-        self.dependencies = frozenset(dependencies)
+    quantumId: int
+    """Index of this Quantum, a unique but arbitrary integer."""
 
-    def __str__(self):
-        return "QuantumIterData({}, {}, {})".format(self.quantumId,
-                                                    self.taskDef,
-                                                    self.dependencies)
+    quantum: Quantum
+    """Quantum corresponding to a graph node."""
+
+    taskDef: TaskDef
+    """Task class to be run on this quantum, and corresponding label and
+    config.
+    """
+
+    dependencies: FrozenSet(int)
+    """Possibly empty set of indices of dependencies for this Quantum.
+    Dependnecies include other nodes in the graph; they do not reflect data
+    already in butler (there are no graph nodes for those).
+    """
 
 
+@dataclass
 class QuantumGraphTaskNodes:
     """QuantumGraphTaskNodes represents a bunch of nodes in an quantum graph
     corresponding to a single task.
@@ -103,17 +101,13 @@ class QuantumGraphTaskNodes:
     Different frameworks may use different graph representation, this
     representation was based mostly on requirements of command-line
     executor which does not need explicit edges information.
-
-    Attributes
-    ----------
-    taskDef : `TaskDef`
-        Task defintion for this set of nodes.
-    quanta : `list` of `~lsst.daf.butler.Quantum`
-        List of quanta corresponding to the task.
     """
-    def __init__(self, taskDef, quanta):
-        self.taskDef = taskDef
-        self.quanta = quanta
+
+    taskDef: TaskDef
+    """Task defintion for this set of nodes."""
+
+    quanta: List[Quantum]
+    """List of quanta corresponding to the task."""
 
 
 class QuantumGraph(list):
@@ -212,7 +206,8 @@ class QuantumGraph(list):
                     key = (dataRef.datasetType.name, DataId(dataRef.dataId))
                     outputs[key] = index
 
-                yield QuantumIterData(index, quantum, nodes.taskDef, prereq)
+                yield QuantumIterData(index=index, quantum=quantum, taskDef=nodes.taskDef,
+                                      dependencies=frozenset(prereq))
                 index += 1
 
     def getDatasetTypes(self, initInputs=True, initOutputs=True, inputs=True, outputs=True):
