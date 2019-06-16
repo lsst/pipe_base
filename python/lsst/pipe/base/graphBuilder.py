@@ -345,8 +345,6 @@ class GraphBuilder(object):
 
         # Next step is to group by task quantum dimensions
         qgraph = QuantumGraph()
-        qgraph._inputDatasetTypes = (required | prerequisite)
-        qgraph._outputDatasetTypes = optional
         for dsType in initInputs:
             for collection in originInfo.getInputCollections(dsType.name):
                 result = self.registry.find(collection, dsType)
