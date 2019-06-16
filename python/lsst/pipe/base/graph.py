@@ -44,7 +44,7 @@ from typing import List, FrozenSet
 # -----------------------------
 from .pipeline import Pipeline, TaskDef
 from .pipeTools import orderPipeline
-from lsst.daf.butler import DataId, Quantum
+from lsst.daf.butler import DataId, Quantum, DatasetRef
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -109,6 +109,12 @@ class QuantumGraphTaskNodes:
     quanta: List[Quantum]
     """List of quanta corresponding to the task."""
 
+    initInputs: List[DatasetRef]
+    """Datasets that must be loaded or created to construct this task."""
+
+    initOutputs: List[DatasetRef]
+    """Datasets that may be written after constructing this task."""
+
 
 class QuantumGraph(list):
     """QuantumGraph is a sequence of `QuantumGraphTaskNodes` objects.
@@ -124,8 +130,6 @@ class QuantumGraph(list):
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
-        self.initInputs = []
-        self.initOutputs = []
 
     def quanta(self):
         """Iterator over quanta in a graph.
