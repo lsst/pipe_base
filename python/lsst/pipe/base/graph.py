@@ -37,14 +37,14 @@ __all__ = ["QuantumGraph", "QuantumGraphTaskNodes", "QuantumIterData"]
 # -------------------------------
 from itertools import chain
 from dataclasses import dataclass
-from typing import List, FrozenSet
+from typing import List, FrozenSet, Mapping
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
 from .pipeline import Pipeline, TaskDef
 from .pipeTools import orderPipeline
-from lsst.daf.butler import DataId, Quantum, DatasetRef
+from lsst.daf.butler import DataId, Quantum, DatasetRef, DatasetType
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -109,10 +109,10 @@ class QuantumGraphTaskNodes:
     quanta: List[Quantum]
     """List of quanta corresponding to the task."""
 
-    initInputs: List[DatasetRef]
+    initInputs: Mapping[DatasetType, DatasetRef]
     """Datasets that must be loaded or created to construct this task."""
 
-    initOutputs: List[DatasetRef]
+    initOutputs: Mapping[DatasetType, DatasetRef]
     """Datasets that may be written after constructing this task."""
 
 
