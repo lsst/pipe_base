@@ -396,7 +396,7 @@ class GraphBuilder(object):
             for qkey in taskQuantaInputs:
                 # taskQuantaInputs and taskQuantaOutputs have the same keys
                 _LOG.debug("make quantum for qkey: %s", qkey)
-                quantum = Quantum(run=None, task=None)
+                quantum = Quantum(run=None, taskClass=taskDss.taskDef.taskClass)
 
                 # add all outputs, but check first that outputs don't exist
                 outputs = list(chain.from_iterable(datasetRefs.values()
