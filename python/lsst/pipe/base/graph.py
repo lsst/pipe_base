@@ -45,6 +45,7 @@ from typing import List, FrozenSet, Mapping
 from .pipeline import Pipeline, TaskDef
 from .pipeTools import orderPipeline
 from lsst.daf.butler import DataId, Quantum, DatasetRef, DatasetType
+from lsst.daf.butler.core.utils import NamedKeyDict
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -130,6 +131,9 @@ class QuantumGraph(list):
     """
     def __init__(self, iterable=None):
         list.__init__(self, iterable or [])
+        self.initInputs = NamedKeyDict()
+        self.initIntermediates = NamedKeyDict()
+        self.initOutputs = NamedKeyDict()
 
     def quanta(self):
         """Iterator over quanta in a graph.

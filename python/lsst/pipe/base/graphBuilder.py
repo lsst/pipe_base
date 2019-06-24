@@ -334,7 +334,12 @@ class _PipelineScaffolding:
                 )
 
     def makeQuantumGraph(self):
-        return QuantumGraph(task.makeQuantumGraphTaskNodes() for task in self.tasks)
+        graph = QuantumGraph(task.makeQuantumGraphTaskNodes() for task in self.tasks)
+        graph.initInputs = self.initInputs.unpackRefs()
+        graph.initOutputs = self.initOutputs.unpackRefs()
+        graph.initIntermediates = self.initIntermediates.unpackRefs()
+        return graph
+
 
 # ------------------------
 #  Exported definitions --
