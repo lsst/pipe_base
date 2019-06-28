@@ -602,10 +602,18 @@ class CmdLineTask(Task):
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
 
+        if resultList is None or len(resultList) == 0:
+            # usually because precall failed
+            if parsedCmd.noExit:
+                parsedCmd.log.error("All dataRefs failed; not exiting as --noExit was set")
+            else:
+                # use max exit code
+                sys.exit(127)
+
         try:
             nFailed = sum(((res.exitStatus != 0) for res in resultList))
-        except (TypeError, AttributeError) as e:
-            # NOTE: TypeError if resultList is None, AttributeError if it doesn't have exitStatus.
+        except AttributeError as e:
+            # NOTE: AttributeError if resultList doesn't have exitStatus.
             parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
             nFailed = 0
 
@@ -613,6 +621,8 @@ class CmdLineTask(Task):
             if parsedCmd.noExit:
                 parsedCmd.log.error("%d dataRefs failed; not exiting as --noExit was set", nFailed)
             else:
+                if nFailed > 127:
+                    nFailed = 127
                 sys.exit(nFailed)
 
         return Struct(
