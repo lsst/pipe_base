@@ -190,9 +190,9 @@ class TaskRunner:
 
         Returns
         -------
-        resultList : `list`
+        resultList : `list` or None
             A list of results returned by `TaskRunner.__call__`, or an empty list if `TaskRunner.__call__`
-            is not called (e.g. if `TaskRunner.precall` returns `False`). See `TaskRunner.__call__`
+            is not called; None if `TaskRunner.precall` returns `False`. See `TaskRunner.__call__`
             for details.
 
         Notes
@@ -222,6 +222,8 @@ class TaskRunner:
             else:
                 log.warn("Not running the task because there is no data to process; "
                          "you may preview data using \"--show data\"")
+        else:
+            resultList = None
 
         if pool is not None:
             pool.close()
@@ -602,7 +604,7 @@ class CmdLineTask(Task):
         taskRunner = cls.RunnerClass(TaskClass=cls, parsedCmd=parsedCmd, doReturnResults=doReturnResults)
         resultList = taskRunner.run(parsedCmd)
 
-        if resultList is None or len(resultList) == 0:
+        if resultList is None:
             # usually because precall failed
             if parsedCmd.noExit:
                 parsedCmd.log.error("All dataRefs failed; not exiting as --noExit was set")
