@@ -38,8 +38,6 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from sqlalchemy.sql import and_
-
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, Pipeline, TaskDef
 from .graph import QuantumGraph, QuantumGraphTaskNodes
 from lsst.daf.butler import Quantum, DatasetRef, DimensionGraph, DataId, DimensionUniverse, DatasetType
@@ -543,22 +541,18 @@ class _PipelineScaffolding:
             raise ValueError("clobberExisting and skipExisting cannot both be true.")
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, scaffolding in itertools.chain(self.initInputs.items(), self.inputs.items()):
-            # TODO: we only need to use SingleDatasetQueryBuilder here because
-            # it provides multi-collection search support.  There should be a
-            # way to do that directly with Registry, and it should probably
-            # operate by just doing an unordered collection search and
-            # resolving the order in Python.
-            builder = SingleDatasetQueryBuilder.fromCollections(
-                registry, datasetType,
-                collections=originInfo.getInputCollections(datasetType.name)
-            )
-            linkColumns = {link: builder.findSelectableForLink(link).columns[link]
-                           for link in datasetType.dimensions.links()}
             for dataId in scaffolding.dataIds:
-                ref = builder.executeOne(
-                    whereSql=and_(*[col == dataId[link] for link, col in linkColumns.items()]),
-                    expandDataId=True
+                # TODO: we only need to use SingleDatasetQueryBuilder here because
+                # it provides multi-collection search support.  There should be a
+                # way to do that directly with Registry, and it should probably
+                # operate by just doing an unordered collection search and
+                # resolving the order in Python.
+                builder = SingleDatasetQueryBuilder.fromCollections(
+                    registry, datasetType,
+                    collections=originInfo.getInputCollections(datasetType.name)
                 )
+                builder.whereDataId(dataId)
+                ref = builder.executeOne(expandDataId=True)
                 if ref is None:
                     # Data IDs have been expanded to include implied
                     # dimensions, which is not what we want for the DatasetRef.
@@ -655,17 +649,10 @@ class _PipelineScaffolding:
                         registry, datasetType,
                         collections=originInfo.getInputCollections(datasetType.name)
                     )
-                    links = quantumDataId.dimensions().links() & datasetType.dimensions.links()
                     if not datasetType.dimensions.issubset(quantumDataId.dimensions()):
-                        links |= builder.relateDimensions(quantumDataId.dimensions(),
-                                                          addResultColumns=False)
-                    linkColumns = {link: builder.findSelectableForLink(link).columns[link] for link in links}
-                    refs = list(
-                        builder.execute(
-                            whereSql=and_(*[col == quantumDataId[link] for link, col in linkColumns.items()]),
-                            expandDataId=True
-                        )
-                    )
+                        builder.relateDimensions(quantumDataId.dimensions(), addResultColumns=False)
+                    builder.whereDataId(quantumDataId)
+                    refs = list(builder.execute(expandDataId=True))
                     if len(refs) == 0:
                         raise PrerequisiteMissingError(
                             f"No instances of prerequisite dataset {datasetType.name} found for task "
