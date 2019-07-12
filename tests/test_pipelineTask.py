@@ -179,7 +179,7 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         quanta = []
         for visit in range(100):
-            quantum = Quantum(run=run, task=None)
+            quantum = Quantum(run=run)
             quantum.addPredictedInput(self._makeDSRefVisit(dstype0, visit))
             quantum.addOutput(self._makeDSRefVisit(dstype1, visit))
             quanta.append(quantum)

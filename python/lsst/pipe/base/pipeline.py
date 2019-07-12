@@ -18,19 +18,26 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+from __future__ import annotations
 
 """Module defining Pipeline class and related methods.
 """
 
-__all__ = ["Pipeline", "TaskDef"]
+__all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
 
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+from dataclasses import dataclass
+from typing import FrozenSet, Mapping, Type
+from types import MappingProxyType
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
+from lsst.daf.butler import DatasetType, DimensionUniverse
+from .pipelineTask import PipelineTask
+from .config import PipelineTaskConfig
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -126,3 +133,221 @@ class Pipeline(list):
     def __str__(self):
         infos = [str(tdef) for tdef in self]
         return "Pipeline({})".format(", ".join(infos))
+
+
+@dataclass(frozen=True)
+class TaskDatasetTypes:
+    """An immutable struct that extracts and classifies the dataset types used
+    by a `PipelineTask`
+    """
+
+    initInputs: FrozenSet[DatasetType]
+    """Dataset types that are needed as inputs in order to construct this Task.
+
+    Task-level `initInputs` may be classified as either
+    `~PipelineDatasetTypes.initInputs` or
+    `~PipelineDatasetTypes.initIntermediates` at the Pipeline level.
+    """
+
+    initOutputs: FrozenSet[DatasetType]
+    """Dataset types that may be written after constructing this Task.
+
+    Task-level `initOutputs` may be classified as either
+    `~PipelineDatasetTypes.initOutputs` or
+    `~PipelineDatasetTypes.initIntermediates` at the Pipeline level.
+    """
+
+    inputs: FrozenSet[DatasetType]
+    """Dataset types that are regular inputs to this Task.
+
+    If an input dataset needed for a Quantum cannot be found in the input
+    collection(s) or produced by another Task in the Pipeline, that Quantum
+    (and all dependent Quanta) will not be produced.
+
+    Task-level `inputs` may be classified as either
+    `~PipelineDatasetTypes.inputs` or `~PipelineDatasetTypes.intermediates`
+    at the Pipeline level.
+    """
+
+    prerequisites: FrozenSet[DatasetType]
+    """Dataset types that are prerequisite inputs to this Task.
+
+    Prerequisite inputs must exist in the input collection(s) before the
+    pipeline is run, but do not constrain the graph - if a prerequisite is
+    missing for a Quantum, `PrerequisiteMissingError` is raised.
+
+    Prerequisite inputs are not resolved until the second stage of
+    QuantumGraph generation.
+    """
+
+    outputs: FrozenSet[DatasetType]
+    """Dataset types that are produced by this Task.
+
+    Task-level `outputs` may be classified as either
+    `~PipelineDatasetTypes.outputs` or `~PipelineDatasetTypes.intermediates`
+    at the Pipeline level.
+    """
+
+    @classmethod
+    def fromTask(cls, taskClass: Type[PipelineTask], config: PipelineTaskConfig, *,
+                 universe: DimensionUniverse) -> TaskDatasetTypes:
+        """Extract and classify the dataset types from a single `PipelineTask`.
+
+        Parameters
+        ----------
+        taskClass: `type`
+            A concrete `PipelineTask` subclass.
+        config: `PipelineTaskConfig`
+            Configuration for the concrete `PipelineTask`.
+        universe: `DimensionUniverse`
+            Set of all known dimensions, used to construct normalized
+            `DatasetType` objects.
+
+        Returns
+        -------
+        types: `TaskDatasetTypes`
+            The dataset types used by this task.
+        """
+        # TODO: there is both a bit too much repetition here and not quite
+        # enough to make it worthwhile to refactor it (i.e. inputs and
+        # prerequisites are special, so we can't use the same code for them
+        # as we could for the others).  But other work on PipelineTask
+        # interfaces will eventually make this moot.
+        allInputsByArgName = {k: descr.makeDatasetType(universe)
+                              for k, descr in taskClass.getInputDatasetTypes(config).items()}
+        prerequisiteArgNames = taskClass.getPrerequisiteDatasetTypes(config)
+        return cls(
+            initInputs=frozenset(descr.makeDatasetType(universe)
+                                 for descr in taskClass.getInitInputDatasetTypes(config).values()),
+            initOutputs=frozenset(descr.makeDatasetType(universe)
+                                  for descr in taskClass.getInitOutputDatasetTypes(config).values()),
+            inputs=frozenset(v for k, v in allInputsByArgName.items() if k not in prerequisiteArgNames),
+            prerequisites=frozenset(v for k, v in allInputsByArgName.items() if k in prerequisiteArgNames),
+            outputs=frozenset(descr.makeDatasetType(universe)
+                              for descr in taskClass.getOutputDatasetTypes(config).values()),
+        )
+
+
+@dataclass(frozen=True)
+class PipelineDatasetTypes:
+    """An immutable struct that classifies the dataset types used in a
+    `Pipeline`.
+    """
+
+    initInputs: FrozenSet[DatasetType]
+    """Dataset types that are needed as inputs in order to construct the Tasks
+    in this Pipeline.
+
+    This does not include dataset types that are produced when constructing
+    other Tasks in the Pipeline (these are classified as `initIntermediates`).
+    """
+
+    initOutputs: FrozenSet[DatasetType]
+    """Dataset types that may be written after constructing the Tasks in this
+    Pipeline.
+
+    This does not include dataset types that are also used as inputs when
+    constructing other Tasks in the Pipeline (these are classified as
+    `initIntermediates`).
+    """
+
+    initIntermediates: FrozenSet[DatasetType]
+    """Dataset types that are both used when constructing one or more Tasks
+    in the Pipeline and produced as a side-effect of constructing another
+    Task in the Pipeline.
+    """
+
+    inputs: FrozenSet[DatasetType]
+    """Dataset types that are regular inputs for the full pipeline.
+
+    If an input dataset needed for a Quantum cannot be found in the input
+    collection(s), that Quantum (and all dependent Quanta) will not be
+    produced.
+    """
+
+    prerequisites: FrozenSet[DatasetType]
+    """Dataset types that are prerequisite inputs for the full Pipeline.
+
+    Prerequisite inputs must exist in the input collection(s) before the
+    pipeline is run, but do not constrain the graph - if a prerequisite is
+    missing for a Quantum, `PrerequisiteMissingError` is raised.
+
+    Prerequisite inputs are not resolved until the second stage of
+    QuantumGraph generation.
+    """
+
+    intermediates: FrozenSet[DatasetType]
+    """Dataset types that are output by one Task in the Pipeline and consumed
+    as inputs by one or more other Tasks in the Pipeline.
+    """
+
+    outputs: FrozenSet[DatasetType]
+    """Dataset types that are output by a Task in the Pipeline and not consumed
+    by any other Task in the Pipeline.
+    """
+
+    byTask: Mapping[str, TaskDatasetTypes]
+    """Per-Task dataset types, keyed by label in the `Pipeline`.
+
+    This is guaranteed to be zip-iterable with the `Pipeline` itself (assuming
+    neither has been modified since the dataset types were extracted, of
+    course).
+    """
+
+    @classmethod
+    def fromPipeline(cls, pipeline: Pipeline, *, universe: DimensionUniverse) -> PipelineDatasetTypes:
+        """Extract and classify the dataset types from all tasks in a
+        `Pipeline`.
+
+        Parameters
+        ----------
+        pipeline: `Pipeline`
+            An ordered collection of tasks that can be run together.
+        universe: `DimensionUniverse`
+            Set of all known dimensions, used to construct normalized
+            `DatasetType` objects.
+
+        Returns
+        -------
+        types: `PipelineDatasetTypes`
+            The dataset types used by this `Pipeline`.
+
+        Raises
+        ------
+        ValueError
+            Raised if Tasks are inconsistent about which datasets are marked
+            prerequisite.  This indicates that the Tasks cannot be run as part
+            of the same `Pipeline`.
+        """
+        allInputs = set()
+        allOutputs = set()
+        allInitInputs = set()
+        allInitOutputs = set()
+        prerequisites = set()
+        byTask = dict()
+        for taskDef in pipeline:
+            thisTask = TaskDatasetTypes.fromTask(taskDef.taskClass, taskDef.config, universe=universe)
+            allInitInputs.update(thisTask.initInputs)
+            allInitOutputs.update(thisTask.initOutputs)
+            allInputs.update(thisTask.inputs)
+            prerequisites.update(thisTask.prerequisites)
+            allOutputs.update(thisTask.outputs)
+            byTask[taskDef.label] = thisTask
+        if not prerequisites.isdisjoint(allInputs):
+            raise ValueError("{} marked as both prerequisites and regular inputs".format(
+                {dt.name for dt in allInputs & prerequisites}
+            ))
+        if not prerequisites.isdisjoint(allOutputs):
+            raise ValueError("{} marked as both prerequisites and outputs".format(
+                {dt.name for dt in allOutputs & prerequisites}
+            ))
+        return cls(
+            initInputs=frozenset(allInitInputs - allInitOutputs),
+            initIntermediates=frozenset(allInitInputs & allInitOutputs),
+            initOutputs=frozenset(allInitOutputs - allInitInputs),
+            inputs=frozenset(allInputs - allOutputs),
+            intermediates=frozenset(allInputs & allOutputs),
+            outputs=frozenset(allOutputs - allInputs),
+            prerequisites=frozenset(prerequisites),
+            byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
+        )
