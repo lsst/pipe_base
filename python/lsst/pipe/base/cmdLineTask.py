@@ -573,8 +573,9 @@ class CmdLineTask(Task):
               `lsst.pipe.base.ArgumentParser.parse_args` method.
             - ``taskRunner``: the task runner used to run the task (an instance of `Task.RunnerClass`).
             - ``resultList``: results returned by the task runner's ``run`` method, one entry per invocation.
-                This will typically be a list of `None` unless ``doReturnResults`` is `True`;
-                see `Task.RunnerClass` (`TaskRunner` by default) for more information.
+                This will typically be a list of `Struct`, each containing at
+                least an ``exitStatus`` integer (0 or 1); see
+                `Task.RunnerClass` (`TaskRunner` by default) for more details.
 
         Notes
         -----
