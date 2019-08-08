@@ -356,13 +356,31 @@ class PipelineDatasetTypes:
             raise ValueError("{} marked as both prerequisites and outputs".format(
                 {dt.name for dt in allOutputs & prerequisites}
             ))
+        # Make sure that components which are marked as inputs get treated as
+        # intermediates if there is an output which produces the composite
+        # containing the component
+        intermediateComponents = set()
+        intermediateComposites = set()
+        outputNameMapping = {dsType.name: dsType for dsType in allOutputs}
+        for dsType in allInputs:
+            # get the name of a possible component
+            name, component = dsType.nameAndComponent()
+            # if there is a component name, that means this is a component
+            # DatasetType, if there is an output which produces the parent of
+            # this component, treat this input as an intermediate
+            if component is not None:
+                if name in outputNameMapping and outputNameMapping[name].dimensions == dsType.dimensions:
+                    composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
+                                            universe=universe)
+                    intermediateComponents.add(dsType)
+                    intermediateComposites.add(composite)
         return cls(
             initInputs=frozenset(allInitInputs - allInitOutputs),
             initIntermediates=frozenset(allInitInputs & allInitOutputs),
             initOutputs=frozenset(allInitOutputs - allInitInputs),
-            inputs=frozenset(allInputs - allOutputs),
-            intermediates=frozenset(allInputs & allOutputs),
-            outputs=frozenset(allOutputs - allInputs),
+            inputs=frozenset(allInputs - allOutputs - intermediateComponents),
+            intermediates=frozenset(allInputs & allOutputs | intermediateComponents),
+            outputs=frozenset(allOutputs - allInputs - intermediateComposites),
             prerequisites=frozenset(prerequisites),
             byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
         )

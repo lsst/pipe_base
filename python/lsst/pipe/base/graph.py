@@ -215,7 +215,9 @@ class QuantumGraph(list):
                 for dataRef in chain.from_iterable(quantum.predictedInputs.values()):
                     # if data exists in butler then `id` is not None
                     if dataRef.id is None:
-                        key = (dataRef.datasetType.name, DataId(dataRef.dataId))
+                        # Get the base name if this is a component
+                        name, component = dataRef.datasetType.nameAndComponent()
+                        key = (name, DataId(dataRef.dataId))
                         try:
                             prereq.append(outputs[key])
                         except KeyError:
