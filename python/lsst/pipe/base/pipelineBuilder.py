@@ -90,6 +90,9 @@ class PipelineBuilder:
             Raised if any inconsistencies are detected in pipeline definition,
             see `pipeTools.orderPipeline` for list of exception types.
         """
+        for taskDef in self._pipeline:
+            taskDef.connections = taskDef.config.connections.connectionsClass(config=taskDef.config)
+
         # conditionally re-order pipeline if requested, but unconditionally
         # check for possible errors
         orderedPipeline = pipeTools.orderPipeline(self._pipeline, self._taskFactory)
@@ -206,22 +209,4 @@ class PipelineBuilder:
             raise LookupError("Task label is not found: " + label)
         overrides = ConfigOverrides()
         overrides.addFileOverride(path)
-        overrides.applyTo(self._pipeline[idx].config)
-
-    def substituteDatatypeNames(self, label, value):
-        """Apply name string formatting to config file.
-
-        Parameters
-        ----------
-        label : `str`
-            Label of the task.
-        value : `dict`
-            A python dict used in formatting nameTemplates.
-        """
-        idx = self._pipeline.labelIndex(label)
-        if idx < 0:
-            raise LookupError("Task label is not found: " + label)
-
-        overrides = ConfigOverrides()
-        overrides.addDatasetNameSubstitution(value)
         overrides.applyTo(self._pipeline[idx].config)

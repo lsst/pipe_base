@@ -28,11 +28,13 @@ __all__ = ["isPipelineOrdered", "orderPipeline"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+import itertools
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
 from .pipeline import Pipeline
+from .connections import iterConnections
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -45,7 +47,8 @@ def _loadTaskClass(taskDef, taskFactory):
     Raises
     ------
     `ImportError` is raised when task class cannot be imported.
-    `MissingTaskFactoryError` is raised when TaskFactory is needed but not provided.
+    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
+    provided.
     """
     taskClass = taskDef.taskClass
     if not taskClass:
@@ -90,8 +93,8 @@ def isPipelineOrdered(pipeline, taskFactory=None):
     pipeline : `pipe.base.Pipeline`
         Pipeline description.
     taskFactory: `pipe.base.TaskFactory`, optional
-        Instance of an object which knows how to import task classes. It is only
-        used if pipeline task definitions do not define task classes.
+        Instance of an object which knows how to import task classes. It is
+        only used if pipeline task definitions do not define task classes.
 
     Returns
     -------
@@ -109,22 +112,17 @@ def isPipelineOrdered(pipeline, taskFactory=None):
     producerIndex = {}
     for idx, taskDef in enumerate(pipeline):
 
-        # we will need task class for next operations, make sure it is loaded
-        taskDef.taskClass = _loadTaskClass(taskDef, taskFactory)
-
-        # get task output DatasetTypes, this can only be done via class method
-        outputs = taskDef.taskClass.getOutputDatasetTypes(taskDef.config)
-        for dsTypeDescr in outputs.values():
-            if dsTypeDescr.name in producerIndex:
+        for attr in iterConnections(taskDef.connections, 'outputs'):
+            if attr.name in producerIndex:
                 raise DuplicateOutputError("DatasetType `{}' appears more than "
-                                           "once as output".format(dsTypeDescr.name))
-            producerIndex[dsTypeDescr.name] = idx
+                                           "once as output".format(attr.name))
+            producerIndex[attr.name] = idx
 
     # check all inputs that are also someone's outputs
     for idx, taskDef in enumerate(pipeline):
 
         # get task input DatasetTypes, this can only be done via class method
-        inputs = taskDef.taskClass.getInputDatasetTypes(taskDef.config)
+        inputs = {name: getattr(taskDef.connections, name) for name in taskDef.connections.inputs}
         for dsTypeDescr in inputs.values():
             # all pre-existing datasets have effective index -1
             prodIdx = producerIndex.get(dsTypeDescr.name, -1)
@@ -145,8 +143,8 @@ def orderPipeline(pipeline, taskFactory=None):
     pipeline : `pipe.base.Pipeline`
         Pipeline description.
     taskFactory: `pipe.base.TaskFactory`, optional
-        Instance of an object which knows how to import task classes. It is only
-        used if pipeline task definitions do not define task classes.
+        Instance of an object which knows how to import task classes. It is
+        only used if pipeline task definitions do not define task classes.
 
     Returns
     -------
@@ -157,9 +155,9 @@ def orderPipeline(pipeline, taskFactory=None):
     `ImportError` is raised when task class cannot be imported.
     `DuplicateOutputError` is raised when there is more than one producer for a
     dataset type.
-    `PipelineDataCycleError` is also raised when pipeline has dependency cycles.
-    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
-    provided.
+    `PipelineDataCycleError` is also raised when pipeline has dependency
+    cycles.  `MissingTaskFactoryError` is raised when TaskFactory is needed but
+    not provided.
     """
 
     # This is a modified version of Kahn's algorithm that preserves order
@@ -170,12 +168,8 @@ def orderPipeline(pipeline, taskFactory=None):
     allInputs = set()   # all inputs of all tasks
     allOutputs = set()  # all outputs of all tasks
     for idx, taskDef in enumerate(pipeline):
-
-        # we will need task class for next operations, make sure it is loaded
-        taskClass = _loadTaskClass(taskDef, taskFactory)
-
         # task outputs
-        dsMap = taskClass.getOutputDatasetTypes(taskDef.config)
+        dsMap = {name: getattr(taskDef.connections, name) for name in taskDef.connections.outputs}
         for dsTypeDescr in dsMap.values():
             if dsTypeDescr.name in allOutputs:
                 raise DuplicateOutputError("DatasetType `{}' appears more than "
@@ -184,8 +178,9 @@ def orderPipeline(pipeline, taskFactory=None):
         allOutputs.update(outputs[idx])
 
         # task inputs
-        dsMap = taskClass.getInputDatasetTypes(taskDef.config)
-        inputs[idx] = set(dsTypeDescr.name for dsTypeDescr in dsMap.values())
+        connectionInputs = itertools.chain(taskDef.connections.inputs, taskDef.connections.prerequisiteInputs)
+        dsMap = [getattr(taskDef.connections, name).name for name in connectionInputs]
+        inputs[idx] = set(dsMap)
         allInputs.update(inputs[idx])
 
     # for simplicity add pseudo-node which is a producer for all pre-existing

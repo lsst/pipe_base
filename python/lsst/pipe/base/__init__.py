@@ -11,3 +11,6 @@ from .pipelineBuilder import *
 from .graph import *
 from .graphBuilder import *
 from .taskFactory import *
+from .connections import *
+from .butlerQuantumContext import *
+from . import connectionTypes

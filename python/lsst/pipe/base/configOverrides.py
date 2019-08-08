@@ -26,7 +26,6 @@ __all__ = ["ConfigOverrides"]
 
 import ast
 
-from lsst.pipe.base import PipelineTaskConfig
 import lsst.pex.exceptions as pexExceptions
 
 
@@ -84,21 +83,6 @@ class ConfigOverrides:
         """
         self._overrides += [('value', (field, value))]
 
-    def addDatasetNameSubstitution(self, nameDict):
-        """Add keys and values to be used in formatting config nameTemplates
-
-        This method takes in a dictionary in the format of key:value which
-        will be used to format fields in all of the nameTemplates found in
-        a config object. I.E. a nameDictString = {'input': 'deep'} would be
-        used to format a nameTemplate of "{input}CoaddDatasetProduct".
-
-        Parameters
-        ----------
-        nameDict : `dict`
-            a python dict used in formatting nameTemplates
-        """
-        self._overrides += [('namesDict', nameDict)]
-
     def applyTo(self, config):
         """Apply all overrides to a task configuration object.
 
@@ -136,9 +120,3 @@ class ConfigOverrides:
 
                 # this can throw in case of type mismatch
                 setattr(obj, field[-1], value)
-            elif otype == 'namesDict':
-                if not isinstance(config, PipelineTaskConfig):
-                    raise pexExceptions.RuntimeError("Dataset name substitution can only be used on Tasks "
-                                                     "with a ConfigClass that is a subclass of "
-                                                     "PipelineTaskConfig")
-                config.formatTemplateNames(override)
