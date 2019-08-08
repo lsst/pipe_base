@@ -24,7 +24,9 @@ Status code
 ===========
 
 A command-line task returns a status code of ``0`` if all data IDs were successfully processed.
-If the command-line task failed to process one or more data IDs, the status code is equal to the number of data IDs that failed.
+If the command-line task failed to process one or more data IDs, the status code is equal to the number of data IDs that failed, up to a maximum of 127.
+Status codes above 127 are treated as being caused by signals and so are not allowed.
+If more than 127 data IDs failed, the actual number is logged and 127 is returned.
 See also: :option:`--noExit`.
 
 Positional arguments
