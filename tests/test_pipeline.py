@@ -26,11 +26,16 @@ import unittest
 import pickle
 
 import lsst.pex.config as pexConfig
-from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef
+from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef,
+                            PipelineTaskConnections)
 import lsst.utils.tests
 
 
-class AddConfig(PipelineTaskConfig):
+class DummyConnections(PipelineTaskConnections, dimensions=()):
+    pass
+
+
+class AddConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
 
@@ -44,7 +49,7 @@ class AddTask(PipelineTask):
         )
 
 
-class MultConfig(PipelineTaskConfig):
+class MultConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
 
 

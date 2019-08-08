@@ -26,7 +26,7 @@ import unittest
 from types import SimpleNamespace
 
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse
+from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse, DataId
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -38,47 +38,43 @@ class ButlerMock():
         self.datasets = {}
         self.registry = SimpleNamespace(dimensions=DimensionUniverse.fromConfig())
 
-    @staticmethod
-    def key(dataId):
-        """Make a dict key out of dataId.
-        """
-        key = (dataId["camera"], dataId["visit"])
-        return tuple(key)
-
     def get(self, datasetRefOrType, dataId=None):
         if isinstance(datasetRefOrType, DatasetRef):
             dataId = datasetRefOrType.dataId
             dsTypeName = datasetRefOrType.datasetType.name
         else:
             dsTypeName = datasetRefOrType
-        key = self.key(dataId)
+        key = dataId
         dsdata = self.datasets.get(dsTypeName)
         if dsdata:
             return dsdata.get(key)
         return None
 
-    def put(self, inMemoryDataset, dsTypeName, dataId, producer=None):
-        key = self.key(dataId)
-        dsdata = self.datasets.setdefault(dsTypeName, {})
+    def put(self, inMemoryDataset, dsRef, producer=None):
+        key = dsRef.dataId
+        if isinstance(dsRef.datasetType, str):
+            name = dsRef.datasetType
+        else:
+            name = dsRef.datasetType.name
+        dsdata = self.datasets.setdefault(name, {})
         dsdata[key] = inMemoryDataset
 
 
-class AddConfig(pipeBase.PipelineTaskConfig):
-    addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
-    input = pipeBase.InputDatasetField(name="add_input",
-                                       dimensions=["instrument", "visit"],
-                                       storageClass="Catalog",
-                                       doc="Input dataset type for this task")
-    output = pipeBase.OutputDatasetField(name="add_output",
-                                         dimensions=["instrument", "visit"],
-                                         storageClass="Catalog",
-                                         doc="Output dataset type for this task")
+class AddConnections(pipeBase.PipelineTaskConnections, dimensions=["instrument", "visit"]):
+    input = pipeBase.connectionTypes.Input(name="add_input",
+                                           dimensions=["instrument", "visit", "detector",
+                                                       "physical_filter", "abstract_filter"],
+                                           storageClass="Catalog",
+                                           doc="Input dataset type for this task")
+    output = pipeBase.connectionTypes.Output(name="add_output",
+                                             dimensions=["instrument", "visit", "detector",
+                                                         "physical_filter", "abstract_filter"],
+                                             storageClass="Catalog",
+                                             doc="Output dataset type for this task")
 
-    def setDefaults(self):
-        # set dimensions of a quantum, this task uses per-visit quanta and it
-        # expects dataset dimensions to be the same
-        self.quantum.dimensions = ["instrument", "visit"]
-        self.quantum.sql = None
+
+class AddConfig(pipeBase.PipelineTaskConfig, pipelineConnections=AddConnections):
+    addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
 
 
 # example task which overrides run() method
@@ -88,7 +84,7 @@ class AddTask(pipeBase.PipelineTask):
 
     def run(self, input):
         self.metadata.add("add", self.config.addend)
-        output = [val + self.config.addend for val in input]
+        output = input + self.config.addend
         return pipeBase.Struct(output=output)
 
 
@@ -97,91 +93,41 @@ class AddTask2(pipeBase.PipelineTask):
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
-    def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
         self.metadata.add("add", self.config.addend)
-        input = inputData["input"]
-        output = [val + self.config.addend for val in input]
-        return pipeBase.Struct(output=output)
-
-
-class DatasetTypeDescriptorTestCase(unittest.TestCase):
-    """A test case for DatasetTypeDescriptor
-    """
-
-    def testConstructor(self):
-        """Test DatasetTypeDescriptor init
-        """
-        name = "testDataset"
-        dimensionNames = frozenset(["label"])
-        storageClassName = "Catalog"
-        universe = DimensionUniverse.fromConfig()
-        descriptor = pipeBase.DatasetTypeDescriptor(name=name,
-                                                    dimensionNames=dimensionNames,
-                                                    storageClassName=storageClassName,
-                                                    scalar=False,
-                                                    manualLoad=False)
-        datasetType = descriptor.makeDatasetType(universe)
-        self.assertEqual(datasetType.name, name)
-        self.assertEqual(datasetType.dimensions.names, dimensionNames)
-        self.assertEqual(datasetType.storageClass.name, storageClassName)
-        self.assertFalse(descriptor.scalar)
-
-        descriptor = pipeBase.DatasetTypeDescriptor(name=name,
-                                                    dimensionNames=dimensionNames,
-                                                    storageClassName=storageClassName,
-                                                    scalar=True,
-                                                    manualLoad=False)
-        datasetType = descriptor.makeDatasetType(universe)
-        self.assertEqual(datasetType.name, name)
-        self.assertEqual(datasetType.dimensions.names, dimensionNames)
-        self.assertEqual(datasetType.storageClass.name, storageClassName)
-        self.assertTrue(descriptor.scalar)
-
-    def testFromConfig(self):
-        """Test DatasetTypeDescriptor.fromConfig()
-        """
-        universe = DimensionUniverse.fromConfig()
-        config = AddConfig()
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
-        datasetType = descriptor.makeDatasetType(universe)
-        self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
-        self.assertEqual(datasetType.name, "add_input")
-        self.assertFalse(descriptor.scalar)
-
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
-        datasetType = descriptor.makeDatasetType(universe)
-        self.assertIsInstance(descriptor, pipeBase.DatasetTypeDescriptor)
-        self.assertEqual(datasetType.name, "add_output")
-        self.assertFalse(descriptor.scalar)
+        inputs = butlerQC.get(inputRefs)
+        outputs = inputs['input'] + self.config.addend
+        butlerQC.put(pipeBase.Struct(output=outputs), outputRefs)
 
 
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask
     """
 
-    def _makeDSRefVisit(self, dstype, visitId):
+    def _makeDSRefVisit(self, dstype, visitId, universe):
         return DatasetRef(datasetType=dstype,
-                          dataId=dict(camera="X",
-                                      visit=visitId,
-                                      physical_filter='a',
-                                      abstract_filter='b'))
+                          dataId=DataId(dict(detector="X",
+                                        visit=visitId,
+                                        physical_filter='a',
+                                        abstract_filter='b',
+                                        instrument='TestInstrument'),
+                                        universe=universe))
 
     def _makeQuanta(self, config):
         """Create set of Quanta
         """
         universe = DimensionUniverse.fromConfig()
         run = Run(collection=1, environment=None, pipeline=None)
+        connections = config.connections.connectionsClass(config=config)
 
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.input)
-        dstype0 = descriptor.makeDatasetType(universe)
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(config.output)
-        dstype1 = descriptor.makeDatasetType(universe)
+        dstype0 = connections.input.makeDatasetType(universe)
+        dstype1 = connections.output.makeDatasetType(universe)
 
         quanta = []
         for visit in range(100):
             quantum = Quantum(run=run)
-            quantum.addPredictedInput(self._makeDSRefVisit(dstype0, visit))
-            quantum.addOutput(self._makeDSRefVisit(dstype1, visit))
+            quantum.addPredictedInput(self._makeDSRefVisit(dstype0, visit, universe))
+            quantum.addOutput(self._makeDSRefVisit(dstype1, visit, universe))
             quanta.append(quantum)
 
         return quanta
@@ -191,71 +137,80 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
+        connections = task.config.connections.connectionsClass(config=task.config)
 
         # make all quanta
         quanta = self._makeQuanta(task.config)
 
         # add input data to butler
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task.config.input)
-        dstype0 = descriptor.makeDatasetType(butler.registry.dimensions)
+        dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta):
             ref = quantum.predictedInputs[dstype0.name][0]
-            butler.put(100 + i, dstype0.name, ref.dataId)
+            butler.put(100 + i, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
 
         # run task on each quanta
         for quantum in quanta:
-            task.runQuantum(quantum, butler)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
+            task.runQuantum(butlerQC, inputRefs, outputRefs)
 
         # look at the output produced by the task
-        outputName = task.config.output.name
+        outputName = connections.output.name
         dsdata = butler.datasets[outputName]
         self.assertEqual(len(dsdata), len(quanta))
         for i, quantum in enumerate(quanta):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3)
+            self.assertEqual(dsdata[ref.dataId], 100 + i + 3)
 
     def testChain2(self):
         """Test for two-task chain.
         """
         butler = ButlerMock()
-        task1 = AddTask(config=AddConfig())
+        config1 = AddConfig()
+        connections1 = config1.connections.connectionsClass(config=config1)
+        task1 = AddTask(config=config1)
         config2 = AddConfig()
         config2.addend = 200
-        config2.input.name = task1.config.output.name
-        config2.output.name = "add_output_2"
+        config2.connections.input = task1.config.connections.output
+        config2.connections.output = "add_output_2"
         task2 = AddTask2(config=config2)
+        connections2 = config2.connections.connectionsClass(config=config2)
 
         # make all quanta
         quanta1 = self._makeQuanta(task1.config)
         quanta2 = self._makeQuanta(task2.config)
 
         # add input data to butler
-        descriptor = pipeBase.DatasetTypeDescriptor.fromConfig(task1.config.input)
-        dstype0 = descriptor.makeDatasetType(butler.registry.dimensions)
+        task1Connections = task1.config.connections.connectionsClass(config=task1.config)
+        dstype0 = task1Connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]
-            butler.put(100 + i, dstype0.name, ref.dataId)
+            butler.put(100 + i, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
 
         # run task on each quanta
         for quantum in quanta1:
-            task1.runQuantum(quantum, butler)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            inputRefs, outputRefs = connections1.buildDatasetRefs(quantum)
+            task1.runQuantum(butlerQC, inputRefs, outputRefs)
         for quantum in quanta2:
-            task2.runQuantum(quantum, butler)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            inputRefs, outputRefs = connections2.buildDatasetRefs(quantum)
+            task2.runQuantum(butlerQC, inputRefs, outputRefs)
 
         # look at the output produced by the task
-        outputName = task1.config.output.name
+        outputName = task1.config.connections.output
         dsdata = butler.datasets[outputName]
         self.assertEqual(len(dsdata), len(quanta1))
         for i, quantum in enumerate(quanta1):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3)
+            self.assertEqual(dsdata[ref.dataId], 100 + i + 3)
 
-        outputName = task2.config.output.name
+        outputName = task2.config.connections.output
         dsdata = butler.datasets[outputName]
         self.assertEqual(len(dsdata), len(quanta2))
         for i, quantum in enumerate(quanta2):
             ref = quantum.outputs[outputName][0]
-            self.assertEqual(dsdata[butler.key(ref.dataId)], 100 + i + 3 + 200)
+            self.assertEqual(dsdata[ref.dataId], 100 + i + 3 + 200)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

@@ -25,37 +25,40 @@
 import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
-                            InputDatasetField, OutputDatasetField,
-                            DatasetTypeDescriptor, Pipeline,
+                            PipelineTaskConnections, Pipeline,
                             TaskDef, pipeTools)
+import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
 
 
-# This method is used by PipelineTask to instantiate DatasetType, normally this
-# should come from some other module but we have not defined that yet, so I
-# stick a trivial (mock) implementation here.
-def makeDatasetTypeDescr(dsConfig):
-    return DatasetTypeDescriptor(name=dsConfig.name, dimensionNames=dsConfig.dimensions,
-                                 storageClassName="Config", scalar=False, manualLoad=False)
+class ExamplePipelineTaskConnections(PipelineTaskConnections, dimensions=["Visit", "Detector"]):
+    input1 = cT.Input(name="",
+                      dimensions=["Visit", "Detector"],
+                      storageClass="example",
+                      doc="Input for this task")
+    input2 = cT.Input(name="",
+                      dimensions=["Visit", "Detector"],
+                      storageClass="example",
+                      doc="Input for this task")
+    output1 = cT.Output(name="",
+                        dimensions=["Visit", "Detector"],
+                        storageClass="example",
+                        doc="Output for this task")
+    output2 = cT.Output(name="",
+                        dimensions=["Visit", "Detector"],
+                        storageClass="example",
+                        doc="Output for this task")
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+        if not config.connections.input2:
+            self.inputs.remove('input2')
+        if not config.connections.output2:
+            self.outputs.remove('output2')
 
 
-class ExamplePipelineTaskConfig(PipelineTaskConfig):
-    input1 = InputDatasetField(name="",
-                               dimensions=[],
-                               storageClass="example",
-                               doc="Input for this task")
-    input2 = InputDatasetField(name="",
-                               dimensions=[],
-                               storageClass="example",
-                               doc="Input for this task")
-    output1 = OutputDatasetField(name="",
-                                 dimensions=[],
-                                 storageClass="example",
-                                 doc="Output for this task")
-    output2 = OutputDatasetField(name="",
-                                 dimensions=[],
-                                 storageClass="example",
-                                 doc="Output for this task")
+class ExamplePipelineTaskConfig(PipelineTaskConfig, pipelineConnections=ExamplePipelineTaskConnections):
+    pass
 
 
 def _makeConfig(inputName, outputName):
@@ -66,42 +69,22 @@ def _makeConfig(inputName, outputName):
     """
     config = ExamplePipelineTaskConfig()
     if isinstance(inputName, tuple):
-        config.input1.name = inputName[0]
-        config.input2.name = inputName[1] if len(inputName) > 1 else ""
+        config.connections.input1 = inputName[0]
+        config.connections.input2 = inputName[1] if len(inputName) > 1 else ""
     else:
-        config.input1.name = inputName
+        config.connections.input1 = inputName
 
     if isinstance(outputName, tuple):
-        config.output1.name = outputName[0]
-        config.output2.name = outputName[1] if len(outputName) > 1 else ""
+        config.connections.output1 = outputName[0]
+        config.connections.output2 = outputName[1] if len(outputName) > 1 else ""
     else:
-        config.output1.name = outputName
-
-    dimensions = ["Visit", "Detector"]
-    config.input1.dimensions = dimensions
-    config.input2.dimensions = dimensions
-    config.output1.dimensions = dimensions
-    config.output2.dimensions = dimensions
+        config.connections.output1 = outputName
 
     return config
 
 
 class ExamplePipelineTask(PipelineTask):
     ConfigClass = ExamplePipelineTaskConfig
-
-    @classmethod
-    def getInputDatasetTypes(cls, config):
-        types = {"input1": makeDatasetTypeDescr(config.input1)}
-        if config.input2.name:
-            types["input2"] = makeDatasetTypeDescr(config.input2)
-        return types
-
-    @classmethod
-    def getOutputDatasetTypes(cls, config):
-        types = {"output1": makeDatasetTypeDescr(config.output1)}
-        if config.output2.name:
-            types["output2"] = makeDatasetTypeDescr(config.output2)
-        return types
 
 
 def _makePipeline(tasks):
@@ -181,12 +164,6 @@ class PipelineToolsTestCase(unittest.TestCase):
         with self.assertRaises(pipeTools.DuplicateOutputError):
             pipeTools.isPipelineOrdered(pipeline)
 
-        # missing factory should throw ValueError
-        pipeline = _makePipeline([("A", "B", "task1", None),
-                                  ("B", "C", "task2", None)])
-        with self.assertRaises(pipeTools.MissingTaskFactoryError):
-            pipeTools.isPipelineOrdered(pipeline)
-
     def testOrderPipeline(self):
         """Tests for pipeTools.orderPipeline method
         """
@@ -257,12 +234,6 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   ("A", "C", "task3"),
                                   ])
         with self.assertRaises(pipeTools.DuplicateOutputError):
-            pipeline = pipeTools.orderPipeline(pipeline)
-
-        # missing factory should throw ValueError
-        pipeline = _makePipeline([("A", "B", "task1", None),
-                                  ("B", "C", "task2", None)])
-        with self.assertRaises(pipeTools.MissingTaskFactoryError):
             pipeline = pipeTools.orderPipeline(pipeline)
 
         # cycle in a graph should throw ValueError
