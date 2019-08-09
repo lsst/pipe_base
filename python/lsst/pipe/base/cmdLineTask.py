@@ -568,14 +568,20 @@ class CmdLineTask(Task):
         struct : `lsst.pipe.base.Struct`
             Fields are:
 
-            - ``argumentParser``: the argument parser.
-            - ``parsedCmd``: the parsed command returned by the argument parser's
-              `lsst.pipe.base.ArgumentParser.parse_args` method.
-            - ``taskRunner``: the task runner used to run the task (an instance of `Task.RunnerClass`).
-            - ``resultList``: results returned by the task runner's ``run`` method, one entry per invocation.
-                This will typically be a list of `Struct`, each containing at
-                least an ``exitStatus`` integer (0 or 1); see
-                `Task.RunnerClass` (`TaskRunner` by default) for more details.
+            ``argumentParser``
+                the argument parser (`lsst.pipe.base.ArgumentParser`).
+            ``parsedCmd``
+                the parsed command returned by the argument parser's
+                `~lsst.pipe.base.ArgumentParser.parse_args` method
+                (`argparse.Namespace`).
+            ``taskRunner``
+                the task runner used to run the task (an instance of `Task.RunnerClass`).
+            ``resultList``
+                results returned by the task runner's ``run`` method, one entry
+                per invocation (`list`). This will typically be a list of
+                `Struct`, each containing at least an ``exitStatus`` integer
+                (0 or 1); see `Task.RunnerClass` (`TaskRunner` by default) for
+                more details.
 
         Notes
         -----
