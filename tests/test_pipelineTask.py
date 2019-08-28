@@ -118,7 +118,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         universe = DimensionUniverse.fromConfig()
         run = Run(collection=1, environment=None, pipeline=None)
-        connections = config.connections.connectionsClass(config=config)
+        connections = config.connections.ConnectionsClass(config=config)
 
         dstype0 = connections.input.makeDatasetType(universe)
         dstype1 = connections.output.makeDatasetType(universe)
@@ -137,7 +137,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
-        connections = task.config.connections.connectionsClass(config=task.config)
+        connections = task.config.connections.ConnectionsClass(config=task.config)
 
         # make all quanta
         quanta = self._makeQuanta(task.config)
@@ -167,21 +167,21 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         butler = ButlerMock()
         config1 = AddConfig()
-        connections1 = config1.connections.connectionsClass(config=config1)
+        connections1 = config1.connections.ConnectionsClass(config=config1)
         task1 = AddTask(config=config1)
         config2 = AddConfig()
         config2.addend = 200
         config2.connections.input = task1.config.connections.output
         config2.connections.output = "add_output_2"
         task2 = AddTask2(config=config2)
-        connections2 = config2.connections.connectionsClass(config=config2)
+        connections2 = config2.connections.ConnectionsClass(config=config2)
 
         # make all quanta
         quanta1 = self._makeQuanta(task1.config)
         quanta2 = self._makeQuanta(task2.config)
 
         # add input data to butler
-        task1Connections = task1.config.connections.connectionsClass(config=task1.config)
+        task1Connections = task1.config.connections.ConnectionsClass(config=task1.config)
         dstype0 = task1Connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta1):
             ref = quantum.predictedInputs[dstype0.name][0]

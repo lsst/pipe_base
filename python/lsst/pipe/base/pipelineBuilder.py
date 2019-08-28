@@ -91,7 +91,7 @@ class PipelineBuilder:
             see `pipeTools.orderPipeline` for list of exception types.
         """
         for taskDef in self._pipeline:
-            taskDef.connections = taskDef.config.connections.connectionsClass(config=taskDef.config)
+            taskDef.connections = taskDef.config.connections.ConnectionsClass(config=taskDef.config)
 
         # conditionally re-order pipeline if requested, but unconditionally
         # check for possible errors

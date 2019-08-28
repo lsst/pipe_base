@@ -52,7 +52,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     configure the connections class. This config is added to the config class
     under declaration with the name "connections" used as an identifier. The
     connections config also has a reference to the connections class used in
-    its construction associated with an atttribute named `connectionsClass`.
+    its construction associated with an atttribute named `ConnectionsClass`.
     Finally the newly constructed config class (not an instance of it) is
     assigned to the Config class under construction with the attribute name
     `ConnectionsConfigClass`.
@@ -64,7 +64,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             if 'pipelineConnections' not in kwargs:
                 for base in bases:
                     if hasattr(base, "connections"):
-                        kwargs['pipelineConnections'] = base.connections.dtype.connectionsClass
+                        kwargs['pipelineConnections'] = base.connections.dtype.ConnectionsClass
                         break
             if 'pipelineConnections' not in kwargs:
                 raise NameError("PipelineTaskConfig or a base class must be defined with connections class")
@@ -88,7 +88,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
                                                                                doc=docString,
                                                                                default=default)
             # add a reference to the connection class used to create this sub config
-            configConnectionsNamespace['connectionsClass'] = connectionsClass
+            configConnectionsNamespace['ConnectionsClass'] = connectionsClass
 
             # Create a new config class with the fields defined above
             Connections = type("Connections", (pexConfig.Config,), configConnectionsNamespace)
@@ -97,6 +97,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
                                                        doc='Configurations describing the'
                                                            ' connections of the PipelineTask to datatypes')
             dct['ConnectionsConfigClass'] = Connections
+            dct['ConnectionsClass'] = connectionsClass
         inst = super().__new__(cls, name, bases, dct)
         return inst
 

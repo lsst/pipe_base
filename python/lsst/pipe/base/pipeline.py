@@ -75,7 +75,7 @@ class TaskDef:
         self.config = config
         self.taskClass = taskClass
         self.label = label
-        self.connections = config.connections.connectionsClass(config=config)
+        self.connections = config.connections.ConnectionsClass(config=config)
 
     def __str__(self):
         rep = "TaskDef(" + self.taskName

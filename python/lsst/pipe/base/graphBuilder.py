@@ -310,7 +310,7 @@ class _TaskScaffolding:
 
     def addQuantum(self, quantum: Quantum):
         config = self.taskDef.config
-        connectionClass = config.connections.connectionsClass
+        connectionClass = config.connections.ConnectionsClass
         connectionInstance = connectionClass(config=config)
         # This will raise if one of the check conditions is not met, which is the intended
         # behavior
