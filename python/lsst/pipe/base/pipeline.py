@@ -29,15 +29,14 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
 #  Imports of standard modules --
 # -------------------------------
 from dataclasses import dataclass
-from typing import FrozenSet, Mapping, Type
 from types import MappingProxyType
+from typing import FrozenSet, Mapping
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
 from lsst.daf.butler import DatasetType, DimensionUniverse
-from .pipelineTask import PipelineTask
-from .config import PipelineTaskConfig
+from .connections import PipelineTaskConnections, iterConnections
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -76,6 +75,7 @@ class TaskDef:
         self.config = config
         self.taskClass = taskClass
         self.label = label
+        self.connections = config.connections.ConnectionsClass(config=config)
 
     def __str__(self):
         rep = "TaskDef(" + self.taskName
@@ -189,16 +189,15 @@ class TaskDatasetTypes:
     """
 
     @classmethod
-    def fromTask(cls, taskClass: Type[PipelineTask], config: PipelineTaskConfig, *,
-                 universe: DimensionUniverse) -> TaskDatasetTypes:
+    def fromConnections(cls, connectionsInstance: PipelineTaskConnections, *,
+                        universe: DimensionUniverse) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
         Parameters
         ----------
-        taskClass: `type`
-            A concrete `PipelineTask` subclass.
-        config: `PipelineTaskConfig`
-            Configuration for the concrete `PipelineTask`.
+        connectionsInstance: `PipelineTaskConnections`
+            An instance of a `PipelineTaskConnections` class for a particular
+            `PipelineTask`.
         universe: `DimensionUniverse`
             Set of all known dimensions, used to construct normalized
             `DatasetType` objects.
@@ -208,23 +207,39 @@ class TaskDatasetTypes:
         types: `TaskDatasetTypes`
             The dataset types used by this task.
         """
-        # TODO: there is both a bit too much repetition here and not quite
-        # enough to make it worthwhile to refactor it (i.e. inputs and
-        # prerequisites are special, so we can't use the same code for them
-        # as we could for the others).  But other work on PipelineTask
-        # interfaces will eventually make this moot.
-        allInputsByArgName = {k: descr.makeDatasetType(universe)
-                              for k, descr in taskClass.getInputDatasetTypes(config).items()}
-        prerequisiteArgNames = taskClass.getPrerequisiteDatasetTypes(config)
+        def makeDatasetTypesSet(connectionType):
+            """Constructs a set of true `DatasetType` objects
+
+            Parameters
+            ----------
+            connectionType : `str`
+                Name of the connection type to produce a set for, corresponds
+                to an attribute of type `list` on the connection class instance
+
+            Returns
+            -------
+            datasetTypes : `frozenset`
+                A set of all datasetTypes which correspond to the input
+                connection type specified in the connection class of this
+                `PipelineTask`
+
+            Notes
+            -----
+            This function is a closure over the variables univers and
+            connectionsInstnace
+            """
+            datasetTypes = []
+            for c in iterConnections(connectionsInstance, connectionType):
+                dimensions = getattr(c, 'dimensions', set())
+                datasetTypes.append(DatasetType(c.name, universe.extract(dimensions), c.storageClass))
+            return frozenset(datasetTypes)
+
         return cls(
-            initInputs=frozenset(descr.makeDatasetType(universe)
-                                 for descr in taskClass.getInitInputDatasetTypes(config).values()),
-            initOutputs=frozenset(descr.makeDatasetType(universe)
-                                  for descr in taskClass.getInitOutputDatasetTypes(config).values()),
-            inputs=frozenset(v for k, v in allInputsByArgName.items() if k not in prerequisiteArgNames),
-            prerequisites=frozenset(v for k, v in allInputsByArgName.items() if k in prerequisiteArgNames),
-            outputs=frozenset(descr.makeDatasetType(universe)
-                              for descr in taskClass.getOutputDatasetTypes(config).values()),
+            initInputs=makeDatasetTypesSet("initInputs"),
+            initOutputs=makeDatasetTypesSet("initOutputs"),
+            inputs=makeDatasetTypesSet("inputs"),
+            prerequisites=makeDatasetTypesSet("prerequisiteInputs"),
+            outputs=makeDatasetTypesSet("outputs"),
         )
 
 
@@ -326,7 +341,7 @@ class PipelineDatasetTypes:
         prerequisites = set()
         byTask = dict()
         for taskDef in pipeline:
-            thisTask = TaskDatasetTypes.fromTask(taskDef.taskClass, taskDef.config, universe=universe)
+            thisTask = TaskDatasetTypes.fromConnections(taskDef.connections, universe=universe)
             allInitInputs.update(thisTask.initInputs)
             allInitOutputs.update(thisTask.initOutputs)
             allInputs.update(thisTask.inputs)
@@ -341,13 +356,31 @@ class PipelineDatasetTypes:
             raise ValueError("{} marked as both prerequisites and outputs".format(
                 {dt.name for dt in allOutputs & prerequisites}
             ))
+        # Make sure that components which are marked as inputs get treated as
+        # intermediates if there is an output which produces the composite
+        # containing the component
+        intermediateComponents = set()
+        intermediateComposites = set()
+        outputNameMapping = {dsType.name: dsType for dsType in allOutputs}
+        for dsType in allInputs:
+            # get the name of a possible component
+            name, component = dsType.nameAndComponent()
+            # if there is a component name, that means this is a component
+            # DatasetType, if there is an output which produces the parent of
+            # this component, treat this input as an intermediate
+            if component is not None:
+                if name in outputNameMapping and outputNameMapping[name].dimensions == dsType.dimensions:
+                    composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
+                                            universe=universe)
+                    intermediateComponents.add(dsType)
+                    intermediateComposites.add(composite)
         return cls(
             initInputs=frozenset(allInitInputs - allInitOutputs),
             initIntermediates=frozenset(allInitInputs & allInitOutputs),
             initOutputs=frozenset(allInitOutputs - allInitInputs),
-            inputs=frozenset(allInputs - allOutputs),
-            intermediates=frozenset(allInputs & allOutputs),
-            outputs=frozenset(allOutputs - allInputs),
+            inputs=frozenset(allInputs - allOutputs - intermediateComponents),
+            intermediates=frozenset(allInputs & allOutputs | intermediateComponents),
+            outputs=frozenset(allOutputs - allInputs - intermediateComposites),
             prerequisites=frozenset(prerequisites),
             byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
         )

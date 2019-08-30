@@ -232,7 +232,7 @@ class _TaskScaffolding:
     def __init__(self, taskDef: TaskDef, parent: _PipelineScaffolding, datasetTypes: TaskDatasetTypes):
         universe = parent.dimensions.universe
         self.taskDef = taskDef
-        self.dimensions = universe.extract(taskDef.config.quantum.dimensions, implied=True)
+        self.dimensions = universe.extract(taskDef.connections.dimensions, implied=True)
         if not self.dimensions.issubset(parent.dimensions):
             raise GraphBuilderError(f"Task with label '{taskDef.label}' has dimensions "
                                     f"{self.dimensions.toSet()} that are not a subset of "
@@ -307,6 +307,18 @@ class _TaskScaffolding:
 
     Populated after construction by `_PipelineScaffolding.fillQuanta`.
     """
+
+    def addQuantum(self, quantum: Quantum):
+        config = self.taskDef.config
+        connectionClass = config.connections.ConnectionsClass
+        connectionInstance = connectionClass(config=config)
+        # This will raise if one of the check conditions is not met, which is the intended
+        # behavior
+        result = connectionInstance.adjustQuantum(quantum.predictedInputs)
+        quantum._predictedInputs = NamedKeyDict(result)
+
+        # If this function has reached this far add the quantum
+        self.quanta.append(quantum)
 
     def makeQuantumGraphTaskNodes(self) -> QuantumGraphTaskNodes:
         """Create a `QuantumGraphTaskNodes` instance from the information in
@@ -659,7 +671,7 @@ class _PipelineScaffolding:
                             f"with label {task.taskDef.label} and quantum data ID {quantumDataId}."
                         )
                     inputs[datasetType] = refs
-                task.quanta.append(
+                task.addQuantum(
                     Quantum(
                         taskName=task.taskDef.taskName,
                         taskClass=task.taskDef.taskClass,
