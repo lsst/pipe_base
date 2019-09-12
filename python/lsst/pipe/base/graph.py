@@ -173,6 +173,16 @@ class QuantumGraph(list):
             for quantum in taskNodes.quanta:
                 yield taskDef, quantum
 
+    def countQuanta(self):
+        """Return total count of quanta in a graph.
+
+        Returns
+        -------
+        count : `int`
+            Number of quanta in a graph.
+        """
+        return sum(len(taskNodes.quanta) for taskNodes in self)
+
     def traverse(self):
         """Return topologically ordered Quanta and their dependencies.
 
