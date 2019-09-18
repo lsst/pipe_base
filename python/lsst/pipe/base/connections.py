@@ -139,7 +139,7 @@ class PipelineTaskConnectionsMetaclass(type):
             allTemplates = set()
             stringFormatter = string.Formatter()
             # Loop over all connections
-            for name, obj in dct['allConnections'].items():
+            for obj in dct['allConnections'].values():
                 nameValue = obj.name
                 # add all the parameters to the set of templates
                 for param in stringFormatter.parse(nameValue):
@@ -181,8 +181,8 @@ class PipelineTaskConnectionsMetaclass(type):
 
         # Convert all the connection containers into frozensets so they cannot
         # be modified at the class scope
-        for name in ("inputs", "prerequisiteInputs", "outputs", "initInputs", "initOutputs"):
-            dct[name] = frozenset(dct[name])
+        for connectionName in ("inputs", "prerequisiteInputs", "outputs", "initInputs", "initOutputs"):
+            dct[connectionName] = frozenset(dct[connectionName])
         # our custom dict type must be turned into an actual dict to be used in
         # type.__new__
         return super().__new__(cls, name, bases, dict(dct))
