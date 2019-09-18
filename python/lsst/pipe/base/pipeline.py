@@ -34,8 +34,7 @@ from typing import FrozenSet, Mapping
 
 # -----------------------------
 #  Imports for other modules --
-# -----------------------------
-from lsst.daf.butler import DatasetType, DimensionUniverse
+from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
 from .connections import PipelineTaskConnections, iterConnections
 
 # ----------------------------------
@@ -190,7 +189,7 @@ class TaskDatasetTypes:
 
     @classmethod
     def fromConnections(cls, connectionsInstance: PipelineTaskConnections, *,
-                        universe: DimensionUniverse) -> TaskDatasetTypes:
+                        registry: Registry) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
         Parameters
@@ -198,9 +197,9 @@ class TaskDatasetTypes:
         connectionsInstance: `PipelineTaskConnections`
             An instance of a `PipelineTaskConnections` class for a particular
             `PipelineTask`.
-        universe: `DimensionUniverse`
-            Set of all known dimensions, used to construct normalized
-            `DatasetType` objects.
+        registry: `Registry`
+            Registry used to construct normalized `DatasetType` objects and
+            retrieve those that are incomplete.
 
         Returns
         -------
@@ -225,13 +224,34 @@ class TaskDatasetTypes:
 
             Notes
             -----
-            This function is a closure over the variables univers and
-            connectionsInstnace
+            This function is a closure over the variables ``registry`` and
+            ``connectionsInstance``.
             """
             datasetTypes = []
             for c in iterConnections(connectionsInstance, connectionType):
-                dimensions = getattr(c, 'dimensions', set())
-                datasetTypes.append(DatasetType(c.name, universe.extract(dimensions), c.storageClass))
+                dimensions = set(getattr(c, 'dimensions', set()))
+                if "skypix" in dimensions:
+                    try:
+                        datasetType = registry.getDatasetType(c.name)
+                    except LookupError as err:
+                        raise LookupError(
+                            f"DatasetType '{c.name}' referenced by "
+                            f"{type(connectionsInstance).__name__} uses 'skypix' as a dimension "
+                            f"placeholder, but does not already exist in the registry.  "
+                            f"Note that reference catalog names are now used as the dataset "
+                            f"type name instead of 'ref_cat'."
+                        ) from err
+                    rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
+                    rest2 = set(dim.name for dim in datasetType.dimensions
+                                if not isinstance(dim, SkyPixDimension))
+                    if rest1 != rest2:
+                        raise ValueError(f"Non-skypix dimensions for dataset type {c.name} declared in "
+                                         f"connections ({rest1}) are inconsistent with those in "
+                                         f"registry's version of this dataset ({rest2}).")
+                else:
+                    datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
+                                              c.storageClass)
+                datasetTypes.append(datasetType)
             return frozenset(datasetTypes)
 
         return cls(
@@ -310,7 +330,7 @@ class PipelineDatasetTypes:
     """
 
     @classmethod
-    def fromPipeline(cls, pipeline: Pipeline, *, universe: DimensionUniverse) -> PipelineDatasetTypes:
+    def fromPipeline(cls, pipeline: Pipeline, *, registry: Registry) -> PipelineDatasetTypes:
         """Extract and classify the dataset types from all tasks in a
         `Pipeline`.
 
@@ -318,9 +338,9 @@ class PipelineDatasetTypes:
         ----------
         pipeline: `Pipeline`
             An ordered collection of tasks that can be run together.
-        universe: `DimensionUniverse`
-            Set of all known dimensions, used to construct normalized
-            `DatasetType` objects.
+        registry: `Registry`
+            Registry used to construct normalized `DatasetType` objects and
+            retrieve those that are incomplete.
 
         Returns
         -------
@@ -341,7 +361,7 @@ class PipelineDatasetTypes:
         prerequisites = set()
         byTask = dict()
         for taskDef in pipeline:
-            thisTask = TaskDatasetTypes.fromConnections(taskDef.connections, universe=universe)
+            thisTask = TaskDatasetTypes.fromConnections(taskDef.connections, registry=registry)
             allInitInputs.update(thisTask.initInputs)
             allInitOutputs.update(thisTask.initOutputs)
             allInputs.update(thisTask.inputs)
@@ -371,7 +391,7 @@ class PipelineDatasetTypes:
             if component is not None:
                 if name in outputNameMapping and outputNameMapping[name].dimensions == dsType.dimensions:
                     composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
-                                            universe=universe)
+                                            universe=registry.dimensions)
                     intermediateComponents.add(dsType)
                     intermediateComposites.add(composite)
         return cls(

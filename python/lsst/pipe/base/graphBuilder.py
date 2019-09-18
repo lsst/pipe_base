@@ -392,16 +392,16 @@ class _PipelineScaffolding:
     5. In `makeQuantumGraph`, we construct a `QuantumGraph` from the lists of
        per-task quanta identified in the previous step.
     """
-    def __init__(self, pipeline, *, universe):
+    def __init__(self, pipeline, *, registry):
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
-        datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, universe=universe)
+        datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, registry=registry)
         # Construct dictionaries that map those DatasetTypes to structures
         # that will (later) hold addiitonal information about them.
         for attr in ("initInputs", "initIntermediates", "initOutputs",
                      "inputs", "intermediates", "outputs", "prerequisites"):
             setattr(self, attr, _DatasetScaffoldingDict.fromDatasetTypes(getattr(datasetTypes, attr),
-                                                                         universe=universe))
+                                                                         universe=registry.dimensions))
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join query.
         self.dimensions = self.inputs.dimensions.union(self.intermediates.dimensions,
@@ -797,7 +797,7 @@ class GraphBuilder(object):
         # sort of two-stage initialization.
         pipeline = Pipeline([self._loadTaskClass(taskDef) for taskDef in pipeline])
 
-        scaffolding = _PipelineScaffolding(pipeline, universe=self.registry.dimensions)
+        scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
 
         scaffolding.fillDataIds(self.registry, inputCollections, userQuery)
         scaffolding.fillDatasetRefs(self.registry, inputCollections, outputCollection,
