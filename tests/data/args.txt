@@ -1,5 +1,0 @@
-# test data for the argument parser
---id visit=1 filter=g # sample inline comment
-
---config floatItem=4.7 strItem="new value"
-
