@@ -44,7 +44,7 @@ from typing import List, FrozenSet, Mapping
 # -----------------------------
 from .pipeline import Pipeline, TaskDef
 from .pipeTools import orderPipeline
-from lsst.daf.butler import DataId, Quantum, DatasetRef, DatasetType
+from lsst.daf.butler import Quantum, DatasetRef, DatasetType
 from lsst.daf.butler.core.utils import NamedKeyDict
 
 # ----------------------------------
@@ -216,7 +216,7 @@ class QuantumGraph(list):
                 yield nodesMap[id(taskDef)]
 
         index = 0
-        outputs = {}  # maps (DatasetType.name, DataId) to its producing quantum index
+        outputs = {}  # maps (DatasetType.name, dataId) to its producing quantum index
         for nodes in orderedTaskNodes(self):
             for quantum in nodes.quanta:
 
@@ -227,7 +227,7 @@ class QuantumGraph(list):
                     if dataRef.id is None:
                         # Get the base name if this is a component
                         name, component = dataRef.datasetType.nameAndComponent()
-                        key = (name, DataId(dataRef.dataId))
+                        key = (name, dataRef.dataId)
                         try:
                             prereq.append(outputs[key])
                         except KeyError:
@@ -242,7 +242,7 @@ class QuantumGraph(list):
 
                 # Update `outputs` with this quantum outputs
                 for dataRef in chain.from_iterable(quantum.outputs.values()):
-                    key = (dataRef.datasetType.name, DataId(dataRef.dataId))
+                    key = (dataRef.datasetType.name, dataRef.dataId)
                     outputs[key] = index
 
                 yield QuantumIterData(index=index, quantum=quantum, taskDef=nodes.taskDef,

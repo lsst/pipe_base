@@ -26,7 +26,7 @@ import unittest
 from types import SimpleNamespace
 
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse, DataId
+from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse, DataCoordinate
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -36,7 +36,7 @@ class ButlerMock():
     """
     def __init__(self):
         self.datasets = {}
-        self.registry = SimpleNamespace(dimensions=DimensionUniverse.fromConfig())
+        self.registry = SimpleNamespace(dimensions=DimensionUniverse())
 
     def get(self, datasetRefOrType, dataId=None):
         if isinstance(datasetRefOrType, DatasetRef):
@@ -105,18 +105,22 @@ class PipelineTaskTestCase(unittest.TestCase):
     """
 
     def _makeDSRefVisit(self, dstype, visitId, universe):
-        return DatasetRef(datasetType=dstype,
-                          dataId=DataId(dict(detector="X",
-                                        visit=visitId,
-                                        physical_filter='a',
-                                        abstract_filter='b',
-                                        instrument='TestInstrument'),
-                                        universe=universe))
+        return DatasetRef(
+            datasetType=dstype,
+            dataId=DataCoordinate.standardize(
+                detector="X",
+                visit=visitId,
+                physical_filter='a',
+                abstract_filter='b',
+                instrument='TestInstrument',
+                universe=universe
+            )
+        )
 
     def _makeQuanta(self, config):
         """Create set of Quanta
         """
-        universe = DimensionUniverse.fromConfig()
+        universe = DimensionUniverse()
         run = Run(collection=1, environment=None, pipeline=None)
         connections = config.connections.ConnectionsClass(config=config)
 

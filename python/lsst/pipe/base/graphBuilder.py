@@ -40,9 +40,15 @@ import logging
 # -----------------------------
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, Pipeline, TaskDef
 from .graph import QuantumGraph, QuantumGraphTaskNodes
-from lsst.daf.butler import Quantum, DatasetRef, DimensionGraph, DataId, DimensionUniverse, DatasetType
+from lsst.daf.butler import (
+    DatasetRef,
+    DatasetType,
+    DimensionGraph,
+    DimensionUniverse,
+    ExpandedDataCoordinate,
+    Quantum,
+)
 from lsst.daf.butler.core.utils import NamedKeyDict
-from lsst.daf.butler.sql import DataIdQueryBuilder, SingleDatasetQueryBuilder
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -66,8 +72,7 @@ class _DatasetScaffolding:
     Parameters
     ----------
     dimensions : `DimensionGraph`
-        Dimensions of the `DatasetType`, expanded to include implied
-        dependencies.
+        Dimensions of the `DatasetType`.
     """
     def __init__(self, dimensions: DimensionGraph):
         self.dimensions = dimensions
@@ -79,8 +84,7 @@ class _DatasetScaffolding:
     __slots__ = ("dimensions", "producer", "consumers", "dataIds", "refs")
 
     dimensions: DimensionGraph
-    """The dimensions of the dataset type, expanded to included implied
-    dependencies.
+    """The dimensions of the dataset type (`DimensionGraph`).
 
     Set during `_PipelineScaffolding` construction.
     """
@@ -98,12 +102,8 @@ class _DatasetScaffolding:
     Set during `_PipelineScaffolding` construction.
     """
 
-    dataIds: Set[DataId]
+    dataIds: Set[ExpandedDataCoordinate]
     """Data IDs for all instances of this dataset type in the graph.
-
-    These data IDs cover the full set of implied-expanded dimensions (i.e.
-    the `dimensions` attribute of this instance), which is a supserset of the
-    dimensions used in `DatasetRef` instances (e.g. in ``refs``).
 
     Populated after construction by `_PipelineScaffolding.fillDataIds`.
     """
@@ -150,7 +150,7 @@ class _DatasetScaffoldingDict(NamedKeyDict):
         dictionary : `_DatasetScaffoldingDict`
             A new dictionary instance.
         """
-        return cls(((datasetType, _DatasetScaffolding(datasetType.dimensions.implied(only=False)))
+        return cls(((datasetType, _DatasetScaffolding(datasetType.dimensions))
                     for datasetType in datasetTypes),
                    universe=universe)
 
@@ -187,7 +187,7 @@ class _DatasetScaffoldingDict(NamedKeyDict):
         base = self.universe.empty
         if len(self) == 0:
             return base
-        return base.union(*(scaffolding.dimensions for scaffolding in self.values()), implied=True)
+        return base.union(*[scaffolding.dimensions for scaffolding in self.values()])
 
     def unpackRefs(self) -> NamedKeyDict:
         """Unpack nested single-element `DatasetRef` lists into a new
@@ -232,11 +232,11 @@ class _TaskScaffolding:
     def __init__(self, taskDef: TaskDef, parent: _PipelineScaffolding, datasetTypes: TaskDatasetTypes):
         universe = parent.dimensions.universe
         self.taskDef = taskDef
-        self.dimensions = universe.extract(taskDef.connections.dimensions, implied=True)
+        self.dimensions = DimensionGraph(universe, names=taskDef.connections.dimensions)
         if not self.dimensions.issubset(parent.dimensions):
             raise GraphBuilderError(f"Task with label '{taskDef.label}' has dimensions "
-                                    f"{self.dimensions.toSet()} that are not a subset of "
-                                    f"the pipeline dimensions {parent.dimensions.toSet()}.")
+                                    f"{self.dimensions} that are not a subset of "
+                                    f"the pipeline dimensions {parent.dimensions}.")
         # Initialize _DatasetScaffoldingDicts as subsets of the one or two
         # corresponding dicts in the parent _PipelineScaffolding.
         self.initInputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.initInputs,
@@ -266,8 +266,7 @@ class _TaskScaffolding:
     """
 
     dimensions: DimensionGraph
-    """The dimensions of a single `Quantum` of this task, expanded to include
-    implied dependencies (`DimensionGraph`).
+    """The dimensions of a single `Quantum` of this task (`DimensionGraph`).
     """
 
     initInputs: _DatasetScaffoldingDict
@@ -296,8 +295,9 @@ class _TaskScaffolding:
     (`_DatasetScaffoldingDict`).
     """
 
-    dataIds: Set[DataId]
-    """Data IDs for all quanta for this task in the graph (`set` of `DataId`).
+    dataIds: Set[ExpandedDataCoordinate]
+    """Data IDs for all quanta for this task in the graph (`set` of
+    `ExpandedDataCoordinate`).
 
     Populated after construction by `_PipelineScaffolding.fillDataIds`.
     """
@@ -392,21 +392,20 @@ class _PipelineScaffolding:
     5. In `makeQuantumGraph`, we construct a `QuantumGraph` from the lists of
        per-task quanta identified in the previous step.
     """
-    def __init__(self, pipeline, *, universe):
+    def __init__(self, pipeline, *, registry):
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
-        datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, universe=universe)
+        datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, registry=registry)
         # Construct dictionaries that map those DatasetTypes to structures
         # that will (later) hold addiitonal information about them.
         for attr in ("initInputs", "initIntermediates", "initOutputs",
                      "inputs", "intermediates", "outputs", "prerequisites"):
             setattr(self, attr, _DatasetScaffoldingDict.fromDatasetTypes(getattr(datasetTypes, attr),
-                                                                         universe=universe))
+                                                                         universe=registry.dimensions))
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join query.
-        self.dimensions = self.inputs.dimensions.union(self.inputs.dimensions,
-                                                       self.intermediates.dimensions,
-                                                       self.outputs.dimensions, implied=True)
+        self.dimensions = self.inputs.dimensions.union(self.intermediates.dimensions,
+                                                       self.outputs.dimensions)
         # Construct scaffolding nodes for each Task, and add backreferences
         # to the Task from each DatasetScaffolding node.
         # Note that there's only one scaffolding node for each DatasetType, shared by
@@ -462,7 +461,7 @@ class _PipelineScaffolding:
     This is required to be a superset of all task quantum dimensions.
     """
 
-    def fillDataIds(self, registry, originInfo, userQuery):
+    def fillDataIds(self, registry, inputCollections, userQuery):
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
         This method populates `_TaskScaffolding.dataIds` and
@@ -472,52 +471,55 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        originInfo : `lsst.daf.butler.DatasetOriginInfo`
-            Object holding the input and output collections for each
-            `DatasetType`.
+        inputCollections : `~collections.abc.Mapping`
+            Mapping from dataset type name to an ordered sequence of
+            collections to search for that dataset.  A `defaultdict` is
+            recommended for the case where the same collections should be
+            used for most datasets.
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
         """
         # Initialization datasets always have empty data IDs.
-        emptyDataId = DataId(dimensions=registry.dimensions.empty)
+        emptyDataId = ExpandedDataCoordinate(registry.dimensions.empty, (), records={})
         for scaffolding in itertools.chain(self.initInputs.values(),
                                            self.initIntermediates.values(),
                                            self.initOutputs.values()):
             scaffolding.dataIds.add(emptyDataId)
-        # We'll run one big query for the data IDs for task dimensions and
-        # regular input and outputs.
-        query = DataIdQueryBuilder.fromDimensions(registry, self.dimensions)
-        # Limit the query to only dimensions that are associated with the input
-        # dataset types.
-        for datasetType in self.inputs:
-            query.requireDataset(datasetType, originInfo.getInputCollections(datasetType.name))
-        # Add the user expression, if any
-        if userQuery:
-            query.whereParsedExpression(userQuery)
-        # Execute the query and populate the data IDs in self
-        # _TaskScaffolding.refs, extracting the subsets of the common data ID
-        # from the query corresponding to the dimensions of each.  By using
+        # Run one big query for the data IDs for task dimensions and regular
+        # inputs and outputs.  We limit the query to only dimensions that are
+        # associated with the input dataset types, but don't (yet) try to
+        # obtain the dataset_ids for those inputs.
+        resultIter = registry.queryDimensions(
+            self.dimensions,
+            datasets={
+                datasetType: inputCollections[datasetType.name]
+                for datasetType in self.inputs
+            },
+            where=userQuery,
+        )
+        # Iterate over query results and populate the data IDs in
+        # self._TaskScaffolding.refs, extracting the subsets of the common data
+        # ID from the query corresponding to the dimensions of each.  By using
         # sets, we remove duplicates caused by query rows in which the
         # dimensions that change are not relevant for that task or dataset
         # type.  For example, if the Big Join Query involves the dimensions
         # (instrument, visit, detector, skymap, tract, patch), we extract
         # "calexp" data IDs from the instrument, visit, and detector values
         # only, and rely on `set.add` to avoid duplications due to result rows
-        # in which only skymap, tract, and patch are varying.
-        # The Big Join Query is defined such that only visit+detector and
-        # tract+patch combinations that represent spatial overlaps are included
-        # in the results.
-        for commonDataId in query.execute():
+        # in which only skymap, tract, and patch are varying.  The Big Join
+        # Query is defined such that only visit+detector and tract+patch
+        # combinations that represent spatial overlaps are included in the
+        # results.
+        for commonDataId in resultIter:
             for taskScaffolding in self.tasks:
-                dataId = DataId(commonDataId, dimensions=taskScaffolding.dimensions)
-                taskScaffolding.dataIds.add(dataId)
+                taskScaffolding.dataIds.add(commonDataId.subset(taskScaffolding.dimensions))
             for datasetType, scaffolding in itertools.chain(self.inputs.items(),
                                                             self.intermediates.items(),
                                                             self.outputs.items()):
-                dataId = DataId(commonDataId, dimensions=scaffolding.dimensions)
-                scaffolding.dataIds.add(dataId)
+                scaffolding.dataIds.add(commonDataId.subset(scaffolding.dimensions))
 
-    def fillDatasetRefs(self, registry, originInfo, *, skipExisting=True, clobberExisting=False):
+    def fillDatasetRefs(self, registry, inputCollections, outputCollection, *,
+                        skipExisting=True, clobberExisting=False):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -528,9 +530,13 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        originInfo : `lsst.daf.butler.DatasetOriginInfo`
-            Object holding the input and output collections for each
-            `DatasetType`.
+        inputCollections : `~collections.abc.Mapping`
+            Mapping from dataset type name to an ordered sequence of
+            collections to search for that dataset.  A `defaultdict` is
+            recommended for the case where the same collections should be
+            used for most datasets.
+        outputCollection : `str`
+            Collection for all output datasets.
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
             already exist.
@@ -554,23 +560,17 @@ class _PipelineScaffolding:
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, scaffolding in itertools.chain(self.initInputs.items(), self.inputs.items()):
             for dataId in scaffolding.dataIds:
-                # TODO: we only need to use SingleDatasetQueryBuilder here because
-                # it provides multi-collection search support.  There should be a
-                # way to do that directly with Registry, and it should probably
-                # operate by just doing an unordered collection search and
-                # resolving the order in Python.
-                builder = SingleDatasetQueryBuilder.fromCollections(
-                    registry, datasetType,
-                    collections=originInfo.getInputCollections(datasetType.name)
+                refs = list(
+                    registry.queryDatasets(
+                        datasetType,
+                        collections=inputCollections[datasetType.name],
+                        dataId=dataId,
+                        deduplicate=True,
+                        expand=True,
+                    )
                 )
-                builder.whereDataId(dataId)
-                ref = builder.executeOne(expandDataId=True)
-                if ref is None:
-                    # Data IDs have been expanded to include implied
-                    # dimensions, which is not what we want for the DatasetRef.
-                    # Constructing a new DataID shrinks them back down.
-                    ref = DatasetRef(datasetType, DataId(dataId, dimensions=datasetType.dimensions))
-                scaffolding.refs.append(ref)
+                assert len(refs) == 1, "BJQ guarantees exactly one input for each data ID."
+                scaffolding.refs.extend(refs)
         # Look up [init] intermediate and output datasets in the output collection,
         # unless clobberExisting is True (in which case we don't care if these
         # already exist).
@@ -578,7 +578,6 @@ class _PipelineScaffolding:
                                                         self.initOutputs.items(),
                                                         self.intermediates.items(),
                                                         self.outputs.items()):
-            collection = originInfo.getOutputCollection(datasetType.name)
             for dataId in scaffolding.dataIds:
                 # TODO: we could easily support per-DatasetType clobberExisting
                 # and skipExisting (it might make sense to put them in
@@ -588,18 +587,16 @@ class _PipelineScaffolding:
                 if clobberExisting:
                     ref = None
                 else:
-                    ref = registry.find(collection=collection, datasetType=datasetType, dataId=dataId)
+                    ref = registry.find(collection=outputCollection, datasetType=datasetType, dataId=dataId)
                 if ref is None:
-                    # data IDs have been expanded to include implied dimensions,
-                    # which is not what we want for the DatasetRef.
-                    ref = DatasetRef(datasetType, DataId(dataId, dimensions=datasetType.dimensions))
+                    ref = DatasetRef(datasetType, dataId)
                 elif not skipExisting:
                     raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
-                                            f"output collection {collection} with data ID {dataId}.")
+                                            f"output collection {outputCollection} with data ID {dataId}.")
                 scaffolding.refs.append(ref)
         # Prerequisite dataset lookups are deferred until fillQuanta.
 
-    def fillQuanta(self, registry, originInfo, *, skipExisting=True):
+    def fillQuanta(self, registry, inputCollections, *, skipExisting=True):
         """Define quanta for each task by splitting up the datasets associated
         with each task data ID.
 
@@ -609,9 +606,11 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        originInfo : `lsst.daf.butler.DatasetOriginInfo`
-            Object holding the input and output collections for each
-            `DatasetType`.
+        inputCollections : `~collections.abc.Mapping`
+            Mapping from dataset type name to an ordered sequence of
+            collections to search for that dataset.  A `defaultdict` is
+            recommended for the case where the same collections should be
+            used for most datasets.
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
             already exist.
@@ -657,19 +656,15 @@ class _PipelineScaffolding:
                 # value that overlaps the quantum's data ID's region, but not
                 # the user expression used for the initial query.
                 for datasetType, scaffolding in task.prerequisites.items():
-                    builder = SingleDatasetQueryBuilder.fromCollections(
-                        registry, datasetType,
-                        collections=originInfo.getInputCollections(datasetType.name)
-                    )
-                    if not datasetType.dimensions.issubset(quantumDataId.dimensions()):
-                        builder.relateDimensions(quantumDataId.dimensions(), addResultColumns=False)
-                    builder.whereDataId(quantumDataId)
-                    refs = list(builder.execute(expandDataId=True))
-                    if len(refs) == 0:
-                        raise PrerequisiteMissingError(
-                            f"No instances of prerequisite dataset {datasetType.name} found for task "
-                            f"with label {task.taskDef.label} and quantum data ID {quantumDataId}."
+                    refs = list(
+                        registry.queryDatasets(
+                            datasetType,
+                            collections=inputCollections[datasetType.name],
+                            dataId=dataId,
+                            deduplicate=True,
+                            expand=True,
                         )
+                    )
                     inputs[datasetType] = refs
                 task.addQuantum(
                     Quantum(
@@ -763,15 +758,20 @@ class GraphBuilder(object):
             taskDef.taskName = tName
         return taskDef
 
-    def makeGraph(self, pipeline, originInfo, userQuery):
+    def makeGraph(self, pipeline, inputCollections, outputCollection, userQuery):
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
         pipeline : `Pipeline`
             Pipeline definition, task names/classes and their configs.
-        originInfo : `~lsst.daf.butler.DatasetOriginInfo`
-            Object which provides names of the input/output collections.
+        inputCollections : `~collections.abc.Mapping`
+            Mapping from dataset type name to an ordered sequence of
+            collections to search for that dataset.  A `defaultdict` is
+            recommended for the case where the same collections should be
+            used for most datasets.
+        outputCollection : `str`
+            Collection for all output datasets.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
@@ -797,13 +797,13 @@ class GraphBuilder(object):
         # sort of two-stage initialization.
         pipeline = Pipeline([self._loadTaskClass(taskDef) for taskDef in pipeline])
 
-        scaffolding = _PipelineScaffolding(pipeline, universe=self.registry.dimensions)
+        scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
 
-        scaffolding.fillDataIds(self.registry, originInfo, userQuery)
-        scaffolding.fillDatasetRefs(self.registry, originInfo,
+        scaffolding.fillDataIds(self.registry, inputCollections, userQuery)
+        scaffolding.fillDatasetRefs(self.registry, inputCollections, outputCollection,
                                     skipExisting=self.skipExisting,
                                     clobberExisting=self.clobberExisting)
-        scaffolding.fillQuanta(self.registry, originInfo,
+        scaffolding.fillQuanta(self.registry, inputCollections,
                                skipExisting=self.skipExisting)
 
         return scaffolding.makeQuantumGraph()
