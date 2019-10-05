@@ -173,6 +173,21 @@ class QuantumGraph(list):
             for quantum in taskNodes.quanta:
                 yield taskDef, quantum
 
+    def quantaAsQgraph(self):
+        """Iterator over quanta in a graph.
+
+        QuantumGraph containing individual quanta are returned.
+
+        Yields
+        ------
+        graph : `QuantumGraph`
+        """
+        for taskDef, quantum in self.quanta():
+            node = QuantumGraphTaskNodes(taskDef, [quantum],
+                                         quantum.initInputs, quantum.outputs)
+            graph = QuantumGraph([node])
+            yield graph
+
     def countQuanta(self):
         """Return total count of quanta in a graph.
 
