@@ -64,6 +64,7 @@ Developing tasks and command-line tasks
    creating-a-task.rst
    creating-a-command-line-task.rst
    testing-a-pipeline-task.rst
+   creating-a-pipelinetask.rst
 
 .. _lsst-pipe-base-developing-pipelines:
 
