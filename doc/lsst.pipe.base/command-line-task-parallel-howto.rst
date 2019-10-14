@@ -98,5 +98,5 @@ For example, in a :command:`bash` shell:
    - `lsst.base.getNumThreads`
    - `lsst.base.setNumThreads`
 
-.. _OpenBLAS: http://www.openblas.net
-.. _MKL: http://www.openblas.net
+.. _OpenBLAS: https://www.openblas.net
+.. _MKL: https://software.intel.com/en-us/mkl
