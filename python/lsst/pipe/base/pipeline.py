@@ -30,12 +30,21 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import FrozenSet, Mapping
+from typing import FrozenSet, Mapping, Union, Generator
+
+import copy
 
 # -----------------------------
 #  Imports for other modules --
 from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
+from lsst.daf.butler.instrument import Instrument
+from lsst.utils import doImport
+from .configOverrides import ConfigOverrides
 from .connections import PipelineTaskConnections, iterConnections
+from .pipelineTask import PipelineTask
+
+from . import pipelineIR
+from . import pipeTools
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -84,54 +93,256 @@ class TaskDef:
         return rep
 
 
-class Pipeline(list):
-    """Pipeline is a sequence of `TaskDef` objects.
-
-    Pipeline is given as one of the inputs to a supervising framework
-    which builds execution graph out of it. Pipeline contains a sequence
-    of `TaskDef` instances.
-
-    Main purpose of this class is to provide a mechanism to pass pipeline
-    definition from users to supervising framework. That mechanism is
-    implemented using simple serialization and de-serialization via
-    `pickle`. Note that pipeline serialization is not guaranteed to be
-    compatible between different versions or releases.
-
-    In current implementation Pipeline is a list (it inherits from `list`)
-    and one can use all list methods on pipeline. Content of the pipeline
-    can be modified, it is up to the client to verify that modifications
-    leave pipeline in a consistent state. One could modify container
-    directly by adding or removing its elements.
+class Pipeline:
+    """A `Pipeline` is a representation of a series of tasks to run, and the
+    configuration for those tasks.
 
     Parameters
     ----------
-    pipeline : iterable of `TaskDef` instances, optional
-        Initial sequence of tasks.
+    description : `str`
+        A description of that this pipeline does.
     """
-    def __init__(self, iterable=None):
-        list.__init__(self, iterable or [])
+    def __init__(self, description: str) -> Pipeline:
+        pipeline_dict = {"description": description, "tasks": {}}
+        self._pipelineIR = pipelineIR.PipelineIR(pipeline_dict)
 
-    def labelIndex(self, label):
-        """Return task index given its label.
+    @classmethod
+    def fromFile(cls, filename: str) -> Pipeline:
+        """Load a pipeline defined in a pipeline yaml file.
+
+        Parameters
+        ----------
+        filename: `str`
+           A path that points to a pipeline defined in yaml format
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+        """
+        pipeline = cls.fromIR(pipelineIR.PipelineIR.from_file(filename))
+        return pipeline
+
+    @classmethod
+    def fromString(cls, pipeline_string: str) -> Pipeline:
+        """Create a pipeline from string formatted as a pipeline document.
+
+        Parameters
+        ----------
+        pipeline_string : `str`
+            A string that is formatted according like a pipeline document
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+        """
+        pipeline = cls.fromIR(pipelineIR.PipelineIR.from_string(pipeline_string))
+        return pipeline
+
+    @classmethod
+    def fromIR(cls, deserialized_pipeline: pipelineIR.PipelineIR) -> Pipeline:
+        """Create a pipeline from an already created `PipelineIR` object.
+
+        Parameters
+        ----------
+        deserialized_pipeline: `PipelineIR`
+            An already created pipeline intermediate representation object
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+        """
+        pipeline = cls.__new__(cls)
+        pipeline._pipelineIR = deserialized_pipeline
+        return pipeline
+
+    @classmethod
+    def fromPipeline(cls, pipeline: pipelineIR.PipelineIR) -> Pipeline:
+        """Create a new pipeline by copying an already existing `Pipeline`.
+
+        Parameters
+        ----------
+        pipeline: `Pipeline`
+            An already created pipeline intermediate representation object
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+        """
+        return cls.fromIR(copy.deep_copy(pipeline._pipelineIR))
+
+    def __str__(self) -> str:
+        return str(self._pipelineIR)
+
+    def addInstrument(self, instrument: Union[Instrument, str]):
+        """Add an instrument to the pipeline, or replace an instrument that is
+        already defined.
+
+        Parameters
+        ----------
+        instrument : `~lsst.daf.butler.instrument.Instrument` or `str`
+            Either a derived class object of a `lsst.daf.butler.instrument` or a
+            string corresponding to a fully qualified
+            `lsst.daf.butler.instrument` name.
+        """
+        if isinstance(instrument, str):
+            pass
+        elif issubclass(instrument, Instrument):
+            instrument = f"{instrument.__module__}.{instrument.__qualname__}"
+        else:
+            raise ValueError("instrument must be either a child class of instrument or a string containing"
+                             " a fully qualified name to one")
+        self._pipelineIR.instrument = instrument
+
+    def addTask(self, task: Union[PipelineTask, str], label: str):
+        """Add a new task to the pipeline, or replace a task that is already
+        associated with the supplied label.
+
+        Parameters
+        ----------
+        task: `PipelineTask` or `str`
+            Either a derived class object of a `PipelineTask` or a string
+            corresponding to a fully qualified `PipelineTask` name.
+        label: `str`
+            A label that is used to identify the `PipelineTask` being added
+        """
+        if isinstance(task, str):
+            taskName = task
+        elif issubclass(task, PipelineTask):
+            taskName = f"{task.__module__}.{task.__qualname__}"
+        else:
+            raise ValueError("task must be either a child class of PipelineTask or a string containing"
+                             " a fully qualified name to one")
+        self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
+
+    def removeTask(self, label: str):
+        """Remove a task from the pipeline.
 
         Parameters
         ----------
         label : `str`
-            Task label.
+            The label used to identify the task that is to be removed
+
+        Raises
+        ------
+        KeyError
+            If no task with that label exists in the pipeline
+
+        """
+        self._pipelineIR.tasks.pop(label)
+
+    def addConfigOverride(self, label: str, key: str, value: object):
+        """Apply single config override.
+
+        Parameters
+        ----------
+        label : `str`
+            Label of the task.
+        key: `str`
+            Fully-qualified field name.
+        value : object
+            Value to be given to a field.
+        """
+        self._addConfigImpl(label, pipelineIR.ConfigIR(rest={key: value}))
+
+    def addConfigFile(self, label: str, filename: str):
+        """Add overrides from a specified file.
+
+        Parameters
+        ----------
+        label : `str`
+            The label used to identify the task associated with config to
+            modify
+        filename : `str`
+            Path to the override file.
+        """
+        self._addConfigImpl(label, pipelineIR.ConfigIR(file=[filename]))
+
+    def addConfigPython(self, label: str, pythonString: str):
+        """Add Overrides by running a snippet of python code against a config.
+
+        Parameters
+        ----------
+        label : `str`
+            The label used to identity the task associated with config to
+            modify.
+        pythonString: `str`
+            A string which is valid python code to be executed. This is done
+            with config as the only local accessible value.
+        """
+        self._addConfigImpl(label, pipelineIR.ConfigIR(python=pythonString))
+
+    def _addConfigImpl(self, label: str, newConfig: pipelineIR.ConfigIR):
+        if label not in self._pipelineIR.tasks:
+            raise LookupError(f"There are no tasks labeled '{label}' in the pipeline")
+        self._pipelineIR.tasks[label].add_or_update_config(newConfig)
+
+    def toFile(self, filename: str):
+        self._pipelineIR.to_file(filename)
+
+    def toExpandedPipeline(self) -> Generator[TaskDef]:
+        """Returns a generator of TaskDefs which can be used to create quantum
+        graphs.
 
         Returns
         -------
-        index : `int`
-            Task index, or -1 if label is not found.
-        """
-        for idx, taskDef in enumerate(self):
-            if taskDef.label == label:
-                return idx
-        return -1
+        generator : generator of `TaskDef`
+            The generator returned will be the sorted iterator of tasks which
+            are to be used in constructing a quantum graph.
 
-    def __str__(self):
-        infos = [str(tdef) for tdef in self]
-        return "Pipeline({})".format(", ".join(infos))
+        Raises
+        ------
+        NotImplementedError
+            If a dataId is supplied in a config block. This is in place for
+            future use
+        """
+        taskDefs = []
+        for label, taskIR in self._pipelineIR.tasks.items():
+            taskClass = doImport(taskIR.klass)
+            taskName = taskClass.__qualname__
+            config = taskClass.ConfigClass()
+            overrides = ConfigOverrides()
+            if self._pipelineIR.instrument is not None:
+                overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
+            if taskIR.config is not None:
+                for configIR in taskIR.config:
+                    if configIR.dataId is not None:
+                        raise NotImplementedError("Specializing a config on a partial data id is not yet "
+                                                  "supported in Pipeline definition")
+                    # only apply override if it applies to everything
+                    if configIR.dataId is None:
+                        if configIR.file:
+                            for configFile in configIR.file:
+                                overrides.addFileOverride(configFile)
+                        if configIR.python is not None:
+                            overrides.addPythonOverride(configIR.python)
+                        for key, value in configIR.rest.items():
+                            overrides.addValueOverride(key, value)
+            overrides.applyTo(config)
+            # This may need to be revisited
+            config.validate()
+            taskDefs.append(TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label))
+
+        # lets evaluate the contracts
+        if self._pipelineIR.contracts is not None:
+            label_to_config = {x.label: x.config for x in taskDefs}
+            for contract in self._pipelineIR.contracts:
+                # execute this in its own line so it can raise a good error message if there was problems
+                # with the eval
+                success = eval(contract.contract, None, label_to_config)
+                if not success:
+                    extra_info = f": {contract.msg}" if contract.msg is not None else ""
+                    raise pipelineIR.ContractError(f"Contract(s) '{contract.contract}' were not "
+                                                   f"satisfied{extra_info}")
+
+        yield from pipeTools.orderPipeline(taskDefs)
+
+    def __len__(self):
+        return len(self._pipelineIR.tasks)
+
+    def __eq__(self, other: "Pipeline"):
+        if not isinstance(other, Pipeline):
+            return False
+        return self._pipelineIR == other._pipelineIR
 
 
 @dataclass(frozen=True)
@@ -330,7 +541,7 @@ class PipelineDatasetTypes:
     """
 
     @classmethod
-    def fromPipeline(cls, pipeline: Pipeline, *, registry: Registry) -> PipelineDatasetTypes:
+    def fromPipeline(cls, pipeline, *, registry: Registry) -> PipelineDatasetTypes:
         """Extract and classify the dataset types from all tasks in a
         `Pipeline`.
 
@@ -360,6 +571,8 @@ class PipelineDatasetTypes:
         allInitOutputs = set()
         prerequisites = set()
         byTask = dict()
+        if isinstance(pipeline, Pipeline):
+            pipeline = pipeline.toExpandedPipeline()
         for taskDef in pipeline:
             thisTask = TaskDatasetTypes.fromConnections(taskDef.connections, registry=registry)
             allInitInputs.update(thisTask.initInputs)

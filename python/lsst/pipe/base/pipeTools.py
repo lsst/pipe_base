@@ -33,7 +33,6 @@ import itertools
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .pipeline import Pipeline
 from .connections import iterConnections
 
 # ----------------------------------
@@ -133,26 +132,22 @@ def isPipelineOrdered(pipeline, taskFactory=None):
     return True
 
 
-def orderPipeline(pipeline, taskFactory=None):
+def orderPipeline(pipeline):
     """Re-order tasks in pipeline to satisfy data dependencies.
 
     When possible new ordering keeps original relative order of the tasks.
 
     Parameters
     ----------
-    pipeline : `pipe.base.Pipeline`
+    pipeline : `list` of `pipe.base.TaskDef`
         Pipeline description.
-    taskFactory: `pipe.base.TaskFactory`, optional
-        Instance of an object which knows how to import task classes. It is
-        only used if pipeline task definitions do not define task classes.
 
     Returns
     -------
-    Correctly ordered pipeline (`pipe.base.Pipeline` instance).
+    Correctly ordered pipeline (`list` of `pipe.base.TaskDef` objects).
 
     Raises
     ------
-    `ImportError` is raised when task class cannot be imported.
     `DuplicateOutputError` is raised when there is more than one producer for a
     dataset type.
     `PipelineDataCycleError` is also raised when pipeline has dependency
@@ -223,4 +218,4 @@ def orderPipeline(pipeline, taskFactory=None):
             loops.append(edge)
         raise PipelineDataCycleError("Pipeline has data cycles:\n" + "\n".join(loops))
 
-    return Pipeline(pipeline[idx] for idx in result)
+    return [pipeline[idx] for idx in result]

@@ -28,7 +28,6 @@ __all__ = ['GraphBuilder']
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
-import copy
 import itertools
 from collections import ChainMap
 from dataclasses import dataclass
@@ -38,7 +37,7 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, Pipeline, TaskDef
+from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
 from .graph import QuantumGraph, QuantumGraphTaskNodes
 from lsst.daf.butler import (
     DatasetRef,
@@ -410,8 +409,11 @@ class _PipelineScaffolding:
         # to the Task from each DatasetScaffolding node.
         # Note that there's only one scaffolding node for each DatasetType, shared by
         # _PipelineScaffolding and all _TaskScaffoldings that reference it.
+        if isinstance(pipeline, Pipeline):
+            pipeline = pipeline.toExpandedPipeline()
         self.tasks = [_TaskScaffolding(taskDef=taskDef, parent=self, datasetTypes=taskDatasetTypes)
-                      for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values())]
+                      for taskDef, taskDatasetTypes in zip(pipeline,
+                      datasetTypes.byTask.values())]
 
     tasks: List[_TaskScaffolding]
     """Scaffolding data structures for each task in the pipeline
@@ -717,8 +719,6 @@ class GraphBuilder(object):
 
     Parameters
     ----------
-    taskFactory : `TaskFactory`
-        Factory object used to load/instantiate PipelineTasks
     registry : `~lsst.daf.butler.Registry`
         Data butler instance.
     skipExisting : `bool`, optional
@@ -729,34 +729,11 @@ class GraphBuilder(object):
         `True` if ``skipExisting`` is.
     """
 
-    def __init__(self, taskFactory, registry, skipExisting=True, clobberExisting=False):
-        self.taskFactory = taskFactory
+    def __init__(self, registry, skipExisting=True, clobberExisting=False):
         self.registry = registry
         self.dimensions = registry.dimensions
         self.skipExisting = skipExisting
         self.clobberExisting = clobberExisting
-
-    def _loadTaskClass(self, taskDef):
-        """Make sure task class is loaded.
-
-        Load task class, update task name to make sure it is fully-qualified,
-        do not update original taskDef in a Pipeline though.
-
-        Parameters
-        ----------
-        taskDef : `TaskDef`
-
-        Returns
-        -------
-        `TaskDef` instance, may be the same as parameter if task class is
-        already loaded.
-        """
-        if taskDef.taskClass is None:
-            tClass, tName = self.taskFactory.loadTaskClass(taskDef.taskName)
-            taskDef = copy.copy(taskDef)
-            taskDef.taskClass = tClass
-            taskDef.taskName = tName
-        return taskDef
 
     def makeGraph(self, pipeline, inputCollections, outputCollection, userQuery):
         """Create execution graph for a pipeline.
@@ -790,13 +767,6 @@ class GraphBuilder(object):
             Other exceptions types may be raised by underlying registry
             classes.
         """
-        # Make sure all task classes are loaded, creating a new Pipeline
-        # to avoid modifying the input one.
-        # TODO: in the future, it would be preferable for `Pipeline` to
-        # guarantee that its Task classes have been imported to avoid this
-        # sort of two-stage initialization.
-        pipeline = Pipeline([self._loadTaskClass(taskDef) for taskDef in pipeline])
-
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
 
         scaffolding.fillDataIds(self.registry, inputCollections, userQuery)

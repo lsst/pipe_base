@@ -1,0 +1,3 @@
+description: Test Pipeline
+tasks:
+  modA: "test.moduleA"

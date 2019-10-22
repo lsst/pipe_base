@@ -27,6 +27,11 @@ __all__ = ["ConfigOverrides"]
 import ast
 
 import lsst.pex.exceptions as pexExceptions
+from lsst.utils import doImport
+
+from enum import Enum
+
+OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
 
 
 class ConfigOverrides:
@@ -63,7 +68,7 @@ class ConfigOverrides:
         filename : str
             Path to the override file.
         """
-        self._overrides += [('file', filename)]
+        self._overrides.append((OverrideTypes.File, filename))
 
     def addValueOverride(self, field, value):
         """Add override for a specific field.
@@ -81,7 +86,33 @@ class ConfigOverrides:
         value :
             Value to be given to a filed.
         """
-        self._overrides += [('value', (field, value))]
+        self._overrides.append((OverrideTypes.Value, (field, value)))
+
+    def addPythonOverride(self, python_snippet: str):
+        """Add Overrides by running a snippit of python code against a config.
+
+        Parameters
+        ----------
+        python_snippet: str
+            A string which is valid python code to be executed. This is done with
+            config as the only local accessible value.
+        """
+        self._overrides.append((OverrideTypes.Python, python_snippet))
+
+    def addInstrumentOverride(self, instrument: str, task_name: str):
+        """Apply any overrides that an instrument has for a task
+
+        Parameters
+        ----------
+        instrument: str
+            A string containing the fully qualified name of an instrument from
+            which configs should be loaded and applied
+        task_name: str
+            The _DefaultName of a task associated with a config, used to look
+            up overrides from the instrument.
+        """
+        instrument_lib = doImport(instrument)()
+        self._overrides.append((OverrideTypes.Instrument, (instrument_lib, task_name)))
 
     def applyTo(self, config):
         """Apply all overrides to a task configuration object.
@@ -95,9 +126,9 @@ class ConfigOverrides:
         `Exception` is raised if operations on configuration object fail.
         """
         for otype, override in self._overrides:
-            if otype == 'file':
+            if otype is OverrideTypes.File:
                 config.load(override)
-            elif otype == 'value':
+            elif otype is OverrideTypes.Value:
                 field, value = override
                 field = field.split('.')
                 # find object with attribute to set, throws if we name is wrong
@@ -120,3 +151,8 @@ class ConfigOverrides:
 
                 # this can throw in case of type mismatch
                 setattr(obj, field[-1], value)
+            elif otype is OverrideTypes.Python:
+                exec(override, None, {"config": config})
+            elif otype is OverrideTypes.Instrument:
+                instrument, name = override
+                instrument.applyConfigOverrides(name, config)
