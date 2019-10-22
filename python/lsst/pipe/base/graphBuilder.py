@@ -660,7 +660,7 @@ class _PipelineScaffolding:
                         registry.queryDatasets(
                             datasetType,
                             collections=inputCollections[datasetType.name],
-                            dataId=dataId,
+                            dataId=quantumDataId,
                             deduplicate=True,
                             expand=True,
                         )
