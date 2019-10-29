@@ -424,8 +424,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     # Unpack arguments that are not marked multiples (list of
                     # length one)
                     if not attribute.multiple:
-                        if len(quantumInputRefs) != 1:
+                        if len(quantumInputRefs) > 1:
                             raise ScalarError(attributeName, len(quantumInputRefs))
+                        if len(quantumInputRefs) == 0:
+                            continue
                         quantumInputRefs = quantumInputRefs[0]
                     # Add to the QuantizedConnection identifier
                     setattr(refs, attributeName, quantumInputRefs)
