@@ -23,7 +23,6 @@
 """
 
 import unittest
-import pickle
 
 import lsst.pex.config as pexConfig
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef,
@@ -91,40 +90,27 @@ class TaskTestCase(unittest.TestCase):
     def testEmpty(self):
         """Creating empty pipeline
         """
-        pipeline = Pipeline()
+        pipeline = Pipeline("test")
         self.assertEqual(len(pipeline), 0)
-
-    def testAppend(self):
-        """Testing append() method
-        """
-        pipeline = Pipeline()
-        self.assertEqual(len(pipeline), 0)
-        pipeline.append(TaskDef("lsst.pipe.base.tests.Add", AddConfig()))
-        pipeline.append(TaskDef("lsst.pipe.base.tests.Mult", MultConfig()))
-        self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
 
     def testInitial(self):
         """Testing constructor with initial data
         """
-        pipeline = Pipeline([TaskDef("lsst.pipe.base.tests.Add", AddConfig()),
-                             TaskDef("lsst.pipe.base.tests.Mult", MultConfig())])
+        pipeline = Pipeline("test")
+        pipeline.addTask(AddTask, "add")
+        pipeline.addTask(MultTask, "mult")
         self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
+        expandedPipeline = list(pipeline.toExpandedPipeline())
+        self.assertEqual(expandedPipeline[0].taskName, "AddTask")
+        self.assertEqual(expandedPipeline[1].taskName, "MultTask")
 
-    def testPickle(self):
-        """Test pickling/unpickling.
-        """
-        pipeline = Pipeline([TaskDef("lsst.pipe.base.tests.Add", AddConfig()),
-                             TaskDef("lsst.pipe.base.tests.Mult", MultConfig())])
-        blob = pickle.dumps(pipeline)
-        pipeline = pickle.loads(blob)
-        self.assertIsInstance(pipeline, Pipeline)
-        self.assertEqual(len(pipeline), 2)
-        self.assertEqual(pipeline[0].taskName, "lsst.pipe.base.tests.Add")
-        self.assertEqual(pipeline[1].taskName, "lsst.pipe.base.tests.Mult")
+    def testSerialization(self):
+        pipeline = Pipeline("test")
+        pipeline.addTask(AddTask, "add")
+        pipeline.addTask(MultTask, "mult")
+        dump = str(pipeline)
+        load = Pipeline.fromString(dump)
+        self.assertEqual(pipeline, load)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

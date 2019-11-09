@@ -42,7 +42,7 @@ from typing import List, FrozenSet, Mapping
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .pipeline import Pipeline, TaskDef
+from .pipeline import TaskDef
 from .pipeTools import orderPipeline
 from lsst.daf.butler import Quantum, DatasetRef, DatasetType
 from lsst.daf.butler.core.utils import NamedKeyDict
@@ -226,7 +226,7 @@ class QuantumGraph(list):
             # is no guarantee for that. Just re-construct Pipeline and order tasks
             # in a pipeline using existing method.
             nodesMap = {id(item.taskDef): item for item in graph}
-            pipeline = orderPipeline(Pipeline(item.taskDef for item in graph))
+            pipeline = orderPipeline([item.taskDef for item in graph])
             for taskDef in pipeline:
                 yield nodesMap[id(taskDef)]
 

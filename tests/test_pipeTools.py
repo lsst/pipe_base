@@ -26,7 +26,7 @@ import unittest
 
 from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
                             PipelineTaskConnections, Pipeline,
-                            TaskDef, pipeTools)
+                            pipeTools)
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
 
@@ -61,26 +61,23 @@ class ExamplePipelineTaskConfig(PipelineTaskConfig, pipelineConnections=ExampleP
     pass
 
 
-def _makeConfig(inputName, outputName):
+def _makeConfig(inputName, outputName, pipeline, label):
     """Factory method for config instances
 
     inputName and outputName can be either string or tuple of strings
     with two items max.
     """
-    config = ExamplePipelineTaskConfig()
     if isinstance(inputName, tuple):
-        config.connections.input1 = inputName[0]
-        config.connections.input2 = inputName[1] if len(inputName) > 1 else ""
+        pipeline.addConfigOverride(label, "connections.input1", inputName[0])
+        pipeline.addConfigOverride(label, "connections.input2", inputName[1] if len(inputName) > 1 else "")
     else:
-        config.connections.input1 = inputName
+        pipeline.addConfigOverride(label, "connections.input1", inputName)
 
     if isinstance(outputName, tuple):
-        config.connections.output1 = outputName[0]
-        config.connections.output2 = outputName[1] if len(outputName) > 1 else ""
+        pipeline.addConfigOverride(label, "connections.output1", outputName[0])
+        pipeline.addConfigOverride(label, "connections.output2", outputName[1] if len(outputName) > 1 else "")
     else:
-        config.connections.output1 = outputName
-
-    return config
+        pipeline.addConfigOverride(label, "connections.output1", outputName)
 
 
 class ExamplePipelineTask(PipelineTask):
@@ -103,15 +100,15 @@ def _makePipeline(tasks):
     -------
     Pipeline instance
     """
-    pipe = Pipeline()
+    pipe = Pipeline("test pipeline")
     for task in tasks:
         inputs = task[0]
         outputs = task[1]
         label = task[2]
         klass = task[3] if len(task) > 3 else ExamplePipelineTask
-        config = _makeConfig(inputs, outputs)
-        pipe.append(TaskDef("ExamplePipelineTask", config, klass, label))
-    return pipe
+        pipe.addTask(klass, label)
+        _makeConfig(inputs, outputs, pipe, label)
+    return list(pipe.toExpandedPipeline())
 
 
 class PipelineToolsTestCase(unittest.TestCase):
@@ -131,10 +128,6 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   ("B", "C", "task2")])
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
-        pipeline = _makePipeline([("B", "C", "task2"),
-                                  ("A", "B", "task1")])
-        self.assertFalse(pipeTools.isPipelineOrdered(pipeline))
-
         pipeline = _makePipeline([("A", ("B", "C"), "task1"),
                                   ("B", "D", "task2"),
                                   ("C", "E", "task3"),
@@ -147,22 +140,15 @@ class PipelineToolsTestCase(unittest.TestCase):
                                   (("D", "E"), "F", "task4")])
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
-        pipeline = _makePipeline([(("D", "E"), "F", "task4"),
-                                  ("B", "D", "task2"),
-                                  ("C", "E", "task3"),
-                                  ("A", ("B", "C"), "task1")])
-        self.assertFalse(pipeTools.isPipelineOrdered(pipeline))
-
     def testIsOrderedExceptions(self):
         """Tests for pipeTools.isPipelineOrdered method exceptions
         """
         # two producers should throw ValueError
-        pipeline = _makePipeline([("A", "B", "task1"),
-                                  ("B", "C", "task2"),
-                                  ("A", "C", "task3"),
-                                  ])
         with self.assertRaises(pipeTools.DuplicateOutputError):
-            pipeTools.isPipelineOrdered(pipeline)
+            _makePipeline([("A", "B", "task1"),
+                           ("B", "C", "task2"),
+                           ("A", "C", "task3"),
+                           ])
 
     def testOrderPipeline(self):
         """Tests for pipeTools.orderPipeline method
@@ -228,26 +214,22 @@ class PipelineToolsTestCase(unittest.TestCase):
     def testOrderPipelineExceptions(self):
         """Tests for pipeTools.orderPipeline method exceptions
         """
-        # two producers should throw ValueError
-        pipeline = _makePipeline([("A", "B", "task1"),
-                                  ("B", "C", "task2"),
-                                  ("A", "C", "task3"),
-                                  ])
         with self.assertRaises(pipeTools.DuplicateOutputError):
-            pipeline = pipeTools.orderPipeline(pipeline)
+            _makePipeline([("A", "B", "task1"),
+                           ("B", "C", "task2"),
+                           ("A", "C", "task3"),
+                           ])
 
         # cycle in a graph should throw ValueError
-        pipeline = _makePipeline([("A", ("A", "B"), "task1")])
         with self.assertRaises(pipeTools.PipelineDataCycleError):
-            pipeline = pipeTools.orderPipeline(pipeline)
+            _makePipeline([("A", ("A", "B"), "task1")])
 
         # another kind of cycle in a graph
-        pipeline = _makePipeline([("A", "B", "task1"),
-                                  ("B", "C", "task2"),
-                                  ("C", "D", "task3"),
-                                  ("D", "A", "task4")])
         with self.assertRaises(pipeTools.PipelineDataCycleError):
-            pipeline = pipeTools.orderPipeline(pipeline)
+            _makePipeline([("A", "B", "task1"),
+                           ("B", "C", "task2"),
+                           ("C", "D", "task3"),
+                           ("D", "A", "task4")])
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

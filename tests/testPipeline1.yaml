@@ -1,0 +1,6 @@
+description: Test Pipeline
+tasks:
+  modA: "test.moduleA"
+  modB: "test.moduleB"
+contracts:
+  - modA.b == modA.c

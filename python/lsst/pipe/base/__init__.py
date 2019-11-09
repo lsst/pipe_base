@@ -7,7 +7,6 @@ from .timer import *
 from .config import *
 from .pipelineTask import *
 from .pipeline import *
-from .pipelineBuilder import *
 from .graph import *
 from .graphBuilder import *
 from .taskFactory import *

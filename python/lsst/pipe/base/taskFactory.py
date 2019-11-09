@@ -30,38 +30,9 @@ from abc import ABCMeta, abstractmethod
 class TaskFactory(metaclass=ABCMeta):
     """Abstract base class for task factory.
 
-    Task factory is responsible for importing PipelineTask subclasses by
-    name and creating instances of these classes.
+    Task factory is responsible for creating instances of PipelineTask
+    subclasses.
     """
-
-    @abstractmethod
-    def loadTaskClass(self, taskName):
-        """Locate and import PipelineTask class.
-
-        Returns tuple of task class and its full name, `None` is returned
-        for both if loading fails.
-
-        Parameters
-        ----------
-        taskName : `str`
-            Name of the PipelineTask class, interpretation depends entirely on
-            activator, e.g. it may or may not include dots.
-
-        Returns
-        -------
-        taskClass : `type`
-            PipelineTask class object, or None on failure.
-        taskName : `str`
-            Full task class name including package and module, or None on
-            failure.
-
-        Raises
-        ------
-        ImportError
-            Raised if task class cannot be imported.
-        TypeError
-            Raised if imported class is not a PipelineTask.
-        """
 
     @abstractmethod
     def makeTask(self, taskClass, config, overrides, butler):
