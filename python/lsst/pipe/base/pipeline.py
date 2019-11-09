@@ -30,14 +30,13 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import FrozenSet, Mapping, Union, Generator
+from typing import FrozenSet, Mapping, Union, Generator, TYPE_CHECKING
 
 import copy
 
 # -----------------------------
 #  Imports for other modules --
 from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
-from lsst.daf.butler.instrument import Instrument
 from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
 from .connections import PipelineTaskConnections, iterConnections
@@ -45,6 +44,9 @@ from .pipelineTask import PipelineTask
 
 from . import pipelineIR
 from . import pipeTools
+
+if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
+    from lsst.obs.base.instrument import Instrument
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -186,11 +188,9 @@ class Pipeline:
         """
         if isinstance(instrument, str):
             pass
-        elif issubclass(instrument, Instrument):
-            instrument = f"{instrument.__module__}.{instrument.__qualname__}"
         else:
-            raise ValueError("instrument must be either a child class of instrument or a string containing"
-                             " a fully qualified name to one")
+            # TODO: assume that this is a subclass of Instrument, no type checking
+            instrument = f"{instrument.__module__}.{instrument.__qualname__}"
         self._pipelineIR.instrument = instrument
 
     def addTask(self, task: Union[PipelineTask, str], label: str):
