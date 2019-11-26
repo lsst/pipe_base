@@ -54,7 +54,7 @@ class ScalarError(TypeError):
     """
     def __init__(self, key, numDataIds):
         super().__init__((f"Expected scalar for output dataset field {key}, "
-                          "received {numDataIds} DataIds"))
+                          f"received {numDataIds} DataIds"))
 
 
 class PipelineTaskConnectionDict(UserDict):
