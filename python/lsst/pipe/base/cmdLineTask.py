@@ -492,7 +492,13 @@ class TaskRunner:
         method.
 
         """
-        return task.runDataRef(dataRef, **kwargs)
+        if False:  # raise on warnings?
+            import warnings
+            warnings.simplefilter('error', RuntimeWarning)
+
+        from ipdb import launch_ipdb_on_exception
+        with launch_ipdb_on_exception():
+            return task.runDataRef(dataRef, **kwargs)
 
 
 class LegacyTaskRunner(TaskRunner):
