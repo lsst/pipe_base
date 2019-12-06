@@ -91,8 +91,7 @@ class ButlerQuantumContext:
 
         Parameters
         ----------
-        dataset : `InputQuantizedConnection` or `list` [`~lsst.daf.butler.DatasetRef`]
-                or `~lsst.daf.butler.DatasetRef`
+        dataset
             This argument may either be an `InputQuantizedConnection` which describes
             all the inputs of a quantum, a list of `~lsst.daf.butler.DatasetRef`, or
             a single `~lsst.daf.butler.DatasetRef`. The function will get and return
@@ -148,8 +147,7 @@ class ButlerQuantumContext:
             if there is a single ref, then only a single object need be passed. The same
             restriction applies if dataset is directly a `list` of `DatasetRef` or a
             single `DatasetRef`.
-        dataset : `OutputQuantizedConnection` or `list` of `lsst.daf.butler.DatasetRef`
-                or `lsst.daf.butler.DatasetRef`
+        dataset
             This argument may either be an `InputQuantizedConnection` which describes
             all the inputs of a quantum, a list of `lsst.daf.butler.DatasetRef`, or
             a single `lsst.daf.butler.DatasetRef`. The function will get and return

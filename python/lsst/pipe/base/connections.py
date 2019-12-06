@@ -266,46 +266,51 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     Parameters
     ----------
-    config : `PipelineTaskConfig` A `PipelineTaskConfig` class instance who's
-    class has been configured to use this `PipelineTaskConnectionsClass`
+    config : `PipelineTaskConfig`
+        A `PipelineTaskConfig` class instance whose class has been configured
+        to use this `PipelineTaskConnectionsClass`
 
-    Notes ----- PipelineTaskConnection classes are created by declaring class
-    attributes of types defined in lsst.pipe.base.connectionTypes and are
+    Notes
+    -----
+    ``PipelineTaskConnection`` classes are created by declaring class
+    attributes of types defined in `lsst.pipe.base.connectionTypes` and are
     listed as follows:
 
-    * InitInput - Defines connections in a quantum graph which are used as
-    inputs to the __init__ function of the PipelineTask corresponding to this
-    class
-    * InitOuput - Defines connections in a quantum graph which are to be
-    persisted using a butler at the end of the __init__ function of the
-    PipelineTask corresponding to this class. The variable name used to define
-    this connection should be the same as an attribute name on the PipelineTask
-    instance. E.g. if a InitOutput is declared with the name outputSchema in a
-    PipelineTaskConnections class, then a PipelineTask instance should have an
-    attribute self.outputSchema defined. Its value is what will be saved by the
-    activator framework.
-    * PrerequisiteInput - An input connection type that defines a
-    `lsst.daf.butler.DatasetType` that must be present at execution time, but
-    that will not be used during the course of creating the quantum graph to be
-    executed. These most often are things produced outside the processing
-    pipeline, such as reference catalogs.
-    * Input - Input `lsst.daf.butler.DatasetType`s that will be used in the run
-    method of a PipelineTask.  The name used to declare class attribute must
-    match a function argument name in the run method of a PipelineTask. E.g. If
-    the PipelineTaskConnections defines an Input with the name calexp, then the
-    corresponding signature should be PipelineTask.run(calexp, ...)
-    * Output - A `lsst.daf.butler.DatasetType` that will be produced by an
-    execution of a PipelineTask. The name used to declare the connection must
-    correspond to an attribute of a `Struct` that is returned by a
-    `PipelineTask` run method.  E.g. if an output connection is defined with
-    the name measCat, then the corresponding PipelineTask.run method must
-    return Struct(measCat=X,..) where X matches the storageClass type defined
-    on the output connection.
+    * ``InitInput`` - Defines connections in a quantum graph which are used as
+      inputs to the ``__init__`` function of the `PipelineTask` corresponding
+      to this class
+    * ``InitOuput`` - Defines connections in a quantum graph which are to be
+      persisted using a butler at the end of the ``__init__`` function of the
+      `PipelineTask` corresponding to this class. The variable name used to
+      define this connection should be the same as an attribute name on the
+      `PipelineTask` instance. E.g. if an ``InitOutput`` is declared with
+      the name ``outputSchema`` in a ``PipelineTaskConnections`` class, then
+      a `PipelineTask` instance should have an attribute
+      ``self.outputSchema`` defined. Its value is what will be saved by the
+      activator framework.
+    * ``PrerequisiteInput`` - An input connection type that defines a
+      `lsst.daf.butler.DatasetType` that must be present at execution time,
+      but that will not be used during the course of creating the quantum
+      graph to be executed. These most often are things produced outside the
+      processing pipeline, such as reference catalogs.
+    * ``Input`` - Input `lsst.daf.butler.DatasetType` objects that will be used
+      in the ``run`` method of a `PipelineTask`.  The name used to declare
+      class attribute must match a function argument name in the ``run``
+      method of a `PipelineTask`. E.g. If the ``PipelineTaskConnections``
+      defines an ``Input`` with the name ``calexp``, then the corresponding
+      signature should be ``PipelineTask.run(calexp, ...)``
+    * ``Output`` - A `lsst.daf.butler.DatasetType` that will be produced by an
+      execution of a `PipelineTask`. The name used to declare the connection
+      must correspond to an attribute of a `Struct` that is returned by a
+      `PipelineTask` ``run`` method.  E.g. if an output connection is
+      defined with the name ``measCat``, then the corresponding
+      ``PipelineTask.run`` method must return ``Struct(measCat=X,..)`` where
+      X matches the ``storageClass`` type defined on the output connection.
 
-    The process of declaring a PipelineTaskConnection class involves parameters
-    passed in the declaration statement.
+    The process of declaring a ``PipelineTaskConnection`` class involves
+    parameters passed in the declaration statement.
 
-    The first parameter is dimensions which is an iterable of strings which
+    The first parameter is ``dimensions`` which is an iterable of strings which
     defines the unit of processing the run method of a corresponding
     `PipelineTask` will operate on. These dimensions must match dimensions that
     exist in the butler registry which will be used in executing the
@@ -319,7 +324,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     ``defaultTemplates`` argument. This is done by passing a dictionary with
     keys corresponding to a template identifier, and values corresponding to
     the value to use as a default when formatting the string. For example if
-    ConnectionClass.calexp.name = '{input}Coadd_calexp' then
+    ``ConnectionClass.calexp.name = '{input}Coadd_calexp'`` then
     ``defaultTemplates`` = {'input': 'deep'}.
 
     Once a `PipelineTaskConnections` class is created, it is used in the
@@ -448,26 +453,26 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         return inputDatasetRefs, outputDatasetRefs
 
     def adjustQuantum(self, datasetRefMap: InputQuantizedConnection):
-        """Override to make adjustments to `lsst.daf.butler.DatasetRef`s in the
-        `lsst.daf.butler.core.Quantum` during the graph generation stage of the
-        activator.
+        """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
+        in the `lsst.daf.butler.core.Quantum` during the graph generation stage
+        of the activator.
 
         Parameters
         ----------
         datasetRefMap : `dict`
             Mapping with keys of dataset type name to `list` of
-            `lsst.daf.butler.DatasetRef`s
+            `lsst.daf.butler.DatasetRef` objects
 
         Returns
         -------
         datasetRefMap : `dict`
             Modified mapping of input with possible adjusted
-            `lsst.daf.butler.DatasetRef`s
+            `lsst.daf.butler.DatasetRef` objects
 
         Raises
         ------
         Exception
-            Overrides of this function have the option of raising and Exception
+            Overrides of this function have the option of raising an Exception
             if a field in the input does not satisfy a need for a corresponding
             pipelineTask, i.e. no reference catalogs are found.
         """
