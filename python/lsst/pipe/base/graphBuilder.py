@@ -236,6 +236,7 @@ class _TaskScaffolding:
             raise GraphBuilderError(f"Task with label '{taskDef.label}' has dimensions "
                                     f"{self.dimensions} that are not a subset of "
                                     f"the pipeline dimensions {parent.dimensions}.")
+
         # Initialize _DatasetScaffoldingDicts as subsets of the one or two
         # corresponding dicts in the parent _PipelineScaffolding.
         self.initInputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.initInputs,

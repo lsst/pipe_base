@@ -39,7 +39,7 @@ import copy
 from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
 from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
-from .connections import PipelineTaskConnections, iterConnections
+from .connections import iterConnections
 from .pipelineTask import PipelineTask
 
 from . import pipelineIR
@@ -86,6 +86,21 @@ class TaskDef:
         self.taskClass = taskClass
         self.label = label
         self.connections = config.connections.ConnectionsClass(config=config)
+
+    @property
+    def metadataDatasetName(self):
+        """Name of a dataset type for metadata of this task, `None` if
+        metadata is not to be saved (`str`)
+        """
+        if self.config.metadataDataset == "label":
+            return self.label + "_metadata"
+        elif self.config.metadataDataset == "taskName":
+            return self.taskName + "_metadata",
+        elif self.config.metadataDataset is None:
+            return None
+        else:
+            raise ValueError("Unexpected value of config.metadataDataset = " +
+                             str(self.config.metadataDataset))
 
     def __str__(self):
         rep = "TaskDef(" + self.taskName
@@ -212,6 +227,13 @@ class Pipeline:
         else:
             raise ValueError("task must be either a child class of PipelineTask or a string containing"
                              " a fully qualified name to one")
+        if not label:
+            # in some cases (with command line-generated pipeline) tasks can
+            # be defined without label which is not acceptable, use task
+            # _DefaultName in that case
+            if isinstance(task, str):
+                task = doImport(task)
+            label = task._DefaultName
         self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
 
     def removeTask(self, label: str):
@@ -399,15 +421,13 @@ class TaskDatasetTypes:
     """
 
     @classmethod
-    def fromConnections(cls, connectionsInstance: PipelineTaskConnections, *,
-                        registry: Registry) -> TaskDatasetTypes:
+    def fromTaskDef(cls, taskDef: TaskDef, *, registry: Registry) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
         Parameters
         ----------
-        connectionsInstance: `PipelineTaskConnections`
-            An instance of a `PipelineTaskConnections` class for a particular
-            `PipelineTask`.
+        taskDef: `TaskDef`
+            An instance of a `TaskDef` class for a particular `PipelineTask`.
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.
@@ -436,10 +456,10 @@ class TaskDatasetTypes:
             Notes
             -----
             This function is a closure over the variables ``registry`` and
-            ``connectionsInstance``.
+            ``taskDef``.
             """
             datasetTypes = []
-            for c in iterConnections(connectionsInstance, connectionType):
+            for c in iterConnections(taskDef.connections, connectionType):
                 dimensions = set(getattr(c, 'dimensions', set()))
                 if "skypix" in dimensions:
                     try:
@@ -447,7 +467,7 @@ class TaskDatasetTypes:
                     except LookupError as err:
                         raise LookupError(
                             f"DatasetType '{c.name}' referenced by "
-                            f"{type(connectionsInstance).__name__} uses 'skypix' as a dimension "
+                            f"{type(taskDef.connections).__name__} uses 'skypix' as a dimension "
                             f"placeholder, but does not already exist in the registry.  "
                             f"Note that reference catalog names are now used as the dataset "
                             f"type name instead of 'ref_cat'."
@@ -465,12 +485,20 @@ class TaskDatasetTypes:
                 datasetTypes.append(datasetType)
             return frozenset(datasetTypes)
 
+        # optionally add output dataset for metadata
+        outputs = makeDatasetTypesSet("outputs")
+        if taskDef.metadataDatasetName is not None:
+            # Metadata is supposed to be of the PropertyList type, its dimensions
+            # correspond to a task quantum
+            dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
+            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertyList")}
+
         return cls(
             initInputs=makeDatasetTypesSet("initInputs"),
             initOutputs=makeDatasetTypesSet("initOutputs"),
             inputs=makeDatasetTypesSet("inputs"),
             prerequisites=makeDatasetTypesSet("prerequisiteInputs"),
-            outputs=makeDatasetTypesSet("outputs"),
+            outputs=outputs,
         )
 
 
@@ -574,7 +602,7 @@ class PipelineDatasetTypes:
         if isinstance(pipeline, Pipeline):
             pipeline = pipeline.toExpandedPipeline()
         for taskDef in pipeline:
-            thisTask = TaskDatasetTypes.fromConnections(taskDef.connections, registry=registry)
+            thisTask = TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
             allInitInputs.update(thisTask.initInputs)
             allInitOutputs.update(thisTask.initOutputs)
             allInputs.update(thisTask.inputs)

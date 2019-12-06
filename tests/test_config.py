@@ -30,12 +30,18 @@ from lsst.daf.butler import StorageClass, StorageClassFactory
 import lsst.pipe.base as pipeBase
 
 
+class NullConnections(pipeBase.PipelineTaskConnections,
+                      dimensions=()):
+    pass
+
+
 class NoResourceTask(pipeBase.PipelineTask):
     _DefaultName = "no_resource_task"
-    ConfigClass = pexConfig.Config
+    ConfigClass = pipeBase.PipelineTaskConfig
 
 
-class OneConfig(pexConfig.Config):
+class OneConfig(pipeBase.PipelineTaskConfig,
+                pipelineConnections=NullConnections):
     resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
                                       doc="Resource configuration")
 
@@ -45,7 +51,8 @@ class OneTask(pipeBase.PipelineTask):
     ConfigClass = OneConfig
 
 
-class TwoConfig(pexConfig.Config):
+class TwoConfig(pipeBase.PipelineTaskConfig,
+                pipelineConnections=NullConnections):
     resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
                                       doc="Resource configuration")
 
@@ -92,6 +99,18 @@ class TaskTestCase(unittest.TestCase):
         self.assertIsNot(res_config, None)
         self.assertEqual(res_config.minMemoryMB, 1024)
         self.assertEqual(res_config.minNumCores, 32)
+
+    def testMetadataDataset(self):
+        """Test for metadata dataset configuration.
+        """
+        config = pipeBase.PipelineTaskConfig()
+        self.assertEqual(config.metadataDataset, "label")
+        config.metadataDataset = "taskName"
+        self.assertEqual(config.metadataDataset, "taskName")
+        config.metadataDataset = None
+        self.assertIsNone(config.metadataDataset)
+        with self.assertRaises(pexConfig.FieldValidationError):
+            config.metadataDataset = ""
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

@@ -123,7 +123,14 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     created config class is then attached to the `PipelineTaskConfig` via a
     `~lsst.pex.config.ConfigField` with the attribute name `connections`.
     """
-    pass
+    metadataDataset = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Choice for the name of metadata dataset.",
+        allowed={"label": "Use task label in dataset name, \"<label>_metadata\".",
+                 "taskName": "Use task name in dataset name, \"<taskName>_metadata\".",
+                 None: "Disables writing of task metadata."},
+        default="label",
+        optional=True)
 
 
 class ResourceConfig(pexConfig.Config):
