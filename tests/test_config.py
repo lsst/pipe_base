@@ -100,18 +100,6 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(res_config.minMemoryMB, 1024)
         self.assertEqual(res_config.minNumCores, 32)
 
-    def testMetadataDataset(self):
-        """Test for metadata dataset configuration.
-        """
-        config = pipeBase.PipelineTaskConfig()
-        self.assertEqual(config.metadataDataset, "label")
-        config.metadataDataset = "taskName"
-        self.assertEqual(config.metadataDataset, "taskName")
-        config.metadataDataset = None
-        self.assertIsNone(config.metadataDataset)
-        with self.assertRaises(pexConfig.FieldValidationError):
-            config.metadataDataset = ""
-
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass

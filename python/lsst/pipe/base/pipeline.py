@@ -92,15 +92,10 @@ class TaskDef:
         """Name of a dataset type for metadata of this task, `None` if
         metadata is not to be saved (`str`)
         """
-        if self.config.metadataDataset == "label":
+        if self.config.saveMetadata:
             return self.label + "_metadata"
-        elif self.config.metadataDataset == "taskName":
-            return self.taskName + "_metadata",
-        elif self.config.metadataDataset is None:
-            return None
         else:
-            raise ValueError("Unexpected value of config.metadataDataset = " +
-                             str(self.config.metadataDataset))
+            return None
 
     def __str__(self):
         rep = "TaskDef(" + self.taskName

@@ -86,6 +86,9 @@ class TaskTestCase(unittest.TestCase):
         self.assertIsInstance(task2.config, MultConfig)
         self.assertIs(task2.taskClass, MultTask)
         self.assertEqual(task2.label, "mult_task")
+        self.assertEqual(task2.metadataDatasetName, "mult_task_metadata")
+        task2.config.saveMetadata = False
+        self.assertIsNone(task2.metadataDatasetName)
 
     def testEmpty(self):
         """Creating empty pipeline
