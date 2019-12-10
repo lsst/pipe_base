@@ -123,7 +123,9 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     created config class is then attached to the `PipelineTaskConfig` via a
     `~lsst.pex.config.ConfigField` with the attribute name `connections`.
     """
-    pass
+    saveMetadata = pexConfig.Field(
+        dtype=bool, default=True, optional=False,
+        doc="Flag to enable/disable metadata saving for a task, enabled by default.")
 
 
 class ResourceConfig(pexConfig.Config):

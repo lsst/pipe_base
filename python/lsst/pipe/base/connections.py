@@ -356,7 +356,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> config.connections.outputConnection = "TotallyDifferent"
     >>> connections = ExampleConnections(config=config)
     >>> assert(connections.inputConnection.name == "ModifiedDataset")
-    >>> assert(connections.outputCOnnection.name == "TotallyDifferent")
+    >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
     def __init__(self, *, config: 'PipelineTaskConfig' = None):

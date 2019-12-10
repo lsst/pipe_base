@@ -30,12 +30,18 @@ from lsst.daf.butler import StorageClass, StorageClassFactory
 import lsst.pipe.base as pipeBase
 
 
+class NullConnections(pipeBase.PipelineTaskConnections,
+                      dimensions=()):
+    pass
+
+
 class NoResourceTask(pipeBase.PipelineTask):
     _DefaultName = "no_resource_task"
-    ConfigClass = pexConfig.Config
+    ConfigClass = pipeBase.PipelineTaskConfig
 
 
-class OneConfig(pexConfig.Config):
+class OneConfig(pipeBase.PipelineTaskConfig,
+                pipelineConnections=NullConnections):
     resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
                                       doc="Resource configuration")
 
@@ -45,7 +51,8 @@ class OneTask(pipeBase.PipelineTask):
     ConfigClass = OneConfig
 
 
-class TwoConfig(pexConfig.Config):
+class TwoConfig(pipeBase.PipelineTaskConfig,
+                pipelineConnections=NullConnections):
     resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
                                       doc="Resource configuration")
 
