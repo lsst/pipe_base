@@ -37,20 +37,20 @@ class PipelineTask(Task):
     resulting data is also stored in a data butler.
 
     PipelineTask inherits from a `pipe.base.Task` and uses the same
-    configuration mechanism based on `pex.config`. `PipelineTask`s also have a
-    `PipelineTaskConnections` class associated with their config which defines
-    all of the IO a `PipelineTask` will need to do. PipelineTask sub-class
-    typically implements `run()` method which receives Python-domain data
-    objects and returns `pipe.base.Struct` object with resulting data.  `run()`
-    method is not supposed to perform any I/O, it operates entirely on
+    configuration mechanism based on `pex.config`. `PipelineTask` classes also
+    have a `PipelineTaskConnections` class associated with their config which
+    defines all of the IO a `PipelineTask` will need to do. PipelineTask
+    sub-class typically implements `run()` method which receives Python-domain
+    data objects and returns `pipe.base.Struct` object with resulting data.
+    `run()` method is not supposed to perform any I/O, it operates entirely on
     in-memory objects. `runQuantum()` is the method (can be re-implemented in
     sub-class) where all necessary I/O is performed, it reads all input data
     from data butler into memory, calls `run()` method with that data, examines
     returned `Struct` object and saves some or all of that data back to data
     butler. `runQuantum()` method receives a `ButlerQuantumContext` instance to
     facilitate I/O, a `InputQuantizedConnection` instance which defines all
-    input `lsst.daf.butler.DatasetRef`s, and a `OutputQuantizedConnection`
-    instance which defines all the output `lsst.daf.butler.DatasetRef`s for a
+    input `lsst.daf.butler.DatasetRef`, and a `OutputQuantizedConnection`
+    instance which defines all the output `lsst.daf.butler.DatasetRef` for a
     single invocation of PipelineTask.
 
     Subclasses must be constructable with exactly the arguments taken by the
@@ -135,11 +135,11 @@ class PipelineTask(Task):
         inputRefs : `InputQuantizedConnection`
             Datastructure whose attribute names are the names that identify connections defined in
             corresponding `PipelineTaskConnections` class. The values of these attributes are the
-            `lsst.daf.butler.DatasetRef`s associated with the defined input/prerequisite connections.
+            `lsst.daf.butler.DatasetRef` objects associated with the defined input/prerequisite connections.
         outputRefs : `OutputQuantizedConnection`
             Datastructure whose attribute names are the names that identify connections defined in
             corresponding `PipelineTaskConnections` class. The values of these attributes are the
-            `lsst.daf.butler.DatasetRef`s associated with the defined output connections.
+            `lsst.daf.butler.DatasetRef` objects associated with the defined output connections.
         """
         inputs = butlerQC.get(inputRefs)
         outputs = self.run(**inputs)
