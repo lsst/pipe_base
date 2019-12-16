@@ -26,7 +26,7 @@ import unittest
 from types import SimpleNamespace
 
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef, Quantum, Run, DimensionUniverse, DataCoordinate
+from lsst.daf.butler import DatasetRef, Quantum, DimensionUniverse, DataCoordinate
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -121,7 +121,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         """Create set of Quanta
         """
         universe = DimensionUniverse()
-        run = Run(collection=1, environment=None, pipeline=None)
+        run = "run1"
         connections = config.connections.ConnectionsClass(config=config)
 
         dstype0 = connections.input.makeDatasetType(universe)
