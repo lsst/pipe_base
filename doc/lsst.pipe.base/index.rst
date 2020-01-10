@@ -69,3 +69,6 @@ Python API reference
 
 .. automodapi:: lsst.pipe.base
    :no-main-docstr:
+.. automodapi:: lsst.pipe.base.tests
+   :no-main-docstr:
+   :no-inheritance-diagram:
