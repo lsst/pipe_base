@@ -30,7 +30,7 @@ import unittest
 import lsst.utils.tests
 import lsst.daf.butler
 
-from lsst.pipe.base.tests import makeTestButler, makeDatasetType
+from lsst.pipe.base.tests import makeTestButler, makeDatasetType, expandUniqueId
 
 
 class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
@@ -97,6 +97,21 @@ class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
             makeDatasetType(self.butler, "DataType3", {"4thDimension"}, "NumpyArray")
         with self.assertRaises(ValueError):
             makeDatasetType(self.butler, "DataType3", {"instrument"}, "UnstorableType")
+
+    def testExpandUniqueId(self):
+        self.assertEqual(dict(expandUniqueId(self.butler, {"instrument": "notACam"})),
+                         {"instrument": "notACam"})
+        self.assertIn(dict(expandUniqueId(self.butler, {"visit": 101})),
+                      [{"instrument": "notACam", "visit": 101},
+                       {"instrument": "dummyCam", "visit": 101}])
+        self.assertIn(dict(expandUniqueId(self.butler, {"detector": 5})),
+                      [{"instrument": "notACam", "detector": 5},
+                       {"instrument": "dummyCam", "detector": 5}])
+        self.assertIn(dict(expandUniqueId(self.butler, {"physical_filter": "k2020"})),
+                      [{"instrument": "notACam", "physical_filter": "k2020"},
+                       {"instrument": "notACam", "physical_filter": "k2020"}])
+        with self.assertRaises(ValueError):
+            expandUniqueId(self.butler, {"tract": 42})
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

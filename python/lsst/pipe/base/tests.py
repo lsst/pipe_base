@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeTestButler", "makeDatasetType"]
+__all__ = ["makeTestButler", "makeDatasetType", "expandUniqueId"]
 
 
 from lsst.daf.butler import Butler, DatasetType
@@ -43,6 +43,12 @@ def makeTestButler(root, dataIds):
     -------
     butler : `lsst.daf.butler.Butler`
         A Butler referring to the new repository.
+
+    Notes
+    -----
+    Since the values in ``dataIds`` uniquely determine the repository's
+    data IDs, the IDs can be recovered by calling `expandUniqueId` so long as
+    no other code has inserted dimensions into the repository registry.
     """
     # TODO: takes 5 seconds to run; split up into class-level Butler
     #     with test-level runs after DM-21246
@@ -101,6 +107,54 @@ def _makeRecords(dataIds, universe):
 
     return {dimension: [universe[dimension].RecordClass.fromDict(value) for value in values]
             for dimension, values in expandedIds.items()}
+
+
+def expandUniqueId(butler, partialId):
+    """Return a complete data ID matching some criterion.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        The repository to query.
+    partialId : `~collections.abc.Mapping` [`str`, any]
+        A mapping of known dimensions and values.
+
+    Returns
+    -------
+    dataId : `lsst.daf.butler.DataCoordinate`
+        The unique data ID that matches ``partialId``.
+
+    Raises
+    ------
+    ValueError
+        Raised if ``partialId`` does not uniquely identify a data ID.
+
+    Notes
+    -----
+    This method will only work correctly if all dimensions attached to the
+    target dimension (eg., "physical_filter" for "visit") are known to the
+    repository, even if they're not needed to identify a dataset.
+
+    Examples
+    --------
+    .. code-block:: py
+
+       >>> butler = makeTestButler(
+               "testdir", {"instrument": ["notACam"], "detector": [1]})
+       >>> expandUniqueId(butler, {"detector": 1})
+       DataCoordinate({instrument, detector}, ('notACam', 1))
+    """
+    # The example is *not* a doctest because it requires dangerous I/O
+    registry = butler.registry
+    dimensions = registry.dimensions.extract(partialId.keys()).required
+
+    query = " AND ".join(f"{dimension} = {value!r}" for dimension, value in partialId.items())
+
+    dataId = [id for id in registry.queryDimensions(dimensions, where=query, expand=False)]
+    if len(dataId) == 1:
+        return dataId[0]
+    else:
+        raise ValueError(f"Found {len(dataId)} matches for {partialId}, expected 1.")
 
 
 def makeDatasetType(butler, name, dimensions, storageClass):
