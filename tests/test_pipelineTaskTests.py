@@ -32,7 +32,9 @@ import numpy as np
 import lsst.utils.tests
 import lsst.daf.butler
 
-from lsst.pipe.base.tests import makeTestRepo, makeUniqueButler, makeDatasetType, expandUniqueId
+from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
+from lsst.pipe.base.tests import (makeTestRepo, makeUniqueButler, makeDatasetType, expandUniqueId, runQuantum,
+                                  refFromConnection)
 
 
 class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
@@ -131,6 +133,157 @@ class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
                        {"instrument": "notACam", "physical_filter": "k2020"}])
         with self.assertRaises(ValueError):
             expandUniqueId(self.butler, {"tract": 42})
+
+
+class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
+    a = connectionTypes.Input(
+        name="VisitA",
+        storageClass="NumpyArray",
+        multiple=False,
+        dimensions={"instrument", "visit"},
+    )
+    b = connectionTypes.Input(
+        name="VisitB",
+        storageClass="NumpyArray",
+        multiple=False,
+        dimensions={"instrument", "visit"},
+    )
+    outA = connectionTypes.Output(
+        name="VisitOutA",
+        storageClass="NumpyArray",
+        multiple=False,
+        dimensions={"instrument", "visit"},
+    )
+    outB = connectionTypes.Output(
+        name="VisitOutB",
+        storageClass="NumpyArray",
+        multiple=False,
+        dimensions={"instrument", "visit"},
+    )
+
+
+class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
+    a = connectionTypes.Input(
+        name="PatchA",
+        storageClass="NumpyArray",
+        multiple=True,
+        dimensions={"skymap", "tract", "patch"},
+    )
+    b = connectionTypes.Input(
+        name="PatchB",
+        storageClass="NumpyArray",
+        multiple=False,
+        dimensions={"skymap", "tract"},
+    )
+    out = connectionTypes.Output(
+        name="PatchOut",
+        storageClass="NumpyArray",
+        multiple=True,
+        dimensions={"skymap", "tract", "patch"},
+    )
+
+
+class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
+    pass
+
+
+class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
+    pass
+
+
+class VisitTask(PipelineTask):
+    ConfigClass = VisitConfig
+    _DefaultName = "visit"
+
+    def run(self, a, b):
+        outA = a + b
+        outB = a - b
+        return Struct(outA=outA, outB=outB)
+
+
+class PatchTask(PipelineTask):
+    ConfigClass = PatchConfig
+    _DefaultName = "patch"
+
+    def run(self, a, b):
+        out = [oneA + b for oneA in a]
+        return Struct(out=out)
+
+
+class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Butler or collection should be re-created for each test case, but
+        # this has a prohibitive run-time cost at present
+        cls.root = tempfile.mkdtemp()
+
+        dataIds = {
+            "instrument": ["notACam"],
+            "physical_filter": ["k2020"],  # needed for expandUniqueId(visit)
+            "visit": [101, 102],
+            "skymap": ["sky"],
+            "tract": [42],
+            "patch": [0, 1],
+        }
+        butler = makeTestRepo(cls.root, dataIds)
+
+        for typeName in {"VisitA", "VisitB", "VisitOutA", "VisitOutB"}:
+            makeDatasetType(butler, typeName, {"instrument", "visit"}, "NumpyArray")
+        for typeName in {"PatchA", "PatchOut"}:
+            makeDatasetType(butler, typeName, {"skymap", "tract", "patch"}, "NumpyArray")
+        makeDatasetType(butler, "PatchB", {"skymap", "tract"}, "NumpyArray")
+
+    def setUp(self):
+        self.butler = makeUniqueButler(self.root)
+
+    def testRunQuantumVisitWithRun(self):
+        task = VisitTask()
+        connections = task.config.ConnectionsClass(config=task.config)
+        dataId = expandUniqueId(self.butler, {"visit": 102})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        quantum = lsst.daf.butler.Quantum(taskClass=VisitTask)
+        quantum.addPredictedInput(refFromConnection(self.butler, connections.a, dataId))
+        quantum.addPredictedInput(refFromConnection(self.butler, connections.b, dataId))
+        quantum.addOutput(refFromConnection(self.butler, connections.outA, dataId))
+        quantum.addOutput(refFromConnection(self.butler, connections.outB, dataId))
+
+        runQuantum(task, self.butler, quantum)
+
+        # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
+        self.assertTrue(self.butler.datasetExists("VisitOutA", dataId))
+        self.assertFloatsAlmostEqual(self.butler.get("VisitOutA", dataId), inA + inB)
+        self.assertTrue(self.butler.datasetExists("VisitOutB", dataId))
+        self.assertFloatsAlmostEqual(self.butler.get("VisitOutB", dataId), inA - inB)
+
+    def testRunQuantumPatchWithRun(self):
+        task = PatchTask()
+        connections = task.config.ConnectionsClass(config=task.config)
+        dataId = expandUniqueId(self.butler, {"tract": 42})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        for patch in {0, 1}:
+            self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
+        self.butler.put(inB, "PatchB", dataId)
+
+        quantum = lsst.daf.butler.Quantum(taskClass=VisitTask)
+        for patch in {0, 1}:
+            quantum.addPredictedInput(refFromConnection(self.butler, connections.a, dataId, patch=patch))
+            quantum.addOutput(refFromConnection(self.butler, connections.out, dataId, patch=patch))
+        quantum.addPredictedInput(refFromConnection(self.butler, connections.b, dataId))
+
+        runQuantum(task, self.butler, quantum)
+
+        # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
+        for patch in {0, 1}:
+            self.assertTrue(self.butler.datasetExists("PatchOut", dataId, patch=patch))
+            self.assertFloatsAlmostEqual(self.butler.get("PatchOut", dataId, patch=patch),
+                                         inA + inB + patch)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
