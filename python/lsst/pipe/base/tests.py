@@ -111,7 +111,18 @@ def _makeRecords(dataIds, universe):
         for value in values:
             expandedValue = {}
             for key in dimension.uniqueKeys:
-                expandedValue[key.name] = key.dtype().python_type(value)
+                if key.nbytes:
+                    castType = bytes
+                else:
+                    castType = key.dtype().python_type
+                try:
+                    castValue = castType(value)
+                except TypeError:
+                    castValue = castType()
+                expandedValue[key.name] = castValue
+            for key in dimension.metadata:
+                if not key.nullable:
+                    expandedValue[key.name] = key.dtype().python_type(value)
             expandedIds[name].append(expandedValue)
 
     # Pick cross-relationships arbitrarily
