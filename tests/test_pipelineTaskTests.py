@@ -27,16 +27,18 @@ import shutil
 import tempfile
 import unittest
 
+import numpy as np
+
 import lsst.utils.tests
 import lsst.daf.butler
 
-from lsst.pipe.base.tests import makeTestButler, makeDatasetType, expandUniqueId
+from lsst.pipe.base.tests import makeTestRepo, makeUniqueButler, makeDatasetType, expandUniqueId
 
 
 class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Butler or collection should be re-created for each test case, but
+        # Repository should be re-created for each test case, but
         # this has a prohibitive run-time cost at present
         cls.root = tempfile.mkdtemp()
 
@@ -46,10 +48,10 @@ class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
             "visit": [101, 102],
             "detector": [5]
         }
-        cls.butler = makeTestButler(cls.root, dataIds)
+        butler = makeTestRepo(cls.root, dataIds)
 
-        makeDatasetType(cls.butler, "DataType1", {"instrument"}, "NumpyArray")
-        makeDatasetType(cls.butler, "DataType2", {"instrument", "visit", "detector"}, "NumpyArray")
+        makeDatasetType(butler, "DataType1", {"instrument"}, "NumpyArray")
+        makeDatasetType(butler, "DataType2", {"instrument", "visit", "detector"}, "NumpyArray")
 
     @classmethod
     def tearDownClass(cls):
@@ -57,8 +59,16 @@ class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
         #    to keep the addition and removal together
         shutil.rmtree(cls.root, ignore_errors=True)
 
+    def setUp(self):
+        self.butler = makeUniqueButler(self.root)
+
     def testButlerValid(self):
         self.butler.validateConfiguration()
+
+    def testButlerUninitialized(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(OSError):
+                makeUniqueButler(temp)
 
     def _checkButlerDimension(self, dimensions, query, expected):
         result = [id for id in self.butler.registry.queryDimensions(
@@ -97,6 +107,15 @@ class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
             makeDatasetType(self.butler, "DataType3", {"4thDimension"}, "NumpyArray")
         with self.assertRaises(ValueError):
             makeDatasetType(self.butler, "DataType3", {"instrument"}, "UnstorableType")
+
+    def testUniqueButler(self):
+        dataId = {"instrument": "notACam"}
+        self.butler.put(np.array([1, 2, 3]), "DataType1", dataId)
+        self.assertTrue(self.butler.datasetExists("DataType1", dataId))
+
+        newButler = makeUniqueButler(self.root)
+        with self.assertRaises(LookupError):
+            newButler.datasetExists("DataType1", dataId)
 
     def testExpandUniqueId(self):
         self.assertEqual(dict(expandUniqueId(self.butler, {"instrument": "notACam"})),
