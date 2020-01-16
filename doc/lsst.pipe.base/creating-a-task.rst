@@ -188,25 +188,41 @@ Both of these are constants, and thus are the same for each invocation of the ``
 
 .. _creating-a-task-class-run-method:
 
+Task execution methods
+----------------------
+
 The run method
---------------
+^^^^^^^^^^^^^^
 
-Most tasks have a ``runDataRef`` method which perform the task's data processing operation.
-This is required for command-line tasks and strongly recommended for most other tasks.
-One exception is if your task needs different methods to handle different data types (C++ handles this using overloaded functions, but the standard technique is Python is to provide different methods for different call signatures).
-
-If your task's processing can be divided into logical units, then we recommend that you provide methods for each unit. ``runDataRef`` can then call each method to do its work.
-This allows your task to be more easily adapted: a subclass can override just a few methods.
-
-We strongly recommend that you make your task stateless, by not using instance variables as part of your data processing. Pass data between methods by calling and returning it.
-This makes the task much easier to reason about, since processing one item of data cannot affect future items of data.
-
-The ``runDataRef`` method should always return its results in an `lsst.pipe.base.struct.Struct` object, with a named field for each item of data.
+All tasks are required to have a ``run`` method which acts as their primary point of entry.
+This method takes, as explicit arguments, everything that the task needs to perform one unit of execution (for example, processing a single image), and returns the result to the caller.
+The ``run`` method should not perform I/O, and, in particular, should not be expected to have access to the Data Butler for storing and retrieving data.
+Instead, results are returned as an `lsst.pipe.base.struct.Struct` object, with a named field for each item of data.
 This is safer than returning a tuple of items, and allows adding fields without affecting existing code.
-Other methods should also return `~lsst.pipe.base.struct.Struct`\ s if they return more than one or two items.
 
+.. note::
+
+   In some, unusual, circumstances, it may be necessary for ``run`` to have access to the Data Butler, or for a task not to provide a ``run`` method.
+   In code released by DM, these cases should be approved by the DM Change Control Board through the `RFC process <https://developer.lsst.io/communications/rfc.html>`_.
+
+If your task's processing can be divided into logical units, then we recommend that you provide methods for each unit.
+``run`` can then call each method to do its work.
+This allows your task to be more easily adapted: a subclass can override just a few methods.
 Any method that is likely to take significant time or memory should be preceded by this python decorator: `lsst.pipe.base.timeMethod`.
 This automatically records the execution time and memory of the method in the task's ``metadata`` attribute.
+
+We strongly recommend that you make your task stateless, by not using instance variables as part of your data processing.
+Pass data between methods by calling and returning it.
+This makes the task much easier to reason about, since processing one item of data cannot affect future items of data.
+
+The runDataRef method
+^^^^^^^^^^^^^^^^^^^^^
+
+In addition to ``run``, many tasks have a ``runDataRef`` method which accepts a Butler data reference; loads appropriate data from it; calls ``run``; and writes the results back to the Butler.
+This is required for all command-line tasks.
+
+Examples
+^^^^^^^^
 
 The example ``exampleCmdLineTask.ExampleCmdLineTask`` is so simple that it needs no other methods; ``runDataRef`` does everything:
 
