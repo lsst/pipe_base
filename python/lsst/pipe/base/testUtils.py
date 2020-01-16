@@ -20,14 +20,102 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["refFromConnection", "runTestQuantum"]
+__all__ = ["makeQuantum", "runTestQuantum"]
 
 
-from lsst.daf.butler import DataCoordinate, DatasetRef
+import collections.abc
+
+from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum
 from lsst.pipe.base import ButlerQuantumContext
 
 
-def refFromConnection(butler, connection, dataId, **kwargs):
+def makeQuantum(task, butler, dataIds):
+    """Create a Quantum for a particular data ID(s).
+
+    Parameters
+    ----------
+    task : `lsst.pipe.base.PipelineTask`
+        The task whose processing the quantum represents.
+    butler : `lsst.daf.butler.Butler`
+        The collection the quantum refers to.
+    dataIds : `collections.abc.Mapping` [`str`]
+        A mapping keyed by input/output names. Values must be data IDs for
+        single connections and sequences of data IDs for multiple connections.
+
+    Returns
+    -------
+    quantum : `lsst.daf.butler.Quantum`
+        A quantum for ``task``, when called with ``dataIds``.
+    """
+    quantum = Quantum(taskClass=type(task))
+    connections = task.config.ConnectionsClass(config=task.config)
+
+    try:
+        for name in connections.inputs:
+            connection = connections.__getattribute__(name)
+            _checkDataIdMultiplicity(name, dataIds[name], connection.multiple)
+            ids = _normalizeDataIds(dataIds[name])
+            for id in ids:
+                quantum.addPredictedInput(_refFromConnection(butler, connection, id))
+        for name in connections.outputs:
+            connection = connections.__getattribute__(name)
+            _checkDataIdMultiplicity(name, dataIds[name], connection.multiple)
+            ids = _normalizeDataIds(dataIds[name])
+            for id in ids:
+                quantum.addOutput(_refFromConnection(butler, connection, id))
+        return quantum
+    except KeyError as e:
+        raise ValueError("Mismatch in input data.") from e
+
+
+def _checkDataIdMultiplicity(name, dataIds, multiple):
+    """Test whether data IDs are scalars for scalar connections and sequences
+    for multiple connections.
+
+    Parameters
+    ----------
+    name : `str`
+        The name of the connection being tested.
+    dataIds : any data ID type or `~collections.abc.Sequence` [data ID]
+        The data ID(s) provided for the connection.
+    multiple : `bool`
+        The ``multiple`` field of the connection.
+
+    Raises
+    ------
+    ValueError
+        Raised if ``dataIds`` and ``multiple`` do not match.
+    """
+    if multiple:
+        if not isinstance(dataIds, collections.abc.Sequence):
+            raise ValueError(f"Expected multiple data IDs for {name}, got {dataIds}.")
+    else:
+        # DataCoordinate is a Mapping
+        if not isinstance(dataIds, collections.abc.Mapping):
+            raise ValueError(f"Expected single data ID for {name}, got {dataIds}.")
+
+
+def _normalizeDataIds(dataIds):
+    """Represent both single and multiple data IDs as a list.
+
+    Parameters
+    ----------
+    dataIds : any data ID type or `~collections.abc.Sequence` thereof
+        The data ID(s) provided for a particular input or output connection.
+
+    Returns
+    -------
+    normalizedIds : `~collections.abc.Sequence` [data ID]
+        A sequence equal to ``dataIds`` if it was already a sequence, or
+        ``[dataIds]`` if it was a single ID.
+    """
+    if isinstance(dataIds, collections.abc.Sequence):
+        return dataIds
+    else:
+        return [dataIds]
+
+
+def _refFromConnection(butler, connection, dataId, **kwargs):
     """Create a DatasetRef for a connection in a collection.
 
     Parameters
@@ -50,10 +138,17 @@ def refFromConnection(butler, connection, dataId, **kwargs):
     """
     universe = butler.registry.dimensions
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
-    return DatasetRef(
-        datasetType=connection.makeDatasetType(universe),
-        dataId=dataId,
-    )
+    datasetType = connection.makeDatasetType(universe)
+    try:
+        butler.registry.getDatasetType(datasetType.name)
+    except KeyError:
+        raise ValueError(f"Invalid dataset type {connection.name}.")
+    try:
+        ref = DatasetRef(datasetType=datasetType, dataId=dataId)
+        return ref
+    except KeyError as e:
+        raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") \
+            from e
 
 
 def runTestQuantum(task, butler, quantum):
