@@ -34,7 +34,7 @@ import lsst.daf.butler
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
 from lsst.pipe.base.tests import (makeTestRepo, makeUniqueButler, makeDatasetType, expandUniqueId, runQuantum,
-                                  refFromConnection)
+                                  makeQuantum)
 
 
 class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
@@ -236,9 +236,10 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def setUp(self):
         self.butler = makeUniqueButler(self.root)
 
-    def testRunQuantumVisitWithRun(self):
-        task = VisitTask()
-        connections = task.config.ConnectionsClass(config=task.config)
+    def testMakeQuantumNoSuchDatatype(self):
+        config = VisitConfig()
+        config.connections.a = "Visit"
+        task = VisitTask(config=config)
         dataId = expandUniqueId(self.butler, {"visit": 102})
 
         inA = np.array([1, 2, 3])
@@ -246,12 +247,101 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(inA, "VisitA", dataId)
         self.butler.put(inB, "VisitB", dataId)
 
-        quantum = lsst.daf.butler.Quantum(taskClass=VisitTask)
-        quantum.addPredictedInput(refFromConnection(self.butler, connections.a, dataId))
-        quantum.addPredictedInput(refFromConnection(self.butler, connections.b, dataId))
-        quantum.addOutput(refFromConnection(self.butler, connections.outA, dataId))
-        quantum.addOutput(refFromConnection(self.butler, connections.outB, dataId))
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
 
+    def testMakeQuantumInvalidDimension(self):
+        config = VisitConfig()
+        config.connections.a = "PatchA"
+        task = VisitTask(config=config)
+        dataIdV = expandUniqueId(self.butler, {"visit": 102})
+        dataIdP = expandUniqueId(self.butler, {"patch": 0})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataIdV)
+        self.butler.put(inA, "PatchA", dataIdP)
+        self.butler.put(inB, "VisitB", dataIdV)
+
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {
+                "a": dataIdP,
+                "b": dataIdV,
+                "outA": dataIdV,
+                "outB": dataIdV,
+            })
+
+    def testMakeQuantumMissingMultiple(self):
+        task = PatchTask()
+        dataId = expandUniqueId(self.butler, {"tract": 42})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        for patch in {0, 1}:
+            self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
+        self.butler.put(inB, "PatchB", dataId)
+
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {
+                "a": dict(dataId, patch=0),
+                "b": dataId,
+                "out": [dict(dataId, patch=patch) for patch in {0, 1}],
+            })
+
+    def testMakeQuantumExtraMultiple(self):
+        task = PatchTask()
+        dataId = expandUniqueId(self.butler, {"tract": 42})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        for patch in {0, 1}:
+            self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
+        self.butler.put(inB, "PatchB", dataId)
+
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {
+                "a": [dict(dataId, patch=patch) for patch in {0, 1}],
+                "b": [dataId],
+                "out": [dict(dataId, patch=patch) for patch in {0, 1}],
+            })
+
+    def testMakeQuantumMissingDataId(self):
+        task = VisitTask()
+        dataId = expandUniqueId(self.butler, {"visit": 102})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {key: dataId for key in {"a", "outA", "outB"}})
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outB"}})
+
+    def testMakeQuantumCorruptedDataId(self):
+        task = VisitTask()
+        dataId = expandUniqueId(self.butler, {"visit": 102})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        with self.assertRaises(ValueError):
+            # third argument should be a mapping keyed by component name
+            makeQuantum(task, self.butler, dataId)
+
+    def testRunQuantumVisitWithRun(self):
+        task = VisitTask()
+        dataId = expandUniqueId(self.butler, {"visit": 102})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
         runQuantum(task, self.butler, quantum)
 
         # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
@@ -262,7 +352,6 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
     def testRunQuantumPatchWithRun(self):
         task = PatchTask()
-        connections = task.config.ConnectionsClass(config=task.config)
         dataId = expandUniqueId(self.butler, {"tract": 42})
 
         inA = np.array([1, 2, 3])
@@ -271,12 +360,11 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
         self.butler.put(inB, "PatchB", dataId)
 
-        quantum = lsst.daf.butler.Quantum(taskClass=VisitTask)
-        for patch in {0, 1}:
-            quantum.addPredictedInput(refFromConnection(self.butler, connections.a, dataId, patch=patch))
-            quantum.addOutput(refFromConnection(self.butler, connections.out, dataId, patch=patch))
-        quantum.addPredictedInput(refFromConnection(self.butler, connections.b, dataId))
-
+        quantum = makeQuantum(task, self.butler, {
+            "a": [dict(dataId, patch=patch) for patch in {0, 1}],
+            "b": dataId,
+            "out": [dict(dataId, patch=patch) for patch in {0, 1}],
+        })
         runQuantum(task, self.butler, quantum)
 
         # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
