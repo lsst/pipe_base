@@ -23,6 +23,7 @@
 PipelineTask subclasses.
 """
 
+import collections.abc
 import shutil
 import tempfile
 import unittest
@@ -342,7 +343,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(inB, "VisitB", dataId)
 
         quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
-        runQuantum(task, self.butler, quantum)
+        runQuantum(task, self.butler, quantum, mockRun=False)
 
         # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
         self.assertTrue(self.butler.datasetExists("VisitOutA", dataId))
@@ -365,13 +366,63 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             "b": dataId,
             "out": [dict(dataId, patch=patch) for patch in {0, 1}],
         })
-        runQuantum(task, self.butler, quantum)
+        runQuantum(task, self.butler, quantum, mockRun=False)
 
         # Can we use runQuantum to verify that task.run got called with correct inputs/outputs?
         for patch in {0, 1}:
             self.assertTrue(self.butler.datasetExists("PatchOut", dataId, patch=patch))
             self.assertFloatsAlmostEqual(self.butler.get("PatchOut", dataId, patch=patch),
                                          inA + inB + patch)
+
+    def testRunQuantumVisitMockRun(self):
+        task = VisitTask()
+        dataId = expandUniqueId(self.butler, {"visit": 102})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
+        run = runQuantum(task, self.butler, quantum, mockRun=True)
+
+        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can't use assert_called_once_with because of how Numpy handles ==
+        run.assert_called_once()
+        self.assertFalse(run.call_args[0])
+        kwargs = run.call_args[1]
+        self.assertEqual(kwargs.keys(), {"a", "b"})
+        np.testing.assert_array_equal(kwargs["a"], inA)
+        np.testing.assert_array_equal(kwargs["b"], inB)
+
+    def testRunQuantumPatchMockRun(self):
+        task = PatchTask()
+        dataId = expandUniqueId(self.butler, {"tract": 42})
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        for patch in {0, 1}:
+            self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
+        self.butler.put(inB, "PatchB", dataId)
+
+        quantum = makeQuantum(task, self.butler, {
+            # Use lists, not sets, to ensure order agrees with test assertion
+            "a": [dict(dataId, patch=patch) for patch in [0, 1]],
+            "b": dataId,
+            "out": [dict(dataId, patch=patch) for patch in [0, 1]],
+        })
+        run = runQuantum(task, self.butler, quantum, mockRun=True)
+
+        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can't use assert_called_once_with because of how Numpy handles ==
+        run.assert_called_once()
+        self.assertFalse(run.call_args[0])
+        kwargs = run.call_args[1]
+        self.assertEqual(kwargs.keys(), {"a", "b"})
+        self.assertIsInstance(kwargs["a"], collections.abc.Sequence)
+        for actual, expected in zip(kwargs["a"], (inA + patch for patch in [0, 1])):
+            np.testing.assert_array_almost_equal(actual, expected)
+        np.testing.assert_array_equal(kwargs["b"], inB)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
