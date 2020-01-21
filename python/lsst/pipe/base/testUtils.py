@@ -24,6 +24,7 @@ __all__ = ["makeQuantum", "runTestQuantum"]
 
 
 import collections.abc
+import unittest.mock
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum
 from lsst.pipe.base import ButlerQuantumContext
@@ -151,7 +152,7 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
             from e
 
 
-def runTestQuantum(task, butler, quantum):
+def runTestQuantum(task, butler, quantum, mockRun=True):
     """Run a PipelineTask on a Quantum.
 
     Parameters
@@ -162,8 +163,25 @@ def runTestQuantum(task, butler, quantum):
         The collection to run on.
     quantum : `lsst.daf.butler.Quantum`
         The quantum to run.
+    mockRun : `bool`
+        Whether or not to replace ``task``'s ``run`` method. The default of
+        `True` is recommended unless ``run`` needs to do real work (e.g.,
+        because the test needs real output datasets).
+
+    Returns
+    -------
+    run : `unittest.mock.Mock` or `None`
+        If ``mockRun`` is set, the mock that replaced ``run``. This object can
+        be queried for the arguments ``runQuantum`` passed to ``run``.
     """
     butlerQc = ButlerQuantumContext(butler, quantum)
     connections = task.config.ConnectionsClass(config=task.config)
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
-    task.runQuantum(butlerQc, inputRefs, outputRefs)
+    if mockRun:
+        with unittest.mock.patch.object(task, "run") as mock, \
+                unittest.mock.patch("lsst.pipe.base.ButlerQuantumContext.put"):
+            task.runQuantum(butlerQc, inputRefs, outputRefs)
+            return mock
+    else:
+        task.runQuantum(butlerQc, inputRefs, outputRefs)
+        return None

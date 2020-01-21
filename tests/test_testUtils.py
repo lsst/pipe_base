@@ -250,7 +250,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataId)
 
         quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
-        runTestQuantum(task, self.butler, quantum)
+        runTestQuantum(task, self.butler, quantum, mockRun=False)
 
         # Can we use runTestQuantum to verify that task.run got called with correct inputs/outputs?
         self.assertTrue(self.butler.datasetExists("VisitOutA", dataId))
@@ -275,13 +275,52 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             "b": dataId,
             "out": [dict(dataId, patch=patch) for patch in {0, 1}],
         })
-        runTestQuantum(task, self.butler, quantum)
+        runTestQuantum(task, self.butler, quantum, mockRun=False)
 
         # Can we use runTestQuantum to verify that task.run got called with correct inputs/outputs?
         for patch in {0, 1}:
             self.assertTrue(self.butler.datasetExists("PatchOut", dataId, patch=patch))
             self.assertEqual(self.butler.get("PatchOut", dataId, patch=patch),
                              butlerTests.MetricsExample(data=(inA + [patch] + inB)))
+
+    def testRunTestQuantumVisitMockRun(self):
+        task = VisitTask()
+        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+
+        inA = butlerTests.MetricsExample(data=[1, 2, 3])
+        inB = butlerTests.MetricsExample(data=[4, 0, 1])
+        self.butler.put(inA, "VisitA", dataId)
+        self.butler.put(inB, "VisitB", dataId)
+
+        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
+        run = runTestQuantum(task, self.butler, quantum, mockRun=True)
+
+        # Can we use the mock to verify that task.run got called with the correct inputs?
+        run.assert_called_once_with(a=inA, b=inB)
+
+    def testRunTestQuantumPatchMockRun(self):
+        task = PatchTask()
+        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+
+        inA = [1, 2, 3]
+        inB = [4, 0, 1]
+        for patch in {0, 1}:
+            self.butler.put(butlerTests.MetricsExample(data=(inA + [patch])), "PatchA", dataId, patch=patch)
+        self.butler.put(butlerTests.MetricsExample(data=inB), "PatchB", dataId)
+
+        quantum = makeQuantum(task, self.butler, {
+            # Use lists, not sets, to ensure order agrees with test assertion
+            "a": [dict(dataId, patch=patch) for patch in [0, 1]],
+            "b": dataId,
+            "out": [dict(dataId, patch=patch) for patch in [0, 1]],
+        })
+        run = runTestQuantum(task, self.butler, quantum, mockRun=True)
+
+        # Can we use the mock to verify that task.run got called with the correct inputs?
+        run.assert_called_once_with(
+            a=[butlerTests.MetricsExample(data=(inA + [patch])) for patch in [0, 1]],
+            b=butlerTests.MetricsExample(data=inB)
+        )
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
