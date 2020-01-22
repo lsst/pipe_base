@@ -31,6 +31,7 @@ import unittest
 import numpy as np
 
 import lsst.utils.tests
+import lsst.pex.config
 import lsst.daf.butler
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
@@ -183,13 +184,19 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         dimensions={"skymap", "tract", "patch"},
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doUseB:
+            self.inputs.remove("b")
+
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
     pass
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
-    pass
+    doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="")
 
 
 class VisitTask(PipelineTask):
@@ -206,8 +213,11 @@ class PatchTask(PipelineTask):
     ConfigClass = PatchConfig
     _DefaultName = "patch"
 
-    def run(self, a, b):
-        out = [oneA + b for oneA in a]
+    def run(self, a, b=None):
+        if self.config.doUseB:
+            out = [oneA + b for oneA in a]
+        else:
+            out = a
         return Struct(out=out)
 
 
@@ -423,6 +433,29 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         for actual, expected in zip(kwargs["a"], (inA + patch for patch in [0, 1])):
             np.testing.assert_array_almost_equal(actual, expected)
         np.testing.assert_array_equal(kwargs["b"], inB)
+
+    def testRunQuantumPatchOptionalInput(self):
+        config = PatchConfig()
+        config.doUseB = False
+        task = PatchTask(config=config)
+        dataId = expandUniqueId(self.butler, {"tract": 42})
+
+        inA = np.array([1, 2, 3])
+        for patch in {0, 1}:
+            self.butler.put(inA + patch, "PatchA", dataId, patch=patch)
+
+        quantum = makeQuantum(task, self.butler, {
+            "a": [dict(dataId, patch=patch) for patch in {0, 1}],
+            "out": [dict(dataId, patch=patch) for patch in {0, 1}],
+        })
+        run = runQuantum(task, self.butler, quantum, mockRun=True)
+
+        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can't use assert_called_once_with because of how Numpy handles ==
+        run.assert_called_once()
+        self.assertFalse(run.call_args[0])
+        kwargs = run.call_args[1]
+        self.assertEqual(kwargs.keys(), {"a"})
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
