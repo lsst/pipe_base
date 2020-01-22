@@ -74,8 +74,72 @@ If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.bas
    butler = butlerTests.makeTestCollection(repo)
    task = AwesomeTask()
    quantum = testUtils.makeQuantum(
-	task, butler,
-	{key: dataId for key in {"input", "output"}})
+       task, butler,
+       {key: dataId for key in {"input", "output"}})
    run = testUtils.runTestQuantum(task, butler, quantum)
    # Actual input dataset omitted for simplicity
    run.assert_called_once()
+
+.. _testing-a-pipeline-task-optional-connections:
+
+Testing optional/alternative inputs
+===================================
+
+Some tasks change their inputs depending on what processing is to be done (for example, `~lsst.ip.diffim.IsrTask` loads dark frames if and only if it does dark subtraction).
+The logic that activates or deactivates inputs is normally found in the `~lsst.pipe.base.PipelineTaskConnections` class's constructor.
+
+Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`:
+
+.. code-block:: py
+   :emphasize-lines: 42-43, 49-50
+
+   import lsst.daf.butler.tests as butlerTests
+   from lsst.pipe.base import connectionTypes, PipelineTask, \
+       PipelineTaskConnections, PipelineTaskConfig
+   from lsst.pipe.base import testUtils
+
+   # A task that can take an Exposure xor a Catalog
+   # Don't try this at home!
+
+   class OrConnections(PipelineTaskConnections,
+                       dimensions=("instrument", "visit", "detector")):
+       exp = connectionTypes.Input(
+           name="calexp",
+           storageClass="ExposureF",
+           dimensions=("instrument", "visit", "detector"))
+       cat = connectionTypes.Input(
+           name="src",
+           storageClass="SourceCatalog",
+           dimensions=("instrument", "visit", "detector"))
+
+       def __init__(self, *, config=None):
+           super().__init__(config=config)
+           if config.doCatalog:
+               self.inputs.remove("exp")
+           else:
+               self.inputs.remove("cat")
+
+
+   class OrConfig(PipelineTaskConfig,
+                  pipelineConnections=OrConnections):
+       doCatalog = Field(dtype=bool, default=False)
+
+
+   class OrTask(PipelineTask):
+       ConfigClass = OrConfig
+
+       def run(exp=None, cat=None):
+           ...
+
+
+   # doCatalog == False
+   task = OrTask()
+   run = testUtils.runTestQuantum(task, butler, quantum)
+   run.assert_called_once_with(exp=testExposure)
+
+   # doCatalog == True
+   config = OrConfig()
+   config.doCatalog = True
+   task = OrTask(config=config)
+   run = testUtils.runTestQuantum(task, butler, quantum)
+   run.assert_called_once_with(cat=testCatalog)
