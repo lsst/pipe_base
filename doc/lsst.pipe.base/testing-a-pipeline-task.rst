@@ -80,15 +80,61 @@ If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.bas
    # Actual input dataset omitted for simplicity
    run.assert_called_once()
 
+.. _testing-a-pipeline-task-run-output:
+
+Testing run Output
+==================
+
+A pipeline task must return a `~lsst.pipe.base.Struct` whose fields include any outputs reported by its `~lsst.pipe.base.PipelineTaskConnections` class.
+
+The `lsst.pipe.base.testUtils.assertValidOutput` function takes a task object and a `~lsst.pipe.base.Struct` and confirms that the latter conforms to the former's connections.
+Currently, it tests for missing fields and mixing up vector and scalar values; more tests may be added in the future.
+
+.. code-block:: py
+   :emphasize-lines: 29-31
+
+   import lsst.daf.butler.tests as butlerTests
+   from lsst.pipe.base import connectionTypes, PipelineTask, \
+       PipelineTaskConnections
+   from lsst.pipe.base import testUtils
+
+
+   class MyConnections(
+           PipelineTaskConnections,
+           dimensions=("instrument", "visit", "detector")):
+       image = connectionTypes.Output(
+           name="calexp",
+           storageClass="ExposureF",
+           dimensions=("instrument", "visit", "detector"))
+       catalog = connectionTypes.Output(
+           name="src",
+           storageClass="SourceCatalog",
+           dimensions=("instrument", "visit", "detector"))
+
+
+   class MyTask(PipelineTask):
+       def run(...):
+           # do processing that produces calexp, srcCat
+           ...
+           # bug: wrong catalog name
+           return Struct(image=calexp, srcCat=srcCat)
+
+
+   task = MyTask()
+   result = task.run(...)
+   # raises because result.catalog does not exist
+   testUtils.assertValidOutput(task, result)
+
 .. _testing-a-pipeline-task-optional-connections:
 
-Testing optional/alternative inputs
-===================================
+Testing optional/alternative inputs/outputs
+===========================================
 
 Some tasks change their inputs depending on what processing is to be done (for example, `~lsst.ip.diffim.IsrTask` loads dark frames if and only if it does dark subtraction).
 The logic that activates or deactivates inputs is normally found in the `~lsst.pipe.base.PipelineTaskConnections` class's constructor.
 
-Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`:
+Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`.
+Output-selecting logic can be tested with `lsst.pipe.base.testUtils.verifyOutputConnections`.
 
 .. code-block:: py
    :emphasize-lines: 42-43, 49-50

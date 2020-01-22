@@ -33,7 +33,7 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
-from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum
+from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
@@ -353,6 +353,58 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         run.assert_called_once_with(
             a=[butlerTests.MetricsExample(data=(inA + [patch])) for patch in [0, 1]]
         )
+
+    def testAssertValidOutputPass(self):
+        task = VisitTask()
+
+        inA = butlerTests.MetricsExample(data=[1, 2, 3])
+        inB = butlerTests.MetricsExample(data=[4, 0, 1])
+        result = task.run(inA, inB)
+
+        # should not throw
+        assertValidOutput(task, result)
+
+    def testAssertValidOutputMissing(self):
+        task = VisitTask()
+
+        def run(a, b):
+            return Struct(outA=a)
+        task.run = run
+
+        inA = butlerTests.MetricsExample(data=[1, 2, 3])
+        inB = butlerTests.MetricsExample(data=[4, 0, 1])
+        result = task.run(inA, inB)
+
+        with self.assertRaises(AssertionError):
+            assertValidOutput(task, result)
+
+    def testAssertValidOutputSingle(self):
+        task = PatchTask()
+
+        def run(a, b):
+            return Struct(out=b)
+        task.run = run
+
+        inA = butlerTests.MetricsExample(data=[1, 2, 3])
+        inB = butlerTests.MetricsExample(data=[4, 0, 1])
+        result = task.run([inA], inB)
+
+        with self.assertRaises(AssertionError):
+            assertValidOutput(task, result)
+
+    def testAssertValidOutputMultiple(self):
+        task = VisitTask()
+
+        def run(a, b):
+            return Struct(outA=[a], outB=b)
+        task.run = run
+
+        inA = butlerTests.MetricsExample(data=[1, 2, 3])
+        inB = butlerTests.MetricsExample(data=[4, 0, 1])
+        result = task.run(inA, inB)
+
+        with self.assertRaises(AssertionError):
+            assertValidOutput(task, result)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

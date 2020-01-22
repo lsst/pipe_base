@@ -20,13 +20,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeQuantum", "runTestQuantum"]
+__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
 
 
 import collections.abc
 import unittest.mock
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum
+from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum, StorageClassFactory
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -185,3 +185,44 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
     else:
         task.runQuantum(butlerQc, inputRefs, outputRefs)
         return None
+
+
+def assertValidOutput(task, result):
+    """Test that the output of a call to ``run`` conforms to its own connections.
+
+    Parameters
+    ----------
+    task : `lsst.pipe.base.PipelineTask`
+        The task whose connections need validation. This is a fully-configured
+        task object to support features such as optional outputs.
+    result : `lsst.pipe.base.Struct`
+        A result object produced by calling ``task.run``.
+
+    Raises
+    -------
+    AssertionError:
+        Raised if ``result`` does not match what's expected from ``task's``
+        connections.
+    """
+    connections = task.config.ConnectionsClass(config=task.config)
+    recoveredOutputs = result.getDict()
+
+    for name in connections.outputs:
+        connection = connections.__getattribute__(name)
+        # name
+        try:
+            output = recoveredOutputs[name]
+        except KeyError:
+            raise AssertionError(f"No such output: {name}")
+        # multiple
+        if connection.multiple:
+            if not isinstance(output, collections.abc.Sequence):
+                raise AssertionError(f"Expected {name} to be a sequence, got {output} instead.")
+        else:
+            # use lazy evaluation to not use StorageClassFactory unless necessary
+            if isinstance(output, collections.abc.Sequence) \
+                    and not issubclass(
+                        StorageClassFactory().getStorageClass(connection.storageClass).pytype,
+                        collections.abc.Sequence):
+                raise AssertionError(f"Expected {name} to be a single value, got {output} instead.")
+        # no test for storageClass, as I'm not sure how much persistence depends on duck-typing
