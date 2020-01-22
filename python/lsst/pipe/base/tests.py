@@ -21,7 +21,7 @@
 
 
 __all__ = ["makeTestRepo", "makeUniqueButler", "makeDatasetType", "expandUniqueId",
-           "makeQuantum", "runQuantum"]
+           "makeQuantum", "runQuantum", "validateOutputConnections"]
 
 
 import collections.abc
@@ -355,3 +355,42 @@ def runQuantum(task, butler, quantum, mockRun=True):
     else:
         task.runQuantum(butlerQc, inputRefs, outputRefs)
         return None
+
+
+def validateOutputConnections(task, result):
+    """Test that the output of a call to ``run`` conforms to its own connections.
+
+    Parameters
+    ----------
+    task : `lsst.pipe.base.PipelineTask`
+        The task whose connections need validation. This is a fully-configured
+        task object to support features such as optional outputs.
+    result : `lsst.pipe.base.Struct`
+        A result object produced by calling ``task.run``.
+
+    Returns
+    -------
+    isValid : `bool`
+        `True` if ``result`` has the fields promised by ``task``, `False` if
+        it does not.
+    """
+    connections = task.config.ConnectionsClass(config=task.config)
+    recoveredOutputs = result.getDict()
+
+    for name in connections.outputs:
+        connection = connections.__getattribute__(name)
+        # name
+        try:
+            output = recoveredOutputs[name]
+        except KeyError:
+            return False
+        # multiple
+        if connection.multiple:
+            if not isinstance(output, collections.abc.Sequence):
+                return False
+        else:
+            if isinstance(output, collections.abc.Sequence) \
+                    and not issubclass(connections.storageClass.pytype, collections.abc.Sequence):
+                return False
+        # no test for storageClass, as I'm not sure how much persistence depends on duck-typing
+    return True

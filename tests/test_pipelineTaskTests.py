@@ -36,7 +36,7 @@ import lsst.daf.butler
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
 from lsst.pipe.base.tests import (makeTestRepo, makeUniqueButler, makeDatasetType, expandUniqueId, runQuantum,
-                                  makeQuantum)
+                                  makeQuantum, validateOutputConnections)
 
 
 class ButlerUtilsTestSuite(lsst.utils.tests.TestCase):
@@ -456,6 +456,54 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.assertFalse(run.call_args[0])
         kwargs = run.call_args[1]
         self.assertEqual(kwargs.keys(), {"a"})
+
+    def testValidateOutputConnectionsPass(self):
+        task = VisitTask()
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        result = task.run(inA, inB)
+
+        self.assertTrue(validateOutputConnections(task, result))
+
+    def testValidateOutputConnectionsMissing(self):
+        task = VisitTask()
+
+        def run(a, b):
+            return Struct(a=a)
+        task.run = run
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        result = task.run(inA, inB)
+
+        self.assertFalse(validateOutputConnections(task, result))
+
+    def testValidateOutputConnectionsSingle(self):
+        task = PatchTask()
+
+        def run(a, b):
+            return Struct(out=b)
+        task.run = run
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        result = task.run([inA], inB)
+
+        self.assertFalse(validateOutputConnections(task, result))
+
+    def testValidateOutputConnectionsMultiple(self):
+        task = VisitTask()
+
+        def run(a, b):
+            return Struct(a=[a])
+        task.run = run
+
+        inA = np.array([1, 2, 3])
+        inB = np.array([4, 0, 1])
+        result = task.run(inA, inB)
+
+        self.assertFalse(validateOutputConnections(task, result))
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
