@@ -370,6 +370,7 @@ Variant tasks
 =============
 
 When there are (or are expected to be) different versions of a given task, those tasks should inherit from an abstract base class that defines the interface and is itself a subclass of `lsst.pipe.base.Task`.
-Examples of tasks with multiple variants include star selectors, PSF determiners, etc.
+Star selectors (`lsst.meas.algorithms.BaseStarSelectorTask`) and PSF determiners (`lsst.meas.algorithms.BasePsfDeterminerTask`) are two examples of tasks with multiple variants.
 The abstract base class should be written using `abc.ABC` or `abc.ABCMeta`.
-It should define a registry, using `lsst.pex.config.RegistryField`, and all implementations should register themselves with that registry.
+The same module that defines the abstract base class should also define a registry, using `lsst.pex.config.RegistryField`, and all implementations should register themselves with that registry.
+Examples include `lsst.meas.algorithms.starSelectorRegistry` and `lsst.meas.algorithms.psfDeterminerRegistry`.
