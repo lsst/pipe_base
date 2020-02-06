@@ -365,3 +365,11 @@ Otherwise use an `lsst.pex.config.ConfigurableField` to keep config overrides si
 
 For example PSF determiners and star selectors are perhaps best specified using `lsst.pex.config.RegistryField` because there are several variants users may wish to select from.
 However, calibration and instrument signature removal are best specified using  `lsst.pex.config.ConfigurableField`  because (for a given camera) there is likely to be only one logical variant, and that variant is specified in a camera-specific configuration override file, so the user need not specify it.
+
+Variant tasks
+=============
+
+When there are (or are expected to be) different versions of a given task, those tasks should inherit from an abstract base class that defines the interface and is itself a subclass of `lsst.pipe.base.Task`.
+Examples of tasks with multiple variants include star selectors, PSF determiners, etc.
+The abstract base class should be written using `abc.ABC` or `abc.ABCMeta`.
+It should define a registry, using `lsst.pex.config.RegistryField`, and all implementations should register themselves with that registry.
