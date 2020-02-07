@@ -658,17 +658,27 @@ class _PipelineScaffolding:
                 # a different calibration_label, or a refcat with a skypix
                 # value that overlaps the quantum's data ID's region, but not
                 # the user expression used for the initial query.
-                for datasetType, scaffolding in task.prerequisites.items():
-                    refs = list(
-                        registry.queryDatasets(
-                            datasetType,
-                            collections=inputCollections[datasetType.name],
-                            dataId=quantumDataId,
-                            deduplicate=True,
-                            expand=True,
+                connections = task.taskDef.connections
+                for con_name in connections.prerequisiteInputs:
+                    con = getattr(connections, con_name)
+                    for datasetType in task.prerequisites:
+                        if datasetType.name == con.name:
+                            break
+                    if con.lookupFunction is not None:
+                        refs = list(con.lookupFunction(datasetType, registry,
+                                                       quantumDataId, inputCollections))
+                    else:
+                        refs = list(
+                            registry.queryDatasets(
+                                datasetType,
+                                collections=inputCollections[con.name],
+                                dataId=quantumDataId,
+                                deduplicate=True,
+                                expand=True,
+                            )
                         )
-                    )
                     inputs[datasetType] = refs
+
                 task.addQuantum(
                     Quantum(
                         taskName=task.taskDef.taskName,

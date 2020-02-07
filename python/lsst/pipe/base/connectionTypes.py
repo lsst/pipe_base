@@ -28,8 +28,10 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput",
 
 import dataclasses
 import typing
+from typing import Callable, Iterable, Optional
+from collections.abc import Mapping
 
-from lsst.daf.butler import DatasetType, DimensionUniverse
+from lsst.daf.butler import DatasetType, DimensionUniverse, Registry, ExpandedDataCoordinate, DatasetRef
 
 
 @dataclasses.dataclass(frozen=True)
@@ -129,7 +131,7 @@ class BaseInput(DimensionedConnection):
     Parameters
     ----------
     name : `str`
-        The name used to identify the dataset type
+        The default name used to identify the dataset type
     storageClass : `str`
         The storage class used when (un)/persisting the dataset type
     multiple : `bool`
@@ -153,7 +155,32 @@ class Input(BaseInput):
 
 @dataclasses.dataclass(frozen=True)
 class PrerequisiteInput(BaseInput):
-    pass
+    """Class used for declaring PipelineTask prerequisite connections
+
+    Parameters
+    ----------
+    name : `str`
+        The default name used to identify the dataset type
+    storageClass : `str`
+        The storage class used when (un)/persisting the dataset type
+    multiple : `bool`
+        Indicates if this connection should expect to contain multiple objects
+        of the given dataset type
+    dimensions : iterable of `str`
+        The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
+        to identify the dataset type identified by the specified name
+    deferLoad : `bool`
+        Indicates that this dataset type will be loaded as a
+        `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
+        object to load the object at a later time.
+    lookupFunction: `typing.Callable`
+        An optional callable function that will look up PrerequisiteInputs
+        using the DatasetType, registry, quantum dataId, and input collections
+        passed to it. If no function is specified, the default temporal spatial
+        lookup will be used.
+    """
+    lookupFunction: Optional[Callable[[DatasetType, Registry, ExpandedDataCoordinate, Mapping],
+                                      Iterable[DatasetRef]]] = None
 
 
 @dataclasses.dataclass(frozen=True)
