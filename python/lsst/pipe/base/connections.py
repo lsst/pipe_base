@@ -49,12 +49,19 @@ class ScalarError(TypeError):
     ----------
     key : `str`
         Name of the configuration field for dataset type.
-    numDataIds : `int`
+        If ``numDataIds`` is not specified, it is assumed that this parameter
+        is the full message to be reported and not the key.
+    numDataIds : `int`, optional
         Actual number of DataIds in a Quantum for this dataset type.
     """
-    def __init__(self, key, numDataIds):
-        super().__init__((f"Expected scalar for output dataset field {key}, "
-                          f"received {numDataIds} DataIds"))
+    def __init__(self, key, numDataIds=None):
+        if numDataIds is None:
+            # Assume we are receiving a normal TypeError message
+            err_msg = key
+        else:
+            err_msg = f"Expected scalar for output dataset field {key}, " \
+                f"received {numDataIds} DataIds"
+        super().__init__(err_msg)
 
 
 class PipelineTaskConnectionDict(UserDict):
