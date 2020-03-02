@@ -224,15 +224,17 @@ Other named arguments are optional.
 
    See :doc:`command-line-task-data-repo-howto` for more information.
 
-.. option:: --show <config|data|tasks|run>
+.. option:: --show <config|history|data|tasks|run>
 
    **Print metadata without processing.**
 
    Permitted values are:
 
-   - ``config``: show configuration state.
+   - ``config``: show configuration state; add ``=PATTERN`` to limit to configuration entries matching the glob pattern.
 
-   - ``data``: show data IDs resolved by the :option:`--id` argument
+   - ``history=PATTERN``: show where the configuration entries that match the glob pattern were set.
+
+   - ``data``: show data IDs resolved by the :option:`--id` argument.
 
    - ``tasks``: show sub-tasks run by the command-line task.
 
