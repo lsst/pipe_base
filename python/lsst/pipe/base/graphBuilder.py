@@ -630,6 +630,10 @@ class _PipelineScaffolding:
                 for datasetType, scaffolding in task.inputs.items():
                     inputs[datasetType] = [ref for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds)
                                            if quantumDataId.matches(dataId)]
+
+                _LOG.debug("%s dataId %s has inputs: %s",
+                           task.taskDef.taskName, quantumDataId, list(inputs.names))
+
                 # Same for outputs.
                 outputs = NamedKeyDict()
                 allOutputsPresent = True
@@ -649,6 +653,9 @@ class _PipelineScaffolding:
                             outputs[datasetType].append(ref)
                 if allOutputsPresent and skipExisting:
                     continue
+
+                _LOG.debug("%s dataID %s has outputs: %s",
+                           task.taskDef.taskName, quantumDataId, list(outputs.names))
 
                 # Look up prerequisite datasets in the input collection(s).
                 # These may have dimensions that extend beyond those we queried
@@ -678,6 +685,9 @@ class _PipelineScaffolding:
                             )
                         )
                     inputs[datasetType] = refs
+
+                _LOG.debug("%s dataID %s has inputs+prereqs: %s",
+                           task.taskDef.taskName, quantumDataId, list(inputs.names))
 
                 task.addQuantum(
                     Quantum(
