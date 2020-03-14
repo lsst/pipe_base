@@ -477,7 +477,10 @@ class TaskDatasetTypes:
                 else:
                     datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
                                               c.storageClass)
-                    registryDatasetType = registry.getDatasetType(c.name)
+                    try:
+                        registryDatasetType = registry.getDatasetType(c.name)
+                    except KeyError:
+                        registryDatasetType = datasetType
                     if datasetType != registryDatasetType:
                         raise ValueError(f"Supplied dataset type ({datasetType}) inconsistent with "
                                          f"registry definition ({registryDatasetType})")
