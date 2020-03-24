@@ -90,12 +90,29 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
             self.prerequisiteInputs.remove("b")
 
 
+class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
+    a = connectionTypes.Input(
+        name="PixA",
+        storageClass="StructuredData",
+        dimensions={"skypix"},
+    )
+    out = connectionTypes.Output(
+        name="PixOut",
+        storageClass="StructuredData",
+        dimensions={"skypix"},
+    )
+
+
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
     pass
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
     doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="")
+
+
+class SkyPixConfig(PipelineTaskConfig, pipelineConnections=SkyPixConnections):
+    pass
 
 
 class VisitTask(PipelineTask):
@@ -118,6 +135,14 @@ class PatchTask(PipelineTask):
         else:
             out = a
         return Struct(out=out)
+
+
+class SkyPixTask(PipelineTask):
+    ConfigClass = SkyPixConfig
+    _DefaultName = "skypix"
+
+    def run(self, a):
+        return Struct(out=a)
 
 
 class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
@@ -144,6 +169,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         for typeName in {"PatchA", "PatchOut"}:
             butlerTests.addDatasetType(cls.repo, typeName, {"skymap", "tract", "patch"}, "StructuredData")
         butlerTests.addDatasetType(cls.repo, "PatchB", {"skymap", "tract"}, "StructuredData")
+        for typeName in {"PixA", "PixOut"}:
+            butlerTests.addDatasetType(cls.repo, typeName, {"htm7"}, "StructuredData")
 
     @classmethod
     def tearDownClass(cls):
@@ -431,6 +458,19 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         with self.assertRaises(AssertionError):
             assertValidOutput(task, result)
+
+    def testSkypixHandling(self):
+        task = SkyPixTask()
+
+        dataId = {"htm7": 157227}  # connection declares skypix, but Butler uses htm7
+        data = butlerTests.MetricsExample(data=[1, 2, 3])
+        self.butler.put(data, "PixA", dataId)
+
+        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "out"}})
+        run = runTestQuantum(task, self.butler, quantum, mockRun=True)
+
+        # PixA dataset should have been retrieved by runTestQuantum
+        run.assert_called_once_with(a=data)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
