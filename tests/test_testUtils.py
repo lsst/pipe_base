@@ -70,7 +70,7 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         multiple=True,
         dimensions={"skymap", "tract", "patch"},
     )
-    b = connectionTypes.Input(
+    b = connectionTypes.PrerequisiteInput(
         name="PatchB",
         storageClass="StructuredData",
         multiple=False,
@@ -87,7 +87,7 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         super().__init__(config=config)
 
         if not config.doUseB:
-            self.inputs.remove("b")
+            self.prerequisiteInputs.remove("b")
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):

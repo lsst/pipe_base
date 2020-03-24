@@ -24,6 +24,7 @@ __all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
 
 
 import collections.abc
+import itertools
 import unittest.mock
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum, StorageClassFactory
@@ -52,7 +53,7 @@ def makeQuantum(task, butler, dataIds):
     connections = task.config.ConnectionsClass(config=task.config)
 
     try:
-        for name in connections.inputs:
+        for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, dataIds[name], connection.multiple)
             ids = _normalizeDataIds(dataIds[name])
