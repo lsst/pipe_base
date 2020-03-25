@@ -29,9 +29,15 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput",
 import dataclasses
 import typing
 from typing import Callable, Iterable, Optional
-from collections.abc import Mapping
 
-from lsst.daf.butler import DatasetType, DimensionUniverse, Registry, ExpandedDataCoordinate, DatasetRef
+from lsst.daf.butler import (
+    CollectionSearch,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    ExpandedDataCoordinate,
+    Registry,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -173,13 +179,13 @@ class PrerequisiteInput(BaseInput):
         Indicates that this dataset type will be loaded as a
         `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
         object to load the object at a later time.
-    lookupFunction: `typing.Callable`
+    lookupFunction: `typing.Callable`, optional
         An optional callable function that will look up PrerequisiteInputs
         using the DatasetType, registry, quantum dataId, and input collections
         passed to it. If no function is specified, the default temporal spatial
         lookup will be used.
     """
-    lookupFunction: Optional[Callable[[DatasetType, Registry, ExpandedDataCoordinate, Mapping],
+    lookupFunction: Optional[Callable[[DatasetType, Registry, ExpandedDataCoordinate, CollectionSearch],
                                       Iterable[DatasetRef]]] = None
 
 

@@ -464,7 +464,7 @@ class _PipelineScaffolding:
     This is required to be a superset of all task quantum dimensions.
     """
 
-    def fillDataIds(self, registry, inputCollections, userQuery):
+    def fillDataIds(self, registry, collections, userQuery):
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
         This method populates `_TaskScaffolding.dataIds` and
@@ -474,11 +474,8 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        inputCollections : `~collections.abc.Mapping`
-            Mapping from dataset type name to an ordered sequence of
-            collections to search for that dataset.  A `defaultdict` is
-            recommended for the case where the same collections should be
-            used for most datasets.
+        collections : `lsst.daf.butler.CollectionSearch`
+            Object representing the collections to search for input datasets.
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
         """
@@ -494,10 +491,8 @@ class _PipelineScaffolding:
         # obtain the dataset_ids for those inputs.
         resultIter = registry.queryDimensions(
             self.dimensions,
-            datasets={
-                datasetType: inputCollections[datasetType.name]
-                for datasetType in self.inputs
-            },
+            datasets=list(self.inputs),
+            collections=collections,
             where=userQuery,
         )
         # Iterate over query results and populate the data IDs in
@@ -521,8 +516,7 @@ class _PipelineScaffolding:
                                                             self.outputs.items()):
                 scaffolding.dataIds.add(commonDataId.subset(scaffolding.dimensions))
 
-    def fillDatasetRefs(self, registry, inputCollections, outputCollection, *,
-                        skipExisting=True, clobberExisting=False):
+    def fillDatasetRefs(self, registry, collections, run, *, skipExisting=True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -533,40 +527,31 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        inputCollections : `~collections.abc.Mapping`
-            Mapping from dataset type name to an ordered sequence of
-            collections to search for that dataset.  A `defaultdict` is
-            recommended for the case where the same collections should be
-            used for most datasets.
-        outputCollection : `str`
-            Collection for all output datasets.
+        collections : `lsst.daf.butler.CollectionSearch`
+            Object representing the collections to search for input datasets.
+        run : `str`, optional
+            Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
+            output datasets, if it already exists.
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
-            already exist.
-        clobberExisting : `bool`, optional
-            If `True`, overwrite any outputs that already exist.  Cannot be
-            `True` if ``skipExisting`` is.
+            already exist in ``run``.  Ignored if ``run`` is `None`.
 
         Raises
         ------
-        ValueError
-            Raised if both `skipExisting` and `clobberExisting` are `True`.
         OutputExistsError
-            Raised if an output dataset already exists in the output collection
-            and both ``skipExisting`` and ``clobberExisting`` are `False`.  The
-            case where some but not all of a quantum's outputs are present and
-            ``skipExisting`` is `True` cannot be identified at this stage, and
-            is handled by `fillQuanta` instead.
+            Raised if an output dataset already exists in the output run
+            and ``skipExisting`` is `False`.  The case where some but not all
+            of a quantum's outputs are present and ``skipExisting`` is `True`
+            cannot be identified at this stage, and is handled by `fillQuanta`
+            instead.
         """
-        if clobberExisting and skipExisting:
-            raise ValueError("clobberExisting and skipExisting cannot both be true.")
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, scaffolding in itertools.chain(self.initInputs.items(), self.inputs.items()):
             for dataId in scaffolding.dataIds:
                 refs = list(
                     registry.queryDatasets(
                         datasetType,
-                        collections=inputCollections[datasetType.name],
+                        collections=collections,
                         dataId=dataId,
                         deduplicate=True,
                         expand=True,
@@ -582,24 +567,24 @@ class _PipelineScaffolding:
                                                         self.intermediates.items(),
                                                         self.outputs.items()):
             for dataId in scaffolding.dataIds:
-                # TODO: we could easily support per-DatasetType clobberExisting
-                # and skipExisting (it might make sense to put them in
-                # originInfo), and I could imagine that being useful - it's
-                # probably required in order to support writing initOutputs
-                # before QuantumGraph generation.
-                if clobberExisting:
-                    ref = None
+                # TODO: we could easily support per-DatasetType skipExisting
+                # (it might make sense to put them in originInfo), and I could
+                # imagine that being useful - it's probably required in order
+                # to support writing initOutputs before QuantumGraph
+                # generation.
+                if run is not None:
+                    ref = registry.findDataset(datasetType=datasetType, dataId=dataId, collections=run)
                 else:
-                    ref = registry.find(collection=outputCollection, datasetType=datasetType, dataId=dataId)
+                    ref = None
                 if ref is None:
                     ref = DatasetRef(datasetType, dataId)
                 elif not skipExisting:
                     raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
-                                            f"output collection {outputCollection} with data ID {dataId}.")
+                                            f"output RUN collection '{run}' with data ID {dataId}.")
                 scaffolding.refs.append(ref)
         # Prerequisite dataset lookups are deferred until fillQuanta.
 
-    def fillQuanta(self, registry, inputCollections, *, skipExisting=True):
+    def fillQuanta(self, registry, collections, *, skipExisting=True):
         """Define quanta for each task by splitting up the datasets associated
         with each task data ID.
 
@@ -609,11 +594,8 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        inputCollections : `~collections.abc.Mapping`
-            Mapping from dataset type name to an ordered sequence of
-            collections to search for that dataset.  A `defaultdict` is
-            recommended for the case where the same collections should be
-            used for most datasets.
+        collections : `lsst.daf.butler.CollectionSearch`
+            Object representing the collections to search for input datasets.
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
             already exist.
@@ -673,12 +655,12 @@ class _PipelineScaffolding:
                             break
                     if con.lookupFunction is not None:
                         refs = list(con.lookupFunction(datasetType, registry,
-                                                       quantumDataId, inputCollections))
+                                                       quantumDataId, collections))
                     else:
                         refs = list(
                             registry.queryDatasets(
                                 datasetType,
-                                collections=inputCollections[con.name],
+                                collections=collections,
                                 dataId=quantumDataId,
                                 deduplicate=True,
                                 expand=True,
@@ -745,31 +727,25 @@ class GraphBuilder(object):
     skipExisting : `bool`, optional
         If `True` (default), a Quantum is not created if all its outputs
         already exist.
-    clobberExisting : `bool`, optional
-        If `True`, overwrite any outputs that already exist.  Cannot be
-        `True` if ``skipExisting`` is.
     """
 
-    def __init__(self, registry, skipExisting=True, clobberExisting=False):
+    def __init__(self, registry, skipExisting=True):
         self.registry = registry
         self.dimensions = registry.dimensions
         self.skipExisting = skipExisting
-        self.clobberExisting = clobberExisting
 
-    def makeGraph(self, pipeline, inputCollections, outputCollection, userQuery):
+    def makeGraph(self, pipeline, collections, run, userQuery):
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
         pipeline : `Pipeline`
             Pipeline definition, task names/classes and their configs.
-        inputCollections : `~collections.abc.Mapping`
-            Mapping from dataset type name to an ordered sequence of
-            collections to search for that dataset.  A `defaultdict` is
-            recommended for the case where the same collections should be
-            used for most datasets.
-        outputCollection : `str`
-            Collection for all output datasets.
+        collections : `lsst.daf.butler.CollectionSearch`
+            Object representing the collections to search for input datasets.
+        run : `str`, optional
+            Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
+            output datasets, if it already exists.
         userQuery : `str`
             String which defunes user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
@@ -789,12 +765,7 @@ class GraphBuilder(object):
             classes.
         """
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
-
-        scaffolding.fillDataIds(self.registry, inputCollections, userQuery)
-        scaffolding.fillDatasetRefs(self.registry, inputCollections, outputCollection,
-                                    skipExisting=self.skipExisting,
-                                    clobberExisting=self.clobberExisting)
-        scaffolding.fillQuanta(self.registry, inputCollections,
-                               skipExisting=self.skipExisting)
-
+        scaffolding.fillDataIds(self.registry, collections, userQuery)
+        scaffolding.fillDatasetRefs(self.registry, collections, run, skipExisting=self.skipExisting)
+        scaffolding.fillQuanta(self.registry, collections, skipExisting=self.skipExisting)
         return scaffolding.makeQuantumGraph()
