@@ -74,7 +74,7 @@ If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.bas
    butler = butlerTests.makeTestCollection(repo)
    task = AwesomeTask()
    quantum = testUtils.makeQuantum(
-       task, butler,
+       task, butler, dataId,
        {key: dataId for key in {"input", "output"}})
    run = testUtils.runTestQuantum(task, butler, quantum)
    # Actual input dataset omitted for simplicity

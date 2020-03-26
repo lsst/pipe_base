@@ -24,13 +24,14 @@ __all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
 
 
 import collections.abc
+import itertools
 import unittest.mock
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum, StorageClassFactory
 from lsst.pipe.base import ButlerQuantumContext
 
 
-def makeQuantum(task, butler, dataIds):
+def makeQuantum(task, butler, dataId, ioDataIds):
     """Create a Quantum for a particular data ID(s).
 
     Parameters
@@ -39,7 +40,10 @@ def makeQuantum(task, butler, dataIds):
         The task whose processing the quantum represents.
     butler : `lsst.daf.butler.Butler`
         The collection the quantum refers to.
-    dataIds : `collections.abc.Mapping` [`str`]
+    dataId: any data ID type
+        The data ID of the quantum. Must have the same dimensions as
+        ``task``'s connections class.
+    ioDataIds : `collections.abc.Mapping` [`str`]
         A mapping keyed by input/output names. Values must be data IDs for
         single connections and sequences of data IDs for multiple connections.
 
@@ -48,20 +52,20 @@ def makeQuantum(task, butler, dataIds):
     quantum : `lsst.daf.butler.Quantum`
         A quantum for ``task``, when called with ``dataIds``.
     """
-    quantum = Quantum(taskClass=type(task))
+    quantum = Quantum(taskClass=type(task), dataId=dataId)
     connections = task.config.ConnectionsClass(config=task.config)
 
     try:
-        for name in connections.inputs:
+        for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = connections.__getattribute__(name)
-            _checkDataIdMultiplicity(name, dataIds[name], connection.multiple)
-            ids = _normalizeDataIds(dataIds[name])
+            _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
+            ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 quantum.addPredictedInput(_refFromConnection(butler, connection, id))
         for name in connections.outputs:
             connection = connections.__getattribute__(name)
-            _checkDataIdMultiplicity(name, dataIds[name], connection.multiple)
-            ids = _normalizeDataIds(dataIds[name])
+            _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
+            ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 quantum.addOutput(_refFromConnection(butler, connection, id))
         return quantum
@@ -139,7 +143,14 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
     """
     universe = butler.registry.dimensions
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
-    datasetType = connection.makeDatasetType(universe)
+
+    # skypix is a PipelineTask alias for "some spatial index", Butler doesn't
+    # understand it. Code copied from TaskDatasetTypes.fromTaskDef
+    if "skypix" in connection.dimensions:
+        datasetType = butler.registry.getDatasetType(connection.name)
+    else:
+        datasetType = connection.makeDatasetType(universe)
+
     try:
         butler.registry.getDatasetType(datasetType.name)
     except KeyError:

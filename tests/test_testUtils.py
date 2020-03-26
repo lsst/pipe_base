@@ -70,7 +70,7 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         multiple=True,
         dimensions={"skymap", "tract", "patch"},
     )
-    b = connectionTypes.Input(
+    b = connectionTypes.PrerequisiteInput(
         name="PatchB",
         storageClass="StructuredData",
         multiple=False,
@@ -87,7 +87,20 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         super().__init__(config=config)
 
         if not config.doUseB:
-            self.inputs.remove("b")
+            self.prerequisiteInputs.remove("b")
+
+
+class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
+    a = connectionTypes.Input(
+        name="PixA",
+        storageClass="StructuredData",
+        dimensions={"skypix"},
+    )
+    out = connectionTypes.Output(
+        name="PixOut",
+        storageClass="StructuredData",
+        dimensions={"skypix"},
+    )
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
@@ -96,6 +109,10 @@ class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
     doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="")
+
+
+class SkyPixConfig(PipelineTaskConfig, pipelineConnections=SkyPixConnections):
+    pass
 
 
 class VisitTask(PipelineTask):
@@ -118,6 +135,14 @@ class PatchTask(PipelineTask):
         else:
             out = a
         return Struct(out=out)
+
+
+class SkyPixTask(PipelineTask):
+    ConfigClass = SkyPixConfig
+    _DefaultName = "skypix"
+
+    def run(self, a):
+        return Struct(out=a)
 
 
 class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
@@ -144,6 +169,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         for typeName in {"PatchA", "PatchOut"}:
             butlerTests.addDatasetType(cls.repo, typeName, {"skymap", "tract", "patch"}, "StructuredData")
         butlerTests.addDatasetType(cls.repo, "PatchB", {"skymap", "tract"}, "StructuredData")
+        for typeName in {"PixA", "PixOut"}:
+            butlerTests.addDatasetType(cls.repo, typeName, {"htm7"}, "StructuredData")
 
     @classmethod
     def tearDownClass(cls):
@@ -219,7 +246,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
+            makeQuantum(task, self.butler, dataId, {key: dataId for key in {"a", "b", "outA", "outB"}})
 
     def testMakeQuantumInvalidDimension(self):
         config = VisitConfig()
@@ -235,7 +262,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataIdV)
 
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {
+            makeQuantum(task, self.butler, dataIdV, {
                 "a": dataIdP,
                 "b": dataIdV,
                 "outA": dataIdV,
@@ -249,7 +276,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {
+            makeQuantum(task, self.butler, dataId, {
                 "a": dict(dataId, patch=0),
                 "b": dataId,
                 "out": [dict(dataId, patch=patch) for patch in {0, 1}],
@@ -262,7 +289,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {
+            makeQuantum(task, self.butler, dataId, {
                 "a": [dict(dataId, patch=patch) for patch in {0, 1}],
                 "b": [dataId],
                 "out": [dict(dataId, patch=patch) for patch in {0, 1}],
@@ -275,9 +302,9 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {key: dataId for key in {"a", "outA", "outB"}})
+            makeQuantum(task, self.butler, dataId, {key: dataId for key in {"a", "outA", "outB"}})
         with self.assertRaises(ValueError):
-            makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outB"}})
+            makeQuantum(task, self.butler, dataId, {key: dataId for key in {"a", "b", "outB"}})
 
     def testMakeQuantumCorruptedDataId(self):
         task = VisitTask()
@@ -286,8 +313,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
-            # third argument should be a mapping keyed by component name
-            makeQuantum(task, self.butler, dataId)
+            # fourth argument should be a mapping keyed by component name
+            makeQuantum(task, self.butler, dataId, dataId)
 
     def testRunTestQuantumVisitWithRun(self):
         task = VisitTask()
@@ -295,7 +322,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
         data = self._makeVisitTestData(dataId)
 
-        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
+        quantum = makeQuantum(task, self.butler, dataId,
+                              {key: dataId for key in {"a", "b", "outA", "outB"}})
         runTestQuantum(task, self.butler, quantum, mockRun=False)
 
         # Can we use runTestQuantum to verify that task.run got called with correct inputs/outputs?
@@ -312,7 +340,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
         data = self._makePatchTestData(dataId)
 
-        quantum = makeQuantum(task, self.butler, {
+        quantum = makeQuantum(task, self.butler, dataId, {
             "a": [dataset[0] for dataset in data["PatchA"]],
             "b": dataId,
             "out": [dataset[0] for dataset in data["PatchA"]],
@@ -333,7 +361,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
         data = self._makeVisitTestData(dataId)
 
-        quantum = makeQuantum(task, self.butler, {key: dataId for key in {"a", "b", "outA", "outB"}})
+        quantum = makeQuantum(task, self.butler, dataId,
+                              {key: dataId for key in {"a", "b", "outA", "outB"}})
         run = runTestQuantum(task, self.butler, quantum, mockRun=True)
 
         # Can we use the mock to verify that task.run got called with the correct inputs?
@@ -346,7 +375,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
         data = self._makePatchTestData(dataId)
 
-        quantum = makeQuantum(task, self.butler, {
+        quantum = makeQuantum(task, self.butler, dataId, {
             # Use lists, not sets, to ensure order agrees with test assertion
             "a": [dataset[0] for dataset in data["PatchA"]],
             "b": dataId,
@@ -368,7 +397,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
         data = self._makePatchTestData(dataId)
 
-        quantum = makeQuantum(task, self.butler, {
+        quantum = makeQuantum(task, self.butler, dataId, {
             # Use lists, not sets, to ensure order agrees with test assertion
             "a": [dataset[0] for dataset in data["PatchA"]],
             "out": [dataset[0] for dataset in data["PatchA"]],
@@ -431,6 +460,19 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         with self.assertRaises(AssertionError):
             assertValidOutput(task, result)
+
+    def testSkypixHandling(self):
+        task = SkyPixTask()
+
+        dataId = {"htm7": 157227}  # connection declares skypix, but Butler uses htm7
+        data = butlerTests.MetricsExample(data=[1, 2, 3])
+        self.butler.put(data, "PixA", dataId)
+
+        quantum = makeQuantum(task, self.butler, dataId, {key: dataId for key in {"a", "out"}})
+        run = runTestQuantum(task, self.butler, quantum, mockRun=True)
+
+        # PixA dataset should have been retrieved by runTestQuantum
+        run.assert_called_once_with(a=data)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
