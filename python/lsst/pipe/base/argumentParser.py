@@ -705,7 +705,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 import debug
                 assert debug  # silence pyflakes
             except ImportError:
-                sys.stderr.write("Warning: no 'debug' module found\n")
+                print("Warning: no 'debug' module found", file=sys.stderr)
                 namespace.debug = False
 
         del namespace.loglevel
@@ -1038,7 +1038,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             matHistory = re.search(r"^(?:config.)?(.+)?", showArgs)
             globPattern = matHistory.group(1)
             if not globPattern:
-                sys.stderr.write("Please provide a value with --show history (e.g. history=*.doXXX)\n")
+                print("Please provide a value with --show history (e.g. history=*.doXXX)", file=sys.stderr)
                 sys.exit(1)
 
             error = False
@@ -1054,14 +1054,14 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         hconfig = getattr(hconfig, cpt)
                     except AttributeError:
                         config_path = ".".join(["config"] + cpath[:i])
-                        sys.stderr.write(f"Error: configuration {config_path} has no subconfig {cpt}\n")
+                        print(f"Error: configuration {config_path} has no subconfig {cpt}", file=sys.stderr)
                         error = True
 
                 try:
                     print(pexConfig.history.format(hconfig, cname))
                 except KeyError:
                     config_path = ".".join(["config"] + cpath)
-                    sys.stderr.write(f"Error: {config_path} has no field {cname}\n")
+                    print(f"Error: {config_path} has no field {cname}", file=sys.stderr)
                     error = True
 
             if error:
@@ -1075,7 +1075,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             showTaskHierarchy(config)
         else:
             choices = "', '".join("config[=XXX] data history=XXX tasks run".split())
-            sys.stderr.write(f"Unknown value for show: {what} (choose from {choices!r})\n")
+            print(f"Unknown value for show: {what} (choose from {choices!r})", file=sys.stderr)
             sys.exit(1)
 
     if exit and "run" not in showOpts:
