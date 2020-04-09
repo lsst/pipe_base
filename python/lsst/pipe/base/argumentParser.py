@@ -149,7 +149,7 @@ class DataIdContainer:
         try:
             idKeyTypeDict = butler.getKeys(datasetType=self.datasetType, level=self.level)
         except KeyError as e:
-            msg = "Cannot get keys for datasetType %s at level %s" % (self.datasetType, self.level)
+            msg = f"Cannot get keys for datasetType {self.datasetType} at level {self.level}"
             raise KeyError(msg) from e
 
         for dataDict in self.idList:
@@ -161,15 +161,15 @@ class DataIdContainer:
                     keyType = str
 
                     log = lsstLog.Log.getDefaultLogger()
-                    log.warn("Unexpected ID %s; guessing type is \"%s\"" %
-                             (key, 'str' if keyType == str else keyType))
+                    log.warn("Unexpected ID %s; guessing type is \"%s\"",
+                             key, 'str' if keyType == str else keyType)
                     idKeyTypeDict[key] = keyType
 
                 if keyType != str:
                     try:
                         castVal = keyType(strVal)
                     except Exception:
-                        raise TypeError("Cannot cast value %r to %s for ID key %r" % (strVal, keyType, key,))
+                        raise TypeError(f"Cannot cast value {strVal!r} to {keyType} for ID key {key}")
                     dataDict[key] = castVal
 
     def makeDataRefList(self, namespace):
@@ -227,7 +227,7 @@ class DataIdArgument:
 
     def __init__(self, name, datasetType, level, doMakeDataRefList=True, ContainerClass=DataIdContainer):
         if name.startswith("-"):
-            raise RuntimeError("Name %s must not start with -" % (name,))
+            raise RuntimeError(f"Name {name} must not start with -")
         self.name = name
         self.datasetType = datasetType
         self.level = level
@@ -357,9 +357,9 @@ class DatasetArgument(DynamicDatasetType):
         -----
         Also sets the `name` attribute if it is currently `None`.
         """
-        help = self.help if self.help else "dataset type for %s" % (idName,)
+        help = self.help if self.help else f"dataset type for {idName}"
         if self.name is None:
-            self.name = "--%s_dstype" % (idName,)
+            self.name = f"--{idName}_dstype"
         requiredDict = dict()
         if self.name.startswith("-"):
             requiredDict = dict(required=self.default is None)
@@ -400,7 +400,7 @@ class ConfigDatasetType(DynamicDatasetType):
             try:
                 value = getattr(value, key)
             except KeyError:
-                raise RuntimeError("Cannot find config parameter %r" % (self.name,))
+                raise RuntimeError(f"Cannot find config parameter {self.name!r}")
         return value
 
 
@@ -451,13 +451,12 @@ class ArgumentParser(argparse.ArgumentParser):
                                          formatter_class=argparse.RawDescriptionHelpFormatter,
                                          **kwargs)
         self.add_argument(metavar='input', dest="rawInput",
-                          help="path to input data repository, relative to $%s" % (DEFAULT_INPUT_NAME,))
+                          help=f"path to input data repository, relative to ${DEFAULT_INPUT_NAME}")
         self.add_argument("--calib", dest="rawCalib",
-                          help="path to input calibration repository, relative to $%s" %
-                          (DEFAULT_CALIB_NAME,))
+                          help=f"path to input calibration repository, relative to ${DEFAULT_CALIB_NAME}")
         self.add_argument("--output", dest="rawOutput",
-                          help="path to output data repository (need not exist), relative to $%s" %
-                          (DEFAULT_OUTPUT_NAME,))
+                          help="path to output data repository (need not exist), "
+                               f"relative to ${DEFAULT_OUTPUT_NAME}")
         self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
                           help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; "
                                "optionally sets ROOT to ROOT/rerun/INPUT")
@@ -553,9 +552,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         argName = name.lstrip("-")
 
         if argName in self._dataIdArgDict:
-            raise RuntimeError("Data ID argument %s already exists" % (name,))
+            raise RuntimeError(f"Data ID argument {name} already exists")
         if argName in set(("camera", "config", "butler", "log", "obsPkg")):
-            raise RuntimeError("Data ID argument %s is a reserved name" % (name,))
+            raise RuntimeError(f"Data ID argument {name} is a reserved name")
 
         self.add_argument(name, nargs="*", action=IdValueAction, help=help,
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
@@ -620,20 +619,20 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             if len(args) == 1 and args[0] in ("-h", "--help"):
                 self.exit()
             else:
-                self.exit("%s: error: Must specify input as first argument" % self.prog)
+                self.exit(f"{self.prog}: error: Must specify input as first argument")
 
         # Note that --rerun may change namespace.input, but if it does
         # we verify that the new input has the same mapper class.
         namespace = argparse.Namespace()
         namespace.input = _fixPath(DEFAULT_INPUT_NAME, args[0])
         if not os.path.isdir(namespace.input):
-            self.error("Error: input=%r not found" % (namespace.input,))
+            self.error(f"Error: input={namespace.input!r} not found")
 
         namespace.config = config
         namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
-            self.error("Error: no mapper specified for input repo %r" % (namespace.input,))
+            self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
 
         namespace.camera = mapperClass.getCameraName()
         namespace.obsPkg = mapperClass.getPackageName()
@@ -696,7 +695,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         if "data" in namespace.show:
             for dataIdName in self._dataIdArgDict.keys():
                 for dataRef in getattr(namespace, dataIdName).refList:
-                    print("%s dataRef.dataId = %s" % (dataIdName, dataRef.dataId))
+                    print(f"{dataIdName} dataRef.dataId = {dataRef.dataId}")
 
         if namespace.show and "run" not in namespace.show:
             sys.exit(0)
@@ -763,7 +762,7 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddTHH:mm:ss.SSSZ} %c 
                     namespace.input = os.path.realpath(os.path.join(namespace.output, "_parent"))
                     modifiedInput = True
             else:
-                self.error("Error: invalid argument for --rerun: %s" % namespace.rerun)
+                self.error(f"Error: invalid argument for --rerun: {namespace.rerun}")
             if modifiedInput and dafPersist.Butler.getMapperClass(namespace.input) != mapperClass:
                 self.error("Error: input directory specified by --rerun must have the same mapper as INPUT")
         else:
@@ -953,9 +952,9 @@ def getTaskDict(config, taskDict=None, baseName=""):
         if hasattr(field, "value") and hasattr(field, "target"):
             subConfig = field.value
             if isinstance(subConfig, pexConfig.Config):
-                subBaseName = "%s.%s" % (baseName, fieldName) if baseName else fieldName
+                subBaseName = f"{baseName}.{fieldName}" if baseName else fieldName
                 try:
-                    taskName = "%s.%s" % (field.target.__module__, field.target.__name__)
+                    taskName = f"{field.target.__module__}.{field.target.__name__}"
                 except Exception:
                     taskName = repr(field.target)
                 taskDict[subBaseName] = taskName
@@ -1018,8 +1017,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                             self._pattern = re.compile(fnmatch.translate(pattern))
                         else:
                             if pattern != pattern.lower():
-                                print(u"Matching \"%s\" without regard to case "
-                                      "(append :NOIGNORECASE to prevent this)" % (pattern,), file=sys.stdout)
+                                print(f"Matching {pattern!r} without regard to case "
+                                      "(append :NOIGNORECASE to prevent this)", file=sys.stdout)
                             self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
@@ -1028,7 +1027,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                         # at "=" for string matching
                         matchStr = showStr.split("\n")[-1].split("=")[0]
                         if self._pattern.search(matchStr):
-                            print(u"\n" + showStr)
+                            print("\n" + showStr)
 
                 fd = FilteredStream(pattern)
             else:
@@ -1039,7 +1038,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             matHistory = re.search(r"^(?:config.)?(.+)?", showArgs)
             globPattern = matHistory.group(1)
             if not globPattern:
-                print("Please provide a value with --show history (e.g. history=*.doXXX)", file=sys.stderr)
+                sys.stderr.write("Please provide a value with --show history (e.g. history=*.doXXX)\n")
                 sys.exit(1)
 
             error = False
@@ -1054,15 +1053,15 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     try:
                         hconfig = getattr(hconfig, cpt)
                     except AttributeError:
-                        print("Error: configuration %s has no subconfig %s" %
-                              (".".join(["config"] + cpath[:i]), cpt), file=sys.stderr)
+                        config_path = ".".join(["config"] + cpath[:i])
+                        sys.stderr.write(f"Error: configuration {config_path} has no subconfig {cpt}\n")
                         error = True
 
                 try:
                     print(pexConfig.history.format(hconfig, cname))
                 except KeyError:
-                    print("Error: %s has no field %s" % (".".join(["config"] + cpath), cname),
-                          file=sys.stderr)
+                    config_path = ".".join(["config"] + cpath)
+                    sys.stderr.write(f"Error: {config_path} has no field {cname}\n")
                     error = True
 
             if error:
@@ -1075,8 +1074,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
         elif showCommand == "tasks":
             showTaskHierarchy(config)
         else:
-            print(u"Unknown value for show: %s (choose from '%s')" %
-                  (what, "', '".join("config[=XXX] data history=XXX tasks run".split())), file=sys.stderr)
+            choices = "', '".join("config[=XXX] data history=XXX tasks run".split())
+            sys.stderr.write(f"Unknown value for show: {what} (choose from {choices!r})\n")
             sys.exit(1)
 
     if exit and "run" not in showOpts:
@@ -1091,13 +1090,13 @@ def showTaskHierarchy(config):
     config : `lsst.pex.config.Config`
         Configuration to process.
     """
-    print(u"Subtasks:")
+    print("Subtasks:")
     taskDict = getTaskDict(config=config)
 
     fieldNameList = sorted(taskDict.keys())
     for fieldName in fieldNameList:
         taskName = taskDict[fieldName]
-        print(u"%s: %s" % (fieldName, taskName))
+        print(f"{fieldName}: {taskName}")
 
 
 class ConfigValueAction(argparse.Action):
@@ -1124,22 +1123,22 @@ class ConfigValueAction(argparse.Action):
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
             if not valueStr:
-                parser.error("%s value %s must be in form name=value" % (option_string, nameValue))
+                parser.error(f"{option_string} value {nameValue} must be in form name=value")
 
             # see if setting the string value works; if not, try eval
             try:
                 setDottedAttr(namespace.config, name, valueStr)
             except AttributeError:
-                parser.error("no config field: %s" % (name,))
+                parser.error(f"no config field: {name}")
             except Exception:
                 try:
                     value = eval(valueStr, {})
                 except Exception:
-                    parser.error("cannot parse %r as a value for %s" % (valueStr, name))
+                    parser.error(f"cannot parse {valueStr!r} as a value for {name}")
                 try:
                     setDottedAttr(namespace.config, name, value)
                 except Exception as e:
-                    parser.error("cannot set config.%s=%r: %s" % (name, value, e))
+                    parser.error(f"cannot set config.{name}={value!r}: {e}")
 
 
 class ConfigFileAction(argparse.Action):
@@ -1167,7 +1166,7 @@ class ConfigFileAction(argparse.Action):
             try:
                 namespace.config.load(configfile)
             except Exception as e:
-                parser.error("cannot load config file %r: %s" % (configfile, e))
+                parser.error(f"cannot load config file {configfile!r}: {e}")
 
 
 class IdValueAction(argparse.Action):
@@ -1225,7 +1224,7 @@ class IdValueAction(argparse.Action):
         for nameValue in values:
             name, sep, valueStr = nameValue.partition("=")
             if name in idDict:
-                parser.error("%s appears multiple times in one ID argument: %s" % (name, option_string))
+                parser.error(f"{name} appears multiple times in one ID argument: {option_string}")
             idDict[name] = []
             for v in valueStr.split("^"):
                 mat = re.search(r"^(\d+)\.\.(\d+)(?::(\d+))?$", v)
@@ -1278,7 +1277,7 @@ class LogLevelAction(argparse.Action):
             if logLevelUpr in permittedLevelSet:
                 logLevel = getattr(lsstLog.Log, logLevelUpr)
             else:
-                parser.error("loglevel=%r not one of %s" % (levelStr, permittedLevelList))
+                parser.error(f"loglevel={levelStr!r} not one of {permittedLevelList}")
             if component is None:
                 namespace.log.setLevel(logLevel)
             else:

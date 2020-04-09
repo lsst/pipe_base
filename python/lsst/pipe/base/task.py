@@ -293,7 +293,7 @@ class Task:
         """
         taskField = getattr(self.config, name, None)
         if taskField is None:
-            raise KeyError("%s's config does not have field %r" % (self.getFullName(), name))
+            raise KeyError(f"{self.getFullName()}'s config does not have field {name!r}")
         subtask = taskField.apply(name=name, parentTask=self, **keyArgs)
         setattr(self, name, subtask)
 
@@ -368,7 +368,7 @@ class Task:
         For example: if the full name of this task is "top.sub.sub2"
         then ``_computeFullName("subname")`` returns ``"top.sub.sub2.subname"``.
         """
-        return "%s.%s" % (self._fullName, name)
+        return f"{self._fullName}.{name}"
 
     def __reduce__(self):
         """Pickler.

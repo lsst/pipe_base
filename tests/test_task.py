@@ -241,8 +241,8 @@ class TaskTestCase(unittest.TestCase):
                     self.assertIn(name, addMultTask.metadata.names(),
                                   name + " is missing from task metadata")
                     self.assertIsInstance(addMultTask.metadata.getScalar(name), keyType,
-                                          "%s is not of the right type (%s vs %s)" %
-                                          (name, keyType, type(addMultTask.metadata.getScalar(name))))
+                                          f"{name} is not of the right type "
+                                          f"({keyType} vs {type(addMultTask.metadata.getScalar(name))})")
         # Some basic sanity checks
         currCpuTime = time.process_time()
         self.assertLessEqual(

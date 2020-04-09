@@ -55,7 +55,7 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
             obj.metadata.addLongLong(name, value)
         except TypeError:
             obj.metadata.add(name, value)
-        strList.append("%s=%s" % (name, value))
+        strList.append(f"{name}={value}")
     log(obj.log.getName(), logLevel, "; ".join(strList))
 
 
