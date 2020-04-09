@@ -78,9 +78,9 @@ class Struct:
             Raised if name already exists or starts with ``__`` (two underscores).
         """
         if hasattr(self, name):
-            raise RuntimeError("Item %s already exists" % (name,))
+            raise RuntimeError(f"Item {name!r} already exists")
         if name.startswith("__"):
-            raise RuntimeError("Item name %r invalid; must not begin with __" % (name,))
+            raise RuntimeError(f"Item name {name!r} invalid; must not begin with __")
         setattr(self, name, val)
 
     def getDict(self):
@@ -137,5 +137,5 @@ class Struct:
         return len(self.__dict__)
 
     def __repr__(self):
-        itemList = ["%s=%r" % (name, val) for name, val in self.getDict().items()]
-        return "%s(%s)" % (self.__class__.__name__, "; ".join(itemList))
+        itemsStr = "; ".join(f"{name}={val}" for name, val in self.getDict().items())
+        return f"{self.__class__.__name__}({itemsStr})"

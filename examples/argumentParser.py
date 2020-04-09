@@ -75,4 +75,4 @@ config = ExampleConfig()
 parsedCmd = parser.parse_args(config=config)
 pcDict = parsedCmd.__dict__
 for key in sorted(pcDict):
-    print("parsedCmd.%s=%r" % (key, pcDict[key]))
+    print(f"parsedCmd.{key}={pcDict[key]!r}")
