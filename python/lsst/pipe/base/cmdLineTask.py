@@ -81,7 +81,7 @@ def profile(filename, log=None):
     profile.disable()
     profile.dump_stats(filename)
     if log is not None:
-        log.info("cProfile stats written to %s" % filename)
+        log.info("cProfile stats written to %s", filename)
 
 
 class TaskRunner:
@@ -679,17 +679,17 @@ class CmdLineTask(Task):
             try:
                 oldConfig = butler.get(configName, immediate=True)
             except Exception as exc:
-                raise type(exc)("Unable to read stored config file %s (%s); consider using --clobber-config" %
-                                (configName, exc))
+                raise type(exc)(f"Unable to read stored config file {configName} (exc); "
+                                "consider using --clobber-config")
 
             def logConfigMismatch(msg):
                 self.log.fatal("Comparing configuration: %s", msg)
 
             if not self.config.compare(oldConfig, shortcut=False, output=logConfigMismatch):
                 raise TaskError(
-                    ("Config does not match existing task config %r on disk; tasks configurations " +
-                     "must be consistent within the same output repo (override with --clobber-config)") %
-                    (configName,))
+                    f"Config does not match existing task config {configName!r} on disk; "
+                    "tasks configurations must be consistent within the same output repo "
+                    "(override with --clobber-config)")
         else:
             butler.put(self.config, configName)
 
@@ -722,9 +722,9 @@ class CmdLineTask(Task):
                 oldSchema = butler.get(schemaDataset, immediate=True).getSchema()
                 if not oldSchema.compare(catalog.getSchema(), afwTable.Schema.IDENTICAL):
                     raise TaskError(
-                        ("New schema does not match schema %r on disk; schemas must be " +
-                         " consistent within the same output repo (override with --clobber-config)") %
-                        (dataset,))
+                        f"New schema does not match schema {dataset!r} on disk; "
+                        "schemas must be consistent within the same output repo "
+                        "(override with --clobber-config)")
             else:
                 butler.put(catalog, schemaDataset)
 
@@ -779,18 +779,16 @@ class CmdLineTask(Task):
         try:
             old = butler.get(dataset, immediate=True)
         except Exception as exc:
-            raise type(exc)("Unable to read stored version dataset %s (%s); "
-                            "consider using --clobber-versions or --no-versions" %
-                            (dataset, exc))
+            raise type(exc)(f"Unable to read stored version dataset {dataset} ({exc}); "
+                            "consider using --clobber-versions or --no-versions")
         # Note that because we can only detect python modules that have been imported, the stored
         # list of products may be more or less complete than what we have now.  What's important is
         # that the products that are in common have the same version.
         diff = packages.difference(old)
         if diff:
+            versions_str = "; ".join(f"{pkg}: {diff[pkg][1]} vs {diff[pkg][0]}" for pkg in diff)
             raise TaskError(
-                "Version mismatch (" +
-                "; ".join("%s: %s vs %s" % (pkg, diff[pkg][1], diff[pkg][0]) for pkg in diff) +
-                "); consider using --clobber-versions or --no-versions")
+                f"Version mismatch ({versions_str}); consider using --clobber-versions or --no-versions")
         # Update the old set of packages in case we have more packages that haven't been persisted.
         extra = packages.extra(old)
         if extra:
