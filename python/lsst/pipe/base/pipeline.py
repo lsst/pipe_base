@@ -638,12 +638,26 @@ class PipelineDatasetTypes:
             # DatasetType, if there is an output which produces the parent of
             # this component, treat this input as an intermediate
             if component is not None:
-                if name in outputNameMapping and outputNameMapping[name].dimensions == dsType.dimensions:
+                if name in outputNameMapping:
+                    if outputNameMapping[name].dimensions != dsType.dimensions:
+                        raise ValueError(f"Component dataset type {dsType.name} has different "
+                                         f"dimensions ({dsType.dimensions}) than its parent "
+                                         f"({outputNameMapping[name].dimensions}).")
                     composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
                                             universe=registry.dimensions)
                     intermediateComponents.add(dsType)
                     intermediateComposites.add(composite)
 
+        def checkConsistency(a: NamedValueSet, b: NamedValueSet):
+            common = a.names & b.names
+            for name in common:
+                if a[name] != b[name]:
+                    raise ValueError(f"Conflicting definitions for dataset type: {a[name]} != {b[name]}.")
+
+        checkConsistency(allInitInputs, allInitOutputs)
+        checkConsistency(allInputs, allOutputs)
+        checkConsistency(allInputs, intermediateComposites)
+        checkConsistency(allOutputs, intermediateComposites)
 
         def frozen(s: NamedValueSet) -> NamedValueSet:
             s.freeze()
