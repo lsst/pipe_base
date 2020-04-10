@@ -557,7 +557,9 @@ class _PipelineScaffolding:
                         expand=True,
                     )
                 )
-                assert len(refs) == 1, "BJQ guarantees exactly one input for each data ID."
+                if len(refs) != 1:
+                    raise RuntimeError(f"Expected exactly one instance of input {datasetType} "
+                                       f"for data ID {dataId}; got {refs}.")
                 scaffolding.refs.extend(refs)
         # Look up [init] intermediate and output datasets in the output collection,
         # unless clobberExisting is True (in which case we don't care if these
