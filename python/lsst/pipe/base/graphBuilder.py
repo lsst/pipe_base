@@ -628,7 +628,7 @@ class _PipelineScaffolding:
                 inputs = NamedKeyDict()
                 for datasetType, scaffolding in task.inputs.items():
                     inputs[datasetType] = [ref for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds)
-                                           if quantumDataId.matches(dataId)]
+                                           if registry.relateDataIds(quantumDataId, dataId)]
 
                 _LOG.debug("%s dataId %s has inputs: %s",
                            task.taskDef.taskName, quantumDataId, list(inputs.names))
@@ -639,7 +639,7 @@ class _PipelineScaffolding:
                 for datasetType, scaffolding in task.outputs.items():
                     outputs[datasetType] = []
                     for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds):
-                        if quantumDataId.matches(dataId):
+                        if registry.relateDataIds(quantumDataId, dataId):
                             if ref.id is None:
                                 allOutputsPresent = False
                             else:
