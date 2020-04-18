@@ -30,13 +30,14 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import FrozenSet, Mapping, Union, Generator, TYPE_CHECKING
+from typing import Mapping, Union, Generator, TYPE_CHECKING
 
 import copy
 
 # -----------------------------
 #  Imports for other modules --
 from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
+from lsst.daf.butler.core.utils import NamedValueSet
 from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
@@ -368,7 +369,7 @@ class TaskDatasetTypes:
     by a `PipelineTask`
     """
 
-    initInputs: FrozenSet[DatasetType]
+    initInputs: NamedValueSet[DatasetType]
     """Dataset types that are needed as inputs in order to construct this Task.
 
     Task-level `initInputs` may be classified as either
@@ -376,7 +377,7 @@ class TaskDatasetTypes:
     `~PipelineDatasetTypes.initIntermediates` at the Pipeline level.
     """
 
-    initOutputs: FrozenSet[DatasetType]
+    initOutputs: NamedValueSet[DatasetType]
     """Dataset types that may be written after constructing this Task.
 
     Task-level `initOutputs` may be classified as either
@@ -384,7 +385,7 @@ class TaskDatasetTypes:
     `~PipelineDatasetTypes.initIntermediates` at the Pipeline level.
     """
 
-    inputs: FrozenSet[DatasetType]
+    inputs: NamedValueSet[DatasetType]
     """Dataset types that are regular inputs to this Task.
 
     If an input dataset needed for a Quantum cannot be found in the input
@@ -396,7 +397,7 @@ class TaskDatasetTypes:
     at the Pipeline level.
     """
 
-    prerequisites: FrozenSet[DatasetType]
+    prerequisites: NamedValueSet[DatasetType]
     """Dataset types that are prerequisite inputs to this Task.
 
     Prerequisite inputs must exist in the input collection(s) before the
@@ -407,7 +408,7 @@ class TaskDatasetTypes:
     QuantumGraph generation.
     """
 
-    outputs: FrozenSet[DatasetType]
+    outputs: NamedValueSet[DatasetType]
     """Dataset types that are produced by this Task.
 
     Task-level `outputs` may be classified as either
@@ -432,7 +433,7 @@ class TaskDatasetTypes:
         types: `TaskDatasetTypes`
             The dataset types used by this task.
         """
-        def makeDatasetTypesSet(connectionType):
+        def makeDatasetTypesSet(connectionType, freeze=True):
             """Constructs a set of true `DatasetType` objects
 
             Parameters
@@ -440,10 +441,12 @@ class TaskDatasetTypes:
             connectionType : `str`
                 Name of the connection type to produce a set for, corresponds
                 to an attribute of type `list` on the connection class instance
+            freeze : `bool`, optional
+                If `True`, call `NamedValueSet.freeze` on the object returned.
 
             Returns
             -------
-            datasetTypes : `frozenset`
+            datasetTypes : `NamedValueSet`
                 A set of all datasetTypes which correspond to the input
                 connection type specified in the connection class of this
                 `PipelineTask`
@@ -453,7 +456,7 @@ class TaskDatasetTypes:
             This function is a closure over the variables ``registry`` and
             ``taskDef``.
             """
-            datasetTypes = []
+            datasetTypes = NamedValueSet()
             for c in iterConnections(taskDef.connections, connectionType):
                 dimensions = set(getattr(c, 'dimensions', set()))
                 if "skypix" in dimensions:
@@ -484,16 +487,19 @@ class TaskDatasetTypes:
                     if datasetType != registryDatasetType:
                         raise ValueError(f"Supplied dataset type ({datasetType}) inconsistent with "
                                          f"registry definition ({registryDatasetType})")
-                datasetTypes.append(datasetType)
-            return frozenset(datasetTypes)
+                datasetTypes.add(datasetType)
+            if freeze:
+                datasetTypes.freeze()
+            return datasetTypes
 
         # optionally add output dataset for metadata
-        outputs = makeDatasetTypesSet("outputs")
+        outputs = makeDatasetTypesSet("outputs", freeze=False)
         if taskDef.metadataDatasetName is not None:
             # Metadata is supposed to be of the PropertyList type, its dimensions
             # correspond to a task quantum
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
             outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertyList")}
+        outputs.freeze()
 
         return cls(
             initInputs=makeDatasetTypesSet("initInputs"),
@@ -510,7 +516,7 @@ class PipelineDatasetTypes:
     `Pipeline`.
     """
 
-    initInputs: FrozenSet[DatasetType]
+    initInputs: NamedValueSet[DatasetType]
     """Dataset types that are needed as inputs in order to construct the Tasks
     in this Pipeline.
 
@@ -518,7 +524,7 @@ class PipelineDatasetTypes:
     other Tasks in the Pipeline (these are classified as `initIntermediates`).
     """
 
-    initOutputs: FrozenSet[DatasetType]
+    initOutputs: NamedValueSet[DatasetType]
     """Dataset types that may be written after constructing the Tasks in this
     Pipeline.
 
@@ -527,13 +533,13 @@ class PipelineDatasetTypes:
     `initIntermediates`).
     """
 
-    initIntermediates: FrozenSet[DatasetType]
+    initIntermediates: NamedValueSet[DatasetType]
     """Dataset types that are both used when constructing one or more Tasks
     in the Pipeline and produced as a side-effect of constructing another
     Task in the Pipeline.
     """
 
-    inputs: FrozenSet[DatasetType]
+    inputs: NamedValueSet[DatasetType]
     """Dataset types that are regular inputs for the full pipeline.
 
     If an input dataset needed for a Quantum cannot be found in the input
@@ -541,7 +547,7 @@ class PipelineDatasetTypes:
     produced.
     """
 
-    prerequisites: FrozenSet[DatasetType]
+    prerequisites: NamedValueSet[DatasetType]
     """Dataset types that are prerequisite inputs for the full Pipeline.
 
     Prerequisite inputs must exist in the input collection(s) before the
@@ -552,12 +558,12 @@ class PipelineDatasetTypes:
     QuantumGraph generation.
     """
 
-    intermediates: FrozenSet[DatasetType]
+    intermediates: NamedValueSet[DatasetType]
     """Dataset types that are output by one Task in the Pipeline and consumed
     as inputs by one or more other Tasks in the Pipeline.
     """
 
-    outputs: FrozenSet[DatasetType]
+    outputs: NamedValueSet[DatasetType]
     """Dataset types that are output by a Task in the Pipeline and not consumed
     by any other Task in the Pipeline.
     """
@@ -595,21 +601,21 @@ class PipelineDatasetTypes:
             prerequisite.  This indicates that the Tasks cannot be run as part
             of the same `Pipeline`.
         """
-        allInputs = set()
-        allOutputs = set()
-        allInitInputs = set()
-        allInitOutputs = set()
-        prerequisites = set()
+        allInputs = NamedValueSet()
+        allOutputs = NamedValueSet()
+        allInitInputs = NamedValueSet()
+        allInitOutputs = NamedValueSet()
+        prerequisites = NamedValueSet()
         byTask = dict()
         if isinstance(pipeline, Pipeline):
             pipeline = pipeline.toExpandedPipeline()
         for taskDef in pipeline:
             thisTask = TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
-            allInitInputs.update(thisTask.initInputs)
-            allInitOutputs.update(thisTask.initOutputs)
-            allInputs.update(thisTask.inputs)
-            prerequisites.update(thisTask.prerequisites)
-            allOutputs.update(thisTask.outputs)
+            allInitInputs |= thisTask.initInputs
+            allInitOutputs |= thisTask.initOutputs
+            allInputs |= thisTask.inputs
+            prerequisites |= thisTask.prerequisites
+            allOutputs |= thisTask.outputs
             byTask[taskDef.label] = thisTask
         if not prerequisites.isdisjoint(allInputs):
             raise ValueError("{} marked as both prerequisites and regular inputs".format(
@@ -622,8 +628,8 @@ class PipelineDatasetTypes:
         # Make sure that components which are marked as inputs get treated as
         # intermediates if there is an output which produces the composite
         # containing the component
-        intermediateComponents = set()
-        intermediateComposites = set()
+        intermediateComponents = NamedValueSet()
+        intermediateComposites = NamedValueSet()
         outputNameMapping = {dsType.name: dsType for dsType in allOutputs}
         for dsType in allInputs:
             # get the name of a possible component
@@ -632,18 +638,38 @@ class PipelineDatasetTypes:
             # DatasetType, if there is an output which produces the parent of
             # this component, treat this input as an intermediate
             if component is not None:
-                if name in outputNameMapping and outputNameMapping[name].dimensions == dsType.dimensions:
+                if name in outputNameMapping:
+                    if outputNameMapping[name].dimensions != dsType.dimensions:
+                        raise ValueError(f"Component dataset type {dsType.name} has different "
+                                         f"dimensions ({dsType.dimensions}) than its parent "
+                                         f"({outputNameMapping[name].dimensions}).")
                     composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
                                             universe=registry.dimensions)
                     intermediateComponents.add(dsType)
                     intermediateComposites.add(composite)
+
+        def checkConsistency(a: NamedValueSet, b: NamedValueSet):
+            common = a.names & b.names
+            for name in common:
+                if a[name] != b[name]:
+                    raise ValueError(f"Conflicting definitions for dataset type: {a[name]} != {b[name]}.")
+
+        checkConsistency(allInitInputs, allInitOutputs)
+        checkConsistency(allInputs, allOutputs)
+        checkConsistency(allInputs, intermediateComposites)
+        checkConsistency(allOutputs, intermediateComposites)
+
+        def frozen(s: NamedValueSet) -> NamedValueSet:
+            s.freeze()
+            return s
+
         return cls(
-            initInputs=frozenset(allInitInputs - allInitOutputs),
-            initIntermediates=frozenset(allInitInputs & allInitOutputs),
-            initOutputs=frozenset(allInitOutputs - allInitInputs),
-            inputs=frozenset(allInputs - allOutputs - intermediateComponents),
-            intermediates=frozenset(allInputs & allOutputs | intermediateComponents),
-            outputs=frozenset(allOutputs - allInputs - intermediateComposites),
-            prerequisites=frozenset(prerequisites),
+            initInputs=frozen(allInitInputs - allInitOutputs),
+            initIntermediates=frozen(allInitInputs & allInitOutputs),
+            initOutputs=frozen(allInitOutputs - allInitInputs),
+            inputs=frozen(allInputs - allOutputs - intermediateComponents),
+            intermediates=frozen(allInputs & allOutputs | intermediateComponents),
+            outputs=frozen(allOutputs - allInputs - intermediateComposites),
+            prerequisites=frozen(prerequisites),
             byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
         )

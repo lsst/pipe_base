@@ -43,25 +43,8 @@ if typing.TYPE_CHECKING:
 
 class ScalarError(TypeError):
     """Exception raised when dataset type is configured as scalar
-    but there are multiple DataIds in a Quantum for that dataset.
-
-    Parameters
-    ----------
-    key : `str`
-        Name of the configuration field for dataset type.
-        If ``numDataIds`` is not specified, it is assumed that this parameter
-        is the full message to be reported and not the key.
-    numDataIds : `int`, optional
-        Actual number of DataIds in a Quantum for this dataset type.
+    but there are multiple data IDs in a Quantum for that dataset.
     """
-    def __init__(self, key, numDataIds=None):
-        if numDataIds is None:
-            # Assume we are receiving a normal TypeError message
-            err_msg = key
-        else:
-            err_msg = f"Expected scalar for output dataset field {key}, " \
-                f"received {numDataIds} DataIds"
-        super().__init__(err_msg)
 
 
 class PipelineTaskConnectionDict(UserDict):
@@ -437,7 +420,13 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     # length one)
                     if not attribute.multiple:
                         if len(quantumInputRefs) > 1:
-                            raise ScalarError(attributeName, len(quantumInputRefs))
+                            raise ScalarError(
+                                f"Received multiple datasets "
+                                f"{', '.join(str(r.dataId) for r in quantumInputRefs)} "
+                                f"for scalar connection {attributeName} "
+                                f"({quantumInputRefs[0].datasetType.name}) "
+                                f"of quantum for {quantum.taskName} with data ID {quantum.dataId}."
+                            )
                         if len(quantumInputRefs) == 0:
                             continue
                         quantumInputRefs = quantumInputRefs[0]
@@ -464,25 +453,39 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
 
+        The base class implementation simply checks that input connections with
+        ``multiple`` set to `False` have no more than one dataset.
+
         Parameters
         ----------
         datasetRefMap : `dict`
-            Mapping with keys of dataset type name to `list` of
+            Mapping from dataset type name to `list` of
             `lsst.daf.butler.DatasetRef` objects
 
         Returns
         -------
         datasetRefMap : `dict`
             Modified mapping of input with possible adjusted
-            `lsst.daf.butler.DatasetRef` objects
+            `lsst.daf.butler.DatasetRef` objects.
 
         Raises
         ------
+        ScalarError
+            Raised if any `Input` or `PrerequisiteInput` connection has
+            ``multiple`` set to `False`, but multiple datasets.
         Exception
             Overrides of this function have the option of raising an Exception
             if a field in the input does not satisfy a need for a corresponding
             pipelineTask, i.e. no reference catalogs are found.
         """
+        for connection in itertools.chain(iterConnections(self, "inputs"),
+                                          iterConnections(self, "prerequisiteInputs")):
+            refs = datasetRefMap[connection.name]
+            if not connection.multiple and len(refs) > 1:
+                raise ScalarError(
+                    f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
+                    f"for scalar connection {connection.name} ({refs[0].datasetType.name})."
+                )
         return datasetRefMap
 
 

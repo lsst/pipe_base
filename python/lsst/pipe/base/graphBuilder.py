@@ -82,6 +82,11 @@ class _DatasetScaffolding:
 
     __slots__ = ("dimensions", "producer", "consumers", "dataIds", "refs")
 
+    def __repr__(self):
+        # Default dataclass-injected __repr__ gets caught in an infinite loop
+        # because of back-references.
+        return f"_DatasetScaffolding(dimensions={self.dimensions}, ...)"
+
     dimensions: DimensionGraph
     """The dimensions of the dataset type (`DimensionGraph`).
 
@@ -260,6 +265,11 @@ class _TaskScaffolding:
         self.dataIds = set()
         self.quanta = []
 
+    def __repr__(self):
+        # Default dataclass-injected __repr__ gets caught in an infinite loop
+        # because of back-references.
+        return f"_TaskScaffolding(taskDef={self.taskDef}, ...)"
+
     taskDef: TaskDef
     """Data structure that identifies the task class and its config
     (`TaskDef`).
@@ -416,6 +426,11 @@ class _PipelineScaffolding:
                       for taskDef, taskDatasetTypes in zip(pipeline,
                       datasetTypes.byTask.values())]
 
+    def __repr__(self):
+        # Default dataclass-injected __repr__ gets caught in an infinite loop
+        # because of back-references.
+        return f"_PipelineScaffolding(tasks={self.tasks}, ...)"
+
     tasks: List[_TaskScaffolding]
     """Scaffolding data structures for each task in the pipeline
     (`list` of `_TaskScaffolding`).
@@ -557,7 +572,9 @@ class _PipelineScaffolding:
                         expand=True,
                     )
                 )
-                assert len(refs) == 1, "BJQ guarantees exactly one input for each data ID."
+                if len(refs) != 1:
+                    raise RuntimeError(f"Expected exactly one instance of input {datasetType} "
+                                       f"for data ID {dataId}; got {refs}.")
                 scaffolding.refs.extend(refs)
         # Look up [init] intermediate and output datasets in the output collection,
         # unless clobberExisting is True (in which case we don't care if these
@@ -611,7 +628,7 @@ class _PipelineScaffolding:
                 inputs = NamedKeyDict()
                 for datasetType, scaffolding in task.inputs.items():
                     inputs[datasetType] = [ref for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds)
-                                           if quantumDataId.matches(dataId)]
+                                           if registry.relateDataIds(quantumDataId, dataId)]
 
                 _LOG.debug("%s dataId %s has inputs: %s",
                            task.taskDef.taskName, quantumDataId, list(inputs.names))
@@ -622,7 +639,7 @@ class _PipelineScaffolding:
                 for datasetType, scaffolding in task.outputs.items():
                     outputs[datasetType] = []
                     for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds):
-                        if quantumDataId.matches(dataId):
+                        if registry.relateDataIds(quantumDataId, dataId):
                             if ref.id is None:
                                 allOutputsPresent = False
                             else:
