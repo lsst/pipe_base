@@ -403,6 +403,7 @@ class _PipelineScaffolding:
        per-task quanta identified in the previous step.
     """
     def __init__(self, pipeline, *, registry):
+        _LOG.debug("Initializing data structures for QuantumGraph generation.")
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
         datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, registry=registry)
@@ -494,6 +495,7 @@ class _PipelineScaffolding:
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
         """
+        _LOG.debug("Building query for data IDs.")
         # Initialization datasets always have empty data IDs.
         emptyDataId = ExpandedDataCoordinate(registry.dimensions.empty, (), records={})
         for scaffolding in itertools.chain(self.initInputs.values(),
@@ -504,6 +506,7 @@ class _PipelineScaffolding:
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
+        _LOG.debug("Submitting data ID query and iterating over results.")
         resultIter = registry.queryDimensions(
             self.dimensions,
             datasets=list(self.inputs),
@@ -530,6 +533,7 @@ class _PipelineScaffolding:
                                                             self.intermediates.items(),
                                                             self.outputs.items()):
                 scaffolding.dataIds.add(commonDataId.subset(scaffolding.dimensions))
+        _LOG.debug("Finished processing results from data ID query.")
 
     def fillDatasetRefs(self, registry, collections, run, *, skipExisting=True):
         """Perform follow up queries for each dataset data ID produced in
@@ -562,6 +566,8 @@ class _PipelineScaffolding:
         """
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, scaffolding in itertools.chain(self.initInputs.items(), self.inputs.items()):
+            _LOG.debug("Looking up %d DatasetRefs for input dataset %s.",
+                       len(scaffolding.dataIds), datasetType.name)
             for dataId in scaffolding.dataIds:
                 refs = list(
                     registry.queryDatasets(
@@ -576,13 +582,15 @@ class _PipelineScaffolding:
                     raise RuntimeError(f"Expected exactly one instance of input {datasetType} "
                                        f"for data ID {dataId}; got {refs}.")
                 scaffolding.refs.extend(refs)
-        # Look up [init] intermediate and output datasets in the output collection,
-        # unless clobberExisting is True (in which case we don't care if these
-        # already exist).
+        # Look up [init] intermediate and output datasets in the output
+        # collection, unless clobberExisting is True (in which case we don't
+        # care if these already exist).
         for datasetType, scaffolding in itertools.chain(self.initIntermediates.items(),
                                                         self.initOutputs.items(),
                                                         self.intermediates.items(),
                                                         self.outputs.items()):
+            _LOG.debug("Looking up %d DatasetRefs for intermediate and/or output dataset %s.",
+                       len(scaffolding.dataIds), datasetType.name)
             for dataId in scaffolding.dataIds:
                 # TODO: we could easily support per-DatasetType skipExisting
                 # (it might make sense to put them in originInfo), and I could
@@ -618,6 +626,8 @@ class _PipelineScaffolding:
             already exist.
         """
         for task in self.tasks:
+            _LOG.debug("Populating quanta and looking up prerequisites for %d quanta for label '%s'.",
+                       len(task.dataIds), task.taskDef.label)
             for quantumDataId in task.dataIds:
                 # Identify the (regular) inputs that correspond to the Quantum
                 # with this data ID.  These are those whose data IDs have the
@@ -630,7 +640,7 @@ class _PipelineScaffolding:
                     inputs[datasetType] = [ref for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds)
                                            if registry.relateDataIds(quantumDataId, dataId)]
 
-                _LOG.debug("%s dataId %s has inputs: %s",
+                _LOG.trace("%s data ID %s has inputs: %s",
                            task.taskDef.taskName, quantumDataId, list(inputs.names))
 
                 # Same for outputs.
@@ -653,7 +663,7 @@ class _PipelineScaffolding:
                 if allOutputsPresent and skipExisting:
                     continue
 
-                _LOG.debug("%s dataID %s has outputs: %s",
+                _LOG.trace("%s data ID %s has outputs: %s",
                            task.taskDef.taskName, quantumDataId, list(outputs.names))
 
                 # Look up prerequisite datasets in the input collection(s).
@@ -685,7 +695,7 @@ class _PipelineScaffolding:
                         )
                     inputs[datasetType] = refs
 
-                _LOG.debug("%s dataID %s has inputs+prereqs: %s",
+                _LOG.trace("%s data ID %s has inputs+prereqs: %s",
                            task.taskDef.taskName, quantumDataId, list(inputs.names))
 
                 task.addQuantum(
