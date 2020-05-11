@@ -35,7 +35,7 @@ import string
 from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
                               Output, BaseConnection)
-from lsst.daf.butler import DatasetRef, Quantum
+from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -448,7 +448,8 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                                      "in input quantum")
         return inputDatasetRefs, outputDatasetRefs
 
-    def adjustQuantum(self, datasetRefMap: InputQuantizedConnection):
+    def adjustQuantum(self, datasetRefMap: NamedKeyDict[DatasetType, typing.Set[DatasetRef]]
+                      ) -> NamedKeyDict[DatasetType, typing.Set[DatasetRef]]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
@@ -458,14 +459,14 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
         Parameters
         ----------
-        datasetRefMap : `dict`
-            Mapping from dataset type name to `list` of
+        datasetRefMap : `NamedKeyDict`
+            Mapping from dataset type to a `set` of
             `lsst.daf.butler.DatasetRef` objects
 
         Returns
         -------
-        datasetRefMap : `dict`
-            Modified mapping of input with possible adjusted
+        datasetRefMap : `NamedKeyDict`
+            Modified mapping of input with possibly adjusted
             `lsst.daf.butler.DatasetRef` objects.
 
         Raises
