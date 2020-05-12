@@ -166,7 +166,8 @@ class PipelineTaskConnectionsMetaclass(type):
                 # templates are specified in an associated config class.
                 nameTemplateIntersection = allTemplates.intersection(set(dct['allConnections'].keys()))
                 if len(nameTemplateIntersection) > 0:
-                    raise TypeError(f"Template parameters cannot share names with Class attributes")
+                    raise TypeError(f"Template parameters cannot share names with Class attributes"
+                                    f" (conflicts are {nameTemplateIntersection}).")
             dct['defaultTemplates'] = kwargs.get('defaultTemplates', {})
 
         # Convert all the connection containers into frozensets so they cannot
