@@ -89,6 +89,12 @@ class TaskDef:
         self.connections = config.connections.ConnectionsClass(config=config)
 
     @property
+    def configDatasetName(self):
+        """Name of a dataset type for configuration of this task (`str`)
+        """
+        return self.label + "_config"
+
+    @property
     def metadataDatasetName(self):
         """Name of a dataset type for metadata of this task, `None` if
         metadata is not to be saved (`str`)
