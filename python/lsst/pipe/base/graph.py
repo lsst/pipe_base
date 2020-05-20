@@ -44,8 +44,7 @@ from typing import List, FrozenSet, Mapping
 # -----------------------------
 from .pipeline import TaskDef
 from .pipeTools import orderPipeline
-from lsst.daf.butler import Quantum, DatasetRef, DatasetType
-from lsst.daf.butler.core.utils import NamedKeyDict
+from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
 
 # ----------------------------------
 #  Local non-exported definitions --

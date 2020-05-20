@@ -45,9 +45,9 @@ from lsst.daf.butler import (
     DimensionGraph,
     DimensionUniverse,
     ExpandedDataCoordinate,
+    NamedKeyDict,
     Quantum,
 )
-from lsst.daf.butler.core.utils import NamedKeyDict
 
 # ----------------------------------
 #  Local non-exported definitions --

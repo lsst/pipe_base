@@ -36,8 +36,7 @@ import copy
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import DatasetType, Registry, SkyPixDimension
-from lsst.daf.butler.core.utils import NamedValueSet
+from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
 from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
