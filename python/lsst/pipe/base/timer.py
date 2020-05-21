@@ -56,7 +56,7 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
         except TypeError:
             obj.metadata.add(name, value)
         strList.append(f"{name}={value}")
-    log(obj.log.getName(), logLevel, "; ".join(strList))
+    log("timer." + obj.log.getName(), logLevel, "; ".join(strList))
 
 
 def logInfo(obj, prefix, logLevel=Log.DEBUG):
