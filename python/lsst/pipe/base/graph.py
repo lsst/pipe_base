@@ -37,6 +37,7 @@ __all__ = ["QuantumGraph", "QuantumGraphTaskNodes", "QuantumIterData"]
 # -------------------------------
 from itertools import chain
 from dataclasses import dataclass
+import pickle
 from typing import List, FrozenSet, Mapping
 
 # -----------------------------
@@ -154,6 +155,54 @@ class QuantumGraph(list):
 
     This is disjoint from both `initInputs` and `initIntermediates`.
     """
+
+    @classmethod
+    def load(cls, file, universe):
+        """Read QuantumGraph from a file that was made by `save`.
+
+        Parameters
+        ----------
+        file : `io.BufferedIOBase`
+            File with pickle data open in binary mode.
+        universe: `~lsst.daf.butler.DimensionUniverse`
+            DimensionUniverse instance, not used by the method itself but
+            needed to ensure that registry data structures are initialized.
+
+        Returns
+        -------
+        graph : `QuantumGraph`
+            Resulting QuantumGraph instance.
+
+        Raises
+        ------
+        TypeError
+            Raised if pickle contains instance of a type other than
+            QuantumGraph.
+
+        Notes
+        -----
+        Reading Quanta from pickle requires existence of singleton
+        DimensionUniverse which is usually instantiated during Registry
+        initializaion. To make sure that DimensionUniverse exists this method
+        accepts dummy DimensionUniverse argument.
+        """
+        qgraph = pickle.load(file)
+        if not isinstance(qgraph, QuantumGraph):
+            raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
+        return qgraph
+
+    def save(self, file):
+        """Save QuantumGraph to a file.
+
+        Presently we store QuantumGraph in pickle format, this could
+        potentially change in the future if better format is found.
+
+        Parameters
+        ----------
+        file : `io.BufferedIOBase`
+            File to write pickle data open in binary mode.
+        """
+        pickle.dump(self, file)
 
     def quanta(self):
         """Iterator over quanta in a graph.
