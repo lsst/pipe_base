@@ -31,15 +31,17 @@ __all__ = ['GraphBuilder']
 import itertools
 from collections import ChainMap
 from dataclasses import dataclass
-from typing import Set, List, Dict, Optional, Iterable
+from typing import Dict, Iterable, Iterator, List
 import logging
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
+from .connections import iterConnections
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
 from .graph import QuantumGraph, QuantumGraphTaskNodes
 from lsst.daf.butler import (
+    DataCoordinate,
     DatasetRef,
     DatasetType,
     DimensionGraph,
@@ -56,74 +58,9 @@ from lsst.daf.butler import (
 _LOG = logging.getLogger(__name__.partition(".")[2])
 
 
-@dataclass
-class _DatasetScaffolding:
-    """Helper class aggregating information about a `DatasetType`, used when
-    constructing a `QuantumGraph`.
-
-    `_DatasetScaffolding` does not hold the `DatasetType` instance itself
-    because it is usually used as the value type in `_DatasetScaffoldingDict`,
-    which uses `DatasetType` instances as keys.
-
-    See `_PipelineScaffolding` for a top-down description of the full
-    scaffolding data structure.
-
-    Parameters
-    ----------
-    dimensions : `DimensionGraph`
-        Dimensions of the `DatasetType`.
-    """
-    def __init__(self, dimensions: DimensionGraph):
-        self.dimensions = dimensions
-        self.producer = None
-        self.consumers = {}
-        self.dataIds = set()
-        self.refs = []
-
-    __slots__ = ("dimensions", "producer", "consumers", "dataIds", "refs")
-
-    def __repr__(self):
-        # Default dataclass-injected __repr__ gets caught in an infinite loop
-        # because of back-references.
-        return f"_DatasetScaffolding(dimensions={self.dimensions}, ...)"
-
-    dimensions: DimensionGraph
-    """The dimensions of the dataset type (`DimensionGraph`).
-
-    Set during `_PipelineScaffolding` construction.
-    """
-
-    producer: Optional[_TaskScaffolding]
-    """The scaffolding objects for the Task that produces this dataset.
-
-    Set during `_PipelineScaffolding` construction.
-    """
-
-    consumers: Dict[str, _TaskScaffolding]
-    """The scaffolding objects for the Tasks that consume this dataset,
-    keyed by their label in the `Pipeline`.
-
-    Set during `_PipelineScaffolding` construction.
-    """
-
-    dataIds: Set[ExpandedDataCoordinate]
-    """Data IDs for all instances of this dataset type in the graph.
-
-    Populated after construction by `_PipelineScaffolding.fillDataIds`.
-    """
-
-    refs: List[DatasetRef]
-    """References for all instances of this dataset type in the graph.
-
-    Populated after construction by `_PipelineScaffolding.fillDatasetRefs`.
-    """
-
-
-class _DatasetScaffoldingDict(NamedKeyDict):
-    """Custom dictionary that maps `DatasetType` to `_DatasetScaffolding`.
-
-    See `_PipelineScaffolding` for a top-down description of the full
-    scaffolding data structure.
+class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
+    """A custom dictionary that maps `DatasetType` to a nested dictionary of
+    the known `DatasetRef` instances of that type.
 
     Parameters
     ----------
@@ -138,29 +75,27 @@ class _DatasetScaffoldingDict(NamedKeyDict):
 
     @classmethod
     def fromDatasetTypes(cls, datasetTypes: Iterable[DatasetType], *,
-                         universe: DimensionUniverse) -> _DatasetScaffoldingDict:
-        """Construct a a dictionary from a flat iterable of `DatasetType` keys.
+                         universe: DimensionUniverse) -> _DatasetDict:
+        """Construct a dictionary from a flat iterable of `DatasetType` keys.
 
         Parameters
         ----------
         datasetTypes : `iterable` of `DatasetType`
-            DatasetTypes to use as keys for the dict.  Values will be
-            constructed from the dimensions of the keys.
+            DatasetTypes to use as keys for the dict.  Values will be empty
+            dictionaries.
         universe : `DimensionUniverse`
             Universe of all possible dimensions.
 
         Returns
         -------
-        dictionary : `_DatasetScaffoldingDict`
-            A new dictionary instance.
+        dictionary : `_DatasetDict`
+            A new `_DatasetDict` instance.
         """
-        return cls(((datasetType, _DatasetScaffolding(datasetType.dimensions))
-                    for datasetType in datasetTypes),
-                   universe=universe)
+        return cls({datasetType: {} for datasetType in datasetTypes}, universe=universe)
 
     @classmethod
-    def fromSubset(cls, datasetTypes: Iterable[DatasetType], first: _DatasetScaffoldingDict,
-                   *rest) -> _DatasetScaffoldingDict:
+    def fromSubset(cls, datasetTypes: Iterable[DatasetType], first: _DatasetDict, *rest: _DatasetDict
+                   ) -> _DatasetDict:
         """Return a new dictionary by extracting items corresponding to the
         given keys from one or more existing dictionaries.
 
@@ -169,18 +104,18 @@ class _DatasetScaffoldingDict(NamedKeyDict):
         datasetTypes : `iterable` of `DatasetType`
             DatasetTypes to use as keys for the dict.  Values will be obtained
             by lookups against ``first`` and ``rest``.
-        first : `_DatasetScaffoldingDict`
+        first : `_DatasetDict`
             Another dictionary from which to extract values.
         rest
             Additional dictionaries from which to extract values.
 
         Returns
         -------
-        dictionary : `_DatasetScaffoldingDict`
+        dictionary : `_DatasetDict`
             A new dictionary instance.
         """
         combined = ChainMap(first, *rest)
-        return cls(((datasetType, combined[datasetType]) for datasetType in datasetTypes),
+        return cls({datasetType: combined[datasetType] for datasetType in datasetTypes},
                    universe=first.universe)
 
     @property
@@ -191,14 +126,14 @@ class _DatasetScaffoldingDict(NamedKeyDict):
         base = self.universe.empty
         if len(self) == 0:
             return base
-        return base.union(*[scaffolding.dimensions for scaffolding in self.values()])
+        return base.union(*[datasetType.dimensions for datasetType in self.keys()])
 
-    def unpackRefs(self) -> NamedKeyDict:
-        """Unpack nested single-element `DatasetRef` lists into a new
-        dictionary.
+    def unpackSingleRefs(self) -> NamedKeyDict[DatasetType, DatasetRef]:
+        """Unpack nested single-element `DatasetRef` dicts into a new
+        mapping with `DatasetType` keys and `DatasetRef` values.
 
-        This method assumes that each `_DatasetScaffolding.refs` list contains
-        exactly one `DatasetRef`, as is the case for all "init" datasets.
+        This method assumes that each nest contains exactly one item, as is the
+        case for all "init" datasets.
 
         Returns
         -------
@@ -206,7 +141,125 @@ class _DatasetScaffoldingDict(NamedKeyDict):
             Dictionary mapping `DatasetType` to `DatasetRef`, with both
             `DatasetType` instances and string names usable as keys.
         """
-        return NamedKeyDict((datasetType, scaffolding.refs[0]) for datasetType, scaffolding in self.items())
+        def getOne(refs: Dict[DataCoordinate, DatasetRef]) -> DatasetRef:
+            ref, = refs.values()
+            return ref
+        return NamedKeyDict({datasetType: getOne(refs) for datasetType, refs in self.items()})
+
+    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, DatasetRef]:
+        """Unpack nested multi-element `DatasetRef` dicts into a new
+        mapping with `DatasetType` keys and `set` of `DatasetRef` values.
+
+        Returns
+        -------
+        dictionary : `NamedKeyDict`
+            Dictionary mapping `DatasetType` to `DatasetRef`, with both
+            `DatasetType` instances and string names usable as keys.
+        """
+        return NamedKeyDict({datasetType: list(refs.values()) for datasetType, refs in self.items()})
+
+    def extract(self, datasetType: DatasetType, dataIds: Iterable[DataCoordinate]
+                ) -> Iterator[DatasetRef]:
+        """Iterate over the contained `DatasetRef` instances that match the
+        given `DatasetType` and data IDs.
+
+        Parameters
+        ----------
+        datasetType : `DatasetType`
+            Dataset type to match.
+        dataIds : `Iterable` [ `DataCoordinate` ]
+            Data IDs to match.
+
+        Returns
+        -------
+        refs : `Iterator` [ `DatasetRef` ]
+            DatasetRef instances for which ``ref.datasetType == datasetType``
+            and ``ref.dataId`` is in ``dataIds``.
+        """
+        refs = self[datasetType]
+        return (refs[dataId] for dataId in dataIds)
+
+
+class _QuantumScaffolding:
+    """Helper class aggregating information about a `Quantum`, used when
+    constructing a `QuantumGraph`.
+
+    See `_PipelineScaffolding` for a top-down description of the full
+    scaffolding data structure.
+
+    Parameters
+    ----------
+    task : _TaskScaffolding
+        Back-reference to the helper object for the `PipelineTask` this quantum
+        represents an execution of.
+    dataId : `DataCoordinate`
+        Data ID for this quantum.
+    """
+    def __init__(self, task: _TaskScaffolding, dataId: DataCoordinate):
+        self.task = task
+        self.dataId = dataId
+        self.inputs = _DatasetDict.fromDatasetTypes(task.inputs.keys(), universe=dataId.universe)
+        self.outputs = _DatasetDict.fromDatasetTypes(task.outputs.keys(), universe=dataId.universe)
+        self.prerequisites = _DatasetDict.fromDatasetTypes(task.prerequisites.keys(),
+                                                           universe=dataId.universe)
+
+    __slots__ = ("task", "dataId", "inputs", "outputs", "prerequisites")
+
+    def __repr__(self):
+        return f"_QuantumScaffolding(taskDef={self.taskDef}, dataId={self.dataId}, ...)"
+
+    task: _TaskScaffolding
+    """Back-reference to the helper object for the `PipelineTask` this quantum
+    represents an execution of.
+    """
+
+    dataId: DataCoordinate
+    """Data ID for this quantum.
+    """
+
+    inputs: _DatasetDict
+    """Nested dictionary containing `DatasetRef` inputs to this quantum.
+
+    This is initialized to map each `DatasetType` to an empty dictionary at
+    construction.  Those nested dictionaries are populated (with data IDs as
+    keys) with unresolved `DatasetRef` instances in
+    `_PipelineScaffolding.connectDataIds`.
+    """
+
+    outputs: _DatasetDict
+    """Nested dictionary containing `DatasetRef` outputs this quantum.
+    """
+
+    prerequisites: _DatasetDict
+    """Nested dictionary containing `DatasetRef` prerequisite inputs to this
+    quantum.
+    """
+
+    def makeQuantum(self) -> Quantum:
+        """Transform the scaffolding object into a true `Quantum` instance.
+
+        Returns
+        -------
+        quantum : `Quantum`
+            An actual `Quantum` instance.
+        """
+        allInputs = self.inputs.unpackMultiRefs()
+        allInputs.update(self.prerequisites.unpackMultiRefs())
+        # Give the task's Connections class an opportunity to remove some
+        # inputs, or complain if they are unacceptable.
+        config = self.task.taskDef.config
+        connections = config.connections.ConnectionsClass(config=config)
+        # This will raise if one of the check conditions is not met, which is the intended
+        # behavior
+        allInputs = connections.adjustQuantum(allInputs)
+        return Quantum(
+            taskName=self.task.taskDef.taskName,
+            taskClass=self.task.taskDef.taskClass,
+            dataId=self.dataId,
+            initInputs=self.task.initInputs.unpackSingleRefs(),
+            predictedInputs=allInputs,
+            outputs=self.outputs.unpackMultiRefs(),
+        )
 
 
 @dataclass
@@ -226,44 +279,23 @@ class _TaskScaffolding:
         constructed.
     datasetTypes : `TaskDatasetTypes`
         Data structure that categorizes the dataset types used by this task.
-
-    Raises
-    ------
-    GraphBuilderError
-        Raised if the task's dimensions are not a subset of the union of the
-        pipeline's dataset dimensions.
     """
     def __init__(self, taskDef: TaskDef, parent: _PipelineScaffolding, datasetTypes: TaskDatasetTypes):
         universe = parent.dimensions.universe
         self.taskDef = taskDef
         self.dimensions = DimensionGraph(universe, names=taskDef.connections.dimensions)
-        if not self.dimensions.issubset(parent.dimensions):
-            raise GraphBuilderError(f"Task with label '{taskDef.label}' has dimensions "
-                                    f"{self.dimensions} that are not a subset of "
-                                    f"the pipeline dimensions {parent.dimensions}.")
-
-        # Initialize _DatasetScaffoldingDicts as subsets of the one or two
+        assert self.dimensions.issubset(parent.dimensions)
+        # Initialize _DatasetDicts as subsets of the one or two
         # corresponding dicts in the parent _PipelineScaffolding.
-        self.initInputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.initInputs,
-                                                             parent.initInputs, parent.initIntermediates)
-        self.initOutputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.initOutputs,
-                                                              parent.initIntermediates, parent.initOutputs)
-        self.inputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.inputs,
-                                                         parent.inputs, parent.intermediates)
-        self.outputs = _DatasetScaffoldingDict.fromSubset(datasetTypes.outputs,
-                                                          parent.intermediates, parent.outputs)
-        self.prerequisites = _DatasetScaffoldingDict.fromSubset(datasetTypes.prerequisites,
-                                                                parent.prerequisites)
-        # Add backreferences to the _DatasetScaffolding objects that point to
-        # this Task.
-        for dataset in itertools.chain(self.initInputs.values(), self.inputs.values(),
-                                       self.prerequisites.values()):
-            dataset.consumers[self.taskDef.label] = self
-        for dataset in itertools.chain(self.initOutputs.values(), self.outputs.values()):
-            assert dataset.producer is None
-            dataset.producer = self
+        self.initInputs = _DatasetDict.fromSubset(datasetTypes.initInputs, parent.initInputs,
+                                                  parent.initIntermediates)
+        self.initOutputs = _DatasetDict.fromSubset(datasetTypes.initOutputs, parent.initIntermediates,
+                                                   parent.initOutputs)
+        self.inputs = _DatasetDict.fromSubset(datasetTypes.inputs, parent.inputs, parent.intermediates)
+        self.outputs = _DatasetDict.fromSubset(datasetTypes.outputs, parent.intermediates, parent.outputs)
+        self.prerequisites = _DatasetDict.fromSubset(datasetTypes.prerequisites, parent.prerequisites)
         self.dataIds = set()
-        self.quanta = []
+        self.quanta = {}
 
     def __repr__(self):
         # Default dataclass-injected __repr__ gets caught in an infinite loop
@@ -279,56 +311,36 @@ class _TaskScaffolding:
     """The dimensions of a single `Quantum` of this task (`DimensionGraph`).
     """
 
-    initInputs: _DatasetScaffoldingDict
+    initInputs: _DatasetDict
     """Dictionary containing information about datasets used to construct this
-    task (`_DatasetScaffoldingDict`).
+    task (`_DatasetDict`).
     """
 
-    initOutputs: _DatasetScaffoldingDict
+    initOutputs: _DatasetDict
     """Dictionary containing information about datasets produced as a
-    side-effect of constructing this task (`_DatasetScaffoldingDict`).
+    side-effect of constructing this task (`_DatasetDict`).
     """
 
-    inputs: _DatasetScaffoldingDict
+    inputs: _DatasetDict
     """Dictionary containing information about datasets used as regular,
-    graph-constraining inputs to this task (`_DatasetScaffoldingDict`).
+    graph-constraining inputs to this task (`_DatasetDict`).
     """
 
-    outputs: _DatasetScaffoldingDict
+    outputs: _DatasetDict
     """Dictionary containing information about datasets produced by this task
-    (`_DatasetScaffoldingDict`).
+    (`_DatasetDict`).
     """
 
-    prerequisites: _DatasetScaffoldingDict
+    prerequisites: _DatasetDict
     """Dictionary containing information about input datasets that must be
     present in the repository before any Pipeline containing this task is run
-    (`_DatasetScaffoldingDict`).
+    (`_DatasetDict`).
     """
 
-    dataIds: Set[ExpandedDataCoordinate]
-    """Data IDs for all quanta for this task in the graph (`set` of
-    `ExpandedDataCoordinate`).
-
-    Populated after construction by `_PipelineScaffolding.fillDataIds`.
+    quanta: Dict[DataCoordinate, _QuantumScaffolding]
+    """Dictionary mapping data ID to a scaffolding object for the Quantum of
+    this task with that data ID.
     """
-
-    quanta: List[Quantum]
-    """All quanta for this task in the graph (`list` of `Quantum`).
-
-    Populated after construction by `_PipelineScaffolding.fillQuanta`.
-    """
-
-    def addQuantum(self, quantum: Quantum):
-        config = self.taskDef.config
-        connectionClass = config.connections.ConnectionsClass
-        connectionInstance = connectionClass(config=config)
-        # This will raise if one of the check conditions is not met, which is the intended
-        # behavior
-        result = connectionInstance.adjustQuantum(quantum.predictedInputs)
-        quantum._predictedInputs = NamedKeyDict(result)
-
-        # If this function has reached this far add the quantum
-        self.quanta.append(quantum)
 
     def makeQuantumGraphTaskNodes(self) -> QuantumGraphTaskNodes:
         """Create a `QuantumGraphTaskNodes` instance from the information in
@@ -341,9 +353,9 @@ class _TaskScaffolding:
         """
         return QuantumGraphTaskNodes(
             taskDef=self.taskDef,
-            quanta=self.quanta,
-            initInputs=self.initInputs.unpackRefs(),
-            initOutputs=self.initOutputs.unpackRefs(),
+            quanta=[q.makeQuantum() for q in self.quanta.values()],
+            initInputs=self.initInputs.unpackSingleRefs(),
+            initOutputs=self.initOutputs.unpackSingleRefs(),
         )
 
 
@@ -360,49 +372,40 @@ class _PipelineScaffolding:
     universe : `DimensionUniverse`
         Universe of all possible dimensions.
 
-    Raises
-    ------
-    GraphBuilderError
-        Raised if the task's dimensions are not a subset of the union of the
-        pipeline's dataset dimensions.
-
     Notes
     -----
     The scaffolding data structure contains nested data structures for both
-    tasks (`_TaskScaffolding`) and datasets (`_DatasetScaffolding`), with the
-    latter held by `_DatasetScaffoldingDict`.  The dataset data structures are
-    shared between the pipeline-level structure (which aggregates all datasets
-    and categorizes them from the perspective of the complete pipeline) and the
-    individual tasks that use them as inputs and outputs.
+    tasks (`_TaskScaffolding`) and datasets (`_DatasetDict`).  The dataset
+    data structures are shared between the pipeline-level structure (which
+    aggregates all datasets and categorizes them from the perspective of the
+    complete pipeline) and the individual tasks that use them as inputs and
+    outputs.
 
-    `QuantumGraph` construction proceeds in five steps, with each corresponding
+    `QuantumGraph` construction proceeds in four steps, with each corresponding
     to a different `_PipelineScaffolding` method:
 
     1. When `_PipelineScaffolding` is constructed, we extract and categorize
        the DatasetTypes used by the pipeline (delegating to
        `PipelineDatasetTypes.fromPipeline`), then use these to construct the
-       nested `_TaskScaffolding` and `_DatasetScaffolding` objects.
+       nested `_TaskScaffolding` and `_DatasetDict` objects.
 
-    2. In `fillDataIds`, we construct and run the "Big Join Query", which
+    2. In `connectDataIds`, we construct and run the "Big Join Query", which
        returns related tuples of all dimensions used to identify any regular
        input, output, and intermediate datasets (not prerequisites).  We then
        iterate over these tuples of related dimensions, identifying the subsets
-       that correspond to distinct data IDs for each task and dataset type.
+       that correspond to distinct data IDs for each task and dataset type,
+       and then create `_QuantumScaffolding` objects.
 
-    3. In `fillDatasetRefs`, we run follow-up queries against all of the
-       dataset data IDs previously identified, populating the
-       `_DatasetScaffolding.refs` lists - except for those for prerequisite
-        datasets, which cannot be resolved until distinct quanta are
-        identified.
+    3. In `resolveDatasetRefs`, we run follow-up queries against all of the
+       dataset data IDs previously identified, transforming unresolved
+       DatasetRefs into resolved DatasetRefs where appropriate.  We then look
+       up prerequisite datasets for all quanta.
 
-    4. In `fillQuanta`, we extract subsets from the lists of `DatasetRef` into
-       the inputs and outputs for each `Quantum` and search for prerequisite
-       datasets, populating `_TaskScaffolding.quanta`.
-
-    5. In `makeQuantumGraph`, we construct a `QuantumGraph` from the lists of
-       per-task quanta identified in the previous step.
+    4. In `makeQuantumGraph`, we construct a `QuantumGraph` from the lists of
+       per-task `_QuantumScaffolding` objects.
     """
     def __init__(self, pipeline, *, registry):
+        _LOG.debug("Initializing data structures for QuantumGraph generation.")
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
         datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, registry=registry)
@@ -410,8 +413,8 @@ class _PipelineScaffolding:
         # that will (later) hold addiitonal information about them.
         for attr in ("initInputs", "initIntermediates", "initOutputs",
                      "inputs", "intermediates", "outputs", "prerequisites"):
-            setattr(self, attr, _DatasetScaffoldingDict.fromDatasetTypes(getattr(datasetTypes, attr),
-                                                                         universe=registry.dimensions))
+            setattr(self, attr, _DatasetDict.fromDatasetTypes(getattr(datasetTypes, attr),
+                                                              universe=registry.dimensions))
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join query.
         self.dimensions = self.inputs.dimensions.union(self.intermediates.dimensions,
@@ -436,39 +439,39 @@ class _PipelineScaffolding:
     (`list` of `_TaskScaffolding`).
     """
 
-    initInputs: _DatasetScaffoldingDict
+    initInputs: _DatasetDict
     """Datasets consumed but not produced when constructing the tasks in this
-    pipeline (`_DatasetScaffoldingDict`).
+    pipeline (`_DatasetDict`).
     """
 
-    initIntermediates: _DatasetScaffoldingDict
+    initIntermediates: _DatasetDict
     """Datasets that are both consumed and produced when constructing the tasks
-    in this pipeline (`_DatasetScaffoldingDict`).
+    in this pipeline (`_DatasetDict`).
     """
 
-    initOutputs: _DatasetScaffoldingDict
+    initOutputs: _DatasetDict
     """Datasets produced but not consumed when constructing the tasks in this
-    pipeline (`_DatasetScaffoldingDict`).
+    pipeline (`_DatasetDict`).
     """
 
-    inputs: _DatasetScaffoldingDict
+    inputs: _DatasetDict
     """Datasets that are consumed but not produced when running this pipeline
-    (`_DatasetScaffoldingDict`).
+    (`_DatasetDict`).
     """
 
-    intermediates: _DatasetScaffoldingDict
+    intermediates: _DatasetDict
     """Datasets that are both produced and consumed when running this pipeline
-    (`_DatasetScaffoldingDict`).
+    (`_DatasetDict`).
     """
 
-    outputs: _DatasetScaffoldingDict
+    outputs: _DatasetDict
     """Datasets produced but not consumed when when running this pipeline
-    (`_DatasetScaffoldingDict`).
+    (`_DatasetDict`).
     """
 
-    prerequisites: _DatasetScaffoldingDict
+    prerequisites: _DatasetDict
     """Datasets that are consumed when running this pipeline and looked up
-    per-Quantum when generating the graph (`_DatasetScaffoldingDict`).
+    per-Quantum when generating the graph (`_DatasetDict`).
     """
 
     dimensions: DimensionGraph
@@ -479,7 +482,7 @@ class _PipelineScaffolding:
     This is required to be a superset of all task quantum dimensions.
     """
 
-    def fillDataIds(self, registry, collections, userQuery):
+    def connectDataIds(self, registry, collections, userQuery):
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
         This method populates `_TaskScaffolding.dataIds` and
@@ -494,44 +497,65 @@ class _PipelineScaffolding:
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
         """
+        _LOG.debug("Building query for data IDs.")
         # Initialization datasets always have empty data IDs.
         emptyDataId = ExpandedDataCoordinate(registry.dimensions.empty, (), records={})
-        for scaffolding in itertools.chain(self.initInputs.values(),
-                                           self.initIntermediates.values(),
-                                           self.initOutputs.values()):
-            scaffolding.dataIds.add(emptyDataId)
+        for datasetType, refs in itertools.chain(self.initInputs.items(),
+                                                 self.initIntermediates.items(),
+                                                 self.initOutputs.items()):
+            refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
         # Run one big query for the data IDs for task dimensions and regular
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
+        _LOG.debug("Submitting data ID query and processing results.")
         resultIter = registry.queryDimensions(
             self.dimensions,
             datasets=list(self.inputs),
             collections=collections,
             where=userQuery,
         )
-        # Iterate over query results and populate the data IDs in
-        # self._TaskScaffolding.refs, extracting the subsets of the common data
-        # ID from the query corresponding to the dimensions of each.  By using
-        # sets, we remove duplicates caused by query rows in which the
-        # dimensions that change are not relevant for that task or dataset
-        # type.  For example, if the Big Join Query involves the dimensions
-        # (instrument, visit, detector, skymap, tract, patch), we extract
-        # "calexp" data IDs from the instrument, visit, and detector values
-        # only, and rely on `set.add` to avoid duplications due to result rows
-        # in which only skymap, tract, and patch are varying.  The Big Join
-        # Query is defined such that only visit+detector and tract+patch
-        # combinations that represent spatial overlaps are included in the
-        # results.
-        for commonDataId in resultIter:
-            for taskScaffolding in self.tasks:
-                taskScaffolding.dataIds.add(commonDataId.subset(taskScaffolding.dimensions))
-            for datasetType, scaffolding in itertools.chain(self.inputs.items(),
-                                                            self.intermediates.items(),
-                                                            self.outputs.items()):
-                scaffolding.dataIds.add(commonDataId.subset(scaffolding.dimensions))
+        # Iterate over query results, populating data IDs for datasets and
+        # quanta and then connecting them to each other.
+        for n, commonDataId in enumerate(resultIter):
+            # Create DatasetRefs for all DatasetTypes from this result row,
+            # noting that we might have created some already.
+            # We remember both those that already existed and those that we
+            # create now.
+            refsForRow = {}
+            for datasetType, refs in itertools.chain(self.inputs.items(), self.intermediates.items(),
+                                                     self.outputs.items()):
+                datasetDataId = commonDataId.subset(datasetType.dimensions)
+                ref = refs.get(datasetDataId)
+                if ref is None:
+                    ref = DatasetRef(datasetType, datasetDataId)
+                    refs[datasetDataId] = ref
+                refsForRow[datasetType.name] = ref
+            # Create _QuantumScaffolding objects for all tasks from this result
+            # row, noting that we might have created some already.
+            for task in self.tasks:
+                quantumDataId = commonDataId.subset(task.dimensions)
+                quantum = task.quanta.get(quantumDataId)
+                if quantum is None:
+                    quantum = _QuantumScaffolding(task=task, dataId=quantumDataId)
+                    task.quanta[quantumDataId] = quantum
+                # Whether this is a new quantum or an existing one, we can now
+                # associate the DatasetRefs for this row with it.  The fact
+                # the fact that a Quantum data ID and a dataset data ID both
+                # came from the same result row is what tells us they should
+                # be associated.
+                # Many of these associates will be duplicates (because another
+                # query row that differed from this one only in irrelevant
+                # dimensions already added them), and we use sets to skip.
+                for datasetType in task.inputs:
+                    ref = refsForRow[datasetType.name]
+                    quantum.inputs[datasetType.name][ref.dataId] = ref
+                for datasetType in task.outputs:
+                    ref = refsForRow[datasetType.name]
+                    quantum.outputs[datasetType.name][ref.dataId] = ref
+        _LOG.debug("Finished processing %d rows from data ID query.", n)
 
-    def fillDatasetRefs(self, registry, collections, run, *, skipExisting=True):
+    def resolveDatasetRefs(self, registry, collections, run, *, skipExisting=True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -560,102 +584,87 @@ class _PipelineScaffolding:
             cannot be identified at this stage, and is handled by `fillQuanta`
             instead.
         """
-        # Look up input and initInput datasets in the input collection(s).
-        for datasetType, scaffolding in itertools.chain(self.initInputs.items(), self.inputs.items()):
-            for dataId in scaffolding.dataIds:
-                refs = list(
-                    registry.queryDatasets(
-                        datasetType,
-                        collections=collections,
-                        dataId=dataId,
-                        deduplicate=True,
-                        expand=True,
-                    )
-                )
-                if len(refs) != 1:
-                    raise RuntimeError(f"Expected exactly one instance of input {datasetType} "
-                                       f"for data ID {dataId}; got {refs}.")
-                scaffolding.refs.extend(refs)
-        # Look up [init] intermediate and output datasets in the output collection,
-        # unless clobberExisting is True (in which case we don't care if these
-        # already exist).
-        for datasetType, scaffolding in itertools.chain(self.initIntermediates.items(),
-                                                        self.initOutputs.items(),
-                                                        self.intermediates.items(),
-                                                        self.outputs.items()):
-            for dataId in scaffolding.dataIds:
-                # TODO: we could easily support per-DatasetType skipExisting
-                # (it might make sense to put them in originInfo), and I could
-                # imagine that being useful - it's probably required in order
-                # to support writing initOutputs before QuantumGraph
-                # generation.
-                if run is not None:
+        # Look up [init] intermediate and output datasets in the output
+        # collection, if there is an output collection.
+        if run is not None:
+            for datasetType, refs in itertools.chain(self.initIntermediates.items(),
+                                                     self.initOutputs.items(),
+                                                     self.intermediates.items(),
+                                                     self.outputs.items()):
+                _LOG.debug("Resolving %d datasets for intermediate and/or output dataset %s.",
+                           len(refs), datasetType.name)
+                for dataId, unresolvedRef in refs.items():
+                    # TODO: we could easily support per-DatasetType
+                    # skipExisting and I could imagine that being useful - it's
+                    # probably required in order to support writing initOutputs
+                    # before QuantumGraph generation.
                     ref = registry.findDataset(datasetType=datasetType, dataId=dataId, collections=run)
-                else:
-                    ref = None
-                if ref is None:
-                    ref = DatasetRef(datasetType, dataId)
-                elif not skipExisting:
-                    raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
-                                            f"output RUN collection '{run}' with data ID {dataId}.")
-                scaffolding.refs.append(ref)
-        # Prerequisite dataset lookups are deferred until fillQuanta.
-
-    def fillQuanta(self, registry, collections, *, skipExisting=True):
-        """Define quanta for each task by splitting up the datasets associated
-        with each task data ID.
-
-        This method populates `_TaskScaffolding.quanta`.
-
-        Parameters
-        ----------
-        registry : `lsst.daf.butler.Registry`
-            Registry for the data repository; used for all data ID queries.
-        collections : `lsst.daf.butler.CollectionSearch`
-            Object representing the collections to search for input datasets.
-        skipExisting : `bool`, optional
-            If `True` (default), a Quantum is not created if all its outputs
-            already exist.
-        """
+                    if ref is not None:
+                        if skipExisting:
+                            refs[dataId] = ref
+                        else:
+                            raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
+                                                    f"output RUN collection '{run}' with data ID {dataId}.")
+        # Look up input and initInput datasets in the input collection(s).
+        for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
+            _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
+            for dataId in refs:
+                refs[dataId] = registry.findDataset(datasetType, dataId=dataId, collections=collections)
+            if any(ref is None for ref in refs.values()):
+                raise RuntimeError(
+                    f"One or more dataset of type '{datasetType.name}' was "
+                    f"present in a previous query, but could not be found now."
+                    f"This is either a logic bug in QuantumGraph generation, "
+                    f"or the input collections have been modified since "
+                    f"QuantumGraph generation began."
+                )
+        # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
+        # replacing the unresolved refs there, and then look up prerequisites.
         for task in self.tasks:
-            for quantumDataId in task.dataIds:
-                # Identify the (regular) inputs that correspond to the Quantum
-                # with this data ID.  These are those whose data IDs have the
-                # same values for all dimensions they have in common.
-                # We do this data IDs expanded to include implied dimensions,
-                # which is why _DatasetScaffolding.dimensions is thus expanded
-                # even though DatasetType.dimensions is not.
-                inputs = NamedKeyDict()
-                for datasetType, scaffolding in task.inputs.items():
-                    inputs[datasetType] = [ref for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds)
-                                           if registry.relateDataIds(quantumDataId, dataId)]
-
-                _LOG.debug("%s dataId %s has inputs: %s",
-                           task.taskDef.taskName, quantumDataId, list(inputs.names))
-
-                # Same for outputs.
-                outputs = NamedKeyDict()
-                allOutputsPresent = True
-                for datasetType, scaffolding in task.outputs.items():
-                    outputs[datasetType] = []
-                    for ref, dataId in zip(scaffolding.refs, scaffolding.dataIds):
-                        if registry.relateDataIds(quantumDataId, dataId):
-                            if ref.id is None:
-                                allOutputsPresent = False
+            _LOG.debug(
+                "Applying resolutions and finding prerequisites for %d quanta of task with label '%s'.",
+                len(task.quanta),
+                task.taskDef.label
+            )
+            lookupFunctions = {
+                c.name: c.lookupFunction
+                for c in iterConnections(task.taskDef.connections, "prerequisiteInputs")
+                if c.lookupFunction is not None
+            }
+            dataIdsToSkip = []
+            for quantum in task.quanta.values():
+                # Process outputs datasets only if there is a run to look for
+                # outputs in and skipExisting is True.  Note that if
+                # skipExisting is False, any output datasets that already exist
+                # would have already caused an exception to be raised.
+                # We never update the DatasetRefs in the quantum because those
+                # should never be resolved.
+                if run is not None and skipExisting:
+                    resolvedRefs = []
+                    unresolvedRefs = []
+                    for datasetType, originalRefs in quantum.outputs.items():
+                        for ref in task.outputs.extract(datasetType, originalRefs.keys()):
+                            if ref.id is not None:
+                                resolvedRefs.append(ref)
                             else:
-                                assert skipExisting, "Existing outputs should have already been identified."
-                                if not allOutputsPresent:
-                                    raise OutputExistsError(f"Output {datasetType.name} with data ID "
-                                                            f"{dataId} already exists, but other outputs "
-                                                            f"for task with label {task.taskDef.label} "
-                                                            f"and data ID {quantumDataId} do not.")
-                            outputs[datasetType].append(ref)
-                if allOutputsPresent and skipExisting:
-                    continue
-
-                _LOG.debug("%s dataID %s has outputs: %s",
-                           task.taskDef.taskName, quantumDataId, list(outputs.names))
-
+                                unresolvedRefs.append(ref)
+                    if resolvedRefs:
+                        if unresolvedRefs:
+                            raise OutputExistsError(
+                                f"Quantum {quantum.dataId} of task with label "
+                                f"'{quantum.taskDef.label}' has some outputs that exist ({resolvedRefs}) "
+                                f"and others that don't ({unresolvedRefs})."
+                            )
+                        else:
+                            # All outputs are already present; skip this
+                            # quantum and continue to the next.
+                            dataIdsToSkip.append(quantum.dataId)
+                            continue
+                # Update the input DatasetRefs to the resolved ones we already
+                # searched for.
+                for datasetType, refs in quantum.inputs.items():
+                    for ref in task.inputs.extract(datasetType, refs.keys()):
+                        refs[ref.dataId] = ref
                 # Look up prerequisite datasets in the input collection(s).
                 # These may have dimensions that extend beyond those we queried
                 # for originally, because we want to permit those data ID
@@ -664,49 +673,43 @@ class _PipelineScaffolding:
                 # a different calibration_label, or a refcat with a skypix
                 # value that overlaps the quantum's data ID's region, but not
                 # the user expression used for the initial query.
-                connections = task.taskDef.connections
-                for con_name in connections.prerequisiteInputs:
-                    con = getattr(connections, con_name)
-                    for datasetType in task.prerequisites:
-                        if datasetType.name == con.name:
-                            break
-                    if con.lookupFunction is not None:
-                        refs = list(con.lookupFunction(datasetType, registry,
-                                                       quantumDataId, collections))
+                for datasetType in task.prerequisites:
+                    lookupFunction = lookupFunctions.get(datasetType.name)
+                    if lookupFunction is not None:
+                        refs = list(
+                            lookupFunction(datasetType, registry, quantum.dataId, collections)
+                        )
                     else:
                         refs = list(
                             registry.queryDatasets(
                                 datasetType,
                                 collections=collections,
-                                dataId=quantumDataId,
+                                dataId=quantum.dataId,
                                 deduplicate=True,
                                 expand=True,
                             )
                         )
-                    inputs[datasetType] = refs
-
-                _LOG.debug("%s dataID %s has inputs+prereqs: %s",
-                           task.taskDef.taskName, quantumDataId, list(inputs.names))
-
-                task.addQuantum(
-                    Quantum(
-                        taskName=task.taskDef.taskName,
-                        taskClass=task.taskDef.taskClass,
-                        dataId=quantumDataId,
-                        initInputs=task.initInputs.unpackRefs(),
-                        predictedInputs=inputs,
-                        outputs=outputs,
-                    )
-                )
+                    quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs})
+            # Actually remove any quanta that we decided to skip above.
+            if dataIdsToSkip:
+                _LOG.debug("Pruning %d quanta for task with label '%s' because all of their outputs exist.",
+                           len(dataIdsToSkip), task.taskDef.label)
+                for dataId in dataIdsToSkip:
+                    del task.quanta[dataId]
 
     def makeQuantumGraph(self):
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
+
+        Returns
+        -------
+        graph : `QuantumGraph`
+            The full `QuantumGraph`.
         """
         graph = QuantumGraph(task.makeQuantumGraphTaskNodes() for task in self.tasks)
-        graph.initInputs = self.initInputs.unpackRefs()
-        graph.initOutputs = self.initOutputs.unpackRefs()
-        graph.initIntermediates = self.initIntermediates.unpackRefs()
+        graph.initInputs = self.initInputs.unpackSingleRefs()
+        graph.initOutputs = self.initOutputs.unpackSingleRefs()
+        graph.initIntermediates = self.initIntermediates.unpackSingleRefs()
         return graph
 
 
@@ -782,7 +785,6 @@ class GraphBuilder(object):
             classes.
         """
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
-        scaffolding.fillDataIds(self.registry, collections, userQuery)
-        scaffolding.fillDatasetRefs(self.registry, collections, run, skipExisting=self.skipExisting)
-        scaffolding.fillQuanta(self.registry, collections, skipExisting=self.skipExisting)
+        scaffolding.connectDataIds(self.registry, collections, userQuery)
+        scaffolding.resolveDatasetRefs(self.registry, collections, run, skipExisting=self.skipExisting)
         return scaffolding.makeQuantumGraph()

@@ -440,7 +440,7 @@ class PipelineIR:
         accumulate = {"description": self.description}
         if self.instrument is not None:
             accumulate['instrument'] = self.instrument
-        accumulate['tasks'] = {l: t.to_primitives() for l, t in self.tasks.items()}
+        accumulate['tasks'] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
             accumulate['contracts'] = [c.to_primitives() for c in self.contracts]
         return accumulate
