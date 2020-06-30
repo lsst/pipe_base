@@ -30,6 +30,7 @@ __all__ = ['GraphBuilder']
 # -------------------------------
 import itertools
 from collections import ChainMap
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, Iterable, Iterator, List
 import logging
@@ -481,6 +482,7 @@ class _PipelineScaffolding:
     This is required to be a superset of all task quantum dimensions.
     """
 
+    @contextmanager
     def connectDataIds(self, registry, collections, userQuery):
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
@@ -495,6 +497,15 @@ class _PipelineScaffolding:
             Object representing the collections to search for input datasets.
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
+
+        Returns
+        -------
+        commonDataIds : \
+                `lsst.daf.butler.registry.queries.DataCoordinateQueryResults`
+            An interface to a database temporary table containing all data IDs
+            that will appear in this `QuantumGraph`.  Returned inside a
+            context manager, which will drop the temporary table at the end of
+            the `with` block in which this method is called.
         """
         _LOG.debug("Building query for data IDs.")
         # Initialization datasets always have empty data IDs.
@@ -508,57 +519,54 @@ class _PipelineScaffolding:
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
         _LOG.debug("Submitting data ID query and processing results.")
-        resultIter = registry.queryDimensions(
-            self.dimensions,
-            datasets=list(self.inputs),
-            collections=collections,
-            where=userQuery,
-        )
-        # Iterate over query results, populating data IDs for datasets and
-        # quanta and then connecting them to each other.
-        n = -1  # If we had no results
-        for n, commonDataId in enumerate(resultIter):
-            # Create DatasetRefs for all DatasetTypes from this result row,
-            # noting that we might have created some already.
-            # We remember both those that already existed and those that we
-            # create now.
-            refsForRow = {}
-            for datasetType, refs in itertools.chain(self.inputs.items(), self.intermediates.items(),
-                                                     self.outputs.items()):
-                datasetDataId = commonDataId.subset(datasetType.dimensions)
-                ref = refs.get(datasetDataId)
-                if ref is None:
-                    ref = DatasetRef(datasetType, datasetDataId)
-                    refs[datasetDataId] = ref
-                refsForRow[datasetType.name] = ref
-            # Create _QuantumScaffolding objects for all tasks from this result
-            # row, noting that we might have created some already.
-            for task in self.tasks:
-                quantumDataId = commonDataId.subset(task.dimensions)
-                quantum = task.quanta.get(quantumDataId)
-                if quantum is None:
-                    quantum = _QuantumScaffolding(task=task, dataId=quantumDataId)
-                    task.quanta[quantumDataId] = quantum
-                # Whether this is a new quantum or an existing one, we can now
-                # associate the DatasetRefs for this row with it.  The fact
-                # the fact that a Quantum data ID and a dataset data ID both
-                # came from the same result row is what tells us they should
-                # be associated.
-                # Many of these associates will be duplicates (because another
-                # query row that differed from this one only in irrelevant
-                # dimensions already added them), and we use sets to skip.
-                for datasetType in task.inputs:
-                    ref = refsForRow[datasetType.name]
-                    quantum.inputs[datasetType.name][ref.dataId] = ref
-                for datasetType in task.outputs:
-                    ref = refsForRow[datasetType.name]
-                    quantum.outputs[datasetType.name][ref.dataId] = ref
-        if n >= 0:
-            _LOG.debug("Finished processing %d rows from data ID query.", n+1)
-        else:
-            _LOG.debug("Received no rows from data ID query.")
+        with registry.queryDataIds(self.dimensions,
+                                   datasets=list(self.inputs),
+                                   collections=collections,
+                                   where=userQuery,
+                                   ).materialize() as commonDataIds:
+            commonDataIds = commonDataIds.expanded()
+            # Iterate over query results, populating data IDs for datasets and
+            # quanta and then connecting them to each other.
+            for n, commonDataId in enumerate(commonDataIds):
+                # Create DatasetRefs for all DatasetTypes from this result row,
+                # noting that we might have created some already.
+                # We remember both those that already existed and those that we
+                # create now.
+                refsForRow = {}
+                for datasetType, refs in itertools.chain(self.inputs.items(), self.intermediates.items(),
+                                                         self.outputs.items()):
+                    datasetDataId = commonDataId.subset(datasetType.dimensions)
+                    ref = refs.get(datasetDataId)
+                    if ref is None:
+                        ref = DatasetRef(datasetType, datasetDataId)
+                        refs[datasetDataId] = ref
+                    refsForRow[datasetType.name] = ref
+                # Create _QuantumScaffolding objects for all tasks from this result
+                # row, noting that we might have created some already.
+                for task in self.tasks:
+                    quantumDataId = commonDataId.subset(task.dimensions)
+                    quantum = task.quanta.get(quantumDataId)
+                    if quantum is None:
+                        quantum = _QuantumScaffolding(task=task, dataId=quantumDataId)
+                        task.quanta[quantumDataId] = quantum
+                    # Whether this is a new quantum or an existing one, we can now
+                    # associate the DatasetRefs for this row with it.  The fact
+                    # the fact that a Quantum data ID and a dataset data ID both
+                    # came from the same result row is what tells us they should
+                    # be associated.
+                    # Many of these associates will be duplicates (because another
+                    # query row that differed from this one only in irrelevant
+                    # dimensions already added them), and we use sets to skip.
+                    for datasetType in task.inputs:
+                        ref = refsForRow[datasetType.name]
+                        quantum.inputs[datasetType.name][ref.dataId] = ref
+                    for datasetType in task.outputs:
+                        ref = refsForRow[datasetType.name]
+                        quantum.outputs[datasetType.name][ref.dataId] = ref
+            _LOG.debug("Finished processing %d rows from data ID query.", n)
+            yield commonDataIds
 
-    def resolveDatasetRefs(self, registry, collections, run, *, skipExisting=True):
+    def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExisting=True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -574,6 +582,9 @@ class _PipelineScaffolding:
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
+        commonDataIds : \
+                `lsst.daf.butler.registry.queries.DataCoordinateQueryResults`
+            Result of a previous call to `connectDataIds`.
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
             already exist in ``run``.  Ignored if ``run`` is `None`.
@@ -596,28 +607,47 @@ class _PipelineScaffolding:
                                                      self.outputs.items()):
                 _LOG.debug("Resolving %d datasets for intermediate and/or output dataset %s.",
                            len(refs), datasetType.name)
-                for dataId, unresolvedRef in refs.items():
+                resolvedRefQueryResults = commonDataIds.subset(
+                    datasetType.dimensions,
+                    unique=True
+                ).findDatasets(
+                    datasetType,
+                    collections=run,
+                    deduplicate=True
+                )
+                for resolvedRef in resolvedRefQueryResults:
                     # TODO: we could easily support per-DatasetType
                     # skipExisting and I could imagine that being useful - it's
                     # probably required in order to support writing initOutputs
                     # before QuantumGraph generation.
-                    ref = registry.findDataset(datasetType=datasetType, dataId=dataId, collections=run)
-                    if ref is not None:
-                        if skipExisting:
-                            refs[dataId] = ref
-                        else:
-                            raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
-                                                    f"output RUN collection '{run}' with data ID {dataId}.")
+                    assert resolvedRef.dataId in refs
+                    if skipExisting:
+                        refs[resolvedRef.dataId] = resolvedRef
+                    else:
+                        raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
+                                                f"output RUN collection '{run}' with data ID"
+                                                f" {resolvedRef.dataId}.")
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
-            for dataId in refs:
-                refs[dataId] = registry.findDataset(datasetType, dataId=dataId, collections=collections)
-            if any(ref is None for ref in refs.values()):
+            resolvedRefQueryResults = commonDataIds.subset(
+                datasetType.dimensions,
+                unique=True
+            ).findDatasets(
+                datasetType,
+                collections=collections,
+                deduplicate=True
+            )
+            dataIdsNotFoundYet = set(refs.keys())
+            for resolvedRef in resolvedRefQueryResults:
+                dataIdsNotFoundYet.discard(resolvedRef.dataId)
+                refs[resolvedRef.dataId] = resolvedRef
+            if dataIdsNotFoundYet:
                 raise RuntimeError(
-                    f"One or more dataset of type '{datasetType.name}' was "
-                    f"present in a previous query, but could not be found now."
-                    f"This is either a logic bug in QuantumGraph generation, "
+                    f"{len(dataIdsNotFoundYet)} dataset(s) of type "
+                    f"'{datasetType.name}' was/were present in a previous "
+                    f"query, but could not be found now."
+                    f"This is either a logic bug in QuantumGraph generation "
                     f"or the input collections have been modified since "
                     f"QuantumGraph generation began."
                 )
@@ -683,15 +713,10 @@ class _PipelineScaffolding:
                             lookupFunction(datasetType, registry, quantum.dataId, collections)
                         )
                     else:
-                        refs = list(
-                            registry.queryDatasets(
-                                datasetType,
-                                collections=collections,
-                                dataId=quantum.dataId,
-                                deduplicate=True,
-                                expand=True,
-                            )
-                        )
+                        refs = list(registry.queryDatasets(datasetType,
+                                                           collections=collections,
+                                                           dataId=quantum.dataId,
+                                                           deduplicate=True))
                     quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs})
             # Actually remove any quanta that we decided to skip above.
             if dataIdsToSkip:
@@ -788,6 +813,7 @@ class GraphBuilder(object):
             classes.
         """
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
-        scaffolding.connectDataIds(self.registry, collections, userQuery)
-        scaffolding.resolveDatasetRefs(self.registry, collections, run, skipExisting=self.skipExisting)
+        with scaffolding.connectDataIds(self.registry, collections, userQuery) as commonDataIds:
+            scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
+                                           skipExisting=self.skipExisting)
         return scaffolding.makeQuantumGraph()
