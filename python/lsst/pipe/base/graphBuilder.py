@@ -518,15 +518,18 @@ class _PipelineScaffolding:
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
-        _LOG.debug("Submitting data ID query and processing results.")
+        _LOG.debug("Submitting data ID query and materializing results.")
         with registry.queryDataIds(self.dimensions,
                                    datasets=list(self.inputs),
                                    collections=collections,
                                    where=userQuery,
                                    ).materialize() as commonDataIds:
+            _LOG.debug("Expanding data IDs.")
             commonDataIds = commonDataIds.expanded()
+            _LOG.debug("Iterating over query results to associate quanta with datasets.")
             # Iterate over query results, populating data IDs for datasets and
             # quanta and then connecting them to each other.
+            n = 0
             for n, commonDataId in enumerate(commonDataIds):
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
