@@ -483,15 +483,30 @@ class TaskDatasetTypes:
                                          f"connections ({rest1}) are inconsistent with those in "
                                          f"registry's version of this dataset ({rest2}).")
                 else:
-                    datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
-                                              c.storageClass)
+                    # Component dataset types are not explicitly in the
+                    # registry.  This complicates consistency checks with
+                    # registry and requires we work out the composite storage
+                    # class.
+                    registryDatasetType = None
                     try:
                         registryDatasetType = registry.getDatasetType(c.name)
                     except KeyError:
+                        compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
+                        parentStorageClass = DatasetType.PlaceholderParentStorageClass \
+                            if componentName else None
+                        datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
+                                                  c.storageClass,
+                                                  parentStorageClass=parentStorageClass)
                         registryDatasetType = datasetType
-                    if datasetType != registryDatasetType:
+                    else:
+                        datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
+                                                  c.storageClass,
+                                                  parentStorageClass=registryDatasetType.parentStorageClass)
+
+                    if registryDatasetType and datasetType != registryDatasetType:
                         raise ValueError(f"Supplied dataset type ({datasetType}) inconsistent with "
-                                         f"registry definition ({registryDatasetType})")
+                                         f"registry definition ({registryDatasetType}) "
+                                         f"for {taskDef.label}.")
                 datasetTypes.add(datasetType)
             if freeze:
                 datasetTypes.freeze()
