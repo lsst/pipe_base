@@ -306,6 +306,18 @@ class PipelineIRTestCase(unittest.TestCase):
             loaded_pipeline = PipelineIR.from_file(tf.name)
         self.assertEqual(pipeline, loaded_pipeline)
 
+    def testPipelineYamlLoader(self):
+        # Tests that an exception is thrown in the case a key is used multiple
+        # times in a given scope within a pipeline file
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        tasks:
+            modA: test1
+            modB: test2
+            modA: test3
+        """)
+        self.assertRaises(KeyError, PipelineIR.from_string, pipeline_str)
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass

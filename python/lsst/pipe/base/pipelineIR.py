@@ -1,3 +1,4 @@
+__all__ = ("ConfigIR", "ContractError", "ContractIR", "InheritIR", "PipelineIR", "TaskIR")
 # This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
@@ -19,12 +20,35 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Union, Generator
 
 import os
 import yaml
 import warnings
+
+
+class PipelineYamlLoader(yaml.SafeLoader):
+    """This is a specialized version of yaml's SafeLoader. It checks and raises
+    an exception if it finds that there are multiple instances of the same key
+    found inside a pipeline file at a given scope.
+    """
+    def construct_mapping(self, node, deep=False):
+        # do the call to super first so that it can do all the other forms of
+        # checking on this node. If you check the uniqueness of keys first
+        # it would save the work that super does in the case of a failure, but
+        # it might fail in the case that the node was the incorrect node due
+        # to a parsing error, and the resulting exception would be difficult to
+        # understand.
+        mapping = super().construct_mapping(node, deep)
+        # Check if there are any duplicate keys
+        all_keys = Counter(key_node.value for key_node, _ in node.value)
+        duplicates = {k for k, i in all_keys.items() if i != 1}
+        if duplicates:
+            raise KeyError("Pipeline files must not have duplicated keys, "
+                           f"{duplicates} appeared multiple times")
+        return mapping
 
 
 class ContractError(Exception):
@@ -405,7 +429,7 @@ class PipelineIR:
         pipeline_string : `str`
             A string that is formatted according like a pipeline document
         """
-        loaded_yaml = yaml.safe_load(pipeline_string)
+        loaded_yaml = yaml.load(pipeline_string, Loader=PipelineYamlLoader)
         return cls(loaded_yaml)
 
     @classmethod
@@ -419,7 +443,7 @@ class PipelineIR:
             Location of document to use in creating a `PipelineIR` object.
         """
         with open(filename, 'r') as f:
-            loaded_yaml = yaml.safe_load(f)
+            loaded_yaml = yaml.load(f, Loader=PipelineYamlLoader)
         return cls(loaded_yaml)
 
     def to_file(self, filename: str):
