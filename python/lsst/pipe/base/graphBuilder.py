@@ -46,7 +46,6 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionGraph,
     DimensionUniverse,
-    ExpandedDataCoordinate,
     NamedKeyDict,
     Quantum,
 )
@@ -499,7 +498,7 @@ class _PipelineScaffolding:
         """
         _LOG.debug("Building query for data IDs.")
         # Initialization datasets always have empty data IDs.
-        emptyDataId = ExpandedDataCoordinate(registry.dimensions.empty, (), records={})
+        emptyDataId = DataCoordinate.makeEmpty(registry.dimensions)
         for datasetType, refs in itertools.chain(self.initInputs.items(),
                                                  self.initIntermediates.items(),
                                                  self.initOutputs.items()):
