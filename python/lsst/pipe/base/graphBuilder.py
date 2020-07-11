@@ -620,6 +620,7 @@ class _PipelineScaffolding:
                 )
         # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
         # replacing the unresolved refs there, and then look up prerequisites.
+        refsToIgnore = []
         for task in self.tasks:
             _LOG.debug(
                 "Applying resolutions and finding prerequisites for %d quanta of task with label '%s'.",
@@ -650,11 +651,15 @@ class _PipelineScaffolding:
                                 unresolvedRefs.append(ref)
                     if resolvedRefs:
                         if unresolvedRefs:
-                            raise OutputExistsError(
+                            _LOG.warn(
                                 f"Quantum {quantum.dataId} of task with label "
-                                f"'{quantum.taskDef.label}' has some outputs that exist ({resolvedRefs}) "
+                                f"'{quantum.task.taskDef.label}' has some outputs that exist ({resolvedRefs}) "
                                 f"and others that don't ({unresolvedRefs})."
+                                f"This may lead to conflicts if running in the same output run"
                             )
+                            for ref in resolvedRefs:
+                                _LOG.debug("Will not use %s", ref)
+                                refsToIgnore.append(ref.id)
                         else:
                             # All outputs are already present; skip this
                             # quantum and continue to the next.
@@ -664,7 +669,8 @@ class _PipelineScaffolding:
                 # searched for.
                 for datasetType, refs in quantum.inputs.items():
                     for ref in task.inputs.extract(datasetType, refs.keys()):
-                        refs[ref.dataId] = ref
+                        if ref.id not in refsToIgnore:
+                            refs[ref.dataId] = ref
                 # Look up prerequisite datasets in the input collection(s).
                 # These may have dimensions that extend beyond those we queried
                 # for originally, because we want to permit those data ID
