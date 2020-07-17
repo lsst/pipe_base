@@ -230,9 +230,9 @@ class QuantumGraph(list):
         ------
         graph : `QuantumGraph`
         """
-        for taskDef, quantum in self.quanta():
-            node = QuantumGraphTaskNodes(taskDef, [quantum],
-                                         quantum.initInputs, quantum.outputs)
+        for qdata in self.traverse():
+            node = QuantumGraphTaskNodes(qdata.taskDef, [qdata.quantum],
+                                         qdata.quantum.initInputs, qdata.quantum.outputs)
             graph = QuantumGraph([node])
             yield graph
 
