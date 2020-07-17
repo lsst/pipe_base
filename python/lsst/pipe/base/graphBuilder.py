@@ -517,6 +517,7 @@ class _PipelineScaffolding:
         )
         # Iterate over query results, populating data IDs for datasets and
         # quanta and then connecting them to each other.
+        n = -1  # If we had no results
         for n, commonDataId in enumerate(resultIter):
             # Create DatasetRefs for all DatasetTypes from this result row,
             # noting that we might have created some already.
@@ -553,7 +554,10 @@ class _PipelineScaffolding:
                 for datasetType in task.outputs:
                     ref = refsForRow[datasetType.name]
                     quantum.outputs[datasetType.name][ref.dataId] = ref
-        _LOG.debug("Finished processing %d rows from data ID query.", n)
+        if n >= 0:
+            _LOG.debug("Finished processing %d rows from data ID query.", n+1)
+        else:
+            _LOG.debug("Received no rows from data ID query.")
 
     def resolveDatasetRefs(self, registry, collections, run, *, skipExisting=True):
         """Perform follow up queries for each dataset data ID produced in
