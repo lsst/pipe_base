@@ -32,10 +32,10 @@ from typing import Callable, Iterable, Optional
 
 from lsst.daf.butler import (
     CollectionSearch,
+    DataCoordinate,
     DatasetRef,
     DatasetType,
     DimensionUniverse,
-    ExpandedDataCoordinate,
     Registry,
 )
 
@@ -185,7 +185,7 @@ class PrerequisiteInput(BaseInput):
         passed to it. If no function is specified, the default temporal spatial
         lookup will be used.
     """
-    lookupFunction: Optional[Callable[[DatasetType, Registry, ExpandedDataCoordinate, CollectionSearch],
+    lookupFunction: Optional[Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch],
                                       Iterable[DatasetRef]]] = None
 
 
