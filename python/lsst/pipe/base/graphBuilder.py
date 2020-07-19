@@ -610,6 +610,7 @@ class _PipelineScaffolding:
                                                      self.outputs.items()):
                 _LOG.debug("Resolving %d datasets for intermediate and/or output dataset %s.",
                            len(refs), datasetType.name)
+                isInit = datasetType in self.initIntermediates or datasetType in self.initOutputs
                 resolvedRefQueryResults = commonDataIds.subset(
                     datasetType.dimensions,
                     unique=True
@@ -624,7 +625,7 @@ class _PipelineScaffolding:
                     # probably required in order to support writing initOutputs
                     # before QuantumGraph generation.
                     assert resolvedRef.dataId in refs
-                    if skipExisting:
+                    if skipExisting or isInit:
                         refs[resolvedRef.dataId] = resolvedRef
                     else:
                         raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
