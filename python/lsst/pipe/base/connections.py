@@ -121,6 +121,11 @@ class PipelineTaskConnectionsMetaclass(type):
                 if 'dimensions' not in kwargs:
                     raise dimensionsValueError
             try:
+                if isinstance(kwargs['dimensions'], str):
+                    raise TypeError("Dimensions must be iterable of dimensions, got str,"
+                                    "possibly omitted trailing comma")
+                if not isinstance(kwargs['dimensions'], typing.Iterable):
+                    raise TypeError("Dimensions must be iterable of dimensions")
                 dct['dimensions'] = set(kwargs['dimensions'])
             except TypeError as exc:
                 raise dimensionsValueError from exc

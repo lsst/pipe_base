@@ -113,6 +113,13 @@ class DimensionedConnection(BaseConnection):
     """
     dimensions: typing.Iterable[str] = ()
 
+    def __post_init__(self):
+        if isinstance(self.dimensions, str):
+            raise TypeError("Dimensions must be iterable of dimensions, got str,"
+                            "possibly omitted trailing comma")
+        if not isinstance(self.dimensions, typing.Iterable):
+            raise TypeError("Dimensions must be iterable of dimensions")
+
     def makeDatasetType(self, universe: DimensionUniverse):
         """Construct a true `DatasetType` instance with normalized dimensions.
         Parameters

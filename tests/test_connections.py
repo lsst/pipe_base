@@ -149,6 +149,23 @@ class TestConnectionsClass(unittest.TestCase):
         with self.assertRaises(ValueError):
             connections.adjustQuantum(inputRefs)
 
+    def testDimensionCheck(self):
+        with self.assertRaises(TypeError):
+            class TestConnectionsWithBrokenDimensionsStr(pipeBase.PipelineTask, dimensions=("a")):
+                pass
+
+        with self.assertRaises(TypeError):
+            class TestConnectionsWithBrokenDimensionsIter(pipeBase.PipelineTask, dimensions=2):
+                pass
+
+        with self.assertRaises(TypeError):
+            pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=("a"), name="output",
+                                            storageClass="mock")
+
+        with self.assertRaises(TypeError):
+            pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=1, name="output",
+                                            storageClass="mock")
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
