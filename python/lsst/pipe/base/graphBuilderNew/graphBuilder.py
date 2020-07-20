@@ -6,7 +6,7 @@ import networkx as nx
 from dataclasses import dataclass, field
 from collections import defaultdict
 
-from lsst.daf.butler import Butler
+from lsst.daf.butler import Butler, Registry
 from .. import (iterConnections, Pipeline)
 from .asyncModules import AsyncBuilder, BuildDirection
 
@@ -85,7 +85,7 @@ class QuantumGraphBuilder:
                 counter.append(value)
         return [k for k, v in counter.counts.items() if v == 1]
 
-    def build(self, registry: dafButler.Registry, products: Optional[Union[str, List[str]]] = None,
+    def build(self, registry: Registry, products: Optional[Union[str, List[str]]] = None,
               where: Optional[Union[str, Mapping[str, str]]] = None):
 
         asyncBuilder = AsyncBuilder(registry=registry, run="test_1", collections=["shared/ci_hsc_output"],)
@@ -96,7 +96,6 @@ class QuantumGraphBuilder:
             graph_output = {name
                             for name in task.connections.allConnections.keys()
                             if name in self.endingNodes}
-            print(task)
             asyncBuilder.addTask(task, graph_input, graph_output, BuildDirection.BACKWARD)
         asyncBuilder.build()
 
