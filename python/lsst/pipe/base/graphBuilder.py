@@ -720,7 +720,7 @@ class _PipelineScaffolding:
                         refs = list(registry.queryDatasets(datasetType,
                                                            collections=collections,
                                                            dataId=quantum.dataId,
-                                                           deduplicate=True))
+                                                           deduplicate=True).expanded())
                     quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs})
             # Actually remove any quanta that we decided to skip above.
             if dataIdsToSkip:
