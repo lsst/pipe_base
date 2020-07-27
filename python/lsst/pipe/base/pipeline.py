@@ -516,10 +516,10 @@ class TaskDatasetTypes:
         # optionally add output dataset for metadata
         outputs = makeDatasetTypesSet("outputs", freeze=False)
         if taskDef.metadataDatasetName is not None:
-            # Metadata is supposed to be of the PropertyList type, its dimensions
+            # Metadata is supposed to be of the PropertySet type, its dimensions
             # correspond to a task quantum
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
-            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertyList")}
+            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertySet")}
         outputs.freeze()
 
         return cls(
