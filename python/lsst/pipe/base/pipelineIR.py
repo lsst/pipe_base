@@ -380,7 +380,18 @@ class PipelineIR:
                                  "be unique")
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
-        accumulate_tasks.update(self.tasks)
+
+        # merge the dict of label:TaskIR objects, preserving any configs in the
+        # imported pipeline if the labels point to the same class
+        for label, task in self.tasks.items():
+            if label not in accumulate_tasks:
+                accumulate_tasks[label] = task
+            elif accumulate_tasks[label].klass == task.klass:
+                if task.config is not None:
+                    for config in task.config:
+                        accumulate_tasks[label].add_or_update_config(config)
+            else:
+                accumulate_tasks[label] = task
         self.tasks = accumulate_tasks
 
     def _read_tasks(self, loaded_yaml):

@@ -191,6 +191,36 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts, [])
 
+        # Test that configs are inherited when defining the same task again with
+        # the same label
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modA:
+            class: "test.moduleA"
+            config:
+                value2: 2
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
+
+        # Test that configs are not inherited when redefining the task
+        # associated with a label
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modA:
+            class: "test.moduleAReplace"
+            config:
+                value2: 2
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
+
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
         location = os.path.expandvars("$PIPE_BASE_DIR/tests/testPipeline1.yaml")
