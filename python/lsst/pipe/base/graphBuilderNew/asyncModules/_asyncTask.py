@@ -22,10 +22,10 @@ class BuildDirection(Enum):
         else:
             return BuildDirection.FORWARD
 
+
 @dataclass
 class AsyncTask:
-    __slots__ = ("task", "_graph_input", "_graph_output", "direction", "_starting", "_resulting", "quanta",
-                 "quantumDimensions")
+    __slots__ = ("task", "_graph_input", "_graph_output", "direction", "_starting", "_resulting", "quanta",)
     task: TaskDef
     _graph_input: Set[DatasetTypeName]
     _graph_output: Set[DatasetTypeName]
@@ -46,6 +46,9 @@ class AsyncTask:
         self._starting = tuple((x for x in startingIterable))
         resultingIterable = iterConnections(task.connections, "outputs")
         self._resulting = tuple(x for x in resultingIterable)
+        self.allDimensions = set(self.task.connections.dimensions)
+        for connection in itertools.chain(self._starting, self._resulting):
+            self.allDimensions.union(connection.dimensions)
 
     @property
     def graph_input(self) -> Set[DatasetTypeName]:

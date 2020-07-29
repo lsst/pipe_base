@@ -3,20 +3,23 @@ __all__ = ("OutputExistsError", "AsyncBuilder")
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import (Set, Coroutine, List, Optional, Union, Mapping, Dict, Iterable, Generator, Any, cast, 
+from typing import (MutableMapping, Set, Coroutine, List, Optional, Union, Mapping, Dict, Iterable, Generator, Any, cast, 
                     Callable, Awaitable)
-from queue import Queue
+from queue import Queue, Empty
 
 import inspect
 import itertools
 import types
 
 from ... import connectionTypes, TaskDef
-from .._customTypes import TaskName, DatasetTypeName, DatasetCoordinate
+from .._customTypes import TaskName, DatasetTypeName, DatasetCoordinate, QuantumCoordinate
 from ._asyncTask import AsyncTask, BuildDirection
 from ._tableCacher import CachedTempTables, CacheQueueArg
 
 from lsst.daf.butler import Registry, DimensionGraph
+
+DatasetTypeCoordMap = MutableMapping[DatasetTypeName, Set[DatasetCoordinate]]
+Quantum = MutableMapping[QuantumCoordinate, DatasetTypeCoordMap]
 
 
 class OutputExistsError(Exception):
@@ -63,7 +66,7 @@ class AsyncBuilder:
         dispatches based on what queued jobs require.
         """
         jobs = set()
-        quanta = {}
+        eventBuffer = {}
         tableCache = CachedTempTables(self._cacheQueue, self._queue, self._registry)
         self._threadExecutor.submit(tableCache)
         forwardComplete = set()
@@ -72,13 +75,18 @@ class AsyncBuilder:
             coro = self._buildQuanta(task)
             requires = coro.send(None)
             jobs.add(AsyncJob(requires, coro))
-        for result in self._queue.get():
-            quanta.update(result)
+        while jobs:
+            try:
+                eventBuffer.update(self._queue.get(), timeout=1)
+            except Empty:
+                # This is not a problem, the queue might be empty as everything
+                # needed is already in the event buffer, continue processing
+                pass
             toRemove = []
             for job in jobs:
-                if job.requires.issubset(quanta.keys()):
+                if job.requires.issubset(eventBuffer.keys()):
                     toRemove.append(job)
-                    requires = job.coro.send({k: quanta[k] for k in job.requires})
+                    requires = job.coro.send({k: eventBuffer[k] for k in job.requires})
                     if not isinstance(requires, EndSignal):
                         jobs.append(AsyncJob(requires, job.coro))
                     else:
@@ -94,8 +102,8 @@ class AsyncBuilder:
 
     @types.coroutine
     def _getJointTable(self, allDimensions, where, name):
-        self._cacheQueue.put((allDimensions, where), name)
-        table = yield name
+        self._cacheQueue.put(CacheQueueArg(allDimensions, where, name))
+        table = yield set(name)
         return table
 
     @types.coroutine
@@ -126,7 +134,7 @@ class AsyncBuilder:
         return quanta
 
     @types.coroutine
-    def _getStartingDatasetRefs(self, starting_names: Iterable[DatasetTypeName]) ->\
+    def _getDataForNames(self, starting_names: Iterable[DatasetTypeName]) ->\
             Generator[Set[DatasetTypeName],
                       Dict[DatasetTypeName, Any],
                       Dict[DatasetTypeName, Any]]:
@@ -141,38 +149,40 @@ class AsyncBuilder:
     async def _getResultingDatasetRefs(self, asyncTask: AsyncTask,
                                        startingQuanta: Mapping[DatasetTypeName,
                                                                Iterable[DatasetCoordinate]]) ->\
-            Dict[DatasetTypeName, Set[DatasetCoordinate]]:
+            DatasetTypeCoordMap:
         """This function takes in initial quanta and calls the appropriate propigate method and waits
         for the results to become available
         """
         if not inspect.isawaitable(asyncTask.build_func):
             # This function will be executed inside a thread
-            def wrapper(registry, quanta, where, queue):
+            def wrapper(registry: Registry, taskDimTable: Any, quantum: Quantum, where: str, queue: Queue):
                 # This wraps a regular function call to put results into the queue
-                queue.put(function(registry, quanta, where))
+                queue.put(function(registry, taskDimTable, quantum, where))
 
             function = self._makeCoroutine(wrapper)
         else:
-            function = cast(Callable[[Registry, Any, Any, Any, Any, Any],
-                                     Awaitable[Dict[DatasetTypeName, Set[DatasetCoordinate]]]],
+            function = cast(Callable[[Registry, Quantum, str, Queue, Set[DatasetTypeName],
+                                      ThreadPoolExecutor],
+                                     Awaitable[DatasetTypeCoordMap]],
                             asyncTask.build_func)
         return await function(self._registry, startingQuanta, self._where, self._queue,
                               set(asyncTask.resulting), self._threadExecutor)
 
     def _makeCoroutine(self, builder: Callable) ->\
-            Callable[[Registry, Any, Any, Any, Any, Any],
-                     Awaitable[Dict[DatasetTypeName, Set[DatasetCoordinate]]]]:
+            Callable[[Registry, Quantum, str, Queue, Set[DatasetTypeName], ThreadPoolExecutor],
+                     Awaitable[DatasetTypeCoordMap]]:
         """This wraps a regular function call inside a coroutine that executes
         the function inside a thread, and then waits for whatever dependencies
         are input to be available
         """
         @types.coroutine
-        def wrapper(registry, quanta, where, queue, depends, executor) ->\
+        def wrapper(registry: Registry, taskDimTable: Any, quantum: Quantum, where: str, queue: Queue,
+                    depends: Set[DatasetTypeName], executor: ThreadPoolExecutor) ->\
             Generator[Set[DatasetTypeName],
-                      Dict[DatasetTypeName, Set[DatasetCoordinate]],
-                      Dict[DatasetTypeName, Set[DatasetCoordinate]]]:
+                      DatasetTypeCoordMap,
+                      DatasetTypeCoordMap]:
             # This wraps a regular function call to be used as a coroutine
-            executor.submit(builder, registry, quanta, where, queue)
+            executor.submit(builder, registry, taskDimTable, quantum, where, queue)
             result = yield depends
             return result
         return wrapper
@@ -205,7 +215,7 @@ class AsyncBuilder:
 
     async def _buildQuantaWithRefs(self,
                                    asyncTask: AsyncTask,
-                                   startingRefs: Dict[DatasetTypeName, Set[DatasetCoordinate]],
+                                   startingRefs: DatasetTypeCoordMap,
                                    incomplete: Set[DatasetTypeName]):
         def worker(jointTable, incomplete, queueTaskName):
             quantaDimensionGraph = DimensionGraph(self._registry.universe,
@@ -241,11 +251,13 @@ class AsyncBuilder:
         for coord in startingRefs.values():
             for dim, value in coord.items():
                 dims[dim].add(value)
-        where = ("{} in {} "*len(dims)).format(x for x in itertools.chain.from_iterable(dims.items()))
+        where = ("{} IN {} AND "*len(dims)).format(x for x in itertools.chain.from_iterable(dims.items()))
+        # slice on where to remove the last AND statement
+        jointTable = await self._getJointTable(allDimensions, where[:-4], identifier)
+
         queueTaskName = f"{asyncTask.task.name}_quantaDone"
-        jointTable = await self._getJointTable(allDimensions, where, identifier)
         self._threadExecutor.submit(worker, jointTable, incomplete, queueTaskName)
-        await self._getStartingDatasetRefs(queueTaskName)
+        await self._getDataForNames(queueTaskName)
 
     async def _buildQuanta(self, asyncTask: AsyncTask):
         starting_names = (x.name for x in asyncTask.starting)
@@ -259,7 +271,7 @@ class AsyncBuilder:
                 # need to remove ones that need looked because they are pure inputs
                 starting_names = {x.name for x in asyncTask.starting if x not in asyncTask.graph_input}
                 incomplete = asyncTask.graph_input
-        startingRefs = await self._getStartingDatasetRefs(starting_names)
+        startingRefs = await self._getDataForNames(starting_names)
         if not asyncTask.quanta:
             await self._buildQuantaWithRefs(asyncTask, startingRefs, incomplete)
         await self._getResultingDatasetRefs(asyncTask)
