@@ -1,3 +1,6 @@
 description: Test Pipeline
 tasks:
-  modA: "test.moduleA"
+  modA:
+      class: "test.moduleA"
+      config:
+          value1: 1

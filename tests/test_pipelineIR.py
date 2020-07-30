@@ -68,7 +68,7 @@ class ConfigIRTestCase(unittest.TestCase):
         self.assertEqual(config5.rest, {"f": 5, "g": 6, "h": 7, "i": 8})
 
         # Cant merge configs with shared keys
-        self.assertEqual(list(config5.maybe_merge(config7)), [config5, config7])
+        self.assertEqual(list(config6.maybe_merge(config7)), [config6, config7])
 
 
 class PipelineIRTestCase(unittest.TestCase):
@@ -190,6 +190,36 @@ class PipelineIRTestCase(unittest.TestCase):
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts, [])
+
+        # Test that configs are inherited when defining the same task again with
+        # the same label
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modA:
+            class: "test.moduleA"
+            config:
+                value2: 2
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
+
+        # Test that configs are not inherited when redefining the task
+        # associated with a label
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modA:
+            class: "test.moduleAReplace"
+            config:
+                value2: 2
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
 
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline

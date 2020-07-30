@@ -33,6 +33,7 @@ from types import MappingProxyType
 from typing import Mapping, Union, Generator, TYPE_CHECKING
 
 import copy
+import os
 
 # -----------------------------
 #  Imports for other modules --
@@ -335,7 +336,7 @@ class Pipeline:
                     if configIR.dataId is None:
                         if configIR.file:
                             for configFile in configIR.file:
-                                overrides.addFileOverride(configFile)
+                                overrides.addFileOverride(os.path.expandvars(configFile))
                         if configIR.python is not None:
                             overrides.addPythonOverride(configIR.python)
                         for key, value in configIR.rest.items():
