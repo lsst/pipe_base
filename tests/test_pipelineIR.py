@@ -68,7 +68,7 @@ class ConfigIRTestCase(unittest.TestCase):
         self.assertEqual(config5.rest, {"f": 5, "g": 6, "h": 7, "i": 8})
 
         # Cant merge configs with shared keys
-        self.assertEqual(list(config5.maybe_merge(config7)), [config5, config7])
+        self.assertEqual(list(config6.maybe_merge(config7)), [config6, config7])
 
 
 class PipelineIRTestCase(unittest.TestCase):
