@@ -366,6 +366,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         self.outputs = set(self.outputs)
         self.initInputs = set(self.initInputs)
         self.initOutputs = set(self.initOutputs)
+        self.allConnections = dict(self.allConnections)
 
         if config is None or not isinstance(config, configMod.PipelineTaskConfig):
             raise ValueError("PipelineTaskConnections must be instantiated with"
