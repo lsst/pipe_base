@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, Iterator, List
 import logging
 
+
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
@@ -50,6 +51,8 @@ from lsst.daf.butler import (
     NamedKeyDict,
     Quantum,
 )
+from lsst.daf.butler.registry.queries.exprParser import ParseError, ParserYacc, TreeVisitor
+from lsst.utils import doImport
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -745,6 +748,75 @@ class _PipelineScaffolding:
         return graph
 
 
+class _InstrumentFinder(TreeVisitor):
+    """Implementation of TreeVisitor which looks for instrument name
+
+    Instrument should be specified as a boolean expression
+
+        instrument = 'string'
+        'string' = instrument
+
+    so we only need to find a binary operator where operator is "=",
+    one side is a string literal and other side is an identifier.
+    All visit methods return tuple of (type, value), non-useful nodes
+    return None for both type and value.
+    """
+    def __init__(self):
+        self.instruments = []
+
+    def visitNumericLiteral(self, value, node):
+        # do not care about numbers
+        return (None, None)
+
+    def visitStringLiteral(self, value, node):
+        # return type and value
+        return ("str", value)
+
+    def visitTimeLiteral(self, value, node):
+        # do not care about these
+        return (None, None)
+
+    def visitRangeLiteral(self, start, stop, stride, node):
+        # do not care about these
+        return (None, None)
+
+    def visitIdentifier(self, name, node):
+        if name.lower() == "instrument":
+            return ("id", "instrument")
+        return (None, None)
+
+    def visitUnaryOp(self, operator, operand, node):
+        # do not care about these
+        return (None, None)
+
+    def visitBinaryOp(self, operator, lhs, rhs, node):
+        if operator == "=":
+            if lhs == ("id", "instrument") and rhs[0] == "str":
+                self.instruments.append(rhs[1])
+            elif rhs == ("id", "instrument") and lhs[0] == "str":
+                self.instruments.append(lhs[1])
+        return (None, None)
+
+    def visitIsIn(self, lhs, values, not_in, node):
+        # do not care about these
+        return (None, None)
+
+    def visitParens(self, expression, node):
+        # do not care about these
+        return (None, None)
+
+
+def _findInstruments(queryStr):
+    parser = ParserYacc()
+    finder = _InstrumentFinder()
+    try:
+        tree = parser.parse(queryStr)
+    except ParseError as exc:
+        raise ValueError(f"failed to parse query expression: {queryStr}") from exc
+    tree.visit(finder)
+    return finder.instruments
+
+
 # ------------------------
 #  Exported definitions --
 # ------------------------
@@ -817,7 +889,58 @@ class GraphBuilder(object):
             classes.
         """
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
+
+        instrument = pipeline.getInstrument()
+        if isinstance(instrument, str):
+            instrument = doImport(instrument)
+        instrumentName = instrument.getName() if instrument else None
+        userQuery = self._verifyInstrumentRestriction(instrumentName, userQuery)
+
         with scaffolding.connectDataIds(self.registry, collections, userQuery) as commonDataIds:
             scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
                                            skipExisting=self.skipExisting)
         return scaffolding.makeQuantumGraph()
+
+    @staticmethod
+    def _verifyInstrumentRestriction(instrumentName, query):
+        """Add an instrument restriction to the query if it does not have one,
+        and verify that if given an instrument name that there are no other
+        instrument restrictions in the query.
+
+        Parameters
+        ----------
+        instrumentName : `str`
+            The name of the instrument that should appear in the query.
+        query : `str`
+            The query string.
+
+        Returns
+        -------
+        query : `str`
+            The query string with the instrument added to it if needed.
+
+        Raises
+        ------
+        RuntimeError
+            If the pipeline names an instrument and the query contains more
+            than one instrument or the name of the instrument in the query does
+            not match the instrument named by the pipeline.
+        """
+        if not instrumentName:
+            return query
+        queryInstruments = _findInstruments(query)
+        if len(queryInstruments) > 1:
+            raise RuntimeError(f"When the pipeline has an instrument (\"{instrumentName}\") the query must "
+                               "have zero instruments or one instrument that matches the pipeline. "
+                               f"Found these instruments in the query: {queryInstruments}.")
+        if not queryInstruments:
+            # There is not an instrument in the query, add it:
+            restriction = f"instrument = '{instrumentName}'"
+            _LOG.debug(f"Adding restriction \"{restriction}\" to query.")
+            query = f"{restriction} AND ({query})"
+        elif queryInstruments[0] != instrumentName:
+            # Since there is an instrument in the query, it should match
+            # the instrument in the pipeline.
+            raise RuntimeError(f"The instrument named in the query (\"{queryInstruments[0]}\") does not "
+                               f"match the instrument named by the pipeline (\"{instrumentName}\")")
+        return query
