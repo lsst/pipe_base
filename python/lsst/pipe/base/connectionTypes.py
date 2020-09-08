@@ -110,8 +110,13 @@ class DimensionedConnection(BaseConnection):
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
         to identify the dataset type identified by the specified name
+    isCalibration: `bool`, optional
+        `True` if this dataset type may be included in CALIBRATION-type
+        collections to associate it with a validity range, `False` (default)
+        otherwise.
     """
     dimensions: typing.Iterable[str] = ()
+    isCalibration: bool = False
 
     def __post_init__(self):
         if isinstance(self.dimensions, str):
@@ -134,7 +139,7 @@ class DimensionedConnection(BaseConnection):
         """
         return DatasetType(self.name,
                            universe.extract(self.dimensions),
-                           self.storageClass)
+                           self.storageClass, isCalibration=self.isCalibration)
 
 
 @dataclasses.dataclass(frozen=True)
