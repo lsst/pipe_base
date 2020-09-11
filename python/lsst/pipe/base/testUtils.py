@@ -23,6 +23,7 @@
 __all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
 
 
+from collections import defaultdict
 import collections.abc
 import itertools
 import unittest.mock
@@ -52,22 +53,29 @@ def makeQuantum(task, butler, dataId, ioDataIds):
     quantum : `lsst.daf.butler.Quantum`
         A quantum for ``task``, when called with ``dataIds``.
     """
-    quantum = Quantum(taskClass=type(task), dataId=dataId)
     connections = task.config.ConnectionsClass(config=task.config)
 
     try:
+        inputs = defaultdict(list)
+        outputs = defaultdict(list)
         for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
-                quantum.addPredictedInput(_refFromConnection(butler, connection, id))
+                ref = _refFromConnection(butler, connection, id)
+                inputs[ref.datasetType].append(ref)
         for name in connections.outputs:
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
-                quantum.addOutput(_refFromConnection(butler, connection, id))
+                ref = _refFromConnection(butler, connection, id)
+                outputs[ref.datasetType].append(ref)
+        quantum = Quantum(taskClass=type(task),
+                          dataId=dataId,
+                          inputs=inputs,
+                          outputs=outputs)
         return quantum
     except KeyError as e:
         raise ValueError("Mismatch in input data.") from e
@@ -181,7 +189,7 @@ def _resolveTestQuantumInputs(butler, quantum):
     # in that class as well (albeit not verbatim).  We should probably move
     # `SingleQuantumExecutor` to ``pipe_base`` and see if it is directly usable
     # in test code instead of having these classes at all.
-    for refsForDatasetType in quantum.predictedInputs.values():
+    for refsForDatasetType in quantum.inputs.values():
         newRefsForDatasetType = []
         for ref in refsForDatasetType:
             if ref.id is None:

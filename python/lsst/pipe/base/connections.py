@@ -28,6 +28,7 @@ __all__ = ["PipelineTaskConnections", "InputQuantizedConnection", "OutputQuantiz
 from collections import UserDict, namedtuple
 from types import SimpleNamespace
 import typing
+from typing import Union, Iterable
 
 import itertools
 import string
@@ -416,9 +417,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 # get the attribute identified by name
                 attribute = getattr(self, attributeName)
                 # Branch if the attribute dataset type is an input
-                if attribute.name in quantum.predictedInputs:
+                if attribute.name in quantum.inputs:
                     # Get the DatasetRefs
-                    quantumInputRefs = quantum.predictedInputs[attribute.name]
+                    quantumInputRefs = quantum.inputs[attribute.name]
                     # if the dataset is marked to load deferred, wrap it in a
                     # DeferredDatasetRef
                     if attribute.deferLoad:
@@ -497,7 +498,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         return datasetRefMap
 
 
-def iterConnections(connections: PipelineTaskConnections, connectionType: str) -> typing.Generator:
+def iterConnections(connections: PipelineTaskConnections,
+                    connectionType: Union[str, Iterable[str]]
+                    ) -> typing.Generator[BaseConnection, None, None]:
     """Creates an iterator over the selected connections type which yields
     all the defined connections of that type.
 
@@ -517,5 +520,7 @@ def iterConnections(connections: PipelineTaskConnections, connectionType: str) -
         supplied.  The yielded value Will be an derived type of
         `BaseConnection`.
     """
-    for name in getattr(connections, connectionType):
+    if isinstance(connectionType, str):
+        connectionType = (connectionType,)
+    for name in itertools.chain.from_iterable(getattr(connections, ct) for ct in connectionType):
         yield getattr(connections, name)
