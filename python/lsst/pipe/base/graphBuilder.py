@@ -799,7 +799,7 @@ class GraphBuilder(object):
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
         userQuery : `str`
-            String which defunes user-defined selection for registry, should be
+            String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
 
         Returns
