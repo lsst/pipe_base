@@ -209,7 +209,7 @@ class _QuantumScaffolding:
     __slots__ = ("task", "dataId", "inputs", "outputs", "prerequisites")
 
     def __repr__(self):
-        return f"_QuantumScaffolding(taskDef={self.taskDef}, dataId={self.dataId}, ...)"
+        return f"_QuantumScaffolding(taskDef={self.task.taskDef}, dataId={self.dataId}, ...)"
 
     task: _TaskScaffolding
     """Back-reference to the helper object for the `PipelineTask` this quantum
@@ -684,7 +684,8 @@ class _PipelineScaffolding:
                         if unresolvedRefs:
                             raise OutputExistsError(
                                 f"Quantum {quantum.dataId} of task with label "
-                                f"'{quantum.taskDef.label}' has some outputs that exist ({resolvedRefs}) "
+                                f"'{quantum.task.taskDef.label}' has some outputs that exist "
+                                f"({resolvedRefs}) "
                                 f"and others that don't ({unresolvedRefs})."
                             )
                         else:
