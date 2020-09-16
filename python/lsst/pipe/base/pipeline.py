@@ -210,6 +210,18 @@ class Pipeline:
             instrument = f"{instrument.__module__}.{instrument.__qualname__}"
         self._pipelineIR.instrument = instrument
 
+    def getInstrument(self):
+        """Get the instrument from the pipeline.
+
+        Returns
+        -------
+        instrument : `~lsst.daf.butler.instrument.Instrument`, `str`, or None
+            A derived class object of a `lsst.daf.butler.instrument`, a string
+            corresponding to a fully qualified `lsst.daf.butler.instrument`
+            name, or None if the pipeline does not have an instrument.
+        """
+        return self._pipelineIR.instrument
+
     def addTask(self, task: Union[PipelineTask, str], label: str):
         """Add a new task to the pipeline, or replace a task that is already
         associated with the supplied label.
