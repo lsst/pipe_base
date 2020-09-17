@@ -805,6 +805,26 @@ class _InstrumentFinder(TreeVisitor):
 
 
 def _findInstruments(queryStr):
+    """Get the names of any instrument named in the query string by searching
+    for "instrument = <value>" and similar patterns.
+
+    Parameters
+    ----------
+    queryStr : `str` or None
+        The query string to search, or None if there is no query.
+
+    Returns
+    -------
+    instruments : `list` [`str`]
+        The list of instrument names found in the query.
+
+    Raises
+    ------
+    ValueError
+        If the query expression can not be parsed.
+    """
+    if not queryStr:
+        return []
     parser = ParserYacc()
     finder = _InstrumentFinder()
     try:
@@ -935,7 +955,7 @@ class GraphBuilder(object):
             # There is not an instrument in the query, add it:
             restriction = f"instrument = '{instrumentName}'"
             _LOG.debug(f"Adding restriction \"{restriction}\" to query.")
-            query = f"{restriction} AND ({query})"
+            query = f"{restriction} AND ({query})" if query else restriction  # (there may not be a query)
         elif queryInstruments[0] != instrumentName:
             # Since there is an instrument in the query, it should match
             # the instrument in the pipeline.
