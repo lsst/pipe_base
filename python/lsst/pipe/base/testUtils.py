@@ -163,6 +163,41 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
             from e
 
 
+def _resolveTestQuantumInputs(butler, quantum):
+    """Look up all input datasets a test quantum in the `Registry` to resolve
+    all `DatasetRef` objects (i.e. ensure they have not-`None` ``id`` and
+    ``run`` attributes).
+
+    Parameters
+    ----------
+    quantum : `~lsst.daf.butler.Quantum`
+        Single Quantum instance.
+    butler : `~lsst.daf.butler.Butler`
+        Data butler.
+    """
+    # TODO (DM-26819): This function is a direct copy of
+    # `lsst.ctrl.mpexec.SingleQuantumExecutor.updateQuantumInputs`, but the
+    # `runTestQuantum` function that calls it is essentially duplicating logic
+    # in that class as well (albeit not verbatim).  We should probably move
+    # `SingleQuantumExecutor` to ``pipe_base`` and see if it is directly usable
+    # in test code instead of having these classes at all.
+    for refsForDatasetType in quantum.predictedInputs.values():
+        newRefsForDatasetType = []
+        for ref in refsForDatasetType:
+            if ref.id is None:
+                resolvedRef = butler.registry.findDataset(ref.datasetType, ref.dataId,
+                                                          collections=butler.collections)
+                if resolvedRef is None:
+                    raise ValueError(
+                        f"Cannot find {ref.datasetType.name} with id {ref.dataId} "
+                        f"in collections {butler.collections}."
+                    )
+                newRefsForDatasetType.append(resolvedRef)
+            else:
+                newRefsForDatasetType.append(ref)
+        refsForDatasetType[:] = newRefsForDatasetType
+
+
 def runTestQuantum(task, butler, quantum, mockRun=True):
     """Run a PipelineTask on a Quantum.
 
@@ -185,6 +220,7 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
         If ``mockRun`` is set, the mock that replaced ``run``. This object can
         be queried for the arguments ``runQuantum`` passed to ``run``.
     """
+    _resolveTestQuantumInputs(butler, quantum)
     butlerQc = ButlerQuantumContext(butler, quantum)
     connections = task.config.ConnectionsClass(config=task.config)
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
