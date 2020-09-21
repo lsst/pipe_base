@@ -28,7 +28,7 @@ from lsst.pipe.base import GraphBuilder
 import lsst.utils.tests
 
 
-class HelperTestCase(unittest.TestCase):
+class VerifyInstrumentRestrictionTestCase(unittest.TestCase):
 
     def testAddInstrument(self):
         """Verify the pipeline instrument is added to the query."""
