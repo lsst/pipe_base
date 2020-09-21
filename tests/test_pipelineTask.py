@@ -38,16 +38,10 @@ class ButlerMock():
         self.datasets = {}
         self.registry = SimpleNamespace(dimensions=DimensionUniverse())
 
-    def get(self, datasetRefOrType, dataId=None):
-        if isinstance(datasetRefOrType, DatasetRef):
-            dataId = datasetRefOrType.dataId
-            dsTypeName = datasetRefOrType.datasetType.name
-        else:
-            dsTypeName = datasetRefOrType
-        key = dataId
-        dsdata = self.datasets.get(dsTypeName)
+    def getDirect(self, ref):
+        dsdata = self.datasets.get(ref.datasetType.name)
         if dsdata:
-            return dsdata.get(key)
+            return dsdata.get(ref.dataId)
         return None
 
     def put(self, inMemoryDataset, dsRef, producer=None):
