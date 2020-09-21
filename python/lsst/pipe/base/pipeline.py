@@ -508,14 +508,16 @@ class TaskDatasetTypes:
                         compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
                         parentStorageClass = DatasetType.PlaceholderParentStorageClass \
                             if componentName else None
-                        datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
-                                                  c.storageClass,
-                                                  parentStorageClass=parentStorageClass)
+                        datasetType = c.makeDatasetType(
+                            registry.dimensions,
+                            parentStorageClass=parentStorageClass
+                        )
                         registryDatasetType = datasetType
                     else:
-                        datasetType = DatasetType(c.name, registry.dimensions.extract(dimensions),
-                                                  c.storageClass,
-                                                  parentStorageClass=registryDatasetType.parentStorageClass)
+                        datasetType = c.makeDatasetType(
+                            registry.dimensions,
+                            parentStorageClass=registryDatasetType.parentStorageClass
+                        )
 
                     if registryDatasetType and datasetType != registryDatasetType:
                         raise ValueError(f"Supplied dataset type ({datasetType}) inconsistent with "

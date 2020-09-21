@@ -37,6 +37,7 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionUniverse,
     Registry,
+    StorageClass,
 )
 
 
@@ -92,6 +93,27 @@ class BaseConnection:
         # information provided by the connection class instance
         return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
 
+    def makeDatasetType(self, universe: DimensionUniverse,
+                        parentStorageClass: Optional[StorageClass] = None):
+        """Construct a true `DatasetType` instance with normalized dimensions.
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Set of all known dimensions to be used to normalize the dimension
+            names specified in config.
+        parentStorageClass : `lsst.daf.butler.StorageClass`, optional
+            Parent storage class for component datasets; `None` otherwise.
+
+        Returns
+        -------
+        datasetType : `DatasetType`
+            The `DatasetType` defined by this connection.
+        """
+        return DatasetType(self.name,
+                           universe.empty,
+                           self.storageClass,
+                           parentStorageClass=parentStorageClass)
+
 
 @dataclasses.dataclass(frozen=True)
 class DimensionedConnection(BaseConnection):
@@ -125,13 +147,17 @@ class DimensionedConnection(BaseConnection):
         if not isinstance(self.dimensions, typing.Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
 
-    def makeDatasetType(self, universe: DimensionUniverse):
+    def makeDatasetType(self, universe: DimensionUniverse,
+                        parentStorageClass: Optional[StorageClass] = None):
         """Construct a true `DatasetType` instance with normalized dimensions.
         Parameters
         ----------
         universe : `lsst.daf.butler.DimensionUniverse`
             Set of all known dimensions to be used to normalize the dimension
             names specified in config.
+        parentStorageClass : `lsst.daf.butler.StorageClass`, optional
+            Parent storage class for component datasets; `None` otherwise.
+
         Returns
         -------
         datasetType : `DatasetType`
@@ -139,7 +165,8 @@ class DimensionedConnection(BaseConnection):
         """
         return DatasetType(self.name,
                            universe.extract(self.dimensions),
-                           self.storageClass, isCalibration=self.isCalibration)
+                           self.storageClass, isCalibration=self.isCalibration,
+                           parentStorageClass=parentStorageClass)
 
 
 @dataclasses.dataclass(frozen=True)
