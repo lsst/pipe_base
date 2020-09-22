@@ -87,8 +87,11 @@ class TaskTestCase(unittest.TestCase):
         self.assertIs(task2.taskClass, MultTask)
         self.assertEqual(task2.label, "mult_task")
         self.assertEqual(task2.metadataDatasetName, "mult_task_metadata")
-        task2.config.saveMetadata = False
-        self.assertIsNone(task2.metadataDatasetName)
+
+        config = MultConfig()
+        config.saveMetadata = False
+        task3 = TaskDef("lsst.pipe.base.tests.Mult", config, MultTask, "mult_task")
+        self.assertIsNone(task3.metadataDatasetName)
 
     def testEmpty(self):
         """Creating empty pipeline
