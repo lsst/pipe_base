@@ -76,6 +76,15 @@ class VerifyInstrumentRestrictionTestCase(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             GraphBuilder._verifyInstrumentRestriction("HSC", "instrument = 'HSC' OR instrument = 'LSSTCam'")
 
+    def testNoQuery(self):
+        """Test adding the instrument query to an empty query."""
+        self.assertEqual(GraphBuilder._verifyInstrumentRestriction("HSC", ""), "instrument = 'HSC'")
+
+    def testNoQueryNoInstruments(self):
+        """Test the verify function when there is no instrument and no
+        query."""
+        self.assertEqual(GraphBuilder._verifyInstrumentRestriction("", ""), "")
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()
