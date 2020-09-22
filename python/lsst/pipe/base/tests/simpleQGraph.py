@@ -37,6 +37,19 @@ from .. import connectionTypes as cT
 _LOG = logging.getLogger(__name__)
 
 
+# SimpleInstrument has an instrument-like API as needed for unit testing, but
+# can not explicitly depend on Instrument because pipe_base does not explicitly
+# depend on obs_base.
+class SimpleInstrument:
+
+    @staticmethod
+    def getName():
+        return "SimpleInstrument"
+
+    def applyConfigOverrides(self, name, config):
+        pass
+
+
 class AddTaskConnections(pipeBase.PipelineTaskConnections,
                          dimensions=("instrument", "detector"),
                          defaultTemplates={"in_tmpl": "_in", "out_tmpl": "_out"}):
@@ -153,7 +166,42 @@ def registerDatasetTypes(registry, pipeline):
                 registry.registerDatasetType(datasetType)
 
 
-def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExisting=False, inMemory=True):
+def makeSimplePipeline(nQuanta, instrument=None):
+    """Make a simple Pipeline for tests.
+
+    This is called by ``makeSimpleQGraph`` if no pipeline is passed to that
+    function. It can also be used to customize the pipeline used by
+    ``makeSimpleQGraph`` function by calling this first and passing the result
+    to it.
+
+    Parameters
+    ----------
+    nQuanta : `int`
+        The number of quanta to add to the pipeline.
+    instrument : `str` or `None`, optional
+        The importable name of an instrument to be added to the pipeline or
+        if no instrument should be added then an empty string or `None`, by
+        default None
+
+    Returns
+    -------
+    pipeline : `~lsst.pipe.base.Pipeline`
+        The created pipeline object.
+    """
+    pipeline = pipeBase.Pipeline("test pipeline")
+    # make a bunch of tasks that execute in well defined order (via data
+    # dependencies)
+    for lvl in range(nQuanta):
+        pipeline.addTask(AddTask, f"task{lvl}")
+        pipeline.addConfigOverride(f"task{lvl}", "connections.in_tmpl", f"{lvl}")
+        pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", f"{lvl+1}")
+    if instrument:
+        pipeline.addInstrument(instrument)
+    return pipeline
+
+
+def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExisting=False, inMemory=True,
+                     userQuery=""):
     """Make simple QuantumGraph for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory
@@ -178,6 +226,8 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
         already exist.
     inMemory : `bool`, optional
         If true make in-memory repository.
+    userQuery : `str`, optional
+        The user query to pass to ``makeGraph``, by default an empty string.
 
     Returns
     -------
@@ -188,13 +238,7 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
     """
 
     if pipeline is None:
-        pipeline = pipeBase.Pipeline("test pipeline")
-        # make a bunch of tasks that execute in well defined order (via data
-        # dependencies)
-        for lvl in range(nQuanta):
-            pipeline.addTask(AddTask, f"task{lvl}")
-            pipeline.addConfigOverride(f"task{lvl}", "connections.in_tmpl", f"{lvl}")
-            pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", f"{lvl+1}")
+        pipeline = makeSimplePipeline(nQuanta=nQuanta)
 
     if butler is None:
 
@@ -226,7 +270,7 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
         pipeline,
         collections=CollectionSearch.fromExpression(butler.run),
         run=butler.run,
-        userQuery=""
+        userQuery=userQuery
     )
 
     return butler, qgraph
