@@ -31,8 +31,8 @@ import numpy
 from lsst.daf.butler import (Butler, Config, DatasetType, CollectionSearch)
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
-import lsst.pipe.base as pipeBase
-from lsst.pipe.base import connectionTypes as cT
+from ... import base as pipeBase
+from .. import connectionTypes as cT
 
 _LOG = logging.getLogger(__name__)
 
