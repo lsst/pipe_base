@@ -63,12 +63,12 @@ class ButlerMock():
 class AddConnections(pipeBase.PipelineTaskConnections, dimensions=["instrument", "visit"]):
     input = pipeBase.connectionTypes.Input(name="add_input",
                                            dimensions=["instrument", "visit", "detector",
-                                                       "physical_filter", "abstract_filter"],
+                                                       "physical_filter", "band"],
                                            storageClass="Catalog",
                                            doc="Input dataset type for this task")
     output = pipeBase.connectionTypes.Output(name="add_output",
                                              dimensions=["instrument", "visit", "detector",
-                                                         "physical_filter", "abstract_filter"],
+                                                         "physical_filter", "band"],
                                              storageClass="Catalog",
                                              doc="Output dataset type for this task")
 
@@ -111,7 +111,7 @@ class PipelineTaskTestCase(unittest.TestCase):
                 detector="X",
                 visit=visitId,
                 physical_filter='a',
-                abstract_filter='b',
+                band='b',
                 instrument='TestInstrument',
                 universe=universe
             )
