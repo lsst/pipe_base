@@ -21,14 +21,18 @@
 
 """Tests of things related to the GraphBuilder class."""
 
+import logging
 import unittest
 
 from lsst.pipe.base import GraphBuilder
-
+from lsst.pipe.base.tests import simpleQGraph
 import lsst.utils.tests
+from lsst.utils.tests import temporaryDirectory
+
+_LOG = logging.getLogger(__name__)
 
 
-class HelperTestCase(unittest.TestCase):
+class VerifyInstrumentRestrictionTestCase(unittest.TestCase):
 
     def testAddInstrument(self):
         """Verify the pipeline instrument is added to the query."""
@@ -75,6 +79,39 @@ class HelperTestCase(unittest.TestCase):
         contains two instruments that a RuntimeError is raised."""
         with self.assertRaises(RuntimeError):
             GraphBuilder._verifyInstrumentRestriction("HSC", "instrument = 'HSC' OR instrument = 'LSSTCam'")
+
+    def testNoQuery(self):
+        """Test adding the instrument query to an empty query."""
+        self.assertEqual(GraphBuilder._verifyInstrumentRestriction("HSC", ""), "instrument = 'HSC'")
+
+    def testNoQueryNoInstruments(self):
+        """Test the verify function when there is no instrument and no
+        query."""
+        self.assertEqual(GraphBuilder._verifyInstrumentRestriction("", ""), "")
+
+
+class GraphBuilderTestCase(unittest.TestCase):
+
+    def testDefault(self):
+        """Simple test to verify makeSimpleQGraph can be used to make a Quantum
+        Graph."""
+        with temporaryDirectory() as root:
+            # makeSimpleQGraph calls GraphBuilder.
+            butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
+            # by default makeSimpleQGraph makes a graph with 5 nodes
+            self.assertEqual(len(qgraph), 5)
+
+    def testAddInstrumentMismatch(self):
+        """Verify that a RuntimeError is raised if the instrument in the user
+        query does not match the instrument in the pipeline."""
+        with temporaryDirectory() as root:
+            pipeline = simpleQGraph.makeSimplePipeline(
+                nQuanta=5,
+                instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument")
+            with self.assertRaises(RuntimeError):
+                simpleQGraph.makeSimpleQGraph(root=root,
+                                              pipeline=pipeline,
+                                              userQuery="instrument = 'foo'")
 
 
 if __name__ == "__main__":
