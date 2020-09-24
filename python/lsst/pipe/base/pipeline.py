@@ -74,7 +74,7 @@ class TaskDef:
         Framework should be prepared to handle all cases.
     config : `lsst.pex.config.Config`
         Instance of the configuration class corresponding to this task class,
-        usually with all overrides applied.
+        usually with all overrides applied. This config will be frozen.
     taskClass : `type` or ``None``
         `PipelineTask` class object, can be ``None``. If ``None`` then
         framework will have to locate and load class.
@@ -83,6 +83,7 @@ class TaskDef:
     """
     def __init__(self, taskName, config, taskClass=None, label=""):
         self.taskName = taskName
+        config.freeze()
         self.config = config
         self.taskClass = taskClass
         self.label = label

@@ -250,11 +250,9 @@ class _QuantumScaffolding:
         allInputs.update(self.prerequisites.unpackMultiRefs())
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
-        config = self.task.taskDef.config
-        connections = config.connections.ConnectionsClass(config=config)
         # This will raise if one of the check conditions is not met, which is the intended
         # behavior
-        allInputs = connections.adjustQuantum(allInputs)
+        allInputs = self.task.taskDef.connections.adjustQuantum(allInputs)
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
