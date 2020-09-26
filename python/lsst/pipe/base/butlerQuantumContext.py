@@ -71,11 +71,11 @@ class ButlerQuantumContext:
         def _get(self, ref):
             if isinstance(ref, DeferredDatasetRef):
                 self._checkMembership(ref.datasetRef, self.allInputs)
-                return butler.getDeferred(ref.datasetRef)
+                return butler.getDirectDeferred(ref.datasetRef)
 
             else:
                 self._checkMembership(ref, self.allInputs)
-                return butler.get(ref)
+                return butler.getDirect(ref)
 
         def _put(self, value, ref):
             self._checkMembership(ref, self.allOutputs)

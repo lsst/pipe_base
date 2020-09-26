@@ -707,22 +707,37 @@ class _PipelineScaffolding:
                 # These may have dimensions that extend beyond those we queried
                 # for originally, because we want to permit those data ID
                 # values to differ across quanta and dataset types.
-                # For example, the same quantum may have a flat and bias with
-                # a different calibration_label, or a refcat with a skypix
-                # value that overlaps the quantum's data ID's region, but not
-                # the user expression used for the initial query.
                 for datasetType in task.prerequisites:
                     lookupFunction = lookupFunctions.get(datasetType.name)
                     if lookupFunction is not None:
+                        # PipelineTask has provided its own function to do the
+                        # lookup.  This always takes precedence.
                         refs = list(
                             lookupFunction(datasetType, registry, quantum.dataId, collections)
                         )
+                    elif (datasetType.isCalibration()
+                            and datasetType.dimensions <= quantum.dataId.graph
+                            and quantum.dataId.graph.temporal):
+                        # This is a master calibration lookup, which we have to
+                        # handle specially because the query system can't do a
+                        # temporal join on a non-dimension-based timespan yet.
+                        timespan = quantum.dataId.timespan
+                        try:
+                            refs = [registry.findDataset(datasetType, quantum.dataId,
+                                                         collections=collections,
+                                                         timespan=timespan)]
+                        except KeyError:
+                            # This dataset type is not present in the registry,
+                            # which just means there are no datasets here.
+                            refs = []
                     else:
+                        # Most general case.
                         refs = list(registry.queryDatasets(datasetType,
                                                            collections=collections,
                                                            dataId=quantum.dataId,
                                                            deduplicate=True).expanded())
-                    quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs})
+                    quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs
+                                                               if ref is not None})
             # Actually remove any quanta that we decided to skip above.
             if dataIdsToSkip:
                 _LOG.debug("Pruning %d quanta for task with label '%s' because all of their outputs exist.",
