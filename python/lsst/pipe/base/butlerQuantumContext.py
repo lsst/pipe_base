@@ -33,7 +33,7 @@ from lsst.daf.butler import DatasetRef, Butler, Quantum
 
 
 class ButlerQuantumContext:
-    """Butler like class specialized for a single quantum
+    """A Butler-like class specialized for a single quantum
 
     A ButlerQuantumContext class wraps a standard butler interface and
     specializes it to the context of a given quantum. What this means
@@ -50,9 +50,23 @@ class ButlerQuantumContext:
     butler : `lsst.daf.butler.Butler`
         Butler object from/to which datasets will be get/put
     quantum : `lsst.daf.butler.core.Quantum`
-        Quantum object that describes the datasets which will
-        be get/put by a single execution of this node in the
-        pipeline graph.
+        Quantum object that describes the datasets which will be get/put by a
+        single execution of this node in the pipeline graph.  All input
+        dataset references must be resolved (i.e. satisfy
+        ``DatasetRef.id is not None``) prior to constructing the
+        `ButlerQuantumContext`.
+
+    Notes
+    -----
+    Most quanta in any non-trivial graph will not start with resolved dataset
+    references, because they represent processing steps that can only run
+    after some other quanta have produced their inputs.  At present, it is the
+    responsibility of ``lsst.ctrl.mpexec.SingleQuantumExecutor`` to resolve all
+    datasets prior to constructing `ButlerQuantumContext` and calling
+    `runQuantum`, and the fact that this precondition is satisfied by code in
+    a downstream package is considered a problem with the
+    ``pipe_base/ctrl_mpexec`` separation of concerns that will be addressed in
+    the future.
     """
     def __init__(self, butler: Butler, quantum: Quantum):
         self.quantum = quantum
@@ -69,6 +83,8 @@ class ButlerQuantumContext:
         # Create closures over butler to discourage anyone from directly
         # using a butler reference
         def _get(self, ref):
+            # Butler methods below will check for unresolved DatasetRefs and
+            # raise appropriately, so no need for us to do that here.
             if isinstance(ref, DeferredDatasetRef):
                 self._checkMembership(ref.datasetRef, self.allInputs)
                 return butler.getDirectDeferred(ref.datasetRef)
