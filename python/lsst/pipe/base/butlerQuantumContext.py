@@ -59,7 +59,7 @@ class ButlerQuantumContext:
         self.registry = butler.registry
         self.allInputs = set()
         self.allOutputs = set()
-        for refs in quantum.predictedInputs.values():
+        for refs in quantum.inputs.values():
             for ref in refs:
                 self.allInputs.add((ref.datasetType, ref.dataId))
         for refs in quantum.outputs.values():

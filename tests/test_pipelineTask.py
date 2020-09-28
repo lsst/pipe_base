@@ -115,7 +115,6 @@ class PipelineTaskTestCase(unittest.TestCase):
         """Create set of Quanta
         """
         universe = DimensionUniverse()
-        run = "run1"
         connections = config.connections.ConnectionsClass(config=config)
 
         dstype0 = connections.input.makeDatasetType(universe)
@@ -123,9 +122,10 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         quanta = []
         for visit in range(100):
-            quantum = Quantum(run=run)
-            quantum.addPredictedInput(self._makeDSRefVisit(dstype0, visit, universe))
-            quantum.addOutput(self._makeDSRefVisit(dstype1, visit, universe))
+            inputRef = self._makeDSRefVisit(dstype0, visit, universe)
+            outputRef = self._makeDSRefVisit(dstype1, visit, universe)
+            quantum = Quantum(inputs={inputRef.datasetType: [inputRef]},
+                              outputs={outputRef.datasetType: [outputRef]})
             quanta.append(quantum)
 
         return quanta
@@ -143,7 +143,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         # add input data to butler
         dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta):
-            ref = quantum.predictedInputs[dstype0.name][0]
+            ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
 
         # run task on each quanta
@@ -182,7 +182,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         task1Connections = task1.config.connections.ConnectionsClass(config=task1.config)
         dstype0 = task1Connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta1):
-            ref = quantum.predictedInputs[dstype0.name][0]
+            ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
 
         # run task on each quanta

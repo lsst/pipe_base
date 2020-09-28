@@ -112,6 +112,16 @@ class TaskDef:
         rep += ")"
         return rep
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TaskDef):
+            return False
+        return self.config == other.config and\
+            self.taskClass == other.taskClass and\
+            self.label == other.label
+
+    def __hash__(self):
+        return hash((self.taskClass, self.label))
+
 
 class Pipeline:
     """A `Pipeline` is a representation of a series of tasks to run, and the

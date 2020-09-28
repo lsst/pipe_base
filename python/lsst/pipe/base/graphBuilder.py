@@ -32,7 +32,7 @@ import itertools
 from collections import ChainMap
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, List
+from typing import Dict, Iterable, Iterator, List, Set
 import logging
 
 
@@ -41,7 +41,7 @@ import logging
 # -----------------------------
 from .connections import iterConnections
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
-from .graph import QuantumGraph, QuantumGraphTaskNodes
+from .graph import QuantumGraph
 from lsst.daf.butler import (
     DataCoordinate,
     DatasetRef,
@@ -209,7 +209,7 @@ class _QuantumScaffolding:
     __slots__ = ("task", "dataId", "inputs", "outputs", "prerequisites")
 
     def __repr__(self):
-        return f"_QuantumScaffolding(taskDef={self.taskDef}, dataId={self.dataId}, ...)"
+        return f"_QuantumScaffolding(taskDef={self.task.taskDef}, dataId={self.dataId}, ...)"
 
     task: _TaskScaffolding
     """Back-reference to the helper object for the `PipelineTask` this quantum
@@ -258,7 +258,7 @@ class _QuantumScaffolding:
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
             initInputs=self.task.initInputs.unpackSingleRefs(),
-            predictedInputs=allInputs,
+            inputs=allInputs,
             outputs=self.outputs.unpackMultiRefs(),
         )
 
@@ -343,21 +343,15 @@ class _TaskScaffolding:
     this task with that data ID.
     """
 
-    def makeQuantumGraphTaskNodes(self) -> QuantumGraphTaskNodes:
-        """Create a `QuantumGraphTaskNodes` instance from the information in
-        ``self``.
+    def makeQuantumSet(self) -> Set[Quantum]:
+        """Create a `set` of `Quantum` from the information in ``self``.
 
         Returns
         -------
-        nodes : `QuantumGraphTaskNodes`
-            The `QuantumGraph` elements corresponding to this task.
+        nodes : `set` of `Quantum
+            The `Quantum` elements corresponding to this task.
         """
-        return QuantumGraphTaskNodes(
-            taskDef=self.taskDef,
-            quanta=[q.makeQuantum() for q in self.quanta.values()],
-            initInputs=self.initInputs.unpackSingleRefs(),
-            initOutputs=self.initOutputs.unpackSingleRefs(),
-        )
+        return set(q.makeQuantum() for q in self.quanta.values())
 
 
 @dataclass
@@ -690,7 +684,8 @@ class _PipelineScaffolding:
                         if unresolvedRefs:
                             raise OutputExistsError(
                                 f"Quantum {quantum.dataId} of task with label "
-                                f"'{quantum.taskDef.label}' has some outputs that exist ({resolvedRefs}) "
+                                f"'{quantum.task.taskDef.label}' has some outputs that exist "
+                                f"({resolvedRefs}) "
                                 f"and others that don't ({unresolvedRefs})."
                             )
                         else:
@@ -754,10 +749,7 @@ class _PipelineScaffolding:
         graph : `QuantumGraph`
             The full `QuantumGraph`.
         """
-        graph = QuantumGraph(task.makeQuantumGraphTaskNodes() for task in self.tasks)
-        graph.initInputs = self.initInputs.unpackSingleRefs()
-        graph.initOutputs = self.initOutputs.unpackSingleRefs()
-        graph.initIntermediates = self.initIntermediates.unpackSingleRefs()
+        graph = QuantumGraph({task.taskDef: task.makeQuantumSet() for task in self.tasks})
         return graph
 
 

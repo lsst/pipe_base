@@ -134,7 +134,7 @@ class TestConnectionsClass(unittest.TestCase):
     def testBuildDatasetRefs(self):
         connections = self.buildTestConnections()
 
-        mockQuantum = pipeBase.Struct(predictedInputs={"fromConfigtest": ["a"]},
+        mockQuantum = pipeBase.Struct(inputs={"fromConfigtest": ["a"]},
                                       outputs={"field2FromConfig": ["b", "c"]})
 
         inputRefs, outputRefs = connections.buildDatasetRefs(mockQuantum)
@@ -143,7 +143,7 @@ class TestConnectionsClass(unittest.TestCase):
 
     def testAdjustQuantum(self):
         connections = self.buildTestConnections()
-        mockQuantum = pipeBase.Struct(predictedInputs={"fromConfigtest": ["a"]},
+        mockQuantum = pipeBase.Struct(inputs={"fromConfigtest": ["a"]},
                                       outputs={"field2FromConfig": ["b", "c"]})
         inputRefs, outputRefs = connections.buildDatasetRefs(mockQuantum)
         with self.assertRaises(ValueError):
