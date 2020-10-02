@@ -23,7 +23,7 @@ from itertools import chain
 import pickle
 import tempfile
 import unittest
-from lsst.daf.butler.core.dimensions.universe import DimensionUniverse
+from lsst.daf.butler import DimensionUniverse
 
 from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskConfig, PipelineTaskConnections,
                             DatasetTypeName, IncompatibleGraphError)
