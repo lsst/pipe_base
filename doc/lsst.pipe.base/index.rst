@@ -70,6 +70,8 @@ Python API reference
 
 .. automodapi:: lsst.pipe.base
    :no-main-docstr:
+   :skip: BuildId
+   :skip: DatasetTypeName
 
 .. automodapi:: lsst.pipe.base.testUtils
    :no-main-docstr:
