@@ -23,17 +23,18 @@ from __future__ import annotations
 """Module defining Pipeline class and related methods.
 """
 
-__all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes"]
+__all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "LabelSpecifier"]
 
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Union, Generator, TYPE_CHECKING
+from typing import Mapping, Set, Union, Generator, TYPE_CHECKING, Optional
 
 import copy
 import os
+import re
 
 # -----------------------------
 #  Imports for other modules --
@@ -56,6 +57,27 @@ if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
 # ------------------------
 #  Exported definitions --
 # ------------------------
+
+
+@dataclass
+class LabelSpecifier:
+    """A structure to specify a subset of labels to load
+
+    This structure may contain a set of labels to be used in subsetting a
+    pipeline, or a beginning and end point. Beginning or end may be empty,
+    in which case the range will be a half open interval. Unlike python
+    iteration bounds, end bounds are *INCLUDED*. Note that range based selection
+    is not well defined for pipelines that are not linear in nature, and
+    correct behavior is not guaranteed, or may vary from run to run.
+    """
+    labels: Optional[Set[str]] = None
+    begin: Optional[str] = None
+    end: Optional[str] = None
+
+    def __post_init__(self):
+        if self.labels is not None and (self.begin or self.end):
+            raise ValueError("This struct can only be initialized with a labels set or "
+                             "a begin (and/or) end specifier")
 
 
 class TaskDef:
@@ -132,7 +154,7 @@ class Pipeline:
     description : `str`
         A description of that this pipeline does.
     """
-    def __init__(self, description: str) -> Pipeline:
+    def __init__(self, description: str):
         pipeline_dict = {"description": description, "tasks": {}}
         self._pipelineIR = pipelineIR.PipelineIR(pipeline_dict)
 
@@ -143,14 +165,181 @@ class Pipeline:
         Parameters
         ----------
         filename: `str`
-           A path that points to a pipeline defined in yaml format
+           A path that points to a pipeline defined in yaml format. This
+           filename may also supply additional labels to be used in
+           subsetting the loaded Pipeline. These labels are separated from
+           the path by a colon, and may be specified as a comma separated
+           list, or a range denoted as beginning..end. Beginning or end may
+           be empty, in which case the range will be a half open interval.
+           Unlike python iteration bounds, end bounds are *INCLUDED*. Note
+           that range based selection is not well defined for pipelines that
+           are not linear in nature, and correct behavior is not guaranteed,
+           or may vary from run to run.
 
         Returns
         -------
         pipeline: `Pipeline`
+            The pipeline loaded from specified location with appropriate (if
+            any) subsetting
+
+        Notes
+        -----
+        This method attempts to prune any contracts that contain labels which
+        are not in the declared subset of labels. This pruning is done using a
+        string based matching due to the nature of contracts and may prune more
+        than it should.
         """
-        pipeline = cls.fromIR(pipelineIR.PipelineIR.from_file(filename))
+        # Split up the filename and any labels that were supplied
+        filename, labelSpecifier = cls._parseFileSpecifier(filename)
+        pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_file(filename))
+
+        # If there are labels supplied, only keep those
+        if labelSpecifier is not None:
+            pipeline = pipeline.subsetFromLabels(labelSpecifier)
         return pipeline
+
+    def subsetFromLabels(self, labelSpecifier: LabelSpecifier) -> Pipeline:
+        """Subset a pipeline to contain only labels specified in labelSpecifier
+
+        Parameters
+        ----------
+        labelSpecifier : `labelSpecifier`
+            Object containing labels that describes how to subset a pipeline.
+
+        Returns
+        -------
+        pipeline : `Pipeline`
+            A new pipeline object that is a subset of the old pipeline
+
+        Raises
+        ------
+        ValueError
+            Raised if there is an issue with specified labels
+
+        Notes
+        -----
+        This method attempts to prune any contracts that contain labels which
+        are not in the declared subset of labels. This pruning is done using a
+        string based matching due to the nature of contracts and may prune more
+        than it should.
+        """
+
+        pipeline = copy.deepcopy(self)
+
+        def remove_contracts(label: str):
+            """Remove any contracts that contain the given label
+
+            String comparison used in this way is not the most elegant and may
+            have issues, but it is the only feasible way when users can specify
+            contracts with generic strings.
+            """
+            new_contracts = []
+            for contract in pipeline._pipelineIR.contracts:
+                # match a label that is not preceded by an ASCII identifier, or
+                # is the start of a line and is followed by a dot
+                if re.match(f".*([^A-Za-z0-9_]|^){label}[.]", contract.contract):
+                    continue
+                new_contracts.append(contract)
+            pipeline._pipelineIR.contracts = new_contracts
+
+        # Labels supplied as a set, explicitly remove any that are not in
+        # That list
+        if labelSpecifier.labels:
+            # verify all the labels are in the pipeline
+            if not labelSpecifier.labels.issubset(pipeline._pipelineIR.tasks.keys()):
+                difference = labelSpecifier.labels.difference(pipeline._pipelineIR.tasks.keys())
+                raise ValueError("Not all supplied labels are in the pipeline definition, extra labels:"
+                                 f"{difference}")
+            # copy needed so as to not modify while iterating
+            pipeline_labels = list(pipeline._pipelineIR.tasks.keys())
+            for label in pipeline_labels:
+                if label not in labelSpecifier.labels:
+                    pipeline.removeTask(label)
+                    remove_contracts(label)
+        # Labels supplied as a range, first create a list of all the labels
+        # in the pipeline sorted according to task dependency. Then only
+        # keep labels that lie between the supplied bounds
+        else:
+            # Use a dict for fast searching while preserving order
+            # save contracts and remove them so they do not fail in the
+            # expansion step, will be restored after. This is needed because
+            # a user may only configure the tasks they intend to run, which
+            # may cause some contracts to fail if they will later be dropped
+            contractSave = pipeline._pipelineIR.contracts
+            pipeline._pipelineIR.contracts = []
+            labels = {taskdef.label: True for taskdef in pipeline.toExpandedPipeline()}
+            pipeline._pipelineIR.contracts = contractSave
+
+            # Verify the bounds are in the labels
+            if labelSpecifier.begin is not None:
+                if labelSpecifier.begin not in labels:
+                    raise ValueError(f"Beginning of range subset, {labelSpecifier.begin}, not found in "
+                                     "pipeline definition")
+            if labelSpecifier.end is not None:
+                if labelSpecifier.end not in labels:
+                    raise ValueError(f"End of range subset, {labelSpecifier.end}, not found in pipeline "
+                                     "definition")
+
+            closed = False
+            for label in labels:
+                # if there is a begin label delete all labels until it is
+                # reached.
+                if labelSpecifier.begin:
+                    if label != labelSpecifier.begin:
+                        pipeline.removeTask(label)
+                        remove_contracts(label)
+                        continue
+                    else:
+                        labelSpecifier.begin = None
+                # if there is an end specifier, keep all tasks until the
+                # end specifier is reached, afterwards delete the labels
+                if labelSpecifier.end:
+                    if label != labelSpecifier.end:
+                        if closed:
+                            pipeline.removeTask(label)
+                            remove_contracts(label)
+                        continue
+                    else:
+                        closed = True
+        return pipeline
+
+    @staticmethod
+    def _parseFileSpecifier(fileSpecifer):
+        """Split appart a filename path from label subsets
+        """
+        split = fileSpecifer.split(':')
+        # There is only a filename, return just that
+        if len(split) == 1:
+            return fileSpecifer, None
+        # More than one specifier provided, bail out
+        if len(split) > 2:
+            raise ValueError("Only one : is allowed when specifying a pipeline to load")
+        else:
+            labelSubset: str
+            filename: str
+            filename, labelSubset = split[0], split[1]
+            # labels supplied as a list
+            if ',' in labelSubset:
+                if '..' in labelSubset:
+                    raise ValueError("Can only specify a list of labels or a range"
+                                     "when loading a Pipline not both")
+                labels = set(labelSubset.split(","))
+                specifier = LabelSpecifier(labels=labels)
+            # labels supplied as a range
+            elif '..' in labelSubset:
+                # Try to destructure the labelSubset, this will fail if more
+                # than one range is specified
+                try:
+                    begin, end = labelSubset.split("..")
+                except ValueError:
+                    raise ValueError("Only one range can be specified when loading a pipeline")
+                specifier = LabelSpecifier(begin=begin if begin else None, end=end if end else None)
+            # Assume anything else is a single label
+            else:
+                labels = {labelSubset}
+                specifier = LabelSpecifier(labels=labels)
+
+            return filename, specifier
 
     @classmethod
     def fromString(cls, pipeline_string: str) -> Pipeline:
