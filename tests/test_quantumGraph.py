@@ -23,7 +23,7 @@ from itertools import chain
 import pickle
 import tempfile
 import unittest
-from lsst.daf.butler.core.dimensions.universe import DimensionUniverse
+from lsst.daf.butler import DimensionUniverse
 
 from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskConfig, PipelineTaskConnections,
                             DatasetTypeName, IncompatibleGraphError)
@@ -110,10 +110,26 @@ class QuantumGraphTestCase(unittest.TestCase):
     """Tests the various functions of a quantum graph
     """
     def setUp(self):
-        config = Config({"dimensions": {"version": 1,
-                                        "skypix": {},
-                                        "elements": {"A": {},
-                                                     "B": {}}}})
+        config = Config({
+            "dimensions": {
+                "version": 1,
+                "skypix": {},
+                "elements": {
+                    "A": {
+                        "keys": [{
+                            "name": "id",
+                            "type": "int",
+                        }],
+                    },
+                    "B": {
+                        "keys": [{
+                            "name": "id",
+                            "type": "int",
+                        }],
+                    }
+                }
+            }
+        })
         universe = DimensionUniverse(config=config)
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
