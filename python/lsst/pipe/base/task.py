@@ -370,7 +370,30 @@ class Task:
         """
         return f"{self._fullName}.{name}"
 
+    @staticmethod
+    def _unpickle_via_factory(factory, args, kwargs):
+        """Unpickle something by calling a factory
+
+        Allows subclasses to unpickle using `__reduce__` with keyword
+        arguments as well as positional arguments.
+        """
+        return factory(*args, **kwargs)
+
+    def _reduce_kwargs(self):
+        """Returns a dict of the keyword arguments that should be used
+        by `__reduce__`.
+
+        Subclasses with additional arguments should always call the parent
+        class method to ensure that the standard parameters are included.
+
+        Returns
+        -------
+        kwargs : `dict`
+            Keyword arguments to be used when pickling.
+        """
+        return dict(config=self.config, name=self._name, parentTask=self._parentTask,)
+
     def __reduce__(self):
         """Pickler.
         """
-        return self.__class__, (self.config, self._name, self._parentTask, None)
+        return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())
