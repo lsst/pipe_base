@@ -59,8 +59,8 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     """
     def __new__(cls, name, bases, dct, **kwargs):
         if name != "PipelineTaskConfig":
-            # Verify that a connection class was specified and the argument is an instance of
-            # PipelineTaskConfig
+            # Verify that a connection class was specified and the argument is
+            # an instance of PipelineTaskConfig
             if 'pipelineConnections' not in kwargs:
                 for base in bases:
                     if hasattr(base, "connections"):
@@ -72,22 +72,24 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             if not issubclass(connectionsClass, PipelineTaskConnections):
                 raise ValueError("Can only assign a PipelineTaskConnections Class to pipelineConnections")
 
-            # Create all the fields that will be used in the newly created sub config
-            # (under the attribute name "connections")
+            # Create all the fields that will be used in the newly created sub
+            # config (under the attribute name "connections")
             configConnectionsNamespace = {}
             for fieldName, obj in connectionsClass.allConnections.items():
                 configConnectionsNamespace[fieldName] = pexConfig.Field(dtype=str,
                                                                         doc=f"name for "
                                                                             f"connection {fieldName}",
                                                                         default=obj.name)
-            # If there are default templates also add them as fields to configure the template values
+            # If there are default templates also add them as fields to
+            # configure the template values
             if hasattr(connectionsClass, 'defaultTemplates'):
                 docString = "Template parameter used to format corresponding field template parameter"
                 for templateName, default in connectionsClass.defaultTemplates.items():
                     configConnectionsNamespace[templateName] = pexConfig.Field(dtype=str,
                                                                                doc=docString,
                                                                                default=default)
-            # add a reference to the connection class used to create this sub config
+            # add a reference to the connection class used to create this sub
+            # config
             configConnectionsNamespace['ConnectionsClass'] = connectionsClass
 
             # Create a new config class with the fields defined above

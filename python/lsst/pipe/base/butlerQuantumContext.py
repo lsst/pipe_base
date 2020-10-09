@@ -108,28 +108,32 @@ class ButlerQuantumContext:
         Parameters
         ----------
         dataset
-            This argument may either be an `InputQuantizedConnection` which describes
-            all the inputs of a quantum, a list of `~lsst.daf.butler.DatasetRef`, or
-            a single `~lsst.daf.butler.DatasetRef`. The function will get and return
+            This argument may either be an `InputQuantizedConnection` which
+            describes all the inputs of a quantum, a list of
+            `~lsst.daf.butler.DatasetRef`, or a single
+            `~lsst.daf.butler.DatasetRef`. The function will get and return
             the corresponding datasets from the butler.
 
         Returns
         -------
         return : `object`
-            This function returns arbitrary objects fetched from the bulter. The
-            structure these objects are returned in depends on the type of the input
-            argument. If the input dataset argument is a InputQuantizedConnection, then
-            the return type will be a dictionary with keys corresponding to the attributes
-            of the `InputQuantizedConnection` (which in turn are the attribute identifiers
-            of the connections). If the input argument is of type `list` of
-            `~lsst.daf.butler.DatasetRef` then the return type  will be a list of objects.
-            If the input argument is a single `~lsst.daf.butler.DatasetRef` then a single
-            object will be returned.
+            This function returns arbitrary objects fetched from the bulter.
+            The structure these objects are returned in depends on the type of
+            the input argument. If the input dataset argument is a
+            `InputQuantizedConnection`, then the return type will be a
+            dictionary with keys corresponding to the attributes of the
+            `InputQuantizedConnection` (which in turn are the attribute
+            identifiers of the connections). If the input argument is of type
+            `list` of `~lsst.daf.butler.DatasetRef` then the return type will
+            be a list of objects.  If the input argument is a single
+            `~lsst.daf.butler.DatasetRef` then a single object will be
+            returned.
 
         Raises
         ------
         ValueError
-            If a `DatasetRef` is passed to get that is not defined in the quantum object
+            Raised if a `DatasetRef` is passed to get that is not defined in
+            the quantum object
         """
         if isinstance(dataset, InputQuantizedConnection):
             retVal = {}
@@ -154,26 +158,30 @@ class ButlerQuantumContext:
         Parameters
         ----------
         values : `Struct` or `list` of `object` or `object`
-            The data that should be put with the butler. If the type of the dataset
-            is `OutputQuantizedConnection` then this argument should be a `Struct`
-            with corresponding attribute names. Each attribute should then correspond
-            to either a list of object or a single object depending of the type of the
-            corresponding attribute on dataset. I.e. if dataset.calexp is [datasetRef1,
-            datasetRef2] then values.calexp should be [calexp1, calexp2]. Like wise
-            if there is a single ref, then only a single object need be passed. The same
-            restriction applies if dataset is directly a `list` of `DatasetRef` or a
-            single `DatasetRef`.
+            The data that should be put with the butler. If the type of the
+            dataset is `OutputQuantizedConnection` then this argument should be
+            a `Struct` with corresponding attribute names. Each attribute
+            should then correspond to either a list of object or a single
+            object depending of the type of the corresponding attribute on
+            dataset. I.e. if ``dataset.calexp`` is
+            ``[datasetRef1, datasetRef2]`` then ``values.calexp`` should be
+            ``[calexp1, calexp2]``. Like wise if there is a single ref, then
+            only a single object need be passed. The same restriction applies
+            if dataset is directly a `list` of `DatasetRef` or a single
+            `DatasetRef`.
         dataset
-            This argument may either be an `InputQuantizedConnection` which describes
-            all the inputs of a quantum, a list of `lsst.daf.butler.DatasetRef`, or
-            a single `lsst.daf.butler.DatasetRef`. The function will get and return
+            This argument may either be an `InputQuantizedConnection` which
+            describes all the inputs of a quantum, a list of
+            `lsst.daf.butler.DatasetRef`, or a single
+            `lsst.daf.butler.DatasetRef`. The function will get and return
             the corresponding datasets from the butler.
 
         Raises
         ------
         ValueError
-            If a `DatasetRef` is passed to put that is not defined in the quantum object, or
-            the type of values does not match what is expected from the type of dataset.
+            Raised if a `DatasetRef` is passed to put that is not defined in
+            the quantum object, or the type of values does not match what is
+            expected from the type of dataset.
         """
         if isinstance(dataset, OutputQuantizedConnection):
             if not isinstance(values, Struct):
@@ -199,19 +207,20 @@ class ButlerQuantumContext:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
     def _checkMembership(self, ref: typing.Union[typing.List[DatasetRef], DatasetRef], inout: set):
-        """Internal function used to check if a DatasetRef is part of the input quantum
+        """Internal function used to check if a DatasetRef is part of the input
+        quantum
 
-        This function will raise an exception if the ButlerQuantumContext is used to
-        get/put a DatasetRef which is not defined in the quantum.
+        This function will raise an exception if the ButlerQuantumContext is
+        used to get/put a DatasetRef which is not defined in the quantum.
 
         Parameters
         ----------
         ref : `list` of `DatasetRef` or `DatasetRef`
             Either a list or a single `DatasetRef` to check
         inout : `set`
-            The connection type to check, e.g. either an input or an output. This prevents
-            both types needing to be checked for every operation, which may be important
-            for Quanta with lots of `DatasetRef`s.
+            The connection type to check, e.g. either an input or an output.
+            This prevents both types needing to be checked for every operation,
+            which may be important for Quanta with lots of `DatasetRef`.
         """
         if not isinstance(ref, list):
             ref = [ref]

@@ -82,13 +82,13 @@ class _DatasetTracker(Generic[_T, _U]):
     def _datasetDictToEdgeIterator(self) -> Generator[Tuple[Optional[_U], Optional[_U]], None, None]:
         """Helper function designed to be used in conjunction with
         `networkx.DiGraph.add_edges_from`. This takes a mapping of keys to
-        `_DatasetTrackers` and yields successive pairs of elements that are to be
-        considered connected by the graph.
+        `_DatasetTrackers` and yields successive pairs of elements that are to
+        be considered connected by the graph.
         """
         for entry in self._container.values():
             # If there is no inputs and only outputs (likely in test cases or
-            # building inits or something) use None as a Node, that will then be
-            # removed later
+            # building inits or something) use None as a Node, that will then
+            # be removed later
             inputs = entry.inputs or (None,)
             for inpt in inputs:
                 yield (entry.output, inpt)

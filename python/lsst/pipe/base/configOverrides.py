@@ -94,8 +94,8 @@ class ConfigOverrides:
         Parameters
         ----------
         python_snippet: str
-            A string which is valid python code to be executed. This is done with
-            config as the only local accessible value.
+            A string which is valid python code to be executed. This is done
+            with config as the only local accessible value.
         """
         self._overrides.append((OverrideTypes.Python, python_snippet))
 
@@ -146,7 +146,8 @@ class ConfigOverrides:
                         # use safer ast.literal_eval, it only supports literals
                         value = ast.literal_eval(value)
                     except Exception:
-                        # eval failed, wrap exception with more user-friendly message
+                        # eval failed, wrap exception with more user-friendly
+                        # message
                         raise pexExceptions.RuntimeError(f"Unable to parse `{value}' into a Python object")
 
                 # this can throw in case of type mismatch

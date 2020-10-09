@@ -104,7 +104,8 @@ class ConfigIR:
     """
     file: List[str] = field(default_factory=list)
     """A list of paths which points to a file containing config overrides to be
-    applied. This value may be an empty list if there are no overrides to apply.
+    applied. This value may be an empty list if there are no overrides to
+    apply.
     """
     rest: dict = field(default_factory=dict)
     """This is a dictionary of key value pairs, where the keys are strings
@@ -117,7 +118,8 @@ class ConfigIR:
         """
         accumulate = {}
         for name in ("python", "dataId", "file"):
-            # if this attribute is thruthy add it to the accumulation dictionary
+            # if this attribute is thruthy add it to the accumulation
+            # dictionary
             if getattr(self, name):
                 accumulate[name] = getattr(self, name)
         # Add the dictionary containing the rest of the config keys to the
@@ -202,9 +204,9 @@ class TaskIR:
         """Adds a `ConfigIR` to this task if one is not present. Merges configs
         if there is a `ConfigIR` present and the dataId keys of both configs
         match, otherwise adds a new entry to the config list. The exception to
-        the above is that if either the last config or other_config has a python
-        block, then other_config is always added, as python blocks can modify
-        configs in ways that cannot be predicted.
+        the above is that if either the last config or other_config has a
+        python block, then other_config is always added, as python blocks can
+        modify configs in ways that cannot be predicted.
 
         Parameters
         ----------
@@ -233,9 +235,9 @@ class InheritIR:
     """
     location: str
     """This is the location of the pipeline to inherit. The path should be
-    specified as an absolute path. Environment variables may be used in the path
-    and should be specified as a python string template, with the name of the
-    environment variable inside braces.
+    specified as an absolute path. Environment variables may be used in the
+    path and should be specified as a python string template, with the name of
+    the environment variable inside braces.
     """
     include: Union[List[str], None] = None
     """List of tasks that should be included when inheriting this pipeline.
@@ -332,8 +334,8 @@ class PipelineIR:
         Parameters
         ---------
         loaded_yaml : `dict`
-            A dictionary which matches the structure that would be produced by a
-            yaml reader which parses a pipeline definition document
+            A dictionary which matches the structure that would be produced by
+            a yaml reader which parses a pipeline definition document
         """
         loaded_contracts = loaded_yaml.pop("contracts", [])
         if isinstance(loaded_contracts, str):
@@ -351,8 +353,8 @@ class PipelineIR:
         Parameters
         ---------
         loaded_yaml : `dict`
-            A dictionary which matches the structure that would be produced by a
-            yaml reader which parses a pipeline definition document
+            A dictionary which matches the structure that would be produced by
+            a yaml reader which parses a pipeline definition document
         """
         def process_args(argument: Union[str, dict]) -> dict:
             if isinstance(argument, str):
@@ -400,8 +402,8 @@ class PipelineIR:
         Parameters
         ---------
         loaded_yaml : `dict`
-            A dictionary which matches the structure that would be produced by a
-            yaml reader which parses a pipeline definition document
+            A dictionary which matches the structure that would be produced by
+            a yaml reader which parses a pipeline definition document
         """
         self.tasks = {}
         tmp_tasks = loaded_yaml.pop("tasks", None)

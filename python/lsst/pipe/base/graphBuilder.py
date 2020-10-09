@@ -250,8 +250,8 @@ class _QuantumScaffolding:
         allInputs.update(self.prerequisites.unpackMultiRefs())
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
-        # This will raise if one of the check conditions is not met, which is the intended
-        # behavior
+        # This will raise if one of the check conditions is not met, which is
+        # the intended behavior
         allInputs = self.task.taskDef.connections.adjustQuantum(allInputs)
         return Quantum(
             taskName=self.task.taskDef.taskName,
@@ -411,13 +411,15 @@ class _PipelineScaffolding:
             setattr(self, attr, _DatasetDict.fromDatasetTypes(getattr(datasetTypes, attr),
                                                               universe=registry.dimensions))
         # Aggregate all dimensions for all non-init, non-prerequisite
-        # DatasetTypes.  These are the ones we'll include in the big join query.
+        # DatasetTypes.  These are the ones we'll include in the big join
+        # query.
         self.dimensions = self.inputs.dimensions.union(self.intermediates.dimensions,
                                                        self.outputs.dimensions)
         # Construct scaffolding nodes for each Task, and add backreferences
         # to the Task from each DatasetScaffolding node.
-        # Note that there's only one scaffolding node for each DatasetType, shared by
-        # _PipelineScaffolding and all _TaskScaffoldings that reference it.
+        # Note that there's only one scaffolding node for each DatasetType,
+        # shared by _PipelineScaffolding and all _TaskScaffoldings that
+        # reference it.
         if isinstance(pipeline, Pipeline):
             pipeline = pipeline.toExpandedPipeline()
         self.tasks = [_TaskScaffolding(taskDef=taskDef, parent=self, datasetTypes=taskDatasetTypes)
@@ -539,22 +541,23 @@ class _PipelineScaffolding:
                         ref = DatasetRef(datasetType, datasetDataId)
                         refs[datasetDataId] = ref
                     refsForRow[datasetType.name] = ref
-                # Create _QuantumScaffolding objects for all tasks from this result
-                # row, noting that we might have created some already.
+                # Create _QuantumScaffolding objects for all tasks from this
+                # result row, noting that we might have created some already.
                 for task in self.tasks:
                     quantumDataId = commonDataId.subset(task.dimensions)
                     quantum = task.quanta.get(quantumDataId)
                     if quantum is None:
                         quantum = _QuantumScaffolding(task=task, dataId=quantumDataId)
                         task.quanta[quantumDataId] = quantum
-                    # Whether this is a new quantum or an existing one, we can now
-                    # associate the DatasetRefs for this row with it.  The fact
-                    # the fact that a Quantum data ID and a dataset data ID both
-                    # came from the same result row is what tells us they should
-                    # be associated.
-                    # Many of these associates will be duplicates (because another
-                    # query row that differed from this one only in irrelevant
-                    # dimensions already added them), and we use sets to skip.
+                    # Whether this is a new quantum or an existing one, we can
+                    # now associate the DatasetRefs for this row with it.  The
+                    # fact that a Quantum data ID and a dataset data ID both
+                    # came from the same result row is what tells us they
+                    # should be associated.
+                    # Many of these associates will be duplicates (because
+                    # another query row that differed from this one only in
+                    # irrelevant dimensions already added them), and we use
+                    # sets to skip.
                     for datasetType in task.inputs:
                         ref = refsForRow[datasetType.name]
                         quantum.inputs[datasetType.name][ref.dataId] = ref

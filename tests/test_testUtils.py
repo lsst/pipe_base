@@ -326,7 +326,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
                               {key: dataId for key in {"a", "b", "outA", "outB"}})
         runTestQuantum(task, self.butler, quantum, mockRun=False)
 
-        # Can we use runTestQuantum to verify that task.run got called with correct inputs/outputs?
+        # Can we use runTestQuantum to verify that task.run got called with
+        # correct inputs/outputs?
         self.assertTrue(self.butler.datasetExists("VisitOutA", dataId))
         self.assertEqual(self.butler.get("VisitOutA", dataId),
                          butlerTests.MetricsExample(data=(data["VisitA"] + data["VisitB"])))
@@ -347,7 +348,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         })
         runTestQuantum(task, self.butler, quantum, mockRun=False)
 
-        # Can we use runTestQuantum to verify that task.run got called with correct inputs/outputs?
+        # Can we use runTestQuantum to verify that task.run got called with
+        # correct inputs/outputs?
         inB = data["PatchB"][0][1]
         for dataset in data["PatchA"]:
             patchId = dataset[0]
@@ -365,7 +367,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
                               {key: dataId for key in {"a", "b", "outA", "outB"}})
         run = runTestQuantum(task, self.butler, quantum, mockRun=True)
 
-        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can we use the mock to verify that task.run got called with the
+        # correct inputs?
         run.assert_called_once_with(a=butlerTests.MetricsExample(data=data["VisitA"]),
                                     b=butlerTests.MetricsExample(data=data["VisitB"]))
 
@@ -383,7 +386,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         })
         run = runTestQuantum(task, self.butler, quantum, mockRun=True)
 
-        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can we use the mock to verify that task.run got called with the
+        # correct inputs?
         run.assert_called_once_with(
             a=[butlerTests.MetricsExample(data=dataset[1]) for dataset in data["PatchA"]],
             b=butlerTests.MetricsExample(data=data["PatchB"][0][1])
@@ -404,7 +408,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         })
         run = runTestQuantum(task, self.butler, quantum, mockRun=True)
 
-        # Can we use the mock to verify that task.run got called with the correct inputs?
+        # Can we use the mock to verify that task.run got called with the
+        # correct inputs?
         run.assert_called_once_with(
             a=[butlerTests.MetricsExample(data=dataset[1]) for dataset in data["PatchA"]]
         )
