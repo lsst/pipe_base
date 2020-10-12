@@ -71,7 +71,8 @@ class StructTestCase(unittest.TestCase):
         sc = s.copy()
         self.assertEqual(s.getDict(), sc.getDict())
 
-        # shallow copy, so changing a list should propagate (not necessarily a feature)
+        # shallow copy, so changing a list should propagate (not necessarily a
+        # feature)
         sc.alist[0] = 97
         self.assertEqual(s, sc)
 

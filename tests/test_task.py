@@ -131,7 +131,8 @@ class TaskTestCase(unittest.TestCase):
                 config = AddMultTask.ConfigClass()
                 config.add.addend = addend
                 config.mult["stdMult"].multiplicand = multiplicand
-                # make sure both ways of accessing the registry work and give the same result
+                # make sure both ways of accessing the registry work and give
+                # the same result
                 self.assertEqual(config.mult.active.multiplicand, multiplicand)
                 addMultTask = AddMultTask(config=config)
                 for val in (-1.0, 0.0, 17.5):

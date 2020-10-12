@@ -99,8 +99,9 @@ class QuantumGraph:
 
             # For each `Quantum` in the set of all `Quantum` for this task,
             # add a key to the `_DatasetTracker` that is a `DatasetRef` for one
-            # of the individual datasets inside the `Quantum`, with a value of a
-            # newly created QuantumNode to the appropriate input/output field.
+            # of the individual datasets inside the `Quantum`, with a value of
+            # a newly created QuantumNode to the appropriate input/output
+            # field.
             self._count += len(quantumSet)
             for quantum in quantumSet:
                 if _quantumToNodeId:
@@ -187,7 +188,8 @@ class QuantumGraph:
 
     @property
     def allDatasetTypes(self) -> Tuple[DatasetTypeName, ...]:
-        """Return all the `DatasetTypeNames` that are contained inside the graph.
+        """Return all the `DatasetTypeNames` that are contained inside the
+        graph.
 
         Returns
         -------
@@ -259,8 +261,9 @@ class QuantumGraph:
         Returns
         -------
         tasks : iterable of `TaskDef`
-            `TaskDef`s that have the specified `DatasetTypeName` as an input, list
-            will be empty if no tasks use specified `DatasetTypeName` as an input.
+            `TaskDef`s that have the specified `DatasetTypeName` as an input,
+            list will be empty if no tasks use specified `DatasetTypeName` as
+            an input.
 
         Raises
         ------
@@ -283,8 +286,8 @@ class QuantumGraph:
         Returns
         -------
         `TaskDef` or `None`
-            `TaskDef` that outputs `DatasetTypeName` as an output or None if none of
-            the tasks produce this `DatasetTypeName`.
+            `TaskDef` that outputs `DatasetTypeName` as an output or None if
+            none of the tasks produce this `DatasetTypeName`.
 
         Raises
         ------
@@ -336,9 +339,9 @@ class QuantumGraph:
         Returns
         -------
         result : list of `TaskDef`
-            List of the `TaskDef`s that have the name specified. Multiple values
-            are returned in the case that a task is used multiple times with
-            different labels.
+            List of the `TaskDef`s that have the name specified. Multiple
+            values are returned in the case that a task is used multiple times
+            with different labels.
         """
         results = []
         for task in self._quanta.keys():
@@ -497,7 +500,8 @@ class QuantumGraph:
         Parameters
         ----------
         node : `QuantumNode`
-            The node of the graph for which connected nodes are to be determined
+            The node of the graph for which connected nodes are to be
+            determined.
 
         Returns
         -------

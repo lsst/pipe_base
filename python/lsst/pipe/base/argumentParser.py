@@ -157,7 +157,8 @@ class DataIdContainer:
                 try:
                     keyType = idKeyTypeDict[key]
                 except KeyError:
-                    # OK, assume that it's a valid key and guess that it's a string
+                    # OK, assume that it's a valid key and guess that it's a
+                    # string
                     keyType = str
 
                     log = lsstLog.Log.getDefaultLogger()
@@ -735,7 +736,8 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddTHH:mm:ss.SSSZ} %c 
         mapperClass = dafPersist.Butler.getMapperClass(_fixPath(DEFAULT_INPUT_NAME, namespace.rawInput))
         namespace.calib = _fixPath(DEFAULT_CALIB_NAME, namespace.rawCalib)
 
-        # If an output directory is specified, process it and assign it to the namespace
+        # If an output directory is specified, process it and assign it to the
+        # namespace
         if namespace.rawOutput:
             namespace.output = _fixPath(DEFAULT_OUTPUT_NAME, namespace.rawOutput)
         else:
@@ -850,7 +852,8 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddTHH:mm:ss.SSSZ} %c 
             Namespace (an ) with the following fields:
 
             - ``camera``: the camera name.
-            - ``config``: the config passed to parse_args, with no overrides applied.
+            - ``config``: the config passed to parse_args, with no overrides
+              applied.
             - ``obsPkg``: the ``obs_`` package for this camera.
             - ``log``: a `lsst.log` Log.
 
@@ -1009,7 +1012,8 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                     """
 
                     def __init__(self, pattern):
-                        # obey case if pattern isn't lowecase or requests NOIGNORECASE
+                        # obey case if pattern isn't lowecase or requests
+                        # NOIGNORECASE
                         mat = re.search(r"(.*):NOIGNORECASE$", pattern)
 
                         if mat:

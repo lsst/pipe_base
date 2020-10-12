@@ -66,9 +66,9 @@ class LabelSpecifier:
     This structure may contain a set of labels to be used in subsetting a
     pipeline, or a beginning and end point. Beginning or end may be empty,
     in which case the range will be a half open interval. Unlike python
-    iteration bounds, end bounds are *INCLUDED*. Note that range based selection
-    is not well defined for pipelines that are not linear in nature, and
-    correct behavior is not guaranteed, or may vary from run to run.
+    iteration bounds, end bounds are *INCLUDED*. Note that range based
+    selection is not well defined for pipelines that are not linear in nature,
+    and correct behavior is not guaranteed, or may vary from run to run.
     """
     labels: Optional[Set[str]] = None
     begin: Optional[str] = None
@@ -399,14 +399,15 @@ class Pipeline:
         Parameters
         ----------
         instrument : `~lsst.daf.butler.instrument.Instrument` or `str`
-            Either a derived class object of a `lsst.daf.butler.instrument` or a
-            string corresponding to a fully qualified
+            Either a derived class object of a `lsst.daf.butler.instrument` or
+            a string corresponding to a fully qualified
             `lsst.daf.butler.instrument` name.
         """
         if isinstance(instrument, str):
             pass
         else:
-            # TODO: assume that this is a subclass of Instrument, no type checking
+            # TODO: assume that this is a subclass of Instrument, no type
+            # checking
             instrument = f"{instrument.__module__}.{instrument.__qualname__}"
         self._pipelineIR.instrument = instrument
 
@@ -562,8 +563,8 @@ class Pipeline:
         if self._pipelineIR.contracts is not None:
             label_to_config = {x.label: x.config for x in taskDefs}
             for contract in self._pipelineIR.contracts:
-                # execute this in its own line so it can raise a good error message if there was problems
-                # with the eval
+                # execute this in its own line so it can raise a good error
+                # message if there was problems with the eval
                 success = eval(contract.contract, None, label_to_config)
                 if not success:
                     extra_info = f": {contract.msg}" if contract.msg is not None else ""
@@ -730,8 +731,8 @@ class TaskDatasetTypes:
         # optionally add output dataset for metadata
         outputs = makeDatasetTypesSet("outputs", freeze=False)
         if taskDef.metadataDatasetName is not None:
-            # Metadata is supposed to be of the PropertySet type, its dimensions
-            # correspond to a task quantum
+            # Metadata is supposed to be of the PropertySet type, its
+            # dimensions correspond to a task quantum
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
             outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertySet")}
         outputs.freeze()

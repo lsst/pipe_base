@@ -56,7 +56,8 @@ class ConfigIRTestCase(unittest.TestCase):
         # Merge configs with different dataIds, this should yield two elements
         self.assertEqual(list(config1.maybe_merge(config2)), [config1, config2])
 
-        # Merge configs with python blocks defined, this should yield two elements
+        # Merge configs with python blocks defined, this should yield two
+        # elements
         self.assertEqual(list(config1.maybe_merge(config3)), [config1, config3])
 
         # Merge configs with file defined, this should yield two elements
@@ -191,8 +192,8 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts, [])
 
-        # Test that configs are inherited when defining the same task again with
-        # the same label
+        # Test that configs are inherited when defining the same task again
+        # with the same label
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
         inherits:

@@ -33,21 +33,26 @@ class Struct:
 
     Notes
     -----
-    Intended to be used for the return value from `~lsst.pipe.base.Task.run` and other `~lsst.pipe.base.Task`
-    methods, and useful for any method that returns multiple values.
+    Intended to be used for the return value from `~lsst.pipe.base.Task.run`
+    and other `~lsst.pipe.base.Task` methods, and useful for any method that
+    returns multiple values.
 
-    The intent is to allow accessing returned items by name, instead of unpacking a tuple.
-    This makes the code much more robust and easier to read. It allows one to change what values are returned
-    without inducing mysterious failures: adding items is completely safe, and removing or renaming items
-    causes errors that are caught quickly and reported in a way that is easy to understand.
+    The intent is to allow accessing returned items by name, instead of
+    unpacking a tuple.  This makes the code much more robust and easier to
+    read. It allows one to change what values are returned without inducing
+    mysterious failures: adding items is completely safe, and removing or
+    renaming items causes errors that are caught quickly and reported in a way
+    that is easy to understand.
 
-    The primary reason for using Struct instead of dict is that the fields may be accessed as attributes,
-    e.g. ``aStruct.foo`` instead of ``aDict["foo"]``. Admittedly this only saves a few characters, but it
+    The primary reason for using Struct instead of dict is that the fields may
+    be accessed as attributes, e.g. ``aStruct.foo`` instead of
+    ``aDict["foo"]``. Admittedly this only saves a few characters, but it
     makes the code significantly more readable.
 
-    Struct is preferred over named tuples, because named tuples can be used as ordinary tuples, thus losing
-    all the safety advantages of Struct. In addition, named tuples are clumsy to define and Structs
-    are much more mutable (e.g. one can trivially combine Structs and add additional fields).
+    Struct is preferred over named tuples, because named tuples can be used as
+    ordinary tuples, thus losing all the safety advantages of Struct. In
+    addition, named tuples are clumsy to define and Structs are much more
+    mutable (e.g. one can trivially combine Structs and add additional fields).
 
     Examples
     --------
@@ -63,7 +68,8 @@ class Struct:
             self.__safeAdd(name, val)
 
     def __safeAdd(self, name, val):
-        """Add a field if it does not already exist and name does not start with ``__`` (two underscores).
+        """Add a field if it does not already exist and name does not start
+        with ``__`` (two underscores).
 
         Parameters
         ----------
@@ -75,7 +81,8 @@ class Struct:
         Raises
         ------
         RuntimeError
-            Raised if name already exists or starts with ``__`` (two underscores).
+            Raised if name already exists or starts with ``__`` (two
+            underscores).
         """
         if hasattr(self, name):
             raise RuntimeError(f"Item {name!r} already exists")
@@ -89,12 +96,14 @@ class Struct:
         Returns
         -------
         structDict : `dict`
-            Dictionary with field names as keys and field values as values. The values are shallow copies.
+            Dictionary with field names as keys and field values as values.
+            The values are shallow copies.
         """
         return self.__dict__.copy()
 
     def mergeItems(self, struct, *nameList):
-        """Copy specified fields from another struct, provided they don't already exist.
+        """Copy specified fields from another struct, provided they don't
+        already exist.
 
         Parameters
         ----------
@@ -106,8 +115,9 @@ class Struct:
         Raises
         ------
         RuntimeError
-            Raised if any item in nameList already exists in self (but any items before the conflicting item
-            in nameList will have been copied).
+            Raised if any item in nameList already exists in self (but any
+            items before the conflicting item in nameList will have been
+            copied).
 
         Examples
         --------

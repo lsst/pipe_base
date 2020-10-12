@@ -40,12 +40,14 @@ class TestConnectionsClass(unittest.TestCase):
         """Tests the declaration of a Connections Class
         """
         with pytest.raises(TypeError):
-            # This should raise because this Connections class is created with no dimensions
+            # This should raise because this Connections class is created with
+            # no dimensions
             class TestConnections(pipeBase.PipelineTaskConnections):
                 pass
 
         with pytest.raises(TypeError):
-            # This should raise because this Connections class is created with out template defaults
+            # This should raise because this Connections class is created with
+            # out template defaults
             class TestConnectionsTemplate(pipeBase.PipelineTaskConnections, dimensions=self.test_dims):
                 field = pipeBase.connectionTypes.Input(doc="Test", name="{template}test",
                                                        dimensions=self.test_dims,

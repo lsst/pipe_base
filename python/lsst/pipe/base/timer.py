@@ -39,8 +39,8 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
     obj : `lsst.pipe.base.Task`-type
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other object with
-          ``add(name, value)`` method).
+        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
+          object with ``add(name, value)`` method).
         - ``log`` an instance of `lsst.log.Log`.
 
     pairs : sequence
@@ -51,7 +51,8 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
     strList = []
     for name, value in pairs:
         try:
-            # Use LongLong explicitly here in case an early value in the sequence is int-sized
+            # Use LongLong explicitly here in case an early value in the
+            # sequence is int-sized
             obj.metadata.addLongLong(name, value)
         except TypeError:
             obj.metadata.add(name, value)
@@ -67,13 +68,14 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     obj : `lsst.pipe.base.Task`-type
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other object with
-          ``add(name, value)`` method).
+        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
+          object with ``add(name, value)`` method).
         - ``log`` an instance of `lsst.log.Log`.
 
     prefix
-        Name prefix, the resulting entries are ``CpuTime``, etc.. For example timeMethod uses
-        ``prefix = Start`` when the method begins and ``prefix = End`` when the method ends.
+        Name prefix, the resulting entries are ``CpuTime``, etc.. For example
+        timeMethod uses ``prefix = Start`` when the method begins and
+        ``prefix = End`` when the method ends.
     logLevel : optional
         Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
 
@@ -81,12 +83,14 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     -----
     Logged items include:
 
-    - ``Utc``: UTC date in ISO format (only in metadata since log entries have timestamps).
+    - ``Utc``: UTC date in ISO format (only in metadata since log entries have
+      timestamps).
     - ``CpuTime``: System + User CPU time (seconds). This should only be used
         in differential measurements; the time reference point is undefined.
     - ``MaxRss``: maximum resident set size.
 
-    All logged resource information is only for the current process; child processes are excluded.
+    All logged resource information is only for the current process; child
+    processes are excluded.
     """
     cpuTime = time.process_time()
     utcStr = datetime.datetime.utcnow().isoformat()
@@ -119,20 +123,23 @@ def timeMethod(func):
 
     Notes
     -----
-    Writes various measures of time and possibly memory usage to the task's metadata; all items are prefixed
-    with the function name.
+    Writes various measures of time and possibly memory usage to the task's
+    metadata; all items are prefixed with the function name.
 
     .. warning::
 
-       This decorator only works with instance methods of Task, or any class with these attributes:
+       This decorator only works with instance methods of Task, or any class
+       with these attributes:
 
-       - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other object with
-         ``add(name, value)`` method).
+       - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other
+         object with ``add(name, value)`` method).
        - ``log``: an instance of `lsst.log.Log`.
 
     Examples
     --------
-    To use::
+    To use:
+
+    .. code-block:: python
 
         import lsst.pipe.base as pipeBase
         class FooTask(pipeBase.Task):

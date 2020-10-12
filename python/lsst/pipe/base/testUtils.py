@@ -243,7 +243,8 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
 
 
 def assertValidOutput(task, result):
-    """Test that the output of a call to ``run`` conforms to its own connections.
+    """Test that the output of a call to ``run`` conforms to its own
+    connections.
 
     Parameters
     ----------
@@ -274,10 +275,12 @@ def assertValidOutput(task, result):
             if not isinstance(output, collections.abc.Sequence):
                 raise AssertionError(f"Expected {name} to be a sequence, got {output} instead.")
         else:
-            # use lazy evaluation to not use StorageClassFactory unless necessary
+            # use lazy evaluation to not use StorageClassFactory unless
+            # necessary
             if isinstance(output, collections.abc.Sequence) \
                     and not issubclass(
                         StorageClassFactory().getStorageClass(connection.storageClass).pytype,
                         collections.abc.Sequence):
                 raise AssertionError(f"Expected {name} to be a single value, got {output} instead.")
-        # no test for storageClass, as I'm not sure how much persistence depends on duck-typing
+        # no test for storageClass, as I'm not sure how much persistence
+        # depends on duck-typing

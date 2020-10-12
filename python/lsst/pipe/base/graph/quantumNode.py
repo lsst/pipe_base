@@ -38,8 +38,9 @@ def _hashDsRef(ref: DatasetRef) -> int:
 @dataclass(frozen=True, eq=True)
 class NodeId:
     """This represents an unique identifier of a node within an individual
-    construction of a `QuantumGraph`. This identifier will stay constant through
-    a pickle, and any `QuantumGraph` methods that return a new `QuantumGraph`.
+    construction of a `QuantumGraph`. This identifier will stay constant
+    through a pickle, and any `QuantumGraph` methods that return a new
+    `QuantumGraph`.
 
     A `NodeId` will not be the same if a new graph is built containing the same
     information in a `QuantumNode`, or even built from exactly the same inputs.

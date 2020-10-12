@@ -22,13 +22,14 @@
 #
 """Example showing use of the argument parser
 
-Here are some examples that use the repository in obs_test (which is automatically setup
-when pipe_base is setup):
+Here are some examples that use the repository in obs_test (which is
+automatically setup when pipe_base is setup):
 
 ./argumentParser.py $OBS_TEST_DIR/data/input --help
 ./argumentParser.py $OBS_TEST_DIR/data/input --id --show config data
 ./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --show data
-./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g --config oneFloat=1.5 --show config
+./argumentParser.py $OBS_TEST_DIR/data/input --id filter=g \
+    --config oneFloat=1.5 --show config
 """
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
