@@ -34,7 +34,6 @@ from typing import Mapping, Set, Union, Generator, TYPE_CHECKING, Optional
 
 import copy
 import os
-import re
 
 # -----------------------------
 #  Imports for other modules --
@@ -223,52 +222,22 @@ class Pipeline:
         string based matching due to the nature of contracts and may prune more
         than it should.
         """
-
-        pipeline = copy.deepcopy(self)
-
-        def remove_contracts(label: str):
-            """Remove any contracts that contain the given label
-
-            String comparison used in this way is not the most elegant and may
-            have issues, but it is the only feasible way when users can specify
-            contracts with generic strings.
-            """
-            new_contracts = []
-            for contract in pipeline._pipelineIR.contracts:
-                # match a label that is not preceded by an ASCII identifier, or
-                # is the start of a line and is followed by a dot
-                if re.match(f".*([^A-Za-z0-9_]|^){label}[.]", contract.contract):
-                    continue
-                new_contracts.append(contract)
-            pipeline._pipelineIR.contracts = new_contracts
-
-        # Labels supplied as a set, explicitly remove any that are not in
-        # That list
+        # Labels supplied as a set
         if labelSpecifier.labels:
-            # verify all the labels are in the pipeline
-            if not labelSpecifier.labels.issubset(pipeline._pipelineIR.tasks.keys()):
-                difference = labelSpecifier.labels.difference(pipeline._pipelineIR.tasks.keys())
-                raise ValueError("Not all supplied labels are in the pipeline definition, extra labels:"
-                                 f"{difference}")
-            # copy needed so as to not modify while iterating
-            pipeline_labels = list(pipeline._pipelineIR.tasks.keys())
-            for label in pipeline_labels:
-                if label not in labelSpecifier.labels:
-                    pipeline.removeTask(label)
-                    remove_contracts(label)
+            labelSet = labelSpecifier.labels
         # Labels supplied as a range, first create a list of all the labels
         # in the pipeline sorted according to task dependency. Then only
         # keep labels that lie between the supplied bounds
         else:
-            # Use a dict for fast searching while preserving order
-            # save contracts and remove them so they do not fail in the
-            # expansion step, will be restored after. This is needed because
-            # a user may only configure the tasks they intend to run, which
-            # may cause some contracts to fail if they will later be dropped
-            contractSave = pipeline._pipelineIR.contracts
+            # Create a copy of the pipeline to use when assessing the label
+            # ordering. Use a dict for fast searching while preserving order.
+            # Remove contracts so they do not fail in the expansion step. This
+            # is needed because a user may only configure the tasks they intend
+            # to run, which may cause some contracts to fail if they will later
+            # be dropped
+            pipeline = copy.deepcopy(self)
             pipeline._pipelineIR.contracts = []
             labels = {taskdef.label: True for taskdef in pipeline.toExpandedPipeline()}
-            pipeline._pipelineIR.contracts = contractSave
 
             # Verify the bounds are in the labels
             if labelSpecifier.begin is not None:
@@ -280,28 +249,17 @@ class Pipeline:
                     raise ValueError(f"End of range subset, {labelSpecifier.end}, not found in pipeline "
                                      "definition")
 
-            closed = False
+            labelSet = set()
             for label in labels:
-                # if there is a begin label delete all labels until it is
-                # reached.
-                if labelSpecifier.begin:
+                if labelSpecifier.begin is not None:
                     if label != labelSpecifier.begin:
-                        pipeline.removeTask(label)
-                        remove_contracts(label)
                         continue
                     else:
                         labelSpecifier.begin = None
-                # if there is an end specifier, keep all tasks until the
-                # end specifier is reached, afterwards delete the labels
-                if labelSpecifier.end:
-                    if label != labelSpecifier.end:
-                        if closed:
-                            pipeline.removeTask(label)
-                            remove_contracts(label)
-                        continue
-                    else:
-                        closed = True
-        return pipeline
+                labelSet.add(label)
+                if labelSpecifier.end is not None and label == labelSpecifier.end:
+                    break
+        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
     def _parseFileSpecifier(fileSpecifer):

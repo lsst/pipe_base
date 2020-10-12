@@ -1,4 +1,3 @@
-__all__ = ("ConfigIR", "ContractError", "ContractIR", "InheritIR", "PipelineIR", "TaskIR")
 # This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
@@ -19,11 +18,17 @@ __all__ = ("ConfigIR", "ContractError", "ContractIR", "InheritIR", "PipelineIR",
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+from __future__ import annotations
+
+__all__ = ("ConfigIR", "ContractError", "ContractIR", "InheritIR", "PipelineIR", "TaskIR", "LabeledSubset")
 
 from collections import Counter
+from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from typing import List, Union, Generator
+from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict
 
+import copy
+import re
 import os
 import yaml
 import warnings
@@ -85,6 +90,69 @@ class ContractIR:
             return True
         else:
             return False
+
+
+@dataclass
+class LabeledSubset:
+    """Intermediate representation of named subset of task labels read from
+    a pipeline yaml file.
+    """
+    label: str
+    """The label used to identify the subset of task labels.
+    """
+    subset: Set[str]
+    """A set of task labels contained in this subset.
+    """
+    description: Optional[str]
+    """A description of what this subset of tasks is intended to do
+    """
+
+    @staticmethod
+    def from_primatives(label: str, value: Union[List[str], dict]) -> LabeledSubset:
+        """Generate `LabeledSubset` objects given a properly formatted object
+        that as been created by a yaml loader.
+
+        Parameters
+        ----------
+        label : `str`
+            The label that will be used to identify this labeled subset.
+        value : `list` of `str` or `dict`
+            Object returned from loading a labeled subset section from a yaml
+            document.
+
+        Returns
+        -------
+        labeledSubset : `LabeledSubset`
+            A `LabeledSubset` object build from the inputs.
+
+        Raises
+        ------
+        ValueError
+            Raised if the value input is not properly formatted for parsing
+        """
+        if isinstance(value, MutableMapping):
+            subset = value.pop("subset", None)
+            if subset is None:
+                raise ValueError("If a labeled subset is specified as a mapping, it must contain the key "
+                                 "'subset'")
+            description = value.pop("description", None)
+        elif isinstance(value, abcIterable):
+            subset = value
+            description = None
+        else:
+            raise ValueError(f"There was a problem parsing the labeled subset {label}, make sure the "
+                             "definition is either a valid yaml list, or a mapping with keys "
+                             "(subset, description) where subset points to a yaml list, and description is "
+                             "associated with a string")
+        return LabeledSubset(label, set(subset), description)
+
+    def to_primitives(self) -> dict:
+        """Convert to a representation used in yaml serialization
+        """
+        accumulate: Dict[str, Any] = {"subset": list(self.subset)}
+        if self.description is not None:
+            accumulate["description"] = self.description
+        return accumulate
 
 
 @dataclass
@@ -263,12 +331,25 @@ class InheritIR:
             warnings.warn("Any instrument definitions in imported pipelines are ignored. "
                           "if an instrument is desired please define it in the top most pipeline")
 
-        new_tasks = {}
-        for label, task in tmp_pipeline.tasks.items():
+        included_labels = set()
+        for label in tmp_pipeline.tasks:
             if (self.include and label in self.include) or (self.exclude and label not in self.exclude)\
                     or (self.include is None and self.exclude is None):
-                new_tasks[label] = task
-        tmp_pipeline.tasks = new_tasks
+                included_labels.add(label)
+
+        # Handle labeled subsets being specified in the include or exclude
+        # list, adding or removing labels.
+        if self.include is not None:
+            subsets_in_include = tmp_pipeline.labeled_subsets.keys() & self.include
+            for label in subsets_in_include:
+                included_labels.update(tmp_pipeline.labeled_subsets[label].subset)
+
+        elif self.exclude is not None:
+            subsets_in_exclude = tmp_pipeline.labeled_subsets.keys() & self.exclude
+            for label in subsets_in_exclude:
+                included_labels.difference_update(tmp_pipeline.labeled_subsets[label].subset)
+
+        tmp_pipeline = tmp_pipeline.subset_from_labels(included_labels)
 
         if not self.importContracts:
             tmp_pipeline.contracts = []
@@ -310,6 +391,8 @@ class PipelineIR:
         if "tasks" not in loaded_yaml and "inherits" not in loaded_yaml:
             raise ValueError("A pipeline must be declared with one or more tasks")
 
+        # These steps below must happen in this call order
+
         # Process pipeline description
         self.description = loaded_yaml.pop("description")
 
@@ -325,8 +408,14 @@ class PipelineIR:
         # Process any contracts
         self._read_contracts(loaded_yaml)
 
+        # Process any named label subsets
+        self._read_labeled_subsets(loaded_yaml)
+
         # Process any inherited pipelines
         self._read_inherits(loaded_yaml)
+
+        # verify named subsets, must be done after inheriting
+        self._verify_labeled_subsets()
 
     def _read_contracts(self, loaded_yaml):
         """Process the contracts portion of the loaded yaml document
@@ -346,6 +435,37 @@ class PipelineIR:
                 self.contracts.append(ContractIR(**contract))
             if isinstance(contract, str):
                 self.contracts.append(ContractIR(contract=contract))
+
+    def _read_labeled_subsets(self, loaded_yaml: dict):
+        """Process the subsets portion of the loaded yaml document
+
+        Parameters
+        ----------
+        loaded_yaml: `MutableMapping`
+            A dictionary which matches the structure that would be produced
+            by a yaml reader which parses a pipeline definition document
+        """
+        loaded_subsets = loaded_yaml.pop("subsets", {})
+        self.labeled_subsets = {}
+        if not loaded_subsets and "subset" in loaded_yaml:
+            raise ValueError("Top level key should be subsets and not subset, add an s")
+        for key, value in loaded_subsets.items():
+            self.labeled_subsets[key] = LabeledSubset.from_primatives(key, value)
+
+    def _verify_labeled_subsets(self):
+        """Verifies that all the labels in each named subset exist within the
+        pipeline.
+        """
+        # Verify that all labels defined in a labeled subset are in the
+        # Pipeline
+        for labeled_subset in self.labeled_subsets.values():
+            if not labeled_subset.subset.issubset(self.tasks.keys()):
+                raise ValueError(f"Labels {labeled_subset.subset - self.tasks.keys()} were not found in the "
+                                 "declared pipeline")
+        # Verify subset labels are not already task labels
+        label_intersection = self.labeled_subsets.keys() & self.tasks.keys()
+        if label_intersection:
+            raise ValueError(f"Labeled subsets can not use the same label as a task: {label_intersection}")
 
     def _read_inherits(self, loaded_yaml):
         """Process the inherits portion of the loaded yaml document
@@ -375,6 +495,7 @@ class PipelineIR:
 
         # integrate any imported pipelines
         accumulate_tasks = {}
+        accumulate_labeled_subsets = {}
         for other_pipeline in self.inherits:
             tmp_IR = other_pipeline.toPipelineIR()
             if accumulate_tasks.keys() & tmp_IR.tasks.keys():
@@ -382,6 +503,25 @@ class PipelineIR:
                                  "be unique")
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
+            # verify that tmp_IR has unique labels for named subset among
+            # existing labeled subsets, and with existing task labels.
+            overlapping_subsets = accumulate_labeled_subsets.keys() & tmp_IR.labeled_subsets.keys()
+            task_subset_overlap = ((accumulate_labeled_subsets.keys() | tmp_IR.labeled_subsets.keys())
+                                   & accumulate_tasks.keys())
+            if overlapping_subsets or task_subset_overlap:
+                raise ValueError("Labeled subset names must be unique amongst imports in both labels and "
+                                 f" named Subsets. Duplicate: {overlapping_subsets | task_subset_overlap}")
+            accumulate_labeled_subsets.update(tmp_IR.labeled_subsets)
+
+        # verify that any accumulated labeled subsets dont clash with a label
+        # from this pipeline
+        if accumulate_labeled_subsets.keys() & self.tasks.keys():
+            raise ValueError("Labeled subset names must be unique amongst imports in both labels and "
+                             " named Subsets")
+        # merge in the named subsets for self so this document can override any
+        # that have been delcared
+        accumulate_labeled_subsets.update(self.labeled_subsets)
+        self.labeled_subsets = accumulate_labeled_subsets
 
         # merge the dict of label:TaskIR objects, preserving any configs in the
         # imported pipeline if the labels point to the same class
@@ -432,6 +572,87 @@ class PipelineIR:
                                                    rest=c))
             self.tasks[label] = TaskIR(label, definition["class"], task_config_ir)
 
+    def _remove_contracts(self, label: str):
+        """Remove any contracts that contain the given label
+
+        String comparison used in this way is not the most elegant and may
+        have issues, but it is the only feasible way when users can specify
+        contracts with generic strings.
+        """
+        new_contracts = []
+        for contract in self.contracts:
+            # match a label that is not preceded by an ASCII identifier, or
+            # is the start of a line and is followed by a dot
+            if re.match(f".*([^A-Za-z0-9_]|^){label}[.]", contract.contract):
+                continue
+            new_contracts.append(contract)
+        self.contracts = new_contracts
+
+    def subset_from_labels(self, labelSpecifier: Set[str]) -> PipelineIR:
+        """Subset a pipelineIR to contain only labels specified in
+        labelSpecifier.
+
+        Parameters
+        ----------
+        labelSpecifier : `set` of `str`
+            Set containing labels that describes how to subset a pipeline.
+
+        Returns
+        -------
+        pipeline : `PipelineIR`
+            A new pipelineIR object that is a subset of the old pipelineIR
+
+        Raises
+        ------
+        ValueError
+            Raised if there is an issue with specified labels
+
+        Notes
+        -----
+        This method attempts to prune any contracts that contain labels which
+        are not in the declared subset of labels. This pruning is done using a
+        string based matching due to the nature of contracts and may prune more
+        than it should. Any labeled subsets defined that no longer have all
+        members of the subset present in the pipeline will be removed from the
+        resulting pipeline.
+        """
+
+        pipeline = copy.deepcopy(self)
+
+        # update the label specifier to expand any named subsets
+        toRemove = set()
+        toAdd = set()
+        for label in labelSpecifier:
+            if label in pipeline.labeled_subsets:
+                toRemove.add(label)
+                toAdd.update(pipeline.labeled_subsets[label].subset)
+        labelSpecifier.difference_update(toRemove)
+        labelSpecifier.update(toAdd)
+        # verify all the labels are in the pipeline
+        if not labelSpecifier.issubset(pipeline.tasks.keys()
+                                       | pipeline.labeled_subsets):
+            difference = labelSpecifier.difference(pipeline.tasks.keys())
+            raise ValueError("Not all supplied labels (specified or named subsets) are in the pipeline "
+                             f"definition, extra labels: {difference}")
+        # copy needed so as to not modify while iterating
+        pipeline_labels = set(pipeline.tasks.keys())
+        # Remove the labels from the pipelineIR, and any contracts that contain
+        # those labels (see docstring on _remove_contracts for why this may
+        # cause issues)
+        for label in pipeline_labels:
+            if label not in labelSpecifier:
+                pipeline.tasks.pop(label)
+                pipeline._remove_contracts(label)
+
+        # create a copy of the object to iterate over
+        labeled_subsets = copy.copy(pipeline.labeled_subsets)
+        # remove any labeled subsets that no longer have a complete set
+        for label, labeled_subset in labeled_subsets.items():
+            if labeled_subset.subset - pipeline.tasks.keys():
+                pipeline.labeled_subsets.pop(label)
+
+        return pipeline
+
     @classmethod
     def from_string(cls, pipeline_string: str):
         """Create a `PipelineIR` object from a string formatted like a pipeline
@@ -480,6 +701,8 @@ class PipelineIR:
         accumulate['tasks'] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
             accumulate['contracts'] = [c.to_primitives() for c in self.contracts]
+        if self.labeled_subsets:
+            accumulate['subsets'] = {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
         return accumulate
 
     def __str__(self) -> str:
