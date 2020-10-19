@@ -111,24 +111,29 @@ class QuantumGraphTestCase(unittest.TestCase):
     """
     def setUp(self):
         config = Config({
-            "dimensions": {
-                "version": 1,
-                "skypix": {},
-                "elements": {
-                    "A": {
-                        "keys": [{
-                            "name": "id",
-                            "type": "int",
-                        }],
-                    },
-                    "B": {
-                        "keys": [{
-                            "name": "id",
-                            "type": "int",
-                        }],
-                    }
+            "version": 1,
+            "skypix": {
+                "common": "htm7",
+                "htm": {
+                    "class": "lsst.sphgeom.HtmPixelization",
+                    "max_level": 24,
                 }
-            }
+            },
+            "elements": {
+                "A": {
+                    "keys": [{
+                        "name": "id",
+                        "type": "int",
+                    }],
+                },
+                "B": {
+                    "keys": [{
+                        "name": "id",
+                        "type": "int",
+                    }],
+                }
+            },
+            "packers": {}
         })
         universe = DimensionUniverse(config=config)
         # need to make a mapping of TaskDef to set of quantum
