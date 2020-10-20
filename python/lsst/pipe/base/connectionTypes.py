@@ -96,6 +96,7 @@ class BaseConnection:
     def makeDatasetType(self, universe: DimensionUniverse,
                         parentStorageClass: Optional[StorageClass] = None):
         """Construct a true `DatasetType` instance with normalized dimensions.
+
         Parameters
         ----------
         universe : `lsst.daf.butler.DimensionUniverse`
@@ -150,6 +151,7 @@ class DimensionedConnection(BaseConnection):
     def makeDatasetType(self, universe: DimensionUniverse,
                         parentStorageClass: Optional[StorageClass] = None):
         """Construct a true `DatasetType` instance with normalized dimensions.
+
         Parameters
         ----------
         universe : `lsst.daf.butler.DimensionUniverse`

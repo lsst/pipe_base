@@ -52,7 +52,7 @@ class IncompatibleGraphError(Exception):
 
 
 class QuantumGraph:
-    """QuantumGraph is a directed acyclic graph of `QuantumNode`s
+    """QuantumGraph is a directed acyclic graph of `QuantumNode` objects
 
     This data structure represents a concrete workflow generated from a
     `Pipeline`.
@@ -143,29 +143,30 @@ class QuantumGraph:
         Returns
         -------
         taskGraph : `networkx.Digraph`
-            Internal datastructure that holds relations of `TaskDef`s
+            Internal datastructure that holds relations of `TaskDef` objects
         """
         return self._taskGraph
 
     @property
     def graph(self) -> nx.DiGraph:
         """Return a graph representing the relations between all the
-        `QuantumNode`s. Largely it should be preferred to iterate over, and use
-        methods of this class, but sometimes direct access to the networkx
-        object may be helpful
+        `QuantumNode` objects. Largely it should be preferred to iterate
+        over, and use methods of this class, but sometimes direct access to
+        the networkx object may be helpful
 
         Returns
         -------
         graph : `networkx.Digraph`
-            Internal datastructure that holds relations of `QuantumNode`s
+            Internal datastructure that holds relations of `QuantumNode`
+            objects
         """
         return self._connectedQuanta
 
     @property
     def inputQuanta(self) -> Iterable[QuantumNode]:
-        """Make a `list` of all `QuantumNode`s that are 'input' nodes to the
-        graph, meaning those nodes to not depend on any other nodes in the
-        graph.
+        """Make a `list` of all `QuantumNode` objects that are 'input' nodes
+        to the graph, meaning those nodes to not depend on any other nodes in
+        the graph.
 
         Returns
         -------
@@ -176,8 +177,9 @@ class QuantumGraph:
 
     @property
     def outputQuanta(self) -> Iterable[QuantumNode]:
-        """Make a `list` of all `QuantumNode`s that are 'output' nodes to the
-        graph, meaning those nodes have no nodes that depend them in the graph.
+        """Make a `list` of all `QuantumNode` objects that are 'output' nodes
+        to the graph, meaning those nodes have no nodes that depend them in
+        the graph.
 
         Returns
         -------
@@ -188,8 +190,8 @@ class QuantumGraph:
 
     @property
     def allDatasetTypes(self) -> Tuple[DatasetTypeName, ...]:
-        """Return all the `DatasetTypeNames` that are contained inside the
-        graph.
+        """Return all the `DatasetTypeName` objects that are contained inside
+        the graph.
 
         Returns
         -------
@@ -261,9 +263,9 @@ class QuantumGraph:
         Returns
         -------
         tasks : iterable of `TaskDef`
-            `TaskDef`s that have the specified `DatasetTypeName` as an input,
-            list will be empty if no tasks use specified `DatasetTypeName` as
-            an input.
+            `TaskDef` objects that have the specified `DatasetTypeName` as an
+            input, list will be empty if no tasks use specified
+            `DatasetTypeName` as an input.
 
         Raises
         ------
@@ -310,7 +312,8 @@ class QuantumGraph:
         Returns
         -------
         result : iterable of `TaskDef`
-            `TaskDef`s that are associated with the specified `DatasetTypeName`
+            `TaskDef` objects that are associated with the specified
+            `DatasetTypeName`
 
         Raises
         ------
@@ -324,12 +327,12 @@ class QuantumGraph:
         return results
 
     def findTaskDefByName(self, taskName: str) -> List[TaskDef]:
-        """Determine which `TaskDef`s in this graph are associated with a `str`
-        representing a task name (looks at the taskName property of
-        `TaskDef`s).
+        """Determine which `TaskDef` objects in this graph are associated
+        with a `str` representing a task name (looks at the taskName property
+        of `TaskDef` objects).
 
-        Returns a list of `TaskDef`s as a `PipelineTask` may appear multiple
-        times in a graph with different labels.
+        Returns a list of `TaskDef` objects as a `PipelineTask` may appear
+        multiple times in a graph with different labels.
 
         Parameters
         ----------
@@ -339,9 +342,9 @@ class QuantumGraph:
         Returns
         -------
         result : list of `TaskDef`
-            List of the `TaskDef`s that have the name specified. Multiple
-            values are returned in the case that a task is used multiple times
-            with different labels.
+            List of the `TaskDef` objects that have the name specified.
+            Multiple values are returned in the case that a task is used
+            multiple times with different labels.
         """
         results = []
         for task in self._quanta.keys():
@@ -351,8 +354,8 @@ class QuantumGraph:
         return results
 
     def findTaskDefByLabel(self, label: str) -> Optional[TaskDef]:
-        """Determine which `TaskDef`s in this graph are associated with a `str`
-        representing a tasks label.
+        """Determine which `TaskDef` objects in this graph are associated
+        with a `str` representing a tasks label.
 
         Parameters
         ----------
@@ -362,7 +365,7 @@ class QuantumGraph:
         Returns
         -------
         result : `TaskDef`
-            `TaskDef`s that has the specified label.
+            `TaskDef` objects that has the specified label.
         """
         for task in self._quanta.keys():
             if label == task.label:
@@ -381,7 +384,7 @@ class QuantumGraph:
 
         Returns
         -------
-        result : `set` of `QuantumNode`s
+        result : `set` of `QuantumNode` objects
             A `set` of `QuantumNode`s that contain specified `DatasetTypeName`
 
         Raises
