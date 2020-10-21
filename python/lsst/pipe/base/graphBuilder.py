@@ -615,7 +615,7 @@ class _PipelineScaffolding:
                 ).findDatasets(
                     datasetType,
                     collections=run,
-                    deduplicate=True
+                    findFirst=True
                 )
                 for resolvedRef in resolvedRefQueryResults:
                     # TODO: we could easily support per-DatasetType
@@ -638,7 +638,7 @@ class _PipelineScaffolding:
             ).findDatasets(
                 datasetType,
                 collections=collections,
-                deduplicate=True
+                findFirst=True
             )
             dataIdsNotFoundYet = set(refs.keys())
             for resolvedRef in resolvedRefQueryResults:
@@ -733,7 +733,7 @@ class _PipelineScaffolding:
                         refs = list(registry.queryDatasets(datasetType,
                                                            collections=collections,
                                                            dataId=quantum.dataId,
-                                                           deduplicate=True).expanded())
+                                                           findFirst=True).expanded())
                     quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs
                                                                if ref is not None})
             # Actually remove any quanta that we decided to skip above.
