@@ -4,3 +4,6 @@ tasks:
       class: "test.moduleA"
       config:
           value1: 1
+subsets:
+  modSubset:
+    - modA

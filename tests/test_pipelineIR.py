@@ -222,6 +222,64 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
 
+        # Test that named subsets are inherited
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
+        self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modA"})
+
+        # Test that inheriting and redeclaring a named subset works
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modE: "test.moduleE"
+        subsets:
+          modSubset:
+            - modE
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
+        self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modE"})
+
+        # Test that inheriting from two pipelines that both declare a named
+        # subset with the same name fails
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $PIPE_BASE_DIR/tests/testPipeline3.yaml
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that inheriting a named subset that duplicates a label declared
+        # in this pipeline fails
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+        tasks:
+          modSubset: "test.moduleE"
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that inheriting fails if a named subset and task label conflict
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $PIPE_BASE_DIR/tests/testPipeline4.yaml
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
         location = os.path.expandvars("$PIPE_BASE_DIR/tests/testPipeline1.yaml")
@@ -242,6 +300,73 @@ class PipelineIRTestCase(unittest.TestCase):
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts[0].msg, "Test message")
+
+    def testReadNamedSubsets(self):
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        tasks:
+            modA: test.modA
+            modB:
+              class: test.modB
+            modC: test.modC
+            modD: test.modD
+        subsets:
+            subset1:
+              - modA
+              - modB
+            subset2:
+              subset:
+                - modC
+                - modD
+              description: "A test named subset"
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.labeled_subsets.keys(), {"subset1", "subset2"})
+
+        self.assertEqual(pipeline.labeled_subsets["subset1"].subset, {"modA", "modB"})
+        self.assertEqual(pipeline.labeled_subsets["subset1"].description, None)
+
+        self.assertEqual(pipeline.labeled_subsets["subset2"].subset, {"modC", "modD"})
+        self.assertEqual(pipeline.labeled_subsets["subset2"].description,
+                         "A test named subset")
+
+        # verify that forgetting a subset key is an error
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        tasks:
+            modA: test.modA
+            modB:
+              class: test.modB
+            modC: test.modC
+            modD: test.modD
+        subsets:
+            subset2:
+              sub:
+                - modC
+                - modD
+              description: "A test named subset"
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # verify putting a label in a named subset that is not in the task is
+        # an error
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        tasks:
+            modA: test.modA
+            modB:
+              class: test.modB
+            modC: test.modC
+            modD: test.modD
+        subsets:
+            subset2:
+              - modC
+              - modD
+              - modE
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
 
     def testInstrument(self):
         # Verify that if instrument is defined it is parsed out
@@ -327,6 +452,10 @@ class PipelineIRTestCase(unittest.TestCase):
             modD: test.moduleD
         contracts:
             - modA.foo == modB.bar
+        subsets:
+            subA:
+               - modA
+               - modC
         """)
 
         pipeline = PipelineIR.from_string(pipeline_str)
