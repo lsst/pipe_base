@@ -736,11 +736,12 @@ class CmdLineTask(Task):
         clobber : `bool`, optional
             A boolean flag that controls what happens if a config already has
             been saved:
+
             - `True`: overwrite or rename the existing config, depending on
               ``doBackup``.
             - `False`: raise `TaskError` if this config does not match the
               existing config.
-        doBackup : bool, optional
+        doBackup : `bool`, optional
             Set to `True` to backup the config files if clobbering.
         """
         configName = self._getConfigName()
@@ -780,6 +781,7 @@ class CmdLineTask(Task):
         clobber : `bool`, optional
             A boolean flag that controls what happens if a schema already has
             been saved:
+
             - `True`: overwrite or rename the existing schema, depending on
               ``doBackup``.
             - `False`: raise `TaskError` if this schema does not match the
@@ -834,6 +836,7 @@ class CmdLineTask(Task):
         clobber : `bool`, optional
             A boolean flag that controls what happens if versions already have
             been saved:
+
             - `True`: overwrite or rename the existing version info, depending
               on ``doBackup``.
             - `False`: raise `TaskError` if this version info does not match
