@@ -125,12 +125,18 @@ class QuantumGraphTestCase(unittest.TestCase):
                         "name": "id",
                         "type": "int",
                     }],
+                    "storage": {
+                        "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+                    },
                 },
                 "B": {
                     "keys": [{
                         "name": "id",
                         "type": "int",
                     }],
+                    "storage": {
+                        "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+                    },
                 }
             },
             "packers": {}
