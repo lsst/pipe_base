@@ -28,7 +28,7 @@ import itertools
 import logging
 import numpy
 
-from lsst.daf.butler import (Butler, Config, DatasetType, CollectionSearch)
+from lsst.daf.butler import Butler, Config, DatasetType
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 from ... import base as pipeBase
@@ -268,7 +268,7 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
     builder = pipeBase.GraphBuilder(registry=butler.registry, skipExisting=skipExisting)
     qgraph = builder.makeGraph(
         pipeline,
-        collections=CollectionSearch.fromExpression(butler.run),
+        collections=[butler.run],
         run=butler.run,
         userQuery=userQuery
     )
