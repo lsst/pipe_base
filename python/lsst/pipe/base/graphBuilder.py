@@ -490,8 +490,10 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        collections : `lsst.daf.butler.CollectionSearch`
-            Object representing the collections to search for input datasets.
+        collections
+            Expressions representing the collections to search for input
+            datasets.  May be any of the types accepted by
+            `lsst.daf.butler.CollectionSearch.fromExpression`.
         userQuery : `str`, optional
             User-provided expression to limit the data IDs processed.
 
@@ -578,8 +580,10 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        collections : `lsst.daf.butler.CollectionSearch`
-            Object representing the collections to search for input datasets.
+        collections
+            Expressions representing the collections to search for input
+            datasets.  May be any of the types accepted by
+            `lsst.daf.butler.CollectionSearch.fromExpression`.
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
@@ -893,8 +897,10 @@ class GraphBuilder(object):
         ----------
         pipeline : `Pipeline`
             Pipeline definition, task names/classes and their configs.
-        collections : `lsst.daf.butler.CollectionSearch`
-            Object representing the collections to search for input datasets.
+        collections
+            Expressions representing the collections to search for input
+            datasets.  May be any of the types accepted by
+            `lsst.daf.butler.CollectionSearch.fromExpression`.
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
