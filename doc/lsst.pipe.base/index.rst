@@ -55,6 +55,16 @@ Developing tasks and command-line tasks
    creating-a-command-line-task.rst
    testing-a-pipeline-task.rst
 
+.. _lsst-pipe-base-developing-pipelines:
+
+Developing Pipelines
+--------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   creating-a-pipeline.rst
+
 .. _lsst.pipe.base-contributing:
 
 Contributing
