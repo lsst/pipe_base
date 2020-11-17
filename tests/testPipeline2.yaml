@@ -4,9 +4,9 @@ parameters:
   value3: valueC
 tasks:
   modA:
-      class: "test.moduleA"
-      config:
-          value1: 1
+    class: "test.moduleA"
+    config:
+      value1: 1
 subsets:
   modSubset:
     - modA
