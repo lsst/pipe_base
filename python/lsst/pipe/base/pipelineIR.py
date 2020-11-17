@@ -390,14 +390,27 @@ class InheritIR:
     pipeline or not.
     """
 
-    def toPipelineIR(self) -> "PipelineIR":
-        """Convert to a representation used in yaml serialization
+    def toPipelineIR(self, instrument=None) -> "PipelineIR":
+        """Load in the Pipeline specified by this object, and turn it into a
+        PipelineIR instance.
+
+        Parameters
+        ----------
+        instrument : Optional `str`
+            A string giving the fully qualified path to an instrument object.
+            If a inherited pipeline defines the same instrument as defined in
+            this variable, an import warning message is skipped.
+
+        Returns
+        -------
+        pipeline : `PipelineIR`
+            A pipeline generated from the imported pipeline file
         """
         if self.include and self.exclude:
             raise ValueError("Both an include and an exclude list cant be specified"
                              " when declaring a pipeline import")
         tmp_pipeline = PipelineIR.from_file(os.path.expandvars(self.location))
-        if tmp_pipeline.instrument is not None:
+        if tmp_pipeline.instrument is not None and tmp_pipeline.instrument != instrument:
             warnings.warn("Any instrument definitions in imported pipelines are ignored. "
                           "if an instrument is desired please define it in the top most pipeline")
 
@@ -585,7 +598,7 @@ class PipelineIR:
         accumulate_labeled_subsets = {}
         accumulated_parameters = ParametersIR({})
         for other_pipeline in self.inherits:
-            tmp_IR = other_pipeline.toPipelineIR()
+            tmp_IR = other_pipeline.toPipelineIR(instrument=self.instrument)
             if accumulate_tasks.keys() & tmp_IR.tasks.keys():
                 raise ValueError("Task labels in the imported pipelines must "
                                  "be unique")
