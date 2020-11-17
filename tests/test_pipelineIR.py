@@ -280,6 +280,63 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
+    def testReadParameters(self):
+        # verify that parameters section are read in from a pipeline
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        parameters:
+          value1: A
+          value2: B
+        tasks:
+          modA: ModuleA
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.parameters.mapping, {"value1": "A", "value2": "B"})
+
+    def testTaskParameterLabel(self):
+        # verify that "parameters" cannot be used as a task label
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        tasks:
+          parameters: modA
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+    def testParameterInheritance(self):
+        # verify that inheriting parameters happens correctly
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        inherits:
+          - $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - location: $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            exclude:
+              - modA
+
+        parameters:
+          value4: valued
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.parameters.mapping, {"value4": "valued", "value1": "valueNew",
+                                                       "value2": "valueB",
+                                                       "value3": "valueC"})
+
+    def testParameterConfigFormatting(self):
+        # verify that a config properly is formatted with parameters
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        parameters:
+          value1: A
+        tasks:
+          modA:
+            class: ModuleA
+            config:
+              testKey: parameters.value1
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        newConfig = pipeline.tasks['modA'].config[0].formatted(pipeline.parameters)
+        self.assertEqual(newConfig.rest['testKey'], "A")
+
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
         location = os.path.expandvars("$PIPE_BASE_DIR/tests/testPipeline1.yaml")

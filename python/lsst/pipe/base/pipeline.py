@@ -467,6 +467,15 @@ class Pipeline:
         self._addConfigImpl(label, pipelineIR.ConfigIR(python=pythonString))
 
     def _addConfigImpl(self, label: str, newConfig: pipelineIR.ConfigIR):
+        if label == "parameters":
+            if newConfig.rest.keys() - self._pipelineIR.parameters.mapping.keys():
+                raise ValueError("Cannot override parameters that are not defined in pipeline")
+            self._pipelineIR.parameters.mapping.update(newConfig.rest)
+            if newConfig.file:
+                raise ValueError("Setting parameters section with config file is not supported")
+            if newConfig.python:
+                raise ValueError("Setting parameters section using python block in unsupported")
+            return
         if label not in self._pipelineIR.tasks:
             raise LookupError(f"There are no tasks labeled '{label}' in the pipeline")
         self._pipelineIR.tasks[label].add_or_update_config(newConfig)
@@ -499,7 +508,8 @@ class Pipeline:
             if self._pipelineIR.instrument is not None:
                 overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
             if taskIR.config is not None:
-                for configIR in taskIR.config:
+                for configIR in (configIr.formatted(self._pipelineIR.parameters)
+                                 for configIr in taskIR.config):
                     if configIR.dataId is not None:
                         raise NotImplementedError("Specializing a config on a partial data id is not yet "
                                                   "supported in Pipeline definition")
