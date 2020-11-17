@@ -256,6 +256,8 @@ class ConfigIR:
         """
         new_config = copy.deepcopy(self)
         for key, value in new_config.rest.items():
+            if not isinstance(value, str):
+                continue
             match = re.match("parameters[.](.*)", value)
             if match and match.group(1) in parameters:
                 new_config.rest[key] = parameters[match.group(1)]
