@@ -22,6 +22,7 @@
 """Simple unit test for Pipeline.
 """
 
+import textwrap
 import unittest
 
 import lsst.pex.config as pexConfig
@@ -109,6 +110,39 @@ class TaskTestCase(unittest.TestCase):
         expandedPipeline = list(pipeline.toExpandedPipeline())
         self.assertEqual(expandedPipeline[0].taskName, "AddTask")
         self.assertEqual(expandedPipeline[1].taskName, "MultTask")
+
+    def testParameters(self):
+        """Test that parameters can be set and used to format
+        """
+        pipeline_str = textwrap.dedent("""
+            description: Test Pipeline
+            parameters:
+               testValue: 5.7
+            tasks:
+              add:
+                class: test_pipeline.AddTask
+                config:
+                  addend: parameters.testValue
+        """)
+        # verify that parameters are used in expanding a pipeline
+        pipeline = Pipeline.fromString(pipeline_str)
+        expandedPipeline = list(pipeline.toExpandedPipeline())
+        self.assertEqual(expandedPipeline[0].config.addend, 5.7)
+
+        # verify that a parameter can be overridden on the "command line"
+        pipeline.addConfigOverride("parameters", "testValue", 14.9)
+        expandedPipeline = list(pipeline.toExpandedPipeline())
+        self.assertEqual(expandedPipeline[0].config.addend, 14.9)
+
+        # verify that a non existing parameter cant be overridden
+        with self.assertRaises(ValueError):
+            pipeline.addConfigOverride("parameters", "missingValue", 17)
+
+        # verify that parameters does not support files or python overrides
+        with self.assertRaises(ValueError):
+            pipeline.addConfigFile("parameters", "fakeFile")
+        with self.assertRaises(ValueError):
+            pipeline.addConfigPython("parameters", "fakePythonString")
 
     def testSerialization(self):
         pipeline = Pipeline("test")

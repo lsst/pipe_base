@@ -156,6 +156,51 @@ class LabeledSubset:
 
 
 @dataclass
+class ParametersIR:
+    """Intermediate representation of parameters that are global to a pipeline
+
+    These parameters are specified under a top level key named `parameters`
+    and are declared as a yaml mapping. These entries can then be used inside
+    task configuration blocks to specify configuration values. They may not be
+    used in the special ``file`` or ``python`` blocks.
+
+    Example:
+    paramters:
+      shared_value: 14
+    tasks:
+      taskA:
+        class: modA
+        config:
+          field1: parameters.shared_value
+      taskB:
+        class: modB
+        config:
+          field2: parameters.shared_value
+    """
+    mapping: MutableMapping[str, str]
+    """A mutable mapping of identifiers as keys, and shared configuration
+    as values.
+    """
+    def update(self, other: Optional[ParametersIR]):
+        if other is not None:
+            self.mapping.update(other.mapping)
+
+    def to_primitives(self) -> MutableMapping[str, str]:
+        """Convert to a representation used in yaml serialization
+        """
+        return self.mapping
+
+    def __contains__(self, value: str) -> bool:
+        return value in self.mapping
+
+    def __getitem__(self, item: str) -> Any:
+        return self.mapping[item]
+
+    def __bool__(self) -> bool:
+        return bool(self.mapping)
+
+
+@dataclass
 class ConfigIR:
     """Intermediate representation of configurations read from a pipeline yaml
     file.
@@ -194,6 +239,31 @@ class ConfigIR:
         # # accumulated dictionary
         accumulate.update(self.rest)
         return accumulate
+
+    def formatted(self, parameters: ParametersIR) -> ConfigIR:
+        """Returns a new ConfigIR object that is formatted according to the
+        specified parameters
+
+        Parameters
+        ----------
+        parameters : ParametersIR
+            Object that contains variable mappings used in substitution.
+
+        Returns
+        -------
+        config : ConfigIR
+            A new ConfigIR object formatted with the input parameters
+        """
+        new_config = copy.deepcopy(self)
+        for key, value in new_config.rest.items():
+            match = re.match("parameters[.](.*)", value)
+            if match and match.group(1) in parameters:
+                new_config.rest[key] = parameters[match.group(1)]
+            if match and match.group(1) not in parameters:
+                warnings.warn(f"config {key} contains value {match.group(0)} which is formatted like a "
+                              "Pipeline parameter but was not found within the Pipeline, if this was not "
+                              "intentional, check for a typo")
+        return new_config
 
     def maybe_merge(self, other_config: "ConfigIR") -> Generator["ConfigIR", None, None]:
         """Merges another instance of a `ConfigIR` into this instance if
@@ -320,14 +390,27 @@ class InheritIR:
     pipeline or not.
     """
 
-    def toPipelineIR(self) -> "PipelineIR":
-        """Convert to a representation used in yaml serialization
+    def toPipelineIR(self, instrument=None) -> "PipelineIR":
+        """Load in the Pipeline specified by this object, and turn it into a
+        PipelineIR instance.
+
+        Parameters
+        ----------
+        instrument : Optional `str`
+            A string giving the fully qualified path to an instrument object.
+            If a inherited pipeline defines the same instrument as defined in
+            this variable, an import warning message is skipped.
+
+        Returns
+        -------
+        pipeline : `PipelineIR`
+            A pipeline generated from the imported pipeline file
         """
         if self.include and self.exclude:
             raise ValueError("Both an include and an exclude list cant be specified"
                              " when declaring a pipeline import")
         tmp_pipeline = PipelineIR.from_file(os.path.expandvars(self.location))
-        if tmp_pipeline.instrument is not None:
+        if tmp_pipeline.instrument is not None and tmp_pipeline.instrument != instrument:
             warnings.warn("Any instrument definitions in imported pipelines are ignored. "
                           "if an instrument is desired please define it in the top most pipeline")
 
@@ -408,6 +491,9 @@ class PipelineIR:
         # Process any contracts
         self._read_contracts(loaded_yaml)
 
+        # Process any defined parameters
+        self._read_parameters(loaded_yaml)
+
         # Process any named label subsets
         self._read_labeled_subsets(loaded_yaml)
 
@@ -435,6 +521,20 @@ class PipelineIR:
                 self.contracts.append(ContractIR(**contract))
             if isinstance(contract, str):
                 self.contracts.append(ContractIR(contract=contract))
+
+    def _read_parameters(self, loaded_yaml):
+        """Process the parameters portion of the loaded yaml document
+
+        Parameters
+        ---------
+        loaded_yaml : `dict`
+            A dictionary which matches the structure that would be produced by
+            a yaml reader which parses a pipeline definition document
+        """
+        loaded_parameters = loaded_yaml.pop("parameters", {})
+        if not isinstance(loaded_parameters, dict):
+            raise ValueError("The parameters section must be a yaml mapping")
+        self.parameters = ParametersIR(loaded_parameters)
 
     def _read_labeled_subsets(self, loaded_yaml: dict):
         """Process the subsets portion of the loaded yaml document
@@ -496,8 +596,9 @@ class PipelineIR:
         # integrate any imported pipelines
         accumulate_tasks = {}
         accumulate_labeled_subsets = {}
+        accumulated_parameters = ParametersIR({})
         for other_pipeline in self.inherits:
-            tmp_IR = other_pipeline.toPipelineIR()
+            tmp_IR = other_pipeline.toPipelineIR(instrument=self.instrument)
             if accumulate_tasks.keys() & tmp_IR.tasks.keys():
                 raise ValueError("Task labels in the imported pipelines must "
                                  "be unique")
@@ -512,6 +613,7 @@ class PipelineIR:
                 raise ValueError("Labeled subset names must be unique amongst imports in both labels and "
                                  f" named Subsets. Duplicate: {overlapping_subsets | task_subset_overlap}")
             accumulate_labeled_subsets.update(tmp_IR.labeled_subsets)
+            accumulated_parameters.update(tmp_IR.parameters)
 
         # verify that any accumulated labeled subsets dont clash with a label
         # from this pipeline
@@ -535,6 +637,7 @@ class PipelineIR:
             else:
                 accumulate_tasks[label] = task
         self.tasks = accumulate_tasks
+        self.parameters.update(accumulated_parameters)
 
     def _read_tasks(self, loaded_yaml):
         """Process the tasks portion of the loaded yaml document
@@ -549,6 +652,9 @@ class PipelineIR:
         tmp_tasks = loaded_yaml.pop("tasks", None)
         if tmp_tasks is None:
             tmp_tasks = {}
+
+        if "parameters" in tmp_tasks:
+            raise ValueError("parameters is a reserved word and cannot be used as a task label")
 
         for label, definition in tmp_tasks.items():
             if isinstance(definition, str):
@@ -698,6 +804,8 @@ class PipelineIR:
         accumulate = {"description": self.description}
         if self.instrument is not None:
             accumulate['instrument'] = self.instrument
+        if self.parameters:
+            accumulate['parameters'] = self.parameters.to_primitives()
         accumulate['tasks'] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
             accumulate['contracts'] = [c.to_primitives() for c in self.contracts]

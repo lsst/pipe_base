@@ -1,4 +1,7 @@
 description: Test Pipeline
+parameters:
+  value1: valueA
+  value2: valueB
 tasks:
   modA: "test.moduleA"
   modB: "test.moduleB"
