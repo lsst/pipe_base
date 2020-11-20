@@ -20,6 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from itertools import chain
+import os
 import pickle
 import tempfile
 import unittest
@@ -339,6 +340,24 @@ class QuantumGraphTestCase(unittest.TestCase):
             restore = QuantumGraph.load(tmpFile, self.universe)
             self._cleanGraphs(self.qGraph, restore)
             self.assertEqual(self.qGraph, restore)
+
+    def testSaveLoadUri(self):
+        uri = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pickle") as tmpFile:
+                uri = tmpFile.name
+                self.qGraph.saveUri(uri)
+                restore = QuantumGraph.loadUri(uri, self.universe)
+                self._cleanGraphs(self.qGraph, restore)
+                self.assertEqual(self.qGraph, restore)
+        except Exception as e:
+            raise e
+        finally:
+            if uri is not None:
+                os.remove(uri)
+
+        with self.assertRaises(TypeError):
+            self.qGraph.saveUri("test.notpickle")
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))

@@ -36,7 +36,7 @@ from typing import (DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, 
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-from lsst.daf.butler import Quantum, DatasetRef
+from lsst.daf.butler import Quantum, DatasetRef, ButlerURI
 
 from ._implDetails import _DatasetTracker, DatasetTypeName
 from .quantumNode import QuantumNode, NodeId, BuildId
@@ -549,8 +549,63 @@ class QuantumGraph:
         except nx.NetworkXNoCycle:
             return []
 
+    def saveUri(self, uri):
+        """Save `QuantumGraph` to the specified URI.
+
+        Parameters
+        ----------
+        uri : `ButlerURI` or `str`
+            URI to where the graph should be saved.
+        """
+        uri = ButlerURI(uri)
+        if uri.getExtension() not in (".pickle", ".pkl"):
+            raise TypeError(f"Can currently only save a graph in pickle format not {uri}")
+        uri.write(pickle.dumps(self))
+
+    @classmethod
+    def loadUri(cls, uri, universe):
+        """Read `QuantumGraph` from a URI.
+
+        Parameters
+        ----------
+        uri : `ButlerURI` or `str`
+            URI from where to load the graph.
+        universe: `~lsst.daf.butler.DimensionUniverse`
+            DimensionUniverse instance, not used by the method itself but
+            needed to ensure that registry data structures are initialized.
+
+        Returns
+        -------
+        graph : `QuantumGraph`
+            Resulting QuantumGraph instance.
+
+        Raises
+        ------
+        TypeError
+            Raised if pickle contains instance of a type other than
+            QuantumGraph.
+        Notes
+        -----
+        Reading Quanta from pickle requires existence of singleton
+        DimensionUniverse which is usually instantiated during Registry
+        initialization. To make sure that DimensionUniverse exists this method
+        accepts dummy DimensionUniverse argument.
+        """
+        uri = ButlerURI(uri)
+        # With ButlerURI we have the choice of always using a local file
+        # or reading in the bytes directly. Reading in bytes can be more
+        # efficient for reasonably-sized pickle files when the resource
+        # is remote. For now use the local file variant. For a local file
+        # as_local() does nothing.
+        with uri.as_local() as local, open(local.ospath, "rb") as fd:
+            qgraph = pickle.load(fd)
+        if not isinstance(qgraph, QuantumGraph):
+            raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
+        return qgraph
+
     def save(self, file):
         """Save QuantumGraph to a file.
+
         Presently we store QuantumGraph in pickle format, this could
         potentially change in the future if better format is found.
 
