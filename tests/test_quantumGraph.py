@@ -20,6 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from itertools import chain
+import os
 import pickle
 import tempfile
 import unittest
@@ -190,6 +191,16 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.qGraph = QuantumGraph(quantumMap)
         self.universe = universe
 
+    def _cleanGraphs(self, graph1, graph2):
+        # This is a hack for the unit test since the qualified name will be
+        # different as it will be __main__ here, but qualified to the
+        # unittest module name when restored
+        # Updates in place
+        for saved, loaded in zip(graph1._quanta.keys(),
+                                 graph2._quanta.keys()):
+            saved.taskName = saved.taskName.split('.')[-1]
+            loaded.taskName = loaded.taskName.split('.')[-1]
+
     def testTaskGraph(self):
         for taskDef in self.quantumMap.keys():
             self.assertIn(taskDef, self.qGraph.taskGraph)
@@ -210,13 +221,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testPickle(self):
         stringify = pickle.dumps(self.qGraph)
         restore: QuantumGraph = pickle.loads(stringify)
-        # This is a hack for the unit test since the qualified name will be
-        # different as it will be __main__ here, but qualified to the
-        # unittest module name when restored
-        for saved, loaded in zip(self.qGraph._quanta.keys(),
-                                 restore._quanta.keys()):
-            saved.taskName = saved.taskName.split('.')[-1]
-            loaded.taskName = loaded.taskName.split('.')[-1]
+        self._cleanGraphs(self.qGraph, restore)
         self.assertEqual(self.qGraph, restore)
 
     def testInputQuanta(self):
@@ -333,14 +338,26 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.qGraph.save(tmpFile)
             tmpFile.seek(0)
             restore = QuantumGraph.load(tmpFile, self.universe)
-            # This is a hack for the unit test since the qualified name will be
-            # different as it will be __main__ here, but qualified to the
-            # unittest module name when restored
-            for saved, loaded in zip(self.qGraph._quanta.keys(),
-                                     restore._quanta.keys()):
-                saved.taskName = saved.taskName.split('.')[-1]
-                loaded.taskName = loaded.taskName.split('.')[-1]
+            self._cleanGraphs(self.qGraph, restore)
             self.assertEqual(self.qGraph, restore)
+
+    def testSaveLoadUri(self):
+        uri = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pickle") as tmpFile:
+                uri = tmpFile.name
+                self.qGraph.saveUri(uri)
+                restore = QuantumGraph.loadUri(uri, self.universe)
+                self._cleanGraphs(self.qGraph, restore)
+                self.assertEqual(self.qGraph, restore)
+        except Exception as e:
+            raise e
+        finally:
+            if uri is not None:
+                os.remove(uri)
+
+        with self.assertRaises(TypeError):
+            self.qGraph.saveUri("test.notpickle")
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))
