@@ -207,6 +207,12 @@ class QuantumGraph:
         """
         return nx.is_weakly_connected(self._connectedQuanta)
 
+    @property
+    def buildId(self) -> BuildId:
+        """Graph build identifier, unique string (`BuildId`).
+        """
+        return self._buildId
+
     def getQuantumNodeByNodeId(self, nodeId: NodeId) -> QuantumNode:
         """Lookup a `QuantumNode` from an id associated with the node.
 
