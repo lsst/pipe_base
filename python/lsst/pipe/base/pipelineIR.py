@@ -25,6 +25,7 @@ __all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", 
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
+from deprecated.sphinx import deprecated
 from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type
 
 import copy
@@ -32,6 +33,8 @@ import re
 import os
 import yaml
 import warnings
+
+from lsst.daf.butler import ButlerURI
 
 
 class KeepInstrument:
@@ -414,7 +417,7 @@ class ImportIR:
         if self.include and self.exclude:
             raise ValueError("Both an include and an exclude list cant be specified"
                              " when declaring a pipeline import")
-        tmp_pipeline = PipelineIR.from_file(os.path.expandvars(self.location))
+        tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not KeepInstrument:
             tmp_pipeline.instrument = self.instrument
 
@@ -791,7 +794,9 @@ class PipelineIR:
         return cls(loaded_yaml)
 
     @classmethod
-    def from_file(cls, filename: str):
+    @deprecated(reason="This has been replaced with `from_uri`. will be removed after v23",
+                version="v21.0,", category=FutureWarning)  # type: ignore
+    def from_file(cls, filename: str) -> PipelineIR:
         """Create a `PipelineIR` object from the document specified by the
         input path.
 
@@ -799,11 +804,48 @@ class PipelineIR:
         ----------
         filename : `str`
             Location of document to use in creating a `PipelineIR` object.
-        """
-        with open(filename, 'r') as f:
-            loaded_yaml = yaml.load(f, Loader=PipelineYamlLoader)
-        return cls(loaded_yaml)
 
+        Returns
+        -------
+        pipelineIR : `PipelineIR`
+            The loaded pipeline
+
+        Note
+        ----
+        This method is deprecated, please use from_uri
+        """
+        return cls.from_uri(filename)
+
+    @classmethod
+    def from_uri(cls, uri: Union[str, ButlerURI]) -> PipelineIR:
+        """Create a `PipelineIR` object from the document specified by the
+        input uri.
+
+        Parameters
+        ----------
+        uri: `str` or `ButlerURI`
+            Location of document to use in creating a `PipelineIR` object.
+
+        Returns
+        -------
+        pipelineIR : `PipelineIR`
+            The loaded pipeline
+        """
+        loaded_uri = ButlerURI(uri)
+        # With ButlerURI we have the choice of always using a local file or
+        # reading in the bytes directly. Reading in bytes can be more
+        # efficient for reasonably-sized files when the resource is remote.
+        # For now use the local file variant. For a local file as_local() does
+        # nothing.
+        with loaded_uri.as_local() as local:
+            # explicitly read here, there was some issue with yaml trying
+            # to read the ButlerURI itself (I think because it only
+            # pretends to be conformant to the io api)
+            loaded_yaml = yaml.load(local.read(), Loader=PipelineYamlLoader)
+            return cls(loaded_yaml)
+
+    @deprecated(reason="This has been replaced with `write_to_uri`. will be removed after v23",
+                version="v21.0,", category=FutureWarning)  # type: ignore
     def to_file(self, filename: str):
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified path.
@@ -813,8 +855,19 @@ class PipelineIR:
         filename : `str`
             Location of document to write a `PipelineIR` object.
         """
-        with open(filename, 'w') as f:
-            yaml.dump(self.to_primitives(), f, sort_keys=False)
+        self.write_to_uri(filename)
+
+    def write_to_uri(self, uri: Union[ButlerURI, str]):
+        """Serialize this `PipelineIR` object into a yaml formatted string and
+        write the output to a file at the specified uri.
+
+        Parameters
+        ----------
+        uri: `str` or `ButlerURI`
+            Location of document to write a `PipelineIR` object.
+        """
+        butlerUri = ButlerURI(uri)
+        butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False).encode())
 
     def to_primitives(self):
         """Convert to a representation used in yaml serialization

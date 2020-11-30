@@ -30,14 +30,17 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Set, Union, Generator, TYPE_CHECKING, Optional
+from typing import Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
 
 import copy
+import re
 import os
+import urllib.parse
+import warnings
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
+from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension, ButlerURI
 from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
@@ -168,7 +171,7 @@ class Pipeline:
            A path that points to a pipeline defined in yaml format. This
            filename may also supply additional labels to be used in
            subsetting the loaded Pipeline. These labels are separated from
-           the path by a colon, and may be specified as a comma separated
+           the path by a \\#, and may be specified as a comma separated
            list, or a range denoted as beginning..end. Beginning or end may
            be empty, in which case the range will be a half open interval.
            Unlike python iteration bounds, end bounds are *INCLUDED*. Note
@@ -189,13 +192,49 @@ class Pipeline:
         string based matching due to the nature of contracts and may prune more
         than it should.
         """
-        # Split up the filename and any labels that were supplied
-        filename, labelSpecifier = cls._parseFileSpecifier(filename)
-        pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_file(filename))
+        return cls.from_uri(filename)
+
+    @classmethod
+    def from_uri(cls, uri: Union[str, ButlerURI]):
+        """Load a pipeline defined in a pipeline yaml file at a location
+        specified by a URI.
+
+        Parameters
+        ----------
+        uri: `str` or `ButlerURI`
+           If a string is supplied this should be a URI path that points to a
+           pipeline defined in yaml format. This uri may also supply
+           additional labels to be used in subsetting the loaded Pipeline.
+           These labels are separated from the path by a \\#, and may be
+           specified as a comma separated list, or a range denoted as
+           beginning..end. Beginning or end may be empty, in which case the
+           range will be a half open interval. Unlike python iteration
+           bounds, end bounds are *INCLUDED*. Note that range based selection
+           is not well defined for pipelines that are not linear in nature,
+           and correct behavior is not guaranteed, or may vary from run to
+           run. The same specifiers can be used with a ButlerURI object, by
+           being the sole contents in the fragments attribute.
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+            The pipeline loaded from specified location with appropriate (if
+            any) subsetting
+
+        Notes
+        -----
+        This method attempts to prune any contracts that contain labels which
+        are not in the declared subset of labels. This pruning is done using a
+        string based matching due to the nature of contracts and may prune more
+        than it should.
+        """
+        # Split up the uri and any labels that were supplied
+        uri, label_specifier = cls._parse_file_specifier(uri)
+        pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_uri(uri))
 
         # If there are labels supplied, only keep those
-        if labelSpecifier is not None:
-            pipeline = pipeline.subsetFromLabels(labelSpecifier)
+        if label_specifier is not None:
+            pipeline = pipeline.subsetFromLabels(label_specifier)
         return pipeline
 
     def subsetFromLabels(self, labelSpecifier: LabelSpecifier) -> Pipeline:
@@ -263,42 +302,48 @@ class Pipeline:
         return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
-    def _parseFileSpecifier(fileSpecifer):
-        """Split appart a filename path from label subsets
+    def _parse_file_specifier(uri: Union[str, ButlerURI]
+                              ) -> Tuple[ButlerURI, Optional[LabelSpecifier]]:
+        """Split appart a uri and any possible label subsets
         """
-        split = fileSpecifer.split(':')
-        # There is only a filename, return just that
-        if len(split) == 1:
-            return fileSpecifer, None
-        # More than one specifier provided, bail out
-        if len(split) > 2:
-            raise ValueError("Only one : is allowed when specifying a pipeline to load")
-        else:
-            labelSubset: str
-            filename: str
-            filename, labelSubset = split[0], split[1]
+        if isinstance(uri, str):
+            # This is to support legacy pipelines during transition
+            uri, num_replace = re.sub("[:](?!\\/\\/)", uri)
+            if num_replace:
+                warnings.warn(f"The pipeline file {uri} seems to use the legacy : to separate "
+                              "labels, this is deprecated and will be removed after June 2021, please use "
+                              "# instead.",
+                              category=FutureWarning)
+            if uri.count("#") > 1:
+                raise ValueError("Only one set of labels is allowed when specifying a pipeline to load")
+            uri = ButlerURI(uri)
+        label_subset = uri.fragment or None
+
+        if label_subset is not None:
+            label_subset = urllib.parse.unquote(label_subset)
             # labels supplied as a list
-            if ',' in labelSubset:
-                if '..' in labelSubset:
+            if ',' in label_subset:
+                if '..' in label_subset:
                     raise ValueError("Can only specify a list of labels or a range"
                                      "when loading a Pipline not both")
-                labels = set(labelSubset.split(","))
-                specifier = LabelSpecifier(labels=labels)
+                args = {"labels": set(label_subset.split(","))}
             # labels supplied as a range
-            elif '..' in labelSubset:
-                # Try to destructure the labelSubset, this will fail if more
+            elif '..' in label_subset:
+                # Try to de-structure the labelSubset, this will fail if more
                 # than one range is specified
-                try:
-                    begin, end = labelSubset.split("..")
-                except ValueError:
+                begin, end, *rest = label_subset.split("..")
+                if rest:
                     raise ValueError("Only one range can be specified when loading a pipeline")
-                specifier = LabelSpecifier(begin=begin if begin else None, end=end if end else None)
+                args = {"begin": begin if begin else None, "end": end if end else None}
             # Assume anything else is a single label
             else:
-                labels = {labelSubset}
-                specifier = LabelSpecifier(labels=labels)
+                args = {"labels": {label_subset}}
 
-            return filename, specifier
+            specifier = LabelSpecifier(**args)
+        else:
+            specifier = None
+
+        return uri, specifier
 
     @classmethod
     def fromString(cls, pipeline_string: str) -> Pipeline:
@@ -483,6 +528,9 @@ class Pipeline:
 
     def toFile(self, filename: str):
         self._pipelineIR.to_file(filename)
+
+    def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
+        self._pipelineIR.write_to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef]:
         """Returns a generator of TaskDefs which can be used to create quantum
