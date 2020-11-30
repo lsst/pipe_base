@@ -24,6 +24,7 @@ import os
 import pickle
 import tempfile
 import unittest
+import random
 from lsst.daf.butler import DimensionUniverse
 
 from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskConfig, PipelineTaskConnections,
@@ -33,6 +34,17 @@ from lsst.daf.butler import Quantum, DatasetRef, DataCoordinate, DatasetType, Co
 from lsst.pex.config import Field
 from lsst.pipe.base.graph.quantumNode import NodeId, BuildId
 import lsst.utils.tests
+
+try:
+    import boto3
+    from moto import mock_s3
+except ImportError:
+    boto3 = None
+
+    def mock_s3(cls):
+        """A no-op decorator in case moto mock_s3 can not be imported.
+        """
+        return cls
 
 
 class Dummy1Connections(PipelineTaskConnections, dimensions=("A", "B")):
@@ -334,22 +346,52 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertFalse(self.qGraph.findCycle())
 
     def testSaveLoad(self):
-        with tempfile.TemporaryFile() as tmpFile:
+        with tempfile.TemporaryFile(suffix='.qgraph') as tmpFile:
             self.qGraph.save(tmpFile)
             tmpFile.seek(0)
             restore = QuantumGraph.load(tmpFile, self.universe)
             self._cleanGraphs(self.qGraph, restore)
             self.assertEqual(self.qGraph, restore)
+            # Load in just one node
+            tmpFile.seek(0)
+            restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(0,))
+            self.assertEqual(len(restoreSub), 1)
+            self.assertEqual(list(restoreSub)[0],
+                             restore.getQuantumNodeByNodeId(NodeId(0, restore._buildId)))
 
     def testSaveLoadUri(self):
         uri = None
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pickle") as tmpFile:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".qgraph") as tmpFile:
                 uri = tmpFile.name
                 self.qGraph.saveUri(uri)
                 restore = QuantumGraph.loadUri(uri, self.universe)
                 self._cleanGraphs(self.qGraph, restore)
                 self.assertEqual(self.qGraph, restore)
+                nodeNumber = random.randint(0, len(self.qGraph)-1)
+                restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber,),
+                                                  graphID=self.qGraph._buildId)
+                self.assertEqual(len(restoreSub), 1)
+                self.assertEqual(list(restoreSub)[0],
+                                 restore.getQuantumNodeByNodeId(NodeId(nodeNumber, restore.graphID)))
+                # verify that more than one node works
+                nodeNumber2 = random.randint(0, len(self.qGraph)-1)
+                # ensure it is a different node number
+                while nodeNumber2 == nodeNumber:
+                    nodeNumber2 = random.randint(0, len(self.qGraph)-1)
+                restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber, nodeNumber2))
+                self.assertEqual(len(restoreSub), 2)
+                self.assertEqual(set(restoreSub),
+                                 set((restore.getQuantumNodeByNodeId(NodeId(nodeNumber, restore._buildId)),
+                                     restore.getQuantumNodeByNodeId(NodeId(nodeNumber2, restore._buildId)))))
+                # verify an error when requesting a non existant node number
+                with self.assertRaises(ValueError):
+                    QuantumGraph.loadUri(uri, self.universe, nodes=(99,))
+
+                # verify a graphID that does not match will be an error
+                with self.assertRaises(ValueError):
+                    QuantumGraph.loadUri(uri, self.universe, graphID="NOTRIGHT")
+
         except Exception as e:
             raise e
         finally:
@@ -357,7 +399,23 @@ class QuantumGraphTestCase(unittest.TestCase):
                 os.remove(uri)
 
         with self.assertRaises(TypeError):
-            self.qGraph.saveUri("test.notpickle")
+            self.qGraph.saveUri("test.notgraph")
+
+    @unittest.skipIf(not boto3, "Warning: boto3 AWS SDK not found!")
+    @mock_s3
+    def testSaveLoadUriS3(self):
+        # Test loading a quantum graph from an mock s3 store
+        conn = boto3.resource('s3', region_name="us-east-1")
+        conn.create_bucket(Bucket='testBucket')
+        uri = f"s3://testBucket/qgraph.qgraph"
+        self.qGraph.saveUri(uri)
+        restore = QuantumGraph.loadUri(uri, self.universe)
+        self._cleanGraphs(self.qGraph, restore)
+        self.assertEqual(self.qGraph, restore)
+        restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(0,))
+        self.assertEqual(len(restoreSub), 1)
+        self.assertEqual(list(restoreSub)[0],
+                         restore.getQuantumNodeByNodeId(NodeId(0, restore._buildId)))
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))
