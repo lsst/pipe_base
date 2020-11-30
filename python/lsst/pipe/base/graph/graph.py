@@ -30,6 +30,8 @@ import networkx as nx
 from networkx.drawing.nx_agraph import write_dot
 import os
 import pickle
+import copy
+import struct
 import time
 from typing import (DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, Generator, Optional, Tuple,
                     Union, TypeVar)
@@ -40,6 +42,8 @@ from lsst.daf.butler import Quantum, DatasetRef, ButlerURI
 
 from ._implDetails import _DatasetTracker, DatasetTypeName
 from .quantumNode import QuantumNode, NodeId, BuildId
+from ._loadHelpers import LoadHelper
+
 
 _T = TypeVar("_T", bound="QuantumGraph")
 
@@ -616,6 +620,56 @@ class QuantumGraph:
         """
         pickle.dump(self, file)
 
+    def newSave(self, uri: str):
+        # make some containers
+        pickleData = []
+        nodeMap = {}
+        taskDefMap = {}
+        protocol = 3
+
+        # counter for the number of bytes processed thus far
+        count = 0
+        # serialize out the task Defs recording the start and end bytes of each
+        # taskDef
+        for taskDef in self.taskGraph:
+            dump = pickle.dumps(taskDef, protocol=protocol)
+            taskDefMap[taskDef.label] = (count, count+len(dump))
+            count += len(dump)
+            pickleData.append(dump)
+
+        # serialize the nodes, recording the start and end bytes of each node
+        self_list = list(self)
+        for node in self_list:
+            node = copy.copy(node)
+            taskDef = node.taskDef
+            object.__setattr__(node, 'taskDef', taskDef.label)
+            dump = pickle.dumps(node, protocol=protocol)
+            pickleData.append(dump)
+            nodeMap[node.nodeId.number] = (count, count+len(dump))
+            count += len(dump)
+
+        # pickle the taskDef byte map
+        taskDef_pickle = pickle.dumps(taskDefMap, protocol=protocol)
+
+        # pickle the node byte map
+        map_pickle = pickle.dumps(nodeMap, protocol=protocol)
+
+        # record the sizes as 2 unsigned long long numbers for a total of 16
+        # bytes
+        map_lengths = struct.pack('>QQ', len(taskDef_pickle), len(map_pickle))
+
+        # write each component of the save out in a deterministic order
+        buffer = io.BytesIO()
+        buffer.write(map_lengths)
+        buffer.write(taskDef_pickle)
+        buffer.write(map_pickle)
+        for dump in pickleData:
+            buffer.write(dump)
+        butlerUri = ButlerURI(uri)
+        if butlerUri.getExtension() not in (".qgraph"):
+            raise TypeError(f"Can currently only save a graph in pickle format not {uri}")
+        butlerUri.write(buffer.getvalue())
+
     @classmethod
     def load(cls, file, universe):
         """Read QuantumGraph from a file that was made by `save`.
@@ -655,7 +709,7 @@ class QuantumGraph:
 
         Yields
         ------
-        `TaskDef`
+            `TaskDef`
             `TaskDef` objects in topological order
         """
         yield from nx.topological_sort(self.taskGraph)

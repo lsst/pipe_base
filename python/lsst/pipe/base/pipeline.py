@@ -136,7 +136,10 @@ class TaskDef:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskDef):
             return False
-        return self.config == other.config and\
+        configDict = self.config.toDict()
+        otherDict = other.config.toDict()
+        configEq = configDict == otherDict or str(configDict) == str(otherDict)
+        return configEq and\
             self.taskClass == other.taskClass and\
             self.label == other.label
 
