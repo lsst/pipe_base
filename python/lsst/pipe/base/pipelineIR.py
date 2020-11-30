@@ -33,6 +33,7 @@ import os
 import yaml
 import warnings
 
+from lsst.daf.butler import ButlerURI
 
 class PipelineYamlLoader(yaml.SafeLoader):
     """This is a specialized version of yaml's SafeLoader. It checks and raises
@@ -788,6 +789,25 @@ class PipelineIR:
             loaded_yaml = yaml.load(f, Loader=PipelineYamlLoader)
         return cls(loaded_yaml)
 
+    @classmethod
+    def from_uri(cls, uri: str):
+        """Create a `PipelineIR` object from the document specified by the
+        input uri.
+
+        Parameters
+        ----------
+        uri: `str`
+            Location of document to use in creating a `PipelineIR` object.
+        """
+        loadedUri = ButlerURI(uri)
+        # With ButlerURI we have the choice of always using a local file or
+        # reading in the bytes directly. Reading in bytes can be more
+        # efficient for reasonably-sized files when the resource is remote.
+        # For now use the local file variant. For a local file as_local() does
+        # nothing.
+        with loadedUri.as_local() as local:
+            return cls.from_file(local.ospath)
+
     def to_file(self, filename: str):
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified path.
@@ -799,6 +819,18 @@ class PipelineIR:
         """
         with open(filename, 'w') as f:
             yaml.dump(self.to_primitives(), f, sort_keys=False)
+
+    def to_uri(self, uri: str):
+        """Serialize this `PipelineIR` object into a yaml formatted string and
+        write the output to a file at the specified uri.
+
+        Parameters
+        ----------
+        uri: `str`
+            Location of document to write a `PipelineIR` object.
+        """
+        butlerUri = ButlerURI(uri)
+        butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False))
 
     def to_primitives(self):
         """Convert to a representation used in yaml serialization

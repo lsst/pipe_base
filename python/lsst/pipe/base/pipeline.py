@@ -170,7 +170,7 @@ class Pipeline:
            A path that points to a pipeline defined in yaml format. This
            filename may also supply additional labels to be used in
            subsetting the loaded Pipeline. These labels are separated from
-           the path by a colon, and may be specified as a comma separated
+           the path by a hash, and may be specified as a comma separated
            list, or a range denoted as beginning..end. Beginning or end may
            be empty, in which case the range will be a half open interval.
            Unlike python iteration bounds, end bounds are *INCLUDED*. Note
@@ -194,6 +194,47 @@ class Pipeline:
         # Split up the filename and any labels that were supplied
         filename, labelSpecifier = cls._parseFileSpecifier(filename)
         pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_file(filename))
+
+        # If there are labels supplied, only keep those
+        if labelSpecifier is not None:
+            pipeline = pipeline.subsetFromLabels(labelSpecifier)
+        return pipeline
+
+    @classmethod
+    def fromUri(cls, uri):
+        """Load a pipeline defined in a pipeline yaml file at a location
+        specified by a URI.
+
+        Parameters
+        ----------
+        uri: `str`
+           A path that points to a pipeline defined in yaml format. This
+           uri may also supply additional labels to be used in
+           subsetting the loaded Pipeline. These labels are separated from
+           the path by a hash, and may be specified as a comma separated
+           list, or a range denoted as beginning..end. Beginning or end may
+           be empty, in which case the range will be a half open interval.
+           Unlike python iteration bounds, end bounds are *INCLUDED*. Note
+           that range based selection is not well defined for pipelines that
+           are not linear in nature, and correct behavior is not guaranteed,
+           or may vary from run to run.
+
+        Returns
+        -------
+        pipeline: `Pipeline`
+            The pipeline loaded from specified location with appropriate (if
+            any) subsetting
+
+        Notes
+        -----
+        This method attempts to prune any contracts that contain labels which
+        are not in the declared subset of labels. This pruning is done using a
+        string based matching due to the nature of contracts and may prune more
+        than it should.
+        """
+        # Split up the uri and any labels that were supplied
+        uri, labelSpecifier = cls._parseFileSpecifier(uri)
+        pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_uri(uri))
 
         # If there are labels supplied, only keep those
         if labelSpecifier is not None:
@@ -268,13 +309,13 @@ class Pipeline:
     def _parseFileSpecifier(fileSpecifer):
         """Split appart a filename path from label subsets
         """
-        split = fileSpecifer.split(':')
+        split = fileSpecifer.split('#')
         # There is only a filename, return just that
         if len(split) == 1:
             return fileSpecifer, None
         # More than one specifier provided, bail out
         if len(split) > 2:
-            raise ValueError("Only one : is allowed when specifying a pipeline to load")
+            raise ValueError("Only one # is allowed when specifying a pipeline to load")
         else:
             labelSubset: str
             filename: str
@@ -485,6 +526,9 @@ class Pipeline:
 
     def toFile(self, filename: str):
         self._pipelineIR.to_file(filename)
+
+    def toURI(self, uri: str):
+        self._pipelineIR.to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef]:
         """Returns a generator of TaskDefs which can be used to create quantum
