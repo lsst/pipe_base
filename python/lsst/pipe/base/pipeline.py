@@ -136,9 +136,10 @@ class TaskDef:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskDef):
             return False
-        return self.config == other.config and\
-            self.taskClass == other.taskClass and\
-            self.label == other.label
+        # This does not consider equality of configs when determining equality
+        # as config equality is a difficult thing to define. Should be updated
+        # after DM-27847
+        return self.taskClass == other.taskClass and self.label == other.label
 
     def __hash__(self):
         return hash((self.taskClass, self.label))

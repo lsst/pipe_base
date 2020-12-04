@@ -19,10 +19,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
+import warnings
 
 __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from itertools import chain, count
 import io
@@ -30,18 +31,36 @@ import networkx as nx
 from networkx.drawing.nx_agraph import write_dot
 import os
 import pickle
+import lzma
+import copy
+import struct
 import time
 from typing import (DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, Generator, Optional, Tuple,
                     Union, TypeVar)
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-from lsst.daf.butler import Quantum, DatasetRef, ButlerURI
+from lsst.daf.butler import Quantum, DatasetRef, ButlerURI, DimensionUniverse
 
 from ._implDetails import _DatasetTracker, DatasetTypeName
 from .quantumNode import QuantumNode, NodeId, BuildId
+from ._loadHelpers import LoadHelper
+
 
 _T = TypeVar("_T", bound="QuantumGraph")
+
+# modify this constant any time the on disk representation of the save file
+# changes, and update the load helpers to behave properly for each version.
+SAVE_VERSION = 1
+
+# String used to describe the format for the preamble bytes in a file save
+# This marks a Big endian encoded format with an unsigned short, an unsigned
+# long long, and an unsigned long long in the byte stream
+STRUCT_FMT_STRING = '>HQQ'
+
+
+# magic bytes that help determine this is a graph save
+MAGIC_BYTES = b"qgraph4\xf6\xe8\xa9"
 
 
 class IncompatibleGraphError(Exception):
@@ -557,13 +576,17 @@ class QuantumGraph:
         uri : `ButlerURI` or `str`
             URI to where the graph should be saved.
         """
-        uri = ButlerURI(uri)
-        if uri.getExtension() not in (".pickle", ".pkl"):
-            raise TypeError(f"Can currently only save a graph in pickle format not {uri}")
-        uri.write(pickle.dumps(self))
+        buffer = self._buildSaveObject()
+        butlerUri = ButlerURI(uri)
+        if butlerUri.getExtension() not in (".qgraph"):
+            raise TypeError(f"Can currently only save a graph in qgraph format not {uri}")
+        butlerUri.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
     @classmethod
-    def loadUri(cls, uri, universe):
+    def loadUri(cls, uri: Union[ButlerURI, str], universe: DimensionUniverse,
+                nodes: Optional[Iterable[int]] = None,
+                graphID: Optional[BuildId] = None
+                ) -> QuantumGraph:
         """Read `QuantumGraph` from a URI.
 
         Parameters
@@ -573,6 +596,14 @@ class QuantumGraph:
         universe: `~lsst.daf.butler.DimensionUniverse`
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
+        nodes: iterable of `int` or None
+            Numbers that correspond to nodes in the graph. If specified, only
+            these nodes will be loaded. Defaults to None, in which case all
+            nodes will be loaded.
+        graphID : `str` or `None`
+            If specified this ID is verified against the loaded graph prior to
+            loading any Nodes. This defaults to None in which case no
+            validation is done.
 
         Returns
         -------
@@ -584,6 +615,13 @@ class QuantumGraph:
         TypeError
             Raised if pickle contains instance of a type other than
             QuantumGraph.
+        ValueError
+            Raised if one or more of the nodes requested is not in the
+            `QuantumGraph` or if graphID parameter does not match the graph
+            being loaded or if the supplied uri does not point at a valid
+            `QuantumGraph` save file.
+
+
         Notes
         -----
         Reading Quanta from pickle requires existence of singleton
@@ -597,13 +635,21 @@ class QuantumGraph:
         # efficient for reasonably-sized pickle files when the resource
         # is remote. For now use the local file variant. For a local file
         # as_local() does nothing.
-        with uri.as_local() as local, open(local.ospath, "rb") as fd:
-            qgraph = pickle.load(fd)
+
+        if uri.getExtension() in (".pickle", ".pkl"):
+            with uri.as_local() as local, open(local.ospath, "rb") as fd:
+                warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
+                qgraph = pickle.load(fd)
+        elif uri.getExtension() in ('.qgraph'):
+            with LoadHelper(uri) as loader:
+                qgraph = loader.load(nodes, graphID)
+        else:
+            raise ValueError("Only know how to handle files saved as `pickle`, `pkl`, or `qgraph`")
         if not isinstance(qgraph, QuantumGraph):
-            raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
+            raise TypeError(f"QuantumGraph save file contains unexpected object type: {type(qgraph)}")
         return qgraph
 
-    def save(self, file):
+    def save(self, file: io.IO[bytes]):
         """Save QuantumGraph to a file.
 
         Presently we store QuantumGraph in pickle format, this could
@@ -614,19 +660,110 @@ class QuantumGraph:
         file : `io.BufferedIOBase`
             File to write pickle data open in binary mode.
         """
-        pickle.dump(self, file)
+        buffer = self._buildSaveObject()
+        file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
+
+    def _buildSaveObject(self) -> bytearray:
+        # make some containers
+        pickleData = deque()
+        nodeMap = {}
+        taskDefMap = {}
+        protocol = 3
+
+        # counter for the number of bytes processed thus far
+        count = 0
+        # serialize out the task Defs recording the start and end bytes of each
+        # taskDef
+        for taskDef in self.taskGraph:
+            # compressing has very little impact on saving or load time, but
+            # a large impact on on disk size, so it is worth doing
+            dump = lzma.compress(pickle.dumps(taskDef, protocol=protocol))
+            taskDefMap[taskDef.label] = (count, count+len(dump))
+            count += len(dump)
+            pickleData.append(dump)
+
+        # Store the QauntumGraph BuildId along side the TaskDefs for
+        # convenance. This will allow validating BuildIds at load time, prior
+        # to loading any QuantumNodes. Name chosen for unlikely conflicts with
+        # labels as this is python standard for private.
+        taskDefMap['__GraphBuildID'] = self.graphID
+
+        # serialize the nodes, recording the start and end bytes of each node
+        for node in self:
+            node = copy.copy(node)
+            taskDef = node.taskDef
+            # Explicitly overload the "frozen-ness" of nodes to normalized out
+            # the taskDef, this saves a lot of space and load time. The label
+            # will be used to retrive the taskDef from the taskDefMap upon load
+            #
+            # This strategy was chosen instead of creating a new class that
+            # looked just like a QuantumNode but containing a label in place of
+            # a TaskDef because it would be needlessly slow to construct a
+            # bunch of new object to immediately serialize them and destroy the
+            # object. This seems like an acceptable use of Python's dynamic
+            # nature in a controlled way for optimization and simplicity.
+            object.__setattr__(node, 'taskDef', taskDef.label)
+            # compressing has very little impact on saving or load time, but
+            # a large impact on on disk size, so it is worth doing
+            dump = lzma.compress(pickle.dumps(node, protocol=protocol))
+            pickleData.append(dump)
+            nodeMap[node.nodeId.number] = (count, count+len(dump))
+            count += len(dump)
+
+        # pickle the taskDef byte map
+        taskDef_pickle = pickle.dumps(taskDefMap, protocol=protocol)
+
+        # pickle the node byte map
+        map_pickle = pickle.dumps(nodeMap, protocol=protocol)
+
+        # record the sizes as 2 unsigned long long numbers for a total of 16
+        # bytes
+        map_lengths = struct.pack(STRUCT_FMT_STRING, SAVE_VERSION, len(taskDef_pickle), len(map_pickle))
+
+        # write each component of the save out in a deterministic order
+        # buffer = io.BytesIO()
+        # buffer.write(map_lengths)
+        # buffer.write(taskDef_pickle)
+        # buffer.write(map_pickle)
+        buffer = bytearray()
+        buffer.extend(MAGIC_BYTES)
+        buffer.extend(map_lengths)
+        buffer.extend(taskDef_pickle)
+        buffer.extend(map_pickle)
+        # Iterate over the length of pickleData, and for each element pop the
+        # leftmost element off the deque and write it out. This is to save
+        # memory, as the memory is added to the buffer object, it is removed
+        # from from the container.
+        #
+        # Only this section needs to worry about memory pressue because
+        # everything else written to the buffer prior to this pickle data is
+        # only on the order of kilobytes to low numbers of megabytes.
+        while pickleData:
+            buffer.extend(pickleData.popleft())
+        return buffer
 
     @classmethod
-    def load(cls, file, universe):
+    def load(cls, file: io.IO[bytes], universe: DimensionUniverse,
+             nodes: Optional[Iterable[int]] = None,
+             graphID: Optional[BuildId] = None
+             ) -> QuantumGraph:
         """Read QuantumGraph from a file that was made by `save`.
 
         Parameters
         ----------
-        file : `io.BufferedIOBase`
+        file : `io.IO` of bytes
             File with pickle data open in binary mode.
         universe: `~lsst.daf.butler.DimensionUniverse`
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
+        nodes: iterable of `int` or None
+            Numbers that correspond to nodes in the graph. If specified, only
+            these nodes will be loaded. Defaults to None, in which case all
+            nodes will be loaded.
+        graphID : `str` or `None`
+            If specified this ID is verified against the loaded graph prior to
+            loading any Nodes. This defaults to None in which case no
+            validation is done.
 
         Returns
         -------
@@ -638,6 +775,12 @@ class QuantumGraph:
         TypeError
             Raised if pickle contains instance of a type other than
             QuantumGraph.
+        ValueError
+            Raised if one or more of the nodes requested is not in the
+            `QuantumGraph` or if graphID parameter does not match the graph
+            being loaded or if the supplied uri does not point at a valid
+            `QuantumGraph` save file.
+
         Notes
         -----
         Reading Quanta from pickle requires existence of singleton
@@ -645,7 +788,14 @@ class QuantumGraph:
         initialization. To make sure that DimensionUniverse exists this method
         accepts dummy DimensionUniverse argument.
         """
-        qgraph = pickle.load(file)
+        # Try to see if the file handle contains pickle data, this will be
+        # removed in the future
+        try:
+            qgraph = pickle.load(file)
+            warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
+        except pickle.UnpicklingError:
+            with LoadHelper(file) as loader:  # type: ignore # needed because we don't have Protocols yet
+                qgraph = loader.load(nodes, graphID)
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
         return qgraph
@@ -655,10 +805,16 @@ class QuantumGraph:
 
         Yields
         ------
-        `TaskDef`
+        taskDef : `TaskDef`
             `TaskDef` objects in topological order
         """
         yield from nx.topological_sort(self.taskGraph)
+
+    @property
+    def graphID(self):
+        """Returns the ID generated by the graph at construction time
+        """
+        return self._buildId
 
     def __iter__(self) -> Generator[QuantumNode, None, None]:
         yield from nx.topological_sort(self._connectedQuanta)
