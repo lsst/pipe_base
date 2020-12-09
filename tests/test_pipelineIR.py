@@ -98,12 +98,12 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
-        # This should raise a FileNotFoundError, as there are inherits defined
-        # so the __init__ method should pass but the inherited file does not
+        # This should raise a FileNotFoundError, as there are imported defined
+        # so the __init__ method should pass but the imported file does not
         # exist
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits: /dummy_pipeline.yaml
+        imports: /dummy_pipeline.yaml
         """)
 
         with self.assertRaises(FileNotFoundError):
@@ -123,11 +123,11 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(list(pipeline.tasks.keys()), ["modA", "modB"])
         self.assertEqual([t.klass for t in pipeline.tasks.values()], ["test.modA", "test.modB"])
 
-    def testInheritParsing(self):
+    def testImportParsing(self):
         # This should raise, as the two pipelines, both define the same label
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline1.yaml
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         """)
@@ -138,7 +138,7 @@ class PipelineIRTestCase(unittest.TestCase):
         # This should pass, as the conflicting task is excluded
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               exclude: modA
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
@@ -149,7 +149,7 @@ class PipelineIRTestCase(unittest.TestCase):
         # This should pass, as the conflicting task is no in includes
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               include: modB
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
@@ -161,7 +161,7 @@ class PipelineIRTestCase(unittest.TestCase):
         # Test that you cant include and exclude a task
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               exclude: modA
               include: modB
@@ -171,20 +171,20 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
-        # Test that contracts are inherited
+        # Test that contracts are imported
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline1.yaml
         """)
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
-        # Test that contracts are not inherited
+        # Test that contracts are not imported
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               importContracts: False
         """)
@@ -192,11 +192,11 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts, [])
 
-        # Test that configs are inherited when defining the same task again
+        # Test that configs are imported when defining the same task again
         # with the same label
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         tasks:
           modA:
@@ -207,11 +207,11 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
 
-        # Test that configs are not inherited when redefining the task
+        # Test that configs are not imported when redefining the task
         # associated with a label
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         tasks:
           modA:
@@ -222,20 +222,20 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
 
-        # Test that named subsets are inherited
+        # Test that named subsets are imported
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         """)
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
         self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modA"})
 
-        # Test that inheriting and redeclaring a named subset works
+        # Test that imported and redeclaring a named subset works
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         tasks:
           modE: "test.moduleE"
@@ -247,22 +247,22 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
         self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modE"})
 
-        # Test that inheriting from two pipelines that both declare a named
+        # Test that imported from two pipelines that both declare a named
         # subset with the same name fails
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
             - $PIPE_BASE_DIR/tests/testPipeline3.yaml
         """)
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
-        # Test that inheriting a named subset that duplicates a label declared
+        # Test that imported a named subset that duplicates a label declared
         # in this pipeline fails
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         tasks:
           modSubset: "test.moduleE"
@@ -270,10 +270,10 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
-        # Test that inheriting fails if a named subset and task label conflict
+        # Test that imported fails if a named subset and task label conflict
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
             - $PIPE_BASE_DIR/tests/testPipeline4.yaml
         """)
@@ -303,11 +303,11 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
-    def testParameterInheritance(self):
-        # verify that inheriting parameters happens correctly
+    def testParameterImporting(self):
+        # verify that importing parameters happens correctly
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
-        inherits:
+        imports:
           - $PIPE_BASE_DIR/tests/testPipeline1.yaml
           - location: $PIPE_BASE_DIR/tests/testPipeline2.yaml
             exclude:
@@ -320,6 +320,47 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline.parameters.mapping, {"value4": "valued", "value1": "valueNew",
                                                        "value2": "valueB",
                                                        "value3": "valueC"})
+
+    def testImportingInstrument(self):
+        # verify an instrument is imported, or ignored, (Or otherwise modified
+        # for potential future use)
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        imports:
+          - $PIPE_BASE_DIR/tests/testPipeline1.yaml
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.instrument, "test.instrument")
+
+        # verify that an imported pipeline can have its instrument set to None
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        imports:
+          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            instrument: None
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.instrument, None)
+
+        # verify that an imported pipeline can have its instrument modified
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        imports:
+          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            instrument: new.instrument
+        """)
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(pipeline.instrument, "new.instrument")
+
+        # Test that multiple instruments can't be defined
+        pipeline_str = textwrap.dedent("""
+        description: Test Pipeline
+        instrument: new.instrument
+        imports:
+          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+        """)
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
 
     def testParameterConfigFormatting(self):
         # verify that a config properly is formatted with parameters
@@ -496,7 +537,9 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
         instrument: dummyCam
-        inherits: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+        imports:
+          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            instrument: None
         tasks:
             modC:
                 class: test.moduleC

@@ -20,18 +20,22 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("ConfigIR", "ContractError", "ContractIR", "InheritIR", "PipelineIR", "TaskIR", "LabeledSubset")
+__all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", "TaskIR", "LabeledSubset")
 
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict
+from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type
 
 import copy
 import re
 import os
 import yaml
 import warnings
+
+
+class KeepInstrument:
+    pass
 
 
 class PipelineYamlLoader(yaml.SafeLoader):
@@ -370,8 +374,8 @@ class TaskIR:
 
 
 @dataclass
-class InheritIR:
-    """An intermediate representation of inherited pipelines
+class ImportIR:
+    """An intermediate representation of imported pipelines
     """
     location: str
     """This is the location of the pipeline to inherit. The path should be
@@ -391,17 +395,16 @@ class InheritIR:
     """Boolean attribute to dictate if contracts should be inherited with the
     pipeline or not.
     """
+    instrument: Union[Type[KeepInstrument], str, None] = KeepInstrument
+    """Instrument to assign to the Pipeline at import. The default value of
+    KEEP_INSTRUMENT indicates that whatever instrument the pipeline is declared
+    with will not be modified. Setting this value to None will drop any
+    declared instrument prior to import.
+    """
 
-    def toPipelineIR(self, instrument=None) -> "PipelineIR":
+    def toPipelineIR(self) -> "PipelineIR":
         """Load in the Pipeline specified by this object, and turn it into a
         PipelineIR instance.
-
-        Parameters
-        ----------
-        instrument : Optional `str`
-            A string giving the fully qualified path to an instrument object.
-            If a inherited pipeline defines the same instrument as defined in
-            this variable, an import warning message is skipped.
 
         Returns
         -------
@@ -412,9 +415,8 @@ class InheritIR:
             raise ValueError("Both an include and an exclude list cant be specified"
                              " when declaring a pipeline import")
         tmp_pipeline = PipelineIR.from_file(os.path.expandvars(self.location))
-        if tmp_pipeline.instrument is not None and tmp_pipeline.instrument != instrument:
-            warnings.warn("Any instrument definitions in imported pipelines are ignored. "
-                          "if an instrument is desired please define it in the top most pipeline")
+        if self.instrument is not KeepInstrument:
+            tmp_pipeline.instrument = self.instrument
 
         included_labels = set()
         for label in tmp_pipeline.tasks:
@@ -441,8 +443,8 @@ class InheritIR:
 
         return tmp_pipeline
 
-    def __eq__(self, other: "InheritIR"):
-        if not isinstance(other, InheritIR):
+    def __eq__(self, other: "ImportIR"):
+        if not isinstance(other, ImportIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
                  ("location", "include", "exclude", "importContracts")):
@@ -473,7 +475,7 @@ class PipelineIR:
         # Check required fields are present
         if "description" not in loaded_yaml:
             raise ValueError("A pipeline must be declared with a description")
-        if "tasks" not in loaded_yaml and "inherits" not in loaded_yaml:
+        if "tasks" not in loaded_yaml and len({"imports", "inherits"} - loaded_yaml.keys()) == 2:
             raise ValueError("A pipeline must be declared with one or more tasks")
 
         # These steps below must happen in this call order
@@ -500,7 +502,7 @@ class PipelineIR:
         self._read_labeled_subsets(loaded_yaml)
 
         # Process any inherited pipelines
-        self._read_inherits(loaded_yaml)
+        self._read_imports(loaded_yaml)
 
         # verify named subsets, must be done after inheriting
         self._verify_labeled_subsets()
@@ -569,7 +571,7 @@ class PipelineIR:
         if label_intersection:
             raise ValueError(f"Labeled subsets can not use the same label as a task: {label_intersection}")
 
-    def _read_inherits(self, loaded_yaml):
+    def _read_imports(self, loaded_yaml):
         """Process the inherits portion of the loaded yaml document
 
         Parameters
@@ -586,21 +588,35 @@ class PipelineIR:
                     argument["exclude"] = [argument["exclude"]]
                 if "include" in argument and isinstance(argument["include"], str):
                     argument["include"] = [argument["include"]]
+                if "instrument" in argument and argument["instrument"] == "None":
+                    argument["instrument"] = None
                 return argument
-        tmp_inherit = loaded_yaml.pop("inherits", None)
-        if tmp_inherit is None:
-            self.inherits = []
-        elif isinstance(tmp_inherit, list):
-            self.inherits = [InheritIR(**process_args(args)) for args in tmp_inherit]
+        if not {"inherits", "imports"} - loaded_yaml.keys():
+            raise ValueError("Cannot define both inherits and imports sections, use imports")
+        tmp_import = loaded_yaml.pop("inherits", None)
+        if tmp_import is None:
+            tmp_import = loaded_yaml.pop("imports", None)
         else:
-            self.inherits = [InheritIR(**process_args(tmp_inherit))]
+            warnings.warn("The 'inherits' key is deprecated, and will be "
+                          "removed around June 2021. Please use the key "
+                          "'imports' instead")
+        if tmp_import is None:
+            self.imports = []
+        elif isinstance(tmp_import, list):
+            self.imports = [ImportIR(**process_args(args)) for args in tmp_import]
+        else:
+            self.imports = [ImportIR(**process_args(tmp_import))]
 
         # integrate any imported pipelines
         accumulate_tasks = {}
         accumulate_labeled_subsets = {}
         accumulated_parameters = ParametersIR({})
-        for other_pipeline in self.inherits:
-            tmp_IR = other_pipeline.toPipelineIR(instrument=self.instrument)
+        for other_pipeline in self.imports:
+            tmp_IR = other_pipeline.toPipelineIR()
+            if self.instrument is None:
+                self.instrument = tmp_IR.instrument
+            elif self.instrument != tmp_IR.instrument and tmp_IR.instrument is not None:
+                raise ValueError("Only one instrument can be declared in a pipeline or it's imports")
             if accumulate_tasks.keys() & tmp_IR.tasks.keys():
                 raise ValueError("Task labels in the imported pipelines must "
                                  "be unique")
