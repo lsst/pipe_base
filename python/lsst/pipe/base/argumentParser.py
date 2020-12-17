@@ -838,7 +838,7 @@ log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddTHH:mm:ss.SSSZ} %c 
             os.path.join(obsPkgDir, "config", namespace.camera, fileName),
         ):
             if os.path.exists(filePath):
-                namespace.log.info("Loading config overrride file %r", filePath)
+                namespace.log.info("Loading config override file %r", filePath)
                 namespace.config.load(filePath)
             else:
                 namespace.log.debug("Config override file does not exist: %r", filePath)
