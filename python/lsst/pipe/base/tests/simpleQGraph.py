@@ -31,6 +31,7 @@ import numpy
 from lsst.daf.butler import Butler, Config, DatasetType
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
+from lsst.utils import doImport
 from ... import base as pipeBase
 from .. import connectionTypes as cT
 
@@ -44,7 +45,7 @@ class SimpleInstrument:
 
     @staticmethod
     def getName():
-        return "SimpleInstrument"
+        return "INSTRU"
 
     def applyConfigOverrides(self, name, config):
         pass
@@ -256,13 +257,22 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
         # Add dataset types to registry
         registerDatasetTypes(butler.registry, pipeline.toExpandedPipeline())
 
+        instrument = pipeline.getInstrument()
+        if instrument is not None:
+            if isinstance(instrument, str):
+                instrument = doImport(instrument)
+            instrumentName = instrument.getName()
+        else:
+            instrumentName = "INSTR"
+
         # Add all needed dimensions to registry
-        butler.registry.insertDimensionData("instrument", dict(name="INSTR"))
-        butler.registry.insertDimensionData("detector", dict(instrument="INSTR", id=0, full_name="det0"))
+        butler.registry.insertDimensionData("instrument", dict(name=instrumentName))
+        butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0,
+                                                             full_name="det0"))
 
         # Add inputs to butler
         data = numpy.array([0., 1., 2., 5.])
-        butler.put(data, "add_dataset0", instrument="INSTR", detector=0)
+        butler.put(data, "add_dataset0", instrument=instrumentName, detector=0)
 
     # Make the graph
     builder = pipeBase.GraphBuilder(registry=butler.registry, skipExisting=skipExisting)
