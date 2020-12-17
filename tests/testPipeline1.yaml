@@ -7,3 +7,4 @@ tasks:
   modB: "test.moduleB"
 contracts:
   - modA.b == modA.c
+instrument: test.instrument
