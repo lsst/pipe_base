@@ -839,7 +839,8 @@ class GraphBuilder(object):
             classes.
         """
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
-
+        if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
+            raise ValueError("Pipeline requires input datasets but no input collections provided.")
         instrument = pipeline.getInstrument()
         if isinstance(instrument, str):
             instrument = doImport(instrument)
