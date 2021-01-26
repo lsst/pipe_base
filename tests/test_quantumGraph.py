@@ -407,7 +407,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         # Test loading a quantum graph from an mock s3 store
         conn = boto3.resource('s3', region_name="us-east-1")
         conn.create_bucket(Bucket='testBucket')
-        uri = f"s3://testBucket/qgraph.qgraph"
+        uri = "s3://testBucket/qgraph.qgraph"
         self.qGraph.saveUri(uri)
         restore = QuantumGraph.loadUri(uri, self.universe)
         self._cleanGraphs(self.qGraph, restore)
