@@ -30,7 +30,7 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
+from typing import Dict, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
 
 import copy
 import re
@@ -50,7 +50,7 @@ from . import pipelineIR
 from . import pipeTools
 
 if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
-    from lsst.obs.base.instrument import Instrument
+    from lsst.obs.base import Instrument
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -114,13 +114,13 @@ class TaskDef:
         self.connections = config.connections.ConnectionsClass(config=config)
 
     @property
-    def configDatasetName(self):
+    def configDatasetName(self) -> str:
         """Name of a dataset type for configuration of this task (`str`)
         """
         return self.label + "_config"
 
     @property
-    def metadataDatasetName(self):
+    def metadataDatasetName(self) -> Optional[str]:
         """Name of a dataset type for metadata of this task, `None` if
         metadata is not to be saved (`str`)
         """
@@ -195,7 +195,7 @@ class Pipeline:
         return cls.from_uri(filename)
 
     @classmethod
-    def from_uri(cls, uri: Union[str, ButlerURI]):
+    def from_uri(cls, uri: Union[str, ButlerURI]) -> Pipeline:
         """Load a pipeline defined in a pipeline yaml file at a location
         specified by a URI.
 
@@ -308,7 +308,7 @@ class Pipeline:
         """
         if isinstance(uri, str):
             # This is to support legacy pipelines during transition
-            uri, num_replace = re.sub("[:](?!\\/\\/)", uri)
+            uri, num_replace = re.subn("[:](?!\\/\\/)", "#", uri)
             if num_replace:
                 warnings.warn(f"The pipeline file {uri} seems to use the legacy : to separate "
                               "labels, this is deprecated and will be removed after June 2021, please use "
@@ -319,8 +319,10 @@ class Pipeline:
             uri = ButlerURI(uri)
         label_subset = uri.fragment or None
 
+        specifier: Optional[LabelSpecifier]
         if label_subset is not None:
             label_subset = urllib.parse.unquote(label_subset)
+            args: Dict[str, Union[Set[str], str, None]]
             # labels supplied as a list
             if ',' in label_subset:
                 if '..' in label_subset:
@@ -396,7 +398,7 @@ class Pipeline:
     def __str__(self) -> str:
         return str(self._pipelineIR)
 
-    def addInstrument(self, instrument: Union[Instrument, str]):
+    def addInstrument(self, instrument: Union[Instrument, str]) -> None:
         """Add an instrument to the pipeline, or replace an instrument that is
         already defined.
 
@@ -415,7 +417,7 @@ class Pipeline:
             instrument = f"{instrument.__module__}.{instrument.__qualname__}"
         self._pipelineIR.instrument = instrument
 
-    def getInstrument(self):
+    def getInstrument(self) -> Instrument:
         """Get the instrument from the pipeline.
 
         Returns
@@ -427,7 +429,7 @@ class Pipeline:
         """
         return self._pipelineIR.instrument
 
-    def addTask(self, task: Union[PipelineTask, str], label: str):
+    def addTask(self, task: Union[PipelineTask, str], label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
         associated with the supplied label.
 
@@ -455,7 +457,7 @@ class Pipeline:
             label = task._DefaultName
         self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
 
-    def removeTask(self, label: str):
+    def removeTask(self, label: str) -> None:
         """Remove a task from the pipeline.
 
         Parameters
@@ -471,7 +473,7 @@ class Pipeline:
         """
         self._pipelineIR.tasks.pop(label)
 
-    def addConfigOverride(self, label: str, key: str, value: object):
+    def addConfigOverride(self, label: str, key: str, value: object) -> None:
         """Apply single config override.
 
         Parameters
@@ -485,7 +487,7 @@ class Pipeline:
         """
         self._addConfigImpl(label, pipelineIR.ConfigIR(rest={key: value}))
 
-    def addConfigFile(self, label: str, filename: str):
+    def addConfigFile(self, label: str, filename: str) -> None:
         """Add overrides from a specified file.
 
         Parameters
@@ -498,7 +500,7 @@ class Pipeline:
         """
         self._addConfigImpl(label, pipelineIR.ConfigIR(file=[filename]))
 
-    def addConfigPython(self, label: str, pythonString: str):
+    def addConfigPython(self, label: str, pythonString: str) -> None:
         """Add Overrides by running a snippet of python code against a config.
 
         Parameters
@@ -512,7 +514,7 @@ class Pipeline:
         """
         self._addConfigImpl(label, pipelineIR.ConfigIR(python=pythonString))
 
-    def _addConfigImpl(self, label: str, newConfig: pipelineIR.ConfigIR):
+    def _addConfigImpl(self, label: str, newConfig: pipelineIR.ConfigIR) -> None:
         if label == "parameters":
             if newConfig.rest.keys() - self._pipelineIR.parameters.mapping.keys():
                 raise ValueError("Cannot override parameters that are not defined in pipeline")
@@ -526,7 +528,7 @@ class Pipeline:
             raise LookupError(f"There are no tasks labeled '{label}' in the pipeline")
         self._pipelineIR.tasks[label].add_or_update_config(newConfig)
 
-    def toFile(self, filename: str):
+    def toFile(self, filename: str) -> None:
         self._pipelineIR.to_file(filename)
 
     def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
@@ -593,7 +595,7 @@ class Pipeline:
     def __len__(self):
         return len(self._pipelineIR.tasks)
 
-    def __eq__(self, other: "Pipeline"):
+    def __eq__(self, other: object):
         if not isinstance(other, Pipeline):
             return False
         return self._pipelineIR == other._pipelineIR
@@ -669,7 +671,7 @@ class TaskDatasetTypes:
         types: `TaskDatasetTypes`
             The dataset types used by this task.
         """
-        def makeDatasetTypesSet(connectionType, freeze=True):
+        def makeDatasetTypesSet(connectionType: str, freeze: bool = True) -> NamedValueSet[DatasetType]:
             """Constructs a set of true `DatasetType` objects
 
             Parameters

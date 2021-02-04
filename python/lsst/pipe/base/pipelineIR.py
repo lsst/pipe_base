@@ -82,7 +82,7 @@ class ContractIR:
     """An optional message to be shown to the user if a contract fails
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, str]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {"contract": self.contract}
@@ -90,7 +90,7 @@ class ContractIR:
             accumulate['msg'] = self.msg
         return accumulate
 
-    def __eq__(self, other: "ContractIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ContractIR):
             return False
         elif self.contract == other.contract and self.msg == other.msg:
@@ -153,10 +153,10 @@ class LabeledSubset:
                              "associated with a string")
         return LabeledSubset(label, set(subset), description)
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[List[str], str]]:
         """Convert to a representation used in yaml serialization
         """
-        accumulate: Dict[str, Any] = {"subset": list(self.subset)}
+        accumulate: Dict[str, Union[List[str], str]] = {"subset": list(self.subset)}
         if self.description is not None:
             accumulate["description"] = self.description
         return accumulate
@@ -233,7 +233,7 @@ class ConfigIR:
     are strings representing the values to apply.
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[str, dict, List[str]]]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {}
@@ -313,7 +313,7 @@ class ConfigIR:
 
         yield self
 
-    def __eq__(self, other: "ConfigIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ConfigIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -339,10 +339,10 @@ class TaskIR:
     `None` if there are no config overrides.
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[str, List[dict]]]:
         """Convert to a representation used in yaml serialization
         """
-        accumulate = {'class': self.klass}
+        accumulate: Dict[str, Union[str, List[dict]]] = {'class': self.klass}
         if self.config:
             accumulate['config'] = [c.to_primitives() for c in self.config]
         return accumulate
@@ -366,7 +366,7 @@ class TaskIR:
             return
         self.config.extend(self.config.pop().maybe_merge(other_config))
 
-    def __eq__(self, other: "TaskIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, TaskIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -446,7 +446,7 @@ class ImportIR:
 
         return tmp_pipeline
 
-    def __eq__(self, other: "ImportIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ImportIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -869,7 +869,7 @@ class PipelineIR:
         butlerUri = ButlerURI(uri)
         butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False).encode())
 
-    def to_primitives(self):
+    def to_primitives(self) -> Dict[str, Any]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {"description": self.description}
@@ -894,7 +894,7 @@ class PipelineIR:
         """
         return str(self)
 
-    def __eq__(self, other: "PipelineIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, PipelineIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
