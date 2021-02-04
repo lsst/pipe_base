@@ -115,7 +115,7 @@ class LabeledSubset:
     """
 
     @staticmethod
-    def from_primatives(label: str, value: Union[List[str], dict]) -> LabeledSubset:
+    def from_primitives(label: str, value: Union[List[str], dict]) -> LabeledSubset:
         """Generate `LabeledSubset` objects given a properly formatted object
         that as been created by a yaml loader.
 
@@ -557,7 +557,7 @@ class PipelineIR:
         if not loaded_subsets and "subset" in loaded_yaml:
             raise ValueError("Top level key should be subsets and not subset, add an s")
         for key, value in loaded_subsets.items():
-            self.labeled_subsets[key] = LabeledSubset.from_primatives(key, value)
+            self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
 
     def _verify_labeled_subsets(self):
         """Verifies that all the labels in each named subset exist within the
