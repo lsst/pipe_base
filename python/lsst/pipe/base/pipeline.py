@@ -391,7 +391,7 @@ class Pipeline:
         -------
         pipeline: `Pipeline`
         """
-        return cls.fromIR(copy.deep_copy(pipeline._pipelineIR))
+        return cls.fromIR(copy.deepcopy(pipeline._pipelineIR))
 
     def __str__(self) -> str:
         return str(self._pipelineIR)
@@ -532,7 +532,7 @@ class Pipeline:
     def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
         self._pipelineIR.write_to_uri(uri)
 
-    def toExpandedPipeline(self) -> Generator[TaskDef]:
+    def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
         """Returns a generator of TaskDefs which can be used to create quantum
         graphs.
 
