@@ -351,7 +351,7 @@ There are advantages to each:
 
        config.registrySubtask.name = "foo"
 
-    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using :option:`--configfile`, never :option:`--config`):
+    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using :option:`--config-file`, never :option:`--config`):
 
     .. code-block:: python
 

@@ -5,7 +5,7 @@ Configuring command-line tasks
 ##############################
 
 :ref:`Command-line tasks <using-command-line-tasks>` are highly configurable.
-This page describes how to review configurations with :option:`--show config <--show>`,  and change configurations on the command line with :option:`--config` or :option:`--configfile`.
+This page describes how to review configurations with :option:`--show config <--show>`,  and change configurations on the command line with :option:`--config`, :option:`--config-file`, or :option:`--configfile`.
 
 One special category of configuration is subtask retargeting.
 Retargeting uses concepts discussed on this page, but with additional considerations described in :doc:`command-line-task-retargeting-howto`.
@@ -56,7 +56,7 @@ For example, this will show any configuration that includes the string ``calibra
 How to set configurations with command-line arguments
 =====================================================
 
-Command-line tasks can be configured through a combination of two mechanisms: arguments on the command line (:option:`--config`) or through configuration files (:option:`--configfile`).
+Command-line tasks can be configured through a combination of two mechanisms: arguments on the command line (:option:`--config`) or through configuration files (:option:`--config-file` or :option:`--configfile`).
 In general, simple configurations can be made through the command line, while complex configurations and :ref:`subtask retargeting <command-line-task-retargeting-howto>` must done through configuration files (see :ref:`command-line-task-config-howto-configfile`).
 
 To change a configuration value on the command line, pass that configuration name and value to the :option:`--config` argument.
@@ -102,13 +102,13 @@ In fact, configuration files are Python modules; anything you can do in Python y
 Configuration files give you full access to the configuration API, allowing you to import and :doc:`retarget subtasks <command-line-task-retargeting-howto>`, and set configurations with complex types.
 These configurations can only be done through configuration files, not through command-line arguments.
 
-Use a configuration file by providing its file path through a :option:`-C`/:option:`--configfile` argument:
+Use a configuration file by providing its file path through a :option:`-C`/:option:`--config-file`/:option:`--configfile` argument:
 
 .. code-block:: bash
 
-   task.py REPOPATH --output output --configfile taskConfig.py
+   task.py REPOPATH --output output --config-file taskConfig.py
 
-Multiple configuration files can be provided through the same :option:`--configfile` argument and the :option:`--configfile` argument itself can be repeated.
+Multiple configuration files can be provided through the same :option:`--config-file` argument and the :option:`--config-file` argument itself can be repeated.
 
 In a configuration file, configurations are attributes of a ``config`` object.
 If on the command line you set a configuration with a ``--config skyMap.projection="TAN"`` argument, in a configuration file the equivalent statement is:
@@ -143,7 +143,7 @@ Here are two examples:
 
 Overall, the priority order for setting task configurations is configurations is (highest priority first):
 
-1. User-provided :option:`--config` and :option:`--configfile` arguments (computed left-to-right).
+1. User-provided :option:`--config` and :option:`--config-file` arguments (computed left-to-right).
 2. Camera specific configuration override file in an observatory package.
 3. General configuration override file in an observatory package.
 4. Task defaults.

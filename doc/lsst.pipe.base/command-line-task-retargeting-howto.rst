@@ -56,7 +56,7 @@ Note that if the ``calibrate.astrometry`` task is retargeted to a different task
 How to retarget a subtask configured as a ConfigurableField with a configuration file
 =====================================================================================
 
-To retarget a subtask specified as an `lsst.pex.config.ConfigurableField`, you must use a configuration file (specified by :option:`--configfile`, see :ref:`command-line-task-config-howto-configfile`).
+To retarget a subtask specified as an `lsst.pex.config.ConfigurableField`, you must use a configuration file (specified by :option:`--config-file` or :option:`--configfile`, see :ref:`command-line-task-config-howto-configfile`).
 Inside a configuration file, retargeting is done in two steps:
 
 1. Import the Task class you intend to use.
@@ -88,7 +88,7 @@ For example:
 How to retarget a subtask configured as a RegistryField with a configuration file
 =================================================================================
 
-To retarget a subtask specified as an `lsst.pex.config.RegistryField`, set the field's `~lsst.pex.config.RegistryField.name` attribute in a configuration file (using :option:`--configfile`).
+To retarget a subtask specified as an `lsst.pex.config.RegistryField`, set the field's `~lsst.pex.config.RegistryField.name` attribute in a configuration file (using :option:`--config-file` or :option:`--configfile`).
 Here is an example that assumes a task ``FooTask`` is defined in module :file:`.../foo.py` and registered using name ``foo``:
 
 .. code-block:: python

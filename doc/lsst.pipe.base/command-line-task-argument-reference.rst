@@ -18,7 +18,7 @@ The basic call signature of a command-line task is:
 See :ref:`command-line-argument-files` for details on ``@file`` syntax.
 
 For named arguments that take multiple values do not use a ``=`` after the argument name.
-For example, ``--configfile foo.py bar.py``, **not** ``--configfile=foo bar``.
+For example, ``--config-file foo.py bar.py``, **not** ``--config-file=foo bar``.
 
 Status code
 ===========
@@ -72,11 +72,11 @@ Other named arguments are optional.
 
    See :ref:`command-line-task-config-howto-config` for more information.
 
-.. option:: -C <configfile>, --configfile <configfile>
+.. option:: -C <configfile>, --config-file <configfile>, --configfile <configfile>
 
    **Task configuration override file(s).**
 
-   The ``-C``/``--configfile`` argument can appear multiple times.
+   The ``-C``/``-config-file``/``--configfile`` argument can appear multiple times.
 
    See :ref:`command-line-task-config-howto-configfile` for more information.
 
@@ -305,7 +305,7 @@ For example, the file :file:`foo.txt` contains:
 .. code-block:: text
 
    --id visit=54123^55523 raft=1,1^2,1 # data ID
-   --config someParam=someValue --configfile configOverrideFilePath
+   --config someParam=someValue --config-file configOverrideFilePath
 
 You can then reference it with ``@foo.txt``, along with additional command-line arguments:
 
