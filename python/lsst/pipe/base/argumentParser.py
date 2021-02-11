@@ -439,15 +439,15 @@ class ArgumentParser(argparse.ArgumentParser):
                                          usage=usage,
                                          fromfile_prefix_chars='@',
                                          epilog=textwrap.dedent("""Notes:
-            * --config, --configfile, --id, --loglevel and @file may appear multiple times;
+            * --config, --config-file or --configfile, --id, --loglevel and @file may appear multiple times;
                 all values are used, in order left to right
             * @file reads command-line options from the specified file:
                 * data may be distributed among multiple lines (e.g. one option per line)
                 * data after # is treated as a comment and ignored
                 * blank lines and lines starting with # are ignored
             * To specify multiple values for an option, do not use = after the option name:
-                * right: --configfile foo bar
-                * wrong: --configfile=foo bar
+                * right: --config-file foo bar
+                * wrong: --config-file=foo bar
             """),
                                          formatter_class=argparse.RawDescriptionHelpFormatter,
                                          **kwargs)
@@ -463,7 +463,8 @@ class ArgumentParser(argparse.ArgumentParser):
                                "optionally sets ROOT to ROOT/rerun/INPUT")
         self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
                           help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
-        self.add_argument("-C", "--configfile", dest="configfile", nargs="*", action=ConfigFileAction,
+        self.add_argument("-C", "--config-file", "--configfile",
+                          dest="configfile", nargs="*", action=ConfigFileAction,
                           help="config override file(s)")
         self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
                           help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
