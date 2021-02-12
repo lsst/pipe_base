@@ -225,6 +225,31 @@ class PrerequisiteInput(BaseInput):
         using the DatasetType, registry, quantum dataId, and input collections
         passed to it. If no function is specified, the default temporal spatial
         lookup will be used.
+
+    Notes
+    -----
+    Prerequisite inputs are used for datasets that must exist in the data
+    repository before a pipeline including this is run; they cannot be produced
+    by another task in the same pipeline.
+
+    In exchange for this limitation, they have a number of advantages relative
+    to regular `Input` connections:
+
+    - The query used to find them then during `QuantumGraph` generation can be
+      fully customized by providing a ``lookupFunction``.
+    - Failed searches for prerequisites during `QuantumGraph` generation will
+      usually generate more helpful diagnostics than those for regular `Input`
+      connections.
+    - The default query for prerequisite inputs relates the quantum dimensions
+      directly to the dimensions of its dataset type, without being constrained
+      by any of the other dimensions in the pipeline.  This allows them to be
+      used for temporal calibration lookups (which regular `Input` connections
+      cannot do at present) and to work around `QuantumGraph` generation
+      limitations involving cases where naive spatial overlap relationships
+      between dimensions are not desired (e.g. a task that wants all detectors
+      in each visit for which the visit overlaps a tract, not just those where
+      that detector+visit combination overlaps the tract).
+
     """
     lookupFunction: Optional[Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch],
                                       Iterable[DatasetRef]]] = None
