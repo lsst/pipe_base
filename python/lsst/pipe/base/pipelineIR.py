@@ -25,6 +25,7 @@ __all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", 
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
+from deprecated.sphinx import deprecated
 from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type
 
 import copy
@@ -32,6 +33,8 @@ import re
 import os
 import yaml
 import warnings
+
+from lsst.daf.butler import ButlerURI
 
 
 class KeepInstrument:
@@ -79,7 +82,7 @@ class ContractIR:
     """An optional message to be shown to the user if a contract fails
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, str]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {"contract": self.contract}
@@ -87,7 +90,7 @@ class ContractIR:
             accumulate['msg'] = self.msg
         return accumulate
 
-    def __eq__(self, other: "ContractIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ContractIR):
             return False
         elif self.contract == other.contract and self.msg == other.msg:
@@ -112,7 +115,7 @@ class LabeledSubset:
     """
 
     @staticmethod
-    def from_primatives(label: str, value: Union[List[str], dict]) -> LabeledSubset:
+    def from_primitives(label: str, value: Union[List[str], dict]) -> LabeledSubset:
         """Generate `LabeledSubset` objects given a properly formatted object
         that as been created by a yaml loader.
 
@@ -150,10 +153,10 @@ class LabeledSubset:
                              "associated with a string")
         return LabeledSubset(label, set(subset), description)
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[List[str], str]]:
         """Convert to a representation used in yaml serialization
         """
-        accumulate: Dict[str, Any] = {"subset": list(self.subset)}
+        accumulate: Dict[str, Union[List[str], str]] = {"subset": list(self.subset)}
         if self.description is not None:
             accumulate["description"] = self.description
         return accumulate
@@ -230,7 +233,7 @@ class ConfigIR:
     are strings representing the values to apply.
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[str, dict, List[str]]]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {}
@@ -310,7 +313,7 @@ class ConfigIR:
 
         yield self
 
-    def __eq__(self, other: "ConfigIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ConfigIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -336,10 +339,10 @@ class TaskIR:
     `None` if there are no config overrides.
     """
 
-    def to_primitives(self) -> dict:
+    def to_primitives(self) -> Dict[str, Union[str, List[dict]]]:
         """Convert to a representation used in yaml serialization
         """
-        accumulate = {'class': self.klass}
+        accumulate: Dict[str, Union[str, List[dict]]] = {'class': self.klass}
         if self.config:
             accumulate['config'] = [c.to_primitives() for c in self.config]
         return accumulate
@@ -363,7 +366,7 @@ class TaskIR:
             return
         self.config.extend(self.config.pop().maybe_merge(other_config))
 
-    def __eq__(self, other: "TaskIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, TaskIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -414,7 +417,7 @@ class ImportIR:
         if self.include and self.exclude:
             raise ValueError("Both an include and an exclude list cant be specified"
                              " when declaring a pipeline import")
-        tmp_pipeline = PipelineIR.from_file(os.path.expandvars(self.location))
+        tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not KeepInstrument:
             tmp_pipeline.instrument = self.instrument
 
@@ -443,7 +446,7 @@ class ImportIR:
 
         return tmp_pipeline
 
-    def __eq__(self, other: "ImportIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, ImportIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
@@ -554,7 +557,7 @@ class PipelineIR:
         if not loaded_subsets and "subset" in loaded_yaml:
             raise ValueError("Top level key should be subsets and not subset, add an s")
         for key, value in loaded_subsets.items():
-            self.labeled_subsets[key] = LabeledSubset.from_primatives(key, value)
+            self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
 
     def _verify_labeled_subsets(self):
         """Verifies that all the labels in each named subset exist within the
@@ -791,7 +794,9 @@ class PipelineIR:
         return cls(loaded_yaml)
 
     @classmethod
-    def from_file(cls, filename: str):
+    @deprecated(reason="This has been replaced with `from_uri`. will be removed after v23",
+                version="v21.0,", category=FutureWarning)  # type: ignore
+    def from_file(cls, filename: str) -> PipelineIR:
         """Create a `PipelineIR` object from the document specified by the
         input path.
 
@@ -799,11 +804,48 @@ class PipelineIR:
         ----------
         filename : `str`
             Location of document to use in creating a `PipelineIR` object.
-        """
-        with open(filename, 'r') as f:
-            loaded_yaml = yaml.load(f, Loader=PipelineYamlLoader)
-        return cls(loaded_yaml)
 
+        Returns
+        -------
+        pipelineIR : `PipelineIR`
+            The loaded pipeline
+
+        Note
+        ----
+        This method is deprecated, please use from_uri
+        """
+        return cls.from_uri(filename)
+
+    @classmethod
+    def from_uri(cls, uri: Union[str, ButlerURI]) -> PipelineIR:
+        """Create a `PipelineIR` object from the document specified by the
+        input uri.
+
+        Parameters
+        ----------
+        uri: `str` or `ButlerURI`
+            Location of document to use in creating a `PipelineIR` object.
+
+        Returns
+        -------
+        pipelineIR : `PipelineIR`
+            The loaded pipeline
+        """
+        loaded_uri = ButlerURI(uri)
+        # With ButlerURI we have the choice of always using a local file or
+        # reading in the bytes directly. Reading in bytes can be more
+        # efficient for reasonably-sized files when the resource is remote.
+        # For now use the local file variant. For a local file as_local() does
+        # nothing.
+        with loaded_uri.as_local() as local:
+            # explicitly read here, there was some issue with yaml trying
+            # to read the ButlerURI itself (I think because it only
+            # pretends to be conformant to the io api)
+            loaded_yaml = yaml.load(local.read(), Loader=PipelineYamlLoader)
+            return cls(loaded_yaml)
+
+    @deprecated(reason="This has been replaced with `write_to_uri`. will be removed after v23",
+                version="v21.0,", category=FutureWarning)  # type: ignore
     def to_file(self, filename: str):
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified path.
@@ -813,10 +855,21 @@ class PipelineIR:
         filename : `str`
             Location of document to write a `PipelineIR` object.
         """
-        with open(filename, 'w') as f:
-            yaml.dump(self.to_primitives(), f, sort_keys=False)
+        self.write_to_uri(filename)
 
-    def to_primitives(self):
+    def write_to_uri(self, uri: Union[ButlerURI, str]):
+        """Serialize this `PipelineIR` object into a yaml formatted string and
+        write the output to a file at the specified uri.
+
+        Parameters
+        ----------
+        uri: `str` or `ButlerURI`
+            Location of document to write a `PipelineIR` object.
+        """
+        butlerUri = ButlerURI(uri)
+        butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False).encode())
+
+    def to_primitives(self) -> Dict[str, Any]:
         """Convert to a representation used in yaml serialization
         """
         accumulate = {"description": self.description}
@@ -841,7 +894,7 @@ class PipelineIR:
         """
         return str(self)
 
-    def __eq__(self, other: "PipelineIR"):
+    def __eq__(self, other: object):
         if not isinstance(other, PipelineIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in
