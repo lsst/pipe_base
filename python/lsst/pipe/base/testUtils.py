@@ -242,6 +242,46 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
         return None
 
 
+def _assertAttributeMatchesConnection(obj, attrName, connection):
+    """Test that an attribute on an object matches the specification given in
+    a connection.
+
+    Parameters
+    ----------
+    obj
+        An object expected to contain the attribute ``attrName``.
+    attrName : `str`
+        The name of the attribute to be tested.
+    connection : `lsst.pipe.base.connectionTypes.BaseConnection`
+        The connection, usually some type of output, specifying ``attrName``.
+
+    Raises
+    ------
+    AssertionError:
+        Raised if ``obj.attrName`` does not match what's expected
+        from ``connection``.
+    """
+    # name
+    try:
+        attrValue = obj.__getattribute__(attrName)
+    except AttributeError:
+        raise AssertionError(f"No such attribute on {obj!r}: {attrName}")
+    # multiple
+    if connection.multiple:
+        if not isinstance(attrValue, collections.abc.Sequence):
+            raise AssertionError(f"Expected {attrName} to be a sequence, got {attrValue!r} instead.")
+    else:
+        # use lazy evaluation to not use StorageClassFactory unless
+        # necessary
+        if isinstance(attrValue, collections.abc.Sequence) \
+                and not issubclass(
+                    StorageClassFactory().getStorageClass(connection.storageClass).pytype,
+                    collections.abc.Sequence):
+            raise AssertionError(f"Expected {attrName} to be a single value, got {attrValue!r} instead.")
+    # no test for storageClass, as I'm not sure how much persistence
+    # depends on duck-typing
+
+
 def assertValidOutput(task, result):
     """Test that the output of a call to ``run`` conforms to its own
     connections.
@@ -255,7 +295,7 @@ def assertValidOutput(task, result):
         A result object produced by calling ``task.run``.
 
     Raises
-    -------
+    ------
     AssertionError:
         Raised if ``result`` does not match what's expected from ``task's``
         connections.
@@ -264,22 +304,4 @@ def assertValidOutput(task, result):
 
     for name in connections.outputs:
         connection = connections.__getattribute__(name)
-        # name
-        try:
-            output = result.__getattribute__(name)
-        except AttributeError:
-            raise AssertionError(f"No such output: {name}")
-        # multiple
-        if connection.multiple:
-            if not isinstance(output, collections.abc.Sequence):
-                raise AssertionError(f"Expected {name} to be a sequence, got {output} instead.")
-        else:
-            # use lazy evaluation to not use StorageClassFactory unless
-            # necessary
-            if isinstance(output, collections.abc.Sequence) \
-                    and not issubclass(
-                        StorageClassFactory().getStorageClass(connection.storageClass).pytype,
-                        collections.abc.Sequence):
-                raise AssertionError(f"Expected {name} to be a single value, got {output} instead.")
-        # no test for storageClass, as I'm not sure how much persistence
-        # depends on duck-typing
+        _assertAttributeMatchesConnection(result, name, connection)
