@@ -261,14 +261,13 @@ def assertValidOutput(task, result):
         connections.
     """
     connections = task.config.ConnectionsClass(config=task.config)
-    recoveredOutputs = result.getDict()
 
     for name in connections.outputs:
         connection = connections.__getattribute__(name)
         # name
         try:
-            output = recoveredOutputs[name]
-        except KeyError:
+            output = result.__getattribute__(name)
+        except AttributeError:
             raise AssertionError(f"No such output: {name}")
         # multiple
         if connection.multiple:
