@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
+__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput", "assertValidInitOutput"]
 
 
 from collections import defaultdict
@@ -305,3 +305,24 @@ def assertValidOutput(task, result):
     for name in connections.outputs:
         connection = connections.__getattribute__(name)
         _assertAttributeMatchesConnection(result, name, connection)
+
+
+def assertValidInitOutput(task):
+    """Test that a constructed task conforms to its own init-connections.
+
+    Parameters
+    ----------
+    task : `lsst.pipe.base.PipelineTask`
+        The task whose connections need validation.
+
+    Raises
+    ------
+    AssertionError:
+        Raised if ``task`` does not have the state expected from ``task's``
+        connections.
+    """
+    connections = task.config.ConnectionsClass(config=task.config)
+
+    for name in connections.initOutputs:
+        connection = connections.__getattribute__(name)
+        _assertAttributeMatchesConnection(task, name, connection)

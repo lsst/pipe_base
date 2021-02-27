@@ -33,7 +33,7 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
-from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput
+from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, assertValidInitOutput
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
@@ -48,6 +48,11 @@ class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit
         storageClass="StructuredData",
         multiple=False,
         dimensions={"instrument", "visit"},
+    )
+    initOut = connectionTypes.InitOutput(
+        name="VisitInitOut",
+        storageClass="StructuredData",
+        multiple=True,
     )
     outA = connectionTypes.Output(
         name="VisitOutA",
@@ -75,6 +80,16 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         storageClass="StructuredData",
         multiple=False,
         dimensions={"skymap", "tract"},
+    )
+    initOutA = connectionTypes.InitOutput(
+        name="PatchInitOutA",
+        storageClass="StructuredData",
+        multiple=False,
+    )
+    initOutB = connectionTypes.InitOutput(
+        name="PatchInitOutB",
+        storageClass="StructuredData",
+        multiple=False,
     )
     out = connectionTypes.Output(
         name="PatchOut",
@@ -119,6 +134,13 @@ class VisitTask(PipelineTask):
     ConfigClass = VisitConfig
     _DefaultName = "visit"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.initOut = [
+            butlerTests.MetricsExample(data=[1, 2]),
+            butlerTests.MetricsExample(data=[3, 4]),
+        ]
+
     def run(self, a, b):
         outA = butlerTests.MetricsExample(data=(a.data + b.data))
         outB = butlerTests.MetricsExample(data=(a.data * max(b.data)))
@@ -128,6 +150,11 @@ class VisitTask(PipelineTask):
 class PatchTask(PipelineTask):
     ConfigClass = PatchConfig
     _DefaultName = "patch"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.initOutA = butlerTests.MetricsExample(data=[1, 2, 4])
+        self.initOutB = butlerTests.MetricsExample(data=[1, 2, 3])
 
     def run(self, a, b=None):
         if self.config.doUseB:
@@ -464,6 +491,49 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         with self.assertRaises(AssertionError):
             assertValidOutput(task, result)
+
+    def testAssertValidInitOutputPass(self):
+        task = VisitTask()
+        # should not throw
+        assertValidInitOutput(task)
+
+        task = PatchTask()
+        # should not throw
+        assertValidInitOutput(task)
+
+    def testAssertValidInitOutputMissing(self):
+        class BadVisitTask(VisitTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass VisitTask constructor
+                pass  # do not set fields
+
+        task = BadVisitTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
+
+    def testAssertValidInitOutputSingle(self):
+        class BadVisitTask(VisitTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass VisitTask constructor
+                self.initOut = butlerTests.MetricsExample(data=[1, 2])
+
+        task = BadVisitTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
+
+    def testAssertValidInitOutputMultiple(self):
+        class BadPatchTask(PatchTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass PatchTask constructor
+                self.initOutA = [butlerTests.MetricsExample(data=[1, 2, 4])]
+                self.initOutB = butlerTests.MetricsExample(data=[1, 2, 3])
+
+        task = BadPatchTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
 
     def testSkypixHandling(self):
         task = SkyPixTask()

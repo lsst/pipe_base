@@ -124,6 +124,49 @@ Currently, it tests for missing fields and mixing up vector and scalar values; m
    # raises because result.catalog does not exist
    testUtils.assertValidOutput(task, result)
 
+.. _testing-a-pipeline-task-initOutput:
+
+Testing task initOutputs
+========================
+
+If a pipeline task has initOutputs, task objects must have one attribute for each such output.
+
+The `lsst.pipe.base.testUtils.assertValidInitOutput` function takes a task object and confirms that it has an attribute for each initOutput in its connections.
+The tests are analogous to :ref:`those for assertValidOutput <testing-a-pipeline-task-run-output>`.
+
+.. code-block:: py
+   :emphasize-lines: 28-29
+
+   import lsst.afw.table as afwTable
+   import lsst.daf.butler.tests as butlerTests
+   from lsst.pipe.base import connectionTypes, PipelineTask, \
+       PipelineTaskConnections
+   from lsst.pipe.base import testUtils
+
+
+   class MyConnections(
+           PipelineTaskConnections,
+           dimensions=("instrument", "visit", "detector")):
+       schema = connectionTypes.InitOutput(
+           name="srcSchema",
+           storageClass="SourceCatalog")
+       catalog = connectionTypes.Output(
+           name="src",
+           storageClass="SourceCatalog",
+           dimensions=("instrument", "visit", "detector"))
+
+
+   class MyTask(PipelineTask):
+       def __init__(config=None, log=None, initInputs=None):
+           super().__init__(config, log, initInputs)
+           # bug: should be SourceCatalog
+           self.schema = afwTable.Schema()
+
+
+   task = MyTask()
+   # raises because result.schema has wrong type
+   testUtils.assertValidInitOutput(task)
+
 .. _testing-a-pipeline-task-optional-connections:
 
 Testing optional/alternative inputs/outputs
