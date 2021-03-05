@@ -48,18 +48,17 @@ Such a test can be combined with separate unit tests of how `~lsst.pipe.base.Pip
 If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.base.PipelineTask.run` (for example, because the test needs real outputs written to the repository), setting the ``mockRun=False`` argument will restore the normal behavior.
 
 .. code-block:: py
-   :emphasize-lines: 20-29
+   :emphasize-lines: 19-28
 
    import lsst.daf.butler.tests as butlerTests
    from lsst.pipe.base import testUtils
 
    # A minimal Butler repo, see daf_butler documentation
-   dimensions = {
-       "instrument": ["notACam"],
-       "visit": [101, 102],
-       "detector": [42],
-   }
-   repo = butlerTests.makeTestRepo(tempDir, dimensions)
+   repo = butlerTests.makeTestRepo(tempDir)
+   butlerTests.addDataIdValue(repo, "instrument", "notACam")
+   butlerTests.addDataIdValue(repo, "visit", 101)
+   butlerTests.addDataIdValue(repo, "visit", 102)
+   butlerTests.addDataIdValue(repo, "detector", 42)
    butlerTests.addDatasetType(
        repo, "InputType", {"instrument", "visit", "detector"},
        "ExposureF")

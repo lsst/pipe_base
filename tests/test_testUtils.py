@@ -153,15 +153,14 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         # this has a prohibitive run-time cost at present
         cls.root = tempfile.mkdtemp()
 
-        dataIds = {
-            "instrument": ["notACam"],
-            "physical_filter": ["k2020"],  # needed for expandUniqueId(visit)
-            "visit": [101, 102],
-            "skymap": ["sky"],
-            "tract": [42],
-            "patch": [0, 1],
-        }
-        cls.repo = butlerTests.makeTestRepo(cls.root, dataIds)
+        cls.repo = butlerTests.makeTestRepo(cls.root)
+        butlerTests.addDataIdValue(cls.repo, "instrument", "notACam")
+        butlerTests.addDataIdValue(cls.repo, "visit", 101)
+        butlerTests.addDataIdValue(cls.repo, "visit", 102)
+        butlerTests.addDataIdValue(cls.repo, "skymap", "sky")
+        butlerTests.addDataIdValue(cls.repo, "tract", 42)
+        butlerTests.addDataIdValue(cls.repo, "patch", 0)
+        butlerTests.addDataIdValue(cls.repo, "patch", 1)
         butlerTests.registerMetricsExample(cls.repo)
 
         for typeName in {"VisitA", "VisitB", "VisitOutA", "VisitOutB"}:
@@ -242,7 +241,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.connections.a = "Visit"
         task = VisitTask(config=config)
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -252,8 +251,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config = VisitConfig()
         config.connections.a = "PatchA"
         task = VisitTask(config=config)
-        dataIdV = butlerTests.expandUniqueId(self.butler, {"visit": 102})
-        dataIdP = butlerTests.expandUniqueId(self.butler, {"patch": 0})
+        dataIdV = {"instrument": "notACam", "visit": 102}
+        dataIdP = {"skymap": "sky", "tract": 42, "patch": 0}
 
         inA = [1, 2, 3]
         inB = [4, 0, 1]
@@ -272,7 +271,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumMissingMultiple(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -285,7 +284,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumExtraMultiple(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -298,7 +297,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumMissingDataId(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -309,7 +308,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumCorruptedDataId(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -319,7 +318,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumVisitWithRun(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         data = self._makeVisitTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId,
@@ -338,7 +337,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumPatchWithRun(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
@@ -360,7 +359,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumVisitMockRun(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         data = self._makeVisitTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId,
@@ -375,7 +374,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumPatchMockRun(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
@@ -398,7 +397,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.doUseB = False
         task = PatchTask(config=config)
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
