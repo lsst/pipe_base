@@ -26,6 +26,7 @@ __all__ = ["ResourceConfig", "PipelineTaskConfig"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+from numbers import Number
 
 # -----------------------------
 #  Imports for other modules --
@@ -40,6 +41,34 @@ from .connections import PipelineTaskConnections
 # ------------------------
 #  Exported definitions --
 # ------------------------
+
+
+class TemplateField(pexConfig.Field):
+    """This Field is specialized for use with connection templates.
+    Specifically it treats strings or numbers as valid input, as occasionally
+    numbers are used as a cycle counter in templates.
+
+    The reason for the specialized field, is that when numbers are involved
+    with the config override system through pipelines or from the command line,
+    sometimes the quoting to get appropriate values as strings gets
+    complicated. This will simplify the process greatly.
+    """
+    def _validateValue(self, value):
+        if value is None:
+            return
+
+        if not (isinstance(value, str) or isinstance(value, Number)):
+            raise TypeError(f"Value {value} is of incorrect type {pexConfig.config._typeStr(value)}."
+                            f" Expected type str or a number")
+        if self.check is not None and not self.check(value):
+            ValueError("Value {value} is not a valid value")
+
+    def __set__(self, instance, value, at=None, label='assignment'):
+        # validate first, even though validate will be called in super
+        self._validateValue(value)
+        # now, explicitly make it into a string
+        value = str(value)
+        super().__set__(instance, value, at, label)
 
 
 class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
@@ -85,9 +114,9 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             if hasattr(connectionsClass, 'defaultTemplates'):
                 docString = "Template parameter used to format corresponding field template parameter"
                 for templateName, default in connectionsClass.defaultTemplates.items():
-                    configConnectionsNamespace[templateName] = pexConfig.Field(dtype=str,
-                                                                               doc=docString,
-                                                                               default=default)
+                    configConnectionsNamespace[templateName] = TemplateField(dtype=str,
+                                                                             doc=docString,
+                                                                             default=default)
             # add a reference to the connection class used to create this sub
             # config
             configConnectionsNamespace['ConnectionsClass'] = connectionsClass

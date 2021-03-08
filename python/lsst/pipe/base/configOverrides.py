@@ -25,13 +25,98 @@
 __all__ = ["ConfigOverrides"]
 
 import ast
+from operator import attrgetter
 
 import lsst.pex.exceptions as pexExceptions
 from lsst.utils import doImport
 
+import inspect
 from enum import Enum
 
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
+
+
+class ConfigExpressionParser(ast.NodeVisitor):
+    """An expression parser that will be used to transform configuration
+    strings supplied from the command line or a pipeline into a python
+    object.
+
+    This is roughly equivalent to ast.literal_parser, but with the ability to
+    transform strings that are valid variable names into the value associated
+    with the name. Variables that should be considered valid are supplied to
+    the constructor as a dictionary that maps a string to its corresponding
+    value.
+
+    This class in an internal implementation detail, and should not be exposed
+    outside this module.
+
+    Parameters
+    ----------
+    namespace : `dict` of `str` to variable
+        This is a mapping of strings corresponding to variable names, to the
+        object that is associated with that name
+    """
+
+    def __init__(self, namespace):
+        self.variables = namespace
+
+    def visit_Name(self, node):
+        """This method gets called when the parser has determined a node
+        corresponds to a variable name.
+        """
+        # If the id (name) of the variable is in the dictionary of valid names,
+        # load and return the corresponding variable.
+        if node.id in self.variables:
+            return self.variables[node.id]
+        # If the node does not correspond to a valid variable, turn the name
+        # into a string, as the user likely intended it as such.
+        return f"{node.id}"
+
+    def visit_List(self, node):
+        """This method is visited if the node is a list. Constructs a list out
+        of the sub nodes.
+        """
+        return [self.visit(elm) for elm in node.elts]
+
+    def visit_Tuple(self, node):
+        """This method is visited if the node is a tuple. Constructs a list out
+        of the sub nodes, and then turns it into a tuple.
+        """
+        return tuple(self.visit_List(node))
+
+    def visit_Constant(self, node):
+        """This method is visited if the node is a constant
+        """
+        return node.value
+
+    def visit_Dict(self, node):
+        """This method is visited if the node is a dict. It builds a dict out
+        of the component nodes.
+        """
+        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values)}
+
+    def visit_Set(self, node):
+        """This method is visited if the node is a set. It builds a set out
+        of the component nodes.
+        """
+        return {self.visit(el) for el in node.elts}
+
+    def visit_UnaryOp(self, node):
+        """This method is visited if the node is a unary operator. Currently
+        The only operator we support is the negative (-) operator, all others
+        are passed to generic_visit method.
+        """
+        if isinstance(node.op, ast.USub):
+            value = self.visit(node.operand)
+            return -1*value
+        self.generic_visit(node)
+
+    def generic_visit(self, node):
+        """This method is called for all other node types. It will just raise
+        a value error, because this is a type of expression that we do not
+        support.
+        """
+        raise ValueError("Unable to parse string into literal expression")
 
 
 class ConfigOverrides:
@@ -114,6 +199,15 @@ class ConfigOverrides:
         instrument_lib = doImport(instrument)()
         self._overrides.append((OverrideTypes.Instrument, (instrument_lib, task_name)))
 
+    def _parser(self, value, configParser):
+        try:
+            value = configParser.visit(ast.parse(value, mode='eval').body)
+        except ValueError:
+            # eval failed, wrap exception with more user-friendly
+            # message
+            raise pexExceptions.RuntimeError(f"Unable to parse `{value}' into a Python object") from None
+        return value
+
     def applyTo(self, config):
         """Apply all overrides to a task configuration object.
 
@@ -125,35 +219,76 @@ class ConfigOverrides:
         ------
         `Exception` is raised if operations on configuration object fail.
         """
+        # Look up a stack of variables people may be using when setting
+        # configs. Create a dictionary that will be used akin to a namespace
+        # for the duration of this function.
+        vars = {}
+        # pull in the variables that are declared in module scope of the config
+        mod = inspect.getmodule(config)
+        vars.update({k: v for k, v in mod.__dict__.items() if not k.startswith("__")})
+        # put the supplied config in the variables dictionary
+        vars['config'] = config
+
+        # Create a parser for config expressions that may be strings
+        configParser = ConfigExpressionParser(namespace=vars)
+
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
                 config.load(override)
             elif otype is OverrideTypes.Value:
                 field, value = override
-                field = field.split('.')
-                # find object with attribute to set, throws if we name is wrong
-                obj = config
-                for attr in field[:-1]:
-                    obj = getattr(obj, attr)
-                # If input is a string and field type is not a string then we
-                # have to convert string to an expected type. Implementing
-                # full string parser is non-trivial so we take a shortcut here
-                # and `eval` the string and assign the resulting value to a
-                # field. Type erroes can happen during both `eval` and field
-                # assignment.
-                if isinstance(value, str) and obj._fields[field[-1]].dtype is not str:
-                    try:
-                        # use safer ast.literal_eval, it only supports literals
-                        value = ast.literal_eval(value)
-                    except Exception:
-                        # eval failed, wrap exception with more user-friendly
-                        # message
-                        raise pexExceptions.RuntimeError(f"Unable to parse `{value}' into a Python object")
+                if isinstance(value, str):
+                    value = self._parser(value, configParser)
+                # checking for dicts and lists here is needed because {} and []
+                # are valid yaml syntax so they get converted before hitting
+                # this method, so we must parse the elements.
+                #
+                # The same override would remain a string if specified on the
+                # command line, and is handled above.
+                if isinstance(value, dict):
+                    new = {}
+                    for k, v in value.items():
+                        if isinstance(v, str):
+                            new[k] = self._parser(v, configParser)
+                        else:
+                            new[k] = v
+                    value = new
+                elif isinstance(value, list):
+                    new = []
+                    for v in value:
+                        if isinstance(v, str):
+                            new.append(self._parser(v, configParser))
+                        else:
+                            new.append(v)
+                    value = new
+                # The field might be a string corresponding to a attribute
+                # hierarchy, attempt to split off the last field which
+                # will then be set.
+                parent, *child = field.rsplit(".", maxsplit=1)
+                if child:
+                    # This branch means there was a hierarchy, get the
+                    # field to set, and look up the sub config for which
+                    # it is to be set
+                    finalField = child[0]
+                    tmpConfig = attrgetter(parent)(config)
+                else:
+                    # There is no hierarchy, the config is the base config
+                    # and the field is exactly what was passed in
+                    finalField = parent
+                    tmpConfig = config
+                # set the specified config
+                setattr(tmpConfig, finalField, value)
 
-                # this can throw in case of type mismatch
-                setattr(obj, field[-1], value)
             elif otype is OverrideTypes.Python:
-                exec(override, None, {"config": config})
+                # exec python string with the context of all vars known. This
+                # both lets people use a var they know about (maybe a bit
+                # dangerous, but not really more so than arbitrary python exec,
+                # and there are so many other places to worry about security
+                # before we start changing this) and any imports that are done
+                # in a python block will be put into this scope. This means
+                # other config setting branches can make use of these
+                # variables.
+                exec(override, None, vars)
             elif otype is OverrideTypes.Instrument:
                 instrument, name = override
                 instrument.applyConfigOverrides(name, config)

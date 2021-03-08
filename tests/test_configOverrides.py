@@ -28,6 +28,9 @@ import lsst.utils.tests
 import lsst.pex.config as pexConfig
 from lsst.pipe.base.configOverrides import ConfigOverrides
 
+# This is used in testSettingVar unit test
+TEST_CHOICE_VALUE = 1  # noqa: F841
+
 
 class ConfigTest(pexConfig.Config):
     fStr = pexConfig.Field(dtype=str, default="default", doc="")
@@ -100,10 +103,6 @@ class ConfigOverridesTestCase(unittest.TestCase):
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "1")
 
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "value")
-
     def testSimpleValueInt(self):
         """Test for applying value override to a int field
         """
@@ -127,10 +126,6 @@ class ConfigOverridesTestCase(unittest.TestCase):
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "[]")
 
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "value")
-
     def testSimpleValueFloat(self):
         """Test for applying value override to a float field
         """
@@ -151,10 +146,6 @@ class ConfigOverridesTestCase(unittest.TestCase):
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "(1, 1)")
 
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "value")
-
     def testListValueStr(self):
         """Test for applying value override to a list field
         """
@@ -172,10 +163,6 @@ class ConfigOverridesTestCase(unittest.TestCase):
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "['a', []]")
 
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "value")
-
     def testListValueBool(self):
         """Test for applying value override to a list field
         """
@@ -188,10 +175,8 @@ class ConfigOverridesTestCase(unittest.TestCase):
         # supported string conversions
         self.checkSingleFieldOverride(field, "[True, False]", [True, False])
         self.checkSingleFieldOverride(field, "(True, False)", [True, False])
+        self.checkSingleFieldOverride(field, "['True', 'False']", [True, False])
 
-        # parseable but invalid input
-        with self.assertRaises(pexConfig.FieldValidationError):
-            self.checkSingleFieldOverride(field, "['True', 'False']")
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "[1, 2]")
         with self.assertRaises(pexConfig.FieldValidationError):
@@ -211,10 +196,9 @@ class ConfigOverridesTestCase(unittest.TestCase):
         # supported string conversions
         self.checkSingleFieldOverride(field, "[1, 2]", [1, 2])
         self.checkSingleFieldOverride(field, "(1, 2)", [1, 2])
+        self.checkSingleFieldOverride(field, "['1', '2']", [1, 2])
 
         # parseable but invalid input
-        with self.assertRaises(pexConfig.FieldValidationError):
-            self.checkSingleFieldOverride(field, "['1', '2']")
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, "[1.0, []]")
         with self.assertRaises(pexConfig.FieldValidationError):
@@ -255,9 +239,22 @@ class ConfigOverridesTestCase(unittest.TestCase):
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, [0, 1])
 
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "value")
+    def testSettingVar(self):
+        """Test setting a field with a string that represents a variable name
+        """
+        field = "fChoiceInt"
+
+        # verify loading variable
+        self.checkSingleFieldOverride(field, "TEST_CHOICE_VALUE", 1)
+
+        # Verify That python importing a variable works
+        config = ConfigTest()
+        overrides = ConfigOverrides()
+        overrides.addPythonOverride("from math import pi")
+        overrides.addValueOverride("fFloat", "pi")
+        overrides.applyTo(config)
+        from math import pi
+        self.assertEqual(config.fFloat, pi)
 
     def testDictValueInt(self):
         """Test for applying value override to a dict field
@@ -277,10 +274,6 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "{'a': 'b'}")
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, {"a": "b"})
-
-        # non-parseable input
-        with self.assertRaises(RuntimeError):
-            self.checkSingleFieldOverride(field, "{1: value}")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

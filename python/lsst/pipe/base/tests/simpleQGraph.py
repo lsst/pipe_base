@@ -194,8 +194,8 @@ def makeSimplePipeline(nQuanta, instrument=None):
     # dependencies)
     for lvl in range(nQuanta):
         pipeline.addTask(AddTask, f"task{lvl}")
-        pipeline.addConfigOverride(f"task{lvl}", "connections.in_tmpl", f"{lvl}")
-        pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", f"{lvl+1}")
+        pipeline.addConfigOverride(f"task{lvl}", "connections.in_tmpl", lvl)
+        pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", lvl+1)
     if instrument:
         pipeline.addInstrument(instrument)
     return pipeline
