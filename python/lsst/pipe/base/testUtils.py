@@ -20,7 +20,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput", "assertValidInitOutput", "getInitInputs"]
+__all__ = ["assertValidInitOutput",
+           "assertValidOutput",
+           "getInitInputs",
+           "makeQuantum",
+           "runTestQuantum",
+           ]
 
 
 from collections import defaultdict
