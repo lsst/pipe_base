@@ -176,7 +176,7 @@ Some tasks change their inputs depending on what processing is to be done (for e
 The logic that activates or deactivates inputs is normally found in the `~lsst.pipe.base.PipelineTaskConnections` class's constructor.
 
 Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`.
-Output-selecting logic can be tested with `lsst.pipe.base.testUtils.verifyOutputConnections`.
+Output-selecting logic can be tested with `lsst.pipe.base.testUtils.assertValidOutput`.
 
 Optional init-inputs can be tested by calling `lsst.pipe.base.testUtils.getInitInputs` and checking which values are returned.
 There is currently no test framework for the use of init-inputs in task constructors.
