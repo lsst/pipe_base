@@ -33,10 +33,16 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
-from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, assertValidInitOutput
+from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, \
+    assertValidInitOutput, getInitInputs
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
+    initIn = connectionTypes.InitInput(
+        name="VisitInitIn",
+        storageClass="StructuredData",
+        multiple=False,
+    )
     a = connectionTypes.Input(
         name="VisitA",
         storageClass="StructuredData",
@@ -66,6 +72,12 @@ class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit
         multiple=False,
         dimensions={"instrument", "visit"},
     )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doUseInitIn:
+            self.initInputs.remove("initIn")
 
 
 class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
@@ -119,7 +131,7 @@ class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
-    pass
+    doUseInitIn = lsst.pex.config.Field(default=False, dtype=bool, doc="")
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
@@ -134,8 +146,8 @@ class VisitTask(PipelineTask):
     ConfigClass = VisitConfig
     _DefaultName = "visit"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, initInputs=None, **kwargs):
+        super().__init__(initInputs=initInputs, **kwargs)
         self.initOut = [
             butlerTests.MetricsExample(data=[1, 2]),
             butlerTests.MetricsExample(data=[3, 4]),
@@ -197,6 +209,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         butlerTests.addDatasetType(cls.repo, "PatchB", {"skymap", "tract"}, "StructuredData")
         for typeName in {"PixA", "PixOut"}:
             butlerTests.addDatasetType(cls.repo, typeName, {"htm7"}, "StructuredData")
+        butlerTests.addDatasetType(cls.repo, "VisitInitIn", set(), "StructuredData")
 
     @classmethod
     def tearDownClass(cls):
@@ -226,11 +239,13 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             these lists as their ``data`` argument, but the lists are easier
             to manipulate in test code.
         """
+        inInit = [4, 2]
         inA = [1, 2, 3]
         inB = [4, 0, 1]
         self.butler.put(butlerTests.MetricsExample(data=inA), "VisitA", dataId)
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataId)
-        return {"VisitA": inA, "VisitB": inB, }
+        self.butler.put(butlerTests.MetricsExample(data=inInit), "VisitInitIn", set())
+        return {"VisitA": inA, "VisitB": inB, "VisitInitIn": inInit, }
 
     def _makePatchTestData(self, dataId):
         """Create dummy datasets suitable for PatchTask.
@@ -534,6 +549,17 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         with self.assertRaises(AssertionError):
             assertValidInitOutput(task)
+
+    def testGetInitInputs(self):
+        dataId = {"instrument": "notACam", "visit": 102}
+        data = self._makeVisitTestData(dataId)
+
+        self.assertEqual(getInitInputs(self.butler, VisitConfig()), {})
+
+        config = VisitConfig()
+        config.doUseInitIn = True
+        self.assertEqual(getInitInputs(self.butler, config),
+                         {"initIn": butlerTests.MetricsExample(data=data["VisitInitIn"])})
 
     def testSkypixHandling(self):
         task = SkyPixTask()

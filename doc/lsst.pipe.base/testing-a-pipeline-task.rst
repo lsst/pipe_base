@@ -178,6 +178,9 @@ The logic that activates or deactivates inputs is normally found in the `~lsst.p
 Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`.
 Output-selecting logic can be tested with `lsst.pipe.base.testUtils.verifyOutputConnections`.
 
+Optional init-inputs can be tested by calling `lsst.pipe.base.testUtils.getInitInputs` and checking which values are returned.
+There is currently no test framework for the use of init-inputs in task constructors.
+
 .. code-block:: py
    :emphasize-lines: 42-43, 49-50
 

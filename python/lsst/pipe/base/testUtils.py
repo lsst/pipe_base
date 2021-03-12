@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput", "assertValidInitOutput"]
+__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput", "assertValidInitOutput", "getInitInputs"]
 
 
 from collections import defaultdict
@@ -28,7 +28,7 @@ import collections.abc
 import itertools
 import unittest.mock
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum, StorageClassFactory
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -326,3 +326,34 @@ def assertValidInitOutput(task):
     for name in connections.initOutputs:
         connection = connections.__getattribute__(name)
         _assertAttributeMatchesConnection(task, name, connection)
+
+
+def getInitInputs(butler, config):
+    """Return the initInputs object that would have been passed to a
+    `~lsst.pipe.base.PipelineTask` constructor.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        The repository to search for input datasets. Must have
+        pre-configured collections.
+    config : `lsst.pipe.base.PipelineTaskConfig`
+        The config for the task to be constructed.
+
+    Returns
+    -------
+    initInputs : `dict` [`str`]
+        A dictionary of objects in the format of the ``initInputs`` parameter
+        to `lsst.pipe.base.PipelineTask`.
+    """
+    connections = config.connections.ConnectionsClass(config=config)
+    initInputs = {}
+    for name in connections.initInputs:
+        attribute = getattr(connections, name)
+        # Get full dataset type to check for consistency problems
+        dsType = DatasetType(attribute.name, butler.registry.dimensions.extract(set()),
+                             attribute.storageClass)
+        # All initInputs have empty data IDs
+        initInputs[name] = butler.get(dsType)
+
+    return initInputs
