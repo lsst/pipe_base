@@ -23,6 +23,7 @@ from itertools import chain
 import os
 import pickle
 import tempfile
+from typing import Iterable
 import unittest
 import random
 from lsst.daf.butler import DimensionUniverse
@@ -32,7 +33,7 @@ from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskCon
 import lsst.pipe.base.connectionTypes as cT
 from lsst.daf.butler import Quantum, DatasetRef, DataCoordinate, DatasetType, Config
 from lsst.pex.config import Field
-from lsst.pipe.base.graph.quantumNode import NodeId, BuildId
+from lsst.pipe.base.graph.quantumNode import NodeId, BuildId, QuantumNode
 import lsst.utils.tests
 
 try:
@@ -250,6 +251,12 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testGetQuantaForTask(self):
         for task in self.tasks:
             self.assertEqual(self.qGraph.getQuantaForTask(task), self.quantumMap[task])
+
+    def testGetNodesForTask(self):
+        for task in self.tasks:
+            nodes: Iterable[QuantumNode] = self.qGraph.getNodesForTask(task)
+            quanta_in_node = set(n.quantum for n in nodes)
+            self.assertEqual(quanta_in_node, self.quantumMap[task])
 
     def testFindTasksWithInput(self):
         self.assertEqual(tuple(self.qGraph.findTasksWithInput(DatasetTypeName("Dummy1Output")))[0],

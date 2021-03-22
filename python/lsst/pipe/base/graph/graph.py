@@ -103,6 +103,7 @@ class QuantumGraph:
 
         nodeNumberGenerator = count()
         self._nodeIdMap: Dict[NodeId, QuantumNode] = {}
+        self._taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
         self._count = 0
         for taskDef, quantumSet in self._quanta.items():
             connections = taskDef.connections
@@ -134,6 +135,7 @@ class QuantumGraph:
                 inits = quantum.initInputs.values()
                 inputs = quantum.inputs.values()
                 value = QuantumNode(quantum, taskDef, nodeId)
+                self._taskToQuantumNode[taskDef].add(value)
                 self._nodeIdMap[nodeId] = value
 
                 for dsRef in chain(inits, inputs):
@@ -267,6 +269,22 @@ class QuantumGraph:
             `TaskDef`.
         """
         return frozenset(self._quanta[taskDef])
+
+    def getNodesForTask(self, taskDef: TaskDef) -> FrozenSet[QuantumNode]:
+        """Return all the `QuantumNodes` associated with a `TaskDef`.
+
+        Parameters
+        ----------
+        taskDef : `TaskDef`
+            The `TaskDef` for which `Quantum` are to be queried
+
+        Returns
+        -------
+        frozenset of `QuantumNodes`
+            The `frozenset` of `QuantumNodes` that is associated with the
+            specified `TaskDef`.
+        """
+        return frozenset(self._taskToQuantumNode[taskDef])
 
     def findTasksWithInput(self, datasetTypeName: DatasetTypeName) -> Iterable[TaskDef]:
         """Find all tasks that have the specified dataset type name as an
