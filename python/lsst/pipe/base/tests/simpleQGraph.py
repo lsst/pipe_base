@@ -249,7 +249,7 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
         config = Config()
         if not inMemory:
             config["registry", "db"] = f"sqlite:///{root}/gen3.sqlite"
-            config["datastore", "cls"] = "lsst.daf.butler.datastores.posixDatastore.PosixDatastore"
+            config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
         repo = butlerTests.makeTestRepo(root, {}, config=config)
         collection = "test"
         butler = Butler(butler=repo, run=collection)
