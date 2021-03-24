@@ -48,18 +48,17 @@ Such a test can be combined with separate unit tests of how `~lsst.pipe.base.Pip
 If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.base.PipelineTask.run` (for example, because the test needs real outputs written to the repository), setting the ``mockRun=False`` argument will restore the normal behavior.
 
 .. code-block:: py
-   :emphasize-lines: 20-29
+   :emphasize-lines: 19-28
 
    import lsst.daf.butler.tests as butlerTests
    from lsst.pipe.base import testUtils
 
    # A minimal Butler repo, see daf_butler documentation
-   dimensions = {
-       "instrument": ["notACam"],
-       "visit": [101, 102],
-       "detector": [42],
-   }
-   repo = butlerTests.makeTestRepo(tempDir, dimensions)
+   repo = butlerTests.makeTestRepo(tempDir)
+   butlerTests.addDataIdValue(repo, "instrument", "notACam")
+   butlerTests.addDataIdValue(repo, "visit", 101)
+   butlerTests.addDataIdValue(repo, "visit", 102)
+   butlerTests.addDataIdValue(repo, "detector", 42)
    butlerTests.addDatasetType(
        repo, "InputType", {"instrument", "visit", "detector"},
        "ExposureF")
@@ -125,6 +124,49 @@ Currently, it tests for missing fields and mixing up vector and scalar values; m
    # raises because result.catalog does not exist
    testUtils.assertValidOutput(task, result)
 
+.. _testing-a-pipeline-task-initOutput:
+
+Testing task initOutputs
+========================
+
+If a pipeline task has initOutputs, task objects must have one attribute for each such output.
+
+The `lsst.pipe.base.testUtils.assertValidInitOutput` function takes a task object and confirms that it has an attribute for each initOutput in its connections.
+The tests are analogous to :ref:`those for assertValidOutput <testing-a-pipeline-task-run-output>`.
+
+.. code-block:: py
+   :emphasize-lines: 28-29
+
+   import lsst.afw.table as afwTable
+   import lsst.daf.butler.tests as butlerTests
+   from lsst.pipe.base import connectionTypes, PipelineTask, \
+       PipelineTaskConnections
+   from lsst.pipe.base import testUtils
+
+
+   class MyConnections(
+           PipelineTaskConnections,
+           dimensions=("instrument", "visit", "detector")):
+       schema = connectionTypes.InitOutput(
+           name="srcSchema",
+           storageClass="SourceCatalog")
+       catalog = connectionTypes.Output(
+           name="src",
+           storageClass="SourceCatalog",
+           dimensions=("instrument", "visit", "detector"))
+
+
+   class MyTask(PipelineTask):
+       def __init__(config=None, log=None, initInputs=None):
+           super().__init__(config, log, initInputs)
+           # bug: should be SourceCatalog
+           self.schema = afwTable.Schema()
+
+
+   task = MyTask()
+   # raises because result.schema has wrong type
+   testUtils.assertValidInitOutput(task)
+
 .. _testing-a-pipeline-task-optional-connections:
 
 Testing optional/alternative inputs/outputs
@@ -134,7 +176,10 @@ Some tasks change their inputs depending on what processing is to be done (for e
 The logic that activates or deactivates inputs is normally found in the `~lsst.pipe.base.PipelineTaskConnections` class's constructor.
 
 Input-selecting logic can be tested by calling `lsst.pipe.base.testUtils.runTestQuantum` and checking which arguments were passed to `~lsst.pipe.base.PipelineTask.run`.
-Output-selecting logic can be tested with `lsst.pipe.base.testUtils.verifyOutputConnections`.
+Output-selecting logic can be tested with `lsst.pipe.base.testUtils.assertValidOutput`.
+
+Optional init-inputs can be tested by calling `lsst.pipe.base.testUtils.getInitInputs` and checking which values are returned.
+There is currently no test framework for the use of init-inputs in task constructors.
 
 .. code-block:: py
    :emphasize-lines: 42-43, 49-50

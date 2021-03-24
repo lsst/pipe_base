@@ -33,10 +33,16 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
-from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput
+from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, \
+    assertValidInitOutput, getInitInputs
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
+    initIn = connectionTypes.InitInput(
+        name="VisitInitIn",
+        storageClass="StructuredData",
+        multiple=False,
+    )
     a = connectionTypes.Input(
         name="VisitA",
         storageClass="StructuredData",
@@ -48,6 +54,11 @@ class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit
         storageClass="StructuredData",
         multiple=False,
         dimensions={"instrument", "visit"},
+    )
+    initOut = connectionTypes.InitOutput(
+        name="VisitInitOut",
+        storageClass="StructuredData",
+        multiple=True,
     )
     outA = connectionTypes.Output(
         name="VisitOutA",
@@ -62,6 +73,12 @@ class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit
         dimensions={"instrument", "visit"},
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doUseInitIn:
+            self.initInputs.remove("initIn")
+
 
 class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
     a = connectionTypes.Input(
@@ -75,6 +92,16 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
         storageClass="StructuredData",
         multiple=False,
         dimensions={"skymap", "tract"},
+    )
+    initOutA = connectionTypes.InitOutput(
+        name="PatchInitOutA",
+        storageClass="StructuredData",
+        multiple=False,
+    )
+    initOutB = connectionTypes.InitOutput(
+        name="PatchInitOutB",
+        storageClass="StructuredData",
+        multiple=False,
     )
     out = connectionTypes.Output(
         name="PatchOut",
@@ -104,7 +131,7 @@ class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
-    pass
+    doUseInitIn = lsst.pex.config.Field(default=False, dtype=bool, doc="")
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
@@ -119,6 +146,13 @@ class VisitTask(PipelineTask):
     ConfigClass = VisitConfig
     _DefaultName = "visit"
 
+    def __init__(self, initInputs=None, **kwargs):
+        super().__init__(initInputs=initInputs, **kwargs)
+        self.initOut = [
+            butlerTests.MetricsExample(data=[1, 2]),
+            butlerTests.MetricsExample(data=[3, 4]),
+        ]
+
     def run(self, a, b):
         outA = butlerTests.MetricsExample(data=(a.data + b.data))
         outB = butlerTests.MetricsExample(data=(a.data * max(b.data)))
@@ -128,6 +162,11 @@ class VisitTask(PipelineTask):
 class PatchTask(PipelineTask):
     ConfigClass = PatchConfig
     _DefaultName = "patch"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.initOutA = butlerTests.MetricsExample(data=[1, 2, 4])
+        self.initOutB = butlerTests.MetricsExample(data=[1, 2, 3])
 
     def run(self, a, b=None):
         if self.config.doUseB:
@@ -153,15 +192,14 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         # this has a prohibitive run-time cost at present
         cls.root = tempfile.mkdtemp()
 
-        dataIds = {
-            "instrument": ["notACam"],
-            "physical_filter": ["k2020"],  # needed for expandUniqueId(visit)
-            "visit": [101, 102],
-            "skymap": ["sky"],
-            "tract": [42],
-            "patch": [0, 1],
-        }
-        cls.repo = butlerTests.makeTestRepo(cls.root, dataIds)
+        cls.repo = butlerTests.makeTestRepo(cls.root)
+        butlerTests.addDataIdValue(cls.repo, "instrument", "notACam")
+        butlerTests.addDataIdValue(cls.repo, "visit", 101)
+        butlerTests.addDataIdValue(cls.repo, "visit", 102)
+        butlerTests.addDataIdValue(cls.repo, "skymap", "sky")
+        butlerTests.addDataIdValue(cls.repo, "tract", 42)
+        butlerTests.addDataIdValue(cls.repo, "patch", 0)
+        butlerTests.addDataIdValue(cls.repo, "patch", 1)
         butlerTests.registerMetricsExample(cls.repo)
 
         for typeName in {"VisitA", "VisitB", "VisitOutA", "VisitOutB"}:
@@ -171,6 +209,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         butlerTests.addDatasetType(cls.repo, "PatchB", {"skymap", "tract"}, "StructuredData")
         for typeName in {"PixA", "PixOut"}:
             butlerTests.addDatasetType(cls.repo, typeName, {"htm7"}, "StructuredData")
+        butlerTests.addDatasetType(cls.repo, "VisitInitIn", set(), "StructuredData")
 
     @classmethod
     def tearDownClass(cls):
@@ -200,11 +239,13 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             these lists as their ``data`` argument, but the lists are easier
             to manipulate in test code.
         """
+        inInit = [4, 2]
         inA = [1, 2, 3]
         inB = [4, 0, 1]
         self.butler.put(butlerTests.MetricsExample(data=inA), "VisitA", dataId)
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataId)
-        return {"VisitA": inA, "VisitB": inB, }
+        self.butler.put(butlerTests.MetricsExample(data=inInit), "VisitInitIn", set())
+        return {"VisitA": inA, "VisitB": inB, "VisitInitIn": inInit, }
 
     def _makePatchTestData(self, dataId):
         """Create dummy datasets suitable for PatchTask.
@@ -242,7 +283,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.connections.a = "Visit"
         task = VisitTask(config=config)
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -252,8 +293,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config = VisitConfig()
         config.connections.a = "PatchA"
         task = VisitTask(config=config)
-        dataIdV = butlerTests.expandUniqueId(self.butler, {"visit": 102})
-        dataIdP = butlerTests.expandUniqueId(self.butler, {"patch": 0})
+        dataIdV = {"instrument": "notACam", "visit": 102}
+        dataIdP = {"skymap": "sky", "tract": 42, "patch": 0}
 
         inA = [1, 2, 3]
         inB = [4, 0, 1]
@@ -272,7 +313,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumMissingMultiple(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -285,7 +326,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumExtraMultiple(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         self._makePatchTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -298,7 +339,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumMissingDataId(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -309,7 +350,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testMakeQuantumCorruptedDataId(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         self._makeVisitTestData(dataId)
 
         with self.assertRaises(ValueError):
@@ -319,7 +360,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumVisitWithRun(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         data = self._makeVisitTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId,
@@ -338,7 +379,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumPatchWithRun(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
@@ -360,7 +401,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumVisitMockRun(self):
         task = VisitTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"visit": 102})
+        dataId = {"instrument": "notACam", "visit": 102}
         data = self._makeVisitTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId,
@@ -375,7 +416,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
     def testRunTestQuantumPatchMockRun(self):
         task = PatchTask()
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
@@ -398,7 +439,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.doUseB = False
         task = PatchTask(config=config)
 
-        dataId = butlerTests.expandUniqueId(self.butler, {"tract": 42})
+        dataId = {"skymap": "sky", "tract": 42}
         data = self._makePatchTestData(dataId)
 
         quantum = makeQuantum(task, self.butler, dataId, {
@@ -465,6 +506,60 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         with self.assertRaises(AssertionError):
             assertValidOutput(task, result)
+
+    def testAssertValidInitOutputPass(self):
+        task = VisitTask()
+        # should not throw
+        assertValidInitOutput(task)
+
+        task = PatchTask()
+        # should not throw
+        assertValidInitOutput(task)
+
+    def testAssertValidInitOutputMissing(self):
+        class BadVisitTask(VisitTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass VisitTask constructor
+                pass  # do not set fields
+
+        task = BadVisitTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
+
+    def testAssertValidInitOutputSingle(self):
+        class BadVisitTask(VisitTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass VisitTask constructor
+                self.initOut = butlerTests.MetricsExample(data=[1, 2])
+
+        task = BadVisitTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
+
+    def testAssertValidInitOutputMultiple(self):
+        class BadPatchTask(PatchTask):
+            def __init__(self, **kwargs):
+                PipelineTask.__init__(self, **kwargs)  # Bypass PatchTask constructor
+                self.initOutA = [butlerTests.MetricsExample(data=[1, 2, 4])]
+                self.initOutB = butlerTests.MetricsExample(data=[1, 2, 3])
+
+        task = BadPatchTask()
+
+        with self.assertRaises(AssertionError):
+            assertValidInitOutput(task)
+
+    def testGetInitInputs(self):
+        dataId = {"instrument": "notACam", "visit": 102}
+        data = self._makeVisitTestData(dataId)
+
+        self.assertEqual(getInitInputs(self.butler, VisitConfig()), {})
+
+        config = VisitConfig()
+        config.doUseInitIn = True
+        self.assertEqual(getInitInputs(self.butler, config),
+                         {"initIn": butlerTests.MetricsExample(data=data["VisitInitIn"])})
 
     def testSkypixHandling(self):
         task = SkyPixTask()

@@ -20,7 +20,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["makeQuantum", "runTestQuantum", "assertValidOutput"]
+__all__ = ["assertValidInitOutput",
+           "assertValidOutput",
+           "getInitInputs",
+           "makeQuantum",
+           "runTestQuantum",
+           ]
 
 
 from collections import defaultdict
@@ -28,7 +33,7 @@ import collections.abc
 import itertools
 import unittest.mock
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, Quantum, StorageClassFactory
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -242,6 +247,46 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
         return None
 
 
+def _assertAttributeMatchesConnection(obj, attrName, connection):
+    """Test that an attribute on an object matches the specification given in
+    a connection.
+
+    Parameters
+    ----------
+    obj
+        An object expected to contain the attribute ``attrName``.
+    attrName : `str`
+        The name of the attribute to be tested.
+    connection : `lsst.pipe.base.connectionTypes.BaseConnection`
+        The connection, usually some type of output, specifying ``attrName``.
+
+    Raises
+    ------
+    AssertionError:
+        Raised if ``obj.attrName`` does not match what's expected
+        from ``connection``.
+    """
+    # name
+    try:
+        attrValue = obj.__getattribute__(attrName)
+    except AttributeError:
+        raise AssertionError(f"No such attribute on {obj!r}: {attrName}")
+    # multiple
+    if connection.multiple:
+        if not isinstance(attrValue, collections.abc.Sequence):
+            raise AssertionError(f"Expected {attrName} to be a sequence, got {attrValue!r} instead.")
+    else:
+        # use lazy evaluation to not use StorageClassFactory unless
+        # necessary
+        if isinstance(attrValue, collections.abc.Sequence) \
+                and not issubclass(
+                    StorageClassFactory().getStorageClass(connection.storageClass).pytype,
+                    collections.abc.Sequence):
+            raise AssertionError(f"Expected {attrName} to be a single value, got {attrValue!r} instead.")
+    # no test for storageClass, as I'm not sure how much persistence
+    # depends on duck-typing
+
+
 def assertValidOutput(task, result):
     """Test that the output of a call to ``run`` conforms to its own
     connections.
@@ -255,32 +300,65 @@ def assertValidOutput(task, result):
         A result object produced by calling ``task.run``.
 
     Raises
-    -------
+    ------
     AssertionError:
         Raised if ``result`` does not match what's expected from ``task's``
         connections.
     """
     connections = task.config.ConnectionsClass(config=task.config)
-    recoveredOutputs = result.getDict()
 
     for name in connections.outputs:
         connection = connections.__getattribute__(name)
-        # name
-        try:
-            output = recoveredOutputs[name]
-        except KeyError:
-            raise AssertionError(f"No such output: {name}")
-        # multiple
-        if connection.multiple:
-            if not isinstance(output, collections.abc.Sequence):
-                raise AssertionError(f"Expected {name} to be a sequence, got {output} instead.")
-        else:
-            # use lazy evaluation to not use StorageClassFactory unless
-            # necessary
-            if isinstance(output, collections.abc.Sequence) \
-                    and not issubclass(
-                        StorageClassFactory().getStorageClass(connection.storageClass).pytype,
-                        collections.abc.Sequence):
-                raise AssertionError(f"Expected {name} to be a single value, got {output} instead.")
-        # no test for storageClass, as I'm not sure how much persistence
-        # depends on duck-typing
+        _assertAttributeMatchesConnection(result, name, connection)
+
+
+def assertValidInitOutput(task):
+    """Test that a constructed task conforms to its own init-connections.
+
+    Parameters
+    ----------
+    task : `lsst.pipe.base.PipelineTask`
+        The task whose connections need validation.
+
+    Raises
+    ------
+    AssertionError:
+        Raised if ``task`` does not have the state expected from ``task's``
+        connections.
+    """
+    connections = task.config.ConnectionsClass(config=task.config)
+
+    for name in connections.initOutputs:
+        connection = connections.__getattribute__(name)
+        _assertAttributeMatchesConnection(task, name, connection)
+
+
+def getInitInputs(butler, config):
+    """Return the initInputs object that would have been passed to a
+    `~lsst.pipe.base.PipelineTask` constructor.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        The repository to search for input datasets. Must have
+        pre-configured collections.
+    config : `lsst.pipe.base.PipelineTaskConfig`
+        The config for the task to be constructed.
+
+    Returns
+    -------
+    initInputs : `dict` [`str`]
+        A dictionary of objects in the format of the ``initInputs`` parameter
+        to `lsst.pipe.base.PipelineTask`.
+    """
+    connections = config.connections.ConnectionsClass(config=config)
+    initInputs = {}
+    for name in connections.initInputs:
+        attribute = getattr(connections, name)
+        # Get full dataset type to check for consistency problems
+        dsType = DatasetType(attribute.name, butler.registry.dimensions.extract(set()),
+                             attribute.storageClass)
+        # All initInputs have empty data IDs
+        initInputs[name] = butler.get(dsType)
+
+    return initInputs
