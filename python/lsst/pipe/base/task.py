@@ -1,9 +1,10 @@
+# This file is part of task_base.
 #
-# LSST Data Management System
-# Copyright 2008-2016 AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,19 +16,24 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 __all__ = ["Task", "TaskError"]
 
 import contextlib
+import logging
+from deprecated.sphinx import deprecated
 
-import lsstDebug
+try:
+    import lsstDebug
+except ImportError:
+    lsstDebug = None
+
 from lsst.pex.config import ConfigurableField
-from lsst.log import Log
-import lsst.daf.base as dafBase
 from .timer import logInfo
+from .task_metadata import TaskMetadata
+from .task_logging import getLogger
 
 
 class TaskError(Exception):
@@ -69,7 +75,7 @@ class Task:
         - If `None` (a top-level task) then you must specify config and name
           is ignored.
         - If not `None` (a subtask) then you must specify name.
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger`, optional
         Log whose name is used as a log name prefix, or `None` for no prefix.
         Ignored if is parentTask specified, in which case
         ``parentTask.log``\ 's name is used as a prefix. The task's log name is
@@ -91,47 +97,46 @@ class Task:
     -----
     Useful attributes include:
 
-    - ``log``: an lsst.log.Log
+    - ``log``: an logging.Logger
     - ``config``: task-specific configuration; an instance of ``ConfigClass``
       (see below).
-    - ``metadata``: an `lsst.daf.base.PropertyList` for collecting
-      task-specific metadata, e.g. data quality and performance metrics.
+    - ``metadata``: dict-like object for collecting task-specific metadata,
+      e.g. data quality and performance metrics.
       This is data that is only meant to be persisted, never to be used by
       the task.
 
-    Subclasses typically have a method named ``runDataRef`` to perform the
+    Subclasses typically have a method named ``run()`` to perform the
     main data processing. Details:
 
-    - ``runDataRef`` should process the minimum reasonable amount of data,
-      typically a single CCD.  Iteration, if desired, is performed by a caller
-      of the method. This is good design and allows multiprocessing without
-      the run method having to support it directly.
-    - If ``runDataRef`` can persist or unpersist data:
-
-      - ``runDataRef`` should accept a butler data reference (or a collection
-        of data references, if appropriate, e.g. coaddition).
-      - There should be a way to run the task without persisting data.
-        Typically the run method returns all data, even if it is persisted, and
-        the task's config method offers a flag to disable persistence.
-
-    **Deprecated:** Tasks other than cmdLineTask.CmdLineTask%s should *not*
-    accept a blob such as a butler data reference.  How we will handle data
-    references is still TBD, so don't make changes yet!
-    RHL 2014-06-27
+    - ``run()`` should take Python-domain objects as arguments, perform a
+      computation, and return a ``struct`` with the results.  Generally
+      this method should process the minimum reasonable amount of data,
+      e.g., a single CCD.  Iteration, if desired, is performed by a
+      caller of the ``run()`` method, and in particular often at the level
+      of an enclosing ``PipelineTask``.
+      This is good design and allows multiprocessing without the ``run()``
+      method having to support it directly.
+    - Except in truly exceptional cases, which should be subject to
+      architectural review, the ``run()`` method of a ``Task`` should not
+      perform any I/O, even through a ``Butler``.  In general, a ``Task``
+      class which is not also a ``PipelineTask`` should not perform I/O
+      at all.
+    - ``run()`` may treat its arguments as mutable, but the implementation
+      should document if it does so.
 
     Subclasses must also have an attribute ``ConfigClass`` that is a subclass
     of `lsst.pex.config.Config` which configures the task. Subclasses should
     also have an attribute ``_DefaultName``: the default name if there is no
-    parent task. ``_DefaultName`` is required for subclasses of
-    `~lsst.pipe.base.CmdLineTask` and recommended for subclasses of Task
+    parent task. ``_DefaultName`` is recommended for subclasses of ``Task``
     because it simplifies construction (e.g. for unit tests).
 
-    Tasks intended to be run from the command line should be subclasses of
-    `~lsst.pipe.base.CmdLineTask` not Task.
+    Tasks intended to be directly executable as part of a ``Pipeline``
+    should be implemented as subclasses of `~lsst.pipe.base.PipelineTask`
+    rather than ``Task`` itself.
     """
 
     def __init__(self, config=None, name=None, parentTask=None, log=None):
-        self.metadata = dafBase.PropertyList()
+        self.metadata = TaskMetadata()
         self._parentTask = parentTask
 
         if parentTask is not None:
@@ -142,7 +147,7 @@ class Task:
             if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
-            loggerName = parentTask.log.getName() + '.' + name
+            loggerName = parentTask.log.name + '.' + name
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -155,20 +160,24 @@ class Task:
                 config = self.ConfigClass()
             self._taskDict = dict()
             loggerName = self._fullName
-            if log is not None and log.getName():
-                loggerName = log.getName() + '.' + loggerName
+            if log is not None and log.name:
+                loggerName = log.name + '.' + loggerName
 
-        self.log = Log.getLogger(loggerName)
+        # get lsst compatible logger
+        self.log = getLogger(loggerName)
         self.config = config
-        self._display = lsstDebug.Info(self.__module__).display
+        if lsstDebug:
+            self._display = lsstDebug.Info(self.__module__).display
         self._taskDict[self._fullName] = self
 
     def emptyMetadata(self):
         """Empty (clear) the metadata for this Task and all sub-Tasks.
         """
         for subtask in self._taskDict.values():
-            subtask.metadata = dafBase.PropertyList()
+            subtask.metadata = TaskMetadata()
 
+    @deprecated(reason="Part of Gen2 Butler interface. Will be removed after v23.",
+                version="v23", category=FutureWarning)
     def getSchemaCatalogs(self):
         """Get the schemas generated by this task.
 
@@ -201,6 +210,8 @@ class Task:
         """
         return {}
 
+    @deprecated(reason="Part of Gen2 Butler interface. Will be removed after v23.",
+                version="v23", category=FutureWarning)
     def getAllSchemaCatalogs(self):
         """Get schema catalogs for all tasks in the hierarchy, combining the
         results into a single dict.
@@ -231,8 +242,8 @@ class Task:
 
         Returns
         -------
-        metadata : `lsst.daf.base.PropertySet`
-            The `~lsst.daf.base.PropertySet` keys are the full task name.
+        metadata : `collections.abc.MutableMapping`
+            The `dict` keys are the full task name.
             Values are metadata for the top-level task and all subtasks,
             sub-subtasks, etc.
 
@@ -248,9 +259,9 @@ class Task:
         using ``:`` in the full task name disambiguates the rare situation
         that a task has a subtask and a metadata item with the same name.
         """
-        fullMetadata = dafBase.PropertySet()
+        fullMetadata = TaskMetadata()
         for fullName, task in self.getTaskDict().items():
-            fullMetadata.set(fullName.replace(".", ":"), task.metadata)
+            fullMetadata[fullName.replace(".", ":")] = task.metadata
         return fullMetadata
 
     def getFullName(self):
@@ -324,7 +335,7 @@ class Task:
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel=Log.DEBUG):
+    def timer(self, name, logLevel=logging.DEBUG):
         """Context manager to log performance data for an arbitrary block of
         code.
 
@@ -334,7 +345,7 @@ class Task:
             Name of code being timed; data will be logged using item name:
             ``Start`` and ``End``.
         logLevel
-            A `lsst.log` level constant.
+            A logging level constant.
 
         Examples
         --------

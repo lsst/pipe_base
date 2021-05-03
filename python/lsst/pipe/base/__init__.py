@@ -2,6 +2,7 @@ from .version import *
 from .argumentParser import *
 from .struct import *
 from .task import *
+from .task_utils import *
 from .cmdLineTask import *
 from .timer import *
 from .config import *
@@ -14,4 +15,5 @@ from .connections import *
 from .butlerQuantumContext import *
 from . import connectionTypes
 from . import pipelineIR
+from . import yaml
 from .makeLightWeightButler import *

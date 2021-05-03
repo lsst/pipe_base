@@ -1,9 +1,10 @@
+# This file is part of task_base.
 #
-# LSST Data Management System
-# Copyright 2008, 2009, 2010 LSST Corporation.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,14 +16,13 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import unittest
 
-import lsst.utils.tests
-import lsst.pipe.base as pipeBase
+# import lsst.utils.tests
+import lsst.pipe.base as taskBase
 
 
 class StructTestCase(unittest.TestCase):
@@ -43,7 +43,7 @@ class StructTestCase(unittest.TestCase):
     def testInit(self):
         """Test Struct.__init__
         """
-        s = pipeBase.Struct(**self.valDict)
+        s = taskBase.Struct(**self.valDict)
         self.assertEqual(self.valDict, s.getDict())
 
         for name, val in self.valDict.items():
@@ -53,12 +53,12 @@ class StructTestCase(unittest.TestCase):
         """Test that struct key names cannot start with double underscores.
         """
         with self.assertRaises(RuntimeError):
-            pipeBase.Struct(__foo=13)
+            taskBase.Struct(__foo=13)
 
     def testSet(self):
         """Test adding values via struct.name=val
         """
-        s = pipeBase.Struct()
+        s = taskBase.Struct()
         for name, val in self.valDict.items():
             setattr(s, name, val)
 
@@ -67,7 +67,7 @@ class StructTestCase(unittest.TestCase):
     def testCopy(self):
         """Test copy, which returns a shallow copy
         """
-        s = pipeBase.Struct(**self.valDict)
+        s = taskBase.Struct(**self.valDict)
         sc = s.copy()
         self.assertEqual(s.getDict(), sc.getDict())
 
@@ -82,8 +82,8 @@ class StructTestCase(unittest.TestCase):
     def testMergeItems(self):
         """Test mergeItems
         """
-        s = pipeBase.Struct(**self.valDict)
-        newS = pipeBase.Struct()
+        s = taskBase.Struct(**self.valDict)
+        newS = taskBase.Struct()
         newS.mergeItems(s)
         # with no names listed, should merge nothing
         self.assertEqual(len(newS), 0)
@@ -100,16 +100,16 @@ class StructTestCase(unittest.TestCase):
             self.assertEqual(val, self.valDict[name])
             with self.assertRaises(RuntimeError):
                 newS.mergeItems(s, name)
-
-
-class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
-
-
-def setup_module(module):
-    lsst.utils.tests.init()
+#
+#
+# class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
+#     pass
+#
+#
+# def setup_module(module):
+#     lsst.utils.tests.init()
 
 
 if __name__ == "__main__":
-    lsst.utils.tests.init()
+    # lsst.utils.tests.init()
     unittest.main()

@@ -1,9 +1,10 @@
+# This file is part of task_base.
 #
-# LSST Data Management System
-# Copyright 2008, 2009, 2010, 2011 LSST Corporation.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,23 +16,22 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <http://www.lsstcorp.org/LegalNotices/>.
-#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Utilities for measuring execution time.
 """
+
 __all__ = ["logInfo", "timeMethod"]
 
 import functools
 import resource
 import time
 import datetime
+import logging
 
-from lsst.log import Log, log
 
-
-def logPairs(obj, pairs, logLevel=Log.DEBUG):
+def logPairs(obj, pairs, logLevel=logging.DEBUG):
     """Log ``(name, value)`` pairs to ``obj.metadata`` and ``obj.log``
 
     Parameters
@@ -39,28 +39,22 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
     obj : `lsst.pipe.base.Task`-type
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
-          object with ``add(name, value)`` method).
-        - ``log`` an instance of `lsst.log.Log`.
+        - ``metadata`` dict-like object with ``add(name, value)`` method.
+        - ``log`` an instance of `logging.Logger`.
 
     pairs : sequence
         A sequence of ``(name, value)`` pairs, with value typically numeric.
     logLevel : optional
-        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+        Log level (an `logging` level constant, such as `logging.DEBUG`).
     """
     strList = []
     for name, value in pairs:
-        try:
-            # Use LongLong explicitly here in case an early value in the
-            # sequence is int-sized
-            obj.metadata.addLongLong(name, value)
-        except TypeError:
-            obj.metadata.add(name, value)
+        obj.metadata.add(name, value)
         strList.append(f"{name}={value}")
-    log("timer." + obj.log.getName(), logLevel, "; ".join(strList))
+    logging.getLogger("timer." + obj.log.name).log(logLevel, "; ".join(strList))
 
 
-def logInfo(obj, prefix, logLevel=Log.DEBUG):
+def logInfo(obj, prefix, logLevel=logging.DEBUG):
     """Log timer information to ``obj.metadata`` and ``obj.log``.
 
     Parameters
@@ -68,16 +62,15 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     obj : `lsst.pipe.base.Task`-type
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
-          object with ``add(name, value)`` method).
-        - ``log`` an instance of `lsst.log.Log`.
+        - ``metadata`` dict-like object  with ``add(name, value)`` method.
+        - ``log`` an instance of `logging.Logger`.
 
     prefix
         Name prefix, the resulting entries are ``CpuTime``, etc.. For example
         timeMethod uses ``prefix = Start`` when the method begins and
         ``prefix = End`` when the method ends.
     logLevel : optional
-        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+        Log level (an `logging` level constant, such as `logging.DEBUG`).
 
     Notes
     -----
@@ -95,7 +88,7 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     cpuTime = time.process_time()
     utcStr = datetime.datetime.utcnow().isoformat()
     res = resource.getrusage(resource.RUSAGE_SELF)
-    obj.metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
+    obj.metadata.add(prefix + "Utc", utcStr)  # log messages already have timestamps
     logPairs(obj=obj,
              pairs=[
                  (prefix + "CpuTime", cpuTime),
@@ -131,9 +124,8 @@ def timeMethod(func):
        This decorator only works with instance methods of Task, or any class
        with these attributes:
 
-       - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other
-         object with ``add(name, value)`` method).
-       - ``log``: an instance of `lsst.log.Log`.
+       - ``metadata``: dict-like object with ``add(name, value)`` method.
+       - ``log``: an instance of `logging.Logger`.
 
     Examples
     --------
@@ -141,11 +133,11 @@ def timeMethod(func):
 
     .. code-block:: python
 
-        import lsst.pipe.base as pipeBase
-        class FooTask(pipeBase.Task):
+        import lsst.pipe.base as taskBase
+        class FooTask(taskBase.Task):
             pass
 
-            @pipeBase.timeMethod
+            @taskBase.timeMethod
             def run(self, ...): # or any other instance method you want to time
                 pass
     """
