@@ -124,12 +124,12 @@ class AddTaskFactoryMock(pipeBase.TaskFactory):
         if taskName == "AddTask":
             return AddTask, "AddTask"
 
-    def makeTask(self, taskClass, config, overrides, butler):
+    def makeTask(self, taskClass, name, config, overrides, butler):
         if config is None:
             config = taskClass.ConfigClass()
             if overrides:
                 overrides.applyTo(config)
-        task = taskClass(config=config, initInputs=None)
+        task = taskClass(config=config, initInputs=None, name=name)
         task.taskFactory = self
         return task
 

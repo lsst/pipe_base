@@ -35,13 +35,16 @@ class TaskFactory(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def makeTask(self, taskClass, config, overrides, butler):
+    def makeTask(self, taskClass, name, config, overrides, butler):
         """Create new PipelineTask instance from its class.
 
         Parameters
         ----------
         taskClass : `type`
             `PipelineTask` sub-class.
+        name : `str` or `None`
+            The name of the new task; if `None` then use
+            ``taskClass._DefaultName``.
         config : `pex.Config` or `None`
             Configuration object, if `None` then use task-defined
             configuration class (``taskClass.ConfigClass``) to create new
