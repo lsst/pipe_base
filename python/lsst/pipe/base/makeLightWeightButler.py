@@ -26,13 +26,11 @@ import io
 
 from collections import defaultdict
 from typing import Callable, DefaultDict, Mapping, Optional, Set, Tuple, Iterable, List, Union
-import os
-import shutil
 
-from lsst.daf.butler import (DatasetRef, DatasetType, Butler, ButlerConfig, Registry, DataCoordinate,
-                             RegistryConfig)
+from lsst.daf.butler import (DatasetRef, DatasetType, Butler, DataCoordinate, ButlerURI, Config)
 from lsst.daf.butler.core.utils import getClassOf
 from lsst.daf.butler.transfers import RepoExportContext
+from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 
 
 from . import QuantumGraph, QuantumNode
@@ -126,26 +124,31 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     return yamlBuffer
 
 
-def _setupNewButler(butler: Butler, outputLocation: str, dirExists: bool) -> Butler:
+def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) -> Butler:
     # Set up the new butler object at the specified location
     if dirExists:
-        if os.path.isfile(outputLocation):
-            os.remove(outputLocation)
-        else:
-            shutil.rmtree(outputLocation)
-    os.mkdir(outputLocation)
+        # Remove the existing table, if the code got this far and this exists
+        # clobber must be true
+        executionRegistry = outputLocation.join("gen3.sqlite3")
+        if executionRegistry.exists():
+            executionRegistry.remove()
+    else:
+        outputLocation.mkdir()
 
     # Copy the existing butler config, modifying the location of the
     # registry to the specified location.
     # Preserve the root path from the existing butler so things like
     # file data stores continue to look at the old location.
-    config = ButlerConfig(butler._config)
-    config["registry", "db"] = f"sqlite:///{outputLocation}/gen3.sqlite3"
-    config["root"] = butler._config.configDir.ospath
+    config = Config(butler._config)
+    config["root"] = outputLocation.geturl()
+    config["registry", "db"] = f"sqlite:///<butlerRoot>/gen3.sqlite3"
+    # record the current root of the datastore if it is specified relative
+    # to the butler root
+    if config.get(("datastore", "root")) == BUTLER_ROOT_TAG:
+        config["datastore", "root"] = butler._config.configDir.geturl()
+    config["datastore", "trust_get_request"] = True
 
-    # Create the new registry which will create and populate the sqlite
-    # file.
-    Registry.createFromConfig(RegistryConfig(config))
+    config = Butler.makeRepo(root=outputLocation, config=config, overwrite=True, forceConfigRoot=False)
 
     # Return a newly created butler
     return Butler(config, writeable=True)
@@ -179,13 +182,13 @@ def _import(yamlBuffer: io.StringIO,
 
 def buildLightweightButler(butler: Butler,
                            graph: QuantumGraph,
-                           outputLocation: str,
+                           outputLocation: Union[str, ButlerURI],
                            run: str,
                            *,
                            clobber: bool = False,
                            butlerModifier: Optional[Callable[[Butler], Butler]] = None,
                            collections: Optional[Iterable[str]] = None
-                           ) -> None:
+                           ) -> Butler:
     r"""buildLightweightButler is a function that is responsible for exporting
     input `QuantumGraphs` into a new minimal `~lsst.daf.butler.Butler` which
     only contains datasets specified by the `QuantumGraph`. These datasets are
@@ -203,10 +206,12 @@ def buildLightweightButler(butler: Butler,
     graph : `QuantumGraph`
         Graph containing nodes that are to be exported into a lightweight
         butler
-    outputLocation : `str`
-        Location at which the lightweight butler is to be exported
-    run : `str`
-        The run collection that the exported datasets are to be placed in.
+    outputLocation : `str` or `~lsst.daf.butler.ButlerURI`
+        URI Location at which the lightweight butler is to be exported. May be
+        specified as a string or a ButlerURI instance.
+    run : `str` optional
+        The run collection that the exported datasets are to be placed in. If
+        None, the default value in registry.defaults will be used.
     clobber : `bool`, Optional
         By default a butler will not be created if a file or directory
         already exists at the output location. If this is set to `True`
@@ -227,20 +232,30 @@ def buildLightweightButler(butler: Butler,
         supplied the `~lsst.daf.butler.Butler`\ 's `~lsst.daf.butler.Registry`
         default collections will be used.
 
+    Returns
+    -------
+    executionButler : `lsst.daf.butler.Butler`
+        An instance of the newly created execution butler
+
     Raises
     ------
     FileExistsError
-        Raise if something exists in the filesystem at the specified output
+        Raised if something exists in the filesystem at the specified output
         location and clobber is `False`
+    NotADirectoryError
+        Raised if specified output URI does not correspond to a directory
     """
+    outputLocation = ButlerURI(outputLocation)
+
     # Do this first to Fail Fast if the output exists
-    if (dirExists := os.path.exists(outputLocation)) and not clobber:
+    if (dirExists := outputLocation.exists()) and not clobber:
         raise FileExistsError("Cannot create a butler at specified location, location exists")
+    if not outputLocation.isdir():
+        raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
     exports, inserts = _accumulate(graph)
     yamlBuffer = _export(butler, collections, exports)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists)
 
-    newButler = _import(yamlBuffer, newButler, inserts, run, butlerModifier)
-    newButler._config.dumpToUri(f"{outputLocation}/butler.yaml")
+    return _import(yamlBuffer, newButler, inserts, run, butlerModifier)
