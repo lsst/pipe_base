@@ -21,10 +21,13 @@
 
 __all__ = ["TaskMetadata"]
 
-import logging
 from collections import UserDict
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
+
+
+def _isListLike(v):
+    return isinstance(v, Sequence) and not isinstance(v, str)
 
 
 class TaskMetadata(UserDict):
@@ -59,15 +62,12 @@ class TaskMetadata(UserDict):
         """
         if self.__contains__(name):
             v = self.__getitem__(name)
-            if type(v) is not list:
-                if isinstance(v, TaskMetadata):
-                    # can not add to TaskMetadata
-                    raise KeyError(f"Invalid key '{name}'.")
-                warning = f"Metadata key '{name}' already set; " + \
-                          "using list for multiple values."
-                logging.getLogger(__name__).warning(warning)
+            if isinstance(v, TaskMetadata):
+                # can not add to TaskMetadata
+                raise KeyError(f"Invalid metadata key '{name}' for add.")
+            if not isinstance(v, list):
                 v = [v]
-            if type(value) is list:
+            if _isListLike(value):
                 v.extend(value)
             else:
                 v.append(value)
@@ -83,13 +83,17 @@ class TaskMetadata(UserDict):
     @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def getScalar(self, key):
-        return self.__getitem__(key)
+        v = self.__getitem__(key)
+        if _isListLike(v):
+            return v[-1]
+        else:
+            return v
 
     @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def getArray(self, key):
         v = self.__getitem__(key)
-        if isinstance(v, Sequence):
+        if _isListLike(v):
             return v
         else:
             return [v]
@@ -159,6 +163,9 @@ class TaskMetadata(UserDict):
         raise KeyError(f"'{key}' not found in TaskMetadata")
 
     def __setitem__(self, key, item):
+        # make sure list-like items are stored as lists
+        if _isListLike(item) and not isinstance(item, TaskMetadata):
+            item = list(item)
         keys = self._getKeys(key)
         if len(keys) == 1:
             super().__setitem__(key, item)
