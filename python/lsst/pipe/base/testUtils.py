@@ -33,7 +33,8 @@ import collections.abc
 import itertools
 import unittest.mock
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory, \
+    SkyPixDimension
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -60,6 +61,8 @@ def makeQuantum(task, butler, dataId, ioDataIds):
     """
     connections = task.config.ConnectionsClass(config=task.config)
 
+    _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
+
     try:
         inputs = defaultdict(list)
         outputs = defaultdict(list)
@@ -84,6 +87,58 @@ def makeQuantum(task, butler, dataId, ioDataIds):
         return quantum
     except KeyError as e:
         raise ValueError("Mismatch in input data.") from e
+
+
+def _checkDimensionsMatch(universe, expected, actual):
+    """Test whether two sets of dimensions agree after conversions.
+
+    Parameters
+    ----------
+    universe : `lsst.daf.butler.DimensionUniverse`
+        The set of all known dimensions.
+    expected : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        The dimensions expected from a task specification.
+    actual : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        The dimensions provided by input.
+
+    Raises
+    ------
+    ValueError
+        Raised if ``expected`` and ``actual`` cannot be reconciled.
+    """
+    if _simplify(universe, expected) != _simplify(universe, actual):
+        raise ValueError(f"Mismatch in dimensions; expected {expected} but got {actual}.")
+
+
+def _simplify(universe, dimensions):
+    """Reduce a set of dimensions to a string-only form.
+
+    Parameters
+    ----------
+    universe : `lsst.daf.butler.DimensionUniverse`
+        The set of all known dimensions.
+    dimensions : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        A set of dimensions to simplify.
+
+    Returns
+    -------
+    dimensions : `Set` [`str`]
+        A copy of ``dimensions`` reduced to string form, with all spatial
+        dimensions simplified to ``skypix``.
+    """
+    simplified = set()
+    for dimension in dimensions:
+        # skypix not a real Dimension, handle it first
+        if dimension == "skypix":
+            simplified.add(dimension)
+        else:
+            # Need a Dimension to test spatialness
+            fullDimension = universe[dimension] if isinstance(dimension, str) else dimension
+            if isinstance(fullDimension, SkyPixDimension):
+                simplified.add("skypix")
+            else:
+                simplified.add(fullDimension.name)
+    return simplified
 
 
 def _checkDataIdMultiplicity(name, dataIds, multiple):

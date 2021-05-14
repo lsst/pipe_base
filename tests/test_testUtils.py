@@ -302,9 +302,17 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(butlerTests.MetricsExample(data=inA), "PatchA", dataIdP)
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataIdV)
 
+        # dataIdV is correct everywhere, dataIdP should error
         with self.assertRaises(ValueError):
             makeQuantum(task, self.butler, dataIdV, {
                 "a": dataIdP,
+                "b": dataIdV,
+                "outA": dataIdV,
+                "outB": dataIdV,
+            })
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdP, {
+                "a": dataIdV,
                 "b": dataIdV,
                 "outA": dataIdV,
                 "outB": dataIdV,
