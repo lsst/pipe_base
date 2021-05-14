@@ -20,7 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("buildLightweightButler", )
+__all__ = ("buildExecutionButler", )
 
 import io
 
@@ -39,11 +39,11 @@ DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
 
 
 def _accumulate(graph: QuantumGraph) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
-    # accumulate the dataIds that will be transferred to the lightweight
+    # accumulate the dataIds that will be transferred to the execution
     # registry
 
     # exports holds all the existing data that will be migrated to the
-    # lightweight butler
+    # execution butler
     exports: Set[DatasetRef] = set()
 
     # inserts is the mapping of DatasetType to dataIds for what is to be
@@ -141,7 +141,7 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
     # file data stores continue to look at the old location.
     config = Config(butler._config)
     config["root"] = outputLocation.geturl()
-    config["registry", "db"] = f"sqlite:///<butlerRoot>/gen3.sqlite3"
+    config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
     # record the current root of the datastore if it is specified relative
     # to the butler root
     if config.get(("datastore", "root")) == BUTLER_ROOT_TAG:
@@ -180,16 +180,16 @@ def _import(yamlBuffer: io.StringIO,
     return newButler
 
 
-def buildLightweightButler(butler: Butler,
-                           graph: QuantumGraph,
-                           outputLocation: Union[str, ButlerURI],
-                           run: str,
-                           *,
-                           clobber: bool = False,
-                           butlerModifier: Optional[Callable[[Butler], Butler]] = None,
-                           collections: Optional[Iterable[str]] = None
-                           ) -> Butler:
-    r"""buildLightweightButler is a function that is responsible for exporting
+def buildExecutionButler(butler: Butler,
+                         graph: QuantumGraph,
+                         outputLocation: Union[str, ButlerURI],
+                         run: str,
+                         *,
+                         clobber: bool = False,
+                         butlerModifier: Optional[Callable[[Butler], Butler]] = None,
+                         collections: Optional[Iterable[str]] = None
+                         ) -> Butler:
+    r"""buildExecutionButler is a function that is responsible for exporting
     input `QuantumGraphs` into a new minimal `~lsst.daf.butler.Butler` which
     only contains datasets specified by the `QuantumGraph`. These datasets are
     both those that already exist in the input `~lsst.daf.butler.Butler`, and
@@ -204,10 +204,10 @@ def buildLightweightButler(butler: Butler,
         `~lsst.daf.butler.Butler` which was used to create any `QuantumGraphs`
         that will be converted with this object.
     graph : `QuantumGraph`
-        Graph containing nodes that are to be exported into a lightweight
+        Graph containing nodes that are to be exported into an execution
         butler
     outputLocation : `str` or `~lsst.daf.butler.ButlerURI`
-        URI Location at which the lightweight butler is to be exported. May be
+        URI Location at which the execution butler is to be exported. May be
         specified as a string or a ButlerURI instance.
     run : `str` optional
         The run collection that the exported datasets are to be placed in. If
@@ -228,7 +228,7 @@ def buildLightweightButler(butler: Butler,
         things such as creating collections/runs/ etc.
     collections : `~typing.Iterable` of `str`, Optional
         An iterable of collection names that will be exported from the input
-        `~lsst.daf.butler.Butler` when creating the lightweight butler. If not
+        `~lsst.daf.butler.Butler` when creating the execution butler. If not
         supplied the `~lsst.daf.butler.Butler`\ 's `~lsst.daf.butler.Registry`
         default collections will be used.
 
