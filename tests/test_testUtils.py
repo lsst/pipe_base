@@ -294,6 +294,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.connections.a = "PatchA"
         task = VisitTask(config=config)
         dataIdV = {"instrument": "notACam", "visit": 102}
+        dataIdVExtra = {"instrument": "notACam", "visit": 102, "detector": 42}
         dataIdP = {"skymap": "sky", "tract": 42, "patch": 0}
 
         inA = [1, 2, 3]
@@ -312,6 +313,21 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             })
         with self.assertRaises(ValueError):
             makeQuantum(task, self.butler, dataIdP, {
+                "a": dataIdV,
+                "b": dataIdV,
+                "outA": dataIdV,
+                "outB": dataIdV,
+            })
+        # should not accept small changes, either
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdV, {
+                "a": dataIdV,
+                "b": dataIdV,
+                "outA": dataIdVExtra,
+                "outB": dataIdV,
+            })
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdVExtra, {
                 "a": dataIdV,
                 "b": dataIdV,
                 "outA": dataIdV,

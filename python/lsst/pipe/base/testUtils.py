@@ -61,32 +61,38 @@ def makeQuantum(task, butler, dataId, ioDataIds):
     """
     connections = task.config.ConnectionsClass(config=task.config)
 
-    _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
-
     try:
-        inputs = defaultdict(list)
-        outputs = defaultdict(list)
-        for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
+        _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
+    except ValueError as e:
+        raise ValueError("Error in quantum dimensions.") from e
+
+    inputs = defaultdict(list)
+    outputs = defaultdict(list)
+    for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
+        try:
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 ref = _refFromConnection(butler, connection, id)
                 inputs[ref.datasetType].append(ref)
-        for name in connections.outputs:
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Error in connection {name}.") from e
+    for name in connections.outputs:
+        try:
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 ref = _refFromConnection(butler, connection, id)
                 outputs[ref.datasetType].append(ref)
-        quantum = Quantum(taskClass=type(task),
-                          dataId=dataId,
-                          inputs=inputs,
-                          outputs=outputs)
-        return quantum
-    except KeyError as e:
-        raise ValueError("Mismatch in input data.") from e
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Error in connection {name}.") from e
+    quantum = Quantum(taskClass=type(task),
+                      dataId=dataId,
+                      inputs=inputs,
+                      outputs=outputs)
+    return quantum
 
 
 def _checkDimensionsMatch(universe, expected, actual):
@@ -210,6 +216,8 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
         ``dataId``, in the collection pointed to by ``butler``.
     """
     universe = butler.registry.dimensions
+    # DatasetRef only tests if required dimension is missing, but not extras
+    _checkDimensionsMatch(universe, connection.dimensions, dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
 
     # skypix is a PipelineTask alias for "some spatial index", Butler doesn't
