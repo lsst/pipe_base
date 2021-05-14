@@ -34,7 +34,7 @@ import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
 from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, \
-    assertValidInitOutput, getInitInputs
+    assertValidInitOutput, getInitInputs, lintConnections
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
@@ -597,6 +597,41 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         # PixA dataset should have been retrieved by runTestQuantum
         run.assert_called_once_with(a=data)
+
+    def testLintConnectionsOk(self):
+        lintConnections(VisitConnections)
+        lintConnections(PatchConnections)
+        lintConnections(SkyPixConnections)
+
+    def testLintConnectionsMissingMultiple(self):
+        class BadConnections(PipelineTaskConnections,
+                             dimensions={"tract", "patch", "skymap"}):
+            coadds = connectionTypes.Input(
+                name="coadd_calexp",
+                storageClass="ExposureF",
+                # Some authors use list rather than set; check that linter
+                # can handle it.
+                dimensions=["tract", "patch", "band", "skymap"],
+            )
+
+        with self.assertRaises(AssertionError):
+            lintConnections(BadConnections)
+        lintConnections(BadConnections, checkMissingMultiple=False)
+
+    def testLintConnectionsExtraMultiple(self):
+        class BadConnections(PipelineTaskConnections,
+                             # Some authors use list rather than set.
+                             dimensions=["tract", "patch", "band", "skymap"]):
+            coadds = connectionTypes.Input(
+                name="coadd_calexp",
+                storageClass="ExposureF",
+                multiple=True,
+                dimensions={"tract", "patch", "band", "skymap"},
+            )
+
+        with self.assertRaises(AssertionError):
+            lintConnections(BadConnections)
+        lintConnections(BadConnections, checkUnnecessaryMultiple=False)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

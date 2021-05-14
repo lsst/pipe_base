@@ -234,3 +234,29 @@ There is currently no test framework for the use of init-inputs in task construc
    task = OrTask(config=config)
    run = testUtils.runTestQuantum(task, butler, quantum)
    run.assert_called_once_with(cat=testCatalog)
+
+.. _testing-a-pipeline-task-static-analysis:
+
+Analyzing Connections Classes
+=============================
+
+Mistakes in creating pipeline connections classes can lead to hard-to-debug errors at run time.
+The `lsst.pipe.base.testUtils.lintConnections` function analyzes a connections class for common errors.
+The only errors currently tested are those involving inconsistencies between connection and quantum dimensions.
+
+All tests done by `lintConnections` are heuristic, looking for common patterns of misuse.
+Advanced users who are *deliberately* bending the usual rules can use keywords to turn off specific tests.
+
+.. code-block:: py
+   :emphasize-lines: 9-10
+
+   class ListConnections(PipelineTaskConnections,
+                         dimensions=("instrument", "visit", "detector")):
+       cat = connectionTypes.Input(
+           name="src",
+           storageClass="SourceCatalog",
+           dimensions=("instrument", "visit", "detector"),
+           multiple=True)  # force a list of one catalog
+
+   lintConnections(ListConnections)  # warns that cat always has one input
+   lintConnections(ListConnections, checkUnnecessaryMultiple=False)  # passes

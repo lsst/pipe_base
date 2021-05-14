@@ -23,6 +23,7 @@
 __all__ = ["assertValidInitOutput",
            "assertValidOutput",
            "getInitInputs",
+           "lintConnections",
            "makeQuantum",
            "runTestQuantum",
            ]
@@ -425,3 +426,50 @@ def getInitInputs(butler, config):
         initInputs[name] = butler.get(dsType)
 
     return initInputs
+
+
+def lintConnections(connections, *,
+                    checkMissingMultiple=True,
+                    checkUnnecessaryMultiple=True,
+                    ):
+    """Inspect a connections class for common errors.
+
+    These tests are designed to detect misuse of connections features in
+    standard designs. An unusually designed connections class may trigger
+    alerts despite being correctly written; specific checks can be turned off
+    using keywords.
+
+    Parameters
+    ----------
+    connections : `lsst.pipe.base.PipelineTaskConnections`-type
+        The connections class to test.
+    checkMissingMultiple : `bool`
+        Whether to test for single connections that would match multiple
+        datasets at run time.
+    checkUnnecessaryMultiple : `bool`
+        Whether to test for multiple connections that would only match
+        one dataset.
+
+    Raises
+    ------
+    AssertionError
+        Raised if any of the selected checks fail for any connection.
+    """
+    # Since all comparisons are inside the class, don't bother
+    # normalizing skypix.
+    quantumDimensions = connections.dimensions
+
+    errors = ""
+    # connectionTypes.DimensionedConnection is implementation detail,
+    # don't use it.
+    for name in itertools.chain(connections.inputs, connections.prerequisiteInputs, connections.outputs):
+        connection = connections.allConnections[name]
+        connDimensions = set(connection.dimensions)
+        if checkMissingMultiple and not connection.multiple and connDimensions > quantumDimensions:
+            errors += f"Connection {name} may be called with multiple values of " \
+                f"{connDimensions - quantumDimensions} but has multiple=False.\n"
+        if checkUnnecessaryMultiple and connection.multiple and connDimensions <= quantumDimensions:
+            errors += f"Connection {name} has multiple=True but can only be called with one " \
+                f"value of {connDimensions} for each {quantumDimensions}.\n"
+    if errors:
+        raise AssertionError(errors)
