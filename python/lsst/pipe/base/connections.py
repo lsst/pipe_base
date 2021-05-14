@@ -267,6 +267,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         A `PipelineTaskConfig` class instance whose class has been configured
         to use this `PipelineTaskConnectionsClass`
 
+    See also
+    --------
+    iterConnections
+
     Notes
     -----
     ``PipelineTaskConnection`` classes are created by declaring class
