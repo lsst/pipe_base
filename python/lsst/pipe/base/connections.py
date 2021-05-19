@@ -36,6 +36,7 @@ import string
 from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
                               Output, BaseConnection, BaseInput)
+from .executed_quantum import NoWorkQuantum
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyMapping, Quantum
 
 if typing.TYPE_CHECKING:
@@ -498,6 +499,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
             Overrides of this function have the option of raising an Exception
             if a field in the input does not satisfy a need for a corresponding
             pipelineTask, i.e. no reference catalogs are found.
+        NoWorkQuantum
+            Raised to indicate that this quantum should not be run; one or more
+            of its expected inputs do not exist, and if possible, should be
+            pruned from the QuantumGraph.
 
         Notes
         -----
@@ -512,6 +517,23 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     f"for scalar connection {label}.{name} ({connection.name}) "
                     f"for quantum data ID {dataId}."
                 )
+            if not connection.optional and not refs:
+                if isinstance(connection, PrerequisiteInput):
+                    # This branch should only be possible during QG generation,
+                    # or if someone deleted the dataset between making the QG
+                    # and trying to run it.  Either one should be a hard error.
+                    raise FileNotFoundError(
+                        f"No datasets found for non-optional connection {label}.{name} ({connection.name}) "
+                        f"for quantum data ID {dataId}."
+                    )
+                else:
+                    # This branch should be impossible during QG generation,
+                    # because that algorithm can only make quanta whose inputs
+                    # are either already present or should be created during
+                    # execution.  It can trigger during execution if the input
+                    # wasn't actually created by an upstream task in the same
+                    # graph.
+                    raise NoWorkQuantum(label, name, connection)
         return ()
 
     def translateAdjustQuantumInputs(
