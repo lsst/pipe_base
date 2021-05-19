@@ -35,8 +35,8 @@ import string
 
 from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
-                              Output, BaseConnection)
-from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
+                              Output, BaseConnection, BaseInput)
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyMapping, Quantum
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -456,26 +456,38 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                                      "in input quantum")
         return inputDatasetRefs, outputDatasetRefs
 
-    def adjustQuantum(self, datasetRefMap: NamedKeyDict[DatasetType, typing.Set[DatasetRef]]
-                      ) -> NamedKeyDict[DatasetType, typing.Set[DatasetRef]]:
+    def adjustQuantum(
+        self,
+        inputs: Iterable[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]],
+        label: str,
+        dataId: DataCoordinate,
+    ) -> typing.Iterable[typing.Tuple[str, BaseInput, typing.AbstractSet[DatasetRef]]]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
 
-        The base class implementation simply checks that input connections with
-        ``multiple`` set to `False` have no more than one dataset.
-
         Parameters
         ----------
-        datasetRefMap : `NamedKeyDict`
-            Mapping from dataset type to a `set` of
-            `lsst.daf.butler.DatasetRef` objects
+        inputs : `Iterable` of `tuple`
+            Three-element tuples, each a connection name, the connection
+            instance, and a `frozenset` of associated
+            `lsst.daf.butler.DatasetRef` objects, for all input and
+            prerequisite input connections.  Guaranteed to support multi-pass
+            iteration.
+        label : `str`
+            Label for this task in the pipeline (should be used in all
+            diagnostic messages).
+        dataId : `lsst.daf.butler.DataCoordintae`
+            Data ID for this quantum in the pipeline (should be used in all
+            diagnostic messages).
 
         Returns
         -------
-        datasetRefMap : `NamedKeyDict`
-            Modified mapping of input with possibly adjusted
-            `lsst.daf.butler.DatasetRef` objects.
+        adjusted : `Iterable` of `tuple`
+            Iterable of tuples of the same form as ``inputs``, with adjusted
+            sets of `lsst.daf.butler.DatasetRef` objects (datasets may be
+            removed, but not added).  Connections not returned at all will be
+            considered to be unchanged.
 
         Raises
         ------
@@ -486,16 +498,54 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
             Overrides of this function have the option of raising an Exception
             if a field in the input does not satisfy a need for a corresponding
             pipelineTask, i.e. no reference catalogs are found.
+
+        Notes
+        -----
+        The base class implementation performs useful checks and should be
+        called via `super` by most custom implementations.  It always returns
+        an empty iterable, because it makes no changes.
         """
-        for connection in itertools.chain(iterConnections(self, "inputs"),
-                                          iterConnections(self, "prerequisiteInputs")):
-            refs = datasetRefMap[connection.name]
+        for name, connection, refs in inputs:
             if not connection.multiple and len(refs) > 1:
                 raise ScalarError(
                     f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
-                    f"for scalar connection {connection.name} ({refs[0].datasetType.name})."
+                    f"for scalar connection {label}.{name} ({connection.name}) "
+                    f"for quantum data ID {dataId}."
                 )
-        return datasetRefMap
+        return ()
+
+    def translateAdjustQuantumInputs(
+        self,
+        datasets: NamedKeyMapping[DatasetType, typing.Set[DatasetRef]],
+    ) -> typing.List[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]]:
+        """Translate a mapping of input datasets keyed on dataset type to the
+        form expected by the ``input`` argument to `adjustQuantum`.
+
+        Parameters
+        ----------
+        datasets : `lsst.daf.butler.NamedKeyMapping`
+            Mapping from `DatasetType` to a set of `DatasetRef`.  Need not
+            include all input dataset types; those missing will be mapped to
+            empty sets in the result.
+
+        Returns
+        -------
+        translated : `list` of `tuple`
+            List of 3-element tuples of the form expected as the ``inputs``
+            argument to `adjustQuantum`.  Includes all input and prerequisite
+            inputs, even there are no associated datasets.
+        """
+        results = []
+        for connectionName in itertools.chain(self.inputs, self.prerequisiteInputs):
+            connectionInstance = getattr(self, connectionName)
+            results.append(
+                (
+                    connectionName,
+                    connectionInstance,
+                    frozenset(datasets.get(connectionInstance.name, frozenset())),
+                )
+            )
+        return results
 
 
 def iterConnections(connections: PipelineTaskConnections,
