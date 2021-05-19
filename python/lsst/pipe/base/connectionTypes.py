@@ -28,7 +28,7 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput",
 
 import dataclasses
 import typing
-from typing import Callable, Iterable, Optional
+from typing import Callable, ClassVar, Iterable, Optional
 
 from lsst.daf.butler import (
     CollectionSearch,
@@ -194,6 +194,12 @@ class BaseInput(DimensionedConnection):
     """
     deferLoad: bool = False
 
+    optional: ClassVar[bool] = False
+    """Quanta are not generated and never (fully) executed when there are no
+    datasets for a non-optional input connection, and most input connections
+    cannot be made optional.
+    """
+
 
 @dataclasses.dataclass(frozen=True)
 class Input(BaseInput):
@@ -225,6 +231,12 @@ class PrerequisiteInput(BaseInput):
         using the DatasetType, registry, quantum dataId, and input collections
         passed to it. If no function is specified, the default temporal spatial
         lookup will be used.
+    optional : `bool`, optional
+        If `True` (`False` is default), generate quanta for this task even
+        when no input datasets for this connection exist.  Missing optional
+        inputs will cause `ButlerQuantumContext.get` to return `None` or a
+        smaller container (never a same-size container with some `None`
+        elements) during execution.
 
     Notes
     -----
@@ -249,10 +261,12 @@ class PrerequisiteInput(BaseInput):
       between dimensions are not desired (e.g. a task that wants all detectors
       in each visit for which the visit overlaps a tract, not just those where
       that detector+visit combination overlaps the tract).
+    - Prerequisite inputs may be optional (regular inputs are never optional).
 
     """
     lookupFunction: Optional[Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch],
                                       Iterable[DatasetRef]]] = None
+    optional: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
