@@ -154,6 +154,10 @@ Other named arguments are optional.
 
    **Enable debugging mode.**
 
+   Some tasks support debug variables that can be set, while running from the command line, to display additional information.
+   Each task documents which debug variables it supports.
+   See `the lsstDebug documentation <http://doxygen.lsst.codes/stack/doxygen/x_masterDoxyDoc/base_debug.html>`_ for information about how to enable specific debug variables using a :file:`debug.py` file.
+
    .. TODO DM-11675 cross-link to debug framework docs in lsst.base module.
 
 .. option:: --doraise
