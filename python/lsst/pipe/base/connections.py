@@ -547,6 +547,24 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
             )
         return results
 
+    def hasPostWriteLogic(self):
+        """Test whether this `PipelineTask` can fail even after all outputs
+        have been written.
+
+        When this returns `False` (the default base class behavior), execution
+        harnesses and QuantumGraph generation algorithms may assume that:
+
+        - any quantum execution that yielded all predicted outputs was a
+          success, without checking actual exit status.
+
+        - any quantum execution that yields no predicted outputs can be
+          treated as if `NoWorkQuantum` was raised.
+
+        These assumptions enable important optimizations in code that attempts
+        to quickly determine the status of an executed quantum.
+        """
+        return False
+
 
 def iterConnections(connections: PipelineTaskConnections,
                     connectionType: Union[str, Iterable[str]]
