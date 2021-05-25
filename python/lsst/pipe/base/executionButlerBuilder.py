@@ -95,7 +95,8 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef]) -> io.StringIO:
+def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef],
+            inserts: DataSetTypeMap) -> io.StringIO:
     # This exports the datasets that exist in the input butler using
     # daf butler objects, however it reaches in deep and does not use the
     # public methods so that it can export it to a string buffer and skip
@@ -107,6 +108,11 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     backend = BackendClass(yamlBuffer)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
     exporter.saveDatasets(exports)
+
+    # Need to ensure that the dimension records for outputs are
+    # transferred.
+    for _, dataIds in inserts.items():
+        exporter.saveDataIds(dataIds)
 
     # Look for any defined collection, if not get the defaults
     if collections is None:
@@ -254,7 +260,7 @@ def buildExecutionButler(butler: Butler,
         raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
     exports, inserts = _accumulate(graph)
-    yamlBuffer = _export(butler, collections, exports)
+    yamlBuffer = _export(butler, collections, exports, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists)
 
