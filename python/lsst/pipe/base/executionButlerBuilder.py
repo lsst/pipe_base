@@ -251,7 +251,8 @@ def buildExecutionButler(butler: Butler,
     NotADirectoryError
         Raised if specified output URI does not correspond to a directory
     """
-    outputLocation = ButlerURI(outputLocation)
+    # We know this must refer to a directory.
+    outputLocation = ButlerURI(outputLocation, forceDirectory=True)
 
     # Do this first to Fail Fast if the output exists
     if (dirExists := outputLocation.exists()) and not clobber:
