@@ -154,7 +154,11 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
         config["datastore", "root"] = butler._config.configDir.geturl()
     config["datastore", "trust_get_request"] = True
 
-    config = Butler.makeRepo(root=outputLocation, config=config, overwrite=True, forceConfigRoot=False)
+    # Requires that we use the dimension configuration from the original
+    # butler and not use the defaults.
+    config = Butler.makeRepo(root=outputLocation, config=config,
+                             dimensionConfig=butler.registry.dimensions.dimensionConfig,
+                             overwrite=True, forceConfigRoot=False)
 
     # Return a newly created butler
     return Butler(config, writeable=True)
