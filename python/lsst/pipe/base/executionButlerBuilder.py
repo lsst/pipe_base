@@ -147,6 +147,7 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
     # file data stores continue to look at the old location.
     config = Config(butler._config)
     config["root"] = outputLocation.geturl()
+    config["allow_put_of_predefined_dataset"] = True
     config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
     # record the current root of the datastore if it is specified relative
     # to the butler root
