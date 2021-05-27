@@ -95,7 +95,8 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef]) -> io.StringIO:
+def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef],
+            inserts: DataSetTypeMap) -> io.StringIO:
     # This exports the datasets that exist in the input butler using
     # daf butler objects, however it reaches in deep and does not use the
     # public methods so that it can export it to a string buffer and skip
@@ -107,6 +108,11 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     backend = BackendClass(yamlBuffer)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
     exporter.saveDatasets(exports)
+
+    # Need to ensure that the dimension records for outputs are
+    # transferred.
+    for _, dataIds in inserts.items():
+        exporter.saveDataIds(dataIds)
 
     # Look for any defined collection, if not get the defaults
     if collections is None:
@@ -141,6 +147,7 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
     # file data stores continue to look at the old location.
     config = Config(butler._config)
     config["root"] = outputLocation.geturl()
+    config["allow_put_of_predefined_dataset"] = True
     config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
     # record the current root of the datastore if it is specified relative
     # to the butler root
@@ -148,7 +155,11 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
         config["datastore", "root"] = butler._config.configDir.geturl()
     config["datastore", "trust_get_request"] = True
 
-    config = Butler.makeRepo(root=outputLocation, config=config, overwrite=True, forceConfigRoot=False)
+    # Requires that we use the dimension configuration from the original
+    # butler and not use the defaults.
+    config = Butler.makeRepo(root=outputLocation, config=config,
+                             dimensionConfig=butler.registry.dimensions.dimensionConfig,
+                             overwrite=True, forceConfigRoot=False)
 
     # Return a newly created butler
     return Butler(config, writeable=True)
@@ -245,7 +256,8 @@ def buildExecutionButler(butler: Butler,
     NotADirectoryError
         Raised if specified output URI does not correspond to a directory
     """
-    outputLocation = ButlerURI(outputLocation)
+    # We know this must refer to a directory.
+    outputLocation = ButlerURI(outputLocation, forceDirectory=True)
 
     # Do this first to Fail Fast if the output exists
     if (dirExists := outputLocation.exists()) and not clobber:
@@ -254,7 +266,7 @@ def buildExecutionButler(butler: Butler,
         raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
     exports, inserts = _accumulate(graph)
-    yamlBuffer = _export(butler, collections, exports)
+    yamlBuffer = _export(butler, collections, exports, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists)
 
