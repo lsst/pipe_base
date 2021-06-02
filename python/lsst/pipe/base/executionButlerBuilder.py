@@ -96,7 +96,38 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
 
 
 def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef],
-            inserts: DataSetTypeMap) -> io.StringIO:
+            inserts: DataSetTypeMap, transfer: Optional[str] = None) -> io.StringIO:
+    r"""This function is responsible for exporting pre-defined datasets into a
+    StringIO buffer object, similar to a butler export command.
+
+    Parameters
+    ----------
+    butler : `~lsst.daf.butler.Butler`
+      `~lsst.daf.butler.Butler` containing information to be exported as buffer
+      string.
+    collections : Optional Iterable `str`
+      An optional itreable of collections to be included in the export,
+      if None Butler default collections will be used.
+    exports : `set` of `~lsst.daf.butler.DatasetRef`
+      `~lsst.daf.butler.DatasetRef`\ s that already exist in the butler which
+      are to be exported.
+    inserts : Mapping of `~lsst.daf.butler.DatasetType` to `set`\ s of
+              `~lsst.daf.butler.DataCoordinate
+      Datasets that are not in the existing `~lsst.daf.butler.Butler` but which
+      should be inserted as if they were. This is used when there is knowledge
+      of what data will be produced against the `~lsst.daf.butler.Butler` which
+      is produced from the data in this export function.
+    transfer : Optional `str`
+      A transfer mode to be used in the exporter, see
+      `~lsst.daf.butler.Datastore.ingest` for more details on what values this
+      can take.
+
+    Returns
+    -------
+    yamlBuffer : `io.StringIO`
+      The exported data in yaml format stored in a `io.StringIO` in memory
+      buffer object.
+    """
     # This exports the datasets that exist in the input butler using
     # daf butler objects, however it reaches in deep and does not use the
     # public methods so that it can export it to a string buffer and skip
@@ -106,7 +137,8 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     # export/import
     BackendClass = getClassOf(butler._config["repo_transfer_formats", "yaml", "export"])
     backend = BackendClass(yamlBuffer)
-    exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
+    exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None,
+                                 transfer=transfer)
     exporter.saveDatasets(exports)
 
     # Need to ensure that the dimension records for outputs are
