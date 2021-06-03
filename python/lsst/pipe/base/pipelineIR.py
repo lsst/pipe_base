@@ -623,7 +623,10 @@ class PipelineIR:
                        f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
                        f"defines {tmp_IR.instrument}.")
                 raise ValueError(msg)
-                                 "be unique")
+            if duplicate_labels := accumulate_tasks.keys() & tmp_IR.tasks.keys():
+                msg = ("Task labels in the imported pipelines must be unique. "
+                       f"These labels appear multiple times: {duplicate_labels}")
+                raise ValueError(msg)
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
             # verify that tmp_IR has unique labels for named subset among

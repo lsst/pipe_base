@@ -131,8 +131,8 @@ class PipelineIRTestCase(unittest.TestCase):
             - $PIPE_BASE_DIR/tests/testPipeline1.yaml
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         """)
-
-        with self.assertRaises(ValueError):
+        # "modA" is the duplicated label, and it should appear in the error.
+        with self.assertRaisesRegex(ValueError, "modA"):
             PipelineIR.from_string(pipeline_str)
 
         # This should pass, as the conflicting task is excluded
