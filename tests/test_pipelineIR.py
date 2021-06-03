@@ -352,14 +352,15 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.instrument, "new.instrument")
 
-        # Test that multiple instruments can't be defined
+        # Test that multiple instruments can't be defined,
+        # and that the error message tells you what instruments were found.
         pipeline_str = textwrap.dedent("""
         description: Test Pipeline
         instrument: new.instrument
         imports:
           - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
         """)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "new.instrument .* test.instrument."):
             PipelineIR.from_string(pipeline_str)
 
     def testParameterConfigFormatting(self):

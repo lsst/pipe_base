@@ -619,9 +619,10 @@ class PipelineIR:
             if self.instrument is None:
                 self.instrument = tmp_IR.instrument
             elif self.instrument != tmp_IR.instrument and tmp_IR.instrument is not None:
-                raise ValueError("Only one instrument can be declared in a pipeline or it's imports")
-            if accumulate_tasks.keys() & tmp_IR.tasks.keys():
-                raise ValueError("Task labels in the imported pipelines must "
+                msg = ("Only one instrument can be declared in a pipeline or its imports. "
+                       f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
+                       f"defines {tmp_IR.instrument}.")
+                raise ValueError(msg)
                                  "be unique")
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
