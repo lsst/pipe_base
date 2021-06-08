@@ -1,0 +1,1 @@
+New documentation on writing pipelines has been added.
