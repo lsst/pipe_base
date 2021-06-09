@@ -31,7 +31,7 @@ import datetime
 from lsst.log import Log, log
 
 
-def logPairs(obj, pairs, logLevel=Log.DEBUG):
+def logPairs(obj, pairs, logLevel=Log.DEBUG, metadata=None, logger=None):
     """Log ``(name, value)`` pairs to ``obj.metadata`` and ``obj.log``
 
     Parameters
@@ -43,34 +43,51 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG):
           object with ``add(name, value)`` method).
         - ``log`` an instance of `lsst.log.Log`.
 
+        If `None`, at least one of ``metadata`` or ``logger`` should be passed
+        or this function will do nothing.
+
     pairs : sequence
         A sequence of ``(name, value)`` pairs, with value typically numeric.
     logLevel : optional
         Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+    metadata : `lsst.daf.base.PropertyList`, optional
+        Metadata object to write entries to.  Ignored if `None`.
+    logger : `lsst.log.Log`
+        Log object to write entries to.  Ignored if `None`.
     """
+    if obj is not None:
+        if metadata is None:
+            metadata = obj.metadata
+        if logger is None:
+            logger = obj.log
     strList = []
     for name, value in pairs:
-        try:
-            # Use LongLong explicitly here in case an early value in the
-            # sequence is int-sized
-            obj.metadata.addLongLong(name, value)
-        except TypeError:
-            obj.metadata.add(name, value)
+        if metadata is not None:
+            try:
+                # Use LongLong explicitly here in case an early value in the
+                # sequence is int-sized
+                metadata.addLongLong(name, value)
+            except TypeError:
+                metadata.add(name, value)
         strList.append(f"{name}={value}")
-    log("timer." + obj.log.getName(), logLevel, "; ".join(strList))
+    if logger is not None:
+        log("timer." + logger.getName(), logLevel, "; ".join(strList))
 
 
-def logInfo(obj, prefix, logLevel=Log.DEBUG):
+def logInfo(obj, prefix, logLevel=Log.DEBUG, metadata=None, logger=None):
     """Log timer information to ``obj.metadata`` and ``obj.log``.
 
     Parameters
     ----------
-    obj : `lsst.pipe.base.Task`-type
+    obj : `lsst.pipe.base.Task`-type or `None`
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
         - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
           object with ``add(name, value)`` method).
         - ``log`` an instance of `lsst.log.Log`.
+
+        If `None`, at least one of ``metadata`` or ``logger`` should be passed
+        or this function will do nothing.
 
     prefix
         Name prefix, the resulting entries are ``CpuTime``, etc.. For example
@@ -78,6 +95,10 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
         ``prefix = End`` when the method ends.
     logLevel : optional
         Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+    metadata : `lsst.daf.base.PropertyList`, optional
+        Metadata object to write entries to, overriding ``obj.metadata``.
+    logger : `lsst.log.Log`
+        Log object to write entries to, overriding ``obj.log``.
 
     Notes
     -----
@@ -95,7 +116,10 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
     cpuTime = time.process_time()
     utcStr = datetime.datetime.utcnow().isoformat()
     res = resource.getrusage(resource.RUSAGE_SELF)
-    obj.metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
+    if metadata is None and obj is not None:
+        metadata = obj.metadata
+    if metadata is not None:
+        metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
     logPairs(obj=obj,
              pairs=[
                  (prefix + "CpuTime", cpuTime),
@@ -110,7 +134,8 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG):
                  (prefix + "InvoluntaryContextSwitches", int(res.ru_nivcsw)),
              ],
              logLevel=logLevel,
-             )
+             metadata=metadata,
+             logger=logger)
 
 
 def timeMethod(func):
