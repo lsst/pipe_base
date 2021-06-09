@@ -619,10 +619,14 @@ class PipelineIR:
             if self.instrument is None:
                 self.instrument = tmp_IR.instrument
             elif self.instrument != tmp_IR.instrument and tmp_IR.instrument is not None:
-                raise ValueError("Only one instrument can be declared in a pipeline or it's imports")
-            if accumulate_tasks.keys() & tmp_IR.tasks.keys():
-                raise ValueError("Task labels in the imported pipelines must "
-                                 "be unique")
+                msg = ("Only one instrument can be declared in a pipeline or its imports. "
+                       f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
+                       f"defines {tmp_IR.instrument}.")
+                raise ValueError(msg)
+            if duplicate_labels := accumulate_tasks.keys() & tmp_IR.tasks.keys():
+                msg = ("Task labels in the imported pipelines must be unique. "
+                       f"These labels appear multiple times: {duplicate_labels}")
+                raise ValueError(msg)
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
             # verify that tmp_IR has unique labels for named subset among
