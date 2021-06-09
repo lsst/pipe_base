@@ -23,6 +23,7 @@
 __all__ = ["assertValidInitOutput",
            "assertValidOutput",
            "getInitInputs",
+           "lintConnections",
            "makeQuantum",
            "runTestQuantum",
            ]
@@ -33,7 +34,8 @@ import collections.abc
 import itertools
 import unittest.mock
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory, \
+    SkyPixDimension
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -61,29 +63,89 @@ def makeQuantum(task, butler, dataId, ioDataIds):
     connections = task.config.ConnectionsClass(config=task.config)
 
     try:
-        inputs = defaultdict(list)
-        outputs = defaultdict(list)
-        for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
+        _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
+    except ValueError as e:
+        raise ValueError("Error in quantum dimensions.") from e
+
+    inputs = defaultdict(list)
+    outputs = defaultdict(list)
+    for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
+        try:
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 ref = _refFromConnection(butler, connection, id)
                 inputs[ref.datasetType].append(ref)
-        for name in connections.outputs:
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Error in connection {name}.") from e
+    for name in connections.outputs:
+        try:
             connection = connections.__getattribute__(name)
             _checkDataIdMultiplicity(name, ioDataIds[name], connection.multiple)
             ids = _normalizeDataIds(ioDataIds[name])
             for id in ids:
                 ref = _refFromConnection(butler, connection, id)
                 outputs[ref.datasetType].append(ref)
-        quantum = Quantum(taskClass=type(task),
-                          dataId=dataId,
-                          inputs=inputs,
-                          outputs=outputs)
-        return quantum
-    except KeyError as e:
-        raise ValueError("Mismatch in input data.") from e
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Error in connection {name}.") from e
+    quantum = Quantum(taskClass=type(task),
+                      dataId=dataId,
+                      inputs=inputs,
+                      outputs=outputs)
+    return quantum
+
+
+def _checkDimensionsMatch(universe, expected, actual):
+    """Test whether two sets of dimensions agree after conversions.
+
+    Parameters
+    ----------
+    universe : `lsst.daf.butler.DimensionUniverse`
+        The set of all known dimensions.
+    expected : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        The dimensions expected from a task specification.
+    actual : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        The dimensions provided by input.
+
+    Raises
+    ------
+    ValueError
+        Raised if ``expected`` and ``actual`` cannot be reconciled.
+    """
+    if _simplify(universe, expected) != _simplify(universe, actual):
+        raise ValueError(f"Mismatch in dimensions; expected {expected} but got {actual}.")
+
+
+def _simplify(universe, dimensions):
+    """Reduce a set of dimensions to a string-only form.
+
+    Parameters
+    ----------
+    universe : `lsst.daf.butler.DimensionUniverse`
+        The set of all known dimensions.
+    dimensions : `Set` [`str`] or `Set` [`~lsst.daf.butler.Dimension`]
+        A set of dimensions to simplify.
+
+    Returns
+    -------
+    dimensions : `Set` [`str`]
+        A copy of ``dimensions`` reduced to string form, with all spatial
+        dimensions simplified to ``skypix``.
+    """
+    simplified = set()
+    for dimension in dimensions:
+        # skypix not a real Dimension, handle it first
+        if dimension == "skypix":
+            simplified.add(dimension)
+        else:
+            # Need a Dimension to test spatialness
+            fullDimension = universe[dimension] if isinstance(dimension, str) else dimension
+            if isinstance(fullDimension, SkyPixDimension):
+                simplified.add("skypix")
+            else:
+                simplified.add(fullDimension.name)
+    return simplified
 
 
 def _checkDataIdMultiplicity(name, dataIds, multiple):
@@ -155,6 +217,8 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
         ``dataId``, in the collection pointed to by ``butler``.
     """
     universe = butler.registry.dimensions
+    # DatasetRef only tests if required dimension is missing, but not extras
+    _checkDimensionsMatch(universe, connection.dimensions, dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
 
     # skypix is a PipelineTask alias for "some spatial index", Butler doesn't
@@ -362,3 +426,50 @@ def getInitInputs(butler, config):
         initInputs[name] = butler.get(dsType)
 
     return initInputs
+
+
+def lintConnections(connections, *,
+                    checkMissingMultiple=True,
+                    checkUnnecessaryMultiple=True,
+                    ):
+    """Inspect a connections class for common errors.
+
+    These tests are designed to detect misuse of connections features in
+    standard designs. An unusually designed connections class may trigger
+    alerts despite being correctly written; specific checks can be turned off
+    using keywords.
+
+    Parameters
+    ----------
+    connections : `lsst.pipe.base.PipelineTaskConnections`-type
+        The connections class to test.
+    checkMissingMultiple : `bool`
+        Whether to test for single connections that would match multiple
+        datasets at run time.
+    checkUnnecessaryMultiple : `bool`
+        Whether to test for multiple connections that would only match
+        one dataset.
+
+    Raises
+    ------
+    AssertionError
+        Raised if any of the selected checks fail for any connection.
+    """
+    # Since all comparisons are inside the class, don't bother
+    # normalizing skypix.
+    quantumDimensions = connections.dimensions
+
+    errors = ""
+    # connectionTypes.DimensionedConnection is implementation detail,
+    # don't use it.
+    for name in itertools.chain(connections.inputs, connections.prerequisiteInputs, connections.outputs):
+        connection = connections.allConnections[name]
+        connDimensions = set(connection.dimensions)
+        if checkMissingMultiple and not connection.multiple and connDimensions > quantumDimensions:
+            errors += f"Connection {name} may be called with multiple values of " \
+                f"{connDimensions - quantumDimensions} but has multiple=False.\n"
+        if checkUnnecessaryMultiple and connection.multiple and connDimensions <= quantumDimensions:
+            errors += f"Connection {name} has multiple=True but can only be called with one " \
+                f"value of {connDimensions} for each {quantumDimensions}.\n"
+    if errors:
+        raise AssertionError(errors)

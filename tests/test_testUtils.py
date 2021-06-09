@@ -34,7 +34,7 @@ import lsst.daf.butler.tests as butlerTests
 
 from lsst.pipe.base import Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
 from lsst.pipe.base.testUtils import runTestQuantum, makeQuantum, assertValidOutput, \
-    assertValidInitOutput, getInitInputs
+    assertValidInitOutput, getInitInputs, lintConnections
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
@@ -294,6 +294,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         config.connections.a = "PatchA"
         task = VisitTask(config=config)
         dataIdV = {"instrument": "notACam", "visit": 102}
+        dataIdVExtra = {"instrument": "notACam", "visit": 102, "detector": 42}
         dataIdP = {"skymap": "sky", "tract": 42, "patch": 0}
 
         inA = [1, 2, 3]
@@ -302,9 +303,32 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         self.butler.put(butlerTests.MetricsExample(data=inA), "PatchA", dataIdP)
         self.butler.put(butlerTests.MetricsExample(data=inB), "VisitB", dataIdV)
 
+        # dataIdV is correct everywhere, dataIdP should error
         with self.assertRaises(ValueError):
             makeQuantum(task, self.butler, dataIdV, {
                 "a": dataIdP,
+                "b": dataIdV,
+                "outA": dataIdV,
+                "outB": dataIdV,
+            })
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdP, {
+                "a": dataIdV,
+                "b": dataIdV,
+                "outA": dataIdV,
+                "outB": dataIdV,
+            })
+        # should not accept small changes, either
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdV, {
+                "a": dataIdV,
+                "b": dataIdV,
+                "outA": dataIdVExtra,
+                "outB": dataIdV,
+            })
+        with self.assertRaises(ValueError):
+            makeQuantum(task, self.butler, dataIdVExtra, {
+                "a": dataIdV,
                 "b": dataIdV,
                 "outA": dataIdV,
                 "outB": dataIdV,
@@ -573,6 +597,41 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         # PixA dataset should have been retrieved by runTestQuantum
         run.assert_called_once_with(a=data)
+
+    def testLintConnectionsOk(self):
+        lintConnections(VisitConnections)
+        lintConnections(PatchConnections)
+        lintConnections(SkyPixConnections)
+
+    def testLintConnectionsMissingMultiple(self):
+        class BadConnections(PipelineTaskConnections,
+                             dimensions={"tract", "patch", "skymap"}):
+            coadds = connectionTypes.Input(
+                name="coadd_calexp",
+                storageClass="ExposureF",
+                # Some authors use list rather than set; check that linter
+                # can handle it.
+                dimensions=["tract", "patch", "band", "skymap"],
+            )
+
+        with self.assertRaises(AssertionError):
+            lintConnections(BadConnections)
+        lintConnections(BadConnections, checkMissingMultiple=False)
+
+    def testLintConnectionsExtraMultiple(self):
+        class BadConnections(PipelineTaskConnections,
+                             # Some authors use list rather than set.
+                             dimensions=["tract", "patch", "band", "skymap"]):
+            coadds = connectionTypes.Input(
+                name="coadd_calexp",
+                storageClass="ExposureF",
+                multiple=True,
+                dimensions={"tract", "patch", "band", "skymap"},
+            )
+
+        with self.assertRaises(AssertionError):
+            lintConnections(BadConnections)
+        lintConnections(BadConnections, checkUnnecessaryMultiple=False)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
