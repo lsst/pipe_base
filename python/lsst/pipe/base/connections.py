@@ -35,8 +35,9 @@ import string
 
 from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
-                              Output, BaseConnection)
-from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
+                              Output, BaseConnection, BaseInput)
+from .status import NoWorkFound
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NameLookupMapping, Quantum
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -194,8 +195,8 @@ class PipelineTaskConnectionsMetaclass(type):
 
 
 class QuantizedConnection(SimpleNamespace):
-    """A Namespace to map defined variable names of connections to their
-    `lsst.daf.buter.DatasetRef`s
+    """A Namespace to map defined variable names of connections to the
+    associated `lsst.daf.butler.DatasetRef` objects.
 
     This class maps the names used to define a connection on a
     PipelineTaskConnectionsClass to the corresponding
@@ -460,46 +461,124 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                                      "in input quantum")
         return inputDatasetRefs, outputDatasetRefs
 
-    def adjustQuantum(self, datasetRefMap: NamedKeyDict[DatasetType, typing.Set[DatasetRef]]
-                      ) -> NamedKeyDict[DatasetType, typing.Set[DatasetRef]]:
+    def adjustQuantum(
+        self,
+        inputs: Iterable[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]],
+        label: str,
+        dataId: DataCoordinate,
+    ) -> typing.Iterator[typing.Tuple[str, BaseInput, typing.AbstractSet[DatasetRef]]]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
 
-        The base class implementation simply checks that input connections with
-        ``multiple`` set to `False` have no more than one dataset.
-
         Parameters
         ----------
-        datasetRefMap : `NamedKeyDict`
-            Mapping from dataset type to a `set` of
-            `lsst.daf.butler.DatasetRef` objects
+        inputs : `Iterable` of `tuple`
+            Three-element tuples, each a connection name, the connection
+            instance, and a `frozenset` of associated
+            `lsst.daf.butler.DatasetRef` objects, for all input and
+            prerequisite input connections.  Guaranteed to support multi-pass
+            iteration.
+        label : `str`
+            Label for this task in the pipeline (should be used in all
+            diagnostic messages).
+        dataId : `lsst.daf.butler.DataCoordinate`
+            Data ID for this quantum in the pipeline (should be used in all
+            diagnostic messages).
 
         Returns
         -------
-        datasetRefMap : `NamedKeyDict`
-            Modified mapping of input with possibly adjusted
-            `lsst.daf.butler.DatasetRef` objects.
+        adjusted : `Iterable` of `tuple`
+            Iterable of tuples of the same form as ``inputs``, with adjusted
+            sets of `lsst.daf.butler.DatasetRef` objects (datasets may be
+            removed, but not added).  Connections not returned at all will be
+            considered to be unchanged.  May include output connections as
+            well as input connections.
 
         Raises
         ------
         ScalarError
             Raised if any `Input` or `PrerequisiteInput` connection has
             ``multiple`` set to `False`, but multiple datasets.
+        NoWorkFound
+            Raised to indicate that this quantum should not be run; one or more
+            of its expected inputs do not exist, and if possible, should be
+            pruned from the QuantumGraph.
         Exception
-            Overrides of this function have the option of raising an Exception
-            if a field in the input does not satisfy a need for a corresponding
-            pipelineTask, i.e. no reference catalogs are found.
+            Overrides of this function may raise other exceptions if a field in
+            the input does not satisfy a need for a corresponding pipelineTask,
+            i.e. no reference catalogs are found, and this should be considered
+            a pre-execution error, not a no-work condition.
+
+        Notes
+        -----
+        The base class implementation performs useful checks and should be
+        called via `super` by most custom implementations.  It always returns
+        an empty iterable, because it makes no changes.
+
+        Implementations are permitted (but not required) to be implemented
+        as generators, and raise the documented exceptions during iteration
+        rather than immediately upon return.
         """
-        for connection in itertools.chain(iterConnections(self, "inputs"),
-                                          iterConnections(self, "prerequisiteInputs")):
-            refs = datasetRefMap[connection.name]
+        for name, connection, refs in inputs:
             if not connection.multiple and len(refs) > 1:
                 raise ScalarError(
                     f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
-                    f"for scalar connection {connection.name} ({refs[0].datasetType.name})."
+                    f"for scalar connection {label}.{name} ({connection.name}) "
+                    f"for quantum data ID {dataId}."
                 )
-        return datasetRefMap
+            if not connection.optional and not refs:
+                if isinstance(connection, PrerequisiteInput):
+                    # This branch should only be possible during QG generation,
+                    # or if someone deleted the dataset between making the QG
+                    # and trying to run it.  Either one should be a hard error.
+                    raise FileNotFoundError(
+                        f"No datasets found for non-optional connection {label}.{name} ({connection.name}) "
+                        f"for quantum data ID {dataId}."
+                    )
+                else:
+                    # This branch should be impossible during QG generation,
+                    # because that algorithm can only make quanta whose inputs
+                    # are either already present or should be created during
+                    # execution.  It can trigger during execution if the input
+                    # wasn't actually created by an upstream task in the same
+                    # graph.
+                    raise NoWorkFound(label, name, connection)
+        yield from ()
+
+    def translateAdjustQuantumInputs(
+        self,
+        datasets: NameLookupMapping[DatasetType, Iterable[DatasetRef]],
+    ) -> typing.List[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]]:
+        """Translate a mapping of input datasets keyed on dataset type to the
+        form expected by the ``input`` argument to `adjustQuantum`.
+
+        Parameters
+        ----------
+        datasets : `lsst.daf.butler.NameLookupMapping`
+            Mapping from dataset type name to an iterable of `DatasetRef`; may
+            be a regular mapping with `str` keys or a `NamedKeyMapping` with
+            `DatasetType` keys.  Need not include all input dataset types;
+            those missing will be mapped to empty sets in the result.
+
+        Returns
+        -------
+        translated : `list` of `tuple`
+            List of 3-element tuples of the form expected as the
+            ``inputs`` argument to `adjustQuantum`.  Includes all input and
+            prerequisite inputs, even there are no associated datasets.
+        """
+        results = []
+        for connectionName in itertools.chain(self.inputs, self.prerequisiteInputs):
+            connectionInstance = getattr(self, connectionName)
+            results.append(
+                (
+                    connectionName,
+                    connectionInstance,
+                    frozenset(datasets.get(connectionInstance.name, ())),
+                )
+            )
+        return results
 
 
 def iterConnections(connections: PipelineTaskConnections,

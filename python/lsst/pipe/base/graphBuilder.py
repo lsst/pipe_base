@@ -148,15 +148,15 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             return ref
         return NamedKeyDict({datasetType: getOne(refs) for datasetType, refs in self.items()})
 
-    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, DatasetRef]:
+    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, List[DatasetRef]]:
         """Unpack nested multi-element `DatasetRef` dicts into a new
         mapping with `DatasetType` keys and `set` of `DatasetRef` values.
 
         Returns
         -------
         dictionary : `NamedKeyDict`
-            Dictionary mapping `DatasetType` to `DatasetRef`, with both
-            `DatasetType` instances and string names usable as keys.
+            Dictionary mapping `DatasetType` to `list` of `DatasetRef`, with
+            both `DatasetType` instances and string names usable as keys.
         """
         return NamedKeyDict({datasetType: list(refs.values()) for datasetType, refs in self.items()})
 
@@ -250,8 +250,17 @@ class _QuantumScaffolding:
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
         # This will raise if one of the check conditions is not met, which is
-        # the intended behavior
-        allInputs = self.task.taskDef.connections.adjustQuantum(allInputs)
+        # the intended behavior.
+        # If it raises NotWorkFound, there is a bug in the QG algorithm
+        # or the adjustQuantum is incorrectly trying to make a prerequisite
+        # input behave like a regular input; adjustQuantum should only raise
+        # NoWorkFound if a regular input is missing, and it shouldn't be
+        for _, connectionInstance, refs in self.task.taskDef.connections.adjustQuantum(
+            self.task.taskDef.connections.translateAdjustQuantumInputs(allInputs),
+            self.task.taskDef.label,
+            self.dataId,
+        ):
+            allInputs[connectionInstance.name] = list(refs)
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
@@ -686,19 +695,22 @@ class _PipelineScaffolding:
                 if run is not None and skipExisting:
                     resolvedRefs = []
                     unresolvedRefs = []
+                    haveMetadata = False
                     for datasetType, originalRefs in quantum.outputs.items():
                         for ref in task.outputs.extract(datasetType, originalRefs.keys()):
                             if ref.id is not None:
                                 resolvedRefs.append(ref)
+                                if datasetType.name == task.taskDef.metadataDatasetName:
+                                    haveMetadata = True
                             else:
                                 unresolvedRefs.append(ref)
                     if resolvedRefs:
-                        if unresolvedRefs:
+                        if unresolvedRefs and not haveMetadata:
                             raise OutputExistsError(
                                 f"Quantum {quantum.dataId} of task with label "
                                 f"'{quantum.task.taskDef.label}' has some outputs that exist "
                                 f"({resolvedRefs}) "
-                                f"and others that don't ({unresolvedRefs})."
+                                f"and others that don't ({unresolvedRefs}), with no metadata output."
                             )
                         else:
                             # All outputs are already present; skip this
@@ -747,7 +759,8 @@ class _PipelineScaffolding:
                                                                if ref is not None})
             # Actually remove any quanta that we decided to skip above.
             if dataIdsToSkip:
-                _LOG.debug("Pruning %d quanta for task with label '%s' because all of their outputs exist.",
+                _LOG.debug("Pruning %d quanta for task with label '%s' because all of their outputs exist "
+                           "or metadata was written successfully.",
                            len(dataIdsToSkip), task.taskDef.label)
                 for dataId in dataIdsToSkip:
                     del task.quanta[dataId]
