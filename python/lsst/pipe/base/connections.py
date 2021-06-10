@@ -36,7 +36,7 @@ import string
 from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
                               Output, BaseConnection, BaseInput)
-from .status import NoWorkFound
+from ._status import NoWorkFound
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NameLookupMapping, Quantum
 
 if typing.TYPE_CHECKING:

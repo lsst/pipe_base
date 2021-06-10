@@ -15,4 +15,4 @@ from .butlerQuantumContext import *
 from . import connectionTypes
 from . import pipelineIR
 from .executionButlerBuilder import *
-from .status import *
+from ._status import *
