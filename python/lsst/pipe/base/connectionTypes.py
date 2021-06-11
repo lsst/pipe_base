@@ -53,7 +53,12 @@ class BaseConnection:
         The storage class used when (un)/persisting the dataset type
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
-        of the given dataset type
+        of the given dataset type.  Tasks with more than one connection with
+        ``multiple=True`` with the same dimensions may want to implement
+        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
+        the execution system as early as possible of outputs that will not be
+        produced because the corresponding input is missing.
     """
     name: str
     storageClass: str
@@ -129,7 +134,12 @@ class DimensionedConnection(BaseConnection):
         The storage class used when (un)/persisting the dataset type
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
-        of the given dataset type
+        of the given dataset type.  Tasks with more than one connection with
+        ``multiple=True`` with the same dimensions may want to implement
+        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
+        the execution system as early as possible of outputs that will not be
+        produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
         to identify the dataset type identified by the specified name
@@ -183,7 +193,12 @@ class BaseInput(DimensionedConnection):
         The storage class used when (un)/persisting the dataset type
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
-        of the given dataset type
+        of the given dataset type.  Tasks with more than one connection with
+        ``multiple=True`` with the same dimensions may want to implement
+        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
+        the execution system as early as possible of outputs that will not be
+        produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
         to identify the dataset type identified by the specified name
@@ -241,7 +256,12 @@ class PrerequisiteInput(BaseInput):
         The storage class used when (un)/persisting the dataset type
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
-        of the given dataset type
+        of the given dataset type.  Tasks with more than one connection with
+        ``multiple=True`` with the same dimensions may want to implement
+        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
+        the execution system as early as possible of outputs that will not be
+        produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
         to identify the dataset type identified by the specified name

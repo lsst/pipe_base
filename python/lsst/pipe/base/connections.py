@@ -22,10 +22,19 @@
 """Module defining connection classes for PipelineTask.
 """
 
-__all__ = ["PipelineTaskConnections", "InputQuantizedConnection", "OutputQuantizedConnection",
-           "DeferredDatasetRef", "iterConnections"]
+from __future__ import annotations
+
+__all__ = [
+    "AdjustQuantumHelper",
+    "DeferredDatasetRef",
+    "InputQuantizedConnection",
+    "OutputQuantizedConnection",
+    "PipelineTaskConnections",
+    "iterConnections",
+]
 
 from collections import UserDict, namedtuple
+from dataclasses import dataclass
 from types import SimpleNamespace
 import typing
 from typing import Union, Iterable
@@ -37,7 +46,7 @@ from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
                               Output, BaseConnection, BaseInput)
 from ._status import NoWorkFound
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NameLookupMapping, Quantum
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -463,37 +472,49 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     def adjustQuantum(
         self,
-        inputs: Iterable[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]],
+        inputs: typing.Dict[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
+        outputs: typing.Dict[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
         label: str,
-        dataId: DataCoordinate,
-    ) -> typing.Iterator[typing.Tuple[str, BaseInput, typing.AbstractSet[DatasetRef]]]:
+        data_id: DataCoordinate,
+    ) -> tuple.Tuple[typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
+                     typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]]]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
 
         Parameters
         ----------
-        inputs : `Iterable` of `tuple`
-            Three-element tuples, each a connection name, the connection
-            instance, and a `frozenset` of associated
-            `lsst.daf.butler.DatasetRef` objects, for all input and
-            prerequisite input connections.  Guaranteed to support multi-pass
-            iteration.
+        inputs : `dict`
+            Dictionary whose keys are an input (regular or prerequisite)
+            connection name and whose values are a tuple of the connection
+            instance and a collection of associated `DatasetRef` objects.
+            The exact type of the nested collections is unspecified; it can be
+            assumed to be multi-pass iterable and support `len` and ``in``, but
+            it should not be mutated in place.  In contrast, the outer
+            dictionaries are guaranteed to be temporary copies that are true
+            `dict` instances, and hence may be modified and even returned; this
+            is especially useful for delegating to `super` (see notes below).
+        outputs : `Mapping`
+            Mapping of output datasets, with the same structure as ``inputs``.
         label : `str`
             Label for this task in the pipeline (should be used in all
             diagnostic messages).
-        dataId : `lsst.daf.butler.DataCoordinate`
+        data_id : `lsst.daf.butler.DataCoordinate`
             Data ID for this quantum in the pipeline (should be used in all
             diagnostic messages).
 
         Returns
         -------
-        adjusted : `Iterable` of `tuple`
-            Iterable of tuples of the same form as ``inputs``, with adjusted
-            sets of `lsst.daf.butler.DatasetRef` objects (datasets may be
-            removed, but not added).  Connections not returned at all will be
-            considered to be unchanged.  May include output connections as
-            well as input connections.
+        adjusted_inputs : `Mapping`
+            Mapping of the same form as ``inputs`` with updated containers of
+            input `DatasetRef` objects.  Connections that are not changed
+            should not be returned at all.  Datasets may only be removed, not
+            added.  Nested collections may be of any multi-pass iterable type,
+            and the order of iteration will set the order of iteration within
+            `PipelineTask.runQuantum`.
+        adjusted_outputs : `Mapping`
+            Mapping of updated output datasets, with the same structure and
+            interpretation as ``adjusted_inputs``.
 
         Raises
         ------
@@ -501,31 +522,57 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
             Raised if any `Input` or `PrerequisiteInput` connection has
             ``multiple`` set to `False`, but multiple datasets.
         NoWorkFound
-            Raised to indicate that this quantum should not be run; one or more
-            of its expected inputs do not exist, and if possible, should be
-            pruned from the QuantumGraph.
-        Exception
-            Overrides of this function may raise other exceptions if a field in
-            the input does not satisfy a need for a corresponding pipelineTask,
-            i.e. no reference catalogs are found, and this should be considered
-            a pre-execution error, not a no-work condition.
+            Raised to indicate that this quantum should not be run; not enough
+            datasets were found for a regular `Input` connection, and the
+            quantum should be pruned or skipped.
+        FileNotFoundError
+            Raised to cause QuantumGraph generation to fail (with the message
+            included in this exception); not enough datasets were found for a
+            `PrerequisiteInput` connection.
 
         Notes
         -----
-        The base class implementation performs useful checks and should be
-        called via `super` by most custom implementations.  It always returns
-        an empty iterable, because it makes no changes.
+        The base class implementation performs important checks.  It always
+        returns an empty mapping (i.e. makes no adjustments).  It should
+        always called be via `super` by custom implementations, ideally at the
+        end of the custom implementation with already-adjusted mappings when
+        any datasets are actually dropped, e.g.::
 
-        Implementations are permitted (but not required) to be implemented
-        as generators, and raise the documented exceptions during iteration
-        rather than immediately upon return.
+            def adjustQuantum(self, inputs, outputs, label, data_id):
+                # Filter out some dataset refs for one connection.
+                connection, old_refs = inputs["my_input"]
+                new_refs = [ref for ref in old_refs if ...]
+                adjusted_inputs = {"my_input", (connection, new_refs)}
+                # Update the original inputs so we can pass them to super.
+                inputs.update(adjusted_inputs)
+                # Can ignore outputs from super because they are guaranteed
+                # to be empty.
+                super().adjustQuantum(inputs, outputs, label_data_id)
+                # Return only the connections we modified.
+                return adjusted_inputs, {}
+
+        Removing outputs here is guaranteed to affect what is actually
+        passed to `PipelineTask.runQuantum`, but its effect on the larger
+        graph may be deferred to execution, depending on the context in
+        which `adjustQuantum` is being run: if one quantum removes an output
+        that is needed by a second quantum as input, the second quantum may not
+        be adjusted (and hence pruned or skipped) until that output is actually
+        found to be missing at execution time.
+
+        Tasks that desire zip-iteration consistency between any combinations of
+        connections that have the same data ID should generally implement
+        `adjustQuantum` to achieve this, even if they could also run that
+        logic during execution; this allows the system to see outputs that will
+        not be produced because the corresponding input is missing as early as
+        possible.
         """
-        for name, connection, refs in inputs:
+        for name, (connection, refs) in inputs.items():
+            dataset_type_name = connection.name
             if not connection.multiple and len(refs) > 1:
                 raise ScalarError(
                     f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
-                    f"for scalar connection {label}.{name} ({connection.name}) "
-                    f"for quantum data ID {dataId}."
+                    f"for non-multiple input connection {label}.{name} ({dataset_type_name}) "
+                    f"for quantum data ID {data_id}."
                 )
             if len(refs) < connection.minimum:
                 if isinstance(connection, PrerequisiteInput):
@@ -533,8 +580,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     # or if someone deleted the dataset between making the QG
                     # and trying to run it.  Either one should be a hard error.
                     raise FileNotFoundError(
-                        f"Not enough datasets ({len(refs)} found for non-optional connection {label}.{name} "
-                        f"({connection.name}) with minimum={connection.minimum} for quantum data ID {dataId}."
+                        f"Not enough datasets ({len(refs)}) found for non-optional connection {label}.{name} "
+                        f"({dataset_type_name}) with minimum={connection.minimum} for quantum data ID "
+                        f"{data_id}."
                     )
                 else:
                     # This branch should be impossible during QG generation,
@@ -544,41 +592,15 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     # wasn't actually created by an upstream task in the same
                     # graph.
                     raise NoWorkFound(label, name, connection)
-        yield from ()
-
-    def translateAdjustQuantumInputs(
-        self,
-        datasets: NameLookupMapping[DatasetType, Iterable[DatasetRef]],
-    ) -> typing.List[typing.Tuple[str, BaseInput, typing.FrozenSet[DatasetRef]]]:
-        """Translate a mapping of input datasets keyed on dataset type to the
-        form expected by the ``input`` argument to `adjustQuantum`.
-
-        Parameters
-        ----------
-        datasets : `lsst.daf.butler.NameLookupMapping`
-            Mapping from dataset type name to an iterable of `DatasetRef`; may
-            be a regular mapping with `str` keys or a `NamedKeyMapping` with
-            `DatasetType` keys.  Need not include all input dataset types;
-            those missing will be mapped to empty sets in the result.
-
-        Returns
-        -------
-        translated : `list` of `tuple`
-            List of 3-element tuples of the form expected as the
-            ``inputs`` argument to `adjustQuantum`.  Includes all input and
-            prerequisite inputs, even there are no associated datasets.
-        """
-        results = []
-        for connectionName in itertools.chain(self.inputs, self.prerequisiteInputs):
-            connectionInstance = getattr(self, connectionName)
-            results.append(
-                (
-                    connectionName,
-                    connectionInstance,
-                    frozenset(datasets.get(connectionInstance.name, ())),
+        for name, (connection, refs) in outputs.items():
+            dataset_type_name = connection.name
+            if not connection.multiple and len(refs) > 1:
+                raise ScalarError(
+                    f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
+                    f"for non-multiple output connection {label}.{name} ({dataset_type_name}) "
+                    f"for quantum data ID {data_id}."
                 )
-            )
-        return results
+        return {}, {}
 
 
 def iterConnections(connections: PipelineTaskConnections,
@@ -607,3 +629,107 @@ def iterConnections(connections: PipelineTaskConnections,
         connectionType = (connectionType,)
     for name in itertools.chain.from_iterable(getattr(connections, ct) for ct in connectionType):
         yield getattr(connections, name)
+
+
+@dataclass
+class AdjustQuantumHelper:
+    """Helper class for calling `PipelineTaskConnections.adjustQuantum`.
+
+    This class holds `input` and `output` mappings in the form used by
+    `Quantum` and execution harness code, i.e. with `DatasetType` keys,
+    translating them to and from the connection-oriented mappings used inside
+    `PipelineTaskConnections`.
+    """
+
+    inputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
+    """Mapping of regular input and prerequisite input datasets, grouped by
+    `DatasetType`.
+    """
+
+    outputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
+    """Mapping of output datasets, grouped by `DatasetType`.
+    """
+
+    inputs_adjusted: bool = False
+    """Whether any inputs were removed in the last call to `adjust_in_place`.
+    """
+
+    outputs_adjusted: bool = False
+    """Whether any outputs were removed in the last call to `adjust_in_place`.
+    """
+
+    def adjust_in_place(
+        self,
+        connections: PipelineTaskConnections,
+        label: str,
+        data_id: DataCoordinate,
+    ) -> None:
+        """Call `~PipelineTaskConnections.adjustQuantum` and update ``self``
+        with its results.
+
+        Parameters
+        ----------
+        connections : `PipelineTaskConnections`
+            Instance on which to call `~PipelineTaskConnections.adjustQuantum`.
+        label : `str`
+            Label for this task in the pipeline (should be used in all
+            diagnostic messages).
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for this quantum in the pipeline (should be used in all
+            diagnostic messages).
+        """
+        # Translate self's DatasetType-keyed, Quantum-oriented mappings into
+        # connection-keyed, PipelineTask-oriented mappings.
+        inputs_by_connection: typing.Dict[str, typing.Tuple[BaseInput, typing.Tuple[DatasetRef, ...]]] = {}
+        outputs_by_connection: typing.Dict[str, typing.Tuple[Output, typing.Tuple[DatasetRef, ...]]] = {}
+        for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
+            connection = getattr(connections, name)
+            dataset_type_name = connection.name
+            inputs_by_connection[name] = (
+                connection,
+                tuple(self.inputs.get(dataset_type_name, ()))
+            )
+        for name in itertools.chain(connections.outputs):
+            connection = getattr(connections, name)
+            outputs_by_connection[name] = (
+                connection,
+                tuple(self.outputs.get(dataset_type_name, ()))
+            )
+        # Actually call adjustQuantum.
+        adjusted_inputs_by_connection, adjusted_outputs_by_connection = connections.adjustQuantum(
+            inputs_by_connection,
+            outputs_by_connection,
+            label,
+            data_id,
+        )
+        # Translate adjustments to DatasetType-keyed, Quantum-oriented form,
+        # installing new mappings in self if necessary.
+        if adjusted_inputs_by_connection:
+            adjusted_inputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.inputs)
+            for name, (connection, updated_refs) in adjusted_inputs_by_connection.items():
+                dataset_type_name = connection.name
+                if not set(updated_refs).issubset(self.inputs[dataset_type_name]):
+                    raise RuntimeError(
+                        f"adjustQuantum implementation for task with label {label} returned {name} "
+                        f"({dataset_type_name}) input datasets that are not a subset of those "
+                        f"it was given for data ID {data_id}."
+                    )
+                adjusted_inputs[dataset_type_name] = list(updated_refs)
+            self.inputs = adjusted_inputs.freeze()
+            self.inputs_adjusted = True
+        else:
+            self.inputs_adjusted = False
+        if adjusted_outputs_by_connection is not None:
+            adjusted_outputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.outputs)
+            for name, (connection, updated_refs) in adjusted_outputs_by_connection.items():
+                if not set(updated_refs).issubset(self.outputs[dataset_type_name]):
+                    raise RuntimeError(
+                        f"adjustQuantum implementation for task with label {label} returned {name} "
+                        f"({dataset_type_name}) output datasets that are not a subset of those "
+                        f"it was given for data ID {data_id}."
+                    )
+                adjusted_outputs[dataset_type_name] = list(updated_refs)
+            self.outputs = adjusted_outputs.freeze()
+            self.outputs_adjusted = True
+        else:
+            self.outputs_adjusted = False

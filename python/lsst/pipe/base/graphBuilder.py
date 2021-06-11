@@ -39,7 +39,7 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .connections import iterConnections
+from .connections import iterConnections, AdjustQuantumHelper
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
 from .graph import QuantumGraph
 from lsst.daf.butler import (
@@ -255,19 +255,16 @@ class _QuantumScaffolding:
         # or the adjustQuantum is incorrectly trying to make a prerequisite
         # input behave like a regular input; adjustQuantum should only raise
         # NoWorkFound if a regular input is missing, and it shouldn't be
-        for _, connectionInstance, refs in self.task.taskDef.connections.adjustQuantum(
-            self.task.taskDef.connections.translateAdjustQuantumInputs(allInputs),
-            self.task.taskDef.label,
-            self.dataId,
-        ):
-            allInputs[connectionInstance.name] = list(refs)
+        # possible for us to have generated ``self`` if that's true.
+        helper = AdjustQuantumHelper(inputs=allInputs, outputs=self.outputs.unpackMultiRefs())
+        helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
             initInputs=self.task.initInputs.unpackSingleRefs(),
-            inputs=allInputs,
-            outputs=self.outputs.unpackMultiRefs(),
+            inputs=helper.inputs,
+            outputs=helper.outputs,
         )
 
 
