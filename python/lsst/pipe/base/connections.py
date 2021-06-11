@@ -527,14 +527,14 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     f"for scalar connection {label}.{name} ({connection.name}) "
                     f"for quantum data ID {dataId}."
                 )
-            if not connection.optional and not refs:
+            if len(refs) < connection.minimum:
                 if isinstance(connection, PrerequisiteInput):
                     # This branch should only be possible during QG generation,
                     # or if someone deleted the dataset between making the QG
                     # and trying to run it.  Either one should be a hard error.
                     raise FileNotFoundError(
-                        f"No datasets found for non-optional connection {label}.{name} ({connection.name}) "
-                        f"for quantum data ID {dataId}."
+                        f"Not enough datasets ({len(refs)} found for non-optional connection {label}.{name} "
+                        f"({connection.name}) with minimum={connection.minimum} for quantum data ID {dataId}."
                     )
                 else:
                     # This branch should be impossible during QG generation,

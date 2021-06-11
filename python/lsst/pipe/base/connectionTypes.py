@@ -28,7 +28,7 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput",
 
 import dataclasses
 import typing
-from typing import Callable, ClassVar, Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from lsst.daf.butler import (
     CollectionSearch,
@@ -191,19 +191,42 @@ class BaseInput(DimensionedConnection):
         Indicates that this dataset type will be loaded as a
         `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
         object to load the object at a later time.
+    minimum : `bool`
+        Minimum number of datasets required for this connection, per quantum.
+        This is checked in the base implementation of
+        `PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
+        the minimum is not met for `Input` connections (causing the quantum to
+        be pruned, skipped, or never created, depending on the context), and
+        `FileNotFoundError` for `PrerequisiteInput` connections (causing
+        QuantumGraph generation to fail).  `PipelineTask` implementations may
+        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
+        for more fine-grained or configuration-driven constraints, as long as
+        they are compatible with this minium.
+
+    Raises
+    ------
+    TypeError
+        Raised if ``minimum`` is greater than one but ``multiple=False``.
+    NotImplementedError
+        Raised if ``minimum`` is zero for a regular `Input` connection; this
+        is not currently supported by our QuantumGraph generation algorithm.
     """
     deferLoad: bool = False
+    minimum: int = 1
 
-    optional: ClassVar[bool] = False
-    """Quanta are not generated and never (fully) executed when there are no
-    datasets for a non-optional input connection, and most input connections
-    cannot be made optional.
-    """
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.minimum > 1 and not self.multiple:
+            raise TypeError(f"Cannot set minimum={self.minimum} if multiple=False.")
 
 
 @dataclasses.dataclass(frozen=True)
 class Input(BaseInput):
-    pass
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.minimum == 0:
+            raise TypeError(f"Cannot set minimum={self.minimum} for regular input.")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -222,21 +245,25 @@ class PrerequisiteInput(BaseInput):
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
         to identify the dataset type identified by the specified name
-    deferLoad : `bool`
-        Indicates that this dataset type will be loaded as a
-        `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
-        object to load the object at a later time.
+    minimum : `bool`
+        Minimum number of datasets required for this connection, per quantum.
+        This is checked in the base implementation of
+        `PipelineTaskConnections.adjustQuantum`, which raises
+        `FileNotFoundError` (causing QuantumGraph generation to fail).
+        `PipelineTask` implementations may
+        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
+        for more fine-grained or configuration-driven constraints, as long as
+        they are compatible with this minium.
     lookupFunction: `typing.Callable`, optional
         An optional callable function that will look up PrerequisiteInputs
         using the DatasetType, registry, quantum dataId, and input collections
         passed to it. If no function is specified, the default temporal spatial
         lookup will be used.
-    optional : `bool`, optional
-        If `True` (`False` is default), generate quanta for this task even
-        when no input datasets for this connection exist.  Missing optional
-        inputs will cause `ButlerQuantumContext.get` to return `None` or a
-        smaller container (never a same-size container with some `None`
-        elements) during execution.
+
+    Raises
+    ------
+    TypeError
+        Raised if ``minimum`` is greater than one but ``multiple=False``.
 
     Notes
     -----
@@ -266,7 +293,6 @@ class PrerequisiteInput(BaseInput):
     """
     lookupFunction: Optional[Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch],
                                       Iterable[DatasetRef]]] = None
-    optional: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
