@@ -20,7 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("LoadHelper")
+__all__ = ("LoadHelper", )
 
 from lsst.daf.butler import ButlerURI, Quantum
 from lsst.daf.butler.core._butlerUri.s3 import ButlerS3URI
@@ -32,12 +32,13 @@ from .quantumNode import NodeId
 from dataclasses import dataclass
 import functools
 import io
+import json
 import lzma
 import pickle
 import struct
 
 from collections import defaultdict, UserDict
-from typing import (Optional, Iterable, DefaultDict, Set, Dict, TYPE_CHECKING, Type, Union)
+from typing import (Optional, Iterable, DefaultDict, Set, Dict, TYPE_CHECKING, Tuple, Type, Union)
 
 if TYPE_CHECKING:
     from . import QuantumGraph
@@ -107,58 +108,97 @@ class DefaultLoadHelper:
     def __init__(self, uriObject: Union[ButlerURI, io.IO[bytes]]):
         self.uriObject = uriObject
 
-        preambleSize, taskDefSize, nodeSize = self._readSizes()
+        # The length of infoSize will either be a tuple with length 2,
+        # (version 1) which contains the lengths of 2 independent pickles,
+        # or a tuple of length 1 which contains the total length of the entire
+        # header information (minus the magic bytes and version bytes)
+        preambleSize, infoSize = self._readSizes()
 
         # Recode the total header size
-        self.headerSize = preambleSize + taskDefSize + nodeSize
+        if self.save_version == 1:
+            self.headerSize = preambleSize + infoSize[0] + infoSize[1]
+        elif self.save_version == 2:
+            self.headerSize = preambleSize + infoSize[0]
+        else:
+            raise ValueError(f"Unable to load QuantumGraph with version {self.save_version}, "
+                             "please try a newer version of the code.")
 
-        self._readByteMappings(preambleSize, self.headerSize, taskDefSize)
+        self._readByteMappings(preambleSize, self.headerSize, infoSize)
 
-    def _readSizes(self):
+    def _readSizes(self) -> Tuple[int, Tuple[int, ...]]:
         # need to import here to avoid cyclic imports
-        from .graph import STRUCT_FMT_STRING, MAGIC_BYTES
+        from .graph import STRUCT_FMT_BASE, MAGIC_BYTES, STRUCT_FMT_STRING, SAVE_VERSION
         # Read the first few bytes which correspond to the lengths of the
         # magic identifier bytes, 2 byte version
         # number and the two 8 bytes numbers that are the sizes of the byte
         # maps
         magicSize = len(MAGIC_BYTES)
-        fmt = STRUCT_FMT_STRING
-        fmtSize = struct.calcsize(fmt)
+
+        # read in just the fmt base to determine the save version
+        fmtSize = struct.calcsize(STRUCT_FMT_BASE)
         preambleSize = magicSize + fmtSize
 
         headerBytes = self._readBytes(0, preambleSize)
         magic = headerBytes[:magicSize]
-        sizeBytes = headerBytes[magicSize:]
+        versionBytes = headerBytes[magicSize:]
 
         if magic != MAGIC_BYTES:
             raise ValueError("This file does not appear to be a quantum graph save got magic bytes "
                              f"{magic}, expected {MAGIC_BYTES}")
 
         # Turn they encode bytes back into a python int object
-        save_version, taskDefSize, nodeSize = struct.unpack('>HQQ', sizeBytes)
+        save_version, = struct.unpack(STRUCT_FMT_BASE, versionBytes)
+
+        if save_version > SAVE_VERSION:
+            raise RuntimeError(f"The version of this save file is {save_version}, but this version of"
+                               f"Quantum Graph software only knows how to read up to version {SAVE_VERSION}")
+
+        # read in the next bits
+        fmtString = STRUCT_FMT_STRING[save_version]
+        infoSize = struct.calcsize(fmtString)
+        infoBytes = self._readBytes(preambleSize, preambleSize+infoSize)
+        infoUnpack = struct.unpack(fmtString, infoBytes)
+
+        preambleSize += infoSize
 
         # Store the save version, so future read codes can make use of any
         # format changes to the save protocol
         self.save_version = save_version
 
-        return preambleSize, taskDefSize, nodeSize
+        return preambleSize, infoUnpack
 
-    def _readByteMappings(self, preambleSize, headerSize, taskDefSize):
+    def _readByteMappings(self, preambleSize: int, headerSize: int, infoSize: Tuple[int, ...]) -> None:
         # Take the header size explicitly so subclasses can modify before
         # This task is called
 
         # read the bytes of taskDef bytes and nodes skipping the size bytes
         headerMaps = self._readBytes(preambleSize, headerSize)
 
-        # read the map of taskDef bytes back in skipping the size bytes
-        self.taskDefMap = pickle.loads(headerMaps[:taskDefSize])
+        if self.save_version == 1:
+            taskDefSize, _ = infoSize
 
-        # read back in the graph id
-        self._buildId = self.taskDefMap['__GraphBuildID']
+            # read the map of taskDef bytes back in skipping the size bytes
+            self.taskDefMap = pickle.loads(headerMaps[:taskDefSize])
 
-        # read the map of the node objects back in skipping bytes
-        # corresponding to the taskDef byte map
-        self.map = pickle.loads(headerMaps[taskDefSize:])
+            # read back in the graph id
+            self._buildId = self.taskDefMap['__GraphBuildID']
+
+            # read the map of the node objects back in skipping bytes
+            # corresponding to the taskDef byte map
+            self.map = pickle.loads(headerMaps[taskDefSize:])
+
+            # There is no metadata for old versions
+            self.metadata = None
+        elif self.save_version == 2:
+            uncompressedHeaderMap = lzma.decompress(headerMaps)
+            header = json.loads(uncompressedHeaderMap)
+            self.taskDefMap = header['TaskDefs']
+            self._buildId = header['GraphBuildID']
+            self.map = dict(header['Nodes'])
+            self.metadata = header['Metadata']
+        else:
+            raise ValueError(f"Unable to load QuantumGraph with version {self.save_version}, "
+                             "please try a newer version of the code.")
 
     def load(self, nodes: Optional[Iterable[int]] = None, graphID: Optional[str] = None) -> QuantumGraph:
         """Loads in the specified nodes from the graph
@@ -217,7 +257,10 @@ class DefaultLoadHelper:
         # loop over the nodes specified above
         for node in nodes:
             # Get the bytes to read from the map
-            start, stop = self.map[node]
+            if self.save_version == 1:
+                start, stop = self.map[node]
+            else:
+                start, stop = self.map[node]['bytes']
             start += self.headerSize
             stop += self.headerSize
 
@@ -233,7 +276,10 @@ class DefaultLoadHelper:
             nodeTask = qNode.taskDef
             if nodeTask not in loadedTaskDef:
                 # Get the byte ranges corresponding to this taskDef
-                start, stop = self.taskDefMap[nodeTask]
+                if self.save_version == 1:
+                    start, stop = self.taskDefMap[nodeTask]
+                else:
+                    start, stop = self.taskDefMap[nodeTask]['bytes']
                 start += self.headerSize
                 stop += self.headerSize
 
@@ -253,7 +299,8 @@ class DefaultLoadHelper:
         # construct an empty new QuantumGraph object, and run the associated
         # creation method with the un-persisted data
         qGraph = object.__new__(QuantumGraph)
-        qGraph._buildGraphs(quanta, _quantumToNodeId=quantumToNodeId, _buildId=self._buildId)
+        qGraph._buildGraphs(quanta, _quantumToNodeId=quantumToNodeId, _buildId=self._buildId,
+                            metadata=self.metadata)
         return qGraph
 
     def _readBytes(self, start: int, stop: int) -> bytes:
