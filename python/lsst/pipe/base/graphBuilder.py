@@ -32,7 +32,7 @@ import itertools
 from collections import ChainMap
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, List, Set
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Mapping
 import logging
 
 
@@ -752,16 +752,23 @@ class _PipelineScaffolding:
                 for dataId in dataIdsToSkip:
                     del task.quanta[dataId]
 
-    def makeQuantumGraph(self):
+    def makeQuantumGraph(self, metadata: Optional[Mapping[str, Any]] = None):
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
+
+        Parameters
+        ---------
+        metadata : Optional Mapping of `str` to primitives
+            This is an optional parameter of extra data to carry with the
+            graph.  Entries in this mapping should be able to be serialized in
+            JSON.
 
         Returns
         -------
         graph : `QuantumGraph`
             The full `QuantumGraph`.
         """
-        graph = QuantumGraph({task.taskDef: task.makeQuantumSet() for task in self.tasks})
+        graph = QuantumGraph({task.taskDef: task.makeQuantumSet() for task in self.tasks}, metadata=metadata)
         return graph
 
 
@@ -806,7 +813,8 @@ class GraphBuilder(object):
         self.dimensions = registry.dimensions
         self.skipExisting = skipExisting
 
-    def makeGraph(self, pipeline, collections, run, userQuery):
+    def makeGraph(self, pipeline, collections, run, userQuery,
+                  metadata: Optional[Mapping[str, Any]] = None):
         """Create execution graph for a pipeline.
 
         Parameters
@@ -823,6 +831,10 @@ class GraphBuilder(object):
         userQuery : `str`
             String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
+        metadata : Optional Mapping of `str` to primitives
+            This is an optional parameter of extra data to carry with the
+            graph.  Entries in this mapping should be able to be serialized in
+            JSON.
 
         Returns
         -------
@@ -852,4 +864,4 @@ class GraphBuilder(object):
         with scaffolding.connectDataIds(self.registry, collections, userQuery, dataId) as commonDataIds:
             scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
                                            skipExisting=self.skipExisting)
-        return scaffolding.makeQuantumGraph()
+        return scaffolding.makeQuantumGraph(metadata=metadata)
