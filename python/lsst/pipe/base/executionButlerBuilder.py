@@ -64,15 +64,14 @@ def _accumulate(graph: QuantumGraph) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
                 # means it exists and should be exported, if not it should
                 # be inserted into the new registry
                 for ref in refs:
-                    if ref.isComponent():
-                        # We can't insert a component, and a component will
-                        # be part of some other upstream dataset, so it
-                        # should be safe to skip them here
-                        continue
-
                     if ref.id is not None:
                         exports.add(ref)
                     else:
+                        if ref.isComponent():
+                            # We can't insert a component, and a component will
+                            # be part of some other upstream dataset, so it
+                            # should be safe to skip them here
+                            continue
                         inserts[type].add(ref.dataId)
     return exports, inserts
 
