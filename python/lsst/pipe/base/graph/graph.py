@@ -27,6 +27,7 @@ from collections import defaultdict, deque
 
 from itertools import chain, count
 import io
+import json
 import networkx as nx
 from networkx.drawing.nx_agraph import write_dot
 import os
@@ -35,8 +36,9 @@ import lzma
 import copy
 import struct
 import time
-from typing import (DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, Generator, Optional, Tuple,
-                    Union, TypeVar)
+from types import MappingProxyType
+from typing import (Any, DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, Generator, Optional,
+                    Tuple, Union, TypeVar)
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
@@ -51,12 +53,24 @@ _T = TypeVar("_T", bound="QuantumGraph")
 
 # modify this constant any time the on disk representation of the save file
 # changes, and update the load helpers to behave properly for each version.
-SAVE_VERSION = 1
+SAVE_VERSION = 2
 
-# String used to describe the format for the preamble bytes in a file save
-# This marks a Big endian encoded format with an unsigned short, an unsigned
+# Strings used to describe the format for the preamble bytes in a file save
+# The base is a big endian encoded unsigned short that is used to hold the
+# file format version. This allows reading version bytes and determine which
+# loading code should be used for the rest of the file
+STRUCT_FMT_BASE = '>H'
+#
+# Version 1
+# This marks a big endian encoded format with an unsigned short, an unsigned
 # long long, and an unsigned long long in the byte stream
-STRUCT_FMT_STRING = '>HQQ'
+# Version 2
+# A big endian encoded format with an unsigned long long byte stream used to
+# indicate the total length of the entire header
+STRUCT_FMT_STRING = {
+    1: '>QQ',
+    2: '>Q'
+}
 
 
 # magic bytes that help determine this is a graph save
@@ -81,18 +95,24 @@ class QuantumGraph:
     quanta : Mapping of `TaskDef` to sets of `Quantum`
         This maps tasks (and their configs) to the sets of data they are to
         process.
+    metadata : Optional Mapping of `str` to primitives
+        This is an optional parameter of extra data to carry with the graph.
+        Entries in this mapping should be able to be serialized in JSON.
     """
-    def __init__(self, quanta: Mapping[TaskDef, Set[Quantum]]):
-        self._buildGraphs(quanta)
+    def __init__(self, quanta: Mapping[TaskDef, Set[Quantum]],
+                 metadata: Optional[Mapping[str, Any]] = None):
+        self._buildGraphs(quanta, metadata=metadata)
 
     def _buildGraphs(self,
                      quanta: Mapping[TaskDef, Set[Quantum]],
                      *,
                      _quantumToNodeId: Optional[Mapping[Quantum, NodeId]] = None,
-                     _buildId: Optional[BuildId] = None):
+                     _buildId: Optional[BuildId] = None,
+                     metadata: Optional[Mapping[str, Any]] = None):
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
+        self._metadata = metadata
         self._quanta = quanta
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structures used to identify relations between components;
@@ -600,6 +620,14 @@ class QuantumGraph:
             raise TypeError(f"Can currently only save a graph in qgraph format not {uri}")
         butlerUri.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
+    @property
+    def metadata(self) -> Optional[MappingProxyType[str, Any]]:
+        """
+        """
+        if self._metadata is None:
+            return None
+        return MappingProxyType(self._metadata)
+
     @classmethod
     def loadUri(cls, uri: Union[ButlerURI, str], universe: DimensionUniverse,
                 nodes: Optional[Iterable[int]] = None,
@@ -684,9 +712,19 @@ class QuantumGraph:
     def _buildSaveObject(self) -> bytearray:
         # make some containers
         pickleData = deque()
-        nodeMap = {}
+        # node map is a list because json does not accept mapping keys that
+        # are not strings, so we store a list of key, value pairs that will
+        # be converted to a mapping on load
+        nodeMap = []
         taskDefMap = {}
+        headerData = {}
         protocol = 3
+
+        # Store the QauntumGraph BuildId, this will allow validating BuildIds
+        # at load time, prior to loading any QuantumNodes. Name chosen for
+        # unlikely conflicts.
+        headerData['GraphBuildID'] = self.graphID
+        headerData['Metadata'] = self._metadata
 
         # counter for the number of bytes processed thus far
         count = 0
@@ -696,15 +734,11 @@ class QuantumGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
             dump = lzma.compress(pickle.dumps(taskDef, protocol=protocol))
-            taskDefMap[taskDef.label] = (count, count+len(dump))
+            taskDefMap[taskDef.label] = {"bytes": (count, count+len(dump))}
             count += len(dump)
             pickleData.append(dump)
 
-        # Store the QauntumGraph BuildId along side the TaskDefs for
-        # convenance. This will allow validating BuildIds at load time, prior
-        # to loading any QuantumNodes. Name chosen for unlikely conflicts with
-        # labels as this is python standard for private.
-        taskDefMap['__GraphBuildID'] = self.graphID
+        headerData['TaskDefs'] = taskDefMap
 
         # serialize the nodes, recording the start and end bytes of each node
         for node in self:
@@ -725,18 +759,22 @@ class QuantumGraph:
             # a large impact on on disk size, so it is worth doing
             dump = lzma.compress(pickle.dumps(node, protocol=protocol))
             pickleData.append(dump)
-            nodeMap[node.nodeId.number] = (count, count+len(dump))
+            nodeMap.append((int(node.nodeId.number), {"bytes": (count, count+len(dump))}))
             count += len(dump)
 
-        # pickle the taskDef byte map
-        taskDef_pickle = pickle.dumps(taskDefMap, protocol=protocol)
+        # need to serialize this as a series of key,value tuples because of
+        # a limitation on how json cant do anyting but strings as keys
+        headerData['Nodes'] = nodeMap
 
-        # pickle the node byte map
-        map_pickle = pickle.dumps(nodeMap, protocol=protocol)
+        # dump the headerData to json
+        header_encode = lzma.compress(json.dumps(headerData).encode())
 
         # record the sizes as 2 unsigned long long numbers for a total of 16
         # bytes
-        map_lengths = struct.pack(STRUCT_FMT_STRING, SAVE_VERSION, len(taskDef_pickle), len(map_pickle))
+        save_bytes = struct.pack(STRUCT_FMT_BASE, SAVE_VERSION)
+
+        fmt_string = STRUCT_FMT_STRING[SAVE_VERSION]
+        map_lengths = struct.pack(fmt_string, len(header_encode))
 
         # write each component of the save out in a deterministic order
         # buffer = io.BytesIO()
@@ -745,9 +783,9 @@ class QuantumGraph:
         # buffer.write(map_pickle)
         buffer = bytearray()
         buffer.extend(MAGIC_BYTES)
+        buffer.extend(save_bytes)
         buffer.extend(map_lengths)
-        buffer.extend(taskDef_pickle)
-        buffer.extend(map_pickle)
+        buffer.extend(header_encode)
         # Iterate over the length of pickleData, and for each element pop the
         # leftmost element off the deque and write it out. This is to save
         # memory, as the memory is added to the buffer object, it is removed

@@ -47,6 +47,8 @@ except ImportError:
         """
         return cls
 
+METADATA = {'a': [1, 2, 3]}
+
 
 class Dummy1Connections(PipelineTaskConnections, dimensions=("A", "B")):
     initOutput = cT.InitOutput(name="Dummy1InitOutput",
@@ -201,7 +203,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
         self.quantumMap = quantumMap
-        self.qGraph = QuantumGraph(quantumMap)
+        self.qGraph = QuantumGraph(quantumMap, metadata=METADATA)
         self.universe = universe
 
     def _cleanGraphs(self, graph1, graph2):
@@ -373,6 +375,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 uri = tmpFile.name
                 self.qGraph.saveUri(uri)
                 restore = QuantumGraph.loadUri(uri, self.universe)
+                self.assertEqual(restore.metadata, METADATA)
                 self._cleanGraphs(self.qGraph, restore)
                 self.assertEqual(self.qGraph, restore)
                 nodeNumber = random.randint(0, len(self.qGraph)-1)
