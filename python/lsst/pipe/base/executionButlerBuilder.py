@@ -32,8 +32,7 @@ from lsst.daf.butler.core.utils import getClassOf
 from lsst.daf.butler.transfers import RepoExportContext
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 
-
-from . import QuantumGraph, QuantumNode
+from .graph import QuantumGraph, QuantumNode
 
 DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
 
