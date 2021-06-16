@@ -30,7 +30,7 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
+from typing import Dict, Iterable, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
 
 import copy
 import re
@@ -832,14 +832,20 @@ class PipelineDatasetTypes:
     """
 
     @classmethod
-    def fromPipeline(cls, pipeline, *, registry: Registry) -> PipelineDatasetTypes:
+    def fromPipeline(
+        cls,
+        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        *,
+        registry: Registry,
+    ) -> PipelineDatasetTypes:
         """Extract and classify the dataset types from all tasks in a
         `Pipeline`.
 
         Parameters
         ----------
-        pipeline: `Pipeline`
-            An ordered collection of tasks that can be run together.
+        pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
+            A dependency-ordered collection of tasks that can be run
+            together.
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.
