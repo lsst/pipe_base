@@ -39,7 +39,7 @@ import logging
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from .connections import iterConnections
+from .connections import iterConnections, AdjustQuantumHelper
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
 from .graph import QuantumGraph
 from lsst.daf.butler import (
@@ -148,15 +148,15 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             return ref
         return NamedKeyDict({datasetType: getOne(refs) for datasetType, refs in self.items()})
 
-    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, DatasetRef]:
+    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, List[DatasetRef]]:
         """Unpack nested multi-element `DatasetRef` dicts into a new
         mapping with `DatasetType` keys and `set` of `DatasetRef` values.
 
         Returns
         -------
         dictionary : `NamedKeyDict`
-            Dictionary mapping `DatasetType` to `DatasetRef`, with both
-            `DatasetType` instances and string names usable as keys.
+            Dictionary mapping `DatasetType` to `list` of `DatasetRef`, with
+            both `DatasetType` instances and string names usable as keys.
         """
         return NamedKeyDict({datasetType: list(refs.values()) for datasetType, refs in self.items()})
 
@@ -250,15 +250,21 @@ class _QuantumScaffolding:
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
         # This will raise if one of the check conditions is not met, which is
-        # the intended behavior
-        allInputs = self.task.taskDef.connections.adjustQuantum(allInputs)
+        # the intended behavior.
+        # If it raises NotWorkFound, there is a bug in the QG algorithm
+        # or the adjustQuantum is incorrectly trying to make a prerequisite
+        # input behave like a regular input; adjustQuantum should only raise
+        # NoWorkFound if a regular input is missing, and it shouldn't be
+        # possible for us to have generated ``self`` if that's true.
+        helper = AdjustQuantumHelper(inputs=allInputs, outputs=self.outputs.unpackMultiRefs())
+        helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
             initInputs=self.task.initInputs.unpackSingleRefs(),
-            inputs=allInputs,
-            outputs=self.outputs.unpackMultiRefs(),
+            inputs=helper.inputs,
+            outputs=helper.outputs,
         )
 
 
@@ -574,7 +580,8 @@ class _PipelineScaffolding:
             _LOG.debug("Finished processing %d rows from data ID query.", n)
             yield commonDataIds
 
-    def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExisting=True):
+    def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExisting=True,
+                           clobberOutputs=True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -598,15 +605,19 @@ class _PipelineScaffolding:
         skipExisting : `bool`, optional
             If `True` (default), a Quantum is not created if all its outputs
             already exist in ``run``.  Ignored if ``run`` is `None`.
+        clobberOutputs : `bool`, optional
+            If `True` (default), allow quanta to created even if outputs exist;
+            this requires the same behavior behavior to be enabled when
+            executing.  If ``skipExisting`` is also `True`, completed quanta
+            (those with metadata, or all outputs if there is no metadata
+            dataset configured) will be skipped rather than clobbered.
 
         Raises
         ------
         OutputExistsError
             Raised if an output dataset already exists in the output run
-            and ``skipExisting`` is `False`.  The case where some but not all
-            of a quantum's outputs are present and ``skipExisting`` is `True`
-            cannot be identified at this stage, and is handled by `fillQuanta`
-            instead.
+            and ``skipExisting`` is `False`, or if only some outputs are
+            present and ``clobberOutputs`` is `False`.
         """
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
@@ -632,7 +643,7 @@ class _PipelineScaffolding:
                     # probably required in order to support writing initOutputs
                     # before QuantumGraph generation.
                     assert resolvedRef.dataId in refs
-                    if skipExisting or isInit:
+                    if skipExisting or isInit or clobberOutputs:
                         refs[resolvedRef.dataId] = resolvedRef
                     else:
                         raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
@@ -675,36 +686,42 @@ class _PipelineScaffolding:
                 for c in iterConnections(task.taskDef.connections, "prerequisiteInputs")
                 if c.lookupFunction is not None
             }
-            dataIdsToSkip = []
+            dataIdsFailed = []
+            dataIdsSucceeded = []
             for quantum in task.quanta.values():
                 # Process outputs datasets only if there is a run to look for
-                # outputs in and skipExisting is True.  Note that if
-                # skipExisting is False, any output datasets that already exist
-                # would have already caused an exception to be raised.
-                # We never update the DatasetRefs in the quantum because those
-                # should never be resolved.
-                if run is not None and skipExisting:
+                # outputs in and skipExisting and/or clobberOutputs is True.
+                # Note that if skipExisting is False, any output datasets that
+                # already exist would have already caused an exception to be
+                # raised.  We never update the DatasetRefs in the quantum
+                # because those should never be resolved.
+                if run is not None and (skipExisting or clobberOutputs):
                     resolvedRefs = []
                     unresolvedRefs = []
+                    haveMetadata = False
                     for datasetType, originalRefs in quantum.outputs.items():
                         for ref in task.outputs.extract(datasetType, originalRefs.keys()):
                             if ref.id is not None:
                                 resolvedRefs.append(ref)
+                                if datasetType.name == task.taskDef.metadataDatasetName:
+                                    haveMetadata = True
                             else:
                                 unresolvedRefs.append(ref)
                     if resolvedRefs:
-                        if unresolvedRefs:
-                            raise OutputExistsError(
-                                f"Quantum {quantum.dataId} of task with label "
-                                f"'{quantum.task.taskDef.label}' has some outputs that exist "
-                                f"({resolvedRefs}) "
-                                f"and others that don't ({unresolvedRefs})."
-                            )
+                        if haveMetadata or not unresolvedRefs:
+                            dataIdsSucceeded.append(quantum.dataId)
+                            if skipExisting:
+                                continue
                         else:
-                            # All outputs are already present; skip this
-                            # quantum and continue to the next.
-                            dataIdsToSkip.append(quantum.dataId)
-                            continue
+                            dataIdsFailed.append(quantum.dataId)
+                            if not clobberOutputs:
+                                raise OutputExistsError(
+                                    f"Quantum {quantum.dataId} of task with label "
+                                    f"'{quantum.task.taskDef.label}' has some outputs that exist "
+                                    f"({resolvedRefs}) "
+                                    f"and others that don't ({unresolvedRefs}), with no metadata output, "
+                                    "and clobbering outputs was not enabled."
+                                )
                 # Update the input DatasetRefs to the resolved ones we already
                 # searched for.
                 for datasetType, refs in quantum.inputs.items():
@@ -746,11 +763,28 @@ class _PipelineScaffolding:
                     quantum.prerequisites[datasetType].update({ref.dataId: ref for ref in refs
                                                                if ref is not None})
             # Actually remove any quanta that we decided to skip above.
-            if dataIdsToSkip:
-                _LOG.debug("Pruning %d quanta for task with label '%s' because all of their outputs exist.",
-                           len(dataIdsToSkip), task.taskDef.label)
-                for dataId in dataIdsToSkip:
-                    del task.quanta[dataId]
+            if dataIdsSucceeded:
+                if skipExisting:
+                    _LOG.debug("Pruning successful %d quanta for task with label '%s' because all of their "
+                               "outputs exist or metadata was written successfully.",
+                               len(dataIdsSucceeded), task.taskDef.label)
+                    for dataId in dataIdsSucceeded:
+                        del task.quanta[dataId]
+                elif clobberOutputs:
+                    _LOG.info("Found %d successful quanta for task with label '%s' "
+                              "that will need to be clobbered during execution.",
+                              len(dataIdsSucceeded),
+                              task.taskDef.label)
+                else:
+                    raise AssertionError("OutputExistsError should have already been raised.")
+            if dataIdsFailed:
+                if clobberOutputs:
+                    _LOG.info("Found %d failed/incomplete quanta for task with label '%s' "
+                              "that will need to be clobbered during execution.",
+                              len(dataIdsFailed),
+                              task.taskDef.label)
+                else:
+                    raise AssertionError("OutputExistsError should have already been raised.")
 
     def makeQuantumGraph(self, metadata: Optional[Mapping[str, Any]] = None):
         """Create a `QuantumGraph` from the quanta already present in
@@ -806,12 +840,17 @@ class GraphBuilder(object):
     skipExisting : `bool`, optional
         If `True` (default), a Quantum is not created if all its outputs
         already exist.
+    clobberOutputs : `bool`, optional
+        If `True` (default), allow quanta to created even if partial outputs
+        exist; this requires the same behavior behavior to be enabled when
+        executing.
     """
 
-    def __init__(self, registry, skipExisting=True):
+    def __init__(self, registry, skipExisting=True, clobberOutputs=True):
         self.registry = registry
         self.dimensions = registry.dimensions
         self.skipExisting = skipExisting
+        self.clobberOutputs = clobberOutputs
 
     def makeGraph(self, pipeline, collections, run, userQuery,
                   metadata: Optional[Mapping[str, Any]] = None):
@@ -863,5 +902,6 @@ class GraphBuilder(object):
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
         with scaffolding.connectDataIds(self.registry, collections, userQuery, dataId) as commonDataIds:
             scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
-                                           skipExisting=self.skipExisting)
+                                           skipExisting=self.skipExisting,
+                                           clobberOutputs=self.clobberOutputs)
         return scaffolding.makeQuantumGraph(metadata=metadata)
