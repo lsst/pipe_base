@@ -277,7 +277,10 @@ def buildExecutionButler(butler: Butler,
         raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
     # Gather all DatasetTypes from the Python and check any that already exist
-    # in the registry for consistency.
+    # in the registry for consistency.  This does not check that all dataset
+    # types here exist, because they might want to register dataset types
+    # later.  It would be nice to also check that, but to that we would need to
+    # be told whether they plan to register dataset types later (DM-30845).
     dataset_types = PipelineDatasetTypes.fromPipeline(graph.iterTaskGraph(), registry=butler.registry)
 
     exports, inserts = _accumulate(graph, dataset_types)
