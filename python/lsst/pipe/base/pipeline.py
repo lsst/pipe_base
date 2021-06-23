@@ -30,7 +30,7 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
+from typing import Dict, Iterable, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
 
 import copy
 import re
@@ -655,7 +655,13 @@ class TaskDatasetTypes:
     """
 
     @classmethod
-    def fromTaskDef(cls, taskDef: TaskDef, *, registry: Registry) -> TaskDatasetTypes:
+    def fromTaskDef(
+        cls,
+        taskDef: TaskDef,
+        *,
+        registry: Registry,
+        include_configs: bool = True,
+    ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
         Parameters
@@ -665,6 +671,9 @@ class TaskDatasetTypes:
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.
+        include_configs : `bool`, optional
+            If `True` (default) include config dataset types as
+            ``initOutputs``.
 
         Returns
         -------
@@ -747,6 +756,18 @@ class TaskDatasetTypes:
                 datasetTypes.freeze()
             return datasetTypes
 
+        # optionally add initOutput dataset for config
+        initOutputs = makeDatasetTypesSet("initOutputs", freeze=False)
+        if include_configs:
+            initOutputs.add(
+                DatasetType(
+                    taskDef.configDatasetName,
+                    registry.dimensions.empty,
+                    storageClass="Config",
+                )
+            )
+        initOutputs.freeze()
+
         # optionally add output dataset for metadata
         outputs = makeDatasetTypesSet("outputs", freeze=False)
         if taskDef.metadataDatasetName is not None:
@@ -758,7 +779,7 @@ class TaskDatasetTypes:
 
         return cls(
             initInputs=makeDatasetTypesSet("initInputs"),
-            initOutputs=makeDatasetTypesSet("initOutputs"),
+            initOutputs=initOutputs,
             inputs=makeDatasetTypesSet("inputs"),
             prerequisites=makeDatasetTypesSet("prerequisiteInputs"),
             outputs=outputs,
@@ -832,17 +853,31 @@ class PipelineDatasetTypes:
     """
 
     @classmethod
-    def fromPipeline(cls, pipeline, *, registry: Registry) -> PipelineDatasetTypes:
+    def fromPipeline(
+        cls,
+        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        *,
+        registry: Registry,
+        include_configs: bool = True,
+        include_packages: bool = True,
+    ) -> PipelineDatasetTypes:
         """Extract and classify the dataset types from all tasks in a
         `Pipeline`.
 
         Parameters
         ----------
-        pipeline: `Pipeline`
-            An ordered collection of tasks that can be run together.
+        pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
+            A dependency-ordered collection of tasks that can be run
+            together.
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.
+        include_configs : `bool`, optional
+            If `True` (default) include config dataset types as
+            ``initOutputs``.
+        include_packages : `bool`, optional
+            If `True` (default) include the dataset type for software package
+            versions in ``initOutputs``.
 
         Returns
         -------
@@ -862,10 +897,22 @@ class PipelineDatasetTypes:
         allInitOutputs = NamedValueSet()
         prerequisites = NamedValueSet()
         byTask = dict()
+        if include_packages:
+            allInitOutputs.add(
+                DatasetType(
+                    "packages",
+                    registry.dimensions.empty,
+                    storageClass="Packages",
+                )
+            )
         if isinstance(pipeline, Pipeline):
             pipeline = pipeline.toExpandedPipeline()
         for taskDef in pipeline:
-            thisTask = TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
+            thisTask = TaskDatasetTypes.fromTaskDef(
+                taskDef,
+                registry=registry,
+                include_configs=include_configs,
+            )
             allInitInputs |= thisTask.initInputs
             allInitOutputs |= thisTask.initOutputs
             allInputs |= thisTask.inputs

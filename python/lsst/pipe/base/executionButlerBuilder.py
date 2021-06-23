@@ -25,6 +25,7 @@ __all__ = ("buildExecutionButler", )
 import io
 
 from collections import defaultdict
+import itertools
 from typing import Callable, DefaultDict, Mapping, Optional, Set, Tuple, Iterable, List, Union
 
 from lsst.daf.butler import (DatasetRef, DatasetType, Butler, DataCoordinate, ButlerURI, Config)
@@ -32,14 +33,17 @@ from lsst.daf.butler.core.utils import getClassOf
 from lsst.daf.butler.transfers import RepoExportContext
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 
-
-from . import QuantumGraph, QuantumNode
+from .graph import QuantumGraph, QuantumNode
+from .pipeline import PipelineDatasetTypes
 
 DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
 
 
-def _accumulate(graph: QuantumGraph) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
-    # accumulate the dataIds that will be transferred to the execution
+def _accumulate(
+    graph: QuantumGraph,
+    dataset_types: PipelineDatasetTypes,
+) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
+    # accumulate the DatasetRefs that will be transferred to the execution
     # registry
 
     # exports holds all the existing data that will be migrated to the
@@ -50,6 +54,14 @@ def _accumulate(graph: QuantumGraph) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
     # inserted into the registry. These are the products that are expected
     # to be produced during processing of the QuantumGraph
     inserts: DefaultDict[DatasetType, Set[DataCoordinate]] = defaultdict(set)
+
+    # Add inserts for initOutputs (including initIntermediates); these are
+    # defined fully by their DatasetType, because they have no dimensions, and
+    # they are by definition not resolved.  initInputs are part of Quantum and
+    # that's the only place the graph stores the dataset IDs, so we process
+    # them there even though each Quantum for a task has the same ones.
+    for dataset_type in itertools.chain(dataset_types.initIntermediates, dataset_types.initOutputs):
+        inserts[dataset_type].add(DataCoordinate.makeEmpty(dataset_type.dimensions.universe))
 
     n: QuantumNode
     for quantum in (n.quantum for n in graph):
@@ -65,15 +77,14 @@ def _accumulate(graph: QuantumGraph) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
                 # means it exists and should be exported, if not it should
                 # be inserted into the new registry
                 for ref in refs:
-                    if ref.isComponent():
-                        # We can't insert a component, and a component will
-                        # be part of some other upstream dataset, so it
-                        # should be safe to skip them here
-                        continue
-
                     if ref.id is not None:
                         exports.add(ref)
                     else:
+                        if ref.isComponent():
+                            # We can't insert a component, and a component will
+                            # be part of some other upstream dataset, so it
+                            # should be safe to skip them here
+                            continue
                         inserts[type].add(ref.dataId)
     return exports, inserts
 
@@ -265,7 +276,14 @@ def buildExecutionButler(butler: Butler,
     if not outputLocation.isdir():
         raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
-    exports, inserts = _accumulate(graph)
+    # Gather all DatasetTypes from the Python and check any that already exist
+    # in the registry for consistency.  This does not check that all dataset
+    # types here exist, because they might want to register dataset types
+    # later.  It would be nice to also check that, but to that we would need to
+    # be told whether they plan to register dataset types later (DM-30845).
+    dataset_types = PipelineDatasetTypes.fromPipeline(graph.iterTaskGraph(), registry=butler.registry)
+
+    exports, inserts = _accumulate(graph, dataset_types)
     yamlBuffer = _export(butler, collections, exports, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists)
