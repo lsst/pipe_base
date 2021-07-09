@@ -32,8 +32,8 @@ import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
+from .task_logging import getLogger
 from lsst.base import Packages
-from lsst.log import Log
 
 
 def _runPool(pool, timeout, function, iterable):
@@ -56,7 +56,7 @@ def profile(filename, log=None):
     filename : `str`
         Filename to which to write profile (profiling disabled if `None` or
         empty).
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger`, optional
         Log object for logging the profile operations.
 
     If profiling is enabled, the context manager returns the cProfile.Profile
@@ -416,7 +416,7 @@ class TaskRunner:
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = Log.getDefaultLogger()
+            self.log = getLogger()
         if hasattr(dataRef, "dataId"):
             self.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
@@ -618,7 +618,7 @@ class CmdLineTask(Task):
             List of command-line arguments; if `None` use `sys.argv`.
         config : `lsst.pex.config.Config`-type, optional
             Config for task. If `None` use `Task.ConfigClass`.
-        log : `lsst.log.Log`-type, optional
+        log : `logging.Logger`-type, optional
             Log. If `None` use the default log.
         doReturnResults : `bool`, optional
             If `True`, return the results of this task. Default is `False`.

@@ -40,6 +40,7 @@ import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
+from .task_logging import getLogger
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -161,7 +162,7 @@ class DataIdContainer:
                     # string
                     keyType = str
 
-                    log = lsstLog.Log.getDefaultLogger()
+                    log = getLogger()
                     log.warn("Unexpected ID %s; guessing type is \"%s\"",
                              key, 'str' if keyType == str else keyType)
                     idKeyTypeDict[key] = keyType
@@ -631,7 +632,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             self.error(f"Error: input={namespace.input!r} not found")
 
         namespace.config = config
-        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
+        namespace.log = log if log is not None else getLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
             self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
@@ -1299,17 +1300,27 @@ class LogLevelAction(argparse.Action):
             if not levelStr:
                 levelStr, component = component, None
             logLevelUpr = levelStr.upper()
+
+            if component is None:
+                logger = namespace.log
+            else:
+                logger = getLogger(component)
+
             if logLevelUpr in permittedLevelSet:
-                logLevel = getattr(lsstLog.Log, logLevelUpr)
+                logLevel = getattr(logger, logLevelUpr)
             else:
                 parser.error(f"loglevel={levelStr!r} not one of {permittedLevelList}")
-            if component is None:
-                namespace.log.setLevel(logLevel)
+
+            logger.setLevel(logLevel)
+
+            # Set logging level for whatever logger this wasn't.
+            if isinstance(logger, lsstLog.Log):
+                pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
+                logging.getLogger(component).setLevel(pyLevel)
             else:
-                lsstLog.Log.getLogger(component).setLevel(logLevel)
-            # set logging level for Python logging
-            pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
-            logging.getLogger(component).setLevel(pyLevel)
+                # Need to see lsstLog level
+                lsstLogLevel = lsstLog.LevelTranslator.logging2lsstLog(logLevel)
+                lsstLog.setLevel(lsstLogLevel)
 
 
 class ReuseAction(argparse.Action):
