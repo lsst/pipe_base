@@ -98,6 +98,9 @@ class LsstLogAdapter(LoggerAdapter):
         super().__init__(logger, extra)
         self._lsstLogHandler = None
 
+    def getChild(self, name):
+        return getLogger(name=name, logger=self.logger)
+
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def configure_prop(self, properties):
@@ -107,7 +110,7 @@ class LsstLogAdapter(LoggerAdapter):
         if self._lsstLogHandler is None:
             self._lsstLogHandler = lsstLog.LogHandler()
             # Forward all Python logging to lsstLog
-            self.addHandler(self._lsstLogHandler)
+            self.logger.addHandler(self._lsstLogHandler)
 
     @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
                 version="v23", category=FutureWarning)
@@ -160,8 +163,29 @@ class LsstLogAdapter(LoggerAdapter):
         self.log(logging.CRITICAL, _F(fmt, *args, **kwargs))
 
 
-def getLogger(name=None, lsstCompatible=True):
-    logger = logging.getLogger(name)
+def getLogger(name=None, lsstCompatible=True, logger=None):
+    """Get a logger compatible with LSST usage.
+
+    Parameters
+    ----------
+    name : `str`, optional
+        Name of the logger. Root logger if `None`.
+    lsstCompatible : `bool`, optional
+        If `True` return a special logger, else return a standard logger.
+    logger : `logging.Logger`
+        If given the logger is converted to the relevant logger class.
+        If ``name`` is given the logger is assumed to be a child of the
+        supplied logger.
+
+    Returns
+    -------
+    logger : `LsstLogAdapter` or `logging.Logger`
+        The relevant logger.
+    """
+    if not logger:
+        logger = logging.getLogger(name)
+    elif name:
+        logger = logger.getChild(name)
     if not lsstCompatible:
         return logger
     return LsstLogAdapter(logger, {})
