@@ -19,7 +19,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+__all__ = ("LOG_TRACE",)
+
 import logging
+from logging import LoggerAdapter
 from deprecated.sphinx import deprecated
 
 try:
@@ -28,7 +31,8 @@ except ModuleNotFoundError:
     lsstLog = None
 
 # log level for trace (verbose debug)
-TRACE = 5
+LOG_TRACE = 5
+logging.addLevelName(LOG_TRACE, "TRACE")
 
 
 class _F:
@@ -45,7 +49,14 @@ class _F:
         return self.fmt.format(*self.args, **self.kwargs)
 
 
-class LSSTCompatibleLogger(logging.Logger):
+class LsstLogAdapter(LoggerAdapter):
+    """A special logging adapter to provide log features for `Task`.
+
+    This is easier to use for a unified interface to task logging
+    than calling `logging.setLoggerClass`.  The main simplification
+    is that this will work with the root logger as well as loggers
+    created for tasks.
+    """
 
     @property
     @deprecated(reason="Use logging.DEBUG. Will be removed after v23.",
@@ -83,8 +94,8 @@ class LSSTCompatibleLogger(logging.Logger):
     def FATAL(self):
         return logging.CRITICAL
 
-    def __init__(self, name):
-        super(LSSTCompatibleLogger, self).__init__(name)
+    def __init__(self, logger, extra):
+        super().__init__(logger, extra)
         self._lsstLogHandler = None
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
@@ -98,7 +109,7 @@ class LSSTCompatibleLogger(logging.Logger):
             # Forward all Python logging to lsstLog
             self.addHandler(self._lsstLogHandler)
 
-    @deprecated(reason="Use Python Logger compatible name attribute. Will be removed after v23.",
+    @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def isDebugEnabled(self):
         return self.isEnabledFor(logging.DEBUG)
@@ -108,7 +119,7 @@ class LSSTCompatibleLogger(logging.Logger):
     def getName(self):
         return self.name
 
-    @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
+    @deprecated(reason="Use Python Logger compatible getEffectiveLevel. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def getLevel(self):
         return self.getEffectiveLevel()
@@ -116,7 +127,7 @@ class LSSTCompatibleLogger(logging.Logger):
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def trace(self, fmt, *args):
-        self.log(TRACE, fmt, *args)
+        self.log(LOG_TRACE, fmt, *args)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
@@ -150,14 +161,7 @@ class LSSTCompatibleLogger(logging.Logger):
 
 
 def getLogger(name=None, lsstCompatible=True):
+    logger = logging.getLogger(name)
     if not lsstCompatible:
-        return logging.getLogger(name)
-    logging_class = logging.getLoggerClass()  # store the current logger factory for later
-    logging._acquireLock()  # use the global logging lock for thread safety
-    try:
-        logging.setLoggerClass(LSSTCompatibleLogger)  # temporarily change the logger factory
-        logger = logging.getLogger(name)
-        logging.setLoggerClass(logging_class)  # be nice, revert the logger factory change
         return logger
-    finally:
-        logging._releaseLock()
+    return LsstLogAdapter(logger, {})
