@@ -328,8 +328,8 @@ class QuantumGraphTestCase(unittest.TestCase):
                 count += 1
         self.assertEqual(len(self.qGraph), count)
 
-        self.assertEqual(self.tasks, list(connectedGraphs[0].taskGraph))
-        self.assertEqual(self.tasks, list(connectedGraphs[1].taskGraph))
+        self.assertEqual(set(self.tasks), set(connectedGraphs[0].taskGraph))
+        self.assertEqual(set(self.tasks), set(connectedGraphs[1].taskGraph))
         allNodes = list(self.qGraph)
         node = self.qGraph.determineInputsToQuantumNode(allNodes[1])
         self.assertEqual(set([allNodes[0]]), node)

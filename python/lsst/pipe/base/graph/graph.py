@@ -132,10 +132,10 @@ class QuantumGraph:
             # `_DatasetTracker` for the connections name, with a value of
             # the TaskDef in the appropriate field
             for inpt in iterConnections(connections, ("inputs", "prerequisiteInputs", "initInputs")):
-                self._datasetDict.addInput(DatasetTypeName(inpt.name), taskDef)
+                self._datasetDict.addConsumer(DatasetTypeName(inpt.name), taskDef)
 
             for output in iterConnections(connections, ("outputs", "initOutputs")):
-                self._datasetDict.addOutput(DatasetTypeName(output.name), taskDef)
+                self._datasetDict.addProducer(DatasetTypeName(output.name), taskDef)
 
             # For each `Quantum` in the set of all `Quantum` for this task,
             # add a key to the `_DatasetTracker` that is a `DatasetRef` for one
@@ -164,11 +164,11 @@ class QuantumGraph:
                     # be an instance check here
                     if isinstance(dsRef, Iterable):
                         for sub in dsRef:
-                            self._datasetRefDict.addInput(sub, value)
+                            self._datasetRefDict.addConsumer(sub, value)
                     else:
-                        self._datasetRefDict.addInput(dsRef, value)
+                        self._datasetRefDict.addConsumer(dsRef, value)
                 for dsRef in chain.from_iterable(quantum.outputs.values()):
-                    self._datasetRefDict.addOutput(dsRef, value)
+                    self._datasetRefDict.addProducer(dsRef, value)
 
         # Graph of task relations, used in various methods
         self._taskGraph = self._datasetDict.makeNetworkXGraph()
@@ -329,7 +329,7 @@ class QuantumGraph:
         KeyError
             Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
         """
-        return (c for c in self._datasetDict.getInputs(datasetTypeName))
+        return (c for c in self._datasetDict.getConsumers(datasetTypeName))
 
     def findTaskWithOutput(self, datasetTypeName: DatasetTypeName) -> Optional[TaskDef]:
         """Find all tasks that have the specified dataset type name as an
@@ -353,7 +353,7 @@ class QuantumGraph:
         KeyError
             Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
         """
-        return self._datasetDict.getOutput(datasetTypeName)
+        return self._datasetDict.getProducer(datasetTypeName)
 
     def tasksWithDSType(self, datasetTypeName: DatasetTypeName) -> Iterable[TaskDef]:
         """Find all tasks that are associated with the specified dataset type
@@ -377,11 +377,7 @@ class QuantumGraph:
         KeyError
             Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
         """
-        results = self.findTasksWithInput(datasetTypeName)
-        output = self.findTaskWithOutput(datasetTypeName)
-        if output is not None:
-            results = chain(results, (output,))
-        return results
+        return self._datasetDict.getAll(datasetTypeName)
 
     def findTaskDefByName(self, taskName: str) -> List[TaskDef]:
         """Determine which `TaskDef` objects in this graph are associated

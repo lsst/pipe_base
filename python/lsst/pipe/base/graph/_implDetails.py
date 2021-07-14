@@ -23,9 +23,8 @@ from collections import defaultdict
 
 __all__ = ("_DatasetTracker", "DatasetTypeName")
 
-from dataclasses import dataclass, field
 import networkx as nx
-from typing import (DefaultDict, Generic, Optional, Set, TypeVar, Generator, Tuple, NewType,)
+from typing import (DefaultDict, Generic, Optional, Set, TypeVar, NewType, Dict)
 
 from lsst.daf.butler import DatasetRef
 
@@ -40,58 +39,145 @@ _T = TypeVar("_T", DatasetTypeName, DatasetRef)
 _U = TypeVar("_U", TaskDef, QuantumNode)
 
 
-@dataclass
-class _DatasetTrackerElement(Generic[_U]):
-    inputs: Set[_U] = field(default_factory=set)
-    output: Optional[_U] = None
-
-
 class _DatasetTracker(Generic[_T, _U]):
-    def __init__(self):
-        self._container: DefaultDict[_T, _DatasetTrackerElement[_U]] = defaultdict(_DatasetTrackerElement)
+    r"""This is a generic container for tracking keys which are produced or
+    consumed by some value. In the context of a QuantumGraph, keys may be
+    `~lsst.daf.butler.DatasetRef`\ s and the values would be Quanta that either
+    produce or consume those `~lsst.daf.butler.DatasetRef`\ s.
 
-    def addInput(self, key: _T, value: _U):
-        self._container[key].inputs.add(value)
+    Prameters
+    ---------
+    createInverse : bool
+        When adding a key associated with a producer or consumer, also create
+        and inverse mapping that allows looking up all the keys associated with
+        some value. Defaults to False.
+    """
+    def __init__(self, createInverse: bool = False):
+        self._producers: Dict[_T, _U] = {}
+        self._consumers: DefaultDict[_T, Set[_U]] = defaultdict(set)
+        self._createInverse = createInverse
+        if self._createInverse:
+            self._itemsDict: DefaultDict[_U, Set[_T]] = defaultdict(set)
 
-    def addOutput(self, key: _T, value: _U):
-        element = self._container[key]
-        if element.output is not None:
-            raise ValueError(f"Only one output for key {key} is allowed, "
-                             f"the current output is set to {element.output}")
-        element.output = value
+    def addProducer(self, key: _T, value: _U):
+        """Add a key which is produced by some value.
 
-    def getInputs(self, key: _T) -> Set[_U]:
-        return self._container[key].inputs
+        Parameters
+        ----------
+        key : TypeVar
+            The type to track
+        value : TypeVar
+            The type associated with the production of the key
 
-    def getOutput(self, key: _T) -> Optional[_U]:
-        return self._container[key].output
+        Raises
+        ------
+        ValueError
+            Raised if key is already declared to be produced by another value
+        """
+        if (existing := self._producers.get(key)) is not None and existing != value:
+            raise ValueError(f"Only one node is allowed to produce {key}, "
+                             f"the current producer is {existing}")
+        self._producers[key] = value
+        if self._createInverse:
+            self._itemsDict[value].add(key)
 
-    def getAll(self, key: _T) -> Set[_U]:
-        output = self._container[key].output
-        if output is not None:
-            return self._container[key].inputs.union((output,))
-        return set(self._container[key].inputs)
+    def addConsumer(self, key: _T, value: _U):
+        """Add a key which is consumed by some value.
+
+        Parameters
+        ----------
+        key : TypeVar
+            The type to track
+        value : TypeVar
+            The type associated with the consumption of the key
+        """
+        self._consumers[key].add(value)
+        if self._createInverse:
+            self._itemsDict[value].add(key)
+
+    def getConsumers(self, key: _T) -> set[_U]:
+        """Return all values associated with the consumption of the supplied
+        key.
+
+        Parameters
+        ----------
+        key : TypeVar
+            The type which has been tracked in the _DatasetTracker
+        """
+        return self._consumers.get(key, set())
+
+    def getProducer(self, key: _T) -> Optional[_U]:
+        """Return the value associated with the consumption of the supplied
+        key.
+
+        Parameters
+        ----------
+        key : TypeVar
+            The type which has been tracked in the _DatasetTracker
+        """
+        return self._producers.get(key)
+
+    def getAll(self, key: _T) -> set[_U]:
+        """Return all consumers and the producer associated with the the
+        supplied key.
+
+        Parameters
+        ----------
+        key : TypeVar
+            The type which has been tracked in the _DatasetTracker
+        """
+
+        return self.getConsumers(key).union(x for x in (self.getProducer(key),) if x is not None)
+
+    @property
+    def inverse(self) -> Optional[DefaultDict[_U, Set[_T]]]:
+        """Return the inverse mapping if class was instantiated to create an
+        inverse, else return None.
+        """
+        return self._itemsDict if self._createInverse else None
 
     def makeNetworkXGraph(self) -> nx.DiGraph:
+        """Create a NetworkX graph out of all the contained keys, using the
+        relations of producer and consumers to create the edges.
+
+        Returns:
+        graph : networkx.DiGraph
+            The graph created out of the supplied keys and their relations
+        """
         graph = nx.DiGraph()
-        graph.add_edges_from(self._datasetDictToEdgeIterator())
-        if None in graph.nodes():
-            graph.remove_node(None)
+        for entry in self._producers.keys() | self._consumers.keys():
+            producer = self.getProducer(entry)
+            consumers = self.getConsumers(entry)
+            # This block is for tasks that consume existing inputs
+            if producer is None and consumers:
+                for consumer in consumers:
+                    graph.add_node(consumer)
+            # This block is for tasks that produce output that is not consumed
+            # in this graph
+            elif producer is not None and not consumers:
+                graph.add_node(producer)
+            # all other connections
+            else:
+                for consumer in consumers:
+                    graph.add_edge(producer, consumer)
         return graph
 
-    def _datasetDictToEdgeIterator(self) -> Generator[Tuple[Optional[_U], Optional[_U]], None, None]:
-        """Helper function designed to be used in conjunction with
-        `networkx.DiGraph.add_edges_from`. This takes a mapping of keys to
-        `_DatasetTrackers` and yields successive pairs of elements that are to
-        be considered connected by the graph.
-        """
-        for entry in self._container.values():
-            # If there is no inputs and only outputs (likely in test cases or
-            # building inits or something) use None as a Node, that will then
-            # be removed later
-            inputs = entry.inputs or (None,)
-            for inpt in inputs:
-                yield (entry.output, inpt)
-
     def keys(self) -> Set[_T]:
-        return set(self._container.keys())
+        """Return all tracked keys.
+        """
+        return self._producers.keys() | self._consumers.keys()
+
+    def __contains__(self, key: _T) -> bool:
+        """Check if a key is in the _DatasetTracker
+
+        Parameters
+        ----------
+        key : TypeVar
+            The key to check
+
+        Returns
+        -------
+        contains : bool
+            Boolean of the presence of the supplied key
+        """
+        return key in self._producers or key in self._consumers
