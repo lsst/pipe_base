@@ -25,15 +25,16 @@ import pickle
 import tempfile
 from typing import Iterable
 import unittest
+import uuid
 import random
 from lsst.daf.butler import DimensionUniverse
 
 from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskConfig, PipelineTaskConnections,
-                            DatasetTypeName, IncompatibleGraphError)
+                            DatasetTypeName)
 import lsst.pipe.base.connectionTypes as cT
 from lsst.daf.butler import Quantum, DatasetRef, DataCoordinate, DatasetType, Config
 from lsst.pex.config import Field
-from lsst.pipe.base.graph.quantumNode import NodeId, BuildId, QuantumNode
+from lsst.pipe.base.graph.quantumNode import QuantumNode
 import lsst.utils.tests
 
 try:
@@ -122,6 +123,27 @@ class Dummy3PipelineTask(PipelineTask):
     ConfigClass = Dummy3Config
 
 
+# Test if a Task that does not interact with the other Tasks works fine in
+# the graph.
+class Dummy4Connections(PipelineTaskConnections, dimensions=("A", "B")):
+    input = cT.Input(name="Dummy4Input",
+                     storageClass="ExposureF",
+                     doc="n/a",
+                     dimensions=("A", "B"))
+    output = cT.Output(name="Dummy4Output",
+                       storageClass="ExposureF",
+                       doc="n/a",
+                       dimensions=("A", "B"))
+
+
+class Dummy4Config(PipelineTaskConfig, pipelineConnections=Dummy4Connections):
+    conf1 = Field(dtype=int, default=1, doc="dummy config")
+
+
+class Dummy4PipelineTask(PipelineTask):
+    ConfigClass = Dummy4Config
+
+
 class QuantumGraphTestCase(unittest.TestCase):
     """Tests the various functions of a quantum graph
     """
@@ -161,7 +183,8 @@ class QuantumGraphTestCase(unittest.TestCase):
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
         tasks = []
-        for task, label in ((Dummy1PipelineTask, "R"), (Dummy2PipelineTask, "S"), (Dummy3PipelineTask, "T")):
+        for task, label in ((Dummy1PipelineTask, "R"), (Dummy2PipelineTask, "S"), (Dummy3PipelineTask, "T"),
+                            (Dummy4PipelineTask, "U")):
             config = task.ConfigClass()
             taskDef = TaskDef(f"__main__.{task.__qualname__}", config, task, label)
             tasks.append(taskDef)
@@ -211,8 +234,8 @@ class QuantumGraphTestCase(unittest.TestCase):
         # different as it will be __main__ here, but qualified to the
         # unittest module name when restored
         # Updates in place
-        for saved, loaded in zip(graph1._quanta.keys(),
-                                 graph2._quanta.keys()):
+        for saved, loaded in zip(graph1.taskGraph,
+                                 graph2.taskGraph):
             saved.taskName = saved.taskName.split('.')[-1]
             loaded.taskName = loaded.taskName.split('.')[-1]
 
@@ -229,8 +252,8 @@ class QuantumGraphTestCase(unittest.TestCase):
         inputQuanta = tuple(self.qGraph.inputQuanta)
         node = self.qGraph.getQuantumNodeByNodeId(inputQuanta[0].nodeId)
         self.assertEqual(node, inputQuanta[0])
-        wrongNode = NodeId(15, BuildId("alternative build Id"))
-        with self.assertRaises(IncompatibleGraphError):
+        wrongNode = uuid.uuid4()
+        with self.assertRaises(KeyError):
             self.qGraph.getQuantumNodeByNodeId(wrongNode)
 
     def testPickle(self):
@@ -241,14 +264,14 @@ class QuantumGraphTestCase(unittest.TestCase):
 
     def testInputQuanta(self):
         inputs = {q.quantum for q in self.qGraph.inputQuanta}
-        self.assertEqual(self.quantumMap[self.tasks[0]], inputs)
+        self.assertEqual(self.quantumMap[self.tasks[0]] | self.quantumMap[self.tasks[3]], inputs)
 
     def testOutputtQuanta(self):
         outputs = {q.quantum for q in self.qGraph.outputQuanta}
-        self.assertEqual(self.quantumMap[self.tasks[-1]], outputs)
+        self.assertEqual(self.quantumMap[self.tasks[2]] | self.quantumMap[self.tasks[3]], outputs)
 
     def testLength(self):
-        self.assertEqual(len(self.qGraph), 6)
+        self.assertEqual(len(self.qGraph), 2*len(self.tasks))
 
     def testGetQuantaForTask(self):
         for task in self.tasks:
@@ -286,7 +309,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testAllDatasetTypes(self):
         allDatasetTypes = set(self.qGraph.allDatasetTypes)
         truth = set()
-        for conClass in (Dummy1Connections, Dummy2Connections, Dummy3Connections):
+        for conClass in (Dummy1Connections, Dummy2Connections, Dummy3Connections, Dummy4Connections):
             for connection in conClass.allConnections.values():  # type: ignore
                 if not isinstance(connection, cT.InitOutput):
                     truth.add(connection.name)
@@ -305,19 +328,25 @@ class QuantumGraphTestCase(unittest.TestCase):
         # dimensions
         self.assertFalse(self.qGraph.isConnected)
         # make a broken subset
-        allNodes = list(self.qGraph)
-        subset = self.qGraph.subset((allNodes[0], allNodes[1]))
+        filteredNodes = [n for n in self.qGraph if n.taskDef.label != 'U']
+        subset = self.qGraph.subset((filteredNodes[0], filteredNodes[1]))
         # True because we subset to only one chain of graphs
         self.assertTrue(subset.isConnected)
 
     def testSubsetToConnected(self):
         connectedGraphs = self.qGraph.subsetToConnected()
-        self.assertEqual(len(connectedGraphs), 2)
+        self.assertEqual(len(connectedGraphs), 4)
         self.assertTrue(connectedGraphs[0].isConnected)
         self.assertTrue(connectedGraphs[1].isConnected)
+        self.assertTrue(connectedGraphs[2].isConnected)
+        self.assertTrue(connectedGraphs[3].isConnected)
 
-        self.assertEqual(len(connectedGraphs[0]), 3)
-        self.assertEqual(len(connectedGraphs[1]), 3)
+        # Split out task[3] because it is expected to be on its own
+        for cg in connectedGraphs:
+            if self.tasks[3] in cg.taskGraph:
+                self.assertEqual(len(cg), 1)
+            else:
+                self.assertEqual(len(cg), 3)
 
         self.assertNotEqual(connectedGraphs[0], connectedGraphs[1])
 
@@ -327,30 +356,53 @@ class QuantumGraphTestCase(unittest.TestCase):
                 count += 1
             if connectedGraphs[1].checkQuantumInGraph(node.quantum):
                 count += 1
+            if connectedGraphs[2].checkQuantumInGraph(node.quantum):
+                count += 1
+            if connectedGraphs[3].checkQuantumInGraph(node.quantum):
+                count += 1
         self.assertEqual(len(self.qGraph), count)
 
-        self.assertEqual(set(self.tasks), set(connectedGraphs[0].taskGraph))
-        self.assertEqual(set(self.tasks), set(connectedGraphs[1].taskGraph))
-        allNodes = list(self.qGraph)
-        node = self.qGraph.determineInputsToQuantumNode(allNodes[1])
-        self.assertEqual(set([allNodes[0]]), node)
-        node = self.qGraph.determineInputsToQuantumNode(allNodes[1])
-        self.assertEqual(set([allNodes[0]]), node)
+        taskSets = {len(tg := s.taskGraph): set(tg) for s in connectedGraphs}
+        for setLen, tskSet in taskSets.items():
+            if setLen == 3:
+                self.assertEqual(set(self.tasks[:-1]), tskSet)
+            elif setLen == 1:
+                self.assertEqual({self.tasks[-1]}, tskSet)
+        for cg in connectedGraphs:
+            if len(cg.taskGraph) == 1:
+                continue
+            allNodes = list(cg)
+            node = cg.determineInputsToQuantumNode(allNodes[1])
+            self.assertEqual(set([allNodes[0]]), node)
+            node = cg.determineInputsToQuantumNode(allNodes[1])
+            self.assertEqual(set([allNodes[0]]), node)
 
     def testDetermineOutputsOfQuantumNode(self):
-        allNodes = list(self.qGraph)
-        node = next(iter(self.qGraph.determineOutputsOfQuantumNode(allNodes[1])))
-        self.assertEqual(allNodes[2], node)
+        testNodes = self.qGraph.getNodesForTask(self.tasks[0])
+        matchNodes = self.qGraph.getNodesForTask(self.tasks[1])
+        connections = set()
+        for node in testNodes:
+            connections |= set(self.qGraph.determineOutputsOfQuantumNode(node))
+        self.assertEqual(matchNodes, connections)
 
     def testDetermineConnectionsOfQuantum(self):
-        allNodes = list(self.qGraph)
-        connections = self.qGraph.determineConnectionsOfQuantumNode(allNodes[1])
-        self.assertEqual(list(connections), list(self.qGraph.subset(allNodes[:3])))
+        testNodes = self.qGraph.getNodesForTask(self.tasks[1])
+        matchNodes = self.qGraph.getNodesForTask(self.tasks[0]) | self.qGraph.getNodesForTask(self.tasks[2])
+        # outputs contain nodes tested for because it is a complete graph
+        matchNodes |= set(testNodes)
+        connections = set()
+        for node in testNodes:
+            connections |= set(self.qGraph.determineConnectionsOfQuantumNode(node))
+        self.assertEqual(matchNodes, connections)
 
     def testDetermineAnsestorsOfQuantumNode(self):
-        allNodes = list(self.qGraph)
-        ansestors = self.qGraph.determineAncestorsOfQuantumNode(allNodes[2])
-        self.assertEqual(list(ansestors), list(self.qGraph.subset(allNodes[:3])))
+        testNodes = self.qGraph.getNodesForTask(self.tasks[1])
+        matchNodes = self.qGraph.getNodesForTask(self.tasks[0])
+        matchNodes |= set(testNodes)
+        connections = set()
+        for node in testNodes:
+            connections |= set(self.qGraph.determineAncestorsOfQuantumNode(node))
+        self.assertEqual(matchNodes, connections)
 
     def testFindCycle(self):
         self.assertFalse(self.qGraph.findCycle())
@@ -364,10 +416,12 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(self.qGraph, restore)
             # Load in just one node
             tmpFile.seek(0)
-            restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(0,))
+            nodeId = [n.nodeId for n in self.qGraph][0]
+            restoreSub = QuantumGraph.load(tmpFile, self.universe,
+                                           nodes=(nodeId,))
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0],
-                             restore.getQuantumNodeByNodeId(NodeId(0, restore._buildId)))
+                             restore.getQuantumNodeByNodeId(nodeId))
 
     def testSaveLoadUri(self):
         uri = None
@@ -379,22 +433,24 @@ class QuantumGraphTestCase(unittest.TestCase):
                 self.assertEqual(restore.metadata, METADATA)
                 self._cleanGraphs(self.qGraph, restore)
                 self.assertEqual(self.qGraph, restore)
-                nodeNumber = random.randint(0, len(self.qGraph)-1)
+                nodeNumberId = random.randint(0, len(self.qGraph)-1)
+                nodeNumber = [n.nodeId for n in self.qGraph][nodeNumberId]
                 restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber,),
                                                   graphID=self.qGraph._buildId)
                 self.assertEqual(len(restoreSub), 1)
                 self.assertEqual(list(restoreSub)[0],
-                                 restore.getQuantumNodeByNodeId(NodeId(nodeNumber, restore.graphID)))
+                                 restore.getQuantumNodeByNodeId(nodeNumber))
                 # verify that more than one node works
-                nodeNumber2 = random.randint(0, len(self.qGraph)-1)
+                nodeNumberId2 = random.randint(0, len(self.qGraph)-1)
                 # ensure it is a different node number
-                while nodeNumber2 == nodeNumber:
-                    nodeNumber2 = random.randint(0, len(self.qGraph)-1)
+                while nodeNumberId2 == nodeNumberId:
+                    nodeNumberId2 = random.randint(0, len(self.qGraph)-1)
+                nodeNumber2 = [n.nodeId for n in self.qGraph][nodeNumberId2]
                 restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber, nodeNumber2))
                 self.assertEqual(len(restoreSub), 2)
                 self.assertEqual(set(restoreSub),
-                                 set((restore.getQuantumNodeByNodeId(NodeId(nodeNumber, restore._buildId)),
-                                     restore.getQuantumNodeByNodeId(NodeId(nodeNumber2, restore._buildId)))))
+                                 set((restore.getQuantumNodeByNodeId(nodeNumber),
+                                     restore.getQuantumNodeByNodeId(nodeNumber2))))
                 # verify an error when requesting a non existant node number
                 with self.assertRaises(ValueError):
                     QuantumGraph.loadUri(uri, self.universe, nodes=(99,))
@@ -423,10 +479,11 @@ class QuantumGraphTestCase(unittest.TestCase):
         restore = QuantumGraph.loadUri(uri, self.universe)
         self._cleanGraphs(self.qGraph, restore)
         self.assertEqual(self.qGraph, restore)
-        restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(0,))
+        nodeId = list(self.qGraph)[0].nodeId
+        restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeId,))
         self.assertEqual(len(restoreSub), 1)
         self.assertEqual(list(restoreSub)[0],
-                         restore.getQuantumNodeByNodeId(NodeId(0, restore._buildId)))
+                         restore.getQuantumNodeByNodeId(nodeId))
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))

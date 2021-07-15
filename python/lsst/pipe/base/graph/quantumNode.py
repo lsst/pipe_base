@@ -19,14 +19,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
+import uuid
 
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 from dataclasses import dataclass
-from typing import NewType
+from pydantic import BaseModel
+from typing import Dict, NewType, Optional, Tuple
 
 from ..pipeline import TaskDef
-from lsst.daf.butler import Quantum, DatasetRef
+from lsst.daf.butler import (Quantum, DatasetRef, SerializedQuantum, DimensionUniverse, DimensionRecord,
+                             DimensionRecordsAccumulator)
 
 BuildId = NewType("BuildId", str)
 
@@ -37,7 +40,11 @@ def _hashDsRef(ref: DatasetRef) -> int:
 
 @dataclass(frozen=True, eq=True)
 class NodeId:
-    """This represents an unique identifier of a node within an individual
+    """Deprecated, this class is used with QuantumGraph save formats of
+    1 and 2 when unpicking objects and must be retained until those formats
+    are considered unloadable.
+
+    This represents an unique identifier of a node within an individual
     construction of a `QuantumGraph`. This identifier will stay constant
     through a pickle, and any `QuantumGraph` methods that return a new
     `QuantumGraph`.
@@ -75,10 +82,15 @@ class QuantumNode:
     """Definition of the task that will process the `Quantum` associated with
     this node.
     """
-    nodeId: NodeId
+    nodeId: uuid.UUID
     """The unique position of the node within the graph assigned at graph
     creation.
     """
+
+    def __post_init__(self):
+        # use setattr here to preserve the frozenness of the QuantumNode
+        self._precomputedHash: int
+        object.__setattr__(self, "_precomputedHash", hash((self.taskDef.label, self.quantum)))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, QuantumNode):
@@ -91,10 +103,41 @@ class QuantumNode:
         """For graphs it is useful to have a more robust hash than provided
         by the default quantum id based hashing
         """
-        return hash((self.taskDef, self.quantum))
+        return self._precomputedHash
 
     def __repr__(self):
         """Make more human readable string representation.
         """
         return (f"{self.__class__.__name__}(quantum={self.quantum}, "
                 f"taskDef={self.taskDef}, nodeId={self.nodeId})")
+
+    def to_simple(self, accumulator: Optional[DimensionRecordsAccumulator] = None) -> SerializedQuantumNode:
+        return SerializedQuantumNode(quantum=self.quantum.to_simple(accumulator=accumulator),
+                                     taskLabel=self.taskDef.label,
+                                     nodeId=self.nodeId)
+
+    @classmethod
+    def from_simple(cls, simple: SerializedQuantumNode, taskDefMap: Dict[str, TaskDef],
+                    universe: DimensionUniverse,
+                    recontitutedDimensions: Optional[Dict[int, Tuple[str, DimensionRecord]]] = None
+                    ) -> QuantumNode:
+        return QuantumNode(quantum=Quantum.from_simple(simple.quantum, universe,
+                                                       reconstitutedDimensions=recontitutedDimensions),
+                           taskDef=taskDefMap[simple.taskLabel],
+                           nodeId=simple.nodeId)
+
+
+class SerializedQuantumNode(BaseModel):
+    quantum: SerializedQuantum
+    taskLabel: str
+    nodeId: uuid.UUID
+
+    @classmethod
+    def direct(cls, *, quantum, taskLabel, nodeId):
+        node = SerializedQuantumNode.__new__(cls)
+        setter = object.__setattr__
+        setter(node, 'quantum', SerializedQuantum.direct(**quantum))
+        setter(node, 'taskLabel', taskLabel)
+        setter(node, 'nodeId', uuid.UUID(nodeId))
+        setter(node, '__fields_set__', {"quantum", "taskLabel", "nodeId"})
+        return node
