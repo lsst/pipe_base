@@ -26,6 +26,7 @@ import traceback
 import functools
 import contextlib
 
+import lsst.log
 import lsst.utils
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
@@ -418,9 +419,9 @@ class TaskRunner:
         if self.log is None:
             self.log = getLogger()
         if hasattr(dataRef, "dataId"):
-            self.log.MDC("LABEL", str(dataRef.dataId))
+            lsst.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
-            self.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
+            lsst.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
         result = None                   # in case the task fails
         exitStatus = 0                  # exit status for the shell
@@ -456,7 +457,7 @@ class TaskRunner:
         task.writeMetadata(dataRef)
 
         # remove MDC so it does not show up outside of task context
-        self.log.MDCRemove("LABEL")
+        lsst.log.MDCRemove("LABEL")
 
         if self.doReturnResults:
             return Struct(
