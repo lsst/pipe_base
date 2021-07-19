@@ -24,6 +24,7 @@ __all__ = ("LOG_TRACE",)
 import logging
 from logging import LoggerAdapter
 from deprecated.sphinx import deprecated
+from contextlib import contextmanager
 
 try:
     import lsst.log as lsstLog
@@ -60,6 +61,26 @@ class TaskLogAdapter(LoggerAdapter):
     is that this will work with the root logger as well as loggers
     created for tasks.
     """
+
+    @contextmanager
+    def temporary_log_level(self, level):
+        """A context manager that temporarily sets the level of this logger.
+
+        Parameters
+        ----------
+        level : `int`
+            The new temporary log level.
+        """
+        old = self.level
+        self.setLevel(level)
+        try:
+            yield
+        finally:
+            self.setLevel(old)
+
+    @property
+    def level(self):
+        return self.logger.level
 
     @property
     @deprecated(reason="Use logging.DEBUG. Will be removed after v23.",
