@@ -83,6 +83,14 @@ class TaskLogAdapter(LoggerAdapter):
         return self.logger.level
 
     @property
+    def TRACE(self):
+        return LOG_TRACE
+
+    @property
+    def VERBOSE(self):
+        return LOG_VERBOSE
+
+    @property
     @deprecated(reason="Use logging.DEBUG. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def DEBUG(self):
@@ -135,6 +143,11 @@ class TaskLogAdapter(LoggerAdapter):
                 version="v23", category=FutureWarning)
     def getLevel(self):
         return self.logger.level
+
+    @deprecated(reason="Use Python Logger compatible critical(). Will be removed after v23.",
+                version="v23", category=FutureWarning)
+    def fatal(self, msg, *args, **kwargs):
+        return self.critical(msg, *args, **kwargs)
 
     def verbose(self, fmt, *args):
         # There is no other way to achieve this other than a special logger
