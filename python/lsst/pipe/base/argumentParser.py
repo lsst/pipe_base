@@ -1316,11 +1316,11 @@ class LogLevelAction(argparse.Action):
             # Set logging level for whatever logger this wasn't.
             if isinstance(logger, lsstLog.Log):
                 pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
-                logging.getLogger(component).setLevel(pyLevel)
+                logging.getLogger(component or None).setLevel(pyLevel)
             else:
                 # Need to see lsstLog level
                 lsstLogLevel = lsstLog.LevelTranslator.logging2lsstLog(logLevel)
-                lsstLog.setLevel(lsstLogLevel)
+                lsstLog.getLogger(component or "").setLevel(lsstLogLevel)
 
 
 class ReuseAction(argparse.Action):
