@@ -94,23 +94,8 @@ class TaskLogAdapter(LoggerAdapter):
     def FATAL(self):
         return logging.CRITICAL
 
-    def __init__(self, logger, extra):
-        super().__init__(logger, extra)
-        self._lsstLogHandler = None
-
     def getChild(self, name):
         return getLogger(name=name, logger=self.logger)
-
-    @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def configure_prop(self, properties):
-        if lsstLog is None:
-            return
-        lsstLog.getLogger(self.name).configure_prop(properties)
-        if self._lsstLogHandler is None:
-            self._lsstLogHandler = lsstLog.LogHandler()
-            # Forward all Python logging to lsstLog
-            self.logger.addHandler(self._lsstLogHandler)
 
     @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
                 version="v23", category=FutureWarning)
