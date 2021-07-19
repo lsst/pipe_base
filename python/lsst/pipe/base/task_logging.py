@@ -49,7 +49,7 @@ class _F:
         return self.fmt.format(*self.args, **self.kwargs)
 
 
-class LsstLogAdapter(LoggerAdapter):
+class TaskLogAdapter(LoggerAdapter):
     """A special logging adapter to provide log features for `Task`.
 
     This is easier to use for a unified interface to task logging
@@ -179,7 +179,7 @@ def getLogger(name=None, lsstCompatible=True, logger=None):
 
     Returns
     -------
-    logger : `LsstLogAdapter` or `logging.Logger`
+    logger : `TaskLogAdapter` or `logging.Logger`
         The relevant logger.
     """
     if not logger:
@@ -188,4 +188,4 @@ def getLogger(name=None, lsstCompatible=True, logger=None):
         logger = logger.getChild(name)
     if not lsstCompatible:
         return logger
-    return LsstLogAdapter(logger, {})
+    return TaskLogAdapter(logger, {})
