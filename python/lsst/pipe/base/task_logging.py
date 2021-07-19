@@ -34,6 +34,9 @@ except ModuleNotFoundError:
 LOG_TRACE = 5
 logging.addLevelName(LOG_TRACE, "TRACE")
 
+LOG_VERBOSE = (logging.INFO + logging.DEBUG) // 2
+logging.addLevelName(LOG_VERBOSE, "VERBOSE")
+
 
 class _F:
     """
@@ -107,14 +110,19 @@ class TaskLogAdapter(LoggerAdapter):
     def getName(self):
         return self.name
 
-    @deprecated(reason="Use Python Logger compatible getEffectiveLevel. Will be removed after v23.",
+    @deprecated(reason="Use Python Logger compatible .level property. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def getLevel(self):
-        return self.getEffectiveLevel()
+        return self.logger.level
 
-    @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    def verbose(self, fmt, *args):
+        # There is no other way to achieve this other than a special logger
+        # method.
+        self.log(LOG_VERBOSE, fmt, *args)
+
     def trace(self, fmt, *args):
+        # There is no other way to achieve this other than a special logger
+        # method.
         self.log(LOG_TRACE, fmt, *args)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
@@ -146,6 +154,32 @@ class TaskLogAdapter(LoggerAdapter):
                 version="v23", category=FutureWarning)
     def fatalf(self, fmt, *args, **kwargs):
         self.log(logging.CRITICAL, _F(fmt, *args, **kwargs))
+
+    def setLevel(self, level):
+        """Set the level for the logger, trapping lsst.log values.
+
+        Parameters
+        ----------
+        level : `int`
+            The level to use. If the level looks too big to be a Python
+            logging level it is assumed to be a lsst.log level.
+        """
+        if level > logging.CRITICAL:
+            self.logger.warning("Attempting to set level to %d -- looks like an lsst.log level so scaling it"
+                                " accordingly.", level)
+            level //= 1000
+
+        self.logger.setLevel(level)
+
+    @property
+    def handlers(self):
+        return self.logger.handlers
+
+    def addHandler(self, handler):
+        self.logger.addHandler(handler)
+
+    def removeHandler(self, handler):
+        self.logger.removeHandler(handler)
 
 
 def getLogger(name=None, lsstCompatible=True, logger=None):
