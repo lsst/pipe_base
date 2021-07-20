@@ -157,6 +157,9 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     saveMetadata = pexConfig.Field(
         dtype=bool, default=True, optional=False,
         doc="Flag to enable/disable metadata saving for a task, enabled by default.")
+    saveLogOutput = pexConfig.Field(
+        dtype=bool, default=True, optional=False,
+        doc="Flag to enable/disable saving of log output for a task, enabled by default.")
 
 
 class ResourceConfig(pexConfig.Config):
