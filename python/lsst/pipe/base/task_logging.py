@@ -118,12 +118,12 @@ class TaskLogAdapter(LoggerAdapter):
     def getLevel(self):
         return self.logger.level
 
-    @deprecated(reason="Use Python Logger compatible critical(). Will be removed after v23.",
-                version="v23", category=FutureWarning)
     def fatal(self, msg, *args, **kwargs):
-        # stacklevel=5 accounts for the deprecation and the forwarding
-        # of LoggerAdapter.
-        return self.critical(msg, *args, **kwargs, stacklevel=5)
+        # Python does not provide this method in LoggerAdapter but does
+        # not formally deprecated it in favor of critical() either.
+        # Provide it without deprecation message for consistency with Python.
+        # stacklevel=5 accounts for the forwarding of LoggerAdapter.
+        return self.critical(msg, *args, **kwargs, stacklevel=4)
 
     def verbose(self, fmt, *args, **kwargs):
         """Issue a VERBOSE level log message.
