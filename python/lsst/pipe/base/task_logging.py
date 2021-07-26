@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ("LOG_TRACE",)
+__all__ = ("TRACE", "VERBOSE", "getLogger")
 
 import logging
 from logging import LoggerAdapter
@@ -31,12 +31,13 @@ try:
 except ModuleNotFoundError:
     lsstLog = None
 
-# log level for trace (verbose debug)
-LOG_TRACE = 5
-logging.addLevelName(LOG_TRACE, "TRACE")
+# log level for trace (verbose debug).
+TRACE = 5
+logging.addLevelName(TRACE, "TRACE")
 
-LOG_VERBOSE = (logging.INFO + logging.DEBUG) // 2
-logging.addLevelName(LOG_VERBOSE, "VERBOSE")
+# Verbose logging is midway between INFO and DEBUG.
+VERBOSE = (logging.INFO + logging.DEBUG) // 2
+logging.addLevelName(VERBOSE, "VERBOSE")
 
 
 class _F:
@@ -62,6 +63,23 @@ class TaskLogAdapter(LoggerAdapter):
     created for tasks.
     """
 
+    # Store logging constants in the class for convenience. This is not
+    # something supported by Python loggers but can simplify some
+    # logic if the logger is available.
+    CRITICAL = logging.CRITICAL
+    ERROR = logging.ERROR
+    DEBUG = logging.DEBUG
+    INFO = logging.INFO
+    WARNING = logging.WARNING
+
+    # Python supports these but prefers they are not used.
+    FATAL = logging.FATAL
+    WARN = logging.WARN
+
+    # These are specific to Tasks
+    TRACE = TRACE
+    VERBOSE = VERBOSE
+
     @contextmanager
     def temporary_log_level(self, level):
         """A context manager that temporarily sets the level of this logger.
@@ -82,59 +100,15 @@ class TaskLogAdapter(LoggerAdapter):
     def level(self):
         return self.logger.level
 
-    @property
-    def TRACE(self):
-        return LOG_TRACE
-
-    @property
-    def VERBOSE(self):
-        return LOG_VERBOSE
-
-    @property
-    @deprecated(reason="Use logging.DEBUG. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def DEBUG(self):
-        return logging.DEBUG
-
-    @property
-    @deprecated(reason="Use logging.INFO. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def INFO(self):
-        return logging.INFO
-
-    @property
-    @deprecated(reason="Use logging.WARNING. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def WARNING(self):
-        return logging.WARNING
-
-    @property
-    @deprecated(reason="Use logging.WARNING. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def WARN(self):
-        return logging.WARNING
-
-    @property
-    @deprecated(reason="Use logging.ERROR. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def ERROR(self):
-        return logging.ERROR
-
-    @property
-    @deprecated(reason="Use logging.CRITICAL. Will be removed after v23.",
-                version="v23", category=FutureWarning)
-    def FATAL(self):
-        return logging.CRITICAL
-
     def getChild(self, name):
         return getLogger(name=name, logger=self.logger)
 
     @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def isDebugEnabled(self):
-        return self.isEnabledFor(logging.DEBUG)
+        return self.isEnabledFor(self.DEBUG)
 
-    @deprecated(reason="Use Python Logger compatible name attribute. Will be removed after v23.",
+    @deprecated(reason="Use Python Logger compatible 'name' attribute. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def getName(self):
         return self.name
@@ -163,7 +137,7 @@ class TaskLogAdapter(LoggerAdapter):
         # in the log record and not this line. 3 is this method,
         # 2 is the level from `self.log` and 1 is the log infrastructure
         # itself.
-        self.log(LOG_VERBOSE, fmt, *args, stacklevel=3, **kwargs)
+        self.log(VERBOSE, fmt, *args, stacklevel=3, **kwargs)
 
     def trace(self, fmt, *args):
         """Issue a TRACE level log message.
@@ -173,7 +147,7 @@ class TaskLogAdapter(LoggerAdapter):
         """
         # There is no other way to achieve this other than a special logger
         # method. For stacklevel discussion see `verbose()`.
-        self.log(LOG_TRACE, fmt, *args, stacklevel=3)
+        self.log(TRACE, fmt, *args, stacklevel=3)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
