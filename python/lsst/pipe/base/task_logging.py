@@ -147,47 +147,64 @@ class TaskLogAdapter(LoggerAdapter):
     @deprecated(reason="Use Python Logger compatible critical(). Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def fatal(self, msg, *args, **kwargs):
-        return self.critical(msg, *args, **kwargs)
+        # stacklevel=5 accounts for the deprecation and the forwarding
+        # of LoggerAdapter.
+        return self.critical(msg, *args, **kwargs, stacklevel=5)
 
-    def verbose(self, fmt, *args):
+    def verbose(self, fmt, *args, **kwargs):
+        """Issue a VERBOSE level log message.
+
+        Arguments are as for `logging.info`.
+        ``VERBOSE`` is between ``DEBUG`` and ``INFO``.
+        """
         # There is no other way to achieve this other than a special logger
         # method.
-        self.log(LOG_VERBOSE, fmt, *args)
+        # Stacklevel is passed in so that the correct line is reported
+        # in the log record and not this line. 3 is this method,
+        # 2 is the level from `self.log` and 1 is the log infrastructure
+        # itself.
+        self.log(LOG_VERBOSE, fmt, *args, stacklevel=3, **kwargs)
 
     def trace(self, fmt, *args):
+        """Issue a TRACE level log message.
+
+        Arguments are as for `logging.info`.
+        ``TRACE`` is lower than ``DEBUG``.
+        """
         # There is no other way to achieve this other than a special logger
-        # method.
-        self.log(LOG_TRACE, fmt, *args)
+        # method. For stacklevel discussion see `verbose()`.
+        self.log(LOG_TRACE, fmt, *args, stacklevel=3)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def tracef(self, fmt, *args, **kwargs):
-        self.log(5, _F(fmt, *args, **kwargs))
+        # Stacklevel is 4 to account for the deprecation wrapper
+        self.log(5, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def debugf(self, fmt, *args, **kwargs):
-        self.log(logging.DEBUG, _F(fmt, *args, **kwargs))
+        self.log(logging.DEBUG, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def infof(self, fmt, *args, **kwargs):
-        self.log(logging.INFO, _F(fmt, *args, **kwargs))
+        self.log(logging.INFO, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def warnf(self, fmt, *args, **kwargs):
-        self.log(logging.WARNING, _F(fmt, *args, **kwargs))
+        self.log(logging.WARNING, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def errorf(self, fmt, *args, **kwargs):
-        self.log(logging.ERROR, _F(fmt, *args, **kwargs))
+        self.log(logging.ERROR, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
     def fatalf(self, fmt, *args, **kwargs):
-        self.log(logging.CRITICAL, _F(fmt, *args, **kwargs))
+        self.log(logging.CRITICAL, _F(fmt, *args, **kwargs), stacklevel=4)
 
     def setLevel(self, level):
         """Set the level for the logger, trapping lsst.log values.
