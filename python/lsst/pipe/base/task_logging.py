@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ("TRACE", "VERBOSE", "getLogger")
+__all__ = ("TRACE", "VERBOSE", "getLogger", "TaskLogAdapter")
 
 import logging
 from logging import LoggerAdapter
