@@ -57,10 +57,15 @@ class _F:
 class TaskLogAdapter(LoggerAdapter):
     """A special logging adapter to provide log features for `Task`.
 
-    This is easier to use for a unified interface to task logging
-    than calling `logging.setLoggerClass`.  The main simplification
-    is that this will work with the root logger as well as loggers
-    created for tasks.
+    Expected to be instantiated initially by a call to `getLogger()`.
+
+    This class provides enhancements over `logging.Logger` that include:
+
+    * Methods for issuing trace and verbose level log messages.
+    * Provision of a context manager to temporarily change the log level.
+    * Attachment of logging level constants to the class to make it easier
+      for a Task writer to access a specific log level without having to
+      know the underlying logger class.
     """
 
     # Store logging constants in the class for convenience. This is not
@@ -98,9 +103,22 @@ class TaskLogAdapter(LoggerAdapter):
 
     @property
     def level(self):
+        """Current level of this logger (``int``)."""
         return self.logger.level
 
     def getChild(self, name):
+        """Get the named child logger.
+
+        Parameters
+        ----------
+        name : `str`
+            Name of the child relative to this logger.
+
+        Returns
+        -------
+        child : `TaskLogAdapter`
+            The child logger.
+        """
         return getLogger(name=name, logger=self.logger)
 
     @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
@@ -198,12 +216,18 @@ class TaskLogAdapter(LoggerAdapter):
 
     @property
     def handlers(self):
+        """Log handlers associated with this logger."""
         return self.logger.handlers
 
     def addHandler(self, handler):
+        """Add a handler to this logger.
+
+        The handler is forwarded to the underlying logger.
+        """
         self.logger.addHandler(handler)
 
     def removeHandler(self, handler):
+        """Remove the given handler from the underlying logger."""
         self.logger.removeHandler(handler)
 
 
@@ -223,6 +247,14 @@ def getLogger(name=None, logger=None):
     -------
     logger : `TaskLogAdapter`
         The relevant logger.
+
+    Notes
+    -----
+    A `logging.LoggerAdapter` is used since it is easier to provide a more
+    uniform interface than when using `logging.setLoggerClass`. An adapter
+    can be wrapped around the root logger and the `~logging.setLoggerClass`
+    will return the logger first given that name even if the name was
+    used before the `Task` was created.
     """
     if not logger:
         logger = logging.getLogger(name)
