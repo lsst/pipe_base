@@ -129,6 +129,16 @@ class TaskDef:
         else:
             return None
 
+    @property
+    def logOutputDatasetName(self) -> Optional[str]:
+        """Name of a dataset type for log output from this task, `None` if
+        logs are not to be saved (`str`)
+        """
+        if self.config.saveLogOutput:
+            return self.label + "_log"
+        else:
+            return None
+
     def __str__(self):
         rep = "TaskDef(" + self.taskName
         if self.label:
@@ -775,6 +785,11 @@ class TaskDatasetTypes:
             # dimensions correspond to a task quantum
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
             outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertySet")}
+        if taskDef.logOutputDatasetName is not None:
+            # Log output dimensions correspond to a task quantum.
+            dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
+            outputs |= {DatasetType(taskDef.logOutputDatasetName, dimensions, "ButlerLogRecords")}
+
         outputs.freeze()
 
         return cls(
