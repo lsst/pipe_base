@@ -171,7 +171,7 @@ class TaskLogAdapter(LoggerAdapter):
                 version="v23", category=FutureWarning)
     def tracef(self, fmt, *args, **kwargs):
         # Stacklevel is 4 to account for the deprecation wrapper
-        self.log(5, _F(fmt, *args, **kwargs), stacklevel=4)
+        self.log(TRACE, _F(fmt, *args, **kwargs), stacklevel=4)
 
     @deprecated(reason="Use Python Logger compatible method. Will be removed after v23.",
                 version="v23", category=FutureWarning)
