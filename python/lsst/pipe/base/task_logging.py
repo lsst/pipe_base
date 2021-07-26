@@ -207,15 +207,13 @@ class TaskLogAdapter(LoggerAdapter):
         self.logger.removeHandler(handler)
 
 
-def getLogger(name=None, lsstCompatible=True, logger=None):
+def getLogger(name=None, logger=None):
     """Get a logger compatible with LSST usage.
 
     Parameters
     ----------
     name : `str`, optional
         Name of the logger. Root logger if `None`.
-    lsstCompatible : `bool`, optional
-        If `True` return a special logger, else return a standard logger.
     logger : `logging.Logger`
         If given the logger is converted to the relevant logger class.
         If ``name`` is given the logger is assumed to be a child of the
@@ -223,13 +221,11 @@ def getLogger(name=None, lsstCompatible=True, logger=None):
 
     Returns
     -------
-    logger : `TaskLogAdapter` or `logging.Logger`
+    logger : `TaskLogAdapter`
         The relevant logger.
     """
     if not logger:
         logger = logging.getLogger(name)
     elif name:
         logger = logger.getChild(name)
-    if not lsstCompatible:
-        return logger
     return TaskLogAdapter(logger, {})
