@@ -33,7 +33,7 @@ import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
-from .task_logging import getLogger
+from .task_logging import getTaskLogger
 from lsst.base import Packages
 
 
@@ -417,7 +417,7 @@ class TaskRunner:
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = getLogger()
+            self.log = getTaskLogger()
         if hasattr(dataRef, "dataId"):
             lsst.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):

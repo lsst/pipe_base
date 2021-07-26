@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ("TRACE", "VERBOSE", "getLogger", "TaskLogAdapter")
+__all__ = ("TRACE", "VERBOSE", "getTaskLogger", "TaskLogAdapter")
 
 import logging
 from logging import LoggerAdapter
@@ -119,7 +119,7 @@ class TaskLogAdapter(LoggerAdapter):
         child : `TaskLogAdapter`
             The child logger.
         """
-        return getLogger(name=name, logger=self.logger)
+        return getTaskLogger(name=name, logger=self.logger)
 
     @deprecated(reason="Use Python Logger compatible isEnabledFor Will be removed after v23.",
                 version="v23", category=FutureWarning)
@@ -231,7 +231,7 @@ class TaskLogAdapter(LoggerAdapter):
         self.logger.removeHandler(handler)
 
 
-def getLogger(name=None, logger=None):
+def getTaskLogger(name=None, logger=None):
     """Get a logger compatible with LSST usage.
 
     Parameters

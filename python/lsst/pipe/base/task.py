@@ -27,7 +27,7 @@ import logging
 from lsst.pex.config import ConfigurableField
 import lsst.daf.base as dafBase
 from .timer import logInfo
-from .task_logging import getLogger
+from .task_logging import getTaskLogger
 
 try:
     import lsstDebug
@@ -164,7 +164,7 @@ class Task:
                 loggerName = name + '.' + loggerName
 
         # Get a logger (that might be a subclass of logging.Logger).
-        self.log = getLogger(loggerName)
+        self.log = getTaskLogger(loggerName)
         self.config = config
         if lsstDebug:
             self._display = lsstDebug.Info(self.__module__).display
