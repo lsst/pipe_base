@@ -120,10 +120,6 @@ class AddTaskFactoryMock(pipeBase.TaskFactory):
         self.countExec = 0  # incremented by AddTask
         self.stopAt = stopAt  # AddTask raises exception at this call to run()
 
-    def loadTaskClass(self, taskName):
-        if taskName == "AddTask":
-            return AddTask, "AddTask"
-
     def makeTask(self, taskClass, name, config, overrides, butler):
         if config is None:
             config = taskClass.ConfigClass()
