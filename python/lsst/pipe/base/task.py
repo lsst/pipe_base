@@ -147,7 +147,7 @@ class Task:
             if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
-            loggerName = parentTask.log.name + '.' + name
+            loggerName = parentTask.log.getChild(name).name
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -160,8 +160,8 @@ class Task:
                 config = self.ConfigClass()
             self._taskDict = dict()
             loggerName = self._fullName
-            if log is not None and (name := log.name):
-                loggerName = name + '.' + loggerName
+            if log is not None and log.name:
+                loggerName = log.getChild(loggerName).name
 
         # Get a logger (that might be a subclass of logging.Logger).
         self.log = getTaskLogger(loggerName)
