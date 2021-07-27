@@ -26,11 +26,6 @@ from logging import LoggerAdapter
 from deprecated.sphinx import deprecated
 from contextlib import contextmanager
 
-try:
-    import lsst.log as lsstLog
-except ModuleNotFoundError:
-    lsstLog = None
-
 # log level for trace (verbose debug).
 TRACE = 5
 logging.addLevelName(TRACE, "TRACE")
