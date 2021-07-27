@@ -188,7 +188,7 @@ class TaskRunner:
 
         if self.numProcesses > 1:
             if not TaskClass.canMultiprocess:
-                self.log.warn("This task does not support multiprocessing; using one process")
+                self.log.warning("This task does not support multiprocessing; using one process")
                 self.numProcesses = 1
 
     def prepareForMultiProcessing(self):
@@ -241,8 +241,8 @@ class TaskRunner:
                     # Run the task using self.__call__
                     resultList = list(mapFunc(self, targetList))
             else:
-                log.warn("Not running the task because there is no data to process; "
-                         "you may preview data using \"--show data\"")
+                log.warning("Not running the task because there is no data to process; "
+                            "you may preview data using \"--show data\"")
 
         if pool is not None:
             pool.close()
@@ -683,7 +683,7 @@ class CmdLineTask(Task):
         except (TypeError, AttributeError) as e:
             # NOTE: TypeError if resultList is None, AttributeError if it
             # doesn't have exitStatus.
-            parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
+            parsedCmd.log.warning("Unable to retrieve exit status (%s); assuming success", e)
             nFailed = 0
 
         if nFailed > 0:
@@ -825,7 +825,7 @@ class CmdLineTask(Task):
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
         except Exception as e:
-            self.log.warn("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
+            self.log.warning("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):
         """Compare and write package versions.

@@ -163,8 +163,8 @@ class DataIdContainer:
                     keyType = str
 
                     log = getTaskLogger()
-                    log.warn("Unexpected ID %s; guessing type is \"%s\"",
-                             key, 'str' if keyType == str else keyType)
+                    log.warning("Unexpected ID %s; guessing type is \"%s\"",
+                                key, 'str' if keyType == str else keyType)
                     idKeyTypeDict[key] = keyType
 
                 if keyType != str:
@@ -195,7 +195,7 @@ class DataIdContainer:
             refList = dafPersist.searchDataRefs(butler, datasetType=self.datasetType,
                                                 level=self.level, dataId=dataId)
             if not refList:
-                namespace.log.warn("No data found for dataId=%s", dataId)
+                namespace.log.warning("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
 
