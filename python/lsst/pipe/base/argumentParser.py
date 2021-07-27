@@ -584,8 +584,8 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             Config for the task being run.
         args : `list`, optional
             Argument list; if `None` then ``sys.argv[1:]`` is used.
-        log : `lsst.log.Log`, optional
-            `~lsst.log.Log` instance; if `None` use the default log.
+        log : `lsst.log.Log` or `logging.Logger`, optional
+            Logger instance; if `None` use the default log.
         override : callable, optional
             A config override function. It must take the root config object
             as its only argument and must modify the config in place.
@@ -606,7 +606,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 `add_id_argument`, of the type passed to its ``ContainerClass``
                 keyword (`~lsst.pipe.base.DataIdContainer` by default). It
                 includes public elements ``idList`` and ``refList``.
-            - ``log``: a `lsst.log` Log.
+            - ``log``: a `lsst.pipe.base.TaskLogAdapter` log.
             - An entry for each command-line argument,
                 with the following exceptions:
 
@@ -850,7 +850,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             - ``config``: the config passed to parse_args, with no overrides
               applied.
             - ``obsPkg``: the ``obs_`` package for this camera.
-            - ``log``: a `lsst.log` Log.
+            - ``log``: a `lsst.pipe.base.TaskLogAdapter` Log.
 
         Notes
         -----
