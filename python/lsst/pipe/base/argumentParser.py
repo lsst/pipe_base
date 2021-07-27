@@ -1318,7 +1318,7 @@ class LogLevelAction(argparse.Action):
                 pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
                 logging.getLogger(component or None).setLevel(pyLevel)
             else:
-                # Need to see lsstLog level
+                # Need to set lsstLog level
                 lsstLogLevel = lsstLog.LevelTranslator.logging2lsstLog(logLevel)
                 lsstLog.getLogger(component or "").setLevel(lsstLogLevel)
 
