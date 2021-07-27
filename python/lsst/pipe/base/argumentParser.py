@@ -632,7 +632,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             self.error(f"Error: input={namespace.input!r} not found")
 
         namespace.config = config
-        namespace.log = log if log is not None else getTaskLogger()
+        # Ensure that the external logger is converted to the expected
+        # logger class.
+        namespace.log = getTaskLogger(log.name) if log is not None else getTaskLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
             self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
