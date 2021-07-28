@@ -28,8 +28,11 @@ import itertools
 import logging
 import numpy
 
-from lsst.daf.butler import Butler, Config, DatasetType
+from lsst.base import Packages
+from lsst.daf.base import PropertySet
+from lsst.daf.butler import Butler, ButlerURI, Config, DatasetType
 import lsst.daf.butler.tests as butlerTests
+from lsst.daf.butler.core.logging import ButlerLogRecords
 import lsst.pex.config as pexConfig
 from lsst.utils import doImport
 from ... import base as pipeBase
@@ -197,34 +200,145 @@ def makeSimplePipeline(nQuanta, instrument=None):
     return pipeline
 
 
-def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExisting=False, inMemory=True,
-                     userQuery=""):
+def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> Butler:
+    """Create new data butler instance.
+
+    Parameters
+    ----------
+    root : `str`
+        Path or URI to the root location of the new repository.
+    run : `str`, optional
+        Run collection name.
+    inMemory : `bool`, optional
+        If true make in-memory repository.
+
+    Returns
+    -------
+    butler : `~lsst.daf.butler.Butler`
+        Data butler instance.
+    """
+    root = ButlerURI(root, forceDirectory=True)
+    if not root.isLocal:
+        raise ValueError(f"Only works with local root not {root}")
+    config = Config()
+    if not inMemory:
+        config["registry", "db"] = f"sqlite:///{root.ospath}/gen3.sqlite"
+        config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
+    repo = butlerTests.makeTestRepo(root, {}, config=config)
+    butler = Butler(butler=repo, run=run)
+    return butler
+
+
+def populateButler(pipeline, butler, datasetTypes=None):
+    """Populate data butler with data needed for test.
+
+    Initializes data butler with a bunch of items:
+    - registers dataset types which are defined by pipeline
+    - create dimensions data for (instrument, detector)
+    - adds datasets based on ``datasetTypes`` dictionary, if dictionary is
+      missing then a single dataset with type "add_dataset0" is added
+
+    All datasets added to butler have ``dataId={instrument=instrument,
+    detector=0}`` where ``instrument`` is extracted from pipeline, "INSTR" is
+    used if pipeline is missing instrument definition. Type of the dataset is
+    guessed from dataset type name (assumes that pipeline is made of `AddTask`
+    tasks).
+
+    Parameters
+    ----------
+    pipeline : `~lsst.pipe.base.Pipeline`
+        Pipeline instance.
+    butler : `~lsst.daf.butler.Butler`
+        Data butler instance.
+    datasetTypes : `dict` [ `str`, `list` ], optional
+        Dictionary whose keys are collection names and values are lists of
+        dataset type names. By default a single dataset of type "add_dataset0"
+        is added to a ``butler.run`` collection.
+    """
+
+    # Add dataset types to registry
+    taskDefs = list(pipeline.toExpandedPipeline())
+    registerDatasetTypes(butler.registry, taskDefs)
+
+    instrument = pipeline.getInstrument()
+    if instrument is not None:
+        if isinstance(instrument, str):
+            instrument = doImport(instrument)
+        instrumentName = instrument.getName()
+    else:
+        instrumentName = "INSTR"
+
+    # Add all needed dimensions to registry
+    butler.registry.insertDimensionData("instrument", dict(name=instrumentName))
+    butler.registry.insertDimensionData("detector", dict(instrument=instrumentName,
+                                                         id=0, full_name="det0"))
+
+    taskDefMap = dict((taskDef.label, taskDef) for taskDef in taskDefs)
+    # Add inputs to butler
+    if not datasetTypes:
+        datasetTypes = {None: ["add_dataset0"]}
+    for run, dsTypes in datasetTypes.items():
+        if run is not None:
+            butler.registry.registerRun(run)
+        for dsType in dsTypes:
+            if dsType == "packages":
+                # Version is intentionally inconsistent
+                data = Packages({"python": "9.9.99"})
+                butler.put(data, dsType, run=run)
+            else:
+                if dsType.endswith("_config"):
+                    # find a confing from matching task name or make a new one
+                    taskLabel, _, _ = dsType.rpartition("_")
+                    taskDef = taskDefMap.get(taskLabel)
+                    if taskDef is not None:
+                        data = taskDef.config
+                    else:
+                        data = AddTaskConfig()
+                elif dsType.endswith("_metadata"):
+                    data = PropertySet()
+                elif dsType.endswith("_log"):
+                    data = ButlerLogRecords.from_records([])
+                else:
+                    data = numpy.array([0., 1., 2., 5.])
+                butler.put(data, dsType, run=run, instrument=instrumentName, detector=0)
+
+
+def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test",
+                     skipExisting=False, inMemory=True, userQuery="",
+                     datasetTypes=None):
     """Make simple QuantumGraph for tests.
 
-    Makes simple one-task pipeline with AddTask, sets up in-memory
-    registry and butler, fills them with minimal data, and generates
-    QuantumGraph with all of that.
+    Makes simple one-task pipeline with AddTask, sets up in-memory registry
+    and butler, fills them with minimal data, and generates QuantumGraph with
+    all of that.
 
     Parameters
     ----------
     nQuanta : `int`
-        Number of quanta in a graph.
+        Number of quanta in a graph, only used if ``pipeline`` is None.
     pipeline : `~lsst.pipe.base.Pipeline`
-        If `None` then one-task pipeline is made with `AddTask` and
-        default `AddTaskConfig`.
+        If `None` then a pipeline is made with `AddTask` and default
+        `AddTaskConfig`.
     butler : `~lsst.daf.butler.Butler`, optional
-        Data butler instance, this should be an instance returned from a
-        previous call to this method.
+        Data butler instance, if None then new data butler is created by
+        calling `makeSimpleButler`.
     root : `str`
         Path or URI to the root location of the new repository. Only used if
         ``butler`` is None.
+    run : `str`, optional
+        Name of the RUN collection to add to butler, only used if ``butler``
+        is None.
     skipExisting : `bool`, optional
         If `True` (default), a Quantum is not created if all its outputs
         already exist.
     inMemory : `bool`, optional
-        If true make in-memory repository.
+        If true make in-memory repository, only used if ``butler`` is `None`.
     userQuery : `str`, optional
         The user query to pass to ``makeGraph``, by default an empty string.
+    datasetTypes : `dict` [ `str`, `list` ], optional
+        Dictionary whose keys are collection names and values are lists of
+        dataset type names. By default a single dataset of type "add_dataset0"
+        is added to a ``butler.run`` collection.
 
     Returns
     -------
@@ -238,44 +352,21 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, skipExist
         pipeline = makeSimplePipeline(nQuanta=nQuanta)
 
     if butler is None:
-
         if root is None:
             raise ValueError("Must provide `root` when `butler` is None")
+        butler = makeSimpleButler(root, run=run, inMemory=inMemory)
 
-        config = Config()
-        if not inMemory:
-            config["registry", "db"] = f"sqlite:///{root}/gen3.sqlite"
-            config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
-        repo = butlerTests.makeTestRepo(root, {}, config=config)
-        collection = "test"
-        butler = Butler(butler=repo, run=collection)
-
-        # Add dataset types to registry
-        registerDatasetTypes(butler.registry, pipeline.toExpandedPipeline())
-
-        instrument = pipeline.getInstrument()
-        if instrument is not None:
-            if isinstance(instrument, str):
-                instrument = doImport(instrument)
-            instrumentName = instrument.getName()
-        else:
-            instrumentName = "INSTR"
-
-        # Add all needed dimensions to registry
-        butler.registry.insertDimensionData("instrument", dict(name=instrumentName))
-        butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0,
-                                                             full_name="det0"))
-
-        # Add inputs to butler
-        data = numpy.array([0., 1., 2., 5.])
-        butler.put(data, "add_dataset0", instrument=instrumentName, detector=0)
+    populateButler(pipeline, butler, datasetTypes=datasetTypes)
 
     # Make the graph
+    _LOG.debug("Instantiating GraphBuilder, skipExisting=%s", skipExisting)
     builder = pipeBase.GraphBuilder(registry=butler.registry, skipExisting=skipExisting)
+    _LOG.debug("Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
+               butler.collections, run or butler.run, userQuery)
     qgraph = builder.makeGraph(
         pipeline,
-        collections=[butler.run],
-        run=butler.run,
+        collections=butler.collections,
+        run=run or butler.run,
         userQuery=userQuery
     )
 
