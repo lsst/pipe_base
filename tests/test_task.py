@@ -19,13 +19,13 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import logging
 import time
 import unittest
 import numbers
 
 import lsst.utils.tests
 import lsst.daf.base as dafBase
-from lsst.log import Log
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -163,13 +163,13 @@ class TaskTestCase(unittest.TestCase):
         """Test the Task's logger
         """
         addMultTask = AddMultTask()
-        self.assertEqual(addMultTask.log.getName(), "addMult")
-        self.assertEqual(addMultTask.add.log.getName(), "addMult.add")
+        self.assertEqual(addMultTask.log.name, "addMult")
+        self.assertEqual(addMultTask.add.log.name, "addMult.add")
 
-        log = Log.getLogger("tester")
+        log = logging.getLogger("tester")
         addMultTask = AddMultTask(log=log)
-        self.assertEqual(addMultTask.log.getName(), "tester.addMult")
-        self.assertEqual(addMultTask.add.log.getName(), "tester.addMult.add")
+        self.assertEqual(addMultTask.log.name, "tester.addMult")
+        self.assertEqual(addMultTask.add.log.name, "tester.addMult.add")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()

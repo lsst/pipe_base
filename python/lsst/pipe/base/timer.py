@@ -24,14 +24,13 @@
 __all__ = ["logInfo", "timeMethod"]
 
 import functools
+import logging
 import resource
 import time
 import datetime
 
-from lsst.log import Log, log
 
-
-def logPairs(obj, pairs, logLevel=Log.DEBUG, metadata=None, logger=None):
+def logPairs(obj, pairs, logLevel=logging.DEBUG, metadata=None, logger=None):
     """Log ``(name, value)`` pairs to ``obj.metadata`` and ``obj.log``
 
     Parameters
@@ -41,18 +40,18 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG, metadata=None, logger=None):
 
         - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
           object with ``add(name, value)`` method).
-        - ``log`` an instance of `lsst.log.Log`.
+        - ``log`` an instance of `logging.Logger` or subclass.
 
         If `None`, at least one of ``metadata`` or ``logger`` should be passed
         or this function will do nothing.
 
     pairs : sequence
         A sequence of ``(name, value)`` pairs, with value typically numeric.
-    logLevel : optional
-        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+    logLevel : `int, optional
+        Log level (an `logging` level constant, such as `logging.DEBUG`).
     metadata : `lsst.daf.base.PropertyList`, optional
         Metadata object to write entries to.  Ignored if `None`.
-    logger : `lsst.log.Log`
+    logger : `logging.Logger`
         Log object to write entries to.  Ignored if `None`.
     """
     if obj is not None:
@@ -71,10 +70,10 @@ def logPairs(obj, pairs, logLevel=Log.DEBUG, metadata=None, logger=None):
                 metadata.add(name, value)
         strList.append(f"{name}={value}")
     if logger is not None:
-        log("timer." + logger.getName(), logLevel, "; ".join(strList))
+        logging.getLogger("timer." + logger.name).log(logLevel, "; ".join(strList))
 
 
-def logInfo(obj, prefix, logLevel=Log.DEBUG, metadata=None, logger=None):
+def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     """Log timer information to ``obj.metadata`` and ``obj.log``.
 
     Parameters
@@ -84,7 +83,7 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG, metadata=None, logger=None):
 
         - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
           object with ``add(name, value)`` method).
-        - ``log`` an instance of `lsst.log.Log`.
+        - ``log`` an instance of `logging.Logger` or subclass.
 
         If `None`, at least one of ``metadata`` or ``logger`` should be passed
         or this function will do nothing.
@@ -94,10 +93,10 @@ def logInfo(obj, prefix, logLevel=Log.DEBUG, metadata=None, logger=None):
         timeMethod uses ``prefix = Start`` when the method begins and
         ``prefix = End`` when the method ends.
     logLevel : optional
-        Log level (an `lsst.log` level constant, such as `lsst.log.Log.DEBUG`).
+        Log level (an `logging` level constant, such as `logging.DEBUG`).
     metadata : `lsst.daf.base.PropertyList`, optional
         Metadata object to write entries to, overriding ``obj.metadata``.
-    logger : `lsst.log.Log`
+    logger : `logging.Logger`
         Log object to write entries to, overriding ``obj.log``.
 
     Notes
@@ -158,7 +157,7 @@ def timeMethod(func):
 
        - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other
          object with ``add(name, value)`` method).
-       - ``log``: an instance of `lsst.log.Log`.
+       - ``log``: an instance of `logging.Logger` or subclass.
 
     Examples
     --------

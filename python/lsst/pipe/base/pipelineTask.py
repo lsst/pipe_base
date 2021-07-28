@@ -69,7 +69,7 @@ class PipelineTask(Task):
         Configuration for this task (an instance of ``self.ConfigClass``,
         which is a task-specific subclass of `PipelineTaskConfig`).
         If not specified then it defaults to `self.ConfigClass()`.
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger`, optional
         Logger instance whose name is used as a log name prefix, or ``None``
         for no prefix.
     initInputs : `dict`, optional

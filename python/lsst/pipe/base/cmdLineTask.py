@@ -26,14 +26,15 @@ import traceback
 import functools
 import contextlib
 
+import lsst.log
 import lsst.utils
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
+from .task_logging import getTaskLogger
 from lsst.base import Packages
-from lsst.log import Log
 
 
 def _runPool(pool, timeout, function, iterable):
@@ -56,7 +57,7 @@ def profile(filename, log=None):
     filename : `str`
         Filename to which to write profile (profiling disabled if `None` or
         empty).
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger`, optional
         Log object for logging the profile operations.
 
     If profiling is enabled, the context manager returns the cProfile.Profile
@@ -187,7 +188,7 @@ class TaskRunner:
 
         if self.numProcesses > 1:
             if not TaskClass.canMultiprocess:
-                self.log.warn("This task does not support multiprocessing; using one process")
+                self.log.warning("This task does not support multiprocessing; using one process")
                 self.numProcesses = 1
 
     def prepareForMultiProcessing(self):
@@ -240,8 +241,8 @@ class TaskRunner:
                     # Run the task using self.__call__
                     resultList = list(mapFunc(self, targetList))
             else:
-                log.warn("Not running the task because there is no data to process; "
-                         "you may preview data using \"--show data\"")
+                log.warning("Not running the task because there is no data to process; "
+                            "you may preview data using \"--show data\"")
 
         if pool is not None:
             pool.close()
@@ -416,11 +417,11 @@ class TaskRunner:
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = Log.getDefaultLogger()
+            self.log = getTaskLogger()
         if hasattr(dataRef, "dataId"):
-            self.log.MDC("LABEL", str(dataRef.dataId))
+            lsst.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
-            self.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
+            lsst.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
         result = None                   # in case the task fails
         exitStatus = 0                  # exit status for the shell
@@ -456,7 +457,7 @@ class TaskRunner:
         task.writeMetadata(dataRef)
 
         # remove MDC so it does not show up outside of task context
-        self.log.MDCRemove("LABEL")
+        lsst.log.MDCRemove("LABEL")
 
         if self.doReturnResults:
             return Struct(
@@ -618,7 +619,7 @@ class CmdLineTask(Task):
             List of command-line arguments; if `None` use `sys.argv`.
         config : `lsst.pex.config.Config`-type, optional
             Config for task. If `None` use `Task.ConfigClass`.
-        log : `lsst.log.Log`-type, optional
+        log : `logging.Logger`-type, optional
             Log. If `None` use the default log.
         doReturnResults : `bool`, optional
             If `True`, return the results of this task. Default is `False`.
@@ -682,7 +683,7 @@ class CmdLineTask(Task):
         except (TypeError, AttributeError) as e:
             # NOTE: TypeError if resultList is None, AttributeError if it
             # doesn't have exitStatus.
-            parsedCmd.log.warn("Unable to retrieve exit status (%s); assuming success", e)
+            parsedCmd.log.warning("Unable to retrieve exit status (%s); assuming success", e)
             nFailed = 0
 
         if nFailed > 0:
@@ -824,7 +825,7 @@ class CmdLineTask(Task):
             if metadataName is not None:
                 dataRef.put(self.getFullMetadata(), metadataName)
         except Exception as e:
-            self.log.warn("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
+            self.log.warning("Could not persist metadata for dataId=%s: %s", dataRef.dataId, e)
 
     def writePackageVersions(self, butler, clobber=False, doBackup=True, dataset="packages"):
         """Compare and write package versions.

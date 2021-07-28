@@ -10,6 +10,7 @@ from .pipeline import *
 from .graph import *
 from .graphBuilder import *
 from .taskFactory import *
+from .task_logging import getTaskLogger, TaskLogAdapter
 from .connections import *
 from .butlerQuantumContext import *
 from . import connectionTypes

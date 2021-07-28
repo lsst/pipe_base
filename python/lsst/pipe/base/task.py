@@ -22,12 +22,17 @@
 __all__ = ["Task", "TaskError"]
 
 import contextlib
+import logging
 
-import lsstDebug
 from lsst.pex.config import ConfigurableField
-from lsst.log import Log
 import lsst.daf.base as dafBase
 from .timer import logInfo
+from .task_logging import getTaskLogger
+
+try:
+    import lsstDebug
+except ImportError:
+    lsstDebug = None
 
 
 class TaskError(Exception):
@@ -69,7 +74,7 @@ class Task:
         - If `None` (a top-level task) then you must specify config and name
           is ignored.
         - If not `None` (a subtask) then you must specify name.
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger` or subclass, optional
         Log whose name is used as a log name prefix, or `None` for no prefix.
         Ignored if is parentTask specified, in which case
         ``parentTask.log``\ 's name is used as a prefix. The task's log name is
@@ -91,7 +96,7 @@ class Task:
     -----
     Useful attributes include:
 
-    - ``log``: an lsst.log.Log
+    - ``log``: an `logging.Logger` or subclass.
     - ``config``: task-specific configuration; an instance of ``ConfigClass``
       (see below).
     - ``metadata``: an `lsst.daf.base.PropertyList` for collecting
@@ -142,7 +147,7 @@ class Task:
             if config is None:
                 config = getattr(parentTask.config, name)
             self._taskDict = parentTask._taskDict
-            loggerName = parentTask.log.getName() + '.' + name
+            loggerName = parentTask.log.getChild(name).name
         else:
             if name is None:
                 name = getattr(self, "_DefaultName", None)
@@ -155,12 +160,16 @@ class Task:
                 config = self.ConfigClass()
             self._taskDict = dict()
             loggerName = self._fullName
-            if log is not None and log.getName():
-                loggerName = log.getName() + '.' + loggerName
+            if log is not None and log.name:
+                loggerName = log.getChild(loggerName).name
 
-        self.log = Log.getLogger(loggerName)
+        # Get a logger (that might be a subclass of logging.Logger).
+        self.log = getTaskLogger(loggerName)
         self.config = config
-        self._display = lsstDebug.Info(self.__module__).display
+        if lsstDebug:
+            self._display = lsstDebug.Info(self.__module__).display
+        else:
+            self._display = None
         self._taskDict[self._fullName] = self
 
     def emptyMetadata(self):
@@ -324,7 +333,7 @@ class Task:
         setattr(self, name, subtask)
 
     @contextlib.contextmanager
-    def timer(self, name, logLevel=Log.DEBUG):
+    def timer(self, name, logLevel=logging.DEBUG):
         """Context manager to log performance data for an arbitrary block of
         code.
 
@@ -334,7 +343,7 @@ class Task:
             Name of code being timed; data will be logged using item name:
             ``Start`` and ``End``.
         logLevel
-            A `lsst.log` level constant.
+            A `logging` level constant.
 
         Examples
         --------

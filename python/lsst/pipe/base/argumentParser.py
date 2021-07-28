@@ -40,6 +40,7 @@ import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
+from .task_logging import getTaskLogger
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -161,9 +162,9 @@ class DataIdContainer:
                     # string
                     keyType = str
 
-                    log = lsstLog.Log.getDefaultLogger()
-                    log.warn("Unexpected ID %s; guessing type is \"%s\"",
-                             key, 'str' if keyType == str else keyType)
+                    log = getTaskLogger()
+                    log.warning("Unexpected ID %s; guessing type is \"%s\"",
+                                key, 'str' if keyType == str else keyType)
                     idKeyTypeDict[key] = keyType
 
                 if keyType != str:
@@ -194,7 +195,7 @@ class DataIdContainer:
             refList = dafPersist.searchDataRefs(butler, datasetType=self.datasetType,
                                                 level=self.level, dataId=dataId)
             if not refList:
-                namespace.log.warn("No data found for dataId=%s", dataId)
+                namespace.log.warning("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
 
@@ -583,8 +584,8 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             Config for the task being run.
         args : `list`, optional
             Argument list; if `None` then ``sys.argv[1:]`` is used.
-        log : `lsst.log.Log`, optional
-            `~lsst.log.Log` instance; if `None` use the default log.
+        log : `lsst.log.Log` or `logging.Logger`, optional
+            Logger instance; if `None` use the default log.
         override : callable, optional
             A config override function. It must take the root config object
             as its only argument and must modify the config in place.
@@ -605,7 +606,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
                 `add_id_argument`, of the type passed to its ``ContainerClass``
                 keyword (`~lsst.pipe.base.DataIdContainer` by default). It
                 includes public elements ``idList`` and ``refList``.
-            - ``log``: a `lsst.log` Log.
+            - ``log``: a `lsst.pipe.base.TaskLogAdapter` log.
             - An entry for each command-line argument,
                 with the following exceptions:
 
@@ -631,7 +632,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             self.error(f"Error: input={namespace.input!r} not found")
 
         namespace.config = config
-        namespace.log = log if log is not None else lsstLog.Log.getDefaultLogger()
+        # Ensure that the external logger is converted to the expected
+        # logger class.
+        namespace.log = getTaskLogger(log.name) if log is not None else getTaskLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
             self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
@@ -847,7 +850,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
             - ``config``: the config passed to parse_args, with no overrides
               applied.
             - ``obsPkg``: the ``obs_`` package for this camera.
-            - ``log``: a `lsst.log` Log.
+            - ``log``: a `lsst.pipe.base.TaskLogAdapter` Log.
 
         Notes
         -----
@@ -1299,17 +1302,27 @@ class LogLevelAction(argparse.Action):
             if not levelStr:
                 levelStr, component = component, None
             logLevelUpr = levelStr.upper()
+
+            if component is None:
+                logger = namespace.log
+            else:
+                logger = getTaskLogger(component)
+
             if logLevelUpr in permittedLevelSet:
-                logLevel = getattr(lsstLog.Log, logLevelUpr)
+                logLevel = getattr(logger, logLevelUpr)
             else:
                 parser.error(f"loglevel={levelStr!r} not one of {permittedLevelList}")
-            if component is None:
-                namespace.log.setLevel(logLevel)
+
+            logger.setLevel(logLevel)
+
+            # Set logging level for whatever logger this wasn't.
+            if isinstance(logger, lsstLog.Log):
+                pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
+                logging.getLogger(component or None).setLevel(pyLevel)
             else:
-                lsstLog.Log.getLogger(component).setLevel(logLevel)
-            # set logging level for Python logging
-            pyLevel = lsstLog.LevelTranslator.lsstLog2logging(logLevel)
-            logging.getLogger(component).setLevel(pyLevel)
+                # Need to set lsstLog level
+                lsstLogLevel = lsstLog.LevelTranslator.logging2lsstLog(logLevel)
+                lsstLog.getLogger(component or "").setLevel(lsstLogLevel)
 
 
 class ReuseAction(argparse.Action):
