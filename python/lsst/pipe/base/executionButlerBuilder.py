@@ -160,6 +160,10 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
     config["root"] = outputLocation.geturl()
     config["allow_put_of_predefined_dataset"] = True
     config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
+
+    # Remove any namespace that may be set in main registry.
+    config.pop(("registry", "namespace"), None)
+
     # record the current root of the datastore if it is specified relative
     # to the butler root
     if config.get(("datastore", "root")) == BUTLER_ROOT_TAG:
