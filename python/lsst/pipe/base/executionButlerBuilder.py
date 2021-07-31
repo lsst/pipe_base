@@ -187,7 +187,7 @@ def _import(yamlBuffer: io.StringIO,
     # that are expected to be produced.
 
     # import the existing datasets
-    newButler.import_(filename=yamlBuffer, format="yaml", reuseIds=True)
+    newButler.import_(filename=yamlBuffer, format="yaml", reuseIds=True, transfer="auto")
 
     # If there is modifier callable, run it to make necessary updates
     # to the new butler.
