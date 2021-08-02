@@ -304,7 +304,7 @@ def populateButler(pipeline, butler, datasetTypes=None):
 
 
 def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test",
-                     skipExisting=False, inMemory=True, userQuery="",
+                     skipExistingIn=None, inMemory=True, userQuery="",
                      datasetTypes=None):
     """Make simple QuantumGraph for tests.
 
@@ -328,9 +328,10 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
     run : `str`, optional
         Name of the RUN collection to add to butler, only used if ``butler``
         is None.
-    skipExisting : `bool`, optional
-        If `True` (default), a Quantum is not created if all its outputs
-        already exist.
+    skipExistingIn
+        Expressions representing the collections to search for existing
+        output datasets that should be skipped.  May be any of the types
+        accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
     inMemory : `bool`, optional
         If true make in-memory repository, only used if ``butler`` is `None`.
     userQuery : `str`, optional
@@ -359,8 +360,8 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
     populateButler(pipeline, butler, datasetTypes=datasetTypes)
 
     # Make the graph
-    _LOG.debug("Instantiating GraphBuilder, skipExisting=%s", skipExisting)
-    builder = pipeBase.GraphBuilder(registry=butler.registry, skipExisting=skipExisting)
+    _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
+    builder = pipeBase.GraphBuilder(registry=butler.registry, skipExistingIn=skipExistingIn)
     _LOG.debug("Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
                butler.collections, run or butler.run, userQuery)
     qgraph = builder.makeGraph(
