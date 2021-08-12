@@ -30,7 +30,8 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 # -------------------------------
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, Iterable, Mapping, Set, Union, Generator, TYPE_CHECKING, Optional, Tuple
+from typing import (ClassVar, Dict, Iterable, Iterator, Mapping, Set, Union,
+                    Generator, TYPE_CHECKING, Optional, Tuple)
 
 import copy
 import re
@@ -807,6 +808,10 @@ class PipelineDatasetTypes:
     `Pipeline`.
     """
 
+    packagesDatasetName: ClassVar[str] = "packages"
+    """Name of a dataset type used to save package versions.
+    """
+
     initInputs: NamedValueSet[DatasetType]
     """Dataset types that are needed as inputs in order to construct the Tasks
     in this Pipeline.
@@ -915,7 +920,7 @@ class PipelineDatasetTypes:
         if include_packages:
             allInitOutputs.add(
                 DatasetType(
-                    "packages",
+                    cls.packagesDatasetName,
                     registry.dimensions.empty,
                     storageClass="Packages",
                 )
@@ -990,3 +995,41 @@ class PipelineDatasetTypes:
             prerequisites=frozen(prerequisites),
             byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
         )
+
+    @classmethod
+    def initOutputNames(cls, pipeline: Union[Pipeline, Iterable[TaskDef]], *,
+                        include_configs: bool = True, include_packages: bool = True) -> Iterator[str]:
+        """Return the names of dataset types ot task initOutputs, Configs,
+        and package versions for a pipeline.
+
+        Parameters
+        ----------
+        pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
+            A `Pipeline` instance or collection of `TaskDef` instances.
+        include_configs : `bool`, optional
+            If `True` (default) include config dataset types.
+        include_packages : `bool`, optional
+            If `True` (default) include the dataset type for package versions.
+
+        Yields
+        ------
+        datasetTypeName : `str`
+            Name of the dataset type.
+        """
+        if include_packages:
+            # Package versions dataset type
+            yield cls.packagesDatasetName
+
+        if isinstance(pipeline, Pipeline):
+            pipeline = pipeline.toExpandedPipeline()
+
+        for taskDef in pipeline:
+
+            # all task InitOutputs
+            for name in taskDef.connections.initOutputs:
+                attribute = getattr(taskDef.connections, name)
+                yield attribute.name
+
+            # config dataset name
+            if include_configs:
+                yield taskDef.configDatasetName
