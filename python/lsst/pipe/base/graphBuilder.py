@@ -43,6 +43,8 @@ from .connections import iterConnections, AdjustQuantumHelper
 from .pipeline import PipelineDatasetTypes, TaskDatasetTypes, TaskDef, Pipeline
 from .graph import QuantumGraph
 from lsst.daf.butler import (
+    CollectionSearch,
+    CollectionType,
     DataCoordinate,
     DatasetRef,
     DatasetType,
@@ -580,7 +582,7 @@ class _PipelineScaffolding:
             _LOG.debug("Finished processing %d rows from data ID query.", n)
             yield commonDataIds
 
-    def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExisting=True,
+    def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExistingIn=None,
                            clobberOutputs=True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
@@ -602,13 +604,15 @@ class _PipelineScaffolding:
         commonDataIds : \
                 `lsst.daf.butler.registry.queries.DataCoordinateQueryResults`
             Result of a previous call to `connectDataIds`.
-        skipExisting : `bool`, optional
-            If `True` (default), a Quantum is not created if all its outputs
-            already exist in ``run``.  Ignored if ``run`` is `None`.
+        skipExistingIn
+            Expressions representing the collections to search for existing
+            output datasets that should be skipped.  May be any of the types
+            accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
+            `None` or empty string/sequence disables skipping.
         clobberOutputs : `bool`, optional
             If `True` (default), allow quanta to created even if outputs exist;
             this requires the same behavior behavior to be enabled when
-            executing.  If ``skipExisting`` is also `True`, completed quanta
+            executing.  If ``skipExistingIn`` is not `None`, completed quanta
             (those with metadata, or all outputs if there is no metadata
             dataset configured) will be skipped rather than clobbered.
 
@@ -616,12 +620,26 @@ class _PipelineScaffolding:
         ------
         OutputExistsError
             Raised if an output dataset already exists in the output run
-            and ``skipExisting`` is `False`, or if only some outputs are
-            present and ``clobberOutputs`` is `False`.
+            and ``skipExistingIn`` does not include output run, or if only
+            some outputs are present and ``clobberOutputs`` is `False`.
         """
+        skipCollections: Optional[CollectionSearch] = None
+        skipExistingInRun = False
+        if skipExistingIn:
+            skipCollections = CollectionSearch.fromExpression(skipExistingIn)
+            if run:
+                # as optimization check in the explicit list of names first
+                skipExistingInRun = run in skipCollections.explicitNames()
+                if not skipExistingInRun:
+                    # need to flatten it and check again
+                    skipExistingInRun = run in registry.queryCollections(
+                        skipExistingIn,
+                        collectionTypes=CollectionType.RUN,
+                    )
+
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
-        if run is not None:
+        if run is not None or skipCollections is not None:
             for datasetType, refs in itertools.chain(self.initIntermediates.items(),
                                                      self.initOutputs.items(),
                                                      self.intermediates.items(),
@@ -629,26 +647,38 @@ class _PipelineScaffolding:
                 _LOG.debug("Resolving %d datasets for intermediate and/or output dataset %s.",
                            len(refs), datasetType.name)
                 isInit = datasetType in self.initIntermediates or datasetType in self.initOutputs
-                resolvedRefQueryResults = commonDataIds.subset(
-                    datasetType.dimensions,
-                    unique=True
-                ).findDatasets(
-                    datasetType,
-                    collections=run,
-                    findFirst=True
-                )
-                for resolvedRef in resolvedRefQueryResults:
-                    # TODO: we could easily support per-DatasetType
-                    # skipExisting and I could imagine that being useful - it's
-                    # probably required in order to support writing initOutputs
-                    # before QuantumGraph generation.
-                    assert resolvedRef.dataId in refs
-                    if skipExisting or isInit or clobberOutputs:
+                subset = commonDataIds.subset(datasetType.dimensions, unique=True)
+
+                # look at RUN collection first
+                if run is not None:
+                    resolvedRefQueryResults = subset.findDatasets(
+                        datasetType,
+                        collections=run,
+                        findFirst=True
+                    )
+                    for resolvedRef in resolvedRefQueryResults:
+                        # TODO: we could easily support per-DatasetType
+                        # skipExisting and I could imagine that being useful -
+                        # it's probably required in order to support writing
+                        # initOutputs before QuantumGraph generation.
+                        assert resolvedRef.dataId in refs
+                        if not (skipExistingInRun or isInit or clobberOutputs):
+                            raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
+                                                    f"output RUN collection '{run}' with data ID"
+                                                    f" {resolvedRef.dataId}.")
+
+                # And check skipExistingIn too, if RUN collection is in
+                # it is handled above
+                if skipCollections is not None:
+                    resolvedRefQueryResults = subset.findDatasets(
+                        datasetType,
+                        collections=skipCollections,
+                        findFirst=True
+                    )
+                    for resolvedRef in resolvedRefQueryResults:
+                        assert resolvedRef.dataId in refs
                         refs[resolvedRef.dataId] = resolvedRef
-                    else:
-                        raise OutputExistsError(f"Output dataset {datasetType.name} already exists in "
-                                                f"output RUN collection '{run}' with data ID"
-                                                f" {resolvedRef.dataId}.")
+
         # Look up input and initInput datasets in the input collection(s).
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
@@ -689,13 +719,13 @@ class _PipelineScaffolding:
             dataIdsFailed = []
             dataIdsSucceeded = []
             for quantum in task.quanta.values():
-                # Process outputs datasets only if there is a run to look for
-                # outputs in and skipExisting and/or clobberOutputs is True.
-                # Note that if skipExisting is False, any output datasets that
-                # already exist would have already caused an exception to be
-                # raised.  We never update the DatasetRefs in the quantum
-                # because those should never be resolved.
-                if run is not None and (skipExisting or clobberOutputs):
+                # Process outputs datasets only if skipExistingIn is not None
+                # or there is a run to look for outputs in and clobberOutputs
+                # is True. Note that if skipExistingIn is None, any output
+                # datasets that already exist would have already caused an
+                # exception to be raised.  We never update the DatasetRefs in
+                # the quantum because those should never be resolved.
+                if skipCollections is not None or (run is not None and clobberOutputs):
                     resolvedRefs = []
                     unresolvedRefs = []
                     haveMetadata = False
@@ -710,7 +740,7 @@ class _PipelineScaffolding:
                     if resolvedRefs:
                         if haveMetadata or not unresolvedRefs:
                             dataIdsSucceeded.append(quantum.dataId)
-                            if skipExisting:
+                            if skipCollections is not None:
                                 continue
                         else:
                             dataIdsFailed.append(quantum.dataId)
@@ -764,7 +794,7 @@ class _PipelineScaffolding:
                                                                if ref is not None})
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
-                if skipExisting:
+                if skipCollections is not None:
                     _LOG.debug("Pruning successful %d quanta for task with label '%s' because all of their "
                                "outputs exist or metadata was written successfully.",
                                len(dataIdsSucceeded), task.taskDef.label)
@@ -837,19 +867,20 @@ class GraphBuilder(object):
     ----------
     registry : `~lsst.daf.butler.Registry`
         Data butler instance.
-    skipExisting : `bool`, optional
-        If `True` (default), a Quantum is not created if all its outputs
-        already exist.
+    skipExistingIn
+        Expressions representing the collections to search for existing
+        output datasets that should be skipped.  May be any of the types
+        accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
     clobberOutputs : `bool`, optional
         If `True` (default), allow quanta to created even if partial outputs
         exist; this requires the same behavior behavior to be enabled when
         executing.
     """
 
-    def __init__(self, registry, skipExisting=True, clobberOutputs=True):
+    def __init__(self, registry, skipExistingIn=None, clobberOutputs=True):
         self.registry = registry
         self.dimensions = registry.dimensions
-        self.skipExisting = skipExisting
+        self.skipExistingIn = skipExistingIn
         self.clobberOutputs = clobberOutputs
 
     def makeGraph(self, pipeline, collections, run, userQuery,
@@ -902,6 +933,6 @@ class GraphBuilder(object):
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
         with scaffolding.connectDataIds(self.registry, collections, userQuery, dataId) as commonDataIds:
             scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
-                                           skipExisting=self.skipExisting,
+                                           skipExistingIn=self.skipExistingIn,
                                            clobberOutputs=self.clobberOutputs)
         return scaffolding.makeQuantumGraph(metadata=metadata)

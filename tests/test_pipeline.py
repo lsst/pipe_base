@@ -27,7 +27,8 @@ import unittest
 
 import lsst.pex.config as pexConfig
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef,
-                            PipelineTaskConnections)
+                            PipelineTaskConnections, PipelineDatasetTypes)
+from lsst.pipe.base.tests.simpleQGraph import makeSimplePipeline
 import lsst.utils.tests
 
 
@@ -151,6 +152,27 @@ class TaskTestCase(unittest.TestCase):
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
+
+
+class PipelineTestCase(unittest.TestCase):
+    """Test case for Pipeline and related classes
+    """
+
+    def test_initOutputNames(self):
+        """Test for PipelineDatasetTypes.initOutputNames method.
+        """
+        pipeline = makeSimplePipeline(3)
+        dsType = set(PipelineDatasetTypes.initOutputNames(pipeline))
+        expected = {
+            "packages",
+            "add_init_output1",
+            "add_init_output2",
+            "add_init_output3",
+            "task0_config",
+            "task1_config",
+            "task2_config",
+        }
+        self.assertEqual(dsType, expected)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

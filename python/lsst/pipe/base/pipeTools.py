@@ -39,24 +39,6 @@ from .connections import iterConnections
 #  Local non-exported definitions --
 # ----------------------------------
 
-
-def _loadTaskClass(taskDef, taskFactory):
-    """Import task class if necessary.
-
-    Raises
-    ------
-    `ImportError` is raised when task class cannot be imported.
-    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
-    provided.
-    """
-    taskClass = taskDef.taskClass
-    if not taskClass:
-        if not taskFactory:
-            raise MissingTaskFactoryError("Task class is not defined but task "
-                                          "factory instance is not provided")
-        taskClass = taskFactory.loadTaskClass(taskDef.taskName)
-    return taskClass
-
 # ------------------------
 #  Exported definitions --
 # ------------------------
