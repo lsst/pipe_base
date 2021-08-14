@@ -190,8 +190,11 @@ def _import(yamlBuffer: io.StringIO,
     # them into the newly created butler, and then inserts the datasets
     # that are expected to be produced.
 
-    # import the existing datasets
-    newButler.import_(filename=yamlBuffer, format="yaml", reuseIds=True, transfer="auto")
+    # import the existing datasets using "split" mode. "split" is safe
+    # because execution butler is assumed to be able to see all the file
+    # locations that the main datastore can see. "split" supports some
+    # absolute URIs in the datastore.
+    newButler.import_(filename=yamlBuffer, format="yaml", reuseIds=True, transfer="split")
 
     # If there is modifier callable, run it to make necessary updates
     # to the new butler.
