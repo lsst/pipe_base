@@ -24,12 +24,11 @@
 
 __all__ = ("ButlerQuantumContext",)
 
-import types
-import typing
-
 from .connections import InputQuantizedConnection, OutputQuantizedConnection, DeferredDatasetRef
 from .struct import Struct
 from lsst.daf.butler import DatasetRef, Butler, Quantum
+
+from typing import Any, Union, List, Sequence
 
 
 class ButlerQuantumContext:
@@ -79,30 +78,24 @@ class ButlerQuantumContext:
         for refs in quantum.outputs.values():
             for ref in refs:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
+        self.__butler = butler
 
-        # Create closures over butler to discourage anyone from directly
-        # using a butler reference
-        def _get(self, ref):
-            # Butler methods below will check for unresolved DatasetRefs and
-            # raise appropriately, so no need for us to do that here.
-            if isinstance(ref, DeferredDatasetRef):
-                self._checkMembership(ref.datasetRef, self.allInputs)
-                return butler.getDirectDeferred(ref.datasetRef)
+    def _get(self, ref: DatasetRef) -> Any:
+        # Butler methods below will check for unresolved DatasetRefs and
+        # raise appropriately, so no need for us to do that here.
+        if isinstance(ref, DeferredDatasetRef):
+            self._checkMembership(ref.datasetRef, self.allInputs)
+            return self.__butler.getDirectDeferred(ref.datasetRef)
 
-            else:
-                self._checkMembership(ref, self.allInputs)
-                return butler.getDirect(ref)
+        else:
+            self._checkMembership(ref, self.allInputs)
+            return self.__butler.getDirect(ref)
 
-        def _put(self, value, ref):
-            self._checkMembership(ref, self.allOutputs)
-            butler.put(value, ref)
+    def _put(self, value: Any, ref: DatasetRef):
+        self._checkMembership(ref, self.allOutputs)
+        self.__butler.put(value, ref)
 
-        self._get = types.MethodType(_get, self)
-        self._put = types.MethodType(_put, self)
-
-    def get(self, dataset: typing.Union[InputQuantizedConnection,
-                                        typing.List[DatasetRef],
-                                        DatasetRef]) -> object:
+    def get(self, dataset: Union[InputQuantizedConnection, List[DatasetRef], DatasetRef]) -> Any:
         """Fetches data from the butler
 
         Parameters
@@ -151,8 +144,8 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to get")
 
-    def put(self, values: typing.Union[Struct, typing.List[typing.Any], object],
-            dataset: typing.Union[OutputQuantizedConnection, typing.List[DatasetRef], DatasetRef]):
+    def put(self, values: Union[Struct, List[Any], Any],
+            dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef]):
         """Puts data into the butler
 
         Parameters
@@ -197,6 +190,8 @@ class ButlerQuantumContext:
                 else:
                     self._put(valuesAttribute, refs)
         elif isinstance(dataset, list):
+            if not isinstance(values, Sequence):
+                raise ValueError("Values to put must be a sequence")
             if len(dataset) != len(values):
                 raise ValueError("There must be a common number of references and values to put")
             for i, ref in enumerate(dataset):
@@ -206,7 +201,7 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
-    def _checkMembership(self, ref: typing.Union[typing.List[DatasetRef], DatasetRef], inout: set):
+    def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set):
         """Internal function used to check if a DatasetRef is part of the input
         quantum
 
