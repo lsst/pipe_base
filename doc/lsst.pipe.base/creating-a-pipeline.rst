@@ -1,3 +1,5 @@
+.. _pipe_base_creating_pipeline:
+
 ###################
 Creating a Pipeline
 ###################
