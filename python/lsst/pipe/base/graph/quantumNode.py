@@ -92,3 +92,9 @@ class QuantumNode:
         by the default quantum id based hashing
         """
         return hash((self.taskDef, self.quantum))
+
+    def __repr__(self):
+        """Make more human readable string representation.
+        """
+        return (f"{self.__class__.__name__}(quantum={self.quantum}, "
+                f"taskDef={self.taskDef}, nodeId={self.nodeId})")
