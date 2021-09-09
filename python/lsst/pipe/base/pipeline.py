@@ -29,6 +29,7 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 #  Imports of standard modules --
 # -------------------------------
 from dataclasses import dataclass
+import logging
 from types import MappingProxyType
 from typing import (ClassVar, Dict, Iterable, Iterator, Mapping, Set, Union,
                     Generator, TYPE_CHECKING, Optional, Tuple)
@@ -56,6 +57,8 @@ if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
 # ----------------------------------
 #  Local non-exported definitions --
 # ----------------------------------
+
+_LOG = logging.getLogger(__name__)
 
 # ------------------------
 #  Exported definitions --
@@ -586,7 +589,11 @@ class Pipeline:
                             overrides.addValueOverride(key, value)
             overrides.applyTo(config)
             # This may need to be revisited
-            config.validate()
+            try:
+                config.validate()
+            except Exception:
+                _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
+                raise
             taskDefs.append(TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label))
 
         # lets evaluate the contracts
