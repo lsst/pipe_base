@@ -46,6 +46,9 @@ _LOG = logging.getLogger(__name__)
 # depend on obs_base.
 class SimpleInstrument:
 
+    def __init__(self, *args, **kwargs):
+        pass
+
     @staticmethod
     def getName():
         return "INSTRU"
