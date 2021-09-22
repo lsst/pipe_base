@@ -579,6 +579,9 @@ class _PipelineScaffolding:
                     for datasetType in task.outputs:
                         ref = refsForRow[datasetType.name]
                         quantum.outputs[datasetType.name][ref.dataId] = ref
+            if n == 0:
+                for message in commonDataIds.explain_no_results():
+                    _LOG.warn(message)
             _LOG.debug("Finished processing %d rows from data ID query.", n)
             yield commonDataIds
 

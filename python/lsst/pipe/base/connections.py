@@ -30,6 +30,7 @@ __all__ = [
     "InputQuantizedConnection",
     "OutputQuantizedConnection",
     "PipelineTaskConnections",
+    "ScalarError",
     "iterConnections",
 ]
 
