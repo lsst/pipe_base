@@ -288,7 +288,8 @@ class QuantumGraphTestCase(unittest.TestCase):
         truth = set()
         for conClass in (Dummy1Connections, Dummy2Connections, Dummy3Connections):
             for connection in conClass.allConnections.values():  # type: ignore
-                truth.add(connection.name)
+                if not isinstance(connection, cT.InitOutput):
+                    truth.add(connection.name)
         self.assertEqual(allDatasetTypes, truth)
 
     def testSubset(self):

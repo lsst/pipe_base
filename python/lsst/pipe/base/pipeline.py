@@ -20,6 +20,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
+from lsst.daf.butler.core.storageClass import StorageClass
+
 """Module defining Pipeline class and related methods.
 """
 
@@ -59,6 +61,8 @@ if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
 # ----------------------------------
 
 _LOG = logging.getLogger(__name__)
+
+PlaceHolder = StorageClass("PlaceHolder")
 
 # ------------------------
 #  Exported definitions --
@@ -696,6 +700,7 @@ class TaskDatasetTypes:
         *,
         registry: Registry,
         include_configs: bool = True,
+        usePlaceHolder: bool = False,
     ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
@@ -709,13 +714,20 @@ class TaskDatasetTypes:
         include_configs : `bool`, optional
             If `True` (default) include config dataset types as
             ``initOutputs``.
+        usePlaceHolder : bool
+            If true a placeholder storageclass will be used for any
+            component DatasetType who's parent storage class cannot be
+            determined.  If a StorageClass cannot be determined and this
+            parameter set to False, this method will raise a ValueError.
+            Defaults to False.
 
         Returns
         -------
         types: `TaskDatasetTypes`
             The dataset types used by this task.
         """
-        def makeDatasetTypesSet(connectionType: str, freeze: bool = True) -> NamedValueSet[DatasetType]:
+        def makeDatasetTypesSet(connectionType: str, freeze: bool = True,
+                                usePlaceHolder: bool = False) -> NamedValueSet[DatasetType]:
             """Constructs a set of true `DatasetType` objects
 
             Parameters
@@ -725,6 +737,12 @@ class TaskDatasetTypes:
                 to an attribute of type `list` on the connection class instance
             freeze : `bool`, optional
                 If `True`, call `NamedValueSet.freeze` on the object returned.
+            usePlaceHolder : bool
+                If true a placeholder storageclass will be used for any
+                component DatasetType who's parent storage class cannot be
+                determined.  If a StorageClass cannot be determined and this
+                parameter set to False, this method will raise a ValueError.
+                Defaults to False.
 
             Returns
             -------
@@ -732,6 +750,14 @@ class TaskDatasetTypes:
                 A set of all datasetTypes which correspond to the input
                 connection type specified in the connection class of this
                 `PipelineTask`
+
+            Raises
+            ------
+            ValueError
+                Raised if dataset type connection definition differs from
+                registry definition.
+                Raised if component parent StorageClass could not be determined
+                and usePlaceHolder is set to False.
 
             Notes
             -----
@@ -768,9 +794,15 @@ class TaskDatasetTypes:
                     try:
                         registryDatasetType = registry.getDatasetType(c.name)
                     except KeyError:
-                        compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
-                        parentStorageClass = DatasetType.PlaceholderParentStorageClass \
-                            if componentName else None
+                        _, componentName = DatasetType.splitDatasetTypeName(c.name)
+                        if componentName:
+                            if not usePlaceHolder:
+                                raise ValueError("Component parent class cannot be determined, and "
+                                                 "placeholder was not supplied")
+                            else:
+                                parentStorageClass = PlaceHolder
+                        else:
+                            parentStorageClass = None
                         datasetType = c.makeDatasetType(
                             registry.dimensions,
                             parentStorageClass=parentStorageClass
@@ -825,9 +857,9 @@ class TaskDatasetTypes:
         outputs.freeze()
 
         return cls(
-            initInputs=makeDatasetTypesSet("initInputs"),
+            initInputs=makeDatasetTypesSet("initInputs", usePlaceHolder=usePlaceHolder),
             initOutputs=initOutputs,
-            inputs=makeDatasetTypesSet("inputs"),
+            inputs=makeDatasetTypesSet("inputs", usePlaceHolder=usePlaceHolder),
             prerequisites=makeDatasetTypesSet("prerequisiteInputs"),
             outputs=outputs,
         )
@@ -962,6 +994,7 @@ class PipelineDatasetTypes:
                 taskDef,
                 registry=registry,
                 include_configs=include_configs,
+                usePlaceHolder=True
             )
             allInitInputs |= thisTask.initInputs
             allInitOutputs |= thisTask.initOutputs
@@ -997,6 +1030,23 @@ class PipelineDatasetTypes:
                                          f"({outputNameMapping[name].dimensions}).")
                     composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
                                             universe=registry.dimensions)
+                    # Find all the references in the tasks that match the
+                    # component ref, these will need to have their parent
+                    # storage class set.
+                    toUpdate = []
+                    for other in byTask.values():
+                        # only need to look at inputs, because that is the only
+                        # valid place intermediates can be
+                        if dsType in other.inputs:
+                            toUpdate.append([x for x in other.inputs if x == dsType][0])
+                    # update the parent storage class for thie composit ref
+                    dsType.replaceParentStorageClass(composite.storageClass)
+                    # update all the other refs that match that have not
+                    # already been updated.
+                    for other in toUpdate:
+                        if other is not dsType:
+                            other.replaceParentStorageClass(composite.storageClass)
+
                     intermediateComponents.add(dsType)
                     intermediateComposites.add(composite)
 
