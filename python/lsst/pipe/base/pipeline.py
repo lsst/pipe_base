@@ -901,8 +901,7 @@ class PipelineDatasetTypes:
         Parameters
         ----------
         pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
-            A dependency-ordered collection of tasks that can be run
-            together.
+            A collection of tasks that can be run together.
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.
