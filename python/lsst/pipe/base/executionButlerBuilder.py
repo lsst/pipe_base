@@ -29,7 +29,7 @@ import itertools
 from typing import Callable, DefaultDict, Mapping, Optional, Set, Tuple, Iterable, List, Union
 
 from lsst.daf.butler import (DatasetRef, DatasetType, Butler, DataCoordinate, ButlerURI, Config)
-from lsst.daf.butler.core.utils import getClassOf
+from lsst.utils.introspection import get_class_of
 from lsst.daf.butler.transfers import RepoExportContext
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 
@@ -115,7 +115,7 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     yamlBuffer = io.StringIO()
     # Yaml is hard coded, since the class controls both ends of the
     # export/import
-    BackendClass = getClassOf(butler._config["repo_transfer_formats", "yaml", "export"])
+    BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
     backend = BackendClass(yamlBuffer)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
     exporter.saveDatasets(exports)
