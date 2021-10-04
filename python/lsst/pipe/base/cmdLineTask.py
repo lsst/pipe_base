@@ -27,7 +27,7 @@ import functools
 import contextlib
 
 import lsst.log
-import lsst.utils
+import lsst.utils.introspection
 import lsst.utils.logging
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
@@ -665,7 +665,7 @@ class CmdLineTask(Task):
             commandAsStr = " ".join(sys.argv)
             args = sys.argv[1:]
         else:
-            commandAsStr = "{}{}".format(lsst.utils.get_caller_name(skip=1), tuple(args))
+            commandAsStr = "{}{}".format(lsst.utils.introspection.get_caller_name(stacklevel=1), tuple(args))
 
         argumentParser = cls._makeArgumentParser()
         if config is None:
