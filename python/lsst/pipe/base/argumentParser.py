@@ -36,11 +36,11 @@ import shutil
 import textwrap
 
 import lsst.utils
+import lsst.utils.logging
 import lsst.pex.config as pexConfig
 import lsst.pex.config.history
 import lsst.log as lsstLog
 import lsst.daf.persistence as dafPersist
-from .task_logging import getTaskLogger
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -162,7 +162,7 @@ class DataIdContainer:
                     # string
                     keyType = str
 
-                    log = getTaskLogger()
+                    log = lsst.utils.logging.getLogger()
                     log.warning("Unexpected ID %s; guessing type is \"%s\"",
                                 key, 'str' if keyType == str else keyType)
                     idKeyTypeDict[key] = keyType
@@ -634,7 +634,8 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         namespace.config = config
         # Ensure that the external logger is converted to the expected
         # logger class.
-        namespace.log = getTaskLogger(log.name) if log is not None else getTaskLogger()
+        namespace.log = lsst.utils.logging.getLogger(log.name) \
+            if log is not None else lsst.utils.logging.getLogger()
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
             self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
@@ -1306,7 +1307,7 @@ class LogLevelAction(argparse.Action):
             if component is None:
                 logger = namespace.log
             else:
-                logger = getTaskLogger(component)
+                logger = lsst.utils.logging.getLogger(component)
 
             if logLevelUpr in permittedLevelSet:
                 logLevel = getattr(logger, logLevelUpr)

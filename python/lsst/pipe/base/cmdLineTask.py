@@ -28,12 +28,12 @@ import contextlib
 
 import lsst.log
 import lsst.utils
+import lsst.utils.logging
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
-from .task_logging import getTaskLogger
 from lsst.base import Packages
 
 
@@ -417,7 +417,7 @@ class TaskRunner:
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = getTaskLogger()
+            self.log = lsst.utils.logging.getLogger()
         if hasattr(dataRef, "dataId"):
             lsst.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
