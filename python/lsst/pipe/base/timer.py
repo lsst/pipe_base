@@ -23,56 +23,14 @@
 """
 __all__ = ["logInfo", "timeMethod"]
 
-import functools
 import logging
-import resource
-import time
-import datetime
+from deprecated.sphinx import deprecated
+import lsst.utils.timer
 
 
-def logPairs(obj, pairs, logLevel=logging.DEBUG, metadata=None, logger=None):
-    """Log ``(name, value)`` pairs to ``obj.metadata`` and ``obj.log``
-
-    Parameters
-    ----------
-    obj : `lsst.pipe.base.Task`-type
-        A `~lsst.pipe.base.Task` or any other object with these two attributes:
-
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
-          object with ``add(name, value)`` method).
-        - ``log`` an instance of `logging.Logger` or subclass.
-
-        If `None`, at least one of ``metadata`` or ``logger`` should be passed
-        or this function will do nothing.
-
-    pairs : sequence
-        A sequence of ``(name, value)`` pairs, with value typically numeric.
-    logLevel : `int, optional
-        Log level (an `logging` level constant, such as `logging.DEBUG`).
-    metadata : `lsst.daf.base.PropertyList`, optional
-        Metadata object to write entries to.  Ignored if `None`.
-    logger : `logging.Logger`
-        Log object to write entries to.  Ignored if `None`.
-    """
-    if obj is not None:
-        if metadata is None:
-            metadata = obj.metadata
-        if logger is None:
-            logger = obj.log
-    strList = []
-    for name, value in pairs:
-        if metadata is not None:
-            try:
-                # Use LongLong explicitly here in case an early value in the
-                # sequence is int-sized
-                metadata.addLongLong(name, value)
-            except TypeError:
-                metadata.add(name, value)
-        strList.append(f"{name}={value}")
-    if logger is not None:
-        logging.getLogger("timer." + logger.name).log(logLevel, "; ".join(strList))
-
-
+@deprecated(reason="logInfo has been replaced by lsst.utils.timer.logInfo."
+            " Will be removed after v25.",
+            version="v24", category=FutureWarning)
 def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     """Log timer information to ``obj.metadata`` and ``obj.log``.
 
@@ -112,74 +70,8 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     All logged resource information is only for the current process; child
     processes are excluded.
     """
-    cpuTime = time.process_time()
-    utcStr = datetime.datetime.utcnow().isoformat()
-    res = resource.getrusage(resource.RUSAGE_SELF)
-    if metadata is None and obj is not None:
-        metadata = obj.metadata
-    if metadata is not None:
-        metadata.add(name=prefix + "Utc", value=utcStr)  # log messages already have timestamps
-    logPairs(obj=obj,
-             pairs=[
-                 (prefix + "CpuTime", cpuTime),
-                 (prefix + "UserTime", res.ru_utime),
-                 (prefix + "SystemTime", res.ru_stime),
-                 (prefix + "MaxResidentSetSize", int(res.ru_maxrss)),
-                 (prefix + "MinorPageFaults", int(res.ru_minflt)),
-                 (prefix + "MajorPageFaults", int(res.ru_majflt)),
-                 (prefix + "BlockInputs", int(res.ru_inblock)),
-                 (prefix + "BlockOutputs", int(res.ru_oublock)),
-                 (prefix + "VoluntaryContextSwitches", int(res.ru_nvcsw)),
-                 (prefix + "InvoluntaryContextSwitches", int(res.ru_nivcsw)),
-             ],
-             logLevel=logLevel,
-             metadata=metadata,
-             logger=logger)
+    return lsst.utils.timer.logInfo(obj, prefix, logLevel=logLevel, metadata=metadata, logger=logger)
 
 
-def timeMethod(func):
-    """Decorator to measure duration of a task method.
-
-    Parameters
-    ----------
-    func
-        The method to wrap.
-
-    Notes
-    -----
-    Writes various measures of time and possibly memory usage to the task's
-    metadata; all items are prefixed with the function name.
-
-    .. warning::
-
-       This decorator only works with instance methods of Task, or any class
-       with these attributes:
-
-       - ``metadata``: an instance of `lsst.daf.base.PropertyList` (or other
-         object with ``add(name, value)`` method).
-       - ``log``: an instance of `logging.Logger` or subclass.
-
-    Examples
-    --------
-    To use:
-
-    .. code-block:: python
-
-        import lsst.pipe.base as pipeBase
-        class FooTask(pipeBase.Task):
-            pass
-
-            @pipeBase.timeMethod
-            def run(self, ...): # or any other instance method you want to time
-                pass
-    """
-
-    @functools.wraps(func)
-    def wrapper(self, *args, **keyArgs):
-        logInfo(obj=self, prefix=func.__name__ + "Start")
-        try:
-            res = func(self, *args, **keyArgs)
-        finally:
-            logInfo(obj=self, prefix=func.__name__ + "End")
-        return res
-    return wrapper
+# Does this need a deprecation message?
+timeMethod = lsst.utils.timer.timeMethod
