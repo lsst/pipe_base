@@ -27,9 +27,9 @@ from typing import Optional
 
 import lsst.utils
 import lsst.utils.logging
+from lsst.utils.timer import logInfo
 from lsst.pex.config import ConfigurableField
 import lsst.daf.base as dafBase
-from .timer import logInfo
 
 import weakref
 
