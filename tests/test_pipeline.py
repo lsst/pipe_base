@@ -42,6 +42,7 @@ class AddConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
 
 class AddTask(PipelineTask):
     ConfigClass = AddConfig
+    _DefaultName = "add"
 
     def run(self, val):
         self.metadata.add("add", self.config.addend)
@@ -56,6 +57,7 @@ class MultConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
 
 class MultTask(PipelineTask):
     ConfigClass = MultConfig
+    _DefaultName = "mult"
 
     def run(self, val):
         self.metadata.add("mult", self.config.multiplicand)
@@ -77,13 +79,14 @@ class TaskTestCase(unittest.TestCase):
     def testTaskDef(self):
         """Tests for TaskDef structure
         """
-        task1 = TaskDef("lsst.pipe.base.tests.Add", AddConfig())
-        self.assertEqual(task1.taskName, "lsst.pipe.base.tests.Add")
+        task1 = TaskDef(taskClass=AddTask, config=AddConfig())
+        self.assertIn("Add", task1.taskName)
         self.assertIsInstance(task1.config, AddConfig)
-        self.assertIsNone(task1.taskClass)
-        self.assertEqual(task1.label, "")
+        self.assertIsNotNone(task1.taskClass)
+        self.assertEqual(task1.label, "add")
 
-        task2 = TaskDef("lsst.pipe.base.tests.Mult", MultConfig(), MultTask, "mult_task")
+        task2 = TaskDef("lsst.pipe.base.tests.Mult", config=MultConfig(), taskClass=MultTask,
+                        label="mult_task")
         self.assertEqual(task2.taskName, "lsst.pipe.base.tests.Mult")
         self.assertIsInstance(task2.config, MultConfig)
         self.assertIs(task2.taskClass, MultTask)
