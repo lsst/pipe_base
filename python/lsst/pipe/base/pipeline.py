@@ -96,20 +96,37 @@ class TaskDef:
 
     Attributes
     ----------
-    taskName : `str`
+    taskName : `str`, optional
         `PipelineTask` class name, currently it is not specified whether this
         is a fully-qualified name or partial name (e.g. ``module.TaskClass``).
-        Framework should be prepared to handle all cases.
-    config : `lsst.pex.config.Config`
+        Framework should be prepared to handle all cases.  If not provided,
+        ``taskClass`` must be, and ``taskClass.__name__`` is used.
+    config : `lsst.pex.config.Config`, optional
         Instance of the configuration class corresponding to this task class,
-        usually with all overrides applied. This config will be frozen.
-    taskClass : `type` or ``None``
+        usually with all overrides applied. This config will be frozen.  If
+        not provided, ``taskClass`` must be provided and
+        ``taskClass.ConfigClass()`` will be used.
+    taskClass : `type`, optional
         `PipelineTask` class object, can be ``None``. If ``None`` then
         framework will have to locate and load class.
     label : `str`, optional
-        Task label, usually a short string unique in a pipeline.
+        Task label, usually a short string unique in a pipeline.  If not
+        provided, ``taskClass`` must be, and ``taskClass._DefaultName`` will
+        be used.
     """
-    def __init__(self, taskName, config, taskClass=None, label=""):
+    def __init__(self, taskName=None, config=None, taskClass=None, label=None):
+        if taskName is None:
+            if taskClass is None:
+                raise ValueError("At least one of `taskName` and `taskClass` must be provided.")
+            taskName = taskClass.__name__
+        if config is None:
+            if taskClass is None:
+                raise ValueError("`taskClass` must be provided if `config` is not.")
+            config = taskClass.ConfigClass()
+        if label is None:
+            if taskClass is None:
+                raise ValueError("`taskClass` must be provided if `label` is not.")
+            label = taskClass._DefaultName
         self.taskName = taskName
         config.freeze()
         self.config = config
@@ -901,8 +918,7 @@ class PipelineDatasetTypes:
         Parameters
         ----------
         pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
-            A dependency-ordered collection of tasks that can be run
-            together.
+            A collection of tasks that can be run together.
         registry: `Registry`
             Registry used to construct normalized `DatasetType` objects and
             retrieve those that are incomplete.

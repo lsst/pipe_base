@@ -368,7 +368,7 @@ class _PipelineScaffolding:
 
     Parameters
     ----------
-    pipeline : `Pipeline`
+    pipeline : `Pipeline` or `Iterable` [ `TaskDef` ]
         Sequence of tasks from which a graph is to be constructed.  Must
         have nested task classes already imported.
     universe : `DimensionUniverse`
@@ -892,7 +892,7 @@ class GraphBuilder(object):
 
         Parameters
         ----------
-        pipeline : `Pipeline`
+        pipeline : `Pipeline` or `Iterable` [ `TaskDef` ]
             Pipeline definition, task names/classes and their configs.
         collections
             Expressions representing the collections to search for input
@@ -926,9 +926,12 @@ class GraphBuilder(object):
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
         if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
             raise ValueError("Pipeline requires input datasets but no input collections provided.")
-        instrument = pipeline.getInstrument()
-        if isinstance(instrument, str):
-            instrument = doImport(instrument)
+        instrument = None
+        if isinstance(pipeline, Pipeline):
+            instrument = pipeline.getInstrument()
+            if isinstance(instrument, str):
+                instrument = doImport(instrument)
+            pipeline = list(pipeline.toExpandedPipeline())
         if instrument is not None:
             dataId = DataCoordinate.standardize(instrument=instrument.getName(),
                                                 universe=self.registry.dimensions)

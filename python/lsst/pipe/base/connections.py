@@ -692,6 +692,7 @@ class AdjustQuantumHelper:
             )
         for name in itertools.chain(connections.outputs):
             connection = getattr(connections, name)
+            dataset_type_name = connection.name
             outputs_by_connection[name] = (
                 connection,
                 tuple(self.outputs.get(dataset_type_name, ()))
