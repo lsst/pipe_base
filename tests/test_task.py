@@ -75,6 +75,7 @@ class AddMultConfig(pexConfig.Config):
 class AddMultTask(pipeBase.Task):
     ConfigClass = AddMultConfig
     _DefaultName = "addMult"
+    _add_module_logger_prefix = False
 
     """First add, then multiply"""
 
@@ -104,6 +105,11 @@ class AddMultTask(pipeBase.Task):
         """
         with self.timer("failCtx"):
             raise RuntimeError("failCtx intentional error")
+
+
+class AddMultTask2(AddMultTask):
+    """Subclass that gets an automatic logger prefix."""
+    _add_module_logger_prefix = True
 
 
 class AddTwiceTask(AddTask):
@@ -171,6 +177,9 @@ class TaskTestCase(unittest.TestCase):
         addMultTask = AddMultTask(log=log)
         self.assertEqual(addMultTask.log.name, "tester.addMult")
         self.assertEqual(addMultTask.add.log.name, "tester.addMult.add")
+
+        addMultTask2 = AddMultTask2()
+        self.assertEqual(addMultTask2.log.name, "test_task.addMult")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()
