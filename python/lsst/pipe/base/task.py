@@ -25,10 +25,11 @@ import contextlib
 import logging
 from typing import Optional
 
+import lsst.utils
+import lsst.utils.logging
+from lsst.utils.timer import logInfo
 from lsst.pex.config import ConfigurableField
 import lsst.daf.base as dafBase
-from .timer import logInfo
-from .task_logging import getTaskLogger
 
 import weakref
 
@@ -168,7 +169,7 @@ class Task:
                 loggerName = log.getChild(loggerName).name
 
         # Get a logger (that might be a subclass of logging.Logger).
-        self.log = getTaskLogger(loggerName)
+        self.log = lsst.utils.logging.getLogger(loggerName)
         self.config = config
         if lsstDebug:
             self._display = lsstDebug.Info(self.__module__).display

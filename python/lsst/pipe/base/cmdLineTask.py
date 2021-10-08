@@ -27,13 +27,13 @@ import functools
 import contextlib
 
 import lsst.log
-import lsst.utils
+import lsst.utils.introspection
+import lsst.utils.logging
 from lsst.base import disableImplicitThreading
 import lsst.afw.table as afwTable
 from .task import Task, TaskError
 from .struct import Struct
 from .argumentParser import ArgumentParser
-from .task_logging import getTaskLogger
 from lsst.base import Packages
 
 
@@ -417,7 +417,7 @@ class TaskRunner:
         """
         dataRef, kwargs = args
         if self.log is None:
-            self.log = getTaskLogger()
+            self.log = lsst.utils.logging.getLogger()
         if hasattr(dataRef, "dataId"):
             lsst.log.MDC("LABEL", str(dataRef.dataId))
         elif isinstance(dataRef, (list, tuple)):
@@ -665,7 +665,7 @@ class CmdLineTask(Task):
             commandAsStr = " ".join(sys.argv)
             args = sys.argv[1:]
         else:
-            commandAsStr = "{}{}".format(lsst.utils.get_caller_name(skip=1), tuple(args))
+            commandAsStr = "{}{}".format(lsst.utils.introspection.get_caller_name(stacklevel=1), tuple(args))
 
         argumentParser = cls._makeArgumentParser()
         if config is None:
