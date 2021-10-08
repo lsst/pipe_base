@@ -662,7 +662,8 @@ class PipelineIR:
             else:
                 accumulate_tasks[label] = task
         self.tasks = accumulate_tasks
-        self.parameters.update(accumulated_parameters)
+        accumulated_parameters.update(self.parameters)
+        self.parameters = accumulated_parameters
 
     def _read_tasks(self, loaded_yaml):
         """Process the tasks portion of the loaded yaml document
