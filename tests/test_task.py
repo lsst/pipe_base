@@ -28,6 +28,7 @@ import lsst.utils.tests
 import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+from lsst.utils.timer import timeMethod
 
 
 class AddConfig(pexConfig.Config):
@@ -37,7 +38,7 @@ class AddConfig(pexConfig.Config):
 class AddTask(pipeBase.Task):
     ConfigClass = AddConfig
 
-    @pipeBase.timeMethod
+    @timeMethod
     def run(self, val):
         self.metadata.add("add", self.config.addend)
         return pipeBase.Struct(
@@ -52,7 +53,7 @@ class MultConfig(pexConfig.Config):
 class MultTask(pipeBase.Task):
     ConfigClass = MultConfig
 
-    @pipeBase.timeMethod
+    @timeMethod
     def run(self, val):
         self.metadata.add("mult", self.config.multiplicand)
         return pipeBase.Struct(
@@ -82,7 +83,7 @@ class AddMultTask(pipeBase.Task):
         self.makeSubtask("add")
         self.makeSubtask("mult")
 
-    @pipeBase.timeMethod
+    @timeMethod
     def run(self, val):
         with self.timer("context"):
             addRet = self.add.run(val)
@@ -92,7 +93,7 @@ class AddMultTask(pipeBase.Task):
                 val=multRet.val,
             )
 
-    @pipeBase.timeMethod
+    @timeMethod
     def failDec(self):
         """A method that fails with a decorator
         """

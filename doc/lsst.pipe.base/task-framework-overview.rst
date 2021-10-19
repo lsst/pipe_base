@@ -45,6 +45,6 @@ Tasks that are associated with a particular package should be in that package; f
   command line.
 - `~lsst.pipe.base.Struct`: object returned by the run method of a task.
 - `~lsst.pipe.base.ArgumentParser`: command line parser for pipeline tasks.
-- `~lsst.pipe.base.timeMethod`: decorator to log performance information for a `~lsst.pipe.base.Task` method.
+- `~lsst.pipe.base.timeMethod`: decorator to log performance information for a `~lsst.pipe.base.Task` method (obsolete, replaced by `lsst.utils.timer.timeMethod`)
 - `~lsst.pipe.base.TaskRunner`: a class that runs command-line tasks using multiprocessing when requested.
   This will work as-is for most command-line tasks but will need to be be subclassed if, for instance, the task's run method needs something other than a single data reference.

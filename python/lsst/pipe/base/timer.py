@@ -25,6 +25,7 @@ __all__ = ["logInfo", "timeMethod"]
 
 import logging
 from deprecated.sphinx import deprecated
+from typing import Any, Callable
 import lsst.utils.timer
 
 
@@ -73,5 +74,15 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     return lsst.utils.timer.logInfo(obj, prefix, logLevel=logLevel, metadata=metadata, logger=logger)
 
 
-# Does this need a deprecation message?
-timeMethod = lsst.utils.timer.timeMethod
+@deprecated(reason="timeMethod has been replaced by lsst.utils.timer.timeMethod."
+            " Will be removed after v25.",
+            version="v24", category=FutureWarning)
+def timeMethod(*args: Any, **kwargs: Any) -> Callable:
+    """Decorator to measure duration of a method.
+
+    Notes
+    -----
+    This is a just a forwarding method for `lsst.utils.timer.timeMethod`. For
+    documentation look at `lsst.utils.timer.timeMethod`.
+    """
+    return lsst.utils.timer.timeMethod(*args, **kwargs)

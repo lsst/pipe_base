@@ -208,7 +208,7 @@ This is safer than returning a tuple of items, and allows adding fields without 
 If your task's processing can be divided into logical units, then we recommend that you provide methods for each unit.
 ``run`` can then call each method to do its work.
 This allows your task to be more easily adapted: a subclass can override just a few methods.
-Any method that is likely to take significant time or memory should be preceded by this python decorator: `lsst.pipe.base.timeMethod`.
+Any method that is likely to take significant time or memory should be preceded by this python decorator: `lsst.utils.timer.timeMethod`.
 This automatically records the execution time and memory of the method in the task's ``metadata`` attribute.
 
 We strongly recommend that you make your task stateless, by not using instance variables as part of your data processing.
@@ -228,7 +228,7 @@ The example ``exampleCmdLineTask.ExampleCmdLineTask`` is so simple that it needs
 
 .. code-block:: python
 
-   @pipeBase.timeMethod
+   @lsst.utils.timer.timeMethod
    def runDataRef(self, dataRef):
        """Compute a few statistics on the image plane of an exposure
        @param dataRef: data reference for a calibrated science exposure ("calexp")
@@ -259,7 +259,7 @@ Here is the ``run`` method for the default version of that task: ``exampleTask.E
 
 .. code-block:: python
 
-   @pipeBase.timeMethod
+   @lsst.utils.timer.timeMethod
    def run(self, maskedImage):
        """!Compute and return statistics for a masked image
        @param[in] maskedImage: masked image (an lsst::afw::MaskedImage)
