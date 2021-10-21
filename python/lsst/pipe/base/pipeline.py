@@ -584,36 +584,8 @@ class Pipeline:
             future use
         """
         taskDefs = []
-        for label, taskIR in self._pipelineIR.tasks.items():
-            taskClass = doImport(taskIR.klass)
-            taskName = taskClass.__qualname__
-            config = taskClass.ConfigClass()
-            overrides = ConfigOverrides()
-            if self._pipelineIR.instrument is not None:
-                overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
-            if taskIR.config is not None:
-                for configIR in (configIr.formatted(self._pipelineIR.parameters)
-                                 for configIr in taskIR.config):
-                    if configIR.dataId is not None:
-                        raise NotImplementedError("Specializing a config on a partial data id is not yet "
-                                                  "supported in Pipeline definition")
-                    # only apply override if it applies to everything
-                    if configIR.dataId is None:
-                        if configIR.file:
-                            for configFile in configIR.file:
-                                overrides.addFileOverride(os.path.expandvars(configFile))
-                        if configIR.python is not None:
-                            overrides.addPythonOverride(configIR.python)
-                        for key, value in configIR.rest.items():
-                            overrides.addValueOverride(key, value)
-            overrides.applyTo(config)
-            # This may need to be revisited
-            try:
-                config.validate()
-            except Exception:
-                _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
-                raise
-            taskDefs.append(TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label))
+        for label in self._pipelineIR.tasks:
+            taskDefs.append(self._buildTaskDef(label))
 
         # lets evaluate the contracts
         if self._pipelineIR.contracts is not None:
@@ -629,8 +601,44 @@ class Pipeline:
 
         yield from pipeTools.orderPipeline(taskDefs)
 
+    def _buildTaskDef(self, label: str) -> TaskDef:
+        if (taskIR := self._pipelineIR.tasks.get(label)) is None:
+            raise NameError(f"Label {label} does not appear in this pipeline")
+        taskClass = doImport(taskIR.klass)
+        taskName = taskClass.__qualname__
+        config = taskClass.ConfigClass()
+        overrides = ConfigOverrides()
+        if self._pipelineIR.instrument is not None:
+            overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
+        if taskIR.config is not None:
+            for configIR in (configIr.formatted(self._pipelineIR.parameters)
+                             for configIr in taskIR.config):
+                if configIR.dataId is not None:
+                    raise NotImplementedError("Specializing a config on a partial data id is not yet "
+                                              "supported in Pipeline definition")
+                # only apply override if it applies to everything
+                if configIR.dataId is None:
+                    if configIR.file:
+                        for configFile in configIR.file:
+                            overrides.addFileOverride(os.path.expandvars(configFile))
+                    if configIR.python is not None:
+                        overrides.addPythonOverride(configIR.python)
+                    for key, value in configIR.rest.items():
+                        overrides.addValueOverride(key, value)
+        overrides.applyTo(config)
+        # This may need to be revisited
+        try:
+            config.validate()
+        except Exception:
+            _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
+            raise
+        return TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label)
+
     def __iter__(self) -> Generator[TaskDef, None, None]:
         return self.toExpandedPipeline()
+
+    def __getitem__(self, item: str) -> TaskDef:
+        return self._buildTaskDef(item)
 
     def __len__(self):
         return len(self._pipelineIR.tasks)
