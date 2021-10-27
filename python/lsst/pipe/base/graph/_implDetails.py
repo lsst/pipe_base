@@ -86,8 +86,9 @@ class _DatasetTracker(Generic[_T, _U]):
             self._itemsDict[value].add(key)
 
     def removeProducer(self, key: _T, value: _U):
-        """Remove a value from being considered a producer of the corresponding
-        key. It is not an error to remove a key that is not in the tracker.
+        """Remove a value (e.g. QuantumNode or TaskDef) from being considered
+        a producer of the corresponding key. It is not an error to remove a
+        key that is not in the tracker.
 
         Parameters
         ----------
@@ -116,8 +117,9 @@ class _DatasetTracker(Generic[_T, _U]):
             self._itemsDict[value].add(key)
 
     def removeConsumer(self, key: _T, value: _U):
-        """Remove a value from being considered a consumer of the corresponding
-        key. It is not an error to remove a key that is not in the tracker.
+        """Remove a value (e.g. QuantumNode or TaskDef) from being considered
+        a consumer of the corresponding key. It is not an error to remove a
+        key that is not in the tracker.
 
         Parameters
         ----------
@@ -237,7 +239,7 @@ class _DatasetTracker(Generic[_T, _U]):
 
 def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemove: Iterable[DatasetRef], *,
             alreadyPruned: Optional[Set[QuantumNode]] = None):
-    r"""Prunes supplied dataset refs out of datasetRefDict container, recursing
+    r"""Prune supplied dataset refs out of datasetRefDict container, recursing
     to additional nodes dependant on pruned refs. This function modifies
     datasetRefDict in-place.
 
@@ -291,15 +293,16 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
             tmpConnections = NamedKeyDict(node.quantum.inputs.items())
             tmpConnections[toRemove.datasetType] = list(tmpRefs)
             helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
-            msg = ("assert to make the type checker happy, it should not actually be possible to not "
-                   "have dataId set to None at this point")
-            assert node.quantum.dataId is not None, msg
+            assert node.quantum.dataId is not None, ("assert to make the type checker happy, it should not "
+                                                     "actually be possible to not have dataId set to None "
+                                                     "at this point")
+
             # Try to adjust the quantum with the reduced refs to make sure the
             # node will still satisfy all its conditions.
             #
-            # If it cant because NoWorkFound is raise, that means a connection
-            # is no longer present, and the node should be removed from the
-            # graph
+            # If it can't because NoWorkFound is raised, that means a
+            # connection is no longer present, and the node should be removed
+            # from the graph.
             try:
                 helper.adjust_in_place(node.taskDef.connections, node.taskDef.label, node.quantum.dataId)
                 newQuantum = Quantum(taskName=node.quantum.taskName, taskClass=node.quantum.taskClass,
@@ -333,8 +336,12 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
                             if remover is datasetRefDict.removeProducer:
                                 _pruner(datasetRefDict, notNeeded, alreadyPruned=alreadyPruned)
                 object.__setattr__(node, 'quantum', newQuantum)
+                noWorkFound = False
 
             except NoWorkFound:
+                noWorkFound = True
+
+            if noWorkFound:
                 # This will throw if the length is less than the minimum number
                 for tmpRef in chain(chain.from_iterable(node.quantum.inputs.values()),
                                     node.quantum.initInputs.values()):

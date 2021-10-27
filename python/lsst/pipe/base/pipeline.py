@@ -20,8 +20,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-from lsst.daf.butler.core.storageClass import StorageClass
-
 """Module defining Pipeline class and related methods.
 """
 
@@ -709,7 +707,7 @@ class TaskDatasetTypes:
         *,
         registry: Registry,
         include_configs: bool = True,
-        storage_class_mapping: Optional[Mapping[str, StorageClass]] = None
+        storage_class_mapping: Optional[Mapping[str, str]] = None
     ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
@@ -725,7 +723,7 @@ class TaskDatasetTypes:
             ``initOutputs``.
         storage_class_mapping : `Mapping` of `str` to `StorageClass`, optional
             If a taskdef contains a component dataset type that is unknown
-            to the registry, it's parent StorageClass will be looked up in this
+            to the registry, its parent StorageClass will be looked up in this
             mapping if it is supplied. If the mapping does not contain the
             composite dataset type, or the mapping is not supplied an exception
             will be raised.
@@ -740,6 +738,7 @@ class TaskDatasetTypes:
         ValueError
             Raised if dataset type connection definition differs from
             registry definition.
+        LookupError
             Raised if component parent StorageClass could not be determined
             and storage_class_mapping does not contain the composite type, or
             is set to None.
@@ -767,6 +766,7 @@ class TaskDatasetTypes:
             ValueError
                 Raised if dataset type connection definition differs from
                 registry definition.
+            LookupError
                 Raised if component parent StorageClass could not be determined
                 and storage_class_mapping does not contain the composite type,
                 or is set to None.
@@ -809,9 +809,9 @@ class TaskDatasetTypes:
                         compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
                         if componentName:
                             if storage_class_mapping is None or compositeName not in storage_class_mapping:
-                                raise ValueError("Component parent class cannot be determined, and "
-                                                 "composite name was not in storage class mapping, or no "
-                                                 "storage_class_mapping was supplied")
+                                raise LookupError("Component parent class cannot be determined, and "
+                                                  "composite name was not in storage class mapping, or no "
+                                                  "storage_class_mapping was supplied")
                             else:
                                 parentStorageClass = storage_class_mapping[compositeName]
                         else:
@@ -1004,10 +1004,10 @@ class PipelineDatasetTypes:
         pipeline = list(pipeline)
 
         # collect all the output dataset types
-        typeStorageclassMap: Dict[str, StorageClass] = {}
+        typeStorageclassMap: Dict[str, str] = {}
         for taskDef in pipeline:
             for outConnection in iterConnections(taskDef.connections, 'outputs'):
-                typeStorageclassMap[outConnection.name] = StorageClass(outConnection.storageClass)
+                typeStorageclassMap[outConnection.name] = outConnection.storageClass
 
         for taskDef in pipeline:
             thisTask = TaskDatasetTypes.fromTaskDef(

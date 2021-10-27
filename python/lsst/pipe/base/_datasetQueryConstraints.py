@@ -42,7 +42,14 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
     graph building query.
 
     LIST variant should be used when one or more specific names should be used
-    in constraining a graph building query
+    in constraining a graph building query.
+
+    Normally the ALL and OFF variants are used as as Singletons, attempting to
+    instantiate them (i.e. ALL()) will return in singleton class itself.
+
+    LIST is used as a constructor to the contents (i.e. List(['a', 'b'])).
+    Using the LIST variant directly as a singleton will behave the same as if
+    it were an empty instance.
 
     Variants can be directly used, or automatically be selected by using the
     `fromExpression` class method given a valid string.

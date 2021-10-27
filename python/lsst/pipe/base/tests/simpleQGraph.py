@@ -349,9 +349,9 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, callPopul
         Dictionary whose keys are collection names and values are lists of
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
-    datasetQueryQconstraint : `DatasetQueryConstraintVariant`
-        The query constraint variant that should be used to constraint the
-        query based on dataset existance, defaults to
+    datasetQueryQConstraint : `DatasetQueryConstraintVariant`
+        The query constraint variant that should be used to constrain the
+        query based on dataset existence, defaults to
         `DatasetQueryConstraintVariant.ALL`.
 
     Returns
