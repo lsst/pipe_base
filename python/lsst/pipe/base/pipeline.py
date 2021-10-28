@@ -582,36 +582,8 @@ class Pipeline:
             future use
         """
         taskDefs = []
-        for label, taskIR in self._pipelineIR.tasks.items():
-            taskClass = doImport(taskIR.klass)
-            taskName = taskClass.__qualname__
-            config = taskClass.ConfigClass()
-            overrides = ConfigOverrides()
-            if self._pipelineIR.instrument is not None:
-                overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
-            if taskIR.config is not None:
-                for configIR in (configIr.formatted(self._pipelineIR.parameters)
-                                 for configIr in taskIR.config):
-                    if configIR.dataId is not None:
-                        raise NotImplementedError("Specializing a config on a partial data id is not yet "
-                                                  "supported in Pipeline definition")
-                    # only apply override if it applies to everything
-                    if configIR.dataId is None:
-                        if configIR.file:
-                            for configFile in configIR.file:
-                                overrides.addFileOverride(os.path.expandvars(configFile))
-                        if configIR.python is not None:
-                            overrides.addPythonOverride(configIR.python)
-                        for key, value in configIR.rest.items():
-                            overrides.addValueOverride(key, value)
-            overrides.applyTo(config)
-            # This may need to be revisited
-            try:
-                config.validate()
-            except Exception:
-                _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
-                raise
-            taskDefs.append(TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label))
+        for label in self._pipelineIR.tasks:
+            taskDefs.append(self._buildTaskDef(label))
 
         # lets evaluate the contracts
         if self._pipelineIR.contracts is not None:
@@ -626,6 +598,45 @@ class Pipeline:
                                                    f"satisfied{extra_info}")
 
         yield from pipeTools.orderPipeline(taskDefs)
+
+    def _buildTaskDef(self, label: str) -> TaskDef:
+        if (taskIR := self._pipelineIR.tasks.get(label)) is None:
+            raise NameError(f"Label {label} does not appear in this pipeline")
+        taskClass = doImport(taskIR.klass)
+        taskName = taskClass.__qualname__
+        config = taskClass.ConfigClass()
+        overrides = ConfigOverrides()
+        if self._pipelineIR.instrument is not None:
+            overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
+        if taskIR.config is not None:
+            for configIR in (configIr.formatted(self._pipelineIR.parameters)
+                             for configIr in taskIR.config):
+                if configIR.dataId is not None:
+                    raise NotImplementedError("Specializing a config on a partial data id is not yet "
+                                              "supported in Pipeline definition")
+                # only apply override if it applies to everything
+                if configIR.dataId is None:
+                    if configIR.file:
+                        for configFile in configIR.file:
+                            overrides.addFileOverride(os.path.expandvars(configFile))
+                    if configIR.python is not None:
+                        overrides.addPythonOverride(configIR.python)
+                    for key, value in configIR.rest.items():
+                        overrides.addValueOverride(key, value)
+        overrides.applyTo(config)
+        # This may need to be revisited
+        try:
+            config.validate()
+        except Exception:
+            _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
+            raise
+        return TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label)
+
+    def __iter__(self) -> Generator[TaskDef, None, None]:
+        return self.toExpandedPipeline()
+
+    def __getitem__(self, item: str) -> TaskDef:
+        return self._buildTaskDef(item)
 
     def __len__(self):
         return len(self._pipelineIR.tasks)
@@ -696,6 +707,7 @@ class TaskDatasetTypes:
         *,
         registry: Registry,
         include_configs: bool = True,
+        storage_class_mapping: Optional[Mapping[str, str]] = None
     ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
@@ -709,11 +721,27 @@ class TaskDatasetTypes:
         include_configs : `bool`, optional
             If `True` (default) include config dataset types as
             ``initOutputs``.
+        storage_class_mapping : `Mapping` of `str` to `StorageClass`, optional
+            If a taskdef contains a component dataset type that is unknown
+            to the registry, its parent StorageClass will be looked up in this
+            mapping if it is supplied. If the mapping does not contain the
+            composite dataset type, or the mapping is not supplied an exception
+            will be raised.
 
         Returns
         -------
         types: `TaskDatasetTypes`
             The dataset types used by this task.
+
+        Raises
+        ------
+        ValueError
+            Raised if dataset type connection definition differs from
+            registry definition.
+        LookupError
+            Raised if component parent StorageClass could not be determined
+            and storage_class_mapping does not contain the composite type, or
+            is set to None.
         """
         def makeDatasetTypesSet(connectionType: str, freeze: bool = True) -> NamedValueSet[DatasetType]:
             """Constructs a set of true `DatasetType` objects
@@ -733,10 +761,20 @@ class TaskDatasetTypes:
                 connection type specified in the connection class of this
                 `PipelineTask`
 
+            Raises
+            ------
+            ValueError
+                Raised if dataset type connection definition differs from
+                registry definition.
+            LookupError
+                Raised if component parent StorageClass could not be determined
+                and storage_class_mapping does not contain the composite type,
+                or is set to None.
+
             Notes
             -----
             This function is a closure over the variables ``registry`` and
-            ``taskDef``.
+            ``taskDef``, and ``storage_class_mapping``.
             """
             datasetTypes = NamedValueSet()
             for c in iterConnections(taskDef.connections, connectionType):
@@ -769,8 +807,15 @@ class TaskDatasetTypes:
                         registryDatasetType = registry.getDatasetType(c.name)
                     except KeyError:
                         compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
-                        parentStorageClass = DatasetType.PlaceholderParentStorageClass \
-                            if componentName else None
+                        if componentName:
+                            if storage_class_mapping is None or compositeName not in storage_class_mapping:
+                                raise LookupError("Component parent class cannot be determined, and "
+                                                  "composite name was not in storage class mapping, or no "
+                                                  "storage_class_mapping was supplied")
+                            else:
+                                parentStorageClass = storage_class_mapping[compositeName]
+                        else:
+                            parentStorageClass = None
                         datasetType = c.makeDatasetType(
                             registry.dimensions,
                             parentStorageClass=parentStorageClass
@@ -955,13 +1000,21 @@ class PipelineDatasetTypes:
                     storageClass="Packages",
                 )
             )
-        if isinstance(pipeline, Pipeline):
-            pipeline = pipeline.toExpandedPipeline()
+        # create a list of TaskDefs in case the input is a generator
+        pipeline = list(pipeline)
+
+        # collect all the output dataset types
+        typeStorageclassMap: Dict[str, str] = {}
+        for taskDef in pipeline:
+            for outConnection in iterConnections(taskDef.connections, 'outputs'):
+                typeStorageclassMap[outConnection.name] = outConnection.storageClass
+
         for taskDef in pipeline:
             thisTask = TaskDatasetTypes.fromTaskDef(
                 taskDef,
                 registry=registry,
                 include_configs=include_configs,
+                storage_class_mapping=typeStorageclassMap
             )
             allInitInputs |= thisTask.initInputs
             allInitOutputs |= thisTask.initOutputs
@@ -990,15 +1043,11 @@ class PipelineDatasetTypes:
             # DatasetType, if there is an output which produces the parent of
             # this component, treat this input as an intermediate
             if component is not None:
+                # This needs to be in this if block, because someone might have
+                # a composite that is a pure input from existing data
                 if name in outputNameMapping:
-                    if outputNameMapping[name].dimensions != dsType.dimensions:
-                        raise ValueError(f"Component dataset type {dsType.name} has different "
-                                         f"dimensions ({dsType.dimensions}) than its parent "
-                                         f"({outputNameMapping[name].dimensions}).")
-                    composite = DatasetType(name, dsType.dimensions, outputNameMapping[name].storageClass,
-                                            universe=registry.dimensions)
                     intermediateComponents.add(dsType)
-                    intermediateComposites.add(composite)
+                    intermediateComposites.add(outputNameMapping[name])
 
         def checkConsistency(a: NamedValueSet, b: NamedValueSet):
             common = a.names & b.names

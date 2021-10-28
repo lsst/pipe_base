@@ -54,6 +54,8 @@ from lsst.daf.butler import (
     Quantum,
 )
 from lsst.utils import doImport
+from ._status import NoWorkFound
+from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -350,7 +352,7 @@ class _TaskScaffolding:
     this task with that data ID.
     """
 
-    def makeQuantumSet(self) -> Set[Quantum]:
+    def makeQuantumSet(self, unresolvedRefs: Optional[Set[DatasetRef]] = None) -> Set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
 
         Returns
@@ -358,7 +360,33 @@ class _TaskScaffolding:
         nodes : `set` of `Quantum
             The `Quantum` elements corresponding to this task.
         """
-        return set(q.makeQuantum() for q in self.quanta.values())
+        if unresolvedRefs is None:
+            unresolvedRefs = set()
+        outputs = set()
+        for q in self.quanta.values():
+            try:
+                tmpQuanta = q.makeQuantum()
+                outputs.add(tmpQuanta)
+            except (NoWorkFound, FileNotFoundError) as exc:
+                refs = itertools.chain.from_iterable(self.inputs.unpackMultiRefs().values())
+                if unresolvedRefs.intersection(refs):
+                    # This means it is a node that is Known to be pruned
+                    # later and should be left in even though some follow up
+                    # queries fail. This allows the pruning to start from this
+                    # quantum with known issues, and prune other nodes it
+                    # touches
+                    inputs = q.inputs.unpackMultiRefs()
+                    inputs.update(q.prerequisites.unpackMultiRefs())
+                    tmpQuantum = Quantum(taskName=q.task.taskDef.taskName,
+                                         taskClass=q.task.taskDef.taskClass,
+                                         dataId=q.dataId,
+                                         initInputs=q.task.initInputs.unpackSingleRefs(),
+                                         inputs=inputs,
+                                         outputs=q.outputs.unpackMultiRefs(),)
+                    outputs.add(tmpQuantum)
+                else:
+                    raise exc
+        return outputs
 
 
 @dataclass
@@ -487,7 +515,9 @@ class _PipelineScaffolding:
     """
 
     @contextmanager
-    def connectDataIds(self, registry, collections, userQuery, externalDataId):
+    def connectDataIds(self, registry, collections, userQuery, externalDataId,
+                       datasetQueryConstraint: DatasetQueryConstraintVariant =
+                       DatasetQueryConstraintVariant.ALL):
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
         This method populates `_TaskScaffolding.dataIds` and
@@ -508,6 +538,10 @@ class _PipelineScaffolding:
             results, just as if these constraints had been included via ``AND``
             in ``userQuery``.  This includes (at least) any instrument named
             in the pipeline definition.
+        datasetQueryConstraint : `DatasetQueryConstraintVariant`, optional
+            The query constraint variant that should be used to constraint the
+            query based on dataset existance, defaults to
+            `DatasetQueryConstraintVariant.ALL`.
 
         Returns
         -------
@@ -530,12 +564,27 @@ class _PipelineScaffolding:
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
         _LOG.debug("Submitting data ID query and materializing results.")
-        with registry.queryDataIds(self.dimensions,
-                                   datasets=list(self.inputs),
-                                   collections=collections,
-                                   where=userQuery,
-                                   dataId=externalDataId,
-                                   ).materialize() as commonDataIds:
+        queryArgs = {'dimensions': self.dimensions, 'where': userQuery, 'dataId': externalDataId}
+        if datasetQueryConstraint == DatasetQueryConstraintVariant.ALL:
+            _LOG.debug("Constraining graph query using all datasets in pipeline.")
+            queryArgs['datasets'] = list(self.inputs)
+            queryArgs['collections'] = collections
+        elif datasetQueryConstraint == DatasetQueryConstraintVariant.OFF:
+            _LOG.debug("Not using dataset existance to constrain query.")
+        elif datasetQueryConstraint == DatasetQueryConstraintVariant.LIST:
+            constraint = set(datasetQueryConstraint)
+            inputs = {k.name: k for k in self.inputs.keys()}
+            if (remainder := constraint.difference(inputs.keys())):
+                raise ValueError(f"{remainder} dataset type(s) specified as a graph constraint, but"
+                                 f" do not appear as an input to the specified pipeline: {inputs.keys()}")
+            _LOG.debug(f"Constraining graph query using {constraint}")
+            queryArgs['datasets'] = [typ for name, typ in inputs.items() if name in constraint]
+            queryArgs['collections'] = collections
+        else:
+            raise ValueError(f"Unable to handle type {datasetQueryConstraint} given as "
+                             "datasetQueryConstraint.")
+
+        with registry.queryDataIds(**queryArgs).materialize() as commonDataIds:
             _LOG.debug("Expanding data IDs.")
             commonDataIds = commonDataIds.expanded()
             _LOG.debug("Iterating over query results to associate quanta with datasets.")
@@ -548,9 +597,12 @@ class _PipelineScaffolding:
                 # We remember both those that already existed and those that we
                 # create now.
                 refsForRow = {}
+                dataIdCacheForRow: Mapping[DimensionGraph, DataCoordinate] = {}
                 for datasetType, refs in itertools.chain(self.inputs.items(), self.intermediates.items(),
                                                          self.outputs.items()):
-                    datasetDataId = commonDataId.subset(datasetType.dimensions)
+                    if not (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)):
+                        datasetDataId = commonDataId.subset(datasetType.dimensions)
+                        dataIdCacheForRow[datasetType.dimensions] = datasetDataId
                     ref = refs.get(datasetDataId)
                     if ref is None:
                         ref = DatasetRef(datasetType, datasetDataId)
@@ -586,7 +638,7 @@ class _PipelineScaffolding:
             yield commonDataIds
 
     def resolveDatasetRefs(self, registry, collections, run, commonDataIds, *, skipExistingIn=None,
-                           clobberOutputs=True):
+                           clobberOutputs=True, constrainedByAllDatasets: bool = True):
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -618,6 +670,9 @@ class _PipelineScaffolding:
             executing.  If ``skipExistingIn`` is not `None`, completed quanta
             (those with metadata, or all outputs if there is no metadata
             dataset configured) will be skipped rather than clobbered.
+        constrainedByAllDatasets : `bool`, optional
+            Indicates if the commonDataIds were generated with a constraint on
+            all dataset types.
 
         Raises
         ------
@@ -683,6 +738,9 @@ class _PipelineScaffolding:
                         refs[resolvedRef.dataId] = resolvedRef
 
         # Look up input and initInput datasets in the input collection(s).
+        # container to accumulate unfound refs, if the common dataIs were not
+        # constrained on dataset type existence.
+        self.unfoundRefs = set()
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
             resolvedRefQueryResults = commonDataIds.subset(
@@ -698,14 +756,24 @@ class _PipelineScaffolding:
                 dataIdsNotFoundYet.discard(resolvedRef.dataId)
                 refs[resolvedRef.dataId] = resolvedRef
             if dataIdsNotFoundYet:
-                raise RuntimeError(
-                    f"{len(dataIdsNotFoundYet)} dataset(s) of type "
-                    f"'{datasetType.name}' was/were present in a previous "
-                    f"query, but could not be found now."
-                    f"This is either a logic bug in QuantumGraph generation "
-                    f"or the input collections have been modified since "
-                    f"QuantumGraph generation began."
-                )
+                if constrainedByAllDatasets:
+                    raise RuntimeError(
+                        f"{len(dataIdsNotFoundYet)} dataset(s) of type "
+                        f"'{datasetType.name}' was/were present in a previous "
+                        f"query, but could not be found now."
+                        f"This is either a logic bug in QuantumGraph generation "
+                        f"or the input collections have been modified since "
+                        f"QuantumGraph generation began."
+                    )
+                else:
+                    # if the common dataIds were not constrained using all the
+                    # input dataset types, it is possible that some data ids
+                    # found dont correspond to existing dataset types and they
+                    # will be un-resolved. Mark these for later pruning from
+                    # the quantum graph.
+                    for k in dataIdsNotFoundYet:
+                        self.unfoundRefs.add(refs[k])
+
         # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
         # replacing the unresolved refs there, and then look up prerequisites.
         for task in self.tasks:
@@ -835,7 +903,12 @@ class _PipelineScaffolding:
         graph : `QuantumGraph`
             The full `QuantumGraph`.
         """
-        graph = QuantumGraph({task.taskDef: task.makeQuantumSet() for task in self.tasks}, metadata=metadata)
+        graphInput: Dict[TaskDef, Set[Quantum]] = {}
+        for task in self.tasks:
+            qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs)
+            graphInput[task.taskDef] = qset
+
+        graph = QuantumGraph(graphInput, metadata=metadata, pruneRefs=self.unfoundRefs)
         return graph
 
 
@@ -887,6 +960,7 @@ class GraphBuilder(object):
         self.clobberOutputs = clobberOutputs
 
     def makeGraph(self, pipeline, collections, run, userQuery,
+                  datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
                   metadata: Optional[Mapping[str, Any]] = None):
         """Create execution graph for a pipeline.
 
@@ -904,6 +978,10 @@ class GraphBuilder(object):
         userQuery : `str`
             String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
+        datasetQueryConstraint : `DatasetQueryConstraintVariant`, optional
+            The query constraint variant that should be used to constraint the
+            query based on dataset existance, defaults to
+            `DatasetQueryConstraintVariant.ALL`.
         metadata : Optional Mapping of `str` to primitives
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
@@ -937,8 +1015,11 @@ class GraphBuilder(object):
                                                 universe=self.registry.dimensions)
         else:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
-        with scaffolding.connectDataIds(self.registry, collections, userQuery, dataId) as commonDataIds:
+        with scaffolding.connectDataIds(self.registry, collections, userQuery, dataId,
+                                        datasetQueryConstraint) as commonDataIds:
+            condition = datasetQueryConstraint == DatasetQueryConstraintVariant.ALL
             scaffolding.resolveDatasetRefs(self.registry, collections, run, commonDataIds,
                                            skipExistingIn=self.skipExistingIn,
-                                           clobberOutputs=self.clobberOutputs)
+                                           clobberOutputs=self.clobberOutputs,
+                                           constrainedByAllDatasets=condition)
         return scaffolding.makeQuantumGraph(metadata=metadata)

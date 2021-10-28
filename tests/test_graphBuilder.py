@@ -25,6 +25,7 @@ import logging
 import unittest
 
 from lsst.pipe.base.tests import simpleQGraph
+from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
 import lsst.utils.tests
 from lsst.utils.tests import temporaryDirectory
 
@@ -41,6 +42,17 @@ class GraphBuilderTestCase(unittest.TestCase):
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
             # by default makeSimpleQGraph makes a graph with 5 nodes
             self.assertEqual(len(qgraph), 5)
+            constraint = DatasetQueryConstraintVariant.OFF
+            _, qgraph2 = simpleQGraph.makeSimpleQGraph(butler=butler,
+                                                       datasetQueryConstraint=constraint,
+                                                       callPopulateButler=False)
+            self.assertEqual(len(qgraph2), 5)
+            self.assertEqual(qgraph, qgraph2)
+            constraint = DatasetQueryConstraintVariant.fromExpression('add_dataset0')
+            _, qgraph3 = simpleQGraph.makeSimpleQGraph(butler=butler,
+                                                       datasetQueryConstraint=constraint,
+                                                       callPopulateButler=False)
+            self.assertEqual(qgraph2, qgraph3)
 
     def testAddInstrumentMismatch(self):
         """Verify that a RuntimeError is raised if the instrument in the user

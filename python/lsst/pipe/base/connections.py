@@ -32,6 +32,7 @@ __all__ = [
     "PipelineTaskConnections",
     "ScalarError",
     "iterConnections",
+    "ScalarError"
 ]
 
 from collections import UserDict, namedtuple
@@ -721,7 +722,7 @@ class AdjustQuantumHelper:
             self.inputs_adjusted = True
         else:
             self.inputs_adjusted = False
-        if adjusted_outputs_by_connection is not None:
+        if adjusted_outputs_by_connection:
             adjusted_outputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.outputs)
             for name, (connection, updated_refs) in adjusted_outputs_by_connection.items():
                 if not set(updated_refs).issubset(self.outputs[dataset_type_name]):

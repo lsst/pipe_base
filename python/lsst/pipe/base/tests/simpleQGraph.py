@@ -37,6 +37,7 @@ import lsst.pex.config as pexConfig
 from lsst.utils import doImport
 from ... import base as pipeBase
 from .. import connectionTypes as cT
+from ..graphBuilder import DatasetQueryConstraintVariant as DSQVariant
 
 _LOG = logging.getLogger(__name__)
 
@@ -306,9 +307,10 @@ def populateButler(pipeline, butler, datasetTypes=None):
                 butler.put(data, dsType, run=run, instrument=instrumentName, detector=0)
 
 
-def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test",
+def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, callPopulateButler=True, run="test",
                      skipExistingIn=None, inMemory=True, userQuery="",
-                     datasetTypes=None):
+                     datasetTypes=None,
+                     datasetQueryConstraint: DSQVariant = DSQVariant.ALL):
     """Make simple QuantumGraph for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory registry
@@ -325,6 +327,10 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
     butler : `~lsst.daf.butler.Butler`, optional
         Data butler instance, if None then new data butler is created by
         calling `makeSimpleButler`.
+    callPopulateButler : `bool`, optional
+        If True insert datasets into the butler prior to building a graph.
+        If False butler argument must not be None, and must be pre-populated.
+        Defaults to True.
     root : `str`
         Path or URI to the root location of the new repository. Only used if
         ``butler`` is None.
@@ -343,6 +349,10 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
         Dictionary whose keys are collection names and values are lists of
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
+    datasetQueryQConstraint : `DatasetQueryConstraintVariant`
+        The query constraint variant that should be used to constrain the
+        query based on dataset existence, defaults to
+        `DatasetQueryConstraintVariant.ALL`.
 
     Returns
     -------
@@ -358,9 +368,12 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
     if butler is None:
         if root is None:
             raise ValueError("Must provide `root` when `butler` is None")
+        if callPopulateButler is False:
+            raise ValueError("populateButler can only be False when butler is supplied as an argument")
         butler = makeSimpleButler(root, run=run, inMemory=inMemory)
 
-    populateButler(pipeline, butler, datasetTypes=datasetTypes)
+    if callPopulateButler:
+        populateButler(pipeline, butler, datasetTypes=datasetTypes)
 
     # Make the graph
     _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
@@ -371,7 +384,8 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, run="test
         pipeline,
         collections=butler.collections,
         run=run or butler.run,
-        userQuery=userQuery
+        userQuery=userQuery,
+        datasetQueryConstraint=datasetQueryConstraint
     )
 
     return butler, qgraph
