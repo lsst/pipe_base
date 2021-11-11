@@ -139,6 +139,10 @@ class Task:
     `~lsst.pipe.base.CmdLineTask` not Task.
     """
 
+    _add_module_logger_prefix = True
+    """Control whether the module prefix should be prepended to default
+    logger names."""
+
     def __init__(self, config=None, name=None, parentTask=None, log=None):
         self.metadata = dafBase.PropertyList()
         self.__parentTask: Optional[weakref.ReferenceType]
@@ -167,6 +171,17 @@ class Task:
             loggerName = self._fullName
             if log is not None and log.name:
                 loggerName = log.getChild(loggerName).name
+            elif self._add_module_logger_prefix:
+                # Prefix the logger name with the root module name.
+                # We want all Task loggers to have this prefix to make
+                # it easier to control them. This can be disabled by
+                # a Task setting the class property _add_module_logger_prefix
+                # to False -- in which case the logger name will not be
+                # modified.
+                module_name = self.__module__
+                module_root = module_name.split(".")[0] + "."
+                if not loggerName.startswith(module_root):
+                    loggerName = module_root + loggerName
 
         # Get a logger (that might be a subclass of logging.Logger).
         self.log = lsst.utils.logging.getLogger(loggerName)

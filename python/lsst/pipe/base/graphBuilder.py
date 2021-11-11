@@ -61,7 +61,7 @@ from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 #  Local non-exported definitions --
 # ----------------------------------
 
-_LOG = logging.getLogger(__name__.partition(".")[2])
+_LOG = logging.getLogger(__name__)
 
 
 class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
