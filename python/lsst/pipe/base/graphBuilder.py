@@ -570,7 +570,7 @@ class _PipelineScaffolding:
             queryArgs['datasets'] = list(self.inputs)
             queryArgs['collections'] = collections
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.OFF:
-            _LOG.debug("Not using dataset existance to constrain query.")
+            _LOG.debug("Not using dataset existence to constrain query.")
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(datasetQueryConstraint)
             inputs = {k.name: k for k in self.inputs.keys()}
@@ -590,7 +590,7 @@ class _PipelineScaffolding:
             _LOG.debug("Iterating over query results to associate quanta with datasets.")
             # Iterate over query results, populating data IDs for datasets and
             # quanta and then connecting them to each other.
-            n = 0
+            n = -1
             for n, commonDataId in enumerate(commonDataIds):
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
@@ -631,9 +631,27 @@ class _PipelineScaffolding:
                     for datasetType in task.outputs:
                         ref = refsForRow[datasetType.name]
                         quantum.outputs[datasetType.name][ref.dataId] = ref
-            if n == 0:
+            if n < 0:
+                emptiness_explained = False
                 for message in commonDataIds.explain_no_results():
                     _LOG.warn(message)
+                    emptiness_explained = True
+                if not emptiness_explained:
+                    _LOG.warn("To reproduce this query for debugging purposes, run "
+                              "Registry.queryDataIds with these arguments:")
+                    # We could just repr() the queryArgs dict to get something
+                    # the user could make sense of, but it's friendlier to
+                    # put these args in an easier-to-construct equivalent form
+                    # so they can read it more easily and copy and paste into
+                    # a Python terminal.
+                    _LOG.warn("  dimensions=%s,", list(queryArgs["dimensions"].names))
+                    _LOG.warn("  dataId=%s,", queryArgs["dataId"].byName())
+                    if queryArgs["where"]:
+                        _LOG.warn("  where=%s,", repr(queryArgs["where"]))
+                    if "datasets" in queryArgs:
+                        _LOG.warn("  datasets=%s,", [t.name for t in queryArgs["datasets"]])
+                    if "collections" in queryArgs:
+                        _LOG.warn("  collections=%s,", list(queryArgs["collections"]))
             _LOG.debug("Finished processing %d rows from data ID query.", n)
             yield commonDataIds
 
