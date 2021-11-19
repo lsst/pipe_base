@@ -22,21 +22,26 @@
 """Simple unit test for Pipeline.
 """
 
+import tempfile
 import textwrap
 import unittest
 
 import lsst.pex.config as pexConfig
 from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig, Pipeline, TaskDef,
-                            PipelineTaskConnections, PipelineDatasetTypes)
+                            PipelineTaskConnections, PipelineDatasetTypes, connectionTypes)
 from lsst.pipe.base.tests.simpleQGraph import makeSimplePipeline
 import lsst.utils.tests
 
 
-class DummyConnections(PipelineTaskConnections, dimensions=()):
-    pass
+class DummyAddConnections(PipelineTaskConnections, dimensions=()):
+    dummyOutput = connectionTypes.Output("addOutput", "dummyStorage", "add output")
 
 
-class AddConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
+class DummyMultiplyConnections(PipelineTaskConnections, dimensions=()):
+    dummyInput = connectionTypes.Input("addOutput", "dummyStorage", "add output")
+
+
+class AddConfig(PipelineTaskConfig, pipelineConnections=DummyAddConnections):
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
 
@@ -51,7 +56,7 @@ class AddTask(PipelineTask):
         )
 
 
-class MultConfig(PipelineTaskConfig, pipelineConnections=DummyConnections):
+class MultConfig(PipelineTaskConfig, pipelineConnections=DummyMultiplyConnections):
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
 
 
@@ -150,11 +155,26 @@ class TaskTestCase(unittest.TestCase):
 
     def testSerialization(self):
         pipeline = Pipeline("test")
-        pipeline.addTask(AddTask, "add")
         pipeline.addTask(MultTask, "mult")
+        pipeline.addTask(AddTask, "add")
+
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
+
+        # verify the keys keys were sorted after a call to str
+        self.assertEqual([t.label for t in pipeline.toExpandedPipeline()], ['add', 'mult'])
+
+        pipeline = Pipeline("test")
+        pipeline.addTask(MultTask, "mult")
+        pipeline.addTask(AddTask, "add")
+
+        # verify that writing out the file sorts it
+        with tempfile.NamedTemporaryFile() as tf:
+            pipeline.write_to_uri(tf.name)
+            loadedPipeline = Pipeline.from_uri(tf.name)
+
+        self.assertEqual([t.label for t in loadedPipeline.toExpandedPipeline()], ['add', 'mult'])
 
 
 class PipelineTestCase(unittest.TestCase):
