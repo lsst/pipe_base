@@ -17,3 +17,4 @@ from . import connectionTypes
 from . import pipelineIR
 from .executionButlerBuilder import *
 from ._status import *
+from ._task_metadata import *
