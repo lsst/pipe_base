@@ -179,7 +179,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.add.log.name, "tester.addMult.add")
 
         addMultTask2 = AddMultTask2()
-        self.assertEqual(addMultTask2.log.name, "test_task.addMult")
+        self.assertEqual(addMultTask2.log.name, f"{__name__}.addMult")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()
