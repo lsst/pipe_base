@@ -25,10 +25,13 @@ import unittest
 import numbers
 
 import lsst.utils.tests
-import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.utils.timer import timeMethod
+
+# Whilst in transition the test can't tell which type is
+# going to be used for metadata.
+from lsst.pipe.base.task import _TASK_METADATA_TYPE
 
 
 class AddConfig(pexConfig.Config):
@@ -186,9 +189,9 @@ class TaskTestCase(unittest.TestCase):
         """
         addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertIsInstance(fullMetadata["addMult"], dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata["addMult:add"], dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata["addMult:mult"], dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata["addMult"], _TASK_METADATA_TYPE)
+        self.assertIsInstance(fullMetadata["addMult:add"], _TASK_METADATA_TYPE)
+        self.assertIsInstance(fullMetadata["addMult:mult"], _TASK_METADATA_TYPE)
 
     def testEmptyMetadata(self):
         task = AddMultTask()
