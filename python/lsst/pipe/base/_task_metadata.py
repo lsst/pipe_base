@@ -24,6 +24,7 @@ __all__ = ["TaskMetadata"]
 from collections import UserDict
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
+import json
 
 
 def _isListLike(v):
@@ -199,3 +200,13 @@ class TaskMetadata(UserDict):
     def __repr__(self):
         # use repr() to format dictionary data
         return f"{type(self).__name__}({self.data!r})"
+
+    def json(self) -> str:
+        """Serialize the task metadata to JSON.
+
+        Returns
+        -------
+        json_str : `str`
+            The contents of the task metadata in JSON string format.
+        """
+        return json.dumps(self.data)

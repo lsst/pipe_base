@@ -23,6 +23,7 @@ import logging
 import time
 import unittest
 import numbers
+import json
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
@@ -274,6 +275,14 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.metadata.getScalar("runEndCpuTime"),
         )
         self.assertLessEqual(addMultTask.add.metadata.getScalar("runEndCpuTime"), currCpuTime)
+        try:
+            j = addMultTask.metadata.json()
+        except AttributeError:
+            # PropertyList will not support this.
+            pass
+        else:
+            new_meta = pipeBase.TaskMetadata(**json.loads(j))
+            self.assertEqual(new_meta, addMultTask.metadata)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
