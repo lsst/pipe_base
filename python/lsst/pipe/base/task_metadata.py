@@ -100,7 +100,7 @@ class TaskMetadata(UserDict):
 
     @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
                 version="v23", category=FutureWarning)
-    def names(self, topLevelOnly):
+    def names(self, topLevelOnly: bool = True):
         """
         This method exists for backward compatibility with
         `lsst.daf.base.PropertySet`.
