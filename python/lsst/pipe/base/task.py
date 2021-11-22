@@ -283,7 +283,7 @@ class Task:
         """
         fullMetadata = dafBase.PropertySet()
         for fullName, task in self.getTaskDict().items():
-            fullMetadata.set(fullName.replace(".", ":"), task().metadata)
+            fullMetadata[fullName.replace(".", ":")] = task().metadata
         return fullMetadata
 
     def getFullName(self):

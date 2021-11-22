@@ -186,18 +186,18 @@ class TaskTestCase(unittest.TestCase):
         """
         addMultTask = AddMultTask()
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata["addMult"], dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata["addMult:add"], dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata["addMult:mult"], dafBase.PropertySet)
 
     def testEmptyMetadata(self):
         task = AddMultTask()
         task.run(val=1.2345)
         task.emptyMetadata()
         fullMetadata = task.getFullMetadata()
-        self.assertEqual(fullMetadata.getPropertySet("addMult").nameCount(), 0)
-        self.assertEqual(fullMetadata.getPropertySet("addMult:add").nameCount(), 0)
-        self.assertEqual(fullMetadata.getPropertySet("addMult:mult").nameCount(), 0)
+        self.assertEqual(len(fullMetadata["addMult"]), 0)
+        self.assertEqual(len(fullMetadata["addMult:add"]), 0)
+        self.assertEqual(len(fullMetadata["addMult:mult"]), 0)
 
     def testReplace(self):
         """Test replacing one subtask with another
@@ -221,12 +221,12 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.failDec()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertTrue(addMultTask.metadata.exists("failDecEndCpuTime"))
+            self.assertIn("failDecEndCpuTime", addMultTask.metadata)
         try:
             addMultTask.failCtx()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertTrue(addMultTask.metadata.exists("failCtxEndCpuTime"))
+            self.assertIn("failCtxEndCpuTime", addMultTask.metadata)
 
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
@@ -249,7 +249,7 @@ class TaskTestCase(unittest.TestCase):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertIn(name, addMultTask.metadata.names(),
+                    self.assertIn(name, addMultTask.metadata,
                                   name + " is missing from task metadata")
                     self.assertIsInstance(addMultTask.metadata.getScalar(name), keyType,
                                           f"{name} is not of the right type "
