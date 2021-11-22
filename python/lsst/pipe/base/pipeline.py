@@ -47,6 +47,8 @@ from lsst.utils import doImport
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
 from .pipelineTask import PipelineTask
+from .task import _TASK_METADATA_TYPE
+from ._task_metadata import TaskMetadata
 
 from . import pipelineIR
 from . import pipeTools
@@ -875,7 +877,11 @@ class TaskDatasetTypes:
             # Metadata is supposed to be of the PropertySet type, its
             # dimensions correspond to a task quantum
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
-            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, "PropertySet")}
+            if _TASK_METADATA_TYPE is TaskMetadata:
+                storageClass = "TaskMetadata"
+            else:
+                storageClass = "PropertySet"
+            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)}
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
