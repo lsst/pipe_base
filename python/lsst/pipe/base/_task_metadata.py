@@ -27,6 +27,9 @@ from deprecated.sphinx import deprecated
 from typing import Dict, List, Union
 from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr
 
+_DEPRECATION_REASON = "Dictionary methods should be used. Will be removed after v25."
+_DEPRECATION_VERSION = "v24"
+
 
 def _isListLike(v):
     return isinstance(v, Sequence) and not isinstance(v, str)
@@ -81,13 +84,13 @@ class TaskMetadata(BaseModel):
             v = value
         self.__setitem__(name, v)
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def getAsDouble(self, key):
         return float(self.__getitem__(key))
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def getScalar(self, key):
         v = self.__getitem__(key)
         if _isListLike(v):
@@ -95,8 +98,8 @@ class TaskMetadata(BaseModel):
         else:
             return v
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def getArray(self, key):
         v = self.__getitem__(key)
         if _isListLike(v):
@@ -104,8 +107,8 @@ class TaskMetadata(BaseModel):
         else:
             return [v]
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def names(self, topLevelOnly: bool = True):
         """
         This method exists for backward compatibility with
@@ -133,18 +136,18 @@ class TaskMetadata(BaseModel):
                     names.add(k)
             return names
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def paramNames(self, topLevelOnly):
         return self.names(topLevelOnly)
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def set(self, key, item):
         self.__setitem__(key, item)
 
-    @deprecated(reason="Dictionary methods should be used. Will be removed after v23.",
-                version="v23", category=FutureWarning)
+    @deprecated(reason=_DEPRECATION_REASON,
+                version=_DEPRECATION_VERSION, category=FutureWarning)
     def remove(self, key):
         self.__delitem__(key)
 
