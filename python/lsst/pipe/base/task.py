@@ -117,10 +117,10 @@ class Task:
     - ``log``: an `logging.Logger` or subclass.
     - ``config``: task-specific configuration; an instance of ``ConfigClass``
       (see below).
-    - ``metadata``: an `lsst.daf.base.PropertyList` for collecting
-      task-specific metadata, e.g. data quality and performance metrics.
-      This is data that is only meant to be persisted, never to be used by
-      the task.
+    - ``metadata``: an `lsst.daf.base.PropertyList` or `TaskMetadata` for
+      collecting task-specific metadata, e.g. data quality and performance
+      metrics. This is data that is only meant to be persisted, never to be
+      used by the task.
 
     Subclasses typically have a method named ``runDataRef`` to perform the
     main data processing. Details:
@@ -278,8 +278,8 @@ class Task:
 
         Returns
         -------
-        metadata : `lsst.daf.base.PropertySet`
-            The `~lsst.daf.base.PropertySet` keys are the full task name.
+        metadata : `lsst.daf.base.PropertySet` or `TaskMetadata`
+            The keys are the full task name.
             Values are metadata for the top-level task and all subtasks,
             sub-subtasks, etc.
 

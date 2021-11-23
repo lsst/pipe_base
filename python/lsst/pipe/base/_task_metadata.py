@@ -56,18 +56,14 @@ class TaskMetadata(BaseModel):
                               List[StrictFloat], List[StrictInt], List[StrictBool], List[StrictStr]]] = {}
 
     def add(self, name, value):
-        """
-        This method exists for backward compatibility with
-        `lsst.daf.base.PropertySet` and `lsst.daf.base.PropertyList`.
-         It should not be used.
+        """Store a new value, adding to a list if one already exists.
 
         Parameters
         ----------
         name : `str`
-            Name of the metadata property
+            Name of the metadata property.
         value
-            Metadata property value
-
+            Metadata property value.
         """
         if self.__contains__(name):
             v = self.__getitem__(name)
