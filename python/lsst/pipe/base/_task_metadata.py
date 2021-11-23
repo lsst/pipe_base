@@ -21,17 +21,18 @@
 
 __all__ = ["TaskMetadata"]
 
-from collections import UserDict
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
-import json
+
+from typing import Dict, List, Union
+from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr
 
 
 def _isListLike(v):
     return isinstance(v, Sequence) and not isinstance(v, str)
 
 
-class TaskMetadata(UserDict):
+class TaskMetadata(BaseModel):
     """Dict-like object for storing task metadata.
     Metadata can be stored at two levels: single task or task plus subtasks.
     The later is called full metadata of a task and has a form
@@ -46,6 +47,10 @@ class TaskMetadata(UserDict):
     Deprecated methods are for compatibility with
     the predecessor containers.
     """
+
+    # Metadata is limited -- float must come before int
+    __root__: Dict[str, Union["TaskMetadata", StrictFloat, StrictInt, StrictBool, StrictStr,
+                              List[StrictFloat], List[StrictInt], List[StrictBool], List[StrictStr]]] = {}
 
     def add(self, name, value):
         """
@@ -118,10 +123,10 @@ class TaskMetadata(UserDict):
 
         """
         if topLevelOnly:
-            return self.data.keys()
+            return set(self.__root__.keys())
         else:
             names = set()
-            for k, v in self.data.items():
+            for k, v in self.__root__.items():
                 if isinstance(v, TaskMetadata):
                     names.update({k+'.'+item for item in v.keys()})
                 else:
@@ -153,12 +158,21 @@ class TaskMetadata(UserDict):
                            " a separator between task and metadata item key.")
         return keys
 
+    def keys(self):
+        return self.__root__.keys()
+
+    def __len__(self):
+        return len(self.__root__)
+
+    def __iter__(self):
+        return iter(self.__root__)
+
     def __getitem__(self, key):
         keys = self._getKeys(key)
         if len(keys) == 1:
-            return super().__getitem__(key)
-        if keys[0] in self.data.keys():
-            val = self.data[keys[0]]
+            return self.__root__[key]
+        if keys[0] in self.__root__.keys():
+            val = self.__root__[keys[0]]
             if isinstance(val, TaskMetadata) and keys[1] in val:
                 return val[keys[1]]
         raise KeyError(f"'{key}' not found in TaskMetadata")
@@ -169,44 +183,38 @@ class TaskMetadata(UserDict):
             item = list(item)
         keys = self._getKeys(key)
         if len(keys) == 1:
-            super().__setitem__(key, item)
+            self.__root__[key] = item
         else:
-            if keys[0] not in self.data.keys():
-                self.data[keys[0]] = TaskMetadata({})
-            elif not isinstance(self.data[keys[0]], TaskMetadata):
+            if keys[0] not in self.__root__.keys():
+                self.__root__[keys[0]] = TaskMetadata()
+            elif not isinstance(self.__root__[keys[0]], TaskMetadata):
                 raise KeyError((f"Key '{key}' can not be set. '{keys[0]}'"
                                 f" exists and is not TaskMetadata"))
-            self.data[keys[0]][keys[1]] = item
+            self.__root__[keys[0]][keys[1]] = item
 
     def __contains__(self, key):
         keys = self._getKeys(key)
         if len(keys) == 1:
-            return super().__contains__(key)
+            return key in self.__root__
         else:
             return \
-                keys[0] in self.data.keys() and \
-                isinstance(self.data[keys[0]], TaskMetadata) and \
-                keys[1] in self.data[keys[0]]
+                keys[0] in self.__root__.keys() and \
+                isinstance(self.__root__[keys[0]], TaskMetadata) and \
+                keys[1] in self.__root__[keys[0]]
 
     def __delitem__(self, key):
         keys = self._getKeys(key)
         if len(keys) == 1:
-            super().__delitem__(key)
-        if keys[0] in self.data.keys() and \
-                isinstance(self.data[keys[0]], TaskMetadata) and \
-                keys[1] in self.data[keys[0]]:
-            del self.data[keys[0]][keys[1]]
+            del self.__root__[key]
+        if keys[0] in self.__root__.keys() and \
+                isinstance(self.__root__[keys[0]], TaskMetadata) and \
+                keys[1] in self.__root__[keys[0]]:
+            del self.__root__[keys[0]][keys[1]]
 
     def __repr__(self):
         # use repr() to format dictionary data
-        return f"{type(self).__name__}({self.data!r})"
+        return f"{type(self).__name__}({self.__root__!r})"
 
-    def json(self) -> str:
-        """Serialize the task metadata to JSON.
 
-        Returns
-        -------
-        json_str : `str`
-            The contents of the task metadata in JSON string format.
-        """
-        return json.dumps(self.data)
+# Needed because a TaskMetadata can contain a TaskMetadata.
+TaskMetadata.update_forward_refs()

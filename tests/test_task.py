@@ -24,6 +24,7 @@ import time
 import unittest
 import numbers
 import json
+import yaml
 
 import lsst.utils.tests
 import lsst.pex.config as pexConfig
@@ -236,7 +237,10 @@ class TaskTestCase(unittest.TestCase):
         """Test that the timer is adding the right metadata
         """
         addMultTask = AddMultTask()
+
+        # Run twice to ensure we are additive.
         addMultTask.run(val=1.1)
+        addMultTask.run(val=2.0)
         # Check existence and type
         for key, keyType in (("Utc", str),
                              ("CpuTime", float),
@@ -275,14 +279,30 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.metadata.getScalar("runEndCpuTime"),
         )
         self.assertLessEqual(addMultTask.add.metadata.getScalar("runEndCpuTime"), currCpuTime)
-        try:
+
+        # Add some explicit values for serialization test.
+        addMultTask.metadata["comment"] = "A comment"
+        addMultTask.metadata["integer"] = 5
+        addMultTask.metadata["float"] = 3.14
+        addMultTask.metadata["bool"] = False
+        addMultTask.metadata.add("commentList", "comment1")
+        addMultTask.metadata.add("commentList", "comment1")
+        addMultTask.metadata.add("intList", 6)
+        addMultTask.metadata.add("intList", 7)
+        addMultTask.metadata.add("boolList", False)
+        addMultTask.metadata.add("boolList", True)
+        addMultTask.metadata.add("floatList", 6.6)
+        addMultTask.metadata.add("floatList", 7.8)
+
+        # TaskMetadata can serialize to JSON but not YAML
+        # and PropertySet can serialize to YAML and not JSON.
+        if hasattr(addMultTask.metadata, "json"):
             j = addMultTask.metadata.json()
-        except AttributeError:
-            # PropertyList will not support this.
-            pass
+            new_meta = pipeBase.TaskMetadata.parse_obj(json.loads(j))
         else:
-            new_meta = pipeBase.TaskMetadata(**json.loads(j))
-            self.assertEqual(new_meta, addMultTask.metadata)
+            y = yaml.dump(addMultTask.metadata)
+            new_meta = yaml.safe_load(y)
+        self.assertEqual(new_meta, addMultTask.metadata)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
