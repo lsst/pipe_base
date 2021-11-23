@@ -29,7 +29,6 @@ import logging
 import numpy
 
 from lsst.base import Packages
-from lsst.daf.base import PropertySet
 from lsst.daf.butler import Butler, ButlerURI, Config, DatasetType
 import lsst.daf.butler.tests as butlerTests
 from lsst.daf.butler.core.logging import ButlerLogRecords
@@ -38,6 +37,7 @@ from lsst.utils import doImport
 from ... import base as pipeBase
 from .. import connectionTypes as cT
 from ..graphBuilder import DatasetQueryConstraintVariant as DSQVariant
+from ..task import _TASK_FULL_METADATA_TYPE
 
 _LOG = logging.getLogger(__name__)
 
@@ -299,7 +299,7 @@ def populateButler(pipeline, butler, datasetTypes=None):
                     else:
                         data = AddTaskConfig()
                 elif dsType.endswith("_metadata"):
-                    data = PropertySet()
+                    data = _TASK_FULL_METADATA_TYPE()
                 elif dsType.endswith("_log"):
                     data = ButlerLogRecords.from_records([])
                 else:
