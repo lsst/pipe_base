@@ -51,7 +51,7 @@ if METADATA_COMPATIBILITY:
     _TASK_FULL_METADATA_TYPE = dafBase.PropertySet
 else:
     _TASK_METADATA_TYPE = TaskMetadata
-    _TASK_FULL_METADATA_TYPE = dict
+    _TASK_FULL_METADATA_TYPE = TaskMetadata
 
 
 class TaskError(Exception):
