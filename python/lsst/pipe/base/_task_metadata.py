@@ -89,18 +89,39 @@ class TaskMetadata(BaseModel):
     def getAsDouble(self, key):
         return float(self.__getitem__(key))
 
-    @deprecated(reason=_DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
     def getScalar(self, key):
+        """Retrieve a scalar item even if the item is a list.
+
+        Parameters
+        ----------
+        key : `str`
+            Item to retrieve.
+
+        Returns
+        -------
+        value : Any
+            Either the value associated with the key or, if the key
+            corresponds to a list, the last item in the list.
+        """
         v = self.__getitem__(key)
         if _isListLike(v):
             return v[-1]
         else:
             return v
 
-    @deprecated(reason=_DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
     def getArray(self, key):
+        """Retrieve an item as a list even if it is a scalar.
+
+        Parameters
+        ----------
+        key : `str`
+            Item to retrieve.
+
+        Returns
+        -------
+        values : `list` of any
+            A list containing the value or values associated with this item.
+        """
         v = self.__getitem__(key)
         if _isListLike(v):
             return v
