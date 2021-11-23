@@ -21,13 +21,14 @@
 
 __all__ = ["TaskMetadata"]
 
+import warnings
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
 
 from typing import Dict, List, Union
 from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr
 
-_DEPRECATION_REASON = "Dictionary methods should be used. Will be removed after v25."
+_DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"
 
 
@@ -80,7 +81,7 @@ class TaskMetadata(BaseModel):
             v = value
         self.__setitem__(name, v)
 
-    @deprecated(reason=_DEPRECATION_REASON,
+    @deprecated(reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def getAsDouble(self, key):
         return float(self.__getitem__(key))
@@ -99,6 +100,7 @@ class TaskMetadata(BaseModel):
             Either the value associated with the key or, if the key
             corresponds to a list, the last item in the list.
         """
+        # Used in pipe_tasks
         v = self.__getitem__(key)
         if _isListLike(v):
             return v[-1]
@@ -124,46 +126,75 @@ class TaskMetadata(BaseModel):
         else:
             return [v]
 
-    @deprecated(reason=_DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
     def names(self, topLevelOnly: bool = True):
-        """
-        This method exists for backward compatibility with
-        `lsst.daf.base.PropertySet`.
+        """Return the hierarchical keys from the metadata.
 
         Parameters
         ----------
         topLevelOnly  : `bool`
-            If true, return top-level keys, otherwise full metadata item keys
+            If true, return top-level keys, otherwise full metadata item keys.
 
         Returns
         -------
         names : `collection.abc.Set`
-            A set of top-level keys or full metadata item keys
+            A set of top-level keys or full metadata item keys, including
+            the top-level keys.
 
+        Notes
+        -----
+        Should never be called in new code with ``topLevelOnly`` set to `True`
+        -- this is equivalent to asking for the keys and is the default
+        when iterating through the task metadata. In this case a deprecation
+        message will be issued and the ability will raise an exception
+        in a future release.
+
+        When ``topLevelOnly`` is `False` all keys, including those from the
+        hierarchy and the top-level hierarchy, are returned.
         """
         if topLevelOnly:
+            warnings.warn("Use keys() instead. " + _DEPRECATION_REASON, FutureWarning)
             return set(self.__root__.keys())
         else:
             names = set()
             for k, v in self.__root__.items():
+                names.add(k)  # Always include the current level
                 if isinstance(v, TaskMetadata):
                     names.update({k+'.'+item for item in v.keys()})
-                else:
-                    names.add(k)
             return names
 
-    @deprecated(reason=_DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
     def paramNames(self, topLevelOnly):
-        return self.names(topLevelOnly)
+        """Return hierarchical names.
 
-    @deprecated(reason=_DEPRECATION_REASON,
+        Parameters
+        ----------
+        topLevelOnly : `bool`
+            Control whether only top-level items are returned or items
+            from the hierarchy.
+
+        Returns
+        -------
+        paramNames : `set` of `str`
+            If ``topLevelOnly`` is `True`, returns any keys that are not
+            part of a hierarchy. If `False` also returns fully-qualified
+            names from the hierarchy. Keys associated with the top
+            of a hierarchy are never returned.
+        """
+        # Currently used by the verify package.
+        paramNames = set()
+        for k, v in self.__root__.items():
+            if isinstance(v, TaskMetadata):
+                if not topLevelOnly:
+                    paramNames.update({k + "." + item for item in v})
+            else:
+                paramNames.add(k)
+        return paramNames
+
+    @deprecated(reason="Use standard assignment syntax. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def set(self, key, item):
         self.__setitem__(key, item)
 
-    @deprecated(reason=_DEPRECATION_REASON,
+    @deprecated(reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def remove(self, key):
         self.__delitem__(key)
