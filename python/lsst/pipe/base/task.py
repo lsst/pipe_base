@@ -29,8 +29,6 @@ import lsst.utils
 import lsst.utils.logging
 from lsst.utils.timer import logInfo
 from lsst.pex.config import ConfigurableField
-import lsst.daf.base as dafBase
-
 import weakref
 
 try:
@@ -47,6 +45,7 @@ from ._task_metadata import TaskMetadata
 METADATA_COMPATIBILITY = True
 
 if METADATA_COMPATIBILITY:
+    import lsst.daf.base as dafBase
     _TASK_METADATA_TYPE = dafBase.PropertyList
     _TASK_FULL_METADATA_TYPE = dafBase.PropertySet
 else:
