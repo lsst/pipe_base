@@ -190,10 +190,25 @@ class TaskTestCase(unittest.TestCase):
         """Test getFullMetadata()
         """
         addMultTask = AddMultTask()
+        addMultTask.run(val=1.234)  # Add some metadata
         fullMetadata = addMultTask.getFullMetadata()
         self.assertIsInstance(fullMetadata["addMult"], _TASK_METADATA_TYPE)
         self.assertIsInstance(fullMetadata["addMult:add"], _TASK_METADATA_TYPE)
         self.assertIsInstance(fullMetadata["addMult:mult"], _TASK_METADATA_TYPE)
+        self.assertEqual(set(fullMetadata), {"addMult", "addMult:add", "addMult:mult"})
+
+        all_names = fullMetadata.names(topLevelOnly=False)
+        self.assertIn("addMult", all_names)
+        self.assertIn("addMult.runStartUtc", all_names)
+
+        param_names = fullMetadata.paramNames(topLevelOnly=True)
+        # No top level keys without hierarchy
+        self.assertEqual(set(param_names), set())
+
+        param_names = fullMetadata.paramNames(topLevelOnly=False)
+        self.assertNotIn("addMult", param_names)
+        self.assertIn("addMult.runStartUtc", param_names)
+        self.assertIn("addMult:add.runStartCpuTime", param_names)
 
     def testEmptyMetadata(self):
         task = AddMultTask()
