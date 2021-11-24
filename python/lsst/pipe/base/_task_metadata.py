@@ -159,7 +159,7 @@ class TaskMetadata(BaseModel):
             for k, v in self.__root__.items():
                 names.add(k)  # Always include the current level
                 if isinstance(v, TaskMetadata):
-                    names.update({k+'.'+item for item in v.keys()})
+                    names.update({k+'.'+item for item in v})
             return names
 
     def paramNames(self, topLevelOnly):
@@ -222,7 +222,7 @@ class TaskMetadata(BaseModel):
         keys = self._getKeys(key)
         if len(keys) == 1:
             return self.__root__[key]
-        if keys[0] in self.__root__.keys():
+        if keys[0] in self.__root__:
             val = self.__root__[keys[0]]
             if isinstance(val, TaskMetadata) and keys[1] in val:
                 return val[keys[1]]
@@ -236,7 +236,7 @@ class TaskMetadata(BaseModel):
         if len(keys) == 1:
             self.__root__[key] = item
         else:
-            if keys[0] not in self.__root__.keys():
+            if keys[0] not in self.__root__:
                 self.__root__[keys[0]] = TaskMetadata()
             elif not isinstance(self.__root__[keys[0]], TaskMetadata):
                 raise KeyError((f"Key '{key}' can not be set. '{keys[0]}'"
@@ -249,7 +249,7 @@ class TaskMetadata(BaseModel):
             return key in self.__root__
         else:
             return \
-                keys[0] in self.__root__.keys() and \
+                keys[0] in self.__root__ and \
                 isinstance(self.__root__[keys[0]], TaskMetadata) and \
                 keys[1] in self.__root__[keys[0]]
 
@@ -257,7 +257,7 @@ class TaskMetadata(BaseModel):
         keys = self._getKeys(key)
         if len(keys) == 1:
             del self.__root__[key]
-        if keys[0] in self.__root__.keys() and \
+        if keys[0] in self.__root__ and \
                 isinstance(self.__root__[keys[0]], TaskMetadata) and \
                 keys[1] in self.__root__[keys[0]]:
             del self.__root__[keys[0]][keys[1]]
