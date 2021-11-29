@@ -456,7 +456,8 @@ class ImportIR:
         """
         if self.include and self.exclude:
             raise ValueError(
-                "Both an include and an exclude list cant be specified when declaring a pipeline import"
+                "An include list and an exclude list cannot both be specified"
+                " when declaring a pipeline import."
             )
         tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not _Tags.KeepInstrument:
