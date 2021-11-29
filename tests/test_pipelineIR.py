@@ -428,7 +428,7 @@ class PipelineIRTestCase(unittest.TestCase):
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
         location = os.path.expandvars("$PIPE_BASE_DIR/tests/testPipeline1.yaml")
-        pipeline = PipelineIR.from_file(location)
+        pipeline = PipelineIR.from_uri(location)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
         # Verify that a contract message is loaded
@@ -626,8 +626,8 @@ class PipelineIRTestCase(unittest.TestCase):
 
         # Create the temp file, write and read
         with tempfile.NamedTemporaryFile() as tf:
-            pipeline.to_file(tf.name)
-            loaded_pipeline = PipelineIR.from_file(tf.name)
+            pipeline.write_to_uri(tf.name)
+            loaded_pipeline = PipelineIR.from_uri(tf.name)
         self.assertEqual(pipeline, loaded_pipeline)
 
     def testSorting(self):
