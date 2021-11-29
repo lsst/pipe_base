@@ -25,7 +25,10 @@ import textwrap
 import unittest
 
 import lsst.utils.tests
+from lsst.daf.butler import ButlerURI
 from lsst.pipe.base.pipelineIR import ConfigIR, PipelineIR
+
+TEST_DIR = os.path.join(os.path.dirname(__file__))
 
 
 class ConfigIRTestCase(unittest.TestCase):
@@ -308,6 +311,20 @@ class PipelineIRTestCase(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
+
+        # Test that importing with a relative path fails as expected.
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+              - testPipeline1.yaml
+        """
+        )
+        with self.assertRaises(RuntimeError):
+            PipelineIR.from_string(pipeline_str)
+        # and that this works when we provide a directory.
+        pipeline = PipelineIR.from_string(pipeline_str, ButlerURI(TEST_DIR))
+        self.assertEqual(set(pipeline.tasks.keys()), set(["modA", "modB"]))
 
     def testReadParameters(self):
         # verify that parameters section are read in from a pipeline

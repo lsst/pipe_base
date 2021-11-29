@@ -27,7 +27,6 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 
 import copy
 import logging
-import os
 import re
 import urllib.parse
 import warnings
@@ -647,7 +646,12 @@ class Pipeline:
                 if configIR.dataId is None:
                     if configIR.file:
                         for configFile in configIR.file:
-                            overrides.addFileOverride(os.path.expandvars(configFile))
+                            overrides.addFileOverride(
+                                pipelineIR.standardize_uri_in_pipeline(
+                                    configFile,
+                                    directory=self._pipelineIR.directory,
+                                )
+                            )
                     if configIR.python is not None:
                         overrides.addPythonOverride(configIR.python)
                     for key, value in configIR.rest.items():

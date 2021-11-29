@@ -22,6 +22,7 @@
 """Simple unit test for Pipeline.
 """
 
+import os
 import textwrap
 import unittest
 
@@ -112,6 +113,39 @@ class PipelineTestCase(unittest.TestCase):
             "task2_config",
         }
         self.assertEqual(dsType, expected)
+
+    def test_relative_config_file_overrides(self):
+        """Test that config file overrides with relative paths are interpreted
+        as relative to the location of the pipeline file.
+        """
+        p1 = makeSimplePipeline(3)
+        p1.addConfigFile("task1", "../a.py")
+        p2 = makeSimplePipeline(3)
+        p2.addConfigFile("task2", "b.py")
+        config = AddTask.ConfigClass()
+        config.addend = 1
+        with lsst.utils.tests.temporaryDirectory() as root:
+            pipeline_dir = os.path.join(root, "p")
+            os.makedirs(pipeline_dir)
+            p1.write_to_uri(os.path.join(pipeline_dir, "p1.yaml"))
+            p2.write_to_uri(os.path.join(pipeline_dir, "p2.yaml"))
+            config.save(os.path.join(root, "a.py"))
+            config.save(os.path.join(pipeline_dir, "b.py"))
+            # Directory structure is now
+            # <root>/
+            #   p/
+            #     p1.yaml
+            #     p2.yaml
+            #     b.py
+            #   a.py
+            p1_loaded = Pipeline.from_uri(f"file://{pipeline_dir}/p1.yaml")
+            p2_loaded = Pipeline.from_uri(os.path.join(pipeline_dir, "p2.yaml"))
+            self.assertEqual(p1_loaded["task0"].config.addend, 3)
+            self.assertEqual(p1_loaded["task1"].config.addend, 1)
+            self.assertEqual(p1_loaded["task2"].config.addend, 3)
+            self.assertEqual(p2_loaded["task0"].config.addend, 3)
+            self.assertEqual(p2_loaded["task1"].config.addend, 3)
+            self.assertEqual(p2_loaded["task2"].config.addend, 1)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
