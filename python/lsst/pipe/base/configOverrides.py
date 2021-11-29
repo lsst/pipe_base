@@ -214,6 +214,7 @@ class ConfigOverrides:
         Parameters
         ----------
         config : `pex.Config`
+            Configuration to apply to; modified in place.
 
         Raises
         ------
