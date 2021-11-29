@@ -501,12 +501,13 @@ class PipelineIR:
 
     Raises
     ------
-    ValueError :
-        - If a pipeline is declared without a description
-        - If no tasks are declared in a pipeline, and no pipelines are to be
-          inherited
-        - If more than one instrument is specified
-        - If more than one inherited pipeline share a label
+    ValueError
+        Raised if:
+        - a pipeline is declared without a description;
+        - no tasks are declared in a pipeline, and no pipelines are to be
+          inherited;
+        - more than one instrument is specified;
+        - more than one inherited pipeline share a label.
     """
 
     def __init__(self, loaded_yaml: Dict[str, Any]):
