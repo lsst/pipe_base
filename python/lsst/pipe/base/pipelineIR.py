@@ -874,16 +874,11 @@ class PipelineIR:
             The loaded pipeline
         """
         loaded_uri = ButlerURI(uri)
-        # With ButlerURI we have the choice of always using a local file or
-        # reading in the bytes directly. Reading in bytes can be more
-        # efficient for reasonably-sized files when the resource is remote.
-        # For now use the local file variant. For a local file as_local() does
-        # nothing.
-        with loaded_uri.as_local() as local:
+        with loaded_uri.open("r") as buffer:
             # explicitly read here, there was some issue with yaml trying
             # to read the ButlerURI itself (I think because it only
             # pretends to be conformant to the io api)
-            loaded_yaml = yaml.load(local.read(), Loader=PipelineYamlLoader)
+            loaded_yaml = yaml.load(buffer, Loader=PipelineYamlLoader)
             return cls(loaded_yaml)
 
     @deprecated(
@@ -911,8 +906,8 @@ class PipelineIR:
         uri: `str` or `ButlerURI`
             Location of document to write a `PipelineIR` object.
         """
-        butlerUri = ButlerURI(uri)
-        butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False).encode())
+        with ButlerURI(uri).open("w") as buffer:
+            yaml.dump(self.to_primitives(), buffer, sort_keys=False)
 
     def to_primitives(self) -> Dict[str, Any]:
         """Convert to a representation used in yaml serialization"""
