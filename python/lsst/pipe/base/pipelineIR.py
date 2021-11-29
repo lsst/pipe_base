@@ -892,10 +892,7 @@ class PipelineIR:
         """
         loaded_uri = ResourcePath(uri)
         with loaded_uri.open("r") as buffer:
-            # explicitly read here, there was some issue with yaml trying
-            # to read the ResourcePath itself (I think because it only
-            # pretends to be conformant to the io api)
-            loaded_yaml = yaml.load(buffer.read(), Loader=PipelineYamlLoader)
+            loaded_yaml = yaml.load(buffer, Loader=PipelineYamlLoader)
             return cls(loaded_yaml)
 
     @deprecated(
