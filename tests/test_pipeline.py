@@ -30,14 +30,8 @@ from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
 
-class TaskTestCase(unittest.TestCase):
-    """A test case for Task"""
-
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
+class PipelineTestCase(unittest.TestCase):
+    """A test case for TaskDef and Pipeline."""
 
     def testTaskDef(self):
         """Tests for TaskDef structure"""
@@ -103,10 +97,6 @@ class TaskTestCase(unittest.TestCase):
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
-
-
-class PipelineTestCase(unittest.TestCase):
-    """Test case for Pipeline and related classes"""
 
     def test_initOutputNames(self):
         """Test for PipelineDatasetTypes.initOutputNames method."""
