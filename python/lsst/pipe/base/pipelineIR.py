@@ -197,9 +197,19 @@ class LabeledSubset:
             )
         return LabeledSubset(label, set(subset), description)
 
-    def to_primitives(self) -> Dict[str, Union[List[str], str]]:
-        """Convert to a representation used in yaml serialization"""
-        accumulate: Dict[str, Union[List[str], str]] = {"subset": list(self.subset)}
+    def to_primitives(self, sorter: Optional[Mapping[str, Any]] = None) -> Dict[str, Union[List[str], str]]:
+        """Convert to a representation used in yaml serialization
+
+        Parameters
+        ----------
+        sorter : `Mapping` [ `str`, `object` ]
+            Mapping from task or subset label to a comparable object that
+            should be used to sort those labels.
+        """
+        contents = list(self.subset)
+        if sorter is not None:
+            contents.sort(key=lambda label: sorter[label])
+        accumulate: Dict[str, Union[List[str], str]] = {"subset": contents}
         if self.description is not None:
             accumulate["description"] = self.description
         return accumulate
@@ -959,7 +969,12 @@ class PipelineIR:
         """
         self.write_to_uri(filename)
 
-    def write_to_uri(self, uri: Union[ButlerURI, str]):
+    def write_to_uri(
+        self,
+        uri: Union[ButlerURI, str],
+        *,
+        expanded_tasks: Optional[Mapping[str, TaskIR]] = None,
+    ):
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified uri.
 
@@ -967,28 +982,82 @@ class PipelineIR:
         ----------
         uri: `str` or `ButlerURI`
             Location of document to write a `PipelineIR` object.
+        expanded_tasks : `Mapping` [ `str`, `TaskIR` ], optional
+            Mapping containing replacement `TaskIR` objects that capture the
+            fully-expanded configuration rather than a set of overrides, in
+            deterministic order.  When this is not `None`, the ``instrument``
+            and ``parameters`` sections are not written and all other sections
+            are sorted (using the order of the given tasks) to maximize the
+            extent to which equivalent pipelines will be written identically.
         """
         with ButlerURI(uri).open("w") as buffer:
-            yaml.dump(self.to_primitives(), buffer, sort_keys=False)
+            yaml.dump(self.to_primitives(expanded_tasks=expanded_tasks), buffer, sort_keys=False)
 
-    def to_primitives(self) -> Dict[str, Any]:
-        """Convert to a representation used in yaml serialization"""
+    def to_primitives(self, expanded_tasks: Optional[Mapping[str, TaskIR]] = None) -> Dict[str, Any]:
+        """Convert to a representation used in yaml serialization
+
+        Parameters
+        ----------
+        expanded_tasks : `Mapping` [ `str`, `TaskIR` ], optional
+            Mapping containing replacement `TaskIR` objects that capture the
+            fully-expanded configuration rather than a set of overrides, in
+            deterministic order.  When this is not `None`, the ``instrument``
+            and ``parameters`` sections are not written and all other sections
+            are sorted (using the order of the given tasks) to maximize the
+            extent to which equivalent pipelines will be written identically.
+
+        Returns
+        -------
+        primitives : `dict`
+            Dictionary that maps directly to the serialized YAML form.
+        """
         accumulate = {"description": self.description}
-        if self.instrument is not None:
-            accumulate["instrument"] = self.instrument
-        if self.parameters:
-            accumulate["parameters"] = self._sort_by_str(self.parameters.to_primitives())
-        accumulate["tasks"] = {m: t.to_primitives() for m, t in self.tasks.items()}
+        sorter: Optional[Dict[str, int]] = None
+        if expanded_tasks is None:
+            tasks = self.tasks
+            labeled_subsets = self.labeled_subsets
+            contracts = self.contracts
+            # Instrument and parameters are only included in non-expanded form,
+            # because they'll have already been applied to configs in expanded
+            # form.  It might be nice to include the instrument to check that
+            # the expanded pipeline is only used on data from that instrument,
+            # but we can't risk having the instrument's config overrides
+            # applied (again) on top of other configs that should supersede
+            # them.
+            if self.instrument is not None:
+                accumulate["instrument"] = self.instrument
+            if self.parameters:
+                accumulate["parameters"] = self.parameters.to_primitives()
+        else:
+            tasks = expanded_tasks
+            # Make a dict that maps task labels to their position in the
+            # (presumably ordered) mapping we were given.
+            sorter = {label: n for n, label in enumerate(expanded_tasks.keys())}
+            # Sort the labeled subsets themselves by the position of their
+            # first task in the overall pipeline, followed by their own label
+            # to break ties.  Note that we sort the tasks within them only
+            # later when we convert them to primitives, because at this point
+            # they hold `set` objects, not lists.
+            labeled_subsets = {
+                subset.label: subset
+                for subset in sorted(
+                    self.labeled_subsets.values(), key=lambda s: (min(sorter[t] for t in s.subset), s.label)
+                )
+            }
+            # Sort contracts by the string expression itself, just for as much
+            # determinism as we can manage; can't help it if someone rewrites
+            # an expression to something equivalent that changes the sort
+            # order.
+            contracts = list(self.contracts)
+            contracts.sort(key=lambda c: c.contract)
+
+        # Get primitives for sections common to expanded and non-expanded
+        # forms.
+        accumulate["tasks"] = {m: t.to_primitives() for m, t in tasks.items()}
         if len(self.contracts) > 0:
-            # sort contracts lexicographical order by the contract string in
-            # absence of any other ordering principle
-            contracts_list = [c.to_primitives() for c in self.contracts]
-            contracts_list.sort(key=lambda x: x["contract"])
-            accumulate["contracts"] = contracts_list
-        if self.labeled_subsets:
-            accumulate["subsets"] = self._sort_by_str(
-                {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
-            )
+            accumulate["contracts"] = [c.to_primitives() for c in contracts]
+        if labeled_subsets:
+            accumulate["subsets"] = {k: v.to_primitives(sorter) for k, v in labeled_subsets.items()}
         return accumulate
 
     def reorder_tasks(self, task_labels: List[str]) -> None:
@@ -1017,11 +1086,6 @@ class PipelineIR:
 
         newTasks = {key: self.tasks[key] for key in task_labels}
         self.tasks = newTasks
-
-    @staticmethod
-    def _sort_by_str(arg: Mapping[str, Any]) -> Mapping[str, Any]:
-        keys = sorted(arg.keys())
-        return {key: arg[key] for key in keys}
 
     def __str__(self) -> str:
         """Instance formatting as how it would look in yaml representation"""

@@ -27,7 +27,8 @@ import textwrap
 import unittest
 
 import lsst.utils.tests
-from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
+import yaml
+from lsst.pipe.base import LabelSpecifier, Pipeline, PipelineDatasetTypes, TaskDef
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
 
@@ -146,6 +147,83 @@ class PipelineTestCase(unittest.TestCase):
             self.assertEqual(p2_loaded["task0"].config.addend, 3)
             self.assertEqual(p2_loaded["task1"].config.addend, 3)
             self.assertEqual(p2_loaded["task2"].config.addend, 1)
+
+    def test_expanded_io(self):
+        """Test writing and reading a pipeline with expand=True."""
+        original_pipeline_str = textwrap.dedent(
+            """
+            description: Test Pipeline
+            parameters:
+              testValue: 5
+            tasks:
+              # Note that topological ordering is addB, then a tie between
+              # addA and addC.
+              addC:
+                class: lsst.pipe.base.tests.simpleQGraph.AddTask
+                config:
+                  connections.in_tmpl: _1
+                  connections.out_tmpl: _2c
+              addB:
+                class: lsst.pipe.base.tests.simpleQGraph.AddTask
+                config:
+                  addend: parameters.testValue
+                  connections.in_tmpl: _0
+                  connections.out_tmpl: _1
+              addA:
+                class: lsst.pipe.base.tests.simpleQGraph.AddTask
+                config:
+                  addend: 8
+                  connections.in_tmpl: _1
+                  connections.out_tmpl: _2a
+            subsets:
+              things: [addC, addB]
+            contracts:
+              addB.connections.out_tmpl == addA.connections.in_tmpl
+        """
+        )
+        original_pipeline = Pipeline.fromString(original_pipeline_str)
+
+        def check(pipeline):
+            """Check that a pipeline has the test content defined above.
+
+            This does not include checks for contracts (no public API for
+            that) or the presence or absence of parameters or instruments,
+            because an expanded pipeline should not have those anymore.
+            """
+            expanded = list(pipeline)
+            self.assertEqual([t.label for t in expanded], ["addB", "addA", "addC"])
+            self.assertEqual(
+                [t.taskName for t in expanded],
+                ["lsst.pipe.base.tests.simpleQGraph.AddTask"] * 3,
+            )
+            self.assertEqual([t.config.addend for t in expanded], [5, 8, 3])
+            subset = pipeline.subsetFromLabels(LabelSpecifier(labels={"things"}))
+            self.assertEqual(len(subset), 2)
+
+        check(original_pipeline)
+
+        with lsst.utils.tests.temporaryDirectory() as root:
+            with self.assertRaises(RuntimeError):
+                original_pipeline.write_to_uri(os.path.join(root, "foo.yaml"), expand=True)
+            # Expansion writes to directories, not yaml files.
+            # But if we don't have a .yaml extension, we assume the caller
+            # wants a directory, even without a trailing slash.
+            original_pipeline.write_to_uri(os.path.join(root, "test_pipeline"), expand=True)
+            self.assertTrue(os.path.isdir(os.path.join(root, "test_pipeline")))
+            self.assertTrue(os.path.isdir(os.path.join(root, "test_pipeline/config")))
+            self.assertTrue(os.path.isfile(os.path.join(root, "test_pipeline/pipeline.yaml")))
+            self.assertTrue(os.path.isfile(os.path.join(root, "test_pipeline/config/addA.py")))
+            self.assertTrue(os.path.isfile(os.path.join(root, "test_pipeline/config/addB.py")))
+            self.assertTrue(os.path.isfile(os.path.join(root, "test_pipeline/config/addC.py")))
+            with open(os.path.join(root, "test_pipeline/pipeline.yaml"), "r") as buffer:
+                primitives = yaml.load(buffer)
+            self.assertEqual(primitives.keys(), {"description", "tasks", "subsets", "contracts"})
+            self.assertEqual(len(primitives["contracts"]), 1)
+            self.assertEqual(primitives["subsets"], {"things": {"subset": ["addB", "addC"]}})
+            read_pipeline_1 = Pipeline.from_uri(os.path.join(root, "test_pipeline"))
+            read_pipeline_2 = Pipeline.from_uri(os.path.join(root, "test_pipeline/pipeline.yaml"))
+            check(read_pipeline_1)
+            check(read_pipeline_2)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

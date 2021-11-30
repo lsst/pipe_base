@@ -252,17 +252,19 @@ class Pipeline:
         ----------
         uri: `str` or `ButlerURI`
            If a string is supplied this should be a URI path that points to a
-           pipeline defined in yaml format. This uri may also supply
-           additional labels to be used in subsetting the loaded Pipeline.
-           These labels are separated from the path by a \\#, and may be
-           specified as a comma separated list, or a range denoted as
+           pipeline defined in yaml format, either as a direct path to the yaml
+           file, or as a directory containing a "pipeline.yaml" file (the form
+           used by `write_to_uri` with ``expand=True``). This uri may also
+           supply additional labels to be used in subsetting the loaded
+           Pipeline.  These labels are separated from the path by a \\#, and
+           may be specified as a comma separated list, or a range denoted as
            beginning..end. Beginning or end may be empty, in which case the
-           range will be a half open interval. Unlike python iteration
-           bounds, end bounds are *INCLUDED*. Note that range based selection
-           is not well defined for pipelines that are not linear in nature,
-           and correct behavior is not guaranteed, or may vary from run to
-           run. The same specifiers can be used with a ButlerURI object, by
-           being the sole contents in the fragments attribute.
+           range will be a half open interval. Unlike python iteration bounds,
+           end bounds are *INCLUDED*. Note that range based selection is not
+           well defined for pipelines that are not linear in nature, and
+           correct behavior is not guaranteed, or may vary from run to run. The
+           same specifiers can be used with a ButlerURI object, by being the
+           sole contents in the fragments attribute.
 
         Returns
         -------
@@ -279,6 +281,8 @@ class Pipeline:
         """
         # Split up the uri and any labels that were supplied
         uri, label_specifier = cls._parse_file_specifier(uri)
+        if uri.dirLike:
+            uri = uri.join("pipeline.yaml")
         pipeline: Pipeline = cls.fromIR(pipelineIR.PipelineIR.from_uri(uri))
 
         # If there are labels supplied, only keep those
@@ -586,8 +590,43 @@ class Pipeline:
     def toFile(self, filename: str) -> None:
         self._pipelineIR.to_file(filename)
 
-    def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
-        self._pipelineIR.write_to_uri(uri)
+    def write_to_uri(
+        self,
+        uri: Union[str, ButlerURI],
+        expand: bool = False,
+        task_defs: Optional[Iterable[TaskDef]] = None,
+    ) -> None:
+        """Write the pipeline to a file or directory.
+
+        Parameters
+        ----------
+        uri : `str` or `ButlerURI`
+            URI to write to; may have any scheme with `ButlerURI` write
+            or no scheme for a local file/directory.  Should have a ``.yaml``
+            extension if ``expand=False`` and a trailing slash (indicating
+            a directory-like URI) if ``expand=True``.
+        expand : `bool`, optional
+            If `False`, write the pipeline to a single YAML file with
+            references to configuration files and other config overrides
+            unexpanded and unapplied, with tasks and subsets only minimally
+            validated (and not imported).  If `True`, import all tasks, apply
+            all configuration overrides (including those supplied by an
+            instrument), resolve parameters, sort all sections
+            deterministically, and write the pipeline to a directory with
+            separate config files for each task as well as a single
+            ``pipeline.yaml`` file.
+        task_defs : `Iterable` [ `TaskDef` ], optional
+            Output of `toExpandedPipeline`; may be passed to avoid a second
+            call to that method internally.  Ignored unless ``expand=True``.
+        """
+        if expand:
+            if str(uri).endswith(".yaml"):
+                raise RuntimeError(
+                    f"Expanded pipelines are written to directories, not YAML files like {uri}."
+                )
+            self._write_expanded_dir(ButlerURI(uri, forceDirectory=True), task_defs=task_defs)
+        else:
+            self._pipelineIR.write_to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
         """Returns a generator of TaskDefs which can be used to create quantum
@@ -684,6 +723,41 @@ class Pipeline:
         raise NotImplementedError(
             "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
         )
+
+    def _write_expanded_dir(self, uri: ButlerURI, task_defs: Optional[Iterable[TaskDef]] = None) -> None:
+        """Internal implementation of `write_to_uri` with ``expand=True`` and
+        a directory-like URI.
+
+        Parameters
+        ----------
+        uri : `str` or `ButlerURI`
+            URI to write to; may have any scheme with `ButlerURI` write or no
+            scheme for a local file/directory.  Should have a trailing slash
+            (indicating a directory-like URI).
+        task_defs : `Iterable` [ `TaskDef` ], optional
+            Output of `toExpandedPipeline`; may be passed to avoid a second
+            call to that method internally.
+        """
+        assert uri.dirLike, f"{uri} is not a directory-like URI."
+        # Expand the pipeline.  This applies all config overrides, applies all
+        # parameters, checks contracts, and sorts tasks topologically with
+        # lexicographical (on label) tiebreaking.
+        if task_defs is not None:
+            task_defs = list(task_defs)
+        else:
+            task_defs = list(self.toExpandedPipeline())
+        uri.mkdir()
+        config_dir_uri = uri.join("config/")
+        config_dir_uri.mkdir()
+        expanded_tasks: Dict[str, pipelineIR.TaskIR] = {}
+        for task_def in task_defs:
+            task_ir = pipelineIR.TaskIR(label=task_def.label, klass=task_def.taskName, config=[])
+            config_uri = config_dir_uri.join(f"{task_def.label}.py")
+            with config_uri.open("w") as buffer:
+                task_def.config.saveToStream(buffer)
+            task_ir.config.append(pipelineIR.ConfigIR(file=[f"config/{task_def.label}.py"]))
+            expanded_tasks[task_def.label] = task_ir
+        self._pipelineIR.write_to_uri(uri.join("pipeline.yaml"), expanded_tasks=expanded_tasks)
 
 
 @dataclass(frozen=True)
