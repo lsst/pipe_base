@@ -25,57 +25,9 @@
 import textwrap
 import unittest
 
-import lsst.pex.config as pexConfig
 import lsst.utils.tests
-from lsst.pipe.base import (
-    Pipeline,
-    PipelineDatasetTypes,
-    PipelineTask,
-    PipelineTaskConfig,
-    PipelineTaskConnections,
-    Struct,
-    TaskDef,
-    connectionTypes,
-)
-from lsst.pipe.base.tests.simpleQGraph import makeSimplePipeline
-
-
-class DummyAddConnections(PipelineTaskConnections, dimensions=()):
-    dummyOutput = connectionTypes.Output("addOutput", "dummyStorage", "add output")
-
-
-class DummyMultiplyConnections(PipelineTaskConnections, dimensions=()):
-    dummyInput = connectionTypes.Input("addOutput", "dummyStorage", "add output")
-
-
-class AddConfig(PipelineTaskConfig, pipelineConnections=DummyAddConnections):
-    addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
-
-
-class AddTask(PipelineTask):
-    ConfigClass = AddConfig
-    _DefaultName = "add"
-
-    def run(self, val):
-        self.metadata.add("add", self.config.addend)
-        return Struct(
-            val=val + self.config.addend,
-        )
-
-
-class MultConfig(PipelineTaskConfig, pipelineConnections=DummyMultiplyConnections):
-    multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
-
-
-class MultTask(PipelineTask):
-    ConfigClass = MultConfig
-    _DefaultName = "mult"
-
-    def run(self, val):
-        self.metadata.add("mult", self.config.multiplicand)
-        return Struct(
-            val=val * self.config.multiplicand,
-        )
+from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
+from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
 
 class TaskTestCase(unittest.TestCase):
@@ -89,25 +41,11 @@ class TaskTestCase(unittest.TestCase):
 
     def testTaskDef(self):
         """Tests for TaskDef structure"""
-        task1 = TaskDef(taskClass=AddTask, config=AddConfig())
+        task1 = TaskDef(taskClass=AddTask, config=AddTask.ConfigClass())
         self.assertIn("Add", task1.taskName)
-        self.assertIsInstance(task1.config, AddConfig)
+        self.assertIsInstance(task1.config, AddTask.ConfigClass)
         self.assertIsNotNone(task1.taskClass)
-        self.assertEqual(task1.label, "add")
-
-        task2 = TaskDef(
-            "lsst.pipe.base.tests.Mult", config=MultConfig(), taskClass=MultTask, label="mult_task"
-        )
-        self.assertEqual(task2.taskName, "lsst.pipe.base.tests.Mult")
-        self.assertIsInstance(task2.config, MultConfig)
-        self.assertIs(task2.taskClass, MultTask)
-        self.assertEqual(task2.label, "mult_task")
-        self.assertEqual(task2.metadataDatasetName, "mult_task_metadata")
-
-        config = MultConfig()
-        config.saveMetadata = False
-        task3 = TaskDef("lsst.pipe.base.tests.Mult", config, MultTask, "mult_task")
-        self.assertIsNone(task3.metadataDatasetName)
+        self.assertEqual(task1.label, "add_task")
 
     def testEmpty(self):
         """Creating empty pipeline"""
@@ -116,13 +54,15 @@ class TaskTestCase(unittest.TestCase):
 
     def testInitial(self):
         """Testing constructor with initial data"""
-        pipeline = Pipeline("test")
-        pipeline.addTask(AddTask, "add")
-        pipeline.addTask(MultTask, "mult")
+        pipeline = makeSimplePipeline(2)
         self.assertEqual(len(pipeline), 2)
         expandedPipeline = list(pipeline.toExpandedPipeline())
         self.assertEqual(expandedPipeline[0].taskName, "AddTask")
-        self.assertEqual(expandedPipeline[1].taskName, "MultTask")
+        self.assertEqual(expandedPipeline[1].taskName, "AddTask")
+        self.assertEqual(expandedPipeline[0].taskClass, AddTask)
+        self.assertEqual(expandedPipeline[1].taskClass, AddTask)
+        self.assertEqual(expandedPipeline[0].label, "task0")
+        self.assertEqual(expandedPipeline[1].label, "task1")
 
     def testParameters(self):
         """Test that parameters can be set and used to format"""
@@ -130,7 +70,7 @@ class TaskTestCase(unittest.TestCase):
             """
             description: Test Pipeline
             parameters:
-               testValue: 5.7
+               testValue: 5
             tasks:
               add:
                 class: test_pipeline.AddTask
@@ -141,12 +81,12 @@ class TaskTestCase(unittest.TestCase):
         # verify that parameters are used in expanding a pipeline
         pipeline = Pipeline.fromString(pipeline_str)
         expandedPipeline = list(pipeline.toExpandedPipeline())
-        self.assertEqual(expandedPipeline[0].config.addend, 5.7)
+        self.assertEqual(expandedPipeline[0].config.addend, 5)
 
         # verify that a parameter can be overridden on the "command line"
-        pipeline.addConfigOverride("parameters", "testValue", 14.9)
+        pipeline.addConfigOverride("parameters", "testValue", 14)
         expandedPipeline = list(pipeline.toExpandedPipeline())
-        self.assertEqual(expandedPipeline[0].config.addend, 14.9)
+        self.assertEqual(expandedPipeline[0].config.addend, 14)
 
         # verify that a non existing parameter cant be overridden
         with self.assertRaises(ValueError):
@@ -159,10 +99,7 @@ class TaskTestCase(unittest.TestCase):
             pipeline.addConfigPython("parameters", "fakePythonString")
 
     def testSerialization(self):
-        pipeline = Pipeline("test")
-        pipeline.addTask(MultTask, "mult")
-        pipeline.addTask(AddTask, "add")
-
+        pipeline = makeSimplePipeline(2)
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
