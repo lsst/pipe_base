@@ -111,6 +111,32 @@ class TaskMetadataTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             meta.getArray("not_present")
 
+    def testValidation(self):
+        """Test that validation works."""
+        meta = TaskMetadata()
+
+        class BadThing:
+            pass
+
+        with self.assertRaises(ValueError):
+            meta["bad"] = BadThing()
+
+        with self.assertRaises(ValueError):
+            meta["bad_list"] = [BadThing()]
+
+        meta.add("int", 4)
+        with self.assertRaises(ValueError):
+            meta.add("int", "string")
+
+        with self.assertRaises(ValueError):
+            meta.add("mapping", {})
+
+        with self.assertRaises(ValueError):
+            meta.add("int", ["string", "array"])
+
+        with self.assertRaises(ValueError):
+            meta["mixed"] = [1, "one"]
+
     def testDict(self):
         """Construct a TaskMetadata from a dictionary."""
         d = {"a": "b", "c": 1, "d": [1, 2], "e": {"f": "g", "h": {"i": [3, 4]}}}

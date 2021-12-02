@@ -32,6 +32,10 @@ from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr, F
 _DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"
 
+# The types allowed in a Task metadata field are restricted
+# to allow predictable serialization.
+_ALLOWED_PRIMITIVE_TYPES = (str, float, int, bool)
+
 
 def _isListLike(v):
     return isinstance(v, Sequence) and not isinstance(v, str)
@@ -94,11 +98,13 @@ class TaskMetadata(BaseModel):
 
             # If add() is being used, always store the value in the arrays
             # property as a list. It's likely there will be another call.
-            if not _isListLike(value):
+            slot_type, value = self._validate_value(value)
+            if slot_type == "array":
+                pass
+            elif slot_type == "scalar":
                 value = [value]
             else:
-                # Force deep copy. No validation.
-                value = list(value)
+                raise ValueError("add() can only be used for primitive types or sequences of those types.")
 
             if key0 in self.metadata:
                 raise ValueError(f"Can not add() to key '{name}' since that is a TaskMetadata")
@@ -108,6 +114,9 @@ class TaskMetadata(BaseModel):
                 self.arrays[key0] = [self.scalars.pop(key0)]
 
             if key0 in self.arrays:
+                # Check that the type is not changing.
+                if (curtype := type(self.arrays[key0][0])) is not (newtype := type(value[0])):
+                    raise ValueError(f"Type mismatch in add() -- currently {curtype} but adding {newtype}")
                 self.arrays[key0].extend(value)
             else:
                 self.arrays[key0] = value
@@ -300,19 +309,12 @@ class TaskMetadata(BaseModel):
         key0 = keys.pop(0)
         if len(keys) == 0:
             # Currently no type validation.
-            slots = {"arrays": self.arrays, "scalars": self.scalars, "metadata": self.metadata}
+            slots = {"array": self.arrays, "scalar": self.scalars, "metadata": self.metadata}
             primary = None
-            if _isListLike(item):
-                primary = slots.pop("arrays")
-                # Force to a list copy for any sequence.
-                item = list(item)
-            elif isinstance(item, TaskMetadata):
-                primary = slots.pop("metadata")
-            elif isinstance(item, Mapping):
-                primary = slots.pop("metadata")
-                item = self.from_dict(item)
-            else:
-                primary = slots.pop("scalars")
+            slot_type, item = self._validate_value(item)
+            primary = slots.pop(slot_type, None)
+            if primary is None:
+                raise AssertionError(f"Unknown slot type returned from validator: {slot_type}")
 
             # Assign the value to the right place.
             primary[key0] = item
@@ -351,6 +353,54 @@ class TaskMetadata(BaseModel):
             raise KeyError(f"'{key} not found'")
 
         del self.metadata[key0][".".join(keys)]
+
+    def _validate_value(self, value):
+        """Validate the given value.
+
+        Parameters
+        ----------
+        value : Any
+            Value to check.
+
+        Returns
+        -------
+        slot_type : `str`
+            The type of value given. Options are "scalar", "array", "metadata".
+        item : Any
+            The item that was given but possibly modified to conform to
+            the slot type.
+
+        Raises
+        ------
+        ValidationError
+            Raised if the value is not a recognized type.
+        """
+
+        # Test the simplest option first.
+        value_type = type(value)
+        if value_type in _ALLOWED_PRIMITIVE_TYPES:
+            return "scalar", value
+
+        if isinstance(value, TaskMetadata):
+            return "metadata", value
+        if isinstance(value, Mapping):
+            return "metadata", self.from_dict(value)
+
+        if _isListLike(value):
+            # For model consistency, need to check that every item in the
+            # list has the same type.
+            value = list(value)
+            type0 = type(value[0])
+            if type0 not in _ALLOWED_PRIMITIVE_TYPES:
+                raise ValueError(f"Supplied list has element of type '{type0}'. "
+                                 "TaskMetadata can only accept primitive types in lists.")
+            for i in value:
+                if type(i) != type0:
+                    raise ValueError("Type mismatch in supplied list. TaskMetadata requires all"
+                                     f" elements have same type but see {type(i)} and {type0}.")
+            return "array", value
+
+        raise ValueError(f"TaskMetadata does not support values of type {value!r}.")
 
 
 # Needed because a TaskMetadata can contain a TaskMetadata.
