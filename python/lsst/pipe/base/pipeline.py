@@ -116,10 +116,8 @@ class TaskDef:
     Attributes
     ----------
     taskName : `str`, optional
-        `PipelineTask` class name, currently it is not specified whether this
-        is a fully-qualified name or partial name (e.g. ``module.TaskClass``).
-        Framework should be prepared to handle all cases.  If not provided,
-        ``taskClass`` must be, and ``taskClass.__name__`` is used.
+        The fully-qualified `PipelineTask` class name.  If not provided,
+        ``taskClass`` must be.
     config : `lsst.pex.config.Config`, optional
         Instance of the configuration class corresponding to this task class,
         usually with all overrides applied. This config will be frozen.  If
@@ -144,7 +142,7 @@ class TaskDef:
         if taskName is None:
             if taskClass is None:
                 raise ValueError("At least one of `taskName` and `taskClass` must be provided.")
-            taskName = taskClass.__name__
+            taskName = get_full_type_name(taskClass)
         if config is None:
             if taskClass is None:
                 raise ValueError("`taskClass` must be provided if `config` is not.")
@@ -670,7 +668,7 @@ class Pipeline:
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
         taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
-        taskName = taskClass.__qualname__
+        taskName = get_full_type_name(taskClass)
         config = taskClass.ConfigClass()
         overrides = ConfigOverrides()
         if self._pipelineIR.instrument is not None:
