@@ -21,12 +21,13 @@
 
 __all__ = ["TaskMetadata"]
 
+import itertools
 import warnings
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
 
-from typing import Dict, List, Union
-from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr
+from typing import Dict, List, Union, Any, Mapping
+from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr, Field
 
 _DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"
@@ -52,9 +53,30 @@ class TaskMetadata(BaseModel):
     the predecessor containers.
     """
 
-    # Metadata is limited -- float must come before int
-    __root__: Dict[str, Union["TaskMetadata", StrictFloat, StrictInt, StrictBool, StrictStr,
-                              List[StrictFloat], List[StrictInt], List[StrictBool], List[StrictStr]]] = {}
+    scalars: Dict[str, Union[StrictFloat, StrictInt, StrictBool, StrictStr]] = Field(default_factory=dict)
+    arrays: Dict[str, Union[List[StrictFloat], List[StrictInt], List[StrictBool],
+                            List[StrictStr]]] = Field(default_factory=dict)
+    metadata: Dict[str, "TaskMetadata"] = Field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> "TaskMetadata":
+        """Create a TaskMetadata from a dictionary.
+
+        Parameters
+        ----------
+        d : `Mapping`
+            Mapping to convert. Can be hierarchical. Any dictionaries
+            in the hierarchy are converted to `TaskMetadata`.
+
+        Returns
+        -------
+        meta : `TaskMetadata`
+            Newly-constructed metadata.
+        """
+        metadata = cls()
+        for k, v in d.items():
+            metadata[k] = v
+        return metadata
 
     def add(self, name, value):
         """Store a new value, adding to a list if one already exists.
@@ -66,20 +88,33 @@ class TaskMetadata(BaseModel):
         value
             Metadata property value.
         """
-        if self.__contains__(name):
-            v = self.__getitem__(name)
-            if isinstance(v, TaskMetadata):
-                # can not add to TaskMetadata
-                raise KeyError(f"Invalid metadata key '{name}' for add.")
-            if not isinstance(v, list):
-                v = [v]
-            if _isListLike(value):
-                v.extend(value)
+        keys = self._getKeys(name)
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+
+            # If add() is being used, always store the value in the arrays
+            # property as a list. It's likely there will be another call.
+            if not _isListLike(value):
+                value = [value]
             else:
-                v.append(value)
-        else:
-            v = value
-        self.__setitem__(name, v)
+                # Force deep copy. No validation.
+                value = list(value)
+
+            if key0 in self.metadata:
+                raise ValueError(f"Can not add() to key '{name}' since that is a TaskMetadata")
+
+            if key0 in self.scalars:
+                # Convert scalar to array.
+                self.arrays[key0] = [self.scalars.pop(key0)]
+
+            if key0 in self.arrays:
+                self.arrays[key0].extend(value)
+            else:
+                self.arrays[key0] = value
+
+            return
+
+        self.metadata[key0].add(".".join(keys), value)
 
     @deprecated(reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
@@ -101,11 +136,18 @@ class TaskMetadata(BaseModel):
             corresponds to a list, the last item in the list.
         """
         # Used in pipe_tasks
-        v = self.__getitem__(key)
-        if _isListLike(v):
-            return v[-1]
-        else:
-            return v
+        keys = self._getKeys(key)
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            if key0 in self.arrays:
+                return self.arrays[key0][-1]
+            elif key0 in self.scalars:
+                return self.scalars[key0]
+            elif key0 in self.metadata:
+                return self.metadata[key0]
+            raise KeyError(f"'{key}' not found")
+
+        return self.metadata[key0].getScalar(".".join(keys))
 
     def getArray(self, key):
         """Retrieve an item as a list even if it is a scalar.
@@ -120,11 +162,18 @@ class TaskMetadata(BaseModel):
         values : `list` of any
             A list containing the value or values associated with this item.
         """
-        v = self.__getitem__(key)
-        if _isListLike(v):
-            return v
-        else:
-            return [v]
+        keys = self._getKeys(key)
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            if key0 in self.arrays:
+                return self.arrays[key0]
+            elif key0 in self.scalars:
+                return [self.scalars[key0]]
+            elif key0 in self.metadata:
+                return [self.metadata[key0]]
+            raise KeyError(f"'{key}' not found")
+
+        return self.metadata[key0].getArray(".".join(keys))
 
     def names(self, topLevelOnly: bool = True):
         """Return the hierarchical keys from the metadata.
@@ -153,13 +202,13 @@ class TaskMetadata(BaseModel):
         """
         if topLevelOnly:
             warnings.warn("Use keys() instead. " + _DEPRECATION_REASON, FutureWarning)
-            return set(self.__root__.keys())
+            return set(self.keys())
         else:
             names = set()
-            for k, v in self.__root__.items():
+            for k, v in self.items():
                 names.add(k)  # Always include the current level
                 if isinstance(v, TaskMetadata):
-                    names.update({k+'.'+item for item in v})
+                    names.update({k + '.' + item for item in v.names(topLevelOnly=topLevelOnly)})
             return names
 
     def paramNames(self, topLevelOnly):
@@ -181,10 +230,10 @@ class TaskMetadata(BaseModel):
         """
         # Currently used by the verify package.
         paramNames = set()
-        for k, v in self.__root__.items():
+        for k, v in self.items():
             if isinstance(v, TaskMetadata):
                 if not topLevelOnly:
-                    paramNames.update({k + "." + item for item in v})
+                    paramNames.update({k + "." + item for item in v.paramNames(topLevelOnly=topLevelOnly)})
             else:
                 paramNames.add(k)
         return paramNames
@@ -197,74 +246,111 @@ class TaskMetadata(BaseModel):
     @deprecated(reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def remove(self, key):
-        self.__delitem__(key)
+        try:
+            self.__delitem__(key)
+        except KeyError:
+            # The PropertySet.remove() should always work.
+            pass
 
     @staticmethod
     def _getKeys(key):
-        if not isinstance(key, str):
-            raise KeyError(f"Invalid key '{key}': only string keys are allowed")
-        keys = key.split('.')
-        if len(keys) > 2:
-            raise KeyError(f"Invalid key '{key}': '.' is only allowed as"
-                           " a separator between task and metadata item key.")
+        try:
+            keys = key.split('.')
+        except Exception:
+            raise KeyError(f"Invalid key '{key}': only string keys are allowed") from None
         return keys
 
     def keys(self):
-        return self.__root__.keys()
+        return tuple(k for k in self)
+
+    def items(self):
+        for k, v in itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items()):
+            yield (k, v)
 
     def __len__(self):
-        return len(self.__root__)
+        return len(self.scalars) + len(self.arrays) + len(self.metadata)
 
     def __iter__(self):
-        return iter(self.__root__)
+        # The order of keys is not preserved since items can move
+        # from scalar to array.
+        return itertools.chain(iter(self.scalars), iter(self.arrays), iter(self.metadata))
 
     def __getitem__(self, key):
+        # For compatibility with PropertySet, if the key refers to
+        # an array, the final element is returned and not the array itself.
         keys = self._getKeys(key)
-        if len(keys) == 1:
-            return self.__root__[key]
-        if keys[0] in self.__root__:
-            val = self.__root__[keys[0]]
-            if isinstance(val, TaskMetadata) and keys[1] in val:
-                return val[keys[1]]
-        raise KeyError(f"'{key}' not found in TaskMetadata")
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            if key0 in self.scalars:
+                return self.scalars[key0]
+            if key0 in self.metadata:
+                return self.metadata[key0]
+            if key0 in self.arrays:
+                return self.arrays[key0][-1]
+            raise KeyError(f"'{key}' not found")
+        # Hierarchical lookup so the top key can only be in the metadata
+        # property.
+        if key0 in self.metadata:
+            # And forward request to that metadata
+            return self.metadata[key0][".".join(keys)]
+        raise KeyError(f"'{key}' not found")
 
     def __setitem__(self, key, item):
-        # make sure list-like items are stored as lists
-        if _isListLike(item) and not isinstance(item, TaskMetadata):
-            item = list(item)
         keys = self._getKeys(key)
-        if len(keys) == 1:
-            self.__root__[key] = item
-        else:
-            if keys[0] not in self.__root__:
-                self.__root__[keys[0]] = TaskMetadata()
-            elif not isinstance(self.__root__[keys[0]], TaskMetadata):
-                raise KeyError((f"Key '{key}' can not be set. '{keys[0]}'"
-                                f" exists and is not TaskMetadata"))
-            self.__root__[keys[0]][keys[1]] = item
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            # Currently no type validation.
+            slots = {"arrays": self.arrays, "scalars": self.scalars, "metadata": self.metadata}
+            primary = None
+            if _isListLike(item):
+                primary = slots.pop("arrays")
+                # Force to a list copy for any sequence.
+                item = list(item)
+            elif isinstance(item, TaskMetadata):
+                primary = slots.pop("metadata")
+            elif isinstance(item, Mapping):
+                primary = slots.pop("metadata")
+                item = self.from_dict(item)
+            else:
+                primary = slots.pop("scalars")
+
+            # Assign the value to the right place.
+            primary[key0] = item
+            for property in slots.values():
+                # Remove any other entries.
+                property.pop(key0, None)
+            return
+
+        # This must be hierarchical so forward to the child TaskMetadata.
+        if key0 not in self.metadata:
+            self.metadata[key0] = TaskMetadata()
+        self.metadata[key0][".".join(keys)] = item
+
+        # Ensure we have cleared out anything with the same name elsewhere.
+        self.scalars.pop(key0, None)
+        self.arrays.pop(key0, None)
 
     def __contains__(self, key):
         keys = self._getKeys(key)
-        if len(keys) == 1:
-            return key in self.__root__
-        else:
-            return \
-                keys[0] in self.__root__ and \
-                isinstance(self.__root__[keys[0]], TaskMetadata) and \
-                keys[1] in self.__root__[keys[0]]
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            return key0 in self.scalars or key0 in self.arrays or key0 in self.metadata
+
+        if key0 in self.metadata:
+            return ".".join(keys) in self.metadata[key0]
+        return False
 
     def __delitem__(self, key):
         keys = self._getKeys(key)
-        if len(keys) == 1:
-            del self.__root__[key]
-        if keys[0] in self.__root__ and \
-                isinstance(self.__root__[keys[0]], TaskMetadata) and \
-                keys[1] in self.__root__[keys[0]]:
-            del self.__root__[keys[0]][keys[1]]
+        key0 = keys.pop(0)
+        if len(keys) == 0:
+            for property in (self.scalars, self.arrays, self.metadata):
+                if key0 in property:
+                    del property[key0]
+                    return
+            raise KeyError(f"'{key} not found'")
 
-    def __repr__(self):
-        # use repr() to format dictionary data
-        return f"{type(self).__name__}({self.__root__!r})"
+        del self.metadata[key0][".".join(keys)]
 
 
 # Needed because a TaskMetadata can contain a TaskMetadata.
