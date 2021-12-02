@@ -21,6 +21,7 @@
 
 __all__ = ["TaskMetadata"]
 
+import numbers
 import itertools
 import warnings
 from collections.abc import Sequence
@@ -390,15 +391,34 @@ class TaskMetadata(BaseModel):
             # For model consistency, need to check that every item in the
             # list has the same type.
             value = list(value)
+
             type0 = type(value[0])
-            if type0 not in _ALLOWED_PRIMITIVE_TYPES:
-                raise ValueError(f"Supplied list has element of type '{type0}'. "
-                                 "TaskMetadata can only accept primitive types in lists.")
             for i in value:
                 if type(i) != type0:
                     raise ValueError("Type mismatch in supplied list. TaskMetadata requires all"
                                      f" elements have same type but see {type(i)} and {type0}.")
+
+            if type0 not in _ALLOWED_PRIMITIVE_TYPES:
+                # Must check to see if we got numpy floats or something.
+                if isinstance(value[0], numbers.Integral):
+                    type_cast = int
+                elif isinstance(value[0], numbers.Real):
+                    type_cast = float
+                else:
+                    raise ValueError(f"Supplied list has element of type '{type0}'. "
+                                     "TaskMetadata can only accept primitive types in lists.")
+
+                value = [type_cast(v) for v in value]
+
             return "array", value
+
+        # Sometimes a numpy number is given.
+        if isinstance(value, numbers.Integral):
+            value = int(value)
+            return "scalar", value
+        if isinstance(value, numbers.Real):
+            value = float(value)
+            return "scalar", value
 
         raise ValueError(f"TaskMetadata does not support values of type {value!r}.")
 

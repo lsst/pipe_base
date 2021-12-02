@@ -22,6 +22,11 @@
 import unittest
 import json
 
+try:
+    import numpy
+except ImportError:
+    numpy = None
+
 from lsst.pipe.base import TaskMetadata
 
 
@@ -169,6 +174,31 @@ class TaskMetadataTestCase(unittest.TestCase):
 
         with self.assertWarns(FutureWarning):
             self.assertEqual(meta.names(topLevelOnly=True), set(meta.keys()))
+
+    @unittest.skipIf(not numpy, "Numpy is required for this test.")
+    def testNumpy(self):
+        meta = TaskMetadata()
+        meta["int"] = numpy.int64(42)
+        self.assertEqual(meta["int"], 42)
+        self.assertEqual(type(meta["int"]), int)
+
+        meta["float"] = numpy.float64(3.14)
+        self.assertEqual(meta["float"], 3.14)
+        self.assertEqual(type(meta["float"]), float)
+
+        meta.add("floatArray", [numpy.float64(1.5), numpy.float64(3.0)])
+        self.assertEqual(meta.getArray("floatArray"), [1.5, 3.0])
+        self.assertEqual(type(meta["floatArray"]), float)
+
+        meta.add("intArray", [numpy.int64(1), numpy.int64(3)])
+        self.assertEqual(meta.getArray("intArray"), [1, 3])
+        self.assertEqual(type(meta["intArray"]), int)
+
+        with self.assertRaises(ValueError):
+            meta.add("mixed", [1.5, numpy.float64(4.5)])
+
+        with self.assertRaises(ValueError):
+            meta["numpy"] = numpy.zeros(5)
 
 
 if __name__ == "__main__":
