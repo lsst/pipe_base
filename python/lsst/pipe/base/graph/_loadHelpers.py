@@ -22,9 +22,10 @@ from __future__ import annotations
 
 __all__ = ("LoadHelper", )
 
-from lsst.daf.butler import ButlerURI, Quantum
-from lsst.daf.butler.core._butlerUri.s3 import ButlerS3URI
-from lsst.daf.butler.core._butlerUri.file import ButlerFileURI
+from lsst.resources import ResourcePath
+from lsst.daf.butler import Quantum
+from lsst.resources.s3 import S3ResourcePath
+from lsst.resources.file import FileResourcePath
 
 from ..pipeline import TaskDef
 from .quantumNode import NodeId
@@ -54,21 +55,21 @@ class RegistryDict(UserDict):
 HELPER_REGISTRY = RegistryDict()
 
 
-def register_helper(URICLass: Union[Type[ButlerURI], Type[io.IO[bytes]]]):
+def register_helper(URICLass: Union[Type[ResourcePath], Type[io.IO[bytes]]]):
     """Used to register classes as Load helpers
 
     When decorating a class the parameter is the class of "handle type", i.e.
-    a ButlerURI type or open file handle that will be used to do the loading.
-    This is then associated with the decorated class such that when the
-    parameter type is used to load data, the appropriate helper to work with
-    that data type can be returned.
+    a ResourcePath type or open file handle that will be used to do the
+    loading. This is then associated with the decorated class such that when
+    the parameter type is used to load data, the appropriate helper to work
+    with that data type can be returned.
 
     A decorator is used so that in theory someone could define another handler
     in a different module and register it for use.
 
     Parameters
     ----------
-    URIClass : Type of `~lsst.daf.butler.ButlerURI` or `~io.IO` of bytes
+    URIClass : Type of `~lsst.resources.ResourcePath` or `~io.IO` of bytes
         type for which the decorated class should be mapped to
     """
     def wrapper(class_):
@@ -95,7 +96,7 @@ class DefaultLoadHelper:
 
     Parameters
     ----------
-    uriObject : `~lsst.daf.butler.ButlerURI` or `io.IO` of bytes
+    uriObject : `~lsst.resources.ResourcePath` or `io.IO` of bytes
         This is the object that will be used to retrieve the raw bytes of the
         save.
 
@@ -105,7 +106,7 @@ class DefaultLoadHelper:
         Raised if the specified file contains the wrong file signature and is
         not a `QuantumGraph` save
     """
-    def __init__(self, uriObject: Union[ButlerURI, io.IO[bytes]]):
+    def __init__(self, uriObject: Union[ResourcePath, io.IO[bytes]]):
         self.uriObject = uriObject
 
         # The length of infoSize will either be a tuple with length 2,
@@ -304,10 +305,10 @@ class DefaultLoadHelper:
         return qGraph
 
     def _readBytes(self, start: int, stop: int) -> bytes:
-        """Loads the specified byte range from the ButlerURI object
+        """Loads the specified byte range from the ResourcePath object
 
         In the base class, this actually will read all the bytes into a buffer
-        from the specified ButlerURI object. Then for each method call will
+        from the specified ResourcePath object. Then for each method call will
         return the requested byte range. This is the most flexible
         implementation, as no special read is required. This will not give a
         speed up with any sub graph reads though.
@@ -322,7 +323,7 @@ class DefaultLoadHelper:
         pass
 
 
-@register_helper(ButlerS3URI)
+@register_helper(S3ResourcePath)
 class S3LoadHelper(DefaultLoadHelper):
     # This subclass implements partial loading of a graph using a s3 uri
     def _readBytes(self, start: int, stop: int) -> bytes:
@@ -342,7 +343,7 @@ class S3LoadHelper(DefaultLoadHelper):
         return body
 
 
-@register_helper(ButlerFileURI)
+@register_helper(FileResourcePath)
 class FileLoadHelper(DefaultLoadHelper):
     # This subclass implements partial loading of a graph using a file uri
     def _readBytes(self, start: int, stop: int) -> bytes:
@@ -359,7 +360,7 @@ class FileLoadHelper(DefaultLoadHelper):
 @register_helper(io.IOBase)  # type: ignore
 class OpenFileHandleHelper(DefaultLoadHelper):
     # This handler is special in that it does not get initialized with a
-    # ButlerURI, but an open file handle.
+    # ResourcePath, but an open file handle.
 
     # Most everything stays the same, the variable is even stored as uriObject,
     # because the interface needed for reading is the same. Unfortunately
@@ -391,13 +392,14 @@ class LoadHelper:
     Note
     ----
     This class may go away or be modified in the future if some of the
-    features of this module can be propagated to `~lsst.daf.butler.ButlerURI`.
+    features of this module can be propagated to
+    `~lsst.resources.ResourcePath`.
 
     This helper will raise a `ValueError` if the specified file does not appear
     to be a valid `QuantumGraph` save file.
     """
-    uri: ButlerURI
-    """ButlerURI object from which the `QuantumGraph` is to be loaded
+    uri: ResourcePath
+    """ResourcePath object from which the `QuantumGraph` is to be loaded
     """
     def __enter__(self):
         # Only one handler is registered for anything that is an instance of
