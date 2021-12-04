@@ -882,6 +882,20 @@ class Pipeline:
             "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
         )
 
+    @property
+    def tasks(self) -> Mapping[str, str]:
+        """A mapping from label to the name of the associated task class.
+
+        This never imports task classes or configuration, but as a result it
+        may not return labels in the same order as iteration over the pipeline.
+        """
+        return {t.label: t.klass for t in self._pipelineIR.tasks.values()}
+
+    @property
+    def description(self) -> str:
+        """The string description of the pipeline."""
+        return self._pipelineIR.description
+
 
 @dataclass(frozen=True)
 class TaskDatasetTypes:
