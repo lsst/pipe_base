@@ -1033,6 +1033,8 @@ class PipelineIR:
             # Make a dict that maps task labels to their position in the
             # (presumably ordered) mapping we were given.
             sorter = {label: n for n, label in enumerate(expanded_tasks.keys())}
+            # Filter out subsets with no tasks.
+            labeled_subsets = {s.label: s for s in self.labeled_subsets.values() if s.subset}
             # Sort the labeled subsets themselves by the position of their
             # first task in the overall pipeline, followed by their own label
             # to break ties.  Note that we sort the tasks within them only
@@ -1041,7 +1043,7 @@ class PipelineIR:
             labeled_subsets = {
                 subset.label: subset
                 for subset in sorted(
-                    self.labeled_subsets.values(), key=lambda s: (min(sorter[t] for t in s.subset), s.label)
+                    labeled_subsets.values(), key=lambda s: (min(sorter[t] for t in s.subset), s.label)
                 )
             }
             # Sort contracts by the string expression itself, just for as much
