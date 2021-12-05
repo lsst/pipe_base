@@ -94,6 +94,8 @@ Python API reference
 
 .. automodapi:: lsst.pipe.base.tests.mocks
 
+.. automodapi:: lsst.pipe.base.pipeline_doc_builder
+
 QuantumGraph generation API reference
 -------------------------------------
 
