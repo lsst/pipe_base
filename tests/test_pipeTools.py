@@ -185,8 +185,8 @@ class PipelineToolsTestCase(unittest.TestCase):
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
-        self.assertEqual(pipeline[1].label, "task3")
-        self.assertEqual(pipeline[2].label, "task2")
+        self.assertEqual(pipeline[1].label, "task2")
+        self.assertEqual(pipeline[2].label, "task3")
         self.assertEqual(pipeline[3].label, "task4")
 
         pipeline = _makePipeline([(("D", "E"), "F", "task4"),
@@ -207,8 +207,8 @@ class PipelineToolsTestCase(unittest.TestCase):
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
-        self.assertEqual(pipeline[1].label, "task3")
-        self.assertEqual(pipeline[2].label, "task2")
+        self.assertEqual(pipeline[1].label, "task2")
+        self.assertEqual(pipeline[2].label, "task3")
         self.assertEqual(pipeline[3].label, "task4")
 
     def testOrderPipelineExceptions(self):

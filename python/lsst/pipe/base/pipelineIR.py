@@ -26,7 +26,7 @@ from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
 from deprecated.sphinx import deprecated
-from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type
+from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type, Mapping
 
 import copy
 import re
@@ -881,13 +881,50 @@ class PipelineIR:
         if self.instrument is not None:
             accumulate['instrument'] = self.instrument
         if self.parameters:
-            accumulate['parameters'] = self.parameters.to_primitives()
+            accumulate['parameters'] = self._sort_by_str(self.parameters.to_primitives())
         accumulate['tasks'] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
-            accumulate['contracts'] = [c.to_primitives() for c in self.contracts]
+            # sort contracts lexicographical order by the contract string in
+            # absence of any other ordering principle
+            contracts_list = [c.to_primitives() for c in self.contracts]
+            contracts_list.sort(key=lambda x: x["contract"])
+            accumulate['contracts'] = contracts_list
         if self.labeled_subsets:
-            accumulate['subsets'] = {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
+            accumulate['subsets'] = self._sort_by_str({k: v.to_primitives() for
+                                                       k, v in self.labeled_subsets.items()})
         return accumulate
+
+    def reorder_tasks(self, task_labels: List[str]) -> None:
+        """Changes the order tasks are stored internally. Useful for
+        determining the order things will appear in the serialized (or printed)
+        form.
+
+        Parameters
+        ----------
+        task_labels : `list` of `str`
+            A list corresponding to all the labels in the pipeline inserted in
+            the order the tasks are to be stored.
+
+        Raises
+        ------
+        KeyError
+            Raised if labels are supplied that are not in the pipeline, or if
+            not all labels in the pipeline were supplied in task_labels input.
+        """
+        # verify that all labels are in the input
+        _tmp_set = set(task_labels)
+        if remainder := (self.tasks.keys() - _tmp_set):
+            raise KeyError(f"Label(s) {remainder} are missing from the task label list")
+        if extra := (_tmp_set - self.tasks.keys()):
+            raise KeyError(f"Extra label(s) {extra} were in the input and are not in the pipeline")
+
+        newTasks = {key: self.tasks[key] for key in task_labels}
+        self.tasks = newTasks
+
+    @staticmethod
+    def _sort_by_str(arg: Mapping[str, Any]) -> Mapping[str, Any]:
+        keys = sorted(arg.keys())
+        return {key: arg[key] for key in keys}
 
     def __str__(self) -> str:
         """Instance formatting as how it would look in yaml representation
@@ -902,8 +939,12 @@ class PipelineIR:
     def __eq__(self, other: object):
         if not isinstance(other, PipelineIR):
             return False
-        elif all(getattr(self, attr) == getattr(other, attr) for attr in
-                 ("contracts", "tasks", "instrument")):
+        # special case contracts because it is a list, but order is not
+        # important
+        elif (all(getattr(self, attr) == getattr(other, attr) for attr in
+                  ("tasks", "instrument", "labeled_subsets", "parameters"))
+              and len(self.contracts) == len(other.contracts)
+              and all(c in self.contracts for c in other.contracts)):
             return True
         else:
             return False
