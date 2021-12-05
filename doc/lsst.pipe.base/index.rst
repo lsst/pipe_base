@@ -96,6 +96,9 @@ Python API reference
 .. automodapi:: lsst.pipe.base.execution_reports
    :no-main-docstr:
 
+.. automodapi:: lsst.pipe.base.pipeline_doc_builder
+
+
 QuantumGraph generation API reference
 -------------------------------------
 
