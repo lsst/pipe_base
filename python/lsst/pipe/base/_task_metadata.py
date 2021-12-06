@@ -44,6 +44,7 @@ def _isListLike(v):
 
 class TaskMetadata(BaseModel):
     """Dict-like object for storing task metadata.
+
     Metadata can be stored at two levels: single task or task plus subtasks.
     The later is called full metadata of a task and has a form
 
@@ -51,8 +52,7 @@ class TaskMetadata(BaseModel):
 
     Metadata item key of a task (`itemName` above) must not contain `.`,
     which serves as a separator in full metadata keys and turns
-    the value into sub-dictionary. `KeyError` is raised if more than one
-    separator is detected in a key.
+    the value into sub-dictionary. Arbitrary hierarchies are supported.
 
     Deprecated methods are for compatibility with
     the predecessor containers.
@@ -129,6 +129,23 @@ class TaskMetadata(BaseModel):
     @deprecated(reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def getAsDouble(self, key):
+        """Return the value cast to a `float`.
+
+        Parameters
+        ----------
+        key : `str`
+            Item to return. Can be dot-separated hierarchical.
+
+        Returns
+        -------
+        value : `float`
+            The value cast to a `float`.
+
+        Raises
+        ------
+        KeyError
+            Raised if the item is not found.
+        """
         return float(self.__getitem__(key))
 
     def getScalar(self, key):
@@ -144,6 +161,11 @@ class TaskMetadata(BaseModel):
         value : Any
             Either the value associated with the key or, if the key
             corresponds to a list, the last item in the list.
+
+        Raises
+        ------
+        KeyError
+            Raised if the item is not found.
         """
         # Used in pipe_tasks
         keys = self._getKeys(key)
@@ -171,6 +193,11 @@ class TaskMetadata(BaseModel):
         -------
         values : `list` of any
             A list containing the value or values associated with this item.
+
+        Raises
+        ------
+        KeyError
+            Raised if the item is not found.
         """
         keys = self._getKeys(key)
         key0 = keys.pop(0)
@@ -251,11 +278,13 @@ class TaskMetadata(BaseModel):
     @deprecated(reason="Use standard assignment syntax. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def set(self, key, item):
+        """Set the value of the supplied key."""
         self.__setitem__(key, item)
 
     @deprecated(reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
                 version=_DEPRECATION_VERSION, category=FutureWarning)
     def remove(self, key):
+        """Remove the item without raising if absent."""
         try:
             self.__delitem__(key)
         except KeyError:
@@ -264,6 +293,23 @@ class TaskMetadata(BaseModel):
 
     @staticmethod
     def _getKeys(key):
+        """Return the key hierarchy.
+
+        Parameters
+        ----------
+        key : `str`
+            The key to analyze. Can be dot-separated.
+
+        Returns
+        -------
+        keys : `list` of `str`
+            The key hierarchy that has been split on ``.``.
+
+        Raises
+        ------
+        KeyError
+            Raised if the key is not a string.
+        """
         try:
             keys = key.split('.')
         except Exception:
@@ -271,23 +317,44 @@ class TaskMetadata(BaseModel):
         return keys
 
     def keys(self):
+        """Return the top-level keys."""
         return tuple(k for k in self)
 
     def items(self):
+        """Yield the top-level keys and values."""
         for k, v in itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items()):
             yield (k, v)
 
     def __len__(self):
+        """Return the number of items."""
         return len(self.scalars) + len(self.arrays) + len(self.metadata)
 
     def __iter__(self):
+        """Return an iterator over each key."""
         # The order of keys is not preserved since items can move
         # from scalar to array.
         return itertools.chain(iter(self.scalars), iter(self.arrays), iter(self.metadata))
 
     def __getitem__(self, key):
-        # For compatibility with PropertySet, if the key refers to
-        # an array, the final element is returned and not the array itself.
+        """Retrieve the item associated with the key.
+
+        Parameters
+        ----------
+        key : `str`
+            The key to retrieve. Can be dot-separated hierarchical.
+
+        Returns
+        -------
+        value : `TaskMetadata`, `float`, `int`, `bool`, `str`
+            A scalar value. For compatibility with ``PropertySet``, if the key
+             refers to an array, the final element is returned and not the
+             array itself.
+
+        Raises
+        ------
+        KeyError
+            Raised if the item is not found.
+        """
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
@@ -306,10 +373,10 @@ class TaskMetadata(BaseModel):
         raise KeyError(f"'{key}' not found")
 
     def __setitem__(self, key, item):
+        """Store the given item."""
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
-            # Currently no type validation.
             slots = {"array": self.arrays, "scalar": self.scalars, "metadata": self.metadata}
             primary = None
             slot_type, item = self._validate_value(item)
@@ -334,6 +401,7 @@ class TaskMetadata(BaseModel):
         self.arrays.pop(key0, None)
 
     def __contains__(self, key):
+        """Determine if the key exists."""
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
@@ -344,6 +412,13 @@ class TaskMetadata(BaseModel):
         return False
 
     def __delitem__(self, key):
+        """Remove the specified item.
+
+        Raises
+        ------
+        KeyError
+            Raised if the item is not present.
+        """
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
@@ -373,10 +448,9 @@ class TaskMetadata(BaseModel):
 
         Raises
         ------
-        ValidationError
+        ValueError
             Raised if the value is not a recognized type.
         """
-
         # Test the simplest option first.
         value_type = type(value)
         if value_type in _ALLOWED_PRIMITIVE_TYPES:
