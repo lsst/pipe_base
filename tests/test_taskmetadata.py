@@ -97,6 +97,35 @@ class TaskMetadataTestCase(unittest.TestCase):
         self.assertIn("new", meta)
         with self.assertRaises(KeyError):
             del meta["test2"]
+        with self.assertRaises(KeyError) as cm:
+            # Check that deleting a hierarchy that is not present also
+            # reports the correct key.
+            del meta["new.a.b.c"]
+        self.assertIn("new.a.b.c", str(cm.exception))
+
+        with self.assertRaises(KeyError) as cm:
+            # Something that doesn't exist at all.
+            meta["something.a.b"]
+        # Ensure that the full key hierarchy is reported in the error message.
+        self.assertIn("something.a.b", str(cm.exception))
+
+        with self.assertRaises(KeyError) as cm:
+            # Something that does exist at level 2 but not further down.
+            meta["new.str.a"]
+        # Ensure that the full key hierarchy is reported in the error message.
+        self.assertIn("new.str.a", str(cm.exception))
+
+        with self.assertRaises(KeyError) as cm:
+            # Something that only exists at level 1.
+            meta["new.str3"]
+        # Ensure that the full key hierarchy is reported in the error message.
+        self.assertIn("new.str3", str(cm.exception))
+
+        with self.assertRaises(KeyError) as cm:
+            # Something that only exists at level 1 but as an array.
+            meta.getArray("new.str3")
+        # Ensure that the full key hierarchy is reported in the error message.
+        self.assertIn("new.str3", str(cm.exception))
 
         with self.assertRaises(ValueError):
             meta.add("new", 1)

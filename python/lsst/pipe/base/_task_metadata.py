@@ -167,19 +167,9 @@ class TaskMetadata(BaseModel):
         KeyError
             Raised if the item is not found.
         """
-        # Used in pipe_tasks
-        keys = self._getKeys(key)
-        key0 = keys.pop(0)
-        if len(keys) == 0:
-            if key0 in self.arrays:
-                return self.arrays[key0][-1]
-            elif key0 in self.scalars:
-                return self.scalars[key0]
-            elif key0 in self.metadata:
-                return self.metadata[key0]
-            raise KeyError(f"'{key}' not found")
-
-        return self.metadata[key0].getScalar(".".join(keys))
+        # Used in pipe_tasks.
+        # getScalar() is the default behavior for __getitem__.
+        return self[key]
 
     def getArray(self, key):
         """Retrieve an item as a list even if it is a scalar.
@@ -210,7 +200,11 @@ class TaskMetadata(BaseModel):
                 return [self.metadata[key0]]
             raise KeyError(f"'{key}' not found")
 
-        return self.metadata[key0].getArray(".".join(keys))
+        try:
+            return self.metadata[key0].getArray(".".join(keys))
+        except KeyError:
+            # Report the correct key.
+            raise KeyError(f"'{key}' not found") from None
 
     def names(self, topLevelOnly: bool = True):
         """Return the hierarchical keys from the metadata.
@@ -366,11 +360,13 @@ class TaskMetadata(BaseModel):
                 return self.arrays[key0][-1]
             raise KeyError(f"'{key}' not found")
         # Hierarchical lookup so the top key can only be in the metadata
-        # property.
-        if key0 in self.metadata:
-            # And forward request to that metadata
+        # property. Trap KeyError and reraise so that the correct key
+        # in the hierarchy is reported.
+        try:
+            # And forward request to that metadata.
             return self.metadata[key0][".".join(keys)]
-        raise KeyError(f"'{key}' not found")
+        except KeyError:
+            raise KeyError(f"'{key}' not found") from None
 
     def __setitem__(self, key, item):
         """Store the given item."""
@@ -426,9 +422,13 @@ class TaskMetadata(BaseModel):
                 if key0 in property:
                     del property[key0]
                     return
-            raise KeyError(f"'{key} not found'")
+            raise KeyError(f"'{key}' not found'")
 
-        del self.metadata[key0][".".join(keys)]
+        try:
+            del self.metadata[key0][".".join(keys)]
+        except KeyError:
+            # Report the correct key.
+            raise KeyError(f"'{key}' not found'") from None
 
     def _validate_value(self, value):
         """Validate the given value.
