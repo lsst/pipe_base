@@ -1,4 +1,4 @@
-# This file is part of task_base.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project

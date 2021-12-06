@@ -23,12 +23,17 @@ import logging
 import time
 import unittest
 import numbers
+import json
+import yaml
 
 import lsst.utils.tests
-import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.utils.timer import timeMethod
+
+# Whilst in transition the test can't tell which type is
+# going to be used for metadata.
+from lsst.pipe.base.task import _TASK_METADATA_TYPE
 
 
 class AddConfig(pexConfig.Config):
@@ -179,25 +184,40 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.add.log.name, "tester.addMult.add")
 
         addMultTask2 = AddMultTask2()
-        self.assertEqual(addMultTask2.log.name, "test_task.addMult")
+        self.assertEqual(addMultTask2.log.name, f"{__name__}.addMult")
 
     def testGetFullMetadata(self):
         """Test getFullMetadata()
         """
         addMultTask = AddMultTask()
+        addMultTask.run(val=1.234)  # Add some metadata
         fullMetadata = addMultTask.getFullMetadata()
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult"), dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult:add"), dafBase.PropertySet)
-        self.assertIsInstance(fullMetadata.getPropertySet("addMult:mult"), dafBase.PropertySet)
+        self.assertIsInstance(fullMetadata["addMult"], _TASK_METADATA_TYPE)
+        self.assertIsInstance(fullMetadata["addMult:add"], _TASK_METADATA_TYPE)
+        self.assertIsInstance(fullMetadata["addMult:mult"], _TASK_METADATA_TYPE)
+        self.assertEqual(set(fullMetadata), {"addMult", "addMult:add", "addMult:mult"})
+
+        all_names = fullMetadata.names(topLevelOnly=False)
+        self.assertIn("addMult", all_names)
+        self.assertIn("addMult.runStartUtc", all_names)
+
+        param_names = fullMetadata.paramNames(topLevelOnly=True)
+        # No top level keys without hierarchy
+        self.assertEqual(set(param_names), set())
+
+        param_names = fullMetadata.paramNames(topLevelOnly=False)
+        self.assertNotIn("addMult", param_names)
+        self.assertIn("addMult.runStartUtc", param_names)
+        self.assertIn("addMult:add.runStartCpuTime", param_names)
 
     def testEmptyMetadata(self):
         task = AddMultTask()
         task.run(val=1.2345)
         task.emptyMetadata()
         fullMetadata = task.getFullMetadata()
-        self.assertEqual(fullMetadata.getPropertySet("addMult").nameCount(), 0)
-        self.assertEqual(fullMetadata.getPropertySet("addMult:add").nameCount(), 0)
-        self.assertEqual(fullMetadata.getPropertySet("addMult:mult").nameCount(), 0)
+        self.assertEqual(len(fullMetadata["addMult"]), 0)
+        self.assertEqual(len(fullMetadata["addMult:add"]), 0)
+        self.assertEqual(len(fullMetadata["addMult:mult"]), 0)
 
     def testReplace(self):
         """Test replacing one subtask with another
@@ -221,18 +241,21 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.failDec()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertTrue(addMultTask.metadata.exists("failDecEndCpuTime"))
+            self.assertIn("failDecEndCpuTime", addMultTask.metadata)
         try:
             addMultTask.failCtx()
             self.fail("Expected RuntimeError")
         except RuntimeError:
-            self.assertTrue(addMultTask.metadata.exists("failCtxEndCpuTime"))
+            self.assertIn("failCtxEndCpuTime", addMultTask.metadata)
 
     def testTimeMethod(self):
         """Test that the timer is adding the right metadata
         """
         addMultTask = AddMultTask()
+
+        # Run twice to ensure we are additive.
         addMultTask.run(val=1.1)
+        addMultTask.run(val=2.0)
         # Check existence and type
         for key, keyType in (("Utc", str),
                              ("CpuTime", float),
@@ -249,7 +272,7 @@ class TaskTestCase(unittest.TestCase):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertIn(name, addMultTask.metadata.names(),
+                    self.assertIn(name, addMultTask.metadata,
                                   name + " is missing from task metadata")
                     self.assertIsInstance(addMultTask.metadata.getScalar(name), keyType,
                                           f"{name} is not of the right type "
@@ -271,6 +294,30 @@ class TaskTestCase(unittest.TestCase):
             addMultTask.metadata.getScalar("runEndCpuTime"),
         )
         self.assertLessEqual(addMultTask.add.metadata.getScalar("runEndCpuTime"), currCpuTime)
+
+        # Add some explicit values for serialization test.
+        addMultTask.metadata["comment"] = "A comment"
+        addMultTask.metadata["integer"] = 5
+        addMultTask.metadata["float"] = 3.14
+        addMultTask.metadata["bool"] = False
+        addMultTask.metadata.add("commentList", "comment1")
+        addMultTask.metadata.add("commentList", "comment1")
+        addMultTask.metadata.add("intList", 6)
+        addMultTask.metadata.add("intList", 7)
+        addMultTask.metadata.add("boolList", False)
+        addMultTask.metadata.add("boolList", True)
+        addMultTask.metadata.add("floatList", 6.6)
+        addMultTask.metadata.add("floatList", 7.8)
+
+        # TaskMetadata can serialize to JSON but not YAML
+        # and PropertySet can serialize to YAML and not JSON.
+        if hasattr(addMultTask.metadata, "json"):
+            j = addMultTask.metadata.json()
+            new_meta = pipeBase.TaskMetadata.parse_obj(json.loads(j))
+        else:
+            y = yaml.dump(addMultTask.metadata)
+            new_meta = yaml.safe_load(y)
+        self.assertEqual(new_meta, addMultTask.metadata)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

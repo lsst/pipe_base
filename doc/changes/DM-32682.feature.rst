@@ -1,0 +1,3 @@
+A new class has been written for handling `~lsst.pipe.base.Task` metadata.
+`lsst.pipe.base.TaskMetadata` will in future become the default metadata class for `~lsst.pipe.base.Task`, replacing ``PropertySet``.
+The new metadata class is not yet enabled by default.

@@ -46,12 +46,11 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
 
         If `None`, at least one of ``metadata`` or ``logger`` should be passed
         or this function will do nothing.
-
-    prefix
+    prefix : `str`
         Name prefix, the resulting entries are ``CpuTime``, etc.. For example
         timeMethod uses ``prefix = Start`` when the method begins and
         ``prefix = End`` when the method ends.
-    logLevel : optional
+    logLevel : `int`, optional
         Log level (an `logging` level constant, such as `logging.DEBUG`).
     metadata : `lsst.daf.base.PropertyList`, optional
         Metadata object to write entries to, overriding ``obj.metadata``.
