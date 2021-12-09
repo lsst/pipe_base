@@ -185,6 +185,22 @@ class TaskMetadataTestCase(unittest.TestCase):
         meta2 = TaskMetadata.parse_obj(json.loads(j))
         self.assertEqual(meta2, meta)
 
+        # Round trip.
+        meta3 = TaskMetadata.from_metadata(meta)
+        self.assertEqual(meta3, meta)
+
+        # Add a new element that would be a single-element array.
+        # This will not equate as equal because from_metadata will move
+        # the item to the scalar part of the model and pydantic does not
+        # see them as equal.
+        meta3.add("e.new", 5)
+        meta4 = TaskMetadata.from_metadata(meta3)
+        self.assertNotEqual(meta4, meta3)
+        self.assertEqual(meta4["e.new"], meta3["e.new"])
+        del meta4["e.new"]
+        del meta3["e.new"]
+        self.assertEqual(meta4, meta3)
+
     def testDeprecated(self):
         """Test the deprecated interface issues warnings."""
         meta = TaskMetadata.from_dict({"a": 1, "b": 2})
