@@ -1,2 +1,0 @@
-The logger associated with ``Task`` is now derived from a Python `logging.Logger` and not `lsst.log.Log`.
-This logger includes a new ``verbose()`` log method as an intermediate between ``INFO`` and ``DEBUG``.

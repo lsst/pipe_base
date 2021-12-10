@@ -1,7 +1,7 @@
 [tool.towncrier]
     package = "lsst.pipe.base"
     package_dir = "python"
-    filename = "doc/lsst.obs.base/CHANGES.rst"
+    filename = "doc/lsst.pipe.base/CHANGES.rst"
     directory = "doc/changes"
     title_format = "pipe_base {version} {project_date}"
     issue_format = "`{issue} <https://jira.lsstcorp.org/browse/{issue}>`_"
@@ -30,12 +30,12 @@
     [[tool.towncrier.type]]
         directory = "other"
         name = "Other Changes and Additions"
-        showcontent = false
+        showcontent = true
 
     [[tool.towncrier.type]]
         directory = "misc"
         name = "Miscellaneous Changes of Minor Interest"
-        showcontent = false
+        showcontent = true
 
     [[tool.towncrier.type]]
         directory = "removal"
