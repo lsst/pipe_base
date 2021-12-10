@@ -28,13 +28,8 @@
         showcontent = true
 
     [[tool.towncrier.type]]
-        directory = "other"
-        name = "Other Changes and Additions"
-        showcontent = true
-
-    [[tool.towncrier.type]]
         directory = "misc"
-        name = "Miscellaneous Changes of Minor Interest"
+        name = "Other Changes and Additions"
         showcontent = true
 
     [[tool.towncrier.type]]
