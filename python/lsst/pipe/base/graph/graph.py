@@ -25,11 +25,11 @@ __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
 import warnings
 
-from lsst.daf.butler import Quantum, DatasetRef, ButlerURI, DimensionUniverse
+from lsst.daf.butler import Quantum, DatasetRef, ButlerURI, DimensionUniverse, DimensionRecordsAccumulator
 
 from collections import defaultdict, deque
 
-from itertools import chain, count
+from itertools import chain
 import io
 import json
 import networkx as nx
@@ -37,26 +37,27 @@ from networkx.drawing.nx_agraph import write_dot
 import os
 import pickle
 import lzma
-import copy
 import struct
 import time
+import uuid
 from types import MappingProxyType
-from typing import (Any, DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, Set, Generator,
-                    Optional, Tuple, Union, TypeVar)
+from typing import (Any, DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, MutableMapping, Set,
+                    Generator, Optional, Tuple, Union, TypeVar)
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
 
 from ._implDetails import _DatasetTracker, DatasetTypeName, _pruner
-from .quantumNode import QuantumNode, NodeId, BuildId
+from .quantumNode import QuantumNode, BuildId
 from ._loadHelpers import LoadHelper
+from ._versionDeserializers import DESERIALIZER_MAP
 
 
 _T = TypeVar("_T", bound="QuantumGraph")
 
 # modify this constant any time the on disk representation of the save file
 # changes, and update the load helpers to behave properly for each version.
-SAVE_VERSION = 2
+SAVE_VERSION = 3
 
 # Strings used to describe the format for the preamble bytes in a file save
 # The base is a big endian encoded unsigned short that is used to hold the
@@ -69,12 +70,11 @@ STRUCT_FMT_BASE = '>H'
 # long long, and an unsigned long long in the byte stream
 # Version 2
 # A big endian encoded format with an unsigned long long byte stream used to
-# indicate the total length of the entire header
+# indicate the total length of the entire header.
 STRUCT_FMT_STRING = {
     1: '>QQ',
     2: '>Q'
 }
-
 
 # magic bytes that help determine this is a graph save
 MAGIC_BYTES = b"qgraph4\xf6\xe8\xa9"
@@ -116,7 +116,7 @@ class QuantumGraph:
     def _buildGraphs(self,
                      quanta: Mapping[TaskDef, Set[Quantum]],
                      *,
-                     _quantumToNodeId: Optional[Mapping[Quantum, NodeId]] = None,
+                     _quantumToNodeId: Optional[Mapping[Quantum, uuid.UUID]] = None,
                      _buildId: Optional[BuildId] = None,
                      metadata: Optional[Mapping[str, Any]] = None,
                      pruneRefs: Optional[Iterable[DatasetRef]] = None):
@@ -124,18 +124,16 @@ class QuantumGraph:
         and the graph that holds the relations between quanta
         """
         self._metadata = metadata
-        self._quanta = quanta
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structures used to identify relations between components;
         # DatasetTypeName -> TaskDef for task,
         # and DatasetRef -> QuantumNode for the quanta
-        self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef]()
+        self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         self._datasetRefDict = _DatasetTracker[DatasetRef, QuantumNode]()
 
-        nodeNumberGenerator = count()
-        self._nodeIdMap: Dict[NodeId, QuantumNode] = {}
-        self._taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
-        for taskDef, quantumSet in self._quanta.items():
+        self._nodeIdMap: Dict[uuid.UUID, QuantumNode] = {}
+        self._taskToQuantumNode: MutableMapping[TaskDef, Set[QuantumNode]] = defaultdict(set)
+        for taskDef, quantumSet in quanta.items():
             connections = taskDef.connections
 
             # For each type of connection in the task, add a key to the
@@ -154,12 +152,11 @@ class QuantumGraph:
             # field.
             for quantum in quantumSet:
                 if _quantumToNodeId:
-                    nodeId = _quantumToNodeId.get(quantum)
-                    if nodeId is None:
+                    if (nodeId := _quantumToNodeId.get(quantum)) is None:
                         raise ValueError("If _quantuMToNodeNumber is not None, all quanta must have an "
                                          "associated value in the mapping")
                 else:
-                    nodeId = NodeId(next(nodeNumberGenerator), self._buildId)
+                    nodeId = uuid.uuid4()
 
                 inits = quantum.initInputs.values()
                 inputs = quantum.inputs.values()
@@ -230,6 +227,10 @@ class QuantumGraph:
 
         # Graph of task relations, used in various methods
         self._taskGraph = self._datasetDict.makeNetworkXGraph()
+
+        # convert default dict into a regular to prevent accidental key
+        # insertion
+        self._taskToQuantumNode = dict(self._taskToQuantumNode.items())
 
     @property
     def taskGraph(self) -> nx.DiGraph:
@@ -323,11 +324,14 @@ class QuantumGraph:
         for node in self:
             quantumMap[node.taskDef].add(node.quantum)
 
+        # convert to standard dict to prevent accidental key insertion
+        quantumMap = dict(quantumMap.items())
+
         newInst._buildGraphs(quantumMap, _quantumToNodeId={n.quantum: n.nodeId for n in self},
                              metadata=self._metadata, pruneRefs=refs)
         return newInst
 
-    def getQuantumNodeByNodeId(self, nodeId: NodeId) -> QuantumNode:
+    def getQuantumNodeByNodeId(self, nodeId: uuid.UUID) -> QuantumNode:
         """Lookup a `QuantumNode` from an id associated with the node.
 
         Parameters
@@ -342,15 +346,9 @@ class QuantumGraph:
 
         Raises
         ------
-        IndexError
+        KeyError
             Raised if the requested nodeId is not in the graph.
-        IncompatibleGraphError
-            Raised if the nodeId was built with a different graph than is not
-            this instance (or a graph instance that produced this instance
-            through and operation such as subset)
         """
-        if nodeId.buildId != self._buildId:
-            raise IncompatibleGraphError("This node was built from a different, incompatible, graph instance")
         return self._nodeIdMap[nodeId]
 
     def getQuantaForTask(self, taskDef: TaskDef) -> FrozenSet[Quantum]:
@@ -367,7 +365,7 @@ class QuantumGraph:
             The `set` of `Quantum` that is associated with the specified
             `TaskDef`.
         """
-        return frozenset(self._quanta[taskDef])
+        return frozenset(node.quantum for node in self._taskToQuantumNode[taskDef])
 
     def getNodesForTask(self, taskDef: TaskDef) -> FrozenSet[QuantumNode]:
         """Return all the `QuantumNodes` associated with a `TaskDef`.
@@ -479,7 +477,7 @@ class QuantumGraph:
             multiple times with different labels.
         """
         results = []
-        for task in self._quanta.keys():
+        for task in self._taskToQuantumNode.keys():
             split = task.taskName.split('.')
             if split[-1] == taskName:
                 results.append(task)
@@ -499,7 +497,7 @@ class QuantumGraph:
         result : `TaskDef`
             `TaskDef` objects that has the specified label.
         """
-        for task in self._quanta.keys():
+        for task in self._taskToQuantumNode.keys():
             if label == task.label:
                 return task
         return None
@@ -527,7 +525,7 @@ class QuantumGraph:
         """
         tasks = self._datasetDict.getAll(datasetTypeName)
         result: Set[Quantum] = set()
-        result = result.union(*(self._quanta[task] for task in tasks))
+        result = result.union(quantum for task in tasks for quantum in self.getQuantaForTask(task))
         return result
 
     def checkQuantumInGraph(self, quantum: Quantum) -> bool:
@@ -543,8 +541,8 @@ class QuantumGraph:
         `bool`
             The result of searching for the quantum
         """
-        for qset in self._quanta.values():
-            if quantum in qset:
+        for node in self:
+            if quantum == node.quantum:
                 return True
         return False
 
@@ -579,6 +577,9 @@ class QuantumGraph:
         node: QuantumNode
         for node in quantumSubgraph:
             quantumMap[node.taskDef].add(node.quantum)
+
+        # convert to standard dict to prevent accidental key insertion
+        quantumMap = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({})
         newInst._buildGraphs(quantumMap, _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
@@ -705,8 +706,9 @@ class QuantumGraph:
 
     @classmethod
     def loadUri(cls, uri: Union[ButlerURI, str], universe: DimensionUniverse,
-                nodes: Optional[Iterable[int]] = None,
-                graphID: Optional[BuildId] = None
+                nodes: Optional[Iterable[Union[str, uuid.UUID]]] = None,
+                graphID: Optional[BuildId] = None,
+                minimumVersion: int = 3
                 ) -> QuantumGraph:
         """Read `QuantumGraph` from a URI.
 
@@ -725,6 +727,11 @@ class QuantumGraph:
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no
             validation is done.
+        minimumVersion : int
+            Minimum version of a save file to load. Set to -1 to load all
+            versions. Older versions may need to be loaded, and re-saved
+            to upgrade them to the latest format before they can be used in
+            production.
 
         Returns
         -------
@@ -762,13 +769,58 @@ class QuantumGraph:
                 warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
                 qgraph = pickle.load(fd)
         elif uri.getExtension() in ('.qgraph'):
-            with LoadHelper(uri) as loader:
-                qgraph = loader.load(nodes, graphID)
+            with LoadHelper(uri, minimumVersion) as loader:
+                qgraph = loader.load(universe, nodes, graphID)
         else:
             raise ValueError("Only know how to handle files saved as `pickle`, `pkl`, or `qgraph`")
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph save file contains unexpected object type: {type(qgraph)}")
         return qgraph
+
+    @classmethod
+    def readHeader(cls, uri: Union[ButlerURI, str], minimumVersion: int = 3) -> Optional[str]:
+        """Read the header of a `QuantumGraph` pointed to by the uri parameter
+        and return it as a string.
+
+        Parameters
+        ----------
+        uri : `~lsst.daf.butler.ButlerURI` or `str`
+            The location of the `QuantumGraph` to load. If the argument is a
+            string, it must correspond to a valid `~lsst.daf.butler.ButlerURI`
+            path.
+        minimumVersion : int
+            Minimum version of a save file to load. Set to -1 to load all
+            versions. Older versions may need to be loaded, and re-saved
+            to upgrade them to the latest format before they can be used in
+            production.
+
+        Returns
+        -------
+        header : `str` or `None`
+            The header associated with the specified `QuantumGraph` it there is
+            one, else `None`.
+
+        Raises
+        ------
+        ValueError
+            Raised if `QuantuGraph` was saved as a pickle.
+            Raised if the extention of the file specified by uri is not a
+            `QuantumGraph` extention.
+        """
+        uri = ButlerURI(uri)
+        if uri.getExtension() in (".pickle", ".pkl"):
+            raise ValueError("Reading a header from a pickle save is not supported")
+        elif uri.getExtension() in ('.qgraph'):
+            return LoadHelper(uri, minimumVersion).readHeader()
+        else:
+            raise ValueError("Only know how to handle files saved as `qgraph`")
+
+    def buildAndPrintHeader(self):
+        """Creates a header that would be used in a save of this object and
+        prints it out to standard out.
+        """
+        _, header = self._buildSaveObject(returnHeader=True)
+        print(json.dumps(header))
 
     def save(self, file: io.IO[bytes]):
         """Save QuantumGraph to a file.
@@ -784,16 +836,15 @@ class QuantumGraph:
         buffer = self._buildSaveObject()
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
 
-    def _buildSaveObject(self) -> bytearray:
+    def _buildSaveObject(self, returnHeader: bool = False) -> Union[bytearray, Tuple[bytearray, Dict]]:
         # make some containers
-        pickleData = deque()
+        jsonData = deque()
         # node map is a list because json does not accept mapping keys that
         # are not strings, so we store a list of key, value pairs that will
         # be converted to a mapping on load
         nodeMap = []
         taskDefMap = {}
         headerData = {}
-        protocol = 3
 
         # Store the QauntumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
@@ -805,37 +856,79 @@ class QuantumGraph:
         count = 0
         # serialize out the task Defs recording the start and end bytes of each
         # taskDef
+        inverseLookup = self._datasetDict.inverse
+        taskDef: TaskDef
+        # sort by task label to ensure serialization happens in the same order
         for taskDef in self.taskGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
-            dump = lzma.compress(pickle.dumps(taskDef, protocol=protocol))
-            taskDefMap[taskDef.label] = {"bytes": (count, count+len(dump))}
+            taskDescription = {}
+            # save the fully qualified name, as TaskDef not not require this,
+            # but by doing so can save space and is easier to transport
+            taskDescription['taskName'] = f"{taskDef.taskClass.__module__}.{taskDef.taskClass.__qualname__}"
+            # save the config as a text stream that will be un-persisted on the
+            # other end
+            stream = io.StringIO()
+            taskDef.config.saveToStream(stream)
+            taskDescription['config'] = stream.getvalue()
+            taskDescription['label'] = taskDef.label
+
+            inputs = []
+            outputs = []
+
+            # Determine the connection between all of tasks and save that in
+            # the header as a list of connections and edges in each task
+            # this will help in un-persisting, and possibly in a "quick view"
+            # method that does not require everything to be un-persisted
+            #
+            # Typing returns can't be parameter dependent
+            for connection in inverseLookup[taskDef]:  # type: ignore
+                consumers = self._datasetDict.getConsumers(connection)
+                producer = self._datasetDict.getProducer(connection)
+                if taskDef in consumers:
+                    # This checks if the task consumes the connection directly
+                    # from the datastore or it is produced by another task
+                    producerLabel = producer.label if producer is not None else "datastore"
+                    inputs.append((producerLabel, connection))
+                elif taskDef not in consumers and producer is taskDef:
+                    # If there are no consumers for this tasks produced
+                    # connection, the output will be said to be the datastore
+                    # in which case the for loop will be a zero length loop
+                    if not consumers:
+                        outputs.append(("datastore", connection))
+                    for td in consumers:
+                        outputs.append((td.label, connection))
+
+            # dump to json string, and encode that string to bytes and then
+            # conpress those bytes
+            dump = lzma.compress(json.dumps(taskDescription).encode())
+            # record the sizing and relation information
+            taskDefMap[taskDef.label] = {"bytes": (count, count+len(dump)),
+                                         "inputs": inputs,
+                                         "outputs": outputs}
             count += len(dump)
-            pickleData.append(dump)
+            jsonData.append(dump)
 
         headerData['TaskDefs'] = taskDefMap
 
         # serialize the nodes, recording the start and end bytes of each node
+        dimAccumulator = DimensionRecordsAccumulator()
         for node in self:
-            node = copy.copy(node)
-            taskDef = node.taskDef
-            # Explicitly overload the "frozen-ness" of nodes to normalized out
-            # the taskDef, this saves a lot of space and load time. The label
-            # will be used to retrive the taskDef from the taskDefMap upon load
-            #
-            # This strategy was chosen instead of creating a new class that
-            # looked just like a QuantumNode but containing a label in place of
-            # a TaskDef because it would be needlessly slow to construct a
-            # bunch of new object to immediately serialize them and destroy the
-            # object. This seems like an acceptable use of Python's dynamic
-            # nature in a controlled way for optimization and simplicity.
-            object.__setattr__(node, 'taskDef', taskDef.label)
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
-            dump = lzma.compress(pickle.dumps(node, protocol=protocol))
-            pickleData.append(dump)
-            nodeMap.append((int(node.nodeId.number), {"bytes": (count, count+len(dump))}))
+            simpleNode = node.to_simple(accumulator=dimAccumulator)
+
+            dump = lzma.compress(simpleNode.json().encode())
+            jsonData.append(dump)
+            nodeMap.append((str(node.nodeId),
+                            {"bytes": (count, count+len(dump)),
+                             "inputs": [str(n.nodeId) for n in self.determineInputsToQuantumNode(node)],
+                             "outputs": [str(n.nodeId) for n in self.determineOutputsOfQuantumNode(node)]}
+                            ))
             count += len(dump)
+
+        headerData['DimensionRecords'] = {key: value.dict() for key, value in
+                                          dimAccumulator.makeSerializedDimensionRecordMapping().items()}
 
         # need to serialize this as a series of key,value tuples because of
         # a limitation on how json cant do anyting but strings as keys
@@ -848,7 +941,7 @@ class QuantumGraph:
         # bytes
         save_bytes = struct.pack(STRUCT_FMT_BASE, SAVE_VERSION)
 
-        fmt_string = STRUCT_FMT_STRING[SAVE_VERSION]
+        fmt_string = DESERIALIZER_MAP[SAVE_VERSION].FMT_STRING()
         map_lengths = struct.pack(fmt_string, len(header_encode))
 
         # write each component of the save out in a deterministic order
@@ -869,14 +962,18 @@ class QuantumGraph:
         # Only this section needs to worry about memory pressue because
         # everything else written to the buffer prior to this pickle data is
         # only on the order of kilobytes to low numbers of megabytes.
-        while pickleData:
-            buffer.extend(pickleData.popleft())
-        return buffer
+        while jsonData:
+            buffer.extend(jsonData.popleft())
+        if returnHeader:
+            return buffer, headerData
+        else:
+            return buffer
 
     @classmethod
     def load(cls, file: io.IO[bytes], universe: DimensionUniverse,
-             nodes: Optional[Iterable[int]] = None,
-             graphID: Optional[BuildId] = None
+             nodes: Optional[Iterable[uuid.UUID]] = None,
+             graphID: Optional[BuildId] = None,
+             minimumVersion: int = 3
              ) -> QuantumGraph:
         """Read QuantumGraph from a file that was made by `save`.
 
@@ -895,6 +992,11 @@ class QuantumGraph:
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no
             validation is done.
+        minimumVersion : int
+            Minimum version of a save file to load. Set to -1 to load all
+            versions. Older versions may need to be loaded, and re-saved
+            to upgrade them to the latest format before they can be used in
+            production.
 
         Returns
         -------
@@ -925,8 +1027,9 @@ class QuantumGraph:
             qgraph = pickle.load(file)
             warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
         except pickle.UnpicklingError:
-            with LoadHelper(file) as loader:  # type: ignore # needed because we don't have Protocols yet
-                qgraph = loader.load(nodes, graphID)
+            # needed because we don't have Protocols yet
+            with LoadHelper(file, minimumVersion) as loader:  # type: ignore
+                qgraph = loader.load(universe, nodes, graphID)
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
         return qgraph
@@ -962,20 +1065,31 @@ class QuantumGraph:
         reconstructed with this information, and it preseves the ordering of
         the graph ndoes.
         """
-        return {"nodesList": list(self)}
+        universe: Optional[DimensionUniverse] = None
+        for node in self:
+            dId = node.quantum.dataId
+            if dId is None:
+                continue
+            universe = dId.graph.universe
+        return {"reduced": self._buildSaveObject(),
+                'graphId': self._buildId, 'universe': universe}
 
     def __setstate__(self, state: dict):
         """Reconstructs the state of the graph from the information persisted
         in getstate.
         """
-        quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
-        quantumToNodeId: Dict[Quantum, NodeId] = {}
-        quantumNode: QuantumNode
-        for quantumNode in state['nodesList']:
-            quanta[quantumNode.taskDef].add(quantumNode.quantum)
-            quantumToNodeId[quantumNode.quantum] = quantumNode.nodeId
-        _buildId = quantumNode.nodeId.buildId if state['nodesList'] else None  # type: ignore
-        self._buildGraphs(quanta, _quantumToNodeId=quantumToNodeId, _buildId=_buildId)
+        buffer = io.BytesIO(state['reduced'])
+        with LoadHelper(buffer, minimumVersion=3) as loader:
+            qgraph = loader.load(state['universe'], graphID=state['graphId'])
+
+        self._metadata = qgraph._metadata
+        self._buildId = qgraph._buildId
+        self._datasetDict = qgraph._datasetDict
+        self._nodeIdMap = qgraph._nodeIdMap
+        self._count = len(qgraph)
+        self._taskToQuantumNode = qgraph._taskToQuantumNode
+        self._taskGraph = qgraph._taskGraph
+        self._connectedQuanta = qgraph._connectedQuanta
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, QuantumGraph):
@@ -989,4 +1103,6 @@ class QuantumGraph:
                 return False
             if self.determineOutputsOfQuantumNode(node) != other.determineOutputsOfQuantumNode(node):
                 return False
-        return list(self.taskGraph) == list(other.taskGraph)
+        if set(self.allDatasetTypes) != set(other.allDatasetTypes):
+            return False
+        return set(self.taskGraph) == set(other.taskGraph)
