@@ -130,6 +130,11 @@ class TaskDef:
                 raise ValueError("`taskClass` must be provided if `label` is not.")
             label = taskClass._DefaultName
         self.taskName = taskName
+        try:
+            config.validate()
+        except Exception:
+            _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
+            raise
         config.freeze()
         self.config = config
         self.taskClass = taskClass
@@ -640,12 +645,6 @@ class Pipeline:
                     for key, value in configIR.rest.items():
                         overrides.addValueOverride(key, value)
         overrides.applyTo(config)
-        # This may need to be revisited
-        try:
-            config.validate()
-        except Exception:
-            _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
-            raise
         return TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label)
 
     def __iter__(self) -> Generator[TaskDef, None, None]:
