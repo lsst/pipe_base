@@ -27,7 +27,7 @@ import warnings
 from collections.abc import Sequence
 from deprecated.sphinx import deprecated
 
-from typing import Dict, List, Union, Any, Mapping
+from typing import Dict, List, Union, Any, Mapping, Protocol, Collection
 from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr, Field
 
 _DEPRECATION_REASON = "Will be removed after v25."
@@ -36,6 +36,20 @@ _DEPRECATION_VERSION = "v24"
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
 _ALLOWED_PRIMITIVE_TYPES = (str, float, int, bool)
+
+
+class PropertySetLike(Protocol):
+    """Protocol that looks like a ``lsst.daf.base.PropertySet``
+
+    Enough of the API is specified to support conversion of a
+    ``PropertySet`` to a `TaskMetadata`.
+    """
+
+    def paramNames(self, topLevelOnly: bool = True) -> Collection[str]:
+        ...
+
+    def getArray(self, name: str) -> Any:
+        ...
 
 
 def _isListLike(v):
@@ -81,6 +95,41 @@ class TaskMetadata(BaseModel):
         metadata = cls()
         for k, v in d.items():
             metadata[k] = v
+        return metadata
+
+    @classmethod
+    def from_metadata(cls, ps: PropertySetLike) -> "TaskMetadata":
+        """Create a TaskMetadata from a PropertySet-like object.
+
+        Parameters
+        ----------
+        ps : `lsst.daf.base.PropertySet` or `TaskMetadata`
+            A ``PropertySet``-like object to be transformed to a
+            `TaskMetadata`. A `TaskMetadata` can be copied using this
+            class method.
+
+        Returns
+        -------
+        tm : `TaskMetadata`
+            Newly-constructed metadata.
+
+        Notes
+        -----
+        Items stored in single-element arrays in the supplied object
+        will be converted to scalars in the newly-created object.
+        """
+        # Use hierarchical names to assign values from input to output.
+        # This API exists for both PropertySet and TaskMetadata.
+        # from_dict() does not work because PropertySet is not declared
+        # to be a Mapping.
+        # PropertySet.toDict() is not present in TaskMetadata so is best
+        # avoided.
+        metadata = cls()
+        for key in sorted(ps.paramNames(topLevelOnly=False)):
+            value = ps.getArray(key)
+            if len(value) == 1:
+                value = value[0]
+            metadata[key] = value
         return metadata
 
     def add(self, name, value):
