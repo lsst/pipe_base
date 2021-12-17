@@ -72,7 +72,8 @@ class ContractError(Exception):
 
 @dataclass
 class ContractIR:
-    """Intermediate representation of contracts read from a pipeline yaml file."""
+    """Intermediate representation of configuration contracts read from a
+    pipeline yaml file."""
 
     contract: str
     """A string of python code representing one or more conditions on configs

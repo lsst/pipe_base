@@ -230,7 +230,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, [0, 1])
 
     def testSettingVar(self):
-        """Test setting a field with a string that represents a variable name"""
+        """Test setting a field with a string that represents a variable."""
         field = "fChoiceInt"
 
         # verify loading variable

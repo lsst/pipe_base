@@ -497,7 +497,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             self.butler,
             dataId,
             {
-                # Use lists, not sets, to ensure order agrees with test assertion
+                # Use lists, not sets, to ensure order agrees with test
+                # assertion.
                 "a": [dataset[0] for dataset in data["PatchA"]],
                 "b": dataId,
                 "out": [dataset[0] for dataset in data["PatchA"]],
@@ -525,7 +526,8 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
             self.butler,
             dataId,
             {
-                # Use lists, not sets, to ensure order agrees with test assertion
+                # Use lists, not sets, to ensure order agrees with test
+                # assertion.
                 "a": [dataset[0] for dataset in data["PatchA"]],
                 "out": [dataset[0] for dataset in data["PatchA"]],
             },
