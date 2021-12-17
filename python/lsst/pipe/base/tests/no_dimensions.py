@@ -30,13 +30,7 @@ __all__ = (
 from typing import Dict
 
 from lsst.pex.config import Field
-from lsst.pipe.base import (
-    PipelineTask,
-    PipelineTaskConfig,
-    PipelineTaskConnections,
-    Struct,
-    connectionTypes,
-)
+from lsst.pipe.base import PipelineTask, PipelineTaskConfig, PipelineTaskConnections, Struct, connectionTypes
 
 
 class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):

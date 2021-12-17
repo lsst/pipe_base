@@ -23,17 +23,16 @@ from __future__ import annotations
 __all__ = ("_DatasetTracker", "DatasetTypeName", "_pruner")
 
 from collections import defaultdict
-
 from itertools import chain
-import networkx as nx
-from typing import (DefaultDict, Generic, Optional, Set, TypeVar, NewType, Dict, Iterable)
+from typing import DefaultDict, Dict, Generic, Iterable, NewType, Optional, Set, TypeVar
 
+import networkx as nx
 from lsst.daf.butler import DatasetRef, NamedKeyDict, Quantum
 from lsst.pipe.base.connections import AdjustQuantumHelper
 
-from .quantumNode import QuantumNode
-from ..pipeline import TaskDef
 from .._status import NoWorkFound
+from ..pipeline import TaskDef
+from .quantumNode import QuantumNode
 
 # NewTypes
 DatasetTypeName = NewType("DatasetTypeName", str)
@@ -56,6 +55,7 @@ class _DatasetTracker(Generic[_T, _U]):
         and inverse mapping that allows looking up all the keys associated with
         some value. Defaults to False.
     """
+
     def __init__(self, createInverse: bool = False):
         self._producers: Dict[_T, _U] = {}
         self._consumers: DefaultDict[_T, Set[_U]] = defaultdict(set)
@@ -79,8 +79,9 @@ class _DatasetTracker(Generic[_T, _U]):
             Raised if key is already declared to be produced by another value
         """
         if (existing := self._producers.get(key)) is not None and existing != value:
-            raise ValueError(f"Only one node is allowed to produce {key}, "
-                             f"the current producer is {existing}")
+            raise ValueError(
+                f"Only one node is allowed to produce {key}, " f"the current producer is {existing}"
+            )
         self._producers[key] = value
         if self._createInverse:
             self._itemsDict[value].add(key)
@@ -99,7 +100,7 @@ class _DatasetTracker(Generic[_T, _U]):
         """
         self._producers.pop(key, None)
         if self._createInverse:
-            if (result := self._itemsDict.get(value)):
+            if result := self._itemsDict.get(value):
                 result.discard(key)
 
     def addConsumer(self, key: _T, value: _U):
@@ -129,10 +130,10 @@ class _DatasetTracker(Generic[_T, _U]):
             The type associated with the consumption of the key
         """
         result = self._consumers.get(key)
-        if (result := self._consumers.get(key)):
+        if result := self._consumers.get(key):
             result.discard(value)
         if self._createInverse:
-            if (result := self._itemsDict.get(value)):
+            if result := self._itemsDict.get(value):
                 result.discard(key)
 
     def getConsumers(self, key: _T) -> set[_U]:
@@ -205,8 +206,7 @@ class _DatasetTracker(Generic[_T, _U]):
         return graph
 
     def keys(self) -> Set[_T]:
-        """Return all tracked keys.
-        """
+        """Return all tracked keys."""
         return self._producers.keys() | self._consumers.keys()
 
     def remove(self, key: _T):
@@ -237,8 +237,12 @@ class _DatasetTracker(Generic[_T, _U]):
         return key in self._producers or key in self._consumers
 
 
-def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemove: Iterable[DatasetRef], *,
-            alreadyPruned: Optional[Set[QuantumNode]] = None):
+def _pruner(
+    datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode],
+    refsToRemove: Iterable[DatasetRef],
+    *,
+    alreadyPruned: Optional[Set[QuantumNode]] = None,
+):
     r"""Prune supplied dataset refs out of datasetRefDict container, recursing
     to additional nodes dependant on pruned refs. This function modifies
     datasetRefDict in-place.
@@ -293,9 +297,11 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
             tmpConnections = NamedKeyDict(node.quantum.inputs.items())
             tmpConnections[toRemove.datasetType] = list(tmpRefs)
             helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
-            assert node.quantum.dataId is not None, ("assert to make the type checker happy, it should not "
-                                                     "actually be possible to not have dataId set to None "
-                                                     "at this point")
+            assert node.quantum.dataId is not None, (
+                "assert to make the type checker happy, it should not "
+                "actually be possible to not have dataId set to None "
+                "at this point"
+            )
 
             # Try to adjust the quantum with the reduced refs to make sure the
             # node will still satisfy all its conditions.
@@ -305,9 +311,14 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
             # from the graph.
             try:
                 helper.adjust_in_place(node.taskDef.connections, node.taskDef.label, node.quantum.dataId)
-                newQuantum = Quantum(taskName=node.quantum.taskName, taskClass=node.quantum.taskClass,
-                                     dataId=node.quantum.dataId, initInputs=node.quantum.initInputs,
-                                     inputs=helper.inputs, outputs=helper.outputs)
+                newQuantum = Quantum(
+                    taskName=node.quantum.taskName,
+                    taskClass=node.quantum.taskClass,
+                    dataId=node.quantum.dataId,
+                    initInputs=node.quantum.initInputs,
+                    inputs=helper.inputs,
+                    outputs=helper.outputs,
+                )
                 # If the inputs or outputs were adjusted to something different
                 # than what was supplied by the graph builder, dissassociate
                 # node from those refs, and if they are output refs, prune them
@@ -315,16 +326,27 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
                 # the task wants to produce fewer outputs, or consume fewer
                 # inputs.
                 for condition, existingMapping, newMapping, remover in (
-                        (helper.inputs_adjusted, node.quantum.inputs, helper.inputs,
-                         datasetRefDict.removeConsumer),
-                        (helper.outputs_adjusted, node.quantum.outputs, helper.outputs,
-                         datasetRefDict.removeProducer)):
+                    (
+                        helper.inputs_adjusted,
+                        node.quantum.inputs,
+                        helper.inputs,
+                        datasetRefDict.removeConsumer,
+                    ),
+                    (
+                        helper.outputs_adjusted,
+                        node.quantum.outputs,
+                        helper.outputs,
+                        datasetRefDict.removeProducer,
+                    ),
+                ):
                     if condition:
                         notNeeded = set()
                         for key in existingMapping:
                             if key not in newMapping:
-                                compositeRefs = (r if not r.isComponent() else r.makeCompositeRef()
-                                                 for r in existingMapping[key])
+                                compositeRefs = (
+                                    r if not r.isComponent() else r.makeCompositeRef()
+                                    for r in existingMapping[key]
+                                )
                                 notNeeded |= set(compositeRefs)
                                 continue
                             notNeeded |= set(existingMapping[key]) - set(newMapping[key])
@@ -335,7 +357,7 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
                                 remover(ref, node)
                             if remover is datasetRefDict.removeProducer:
                                 _pruner(datasetRefDict, notNeeded, alreadyPruned=alreadyPruned)
-                object.__setattr__(node, 'quantum', newQuantum)
+                object.__setattr__(node, "quantum", newQuantum)
                 noWorkFound = False
 
             except NoWorkFound:
@@ -343,8 +365,9 @@ def _pruner(datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode], refsToRemo
 
             if noWorkFound:
                 # This will throw if the length is less than the minimum number
-                for tmpRef in chain(chain.from_iterable(node.quantum.inputs.values()),
-                                    node.quantum.initInputs.values()):
+                for tmpRef in chain(
+                    chain.from_iterable(node.quantum.inputs.values()), node.quantum.initInputs.values()
+                ):
                     if tmpRef.isComponent():
                         tmpRef = tmpRef.makeCompositeRef()
                     datasetRefDict.removeConsumer(tmpRef, node)

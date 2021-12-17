@@ -24,8 +24,8 @@
 
 import unittest
 
-import lsst.utils.tests
 import lsst.pex.config as pexConfig
+import lsst.utils.tests
 from lsst.pipe.base.configOverrides import ConfigOverrides
 
 # This is used in testSettingVar unit test
@@ -36,7 +36,7 @@ class ConfigTest(pexConfig.Config):
     fStr = pexConfig.Field(dtype=str, default="default", doc="")
     fBool = pexConfig.Field(dtype=bool, default=False, doc="")
     fInt = pexConfig.Field(dtype=int, default=-1, doc="")
-    fFloat = pexConfig.Field(dtype=float, default=-1., doc="")
+    fFloat = pexConfig.Field(dtype=float, default=-1.0, doc="")
 
     fListStr = pexConfig.ListField(dtype=str, default=[], doc="")
     fListBool = pexConfig.ListField(dtype=bool, default=[], doc="")
@@ -49,8 +49,7 @@ class ConfigTest(pexConfig.Config):
 
 
 class ConfigOverridesTestCase(unittest.TestCase):
-    """A test case for Task
-    """
+    """A test case for Task"""
 
     def checkSingleFieldOverride(self, field, value, result=None):
         """Convenience method for override of single field
@@ -71,8 +70,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
         self.assertEqual(getattr(config, field), result)
 
     def testSimpleValueStr(self):
-        """Test for applying value override to a string field
-        """
+        """Test for applying value override to a string field"""
         field = "fStr"
 
         # values of supported type
@@ -83,8 +81,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, 1)
 
     def testSimpleValueBool(self):
-        """Test for applying value override to a boolean field
-        """
+        """Test for applying value override to a boolean field"""
         field = "fBool"
 
         # values of supported type
@@ -104,8 +101,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "1")
 
     def testSimpleValueInt(self):
-        """Test for applying value override to a int field
-        """
+        """Test for applying value override to a int field"""
         field = "fInt"
 
         # values of supported type
@@ -127,17 +123,16 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "[]")
 
     def testSimpleValueFloat(self):
-        """Test for applying value override to a float field
-        """
+        """Test for applying value override to a float field"""
         field = "fFloat"
 
         # values of supported type
-        self.checkSingleFieldOverride(field, 0., 0.)
-        self.checkSingleFieldOverride(field, 100., 100.)
+        self.checkSingleFieldOverride(field, 0.0, 0.0)
+        self.checkSingleFieldOverride(field, 100.0, 100.0)
 
         # supported string conversions
-        self.checkSingleFieldOverride(field, "0.", 0.)
-        self.checkSingleFieldOverride(field, "100.0", 100.)
+        self.checkSingleFieldOverride(field, "0.", 0.0)
+        self.checkSingleFieldOverride(field, "100.0", 100.0)
         self.checkSingleFieldOverride(field, "-1.2e10", -1.2e10)
 
         # parseable but invalid input
@@ -147,8 +142,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "(1, 1)")
 
     def testListValueStr(self):
-        """Test for applying value override to a list field
-        """
+        """Test for applying value override to a list field"""
         field = "fListStr"
 
         # values of supported type
@@ -164,8 +158,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "['a', []]")
 
     def testListValueBool(self):
-        """Test for applying value override to a list field
-        """
+        """Test for applying value override to a list field"""
         field = "fListBool"
 
         # values of supported type
@@ -185,8 +178,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "5")
 
     def testListValueInt(self):
-        """Test for applying value override to a list field
-        """
+        """Test for applying value override to a list field"""
         field = "fListInt"
 
         # values of supported type
@@ -207,8 +199,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "5")
 
     def testChoiceValueStr(self):
-        """Test for applying value override to a choice field
-        """
+        """Test for applying value override to a choice field"""
         field = "fChoiceStr"
 
         # values of supported type
@@ -220,8 +211,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "X")
 
     def testChoiceValueInt(self):
-        """Test for applying value override to a choice field
-        """
+        """Test for applying value override to a choice field"""
         field = "fChoiceInt"
 
         # values of supported type
@@ -240,8 +230,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, [0, 1])
 
     def testSettingVar(self):
-        """Test setting a field with a string that represents a variable name
-        """
+        """Test setting a field with a string that represents a variable name"""
         field = "fChoiceInt"
 
         # verify loading variable
@@ -254,11 +243,11 @@ class ConfigOverridesTestCase(unittest.TestCase):
         overrides.addValueOverride("fFloat", "pi")
         overrides.applyTo(config)
         from math import pi
+
         self.assertEqual(config.fFloat, pi)
 
     def testDictValueInt(self):
-        """Test for applying value override to a dict field
-        """
+        """Test for applying value override to a dict field"""
         field = "fDictStrInt"
 
         # values of supported type

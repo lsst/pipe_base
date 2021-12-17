@@ -19,14 +19,14 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import sys
 import io
-import unittest
+import sys
 import textwrap
+import unittest
 
-import lsst.utils.tests
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+import lsst.utils.tests
 
 
 class SimpleTaskConfig(pexConfig.Config):
@@ -69,8 +69,7 @@ class ShowTasksTestCase(unittest.TestCase):
     """
 
     def testBasicShowTaskHierarchy(self):
-        """Test basic usage of show
-        """
+        """Test basic usage of show"""
         config = MainTaskConfig()
         expectedData = """
         Subtasks:
@@ -80,7 +79,9 @@ class ShowTasksTestCase(unittest.TestCase):
         st2: {0}.TaskWithSubtasks
         st2.sst1: {0}.SimpleTask
         st2.sst2: {0}.SimpleTask
-        """.format(__name__)
+        """.format(
+            __name__
+        )
         tempStdOut = io.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
         try:

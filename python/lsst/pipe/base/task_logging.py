@@ -22,13 +22,14 @@
 __all__ = ("TRACE", "VERBOSE", "getTaskLogger")
 
 from deprecated.sphinx import deprecated
+from lsst.utils.logging import TRACE, VERBOSE, getLogger
 
-from lsst.utils.logging import getLogger, TRACE, VERBOSE
 
-
-@deprecated(reason="getTaskLogger has been replaced by lsst.utils.logging.getLogger."
-            " Will be removed after v24.",
-            version="v24", category=FutureWarning)
+@deprecated(
+    reason="getTaskLogger has been replaced by lsst.utils.logging.getLogger." " Will be removed after v24.",
+    version="v24",
+    category=FutureWarning,
+)
 def getTaskLogger(name=None, logger=None):
     """Get a logger compatible with LSST usage.
 

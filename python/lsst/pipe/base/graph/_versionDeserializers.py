@@ -22,30 +22,26 @@ from __future__ import annotations
 
 __all__ = ("DESERIALIZER_MAP",)
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import Callable, ClassVar, Mapping, DefaultDict, Set, Dict, Tuple, Optional
-
 import json
 import lzma
-import networkx as nx
 import pickle
 import struct
 import uuid
-
+from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Mapping, Optional, Set, Tuple
 
-from lsst.utils import doImport
+import networkx as nx
+from lsst.daf.butler import DimensionRecord, DimensionUniverse, Quantum, SerializedDimensionRecord
 from lsst.pex.config import Config
-from lsst.daf.butler import DimensionUniverse, Quantum, SerializedDimensionRecord, DimensionRecord
+from lsst.utils import doImport
 
-from .quantumNode import QuantumNode, SerializedQuantumNode
 from ..pipeline import TaskDef
 from ..pipelineTask import PipelineTask
-from ._implDetails import _DatasetTracker, DatasetTypeName
-
+from ._implDetails import DatasetTypeName, _DatasetTracker
+from .quantumNode import QuantumNode, SerializedQuantumNode
 
 if TYPE_CHECKING:
     from .graph import QuantumGraph
@@ -55,6 +51,7 @@ class StructSizeDescriptor:
     """This is basically a class level property. It exists to report the size
     (number of bytes) of whatever the formatter string is for a deserializer
     """
+
     def __get__(self, inst, owner) -> int:
         return struct.calcsize(owner.FMT_STRING())
 
@@ -111,8 +108,9 @@ class DeserializerBase(ABC):
         """
         raise NotImplementedError("Base class does not implement this method")
 
-    def constructGraph(self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes],
-                       universe: DimensionUniverse) -> QuantumGraph:
+    def constructGraph(
+        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+    ) -> QuantumGraph:
         """Constructs a graph from the deserialized information.
 
         Parameters
@@ -129,8 +127,7 @@ class DeserializerBase(ABC):
         raise NotImplementedError("Base class does not implement this method")
 
     def description(self) -> str:
-        """Return the description of the serialized data format
-        """
+        """Return the description of the serialized data format"""
         raise NotImplementedError("Base class does not implement this method")
 
 
@@ -170,7 +167,7 @@ unique id assigned to the graph at its creation time.
 class DeserializerV1(DeserializerBase):
     @classmethod
     def FMT_STRING(cls) -> str:
-        return '>QQ'
+        return ">QQ"
 
     def __post_init__(self):
         self.taskDefMapSize, self.nodeMapSize = struct.unpack(self.FMT_STRING(), self.sizeBytes)
@@ -181,9 +178,9 @@ class DeserializerV1(DeserializerBase):
 
     def readHeaderInfo(self, rawHeader: bytes) -> SimpleNamespace:
         returnValue = SimpleNamespace()
-        returnValue.taskDefMap = pickle.loads(rawHeader[:self.taskDefMapSize])
-        returnValue._buildId = returnValue.taskDefMap['__GraphBuildID']
-        returnValue.map = pickle.loads(rawHeader[self.taskDefMapSize:])
+        returnValue.taskDefMap = pickle.loads(rawHeader[: self.taskDefMapSize])
+        returnValue._buildId = returnValue.taskDefMap["__GraphBuildID"]
+        returnValue.map = pickle.loads(rawHeader[self.taskDefMapSize :])
         returnValue.metadata = None
         self.returnValue = returnValue
         return returnValue
@@ -191,10 +188,12 @@ class DeserializerV1(DeserializerBase):
     def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
         return None
 
-    def constructGraph(self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes],
-                       universe: DimensionUniverse):
+    def constructGraph(
+        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+    ):
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
+
         quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
         quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
@@ -211,7 +210,7 @@ class DeserializerV1(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, 'nodeId', uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", uuid.uuid4())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
@@ -229,7 +228,7 @@ class DeserializerV1(DeserializerBase):
                 loadedTaskDef[nodeTask] = taskDef
             # Explicitly overload the "frozen-ness" of nodes to attach the
             # taskDef back into the un-persisted node
-            object.__setattr__(qNode, 'taskDef', loadedTaskDef[nodeTask])
+            object.__setattr__(qNode, "taskDef", loadedTaskDef[nodeTask])
             quanta[qNode.taskDef].add(qNode.quantum)
 
             # record the node for later processing
@@ -238,8 +237,12 @@ class DeserializerV1(DeserializerBase):
         # construct an empty new QuantumGraph object, and run the associated
         # creation method with the un-persisted data
         qGraph = object.__new__(QuantumGraph)
-        qGraph._buildGraphs(quanta, _quantumToNodeId=quantumToNodeId, _buildId=self.returnValue._buildId,
-                            metadata=self.returnValue.metadata)
+        qGraph._buildGraphs(
+            quanta,
+            _quantumToNodeId=quantumToNodeId,
+            _buildId=self.returnValue._buildId,
+            metadata=self.returnValue.metadata,
+        )
         return qGraph
 
     def description(self) -> str:
@@ -287,10 +290,10 @@ be deserialized in a similar manner.
 class DeserializerV2(DeserializerBase):
     @classmethod
     def FMT_STRING(cls) -> str:
-        return '>Q'
+        return ">Q"
 
     def __post_init__(self):
-        self.mapSize, = struct.unpack(self.FMT_STRING(), self.sizeBytes)
+        (self.mapSize,) = struct.unpack(self.FMT_STRING(), self.sizeBytes)
 
     @property
     def headerSize(self) -> int:
@@ -299,31 +302,35 @@ class DeserializerV2(DeserializerBase):
     def readHeaderInfo(self, rawHeader: bytes) -> SimpleNamespace:
         uncompressedHeaderMap = self.unpackHeader(rawHeader)
         if uncompressedHeaderMap is None:
-            raise ValueError("This error is not possible because self.unpackHeader cannot return None,"
-                             " but is done to satisfy type checkers")
+            raise ValueError(
+                "This error is not possible because self.unpackHeader cannot return None,"
+                " but is done to satisfy type checkers"
+            )
         header = json.loads(uncompressedHeaderMap)
         returnValue = SimpleNamespace()
-        returnValue.taskDefMap = header['TaskDefs']
-        returnValue._buildId = header['GraphBuildID']
-        returnValue.map = dict(header['Nodes'])
-        returnValue.metadata = header['Metadata']
+        returnValue.taskDefMap = header["TaskDefs"]
+        returnValue._buildId = header["GraphBuildID"]
+        returnValue.map = dict(header["Nodes"])
+        returnValue.metadata = header["Metadata"]
         self.returnValue = returnValue
         return returnValue
 
     def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
         return lzma.decompress(rawHeader).decode()
 
-    def constructGraph(self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes],
-                       universe: DimensionUniverse):
+    def constructGraph(
+        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+    ):
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
+
         quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
         quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
         # loop over the nodes specified above
         for node in nodes:
             # Get the bytes to read from the map
-            start, stop = self.returnValue.map[node]['bytes']
+            start, stop = self.returnValue.map[node]["bytes"]
             start += self.headerSize
             stop += self.headerSize
 
@@ -333,14 +340,14 @@ class DeserializerV2(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, 'nodeId', uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", uuid.uuid4())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
             nodeTask = qNode.taskDef
             if nodeTask not in loadedTaskDef:
                 # Get the byte ranges corresponding to this taskDef
-                start, stop = self.returnValue.taskDefMap[nodeTask]['bytes']
+                start, stop = self.returnValue.taskDefMap[nodeTask]["bytes"]
                 start += self.headerSize
                 stop += self.headerSize
 
@@ -351,7 +358,7 @@ class DeserializerV2(DeserializerBase):
                 loadedTaskDef[nodeTask] = taskDef
             # Explicitly overload the "frozen-ness" of nodes to attach the
             # taskDef back into the un-persisted node
-            object.__setattr__(qNode, 'taskDef', loadedTaskDef[nodeTask])
+            object.__setattr__(qNode, "taskDef", loadedTaskDef[nodeTask])
             quanta[qNode.taskDef].add(qNode.quantum)
 
             # record the node for later processing
@@ -360,8 +367,12 @@ class DeserializerV2(DeserializerBase):
         # construct an empty new QuantumGraph object, and run the associated
         # creation method with the un-persisted data
         qGraph = object.__new__(QuantumGraph)
-        qGraph._buildGraphs(quanta, _quantumToNodeId=quantumToNodeId, _buildId=self.returnValue._buildId,
-                            metadata=self.returnValue.metadata)
+        qGraph._buildGraphs(
+            quanta,
+            _quantumToNodeId=quantumToNodeId,
+            _buildId=self.returnValue._buildId,
+            metadata=self.returnValue.metadata,
+        )
         return qGraph
 
     def description(self) -> str:
@@ -442,7 +453,7 @@ class DeserializerV3(DeserializerBase):
 
     def __post_init__(self):
         self.infoSize: int
-        self.infoSize, = struct.unpack(self.FMT_STRING(), self.sizeBytes)
+        (self.infoSize,) = struct.unpack(self.FMT_STRING(), self.sizeBytes)
 
     @property
     def headerSize(self) -> int:
@@ -453,12 +464,12 @@ class DeserializerV3(DeserializerBase):
         assert uncompressedinfoMap is not None  # for python typing, this variant can't be None
         infoMap = json.loads(uncompressedinfoMap)
         infoMappings = SimpleNamespace()
-        infoMappings.taskDefMap = infoMap['TaskDefs']
-        infoMappings._buildId = infoMap['GraphBuildID']
-        infoMappings.map = {uuid.UUID(k): v for k, v in infoMap['Nodes']}
-        infoMappings.metadata = infoMap['Metadata']
+        infoMappings.taskDefMap = infoMap["TaskDefs"]
+        infoMappings._buildId = infoMap["GraphBuildID"]
+        infoMappings.map = {uuid.UUID(k): v for k, v in infoMap["Nodes"]}
+        infoMappings.metadata = infoMap["Metadata"]
         infoMappings.dimensionRecords = {}
-        for k, v in infoMap['DimensionRecords'].items():
+        for k, v in infoMap["DimensionRecords"].items():
             infoMappings.dimensionRecords[int(k)] = SerializedDimensionRecord(**v)
         self.infoMappings = infoMappings
         return infoMappings
@@ -466,10 +477,12 @@ class DeserializerV3(DeserializerBase):
     def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
         return lzma.decompress(rawHeader).decode()
 
-    def constructGraph(self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes],
-                       universe: DimensionUniverse):
+    def constructGraph(
+        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+    ):
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
+
         graph = nx.DiGraph()
         loadedTaskDef: Mapping[str, TaskDef] = {}
         container = {}
@@ -478,7 +491,7 @@ class DeserializerV3(DeserializerBase):
         recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
 
         for node in nodes:
-            start, stop = self.infoMappings.map[node]['bytes']
+            start, stop = self.infoMappings.map[node]["bytes"]
             start, stop = start + self.headerSize, stop + self.headerSize
             # Read in the bytes corresponding to the node to load and
             # decompress it
@@ -495,28 +508,30 @@ class DeserializerV3(DeserializerBase):
 
             if nodeTaskLabel not in loadedTaskDef:
                 # Get the byte ranges corresponding to this taskDef
-                start, stop = self.infoMappings.taskDefMap[nodeTaskLabel]['bytes']
+                start, stop = self.infoMappings.taskDefMap[nodeTaskLabel]["bytes"]
                 start, stop = start + self.headerSize, stop + self.headerSize
 
                 # bytes are compressed, so decompress them
                 taskDefDump = json.loads(lzma.decompress(_readBytes(start, stop)))
-                taskClass: PipelineTask = doImport(taskDefDump['taskName'])  # type: ignore
+                taskClass: PipelineTask = doImport(taskDefDump["taskName"])  # type: ignore
                 config: Config = taskClass.ConfigClass()  # type: ignore
-                config.loadFromStream(taskDefDump['config'])
+                config.loadFromStream(taskDefDump["config"])
                 # Rebuild TaskDef
-                recreatedTaskDef = TaskDef(taskName=taskDefDump['taskName'],
-                                           taskClass=taskClass,
-                                           config=config,
-                                           label=taskDefDump['label'])
+                recreatedTaskDef = TaskDef(
+                    taskName=taskDefDump["taskName"],
+                    taskClass=taskClass,
+                    config=config,
+                    label=taskDefDump["label"],
+                )
                 loadedTaskDef[nodeTaskLabel] = recreatedTaskDef
 
                 # rebuild the mappings that associate dataset type names with
                 # TaskDefs
-                for _, input in self.infoMappings.taskDefMap[nodeTaskLabel]['inputs']:
+                for _, input in self.infoMappings.taskDefMap[nodeTaskLabel]["inputs"]:
                     datasetDict.addConsumer(DatasetTypeName(input), recreatedTaskDef)
 
                 added = set()
-                for outputConnection in self.infoMappings.taskDefMap[nodeTaskLabel]['outputs']:
+                for outputConnection in self.infoMappings.taskDefMap[nodeTaskLabel]["outputs"]:
                     typeName = outputConnection[1]
                     if typeName not in added:
                         added.add(typeName)
@@ -531,7 +546,7 @@ class DeserializerV3(DeserializerBase):
 
             # recreate the relations between each node from stored info
             graph.add_node(node)
-            for id in self.infoMappings.map[node.nodeId]['inputs']:
+            for id in self.infoMappings.map[node.nodeId]["inputs"]:
                 # uuid is stored as a string, turn it back into a uuid
                 id = uuid.UUID(id)
                 # if the id is not yet in the container, dont make a connection
@@ -539,7 +554,7 @@ class DeserializerV3(DeserializerBase):
                 # the reverse connection
                 if id in container:
                     graph.add_edge(container[id], node)
-            for id in self.infoMappings.map[node.nodeId]['outputs']:
+            for id in self.infoMappings.map[node.nodeId]["outputs"]:
                 # uuid is stored as a string, turn it back into a uuid
                 id = uuid.UUID(id)
                 # if the id is not yet in the container, dont make a connection

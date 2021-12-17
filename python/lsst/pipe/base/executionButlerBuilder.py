@@ -20,18 +20,17 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("buildExecutionButler", )
+__all__ = ("buildExecutionButler",)
 
 import io
-
-from collections import defaultdict
 import itertools
-from typing import Callable, DefaultDict, Mapping, Optional, Set, Tuple, Iterable, List, Union
+from collections import defaultdict
+from typing import Callable, DefaultDict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
-from lsst.daf.butler import (DatasetRef, DatasetType, Butler, DataCoordinate, ButlerURI, Config)
-from lsst.utils.introspection import get_class_of
-from lsst.daf.butler.transfers import RepoExportContext
+from lsst.daf.butler import Butler, ButlerURI, Config, DataCoordinate, DatasetRef, DatasetType
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
+from lsst.daf.butler.transfers import RepoExportContext
+from lsst.utils.introspection import get_class_of
 
 from .graph import QuantumGraph, QuantumNode
 from .pipeline import PipelineDatasetTypes
@@ -97,8 +96,9 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     # logic changes
     collections = set(collections)
     while True:
-        discoveredCollections = set(butler.registry.queryCollections(collections, flattenChains=True,
-                                                                     includeChains=True))
+        discoveredCollections = set(
+            butler.registry.queryCollections(collections, flattenChains=True, includeChains=True)
+        )
         if len(discoveredCollections) > len(collections):
             collections = discoveredCollections
         else:
@@ -106,8 +106,9 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef],
-            inserts: DataSetTypeMap) -> io.StringIO:
+def _export(
+    butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef], inserts: DataSetTypeMap
+) -> io.StringIO:
     # This exports the datasets that exist in the input butler using
     # daf butler objects, however it reaches in deep and does not use the
     # public methods so that it can export it to a string buffer and skip
@@ -172,20 +173,25 @@ def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) 
 
     # Requires that we use the dimension configuration from the original
     # butler and not use the defaults.
-    config = Butler.makeRepo(root=outputLocation, config=config,
-                             dimensionConfig=butler.registry.dimensions.dimensionConfig,
-                             overwrite=True, forceConfigRoot=False)
+    config = Butler.makeRepo(
+        root=outputLocation,
+        config=config,
+        dimensionConfig=butler.registry.dimensions.dimensionConfig,
+        overwrite=True,
+        forceConfigRoot=False,
+    )
 
     # Return a newly created butler
     return Butler(config, writeable=True)
 
 
-def _import(yamlBuffer: io.StringIO,
-            newButler: Butler,
-            inserts: DataSetTypeMap,
-            run: str,
-            butlerModifier: Optional[Callable[[Butler], Butler]]
-            ) -> Butler:
+def _import(
+    yamlBuffer: io.StringIO,
+    newButler: Butler,
+    inserts: DataSetTypeMap,
+    run: str,
+    butlerModifier: Optional[Callable[[Butler], Butler]],
+) -> Butler:
     # This method takes the exports from the existing butler, imports
     # them into the newly created butler, and then inserts the datasets
     # that are expected to be produced.
@@ -209,15 +215,16 @@ def _import(yamlBuffer: io.StringIO,
     return newButler
 
 
-def buildExecutionButler(butler: Butler,
-                         graph: QuantumGraph,
-                         outputLocation: Union[str, ButlerURI],
-                         run: str,
-                         *,
-                         clobber: bool = False,
-                         butlerModifier: Optional[Callable[[Butler], Butler]] = None,
-                         collections: Optional[Iterable[str]] = None
-                         ) -> Butler:
+def buildExecutionButler(
+    butler: Butler,
+    graph: QuantumGraph,
+    outputLocation: Union[str, ButlerURI],
+    run: str,
+    *,
+    clobber: bool = False,
+    butlerModifier: Optional[Callable[[Butler], Butler]] = None,
+    collections: Optional[Iterable[str]] = None,
+) -> Butler:
     r"""buildExecutionButler is a function that is responsible for exporting
     input `QuantumGraphs` into a new minimal `~lsst.daf.butler.Butler` which
     only contains datasets specified by the `QuantumGraph`. These datasets are

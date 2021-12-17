@@ -21,37 +21,48 @@
 from __future__ import annotations
 
 from lsst.daf.butler.core.datasets.type import DatasetType
+
 __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
-import warnings
-
-from lsst.daf.butler import Quantum, DatasetRef, ButlerURI, DimensionUniverse, DimensionRecordsAccumulator
-
-from collections import defaultdict, deque
-
-from itertools import chain
 import io
 import json
-import networkx as nx
-from networkx.drawing.nx_agraph import write_dot
+import lzma
 import os
 import pickle
-import lzma
 import struct
 import time
 import uuid
+import warnings
+from collections import defaultdict, deque
+from itertools import chain
 from types import MappingProxyType
-from typing import (Any, DefaultDict, Dict, FrozenSet, Iterable, List, Mapping, MutableMapping, Set,
-                    Generator, Optional, Tuple, Union, TypeVar)
+from typing import (
+    Any,
+    DefaultDict,
+    Dict,
+    FrozenSet,
+    Generator,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
+
+import networkx as nx
+from lsst.daf.butler import ButlerURI, DatasetRef, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-
-from ._implDetails import _DatasetTracker, DatasetTypeName, _pruner
-from .quantumNode import QuantumNode, BuildId
+from ._implDetails import DatasetTypeName, _DatasetTracker, _pruner
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
-
+from .quantumNode import BuildId, QuantumNode
 
 _T = TypeVar("_T", bound="QuantumGraph")
 
@@ -63,7 +74,7 @@ SAVE_VERSION = 3
 # The base is a big endian encoded unsigned short that is used to hold the
 # file format version. This allows reading version bytes and determine which
 # loading code should be used for the rest of the file
-STRUCT_FMT_BASE = '>H'
+STRUCT_FMT_BASE = ">H"
 #
 # Version 1
 # This marks a big endian encoded format with an unsigned short, an unsigned
@@ -71,10 +82,7 @@ STRUCT_FMT_BASE = '>H'
 # Version 2
 # A big endian encoded format with an unsigned long long byte stream used to
 # indicate the total length of the entire header.
-STRUCT_FMT_STRING = {
-    1: '>QQ',
-    2: '>Q'
-}
+STRUCT_FMT_STRING = {1: ">QQ", 2: ">Q"}
 
 # magic bytes that help determine this is a graph save
 MAGIC_BYTES = b"qgraph4\xf6\xe8\xa9"
@@ -84,6 +92,7 @@ class IncompatibleGraphError(Exception):
     """Exception class to indicate that a lookup by NodeId is impossible due
     to incompatibilities
     """
+
     pass
 
 
@@ -108,18 +117,24 @@ class QuantumGraph:
         Raised if the graph is pruned such that some tasks no longer have nodes
         associated with them.
     """
-    def __init__(self, quanta: Mapping[TaskDef, Set[Quantum]],
-                 metadata: Optional[Mapping[str, Any]] = None,
-                 pruneRefs: Optional[Iterable[DatasetRef]] = None):
+
+    def __init__(
+        self,
+        quanta: Mapping[TaskDef, Set[Quantum]],
+        metadata: Optional[Mapping[str, Any]] = None,
+        pruneRefs: Optional[Iterable[DatasetRef]] = None,
+    ):
         self._buildGraphs(quanta, metadata=metadata, pruneRefs=pruneRefs)
 
-    def _buildGraphs(self,
-                     quanta: Mapping[TaskDef, Set[Quantum]],
-                     *,
-                     _quantumToNodeId: Optional[Mapping[Quantum, uuid.UUID]] = None,
-                     _buildId: Optional[BuildId] = None,
-                     metadata: Optional[Mapping[str, Any]] = None,
-                     pruneRefs: Optional[Iterable[DatasetRef]] = None):
+    def _buildGraphs(
+        self,
+        quanta: Mapping[TaskDef, Set[Quantum]],
+        *,
+        _quantumToNodeId: Optional[Mapping[Quantum, uuid.UUID]] = None,
+        _buildId: Optional[BuildId] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        pruneRefs: Optional[Iterable[DatasetRef]] = None,
+    ):
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
@@ -153,8 +168,10 @@ class QuantumGraph:
             for quantum in quantumSet:
                 if _quantumToNodeId:
                     if (nodeId := _quantumToNodeId.get(quantum)) is None:
-                        raise ValueError("If _quantuMToNodeNumber is not None, all quanta must have an "
-                                         "associated value in the mapping")
+                        raise ValueError(
+                            "If _quantuMToNodeNumber is not None, all quanta must have an "
+                            "associated value in the mapping"
+                        )
                 else:
                     nodeId = uuid.uuid4()
 
@@ -208,8 +225,9 @@ class QuantumGraph:
                     if len(taskNodes) != 0:
                         tp: DatasetType
                         for tp in types_:
-                            if ((tmpRefs := next(iter(taskNodes)).quantum.inputs.get(tp)) and not
-                                    set(tmpRefs).difference(pruneRefs)):
+                            if (tmpRefs := next(iter(taskNodes)).quantum.inputs.get(tp)) and not set(
+                                tmpRefs
+                            ).difference(pruneRefs):
                                 culprits.add(tp.name)
                     emptyTasks.add(td.label)
                 newTaskToQuantumNode[td] = diff
@@ -218,8 +236,10 @@ class QuantumGraph:
             self._taskToQuantumNode = newTaskToQuantumNode
 
             if emptyTasks:
-                raise ValueError(f"{', '.join(emptyTasks)} task(s) have no nodes associated with them "
-                                 f"after graph pruning; {', '.join(culprits)} caused over-pruning")
+                raise ValueError(
+                    f"{', '.join(emptyTasks)} task(s) have no nodes associated with them "
+                    f"after graph pruning; {', '.join(culprits)} caused over-pruning"
+                )
 
         # Graph of quanta relations
         self._connectedQuanta = self._datasetRefDict.makeNetworkXGraph()
@@ -327,8 +347,12 @@ class QuantumGraph:
         # convert to standard dict to prevent accidental key insertion
         quantumMap = dict(quantumMap.items())
 
-        newInst._buildGraphs(quantumMap, _quantumToNodeId={n.quantum: n.nodeId for n in self},
-                             metadata=self._metadata, pruneRefs=refs)
+        newInst._buildGraphs(
+            quantumMap,
+            _quantumToNodeId={n.quantum: n.nodeId for n in self},
+            metadata=self._metadata,
+            pruneRefs=refs,
+        )
         return newInst
 
     def getQuantumNodeByNodeId(self, nodeId: uuid.UUID) -> QuantumNode:
@@ -478,7 +502,7 @@ class QuantumGraph:
         """
         results = []
         for task in self._taskToQuantumNode.keys():
-            split = task.taskName.split('.')
+            split = task.taskName.split(".")
             if split[-1] == taskName:
                 results.append(task)
         return results
@@ -570,7 +594,7 @@ class QuantumGraph:
             An instance of the type from which the subset was created
         """
         if not isinstance(nodes, Iterable):
-            nodes = (nodes, )
+            nodes = (nodes,)
         quantumSubgraph = self._connectedQuanta.subgraph(nodes).nodes
         quantumMap = defaultdict(set)
 
@@ -582,8 +606,12 @@ class QuantumGraph:
         quantumMap = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({})
-        newInst._buildGraphs(quantumMap, _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
-                             _buildId=self._buildId, metadata=self._metadata)
+        newInst._buildGraphs(
+            quantumMap,
+            _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
+            _buildId=self._buildId,
+            metadata=self._metadata,
+        )
         return newInst
 
     def subsetToConnected(self: _T) -> Tuple[_T, ...]:
@@ -594,8 +622,10 @@ class QuantumGraph:
         result : list of `QuantumGraph`
             A list of graphs that are each connected
         """
-        return tuple(self.subset(connectedSet)
-                     for connectedSet in nx.weakly_connected_components(self._connectedQuanta))
+        return tuple(
+            self.subset(connectedSet)
+            for connectedSet in nx.weakly_connected_components(self._connectedQuanta)
+        )
 
     def determineInputsToQuantumNode(self, node: QuantumNode) -> Set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct inputs to a specified
@@ -698,18 +728,20 @@ class QuantumGraph:
 
     @property
     def metadata(self) -> Optional[MappingProxyType[str, Any]]:
-        """
-        """
+        """ """
         if self._metadata is None:
             return None
         return MappingProxyType(self._metadata)
 
     @classmethod
-    def loadUri(cls, uri: Union[ButlerURI, str], universe: DimensionUniverse,
-                nodes: Optional[Iterable[Union[str, uuid.UUID]]] = None,
-                graphID: Optional[BuildId] = None,
-                minimumVersion: int = 3
-                ) -> QuantumGraph:
+    def loadUri(
+        cls,
+        uri: Union[ButlerURI, str],
+        universe: DimensionUniverse,
+        nodes: Optional[Iterable[Union[str, uuid.UUID]]] = None,
+        graphID: Optional[BuildId] = None,
+        minimumVersion: int = 3,
+    ) -> QuantumGraph:
         """Read `QuantumGraph` from a URI.
 
         Parameters
@@ -768,7 +800,7 @@ class QuantumGraph:
             with uri.as_local() as local, open(local.ospath, "rb") as fd:
                 warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
                 qgraph = pickle.load(fd)
-        elif uri.getExtension() in ('.qgraph'):
+        elif uri.getExtension() in (".qgraph"):
             with LoadHelper(uri, minimumVersion) as loader:
                 qgraph = loader.load(universe, nodes, graphID)
         else:
@@ -810,7 +842,7 @@ class QuantumGraph:
         uri = ButlerURI(uri)
         if uri.getExtension() in (".pickle", ".pkl"):
             raise ValueError("Reading a header from a pickle save is not supported")
-        elif uri.getExtension() in ('.qgraph'):
+        elif uri.getExtension() in (".qgraph"):
             return LoadHelper(uri, minimumVersion).readHeader()
         else:
             raise ValueError("Only know how to handle files saved as `qgraph`")
@@ -849,8 +881,8 @@ class QuantumGraph:
         # Store the QauntumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
         # unlikely conflicts.
-        headerData['GraphBuildID'] = self.graphID
-        headerData['Metadata'] = self._metadata
+        headerData["GraphBuildID"] = self.graphID
+        headerData["Metadata"] = self._metadata
 
         # counter for the number of bytes processed thus far
         count = 0
@@ -865,13 +897,13 @@ class QuantumGraph:
             taskDescription = {}
             # save the fully qualified name, as TaskDef not not require this,
             # but by doing so can save space and is easier to transport
-            taskDescription['taskName'] = f"{taskDef.taskClass.__module__}.{taskDef.taskClass.__qualname__}"
+            taskDescription["taskName"] = f"{taskDef.taskClass.__module__}.{taskDef.taskClass.__qualname__}"
             # save the config as a text stream that will be un-persisted on the
             # other end
             stream = io.StringIO()
             taskDef.config.saveToStream(stream)
-            taskDescription['config'] = stream.getvalue()
-            taskDescription['label'] = taskDef.label
+            taskDescription["config"] = stream.getvalue()
+            taskDescription["label"] = taskDef.label
 
             inputs = []
             outputs = []
@@ -903,13 +935,15 @@ class QuantumGraph:
             # conpress those bytes
             dump = lzma.compress(json.dumps(taskDescription).encode())
             # record the sizing and relation information
-            taskDefMap[taskDef.label] = {"bytes": (count, count+len(dump)),
-                                         "inputs": inputs,
-                                         "outputs": outputs}
+            taskDefMap[taskDef.label] = {
+                "bytes": (count, count + len(dump)),
+                "inputs": inputs,
+                "outputs": outputs,
+            }
             count += len(dump)
             jsonData.append(dump)
 
-        headerData['TaskDefs'] = taskDefMap
+        headerData["TaskDefs"] = taskDefMap
 
         # serialize the nodes, recording the start and end bytes of each node
         dimAccumulator = DimensionRecordsAccumulator()
@@ -920,19 +954,25 @@ class QuantumGraph:
 
             dump = lzma.compress(simpleNode.json().encode())
             jsonData.append(dump)
-            nodeMap.append((str(node.nodeId),
-                            {"bytes": (count, count+len(dump)),
-                             "inputs": [str(n.nodeId) for n in self.determineInputsToQuantumNode(node)],
-                             "outputs": [str(n.nodeId) for n in self.determineOutputsOfQuantumNode(node)]}
-                            ))
+            nodeMap.append(
+                (
+                    str(node.nodeId),
+                    {
+                        "bytes": (count, count + len(dump)),
+                        "inputs": [str(n.nodeId) for n in self.determineInputsToQuantumNode(node)],
+                        "outputs": [str(n.nodeId) for n in self.determineOutputsOfQuantumNode(node)],
+                    },
+                )
+            )
             count += len(dump)
 
-        headerData['DimensionRecords'] = {key: value.dict() for key, value in
-                                          dimAccumulator.makeSerializedDimensionRecordMapping().items()}
+        headerData["DimensionRecords"] = {
+            key: value.dict() for key, value in dimAccumulator.makeSerializedDimensionRecordMapping().items()
+        }
 
         # need to serialize this as a series of key,value tuples because of
         # a limitation on how json cant do anyting but strings as keys
-        headerData['Nodes'] = nodeMap
+        headerData["Nodes"] = nodeMap
 
         # dump the headerData to json
         header_encode = lzma.compress(json.dumps(headerData).encode())
@@ -970,11 +1010,14 @@ class QuantumGraph:
             return buffer
 
     @classmethod
-    def load(cls, file: io.IO[bytes], universe: DimensionUniverse,
-             nodes: Optional[Iterable[uuid.UUID]] = None,
-             graphID: Optional[BuildId] = None,
-             minimumVersion: int = 3
-             ) -> QuantumGraph:
+    def load(
+        cls,
+        file: io.IO[bytes],
+        universe: DimensionUniverse,
+        nodes: Optional[Iterable[uuid.UUID]] = None,
+        graphID: Optional[BuildId] = None,
+        minimumVersion: int = 3,
+    ) -> QuantumGraph:
         """Read QuantumGraph from a file that was made by `save`.
 
         Parameters
@@ -1046,8 +1089,7 @@ class QuantumGraph:
 
     @property
     def graphID(self):
-        """Returns the ID generated by the graph at construction time
-        """
+        """Returns the ID generated by the graph at construction time"""
         return self._buildId
 
     def __iter__(self) -> Generator[QuantumNode, None, None]:
@@ -1071,16 +1113,15 @@ class QuantumGraph:
             if dId is None:
                 continue
             universe = dId.graph.universe
-        return {"reduced": self._buildSaveObject(),
-                'graphId': self._buildId, 'universe': universe}
+        return {"reduced": self._buildSaveObject(), "graphId": self._buildId, "universe": universe}
 
     def __setstate__(self, state: dict):
         """Reconstructs the state of the graph from the information persisted
         in getstate.
         """
-        buffer = io.BytesIO(state['reduced'])
+        buffer = io.BytesIO(state["reduced"])
         with LoadHelper(buffer, minimumVersion=3) as loader:
-            qgraph = loader.load(state['universe'], graphID=state['graphId'])
+            qgraph = loader.load(state["universe"], graphID=state["graphId"])
 
         self._metadata = qgraph._metadata
         self._buildId = qgraph._buildId

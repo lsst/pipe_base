@@ -23,13 +23,13 @@ __all__ = ["Task", "TaskError"]
 
 import contextlib
 import logging
+import weakref
 from typing import Optional
 
 import lsst.utils
 import lsst.utils.logging
-from lsst.utils.timer import logInfo
 from lsst.pex.config import ConfigurableField
-import weakref
+from lsst.utils.timer import logInfo
 
 try:
     import lsstDebug
@@ -46,6 +46,7 @@ METADATA_COMPATIBILITY = True
 
 if METADATA_COMPATIBILITY:
     import lsst.daf.base as dafBase
+
     _TASK_METADATA_TYPE = dafBase.PropertyList
     _TASK_FULL_METADATA_TYPE = dafBase.PropertySet
 else:
@@ -64,6 +65,7 @@ class TaskError(Exception):
       is found.
     - coadd finds no valid images in the specified patch.
     """
+
     pass
 
 
@@ -207,12 +209,11 @@ class Task:
         self._taskDict[self._fullName] = weakref.ref(self)
 
     @property
-    def _parentTask(self) -> Optional['Task']:
+    def _parentTask(self) -> Optional["Task"]:
         return self.__parentTask if self.__parentTask is None else self.__parentTask()
 
     def emptyMetadata(self):
-        """Empty (clear) the metadata for this Task and all sub-Tasks.
-        """
+        """Empty (clear) the metadata for this Task and all sub-Tasks."""
         for subtask in self._taskDict.values():
             subtask().metadata = _TASK_METADATA_TYPE()
 
@@ -474,9 +475,12 @@ class Task:
         kwargs : `dict`
             Keyword arguments to be used when pickling.
         """
-        return dict(config=self.config, name=self._name, parentTask=self._parentTask,)
+        return dict(
+            config=self.config,
+            name=self._name,
+            parentTask=self._parentTask,
+        )
 
     def __reduce__(self):
-        """Pickler.
-        """
+        """Pickler."""
         return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())

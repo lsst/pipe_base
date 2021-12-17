@@ -19,8 +19,15 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-__all__ = ["ArgumentParser", "ConfigFileAction", "ConfigValueAction", "DataIdContainer",
-           "DatasetArgument", "ConfigDatasetType", "InputOnlyArgumentParser"]
+__all__ = [
+    "ArgumentParser",
+    "ConfigFileAction",
+    "ConfigValueAction",
+    "DataIdContainer",
+    "DatasetArgument",
+    "ConfigDatasetType",
+    "InputOnlyArgumentParser",
+]
 
 import abc
 import argparse
@@ -31,16 +38,16 @@ import logging
 import os
 import re
 import shlex
-import sys
 import shutil
+import sys
 import textwrap
 
-import lsst.utils
-import lsst.utils.logging
+import lsst.daf.persistence as dafPersist
+import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pex.config.history
-import lsst.log as lsstLog
-import lsst.daf.persistence as dafPersist
+import lsst.utils
+import lsst.utils.logging
 
 DEFAULT_INPUT_NAME = "PIPE_INPUT_ROOT"
 DEFAULT_CALIB_NAME = "PIPE_CALIB_ROOT"
@@ -163,8 +170,9 @@ class DataIdContainer:
                     keyType = str
 
                     log = lsst.utils.logging.getLogger()
-                    log.warning("Unexpected ID %s; guessing type is \"%s\"",
-                                key, 'str' if keyType == str else keyType)
+                    log.warning(
+                        'Unexpected ID %s; guessing type is "%s"', key, "str" if keyType == str else keyType
+                    )
                     idKeyTypeDict[key] = keyType
 
                 if keyType != str:
@@ -192,8 +200,9 @@ class DataIdContainer:
             raise RuntimeError("Must call setDatasetType first")
         butler = namespace.butler
         for dataId in self.idList:
-            refList = dafPersist.searchDataRefs(butler, datasetType=self.datasetType,
-                                                level=self.level, dataId=dataId)
+            refList = dafPersist.searchDataRefs(
+                butler, datasetType=self.datasetType, level=self.level, dataId=dataId
+            )
             if not refList:
                 namespace.log.warning("No data found for dataId=%s", dataId)
                 continue
@@ -318,11 +327,12 @@ class DatasetArgument(DynamicDatasetType):
         not support default values.
     """
 
-    def __init__(self,
-                 name=None,
-                 help="dataset type to process from input data repository",
-                 default=None,
-                 ):
+    def __init__(
+        self,
+        name=None,
+        help="dataset type to process from input data repository",
+        default=None,
+    ):
         DynamicDatasetType.__init__(self)
         self.name = name
         self.help = help
@@ -365,11 +375,7 @@ class DatasetArgument(DynamicDatasetType):
         requiredDict = dict()
         if self.name.startswith("-"):
             requiredDict = dict(required=self.default is None)
-        parser.add_argument(
-            self.name,
-            default=self.default,
-            help=help,
-            **requiredDict)
+        parser.add_argument(self.name, default=self.default, help=help, **requiredDict)
 
 
 class ConfigDatasetType(DynamicDatasetType):
@@ -424,6 +430,7 @@ class ArgumentParser(argparse.ArgumentParser):
     -----
     Users may wish to add additional arguments before calling `parse_args`.
     """
+
     # I would prefer to check data ID keys and values as they are parsed,
     # but the required information comes from the butler, so I have to
     # construct a butler before I do this checking. Constructing a butler
@@ -436,10 +443,12 @@ class ArgumentParser(argparse.ArgumentParser):
     def __init__(self, name, usage="%(prog)s input [options]", **kwargs):
         self._name = name
         self._dataIdArgDict = {}  # Dict of data identifier specifications, by argument name
-        argparse.ArgumentParser.__init__(self,
-                                         usage=usage,
-                                         fromfile_prefix_chars='@',
-                                         epilog=textwrap.dedent("""Notes:
+        argparse.ArgumentParser.__init__(
+            self,
+            usage=usage,
+            fromfile_prefix_chars="@",
+            epilog=textwrap.dedent(
+                """Notes:
             * --config, --config-file or --configfile, --id, --loglevel and @file may appear multiple times;
                 all values are used, in order left to right
             * @file reads command-line options from the specified file:
@@ -449,69 +458,144 @@ class ArgumentParser(argparse.ArgumentParser):
             * To specify multiple values for an option, do not use = after the option name:
                 * right: --config-file foo bar
                 * wrong: --config-file=foo bar
-            """),
-                                         formatter_class=argparse.RawDescriptionHelpFormatter,
-                                         **kwargs)
-        self.add_argument(metavar='input', dest="rawInput",
-                          help=f"path to input data repository, relative to ${DEFAULT_INPUT_NAME}")
-        self.add_argument("--calib", dest="rawCalib",
-                          help=f"path to input calibration repository, relative to ${DEFAULT_CALIB_NAME}")
-        self.add_argument("--output", dest="rawOutput",
-                          help="path to output data repository (need not exist), "
-                               f"relative to ${DEFAULT_OUTPUT_NAME}")
-        self.add_argument("--rerun", dest="rawRerun", metavar="[INPUT:]OUTPUT",
-                          help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; "
-                               "optionally sets ROOT to ROOT/rerun/INPUT")
-        self.add_argument("-c", "--config", nargs="*", action=ConfigValueAction,
-                          help="config override(s), e.g. -c foo=newfoo bar.baz=3", metavar="NAME=VALUE")
-        self.add_argument("-C", "--config-file", "--configfile",
-                          dest="configfile", nargs="*", action=ConfigFileAction,
-                          help="config override file(s)")
-        self.add_argument("-L", "--loglevel", nargs="*", action=LogLevelAction,
-                          help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
-                          metavar="LEVEL|COMPONENT=LEVEL")
+            """
+            ),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            **kwargs,
+        )
+        self.add_argument(
+            metavar="input",
+            dest="rawInput",
+            help=f"path to input data repository, relative to ${DEFAULT_INPUT_NAME}",
+        )
+        self.add_argument(
+            "--calib",
+            dest="rawCalib",
+            help=f"path to input calibration repository, relative to ${DEFAULT_CALIB_NAME}",
+        )
+        self.add_argument(
+            "--output",
+            dest="rawOutput",
+            help="path to output data repository (need not exist), " f"relative to ${DEFAULT_OUTPUT_NAME}",
+        )
+        self.add_argument(
+            "--rerun",
+            dest="rawRerun",
+            metavar="[INPUT:]OUTPUT",
+            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; " "optionally sets ROOT to ROOT/rerun/INPUT",
+        )
+        self.add_argument(
+            "-c",
+            "--config",
+            nargs="*",
+            action=ConfigValueAction,
+            help="config override(s), e.g. -c foo=newfoo bar.baz=3",
+            metavar="NAME=VALUE",
+        )
+        self.add_argument(
+            "-C",
+            "--config-file",
+            "--configfile",
+            dest="configfile",
+            nargs="*",
+            action=ConfigFileAction,
+            help="config override file(s)",
+        )
+        self.add_argument(
+            "-L",
+            "--loglevel",
+            nargs="*",
+            action=LogLevelAction,
+            help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
+            metavar="LEVEL|COMPONENT=LEVEL",
+        )
         self.add_argument("--longlog", action=LongLogAction, help="use a more verbose format for the logging")
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
-        self.add_argument("--doraise", action="store_true",
-                          help="raise an exception on error (else log a message and continue)?")
-        self.add_argument("--noExit", action="store_true",
-                          help="Do not exit even upon failure (i.e. return a struct to the calling script)")
+        self.add_argument(
+            "--doraise",
+            action="store_true",
+            help="raise an exception on error (else log a message and continue)?",
+        )
+        self.add_argument(
+            "--noExit",
+            action="store_true",
+            help="Do not exit even upon failure (i.e. return a struct to the calling script)",
+        )
         self.add_argument("--profile", help="Dump cProfile statistics to filename")
-        self.add_argument("--show", nargs="+", default=(),
-                          help="display the specified information to stdout and quit "
-                               "(unless run is specified); information is "
-                               "(config[=PATTERN]|history=PATTERN|tasks|data|run)")
+        self.add_argument(
+            "--show",
+            nargs="+",
+            default=(),
+            help="display the specified information to stdout and quit "
+            "(unless run is specified); information is "
+            "(config[=PATTERN]|history=PATTERN|tasks|data|run)",
+        )
         self.add_argument("-j", "--processes", type=int, default=1, help="Number of processes to use")
-        self.add_argument("-t", "--timeout", type=float,
-                          help="Timeout for multiprocessing; maximum wall time (sec)")
-        self.add_argument("--clobber-output", action="store_true", dest="clobberOutput", default=False,
-                          help=("remove and re-create the output directory if it already exists "
-                                "(safe with -j, but not all other forms of parallel execution)"))
-        self.add_argument("--clobber-config", action="store_true", dest="clobberConfig", default=False,
-                          help=("backup and then overwrite existing config files instead of checking them "
-                                "(safe with -j, but not all other forms of parallel execution)"))
-        self.add_argument("--no-backup-config", action="store_true", dest="noBackupConfig", default=False,
-                          help="Don't copy config to file~N backup.")
-        self.add_argument("--clobber-versions", action="store_true", dest="clobberVersions", default=False,
-                          help=("backup and then overwrite existing package versions instead of checking"
-                                "them (safe with -j, but not all other forms of parallel execution)"))
-        self.add_argument("--no-versions", action="store_true", dest="noVersions", default=False,
-                          help="don't check package versions; useful for development")
-        lsstLog.configure_prop("""
+        self.add_argument(
+            "-t", "--timeout", type=float, help="Timeout for multiprocessing; maximum wall time (sec)"
+        )
+        self.add_argument(
+            "--clobber-output",
+            action="store_true",
+            dest="clobberOutput",
+            default=False,
+            help=(
+                "remove and re-create the output directory if it already exists "
+                "(safe with -j, but not all other forms of parallel execution)"
+            ),
+        )
+        self.add_argument(
+            "--clobber-config",
+            action="store_true",
+            dest="clobberConfig",
+            default=False,
+            help=(
+                "backup and then overwrite existing config files instead of checking them "
+                "(safe with -j, but not all other forms of parallel execution)"
+            ),
+        )
+        self.add_argument(
+            "--no-backup-config",
+            action="store_true",
+            dest="noBackupConfig",
+            default=False,
+            help="Don't copy config to file~N backup.",
+        )
+        self.add_argument(
+            "--clobber-versions",
+            action="store_true",
+            dest="clobberVersions",
+            default=False,
+            help=(
+                "backup and then overwrite existing package versions instead of checking"
+                "them (safe with -j, but not all other forms of parallel execution)"
+            ),
+        )
+        self.add_argument(
+            "--no-versions",
+            action="store_true",
+            dest="noVersions",
+            default=False,
+            help="don't check package versions; useful for development",
+        )
+        lsstLog.configure_prop(
+            """
 log4j.rootLogger=INFO, A1
 log4j.appender.A1=ConsoleAppender
 log4j.appender.A1.Target=System.out
 log4j.appender.A1.layout=PatternLayout
 log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
-""")
+"""
+        )
 
         # Forward all Python logging to lsst.log
         lgr = logging.getLogger()
         lgr.setLevel(logging.INFO)  # same as in log4cxx config above
         lgr.addHandler(lsstLog.LogHandler())
 
-    def add_id_argument(self, name, datasetType, help, level=None, doMakeDataRefList=True,
-                        ContainerClass=DataIdContainer):
+    def add_id_argument(
+        self, name, datasetType, help, level=None, doMakeDataRefList=True, ContainerClass=DataIdContainer
+    ):
         """Add a data ID argument.
 
 
@@ -559,8 +643,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         if argName in set(("camera", "config", "butler", "log", "obsPkg")):
             raise RuntimeError(f"Data ID argument {name} is a reserved name")
 
-        self.add_argument(name, nargs="*", action=IdValueAction, help=help,
-                          metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
+        self.add_argument(
+            name, nargs="*", action=IdValueAction, help=help, metavar="KEY=VALUE1[^VALUE2[^VALUE3...]"
+        )
 
         dataIdArgument = DataIdArgument(
             name=argName,
@@ -634,8 +719,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         namespace.config = config
         # Ensure that the external logger is converted to the expected
         # logger class.
-        namespace.log = lsst.utils.logging.getLogger(log.name) \
-            if log is not None else lsst.utils.logging.getLogger()
+        namespace.log = (
+            lsst.utils.logging.getLogger(log.name) if log is not None else lsst.utils.logging.getLogger()
+        )
         mapperClass = dafPersist.Butler.getMapperClass(namespace.input)
         if mapperClass is None:
             self.error(f"Error: no mapper specified for input repo {namespace.input!r}")
@@ -675,21 +761,23 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
         # No environment variable or --output or --rerun specified.
         if self.requireOutput and namespace.output is None and namespace.rerun is None:
-            self.error("no output directory specified.\n"
-                       "An output directory must be specified with the --output or --rerun\n"
-                       "command-line arguments.\n")
+            self.error(
+                "no output directory specified.\n"
+                "An output directory must be specified with the --output or --rerun\n"
+                "command-line arguments.\n"
+            )
 
         butlerArgs = {}  # common arguments for butler elements
         if namespace.calib:
-            butlerArgs = {'mapperArgs': {'calibRoot': namespace.calib}}
+            butlerArgs = {"mapperArgs": {"calibRoot": namespace.calib}}
         if namespace.output:
-            outputs = {'root': namespace.output, 'mode': 'rw'}
-            inputs = {'root': namespace.input}
+            outputs = {"root": namespace.output, "mode": "rw"}
+            inputs = {"root": namespace.input}
             inputs.update(butlerArgs)
             outputs.update(butlerArgs)
             namespace.butler = dafPersist.Butler(inputs=inputs, outputs=outputs)
         else:
-            outputs = {'root': namespace.input, 'mode': 'rw'}
+            outputs = {"root": namespace.input, "mode": "rw"}
             outputs.update(butlerArgs)
             namespace.butler = dafPersist.Butler(outputs=outputs)
 
@@ -709,6 +797,7 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         if namespace.debug:
             try:
                 import debug
+
                 assert debug  # silence pyflakes
             except ImportError:
                 print("Warning: no 'debug' module found", file=sys.stderr)
@@ -904,15 +993,21 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
         """
         choices = list(choices)
         choices.append("all")
-        self.add_argument("--reuse-outputs-from", dest="reuse", choices=choices,
-                          default=[], action=ReuseAction,
-                          help=("Skip the given subtask and its predecessors and reuse their outputs "
-                                "if those outputs already exist.  Use 'all' to specify all subtasks."))
+        self.add_argument(
+            "--reuse-outputs-from",
+            dest="reuse",
+            choices=choices,
+            default=[],
+            action=ReuseAction,
+            help=(
+                "Skip the given subtask and its predecessors and reuse their outputs "
+                "if those outputs already exist.  Use 'all' to specify all subtasks."
+            ),
+        )
 
 
 class InputOnlyArgumentParser(ArgumentParser):
-    """`ArgumentParser` for command-line tasks that don't write any output.
-    """
+    """`ArgumentParser` for command-line tasks that don't write any output."""
 
     requireOutput = False  # We're not going to write anything
 
@@ -999,6 +1094,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
             matConfig = re.search(r"^(?:config.)?(.+)?", showArgs)
             pattern = matConfig.group(1)
             if pattern:
+
                 class FilteredStream:
                     """A file object that only prints lines
                     that match the glob "pattern".
@@ -1017,8 +1113,11 @@ def obeyShowArgument(showOpts, config=None, exit=False):
                             self._pattern = re.compile(fnmatch.translate(pattern))
                         else:
                             if pattern != pattern.lower():
-                                print(f"Matching {pattern!r} without regard to case "
-                                      "(append :NOIGNORECASE to prevent this)", file=sys.stdout)
+                                print(
+                                    f"Matching {pattern!r} without regard to case "
+                                    "(append :NOIGNORECASE to prevent this)",
+                                    file=sys.stdout,
+                                )
                             self._pattern = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
 
                     def write(self, showStr):
@@ -1048,7 +1147,7 @@ def obeyShowArgument(showOpts, config=None, exit=False):
 
                 pattern = pattern.split(".")
                 cpath, cname = pattern[:-1], pattern[-1]
-                hconfig = config            # the config that we're interested in
+                hconfig = config  # the config that we're interested in
                 for i, cpt in enumerate(cpath):
                     try:
                         hconfig = getattr(hconfig, cpt)
@@ -1142,8 +1241,7 @@ class ConfigValueAction(argparse.Action):
 
 
 class ConfigFileAction(argparse.Action):
-    """argparse action to load config overrides from one or more files.
-    """
+    """argparse action to load config overrides from one or more files."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         """Load one or more files of config overrides.
@@ -1170,8 +1268,7 @@ class ConfigFileAction(argparse.Action):
 
 
 class IdValueAction(argparse.Action):
-    """argparse action callback to process a data ID into a dict.
-    """
+    """argparse action callback to process a data ID into a dict."""
 
     def __call__(self, parser, namespace, values, option_string):
         """Parse ``--id`` data and append results to
@@ -1239,8 +1336,9 @@ class IdValueAction(argparse.Action):
                     idDict[name].append(v)
 
         iterList = [idDict[key] for key in idDict.keys()]
-        idDictList = [collections.OrderedDict(zip(idDict.keys(), valList))
-                      for valList in itertools.product(*iterList)]
+        idDictList = [
+            collections.OrderedDict(zip(idDict.keys(), valList)) for valList in itertools.product(*iterList)
+        ]
 
         argName = option_string.lstrip("-")
         ident = getattr(namespace, argName)
@@ -1267,18 +1365,19 @@ class LongLogAction(argparse.Action):
         option_string : `str`
             Option value specified by the user (unused).
         """
-        lsstLog.configure_prop("""
+        lsstLog.configure_prop(
+            """
 log4j.rootLogger=INFO, A1
 log4j.appender.A1=ConsoleAppender
 log4j.appender.A1.Target=System.out
 log4j.appender.A1.layout=PatternLayout
 log4j.appender.A1.layout.ConversionPattern=%-5p %d{yyyy-MM-ddTHH:mm:ss.SSSZ} %c (%X{LABEL})(%F:%L)- %m%n
-""")
+"""
+        )
 
 
 class LogLevelAction(argparse.Action):
-    """argparse action to set log level.
-    """
+    """argparse action to set log level."""
 
     def __call__(self, parser, namespace, values, option_string):
         """Set trace level.
@@ -1296,7 +1395,7 @@ class LogLevelAction(argparse.Action):
         option_string : `str`
             Option value specified by the user.
         """
-        permittedLevelList = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')
+        permittedLevelList = ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")
         permittedLevelSet = set(permittedLevelList)
         for componentLevel in values:
             component, sep, levelStr = componentLevel.partition("=")
@@ -1333,7 +1432,7 @@ class ReuseAction(argparse.Action):
         if value == "all":
             value = self.choices[-2]
         index = self.choices.index(value)
-        namespace.reuse = self.choices[:index + 1]
+        namespace.reuse = self.choices[: index + 1]
 
 
 def setDottedAttr(item, name, value):

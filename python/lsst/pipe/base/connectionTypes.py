@@ -23,8 +23,7 @@
 `PipelineTaskConnections` class.
 """
 
-__all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput",
-           "Output", "BaseConnection"]
+__all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "BaseConnection"]
 
 import dataclasses
 import typing
@@ -60,6 +59,7 @@ class BaseConnection:
         the execution system as early as possible of outputs that will not be
         produced because the corresponding input is missing.
     """
+
     name: str
     storageClass: str
     doc: str = ""
@@ -82,8 +82,8 @@ class BaseConnection:
             return self
         # If no object cache exists, create one to track the instances this
         # connection has been accessed by
-        if not hasattr(inst, '_connectionCache'):
-            object.__setattr__(inst, '_connectionCache', {})
+        if not hasattr(inst, "_connectionCache"):
+            object.__setattr__(inst, "_connectionCache", {})
         # Look up an existing cached instance
         idSelf = id(self)
         if idSelf in inst._connectionCache:
@@ -93,13 +93,12 @@ class BaseConnection:
         for field in dataclasses.fields(self):
             params[field.name] = getattr(self, field.name)
         # Get the name override defined by the instance of the connection class
-        params['name'] = inst._nameOverrides[self.varName]
+        params["name"] = inst._nameOverrides[self.varName]
         # Return a new instance of this connection specialized with the
         # information provided by the connection class instance
         return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
 
-    def makeDatasetType(self, universe: DimensionUniverse,
-                        parentStorageClass: Optional[StorageClass] = None):
+    def makeDatasetType(self, universe: DimensionUniverse, parentStorageClass: Optional[StorageClass] = None):
         """Construct a true `DatasetType` instance with normalized dimensions.
 
         Parameters
@@ -115,10 +114,9 @@ class BaseConnection:
         datasetType : `DatasetType`
             The `DatasetType` defined by this connection.
         """
-        return DatasetType(self.name,
-                           universe.empty,
-                           self.storageClass,
-                           parentStorageClass=parentStorageClass)
+        return DatasetType(
+            self.name, universe.empty, self.storageClass, parentStorageClass=parentStorageClass
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -148,18 +146,19 @@ class DimensionedConnection(BaseConnection):
         collections to associate it with a validity range, `False` (default)
         otherwise.
     """
+
     dimensions: typing.Iterable[str] = ()
     isCalibration: bool = False
 
     def __post_init__(self):
         if isinstance(self.dimensions, str):
-            raise TypeError("Dimensions must be iterable of dimensions, got str,"
-                            "possibly omitted trailing comma")
+            raise TypeError(
+                "Dimensions must be iterable of dimensions, got str," "possibly omitted trailing comma"
+            )
         if not isinstance(self.dimensions, typing.Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
 
-    def makeDatasetType(self, universe: DimensionUniverse,
-                        parentStorageClass: Optional[StorageClass] = None):
+    def makeDatasetType(self, universe: DimensionUniverse, parentStorageClass: Optional[StorageClass] = None):
         """Construct a true `DatasetType` instance with normalized dimensions.
 
         Parameters
@@ -175,10 +174,13 @@ class DimensionedConnection(BaseConnection):
         datasetType : `DatasetType`
             The `DatasetType` defined by this connection.
         """
-        return DatasetType(self.name,
-                           universe.extract(self.dimensions),
-                           self.storageClass, isCalibration=self.isCalibration,
-                           parentStorageClass=parentStorageClass)
+        return DatasetType(
+            self.name,
+            universe.extract(self.dimensions),
+            self.storageClass,
+            isCalibration=self.isCalibration,
+            parentStorageClass=parentStorageClass,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -226,6 +228,7 @@ class BaseInput(DimensionedConnection):
         Raised if ``minimum`` is zero for a regular `Input` connection; this
         is not currently supported by our QuantumGraph generation algorithm.
     """
+
     deferLoad: bool = False
     minimum: int = 1
 
@@ -237,7 +240,6 @@ class BaseInput(DimensionedConnection):
 
 @dataclasses.dataclass(frozen=True)
 class Input(BaseInput):
-
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.minimum == 0:
@@ -311,8 +313,10 @@ class PrerequisiteInput(BaseInput):
     - Prerequisite inputs may be optional (regular inputs are never optional).
 
     """
-    lookupFunction: Optional[Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch],
-                                      Iterable[DatasetRef]]] = None
+
+    lookupFunction: Optional[
+        Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch], Iterable[DatasetRef]]
+    ] = None
 
 
 @dataclasses.dataclass(frozen=True)

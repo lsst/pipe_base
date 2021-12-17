@@ -19,23 +19,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
+
 from uuid import UUID
 
-__all__ = ("LoadHelper", )
+__all__ = ("LoadHelper",)
 
-from lsst.resources import ResourcePath
-from lsst.resources.s3 import S3ResourcePath
-from lsst.resources.file import FileResourcePath
-from lsst.daf.butler import DimensionUniverse
-
-
-from dataclasses import dataclass
 import functools
 import io
 import struct
-
 from collections import UserDict
-from typing import Optional, Iterable, TYPE_CHECKING, Type, Union, IO
+from dataclasses import dataclass
+from typing import IO, TYPE_CHECKING, Iterable, Optional, Type, Union
+
+from lsst.daf.butler import DimensionUniverse
+from lsst.resources import ResourcePath
+from lsst.resources.file import FileResourcePath
+from lsst.resources.s3 import S3ResourcePath
 
 if TYPE_CHECKING:
     from . import QuantumGraph
@@ -68,9 +67,11 @@ def register_helper(URICLass: Union[Type[ResourcePath], Type[io.IO[bytes]]]):
     URIClass : Type of `~lsst.resources.ResourcePath` or `~io.IO` of bytes
         type for which the decorated class should be mapped to
     """
+
     def wrapper(class_):
         HELPER_REGISTRY[URICLass] = class_
         return class_
+
     return wrapper
 
 
@@ -111,6 +112,7 @@ class DefaultLoadHelper:
         not a `QuantumGraph` save, or if the graph save version is below the
         minimum specified version.
     """
+
     def __init__(self, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int):
         headerBytes = self.__setup_impl(uriObject, minimumVersion)
         self.headerInfo = self.deserializer.readHeaderInfo(headerBytes)
@@ -118,8 +120,8 @@ class DefaultLoadHelper:
     def __setup_impl(self, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int) -> bytes:
         self.uriObject = uriObject
         # need to import here to avoid cyclic imports
-        from .graph import STRUCT_FMT_BASE, MAGIC_BYTES, SAVE_VERSION
         from ._versionDeserializers import DESERIALIZER_MAP
+        from .graph import MAGIC_BYTES, SAVE_VERSION, STRUCT_FMT_BASE
 
         # Read the first few bytes which correspond to the  magic identifier
         # bytes, and save version
@@ -132,26 +134,32 @@ class DefaultLoadHelper:
         versionBytes = headerBytes[magicSize:]
 
         if magic != MAGIC_BYTES:
-            raise ValueError("This file does not appear to be a quantum graph save got magic bytes "
-                             f"{magic}, expected {MAGIC_BYTES}")
+            raise ValueError(
+                "This file does not appear to be a quantum graph save got magic bytes "
+                f"{magic}, expected {MAGIC_BYTES}"
+            )
 
         # unpack the save version bytes and verify it is a version that this
         # code can understand
-        save_version, = struct.unpack(STRUCT_FMT_BASE, versionBytes)
+        (save_version,) = struct.unpack(STRUCT_FMT_BASE, versionBytes)
         # loads can sometimes trigger upgrades in format to a latest version,
         # in which case accessory code might not match the upgraded graph.
         # I.E. switching from old node number to UUID. This clause necessitates
         # that users specifically interact with older graph versions and verify
         # everything happens appropriately.
         if save_version < minimumVersion:
-            raise ValueError(f"The loaded QuantumGraph is version {save_version}, and the minimum "
-                             f"version specified is {minimumVersion}. Please re-run this method "
-                             "with a lower minimum version, then re-save the graph to automatically upgrade"
-                             "to the newest version. Older versions may not work correctly with newer code")
+            raise ValueError(
+                f"The loaded QuantumGraph is version {save_version}, and the minimum "
+                f"version specified is {minimumVersion}. Please re-run this method "
+                "with a lower minimum version, then re-save the graph to automatically upgrade"
+                "to the newest version. Older versions may not work correctly with newer code"
+            )
 
         if save_version > SAVE_VERSION:
-            raise RuntimeError(f"The version of this save file is {save_version}, but this version of"
-                               f"Quantum Graph software only knows how to read up to version {SAVE_VERSION}")
+            raise RuntimeError(
+                f"The version of this save file is {save_version}, but this version of"
+                f"Quantum Graph software only knows how to read up to version {SAVE_VERSION}"
+            )
 
         # select the appropriate deserializer for this save version
         deserializerClass = DESERIALIZER_MAP[save_version]
@@ -159,25 +167,31 @@ class DefaultLoadHelper:
         # read in the bytes corresponding to the mappings and initialize the
         # deserializer. This will be the bytes that describe the following
         # byte boundaries of the header info
-        sizeBytes = self._readBytes(preambleSize, preambleSize+deserializerClass.structSize)
+        sizeBytes = self._readBytes(preambleSize, preambleSize + deserializerClass.structSize)
         self.deserializer = deserializerClass(preambleSize, sizeBytes)
 
         # get the header info
-        headerBytes = self._readBytes(preambleSize+deserializerClass.structSize,
-                                      self.deserializer.headerSize)
+        headerBytes = self._readBytes(
+            preambleSize + deserializerClass.structSize, self.deserializer.headerSize
+        )
         return headerBytes
 
     @classmethod
-    def dumpHeader(cls, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int = 3
-                   ) -> Optional[str]:
+    def dumpHeader(
+        cls, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int = 3
+    ) -> Optional[str]:
         instance = cls.__new__(cls)
         headerBytes = instance.__setup_impl(uriObject, minimumVersion)
         header = instance.deserializer.unpackHeader(headerBytes)
         instance.close()
         return header
 
-    def load(self, universe: DimensionUniverse, nodes: Optional[Iterable[Union[str, UUID]]] = None,
-             graphID: Optional[str] = None) -> QuantumGraph:
+    def load(
+        self,
+        universe: DimensionUniverse,
+        nodes: Optional[Iterable[Union[str, UUID]]] = None,
+        graphID: Optional[str] = None,
+    ) -> QuantumGraph:
         """Loads in the specified nodes from the graph
 
         Load in the `QuantumGraph` containing only the nodes specified in the
@@ -211,7 +225,7 @@ class DefaultLoadHelper:
         """
         # verify this is the expected graph
         if graphID is not None and self.headerInfo._buildId != graphID:
-            raise ValueError('graphID does not match that of the graph being loaded')
+            raise ValueError("graphID does not match that of the graph being loaded")
         # Read in specified nodes, or all the nodes
         if nodes is None:
             nodes = list(self.headerInfo.map.keys())
@@ -226,8 +240,9 @@ class DefaultLoadHelper:
             # verify that all nodes requested are in the graph
             remainder = nodes - self.headerInfo.map.keys()
             if remainder:
-                raise ValueError(f"Nodes {remainder} were requested, but could not be found in the input "
-                                 "graph")
+                raise ValueError(
+                    f"Nodes {remainder} were requested, but could not be found in the input " "graph"
+                )
             _readBytes = self._readBytes
         return self.deserializer.constructGraph(nodes, _readBytes, universe)
 
@@ -240,13 +255,12 @@ class DefaultLoadHelper:
         implementation, as no special read is required. This will not give a
         speed up with any sub graph reads though.
         """
-        if not hasattr(self, 'buffer'):
+        if not hasattr(self, "buffer"):
             self.buffer = self.uriObject.read()
         return self.buffer[start:stop]
 
     def close(self):
-        """Cleans up an instance if needed. Base class does nothing
-        """
+        """Cleans up an instance if needed. Base class does nothing"""
         pass
 
 
@@ -259,11 +273,13 @@ class S3LoadHelper(DefaultLoadHelper):
         # than standard python where the end point is generally exclusive
         args["Range"] = f"bytes={start}-{stop-1}"
         try:
-            response = self.uriObject.client.get_object(Bucket=self.uriObject.netloc,
-                                                        Key=self.uriObject.relativeToPathRoot,
-                                                        **args)
-        except (self.uriObject.client.exceptions.NoSuchKey,
-                self.uriObject.client.exceptions.NoSuchBucket) as err:
+            response = self.uriObject.client.get_object(
+                Bucket=self.uriObject.netloc, Key=self.uriObject.relativeToPathRoot, **args
+            )
+        except (
+            self.uriObject.client.exceptions.NoSuchKey,
+            self.uriObject.client.exceptions.NoSuchBucket,
+        ) as err:
             raise FileNotFoundError(f"No such resource: {self.uriObject}") from err
         body = response["Body"].read()
         response["Body"].close()
@@ -274,13 +290,13 @@ class S3LoadHelper(DefaultLoadHelper):
 class FileLoadHelper(DefaultLoadHelper):
     # This subclass implements partial loading of a graph using a file uri
     def _readBytes(self, start: int, stop: int) -> bytes:
-        if not hasattr(self, 'fileHandle'):
-            self.fileHandle = open(self.uriObject.ospath, 'rb')
+        if not hasattr(self, "fileHandle"):
+            self.fileHandle = open(self.uriObject.ospath, "rb")
         self.fileHandle.seek(start)
-        return self.fileHandle.read(stop-start)
+        return self.fileHandle.read(stop - start)
 
     def close(self):
-        if hasattr(self, 'fileHandle'):
+        if hasattr(self, "fileHandle"):
             self.fileHandle.close()
 
 
@@ -307,7 +323,7 @@ class OpenFileHandleHelper(DefaultLoadHelper):
 
     def _readBytes(self, start: int, stop: int) -> bytes:
         self.uriObject.seek(start)
-        result = self.uriObject.read(stop-start)
+        result = self.uriObject.read(stop - start)
         return result
 
 
@@ -325,6 +341,7 @@ class LoadHelper:
     This helper will raise a `ValueError` if the specified file does not appear
     to be a valid `QuantumGraph` save file.
     """
+
     uri: Union[ResourcePath, IO[bytes]]
     """ResourcePath object from which the `QuantumGraph` is to be loaded
     """

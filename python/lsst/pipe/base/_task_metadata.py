@@ -21,14 +21,14 @@
 
 __all__ = ["TaskMetadata"]
 
-import numbers
 import itertools
+import numbers
 import warnings
 from collections.abc import Sequence
-from deprecated.sphinx import deprecated
+from typing import Any, Collection, Dict, List, Mapping, Protocol, Union
 
-from typing import Dict, List, Union, Any, Mapping, Protocol, Collection
-from pydantic import BaseModel, StrictInt, StrictFloat, StrictBool, StrictStr, Field
+from deprecated.sphinx import deprecated
+from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 _DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"
@@ -73,8 +73,9 @@ class TaskMetadata(BaseModel):
     """
 
     scalars: Dict[str, Union[StrictFloat, StrictInt, StrictBool, StrictStr]] = Field(default_factory=dict)
-    arrays: Dict[str, Union[List[StrictFloat], List[StrictInt], List[StrictBool],
-                            List[StrictStr]]] = Field(default_factory=dict)
+    arrays: Dict[str, Union[List[StrictFloat], List[StrictInt], List[StrictBool], List[StrictStr]]] = Field(
+        default_factory=dict
+    )
     metadata: Dict[str, "TaskMetadata"] = Field(default_factory=dict)
 
     @classmethod
@@ -175,8 +176,11 @@ class TaskMetadata(BaseModel):
 
         self.metadata[key0].add(".".join(keys), value)
 
-    @deprecated(reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
+    @deprecated(
+        reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
+        version=_DEPRECATION_VERSION,
+        category=FutureWarning,
+    )
     def getAsDouble(self, key):
         """Return the value cast to a `float`.
 
@@ -288,7 +292,7 @@ class TaskMetadata(BaseModel):
             for k, v in self.items():
                 names.add(k)  # Always include the current level
                 if isinstance(v, TaskMetadata):
-                    names.update({k + '.' + item for item in v.names(topLevelOnly=topLevelOnly)})
+                    names.update({k + "." + item for item in v.names(topLevelOnly=topLevelOnly)})
             return names
 
     def paramNames(self, topLevelOnly):
@@ -318,14 +322,20 @@ class TaskMetadata(BaseModel):
                 paramNames.add(k)
         return paramNames
 
-    @deprecated(reason="Use standard assignment syntax. " + _DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
+    @deprecated(
+        reason="Use standard assignment syntax. " + _DEPRECATION_REASON,
+        version=_DEPRECATION_VERSION,
+        category=FutureWarning,
+    )
     def set(self, key, item):
         """Set the value of the supplied key."""
         self.__setitem__(key, item)
 
-    @deprecated(reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
-                version=_DEPRECATION_VERSION, category=FutureWarning)
+    @deprecated(
+        reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
+        version=_DEPRECATION_VERSION,
+        category=FutureWarning,
+    )
     def remove(self, key):
         """Remove the item without raising if absent."""
         try:
@@ -354,7 +364,7 @@ class TaskMetadata(BaseModel):
             Raised if the key is not a string.
         """
         try:
-            keys = key.split('.')
+            keys = key.split(".")
         except Exception:
             raise KeyError(f"Invalid key '{key}': only string keys are allowed") from None
         return keys
@@ -518,8 +528,10 @@ class TaskMetadata(BaseModel):
             type0 = type(value[0])
             for i in value:
                 if type(i) != type0:
-                    raise ValueError("Type mismatch in supplied list. TaskMetadata requires all"
-                                     f" elements have same type but see {type(i)} and {type0}.")
+                    raise ValueError(
+                        "Type mismatch in supplied list. TaskMetadata requires all"
+                        f" elements have same type but see {type(i)} and {type0}."
+                    )
 
             if type0 not in _ALLOWED_PRIMITIVE_TYPES:
                 # Must check to see if we got numpy floats or something.
@@ -528,8 +540,10 @@ class TaskMetadata(BaseModel):
                 elif isinstance(value[0], numbers.Real):
                     type_cast = float
                 else:
-                    raise ValueError(f"Supplied list has element of type '{type0}'. "
-                                     "TaskMetadata can only accept primitive types in lists.")
+                    raise ValueError(
+                        f"Supplied list has element of type '{type0}'. "
+                        "TaskMetadata can only accept primitive types in lists."
+                    )
 
                 value = [type_cast(v) for v in value]
 

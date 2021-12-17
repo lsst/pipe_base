@@ -25,33 +25,43 @@ from __future__ import annotations
 
 __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "LabelSpecifier"]
 
+import copy
+import logging
+import os
+import re
+import urllib.parse
+import warnings
+
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
 from dataclasses import dataclass
-import logging
 from types import MappingProxyType
-from typing import (ClassVar, Dict, Iterable, Iterator, Mapping, Set, Union,
-                    Generator, TYPE_CHECKING, Optional, Tuple)
-
-import copy
-import re
-import os
-import urllib.parse
-import warnings
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Dict,
+    Generator,
+    Iterable,
+    Iterator,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension, ButlerURI
+from lsst.daf.butler import ButlerURI, DatasetType, NamedValueSet, Registry, SkyPixDimension
 from lsst.utils import doImport
+
+from . import pipelineIR, pipeTools
+from ._task_metadata import TaskMetadata
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
 from .pipelineTask import PipelineTask
 from .task import _TASK_METADATA_TYPE
-from ._task_metadata import TaskMetadata
-
-from . import pipelineIR
-from . import pipeTools
 
 if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
     from lsst.obs.base import Instrument
@@ -78,14 +88,16 @@ class LabelSpecifier:
     selection is not well defined for pipelines that are not linear in nature,
     and correct behavior is not guaranteed, or may vary from run to run.
     """
+
     labels: Optional[Set[str]] = None
     begin: Optional[str] = None
     end: Optional[str] = None
 
     def __post_init__(self):
         if self.labels is not None and (self.begin or self.end):
-            raise ValueError("This struct can only be initialized with a labels set or "
-                             "a begin (and/or) end specifier")
+            raise ValueError(
+                "This struct can only be initialized with a labels set or " "a begin (and/or) end specifier"
+            )
 
 
 class TaskDef:
@@ -116,6 +128,7 @@ class TaskDef:
         provided, ``taskClass`` must be, and ``taskClass._DefaultName`` will
         be used.
     """
+
     def __init__(self, taskName=None, config=None, taskClass=None, label=None):
         if taskName is None:
             if taskClass is None:
@@ -143,8 +156,7 @@ class TaskDef:
 
     @property
     def configDatasetName(self) -> str:
-        """Name of a dataset type for configuration of this task (`str`)
-        """
+        """Name of a dataset type for configuration of this task (`str`)"""
         return self.label + "_config"
 
     @property
@@ -195,6 +207,7 @@ class Pipeline:
     description : `str`
         A description of that this pipeline does.
     """
+
     def __init__(self, description: str):
         pipeline_dict = {"description": description, "tasks": {}}
         self._pipelineIR = pipelineIR.PipelineIR(pipeline_dict)
@@ -320,12 +333,15 @@ class Pipeline:
             # Verify the bounds are in the labels
             if labelSpecifier.begin is not None:
                 if labelSpecifier.begin not in labels:
-                    raise ValueError(f"Beginning of range subset, {labelSpecifier.begin}, not found in "
-                                     "pipeline definition")
+                    raise ValueError(
+                        f"Beginning of range subset, {labelSpecifier.begin}, not found in "
+                        "pipeline definition"
+                    )
             if labelSpecifier.end is not None:
                 if labelSpecifier.end not in labels:
-                    raise ValueError(f"End of range subset, {labelSpecifier.end}, not found in pipeline "
-                                     "definition")
+                    raise ValueError(
+                        f"End of range subset, {labelSpecifier.end}, not found in pipeline " "definition"
+                    )
 
             labelSet = set()
             for label in labels:
@@ -340,18 +356,18 @@ class Pipeline:
         return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
-    def _parse_file_specifier(uri: Union[str, ButlerURI]
-                              ) -> Tuple[ButlerURI, Optional[LabelSpecifier]]:
-        """Split appart a uri and any possible label subsets
-        """
+    def _parse_file_specifier(uri: Union[str, ButlerURI]) -> Tuple[ButlerURI, Optional[LabelSpecifier]]:
+        """Split appart a uri and any possible label subsets"""
         if isinstance(uri, str):
             # This is to support legacy pipelines during transition
             uri, num_replace = re.subn("[:](?!\\/\\/)", "#", uri)
             if num_replace:
-                warnings.warn(f"The pipeline file {uri} seems to use the legacy : to separate "
-                              "labels, this is deprecated and will be removed after June 2021, please use "
-                              "# instead.",
-                              category=FutureWarning)
+                warnings.warn(
+                    f"The pipeline file {uri} seems to use the legacy : to separate "
+                    "labels, this is deprecated and will be removed after June 2021, please use "
+                    "# instead.",
+                    category=FutureWarning,
+                )
             if uri.count("#") > 1:
                 raise ValueError("Only one set of labels is allowed when specifying a pipeline to load")
             uri = ButlerURI(uri)
@@ -362,13 +378,14 @@ class Pipeline:
             label_subset = urllib.parse.unquote(label_subset)
             args: Dict[str, Union[Set[str], str, None]]
             # labels supplied as a list
-            if ',' in label_subset:
-                if '..' in label_subset:
-                    raise ValueError("Can only specify a list of labels or a range"
-                                     "when loading a Pipline not both")
+            if "," in label_subset:
+                if ".." in label_subset:
+                    raise ValueError(
+                        "Can only specify a list of labels or a range" "when loading a Pipline not both"
+                    )
                 args = {"labels": set(label_subset.split(","))}
             # labels supplied as a range
-            elif '..' in label_subset:
+            elif ".." in label_subset:
                 # Try to de-structure the labelSubset, this will fail if more
                 # than one range is specified
                 begin, end, *rest = label_subset.split("..")
@@ -489,8 +506,10 @@ class Pipeline:
         elif issubclass(task, PipelineTask):
             taskName = f"{task.__module__}.{task.__qualname__}"
         else:
-            raise ValueError("task must be either a child class of PipelineTask or a string containing"
-                             " a fully qualified name to one")
+            raise ValueError(
+                "task must be either a child class of PipelineTask or a string containing"
+                " a fully qualified name to one"
+            )
         if not label:
             # in some cases (with command line-generated pipeline) tasks can
             # be defined without label which is not acceptable, use task
@@ -614,8 +633,9 @@ class Pipeline:
                 success = eval(contract.contract, None, label_to_config)
                 if not success:
                     extra_info = f": {contract.msg}" if contract.msg is not None else ""
-                    raise pipelineIR.ContractError(f"Contract(s) '{contract.contract}' were not "
-                                                   f"satisfied{extra_info}")
+                    raise pipelineIR.ContractError(
+                        f"Contract(s) '{contract.contract}' were not " f"satisfied{extra_info}"
+                    )
 
         taskDefs = sorted(taskDefs, key=lambda x: x.label)
         yield from pipeTools.orderPipeline(taskDefs)
@@ -630,11 +650,12 @@ class Pipeline:
         if self._pipelineIR.instrument is not None:
             overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
         if taskIR.config is not None:
-            for configIR in (configIr.formatted(self._pipelineIR.parameters)
-                             for configIr in taskIR.config):
+            for configIR in (configIr.formatted(self._pipelineIR.parameters) for configIr in taskIR.config):
                 if configIR.dataId is not None:
-                    raise NotImplementedError("Specializing a config on a partial data id is not yet "
-                                              "supported in Pipeline definition")
+                    raise NotImplementedError(
+                        "Specializing a config on a partial data id is not yet "
+                        "supported in Pipeline definition"
+                    )
                 # only apply override if it applies to everything
                 if configIR.dataId is None:
                     if configIR.file:
@@ -722,7 +743,7 @@ class TaskDatasetTypes:
         *,
         registry: Registry,
         include_configs: bool = True,
-        storage_class_mapping: Optional[Mapping[str, str]] = None
+        storage_class_mapping: Optional[Mapping[str, str]] = None,
     ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
@@ -758,6 +779,7 @@ class TaskDatasetTypes:
             and storage_class_mapping does not contain the composite type, or
             is set to None.
         """
+
         def makeDatasetTypesSet(connectionType: str, freeze: bool = True) -> NamedValueSet[DatasetType]:
             """Constructs a set of true `DatasetType` objects
 
@@ -793,7 +815,7 @@ class TaskDatasetTypes:
             """
             datasetTypes = NamedValueSet()
             for c in iterConnections(taskDef.connections, connectionType):
-                dimensions = set(getattr(c, 'dimensions', set()))
+                dimensions = set(getattr(c, "dimensions", set()))
                 if "skypix" in dimensions:
                     try:
                         datasetType = registry.getDatasetType(c.name)
@@ -806,12 +828,15 @@ class TaskDatasetTypes:
                             f"type name instead of 'ref_cat'."
                         ) from err
                     rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
-                    rest2 = set(dim.name for dim in datasetType.dimensions
-                                if not isinstance(dim, SkyPixDimension))
+                    rest2 = set(
+                        dim.name for dim in datasetType.dimensions if not isinstance(dim, SkyPixDimension)
+                    )
                     if rest1 != rest2:
-                        raise ValueError(f"Non-skypix dimensions for dataset type {c.name} declared in "
-                                         f"connections ({rest1}) are inconsistent with those in "
-                                         f"registry's version of this dataset ({rest2}).")
+                        raise ValueError(
+                            f"Non-skypix dimensions for dataset type {c.name} declared in "
+                            f"connections ({rest1}) are inconsistent with those in "
+                            f"registry's version of this dataset ({rest2})."
+                        )
                 else:
                     # Component dataset types are not explicitly in the
                     # registry.  This complicates consistency checks with
@@ -824,22 +849,22 @@ class TaskDatasetTypes:
                         compositeName, componentName = DatasetType.splitDatasetTypeName(c.name)
                         if componentName:
                             if storage_class_mapping is None or compositeName not in storage_class_mapping:
-                                raise LookupError("Component parent class cannot be determined, and "
-                                                  "composite name was not in storage class mapping, or no "
-                                                  "storage_class_mapping was supplied")
+                                raise LookupError(
+                                    "Component parent class cannot be determined, and "
+                                    "composite name was not in storage class mapping, or no "
+                                    "storage_class_mapping was supplied"
+                                )
                             else:
                                 parentStorageClass = storage_class_mapping[compositeName]
                         else:
                             parentStorageClass = None
                         datasetType = c.makeDatasetType(
-                            registry.dimensions,
-                            parentStorageClass=parentStorageClass
+                            registry.dimensions, parentStorageClass=parentStorageClass
                         )
                         registryDatasetType = datasetType
                     else:
                         datasetType = c.makeDatasetType(
-                            registry.dimensions,
-                            parentStorageClass=registryDatasetType.parentStorageClass
+                            registry.dimensions, parentStorageClass=registryDatasetType.parentStorageClass
                         )
 
                     if registryDatasetType and datasetType != registryDatasetType:
@@ -848,11 +873,15 @@ class TaskDatasetTypes:
                             # more specific message.
                             _ = datasetType.storageClass
                         except KeyError:
-                            raise ValueError("Storage class does not exist for supplied dataset type "
-                                             f"{datasetType} for {taskDef.label}.") from None
-                        raise ValueError(f"Supplied dataset type ({datasetType}) inconsistent with "
-                                         f"registry definition ({registryDatasetType}) "
-                                         f"for {taskDef.label}.")
+                            raise ValueError(
+                                "Storage class does not exist for supplied dataset type "
+                                f"{datasetType} for {taskDef.label}."
+                            ) from None
+                        raise ValueError(
+                            f"Supplied dataset type ({datasetType}) inconsistent with "
+                            f"registry definition ({registryDatasetType}) "
+                            f"for {taskDef.label}."
+                        )
                 datasetTypes.add(datasetType)
             if freeze:
                 datasetTypes.freeze()
@@ -1025,7 +1054,7 @@ class PipelineDatasetTypes:
         # collect all the output dataset types
         typeStorageclassMap: Dict[str, str] = {}
         for taskDef in pipeline:
-            for outConnection in iterConnections(taskDef.connections, 'outputs'):
+            for outConnection in iterConnections(taskDef.connections, "outputs"):
                 typeStorageclassMap[outConnection.name] = outConnection.storageClass
 
         for taskDef in pipeline:
@@ -1033,7 +1062,7 @@ class PipelineDatasetTypes:
                 taskDef,
                 registry=registry,
                 include_configs=include_configs,
-                storage_class_mapping=typeStorageclassMap
+                storage_class_mapping=typeStorageclassMap,
             )
             allInitInputs |= thisTask.initInputs
             allInitOutputs |= thisTask.initOutputs
@@ -1042,13 +1071,17 @@ class PipelineDatasetTypes:
             allOutputs |= thisTask.outputs
             byTask[taskDef.label] = thisTask
         if not prerequisites.isdisjoint(allInputs):
-            raise ValueError("{} marked as both prerequisites and regular inputs".format(
-                {dt.name for dt in allInputs & prerequisites}
-            ))
+            raise ValueError(
+                "{} marked as both prerequisites and regular inputs".format(
+                    {dt.name for dt in allInputs & prerequisites}
+                )
+            )
         if not prerequisites.isdisjoint(allOutputs):
-            raise ValueError("{} marked as both prerequisites and outputs".format(
-                {dt.name for dt in allOutputs & prerequisites}
-            ))
+            raise ValueError(
+                "{} marked as both prerequisites and outputs".format(
+                    {dt.name for dt in allOutputs & prerequisites}
+                )
+            )
         # Make sure that components which are marked as inputs get treated as
         # intermediates if there is an output which produces the composite
         # containing the component
@@ -1095,8 +1128,13 @@ class PipelineDatasetTypes:
         )
 
     @classmethod
-    def initOutputNames(cls, pipeline: Union[Pipeline, Iterable[TaskDef]], *,
-                        include_configs: bool = True, include_packages: bool = True) -> Iterator[str]:
+    def initOutputNames(
+        cls,
+        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        *,
+        include_configs: bool = True,
+        include_packages: bool = True,
+    ) -> Iterator[str]:
         """Return the names of dataset types ot task initOutputs, Configs,
         and package versions for a pipeline.
 

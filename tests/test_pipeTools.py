@@ -24,37 +24,31 @@
 
 import unittest
 
-from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
-                            PipelineTaskConnections, Pipeline,
-                            pipeTools)
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
+from lsst.pipe.base import Pipeline, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, pipeTools
 
 
 class ExamplePipelineTaskConnections(PipelineTaskConnections, dimensions=["Visit", "Detector"]):
-    input1 = cT.Input(name="",
-                      dimensions=["Visit", "Detector"],
-                      storageClass="example",
-                      doc="Input for this task")
-    input2 = cT.Input(name="",
-                      dimensions=["Visit", "Detector"],
-                      storageClass="example",
-                      doc="Input for this task")
-    output1 = cT.Output(name="",
-                        dimensions=["Visit", "Detector"],
-                        storageClass="example",
-                        doc="Output for this task")
-    output2 = cT.Output(name="",
-                        dimensions=["Visit", "Detector"],
-                        storageClass="example",
-                        doc="Output for this task")
+    input1 = cT.Input(
+        name="", dimensions=["Visit", "Detector"], storageClass="example", doc="Input for this task"
+    )
+    input2 = cT.Input(
+        name="", dimensions=["Visit", "Detector"], storageClass="example", doc="Input for this task"
+    )
+    output1 = cT.Output(
+        name="", dimensions=["Visit", "Detector"], storageClass="example", doc="Output for this task"
+    )
+    output2 = cT.Output(
+        name="", dimensions=["Visit", "Detector"], storageClass="example", doc="Output for this task"
+    )
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
         if not config.connections.input2:
-            self.inputs.remove('input2')
+            self.inputs.remove("input2")
         if not config.connections.output2:
-            self.outputs.remove('output2')
+            self.outputs.remove("output2")
 
 
 class ExamplePipelineTaskConfig(PipelineTaskConfig, pipelineConnections=ExamplePipelineTaskConnections):
@@ -112,8 +106,7 @@ def _makePipeline(tasks):
 
 
 class PipelineToolsTestCase(unittest.TestCase):
-    """A test case for pipelineTools
-    """
+    """A test case for pipelineTools"""
 
     def setUp(self):
         pass
@@ -122,55 +115,49 @@ class PipelineToolsTestCase(unittest.TestCase):
         pass
 
     def testIsOrdered(self):
-        """Tests for pipeTools.isPipelineOrdered method
-        """
-        pipeline = _makePipeline([("A", "B", "task1"),
-                                  ("B", "C", "task2")])
+        """Tests for pipeTools.isPipelineOrdered method"""
+        pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
-        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
-                                  ("B", "D", "task2"),
-                                  ("C", "E", "task3"),
-                                  (("D", "E"), "F", "task4")])
+        pipeline = _makePipeline(
+            [("A", ("B", "C"), "task1"), ("B", "D", "task2"), ("C", "E", "task3"), (("D", "E"), "F", "task4")]
+        )
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
-        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
-                                  ("C", "E", "task2"),
-                                  ("B", "D", "task3"),
-                                  (("D", "E"), "F", "task4")])
+        pipeline = _makePipeline(
+            [("A", ("B", "C"), "task1"), ("C", "E", "task2"), ("B", "D", "task3"), (("D", "E"), "F", "task4")]
+        )
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
     def testIsOrderedExceptions(self):
-        """Tests for pipeTools.isPipelineOrdered method exceptions
-        """
+        """Tests for pipeTools.isPipelineOrdered method exceptions"""
         # two producers should throw ValueError
         with self.assertRaises(pipeTools.DuplicateOutputError):
-            _makePipeline([("A", "B", "task1"),
-                           ("B", "C", "task2"),
-                           ("A", "C", "task3"),
-                           ])
+            _makePipeline(
+                [
+                    ("A", "B", "task1"),
+                    ("B", "C", "task2"),
+                    ("A", "C", "task3"),
+                ]
+            )
 
     def testOrderPipeline(self):
-        """Tests for pipeTools.orderPipeline method
-        """
-        pipeline = _makePipeline([("A", "B", "task1"),
-                                  ("B", "C", "task2")])
+        """Tests for pipeTools.orderPipeline method"""
+        pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 2)
         self.assertEqual(pipeline[0].label, "task1")
         self.assertEqual(pipeline[1].label, "task2")
 
-        pipeline = _makePipeline([("B", "C", "task2"),
-                                  ("A", "B", "task1")])
+        pipeline = _makePipeline([("B", "C", "task2"), ("A", "B", "task1")])
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 2)
         self.assertEqual(pipeline[0].label, "task1")
         self.assertEqual(pipeline[1].label, "task2")
 
-        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
-                                  ("B", "D", "task2"),
-                                  ("C", "E", "task3"),
-                                  (("D", "E"), "F", "task4")])
+        pipeline = _makePipeline(
+            [("A", ("B", "C"), "task1"), ("B", "D", "task2"), ("C", "E", "task3"), (("D", "E"), "F", "task4")]
+        )
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
@@ -178,10 +165,9 @@ class PipelineToolsTestCase(unittest.TestCase):
         self.assertEqual(pipeline[2].label, "task3")
         self.assertEqual(pipeline[3].label, "task4")
 
-        pipeline = _makePipeline([("A", ("B", "C"), "task1"),
-                                  ("C", "E", "task3"),
-                                  ("B", "D", "task2"),
-                                  (("D", "E"), "F", "task4")])
+        pipeline = _makePipeline(
+            [("A", ("B", "C"), "task1"), ("C", "E", "task3"), ("B", "D", "task2"), (("D", "E"), "F", "task4")]
+        )
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
@@ -189,10 +175,9 @@ class PipelineToolsTestCase(unittest.TestCase):
         self.assertEqual(pipeline[2].label, "task3")
         self.assertEqual(pipeline[3].label, "task4")
 
-        pipeline = _makePipeline([(("D", "E"), "F", "task4"),
-                                  ("B", "D", "task2"),
-                                  ("C", "E", "task3"),
-                                  ("A", ("B", "C"), "task1")])
+        pipeline = _makePipeline(
+            [(("D", "E"), "F", "task4"), ("B", "D", "task2"), ("C", "E", "task3"), ("A", ("B", "C"), "task1")]
+        )
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
@@ -200,10 +185,9 @@ class PipelineToolsTestCase(unittest.TestCase):
         self.assertEqual(pipeline[2].label, "task3")
         self.assertEqual(pipeline[3].label, "task4")
 
-        pipeline = _makePipeline([(("D", "E"), "F", "task4"),
-                                  ("C", "E", "task3"),
-                                  ("B", "D", "task2"),
-                                  ("A", ("B", "C"), "task1")])
+        pipeline = _makePipeline(
+            [(("D", "E"), "F", "task4"), ("C", "E", "task3"), ("B", "D", "task2"), ("A", ("B", "C"), "task1")]
+        )
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 4)
         self.assertEqual(pipeline[0].label, "task1")
@@ -212,13 +196,15 @@ class PipelineToolsTestCase(unittest.TestCase):
         self.assertEqual(pipeline[3].label, "task4")
 
     def testOrderPipelineExceptions(self):
-        """Tests for pipeTools.orderPipeline method exceptions
-        """
+        """Tests for pipeTools.orderPipeline method exceptions"""
         with self.assertRaises(pipeTools.DuplicateOutputError):
-            _makePipeline([("A", "B", "task1"),
-                           ("B", "C", "task2"),
-                           ("A", "C", "task3"),
-                           ])
+            _makePipeline(
+                [
+                    ("A", "B", "task1"),
+                    ("B", "C", "task2"),
+                    ("A", "C", "task3"),
+                ]
+            )
 
         # cycle in a graph should throw ValueError
         with self.assertRaises(pipeTools.PipelineDataCycleError):
@@ -226,10 +212,9 @@ class PipelineToolsTestCase(unittest.TestCase):
 
         # another kind of cycle in a graph
         with self.assertRaises(pipeTools.PipelineDataCycleError):
-            _makePipeline([("A", "B", "task1"),
-                           ("B", "C", "task2"),
-                           ("C", "D", "task3"),
-                           ("D", "A", "task4")])
+            _makePipeline(
+                [("A", "B", "task1"), ("B", "C", "task2"), ("C", "D", "task3"), ("D", "A", "task4")]
+            )
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

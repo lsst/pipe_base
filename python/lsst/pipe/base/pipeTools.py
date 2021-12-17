@@ -45,8 +45,8 @@ from .connections import iterConnections
 
 
 class MissingTaskFactoryError(Exception):
-    """Exception raised when client fails to provide TaskFactory instance.
-    """
+    """Exception raised when client fails to provide TaskFactory instance."""
+
     pass
 
 
@@ -54,12 +54,13 @@ class DuplicateOutputError(Exception):
     """Exception raised when Pipeline has more than one task for the same
     output.
     """
+
     pass
 
 
 class PipelineDataCycleError(Exception):
-    """Exception raised when Pipeline has data dependency cycle.
-    """
+    """Exception raised when Pipeline has data dependency cycle."""
+
     pass
 
 
@@ -93,10 +94,11 @@ def isPipelineOrdered(pipeline, taskFactory=None):
     producerIndex = {}
     for idx, taskDef in enumerate(pipeline):
 
-        for attr in iterConnections(taskDef.connections, 'outputs'):
+        for attr in iterConnections(taskDef.connections, "outputs"):
             if attr.name in producerIndex:
-                raise DuplicateOutputError("DatasetType `{}' appears more than "
-                                           "once as output".format(attr.name))
+                raise DuplicateOutputError(
+                    "DatasetType `{}' appears more than " "once as output".format(attr.name)
+                )
             producerIndex[attr.name] = idx
 
     # check all inputs that are also someone's outputs
@@ -140,17 +142,18 @@ def orderPipeline(pipeline):
     # This is a modified version of Kahn's algorithm that preserves order
 
     # build mapping of the tasks to their inputs and outputs
-    inputs = {}   # maps task index to its input DatasetType names
+    inputs = {}  # maps task index to its input DatasetType names
     outputs = {}  # maps task index to its output DatasetType names
-    allInputs = set()   # all inputs of all tasks
+    allInputs = set()  # all inputs of all tasks
     allOutputs = set()  # all outputs of all tasks
     for idx, taskDef in enumerate(pipeline):
         # task outputs
         dsMap = {name: getattr(taskDef.connections, name) for name in taskDef.connections.outputs}
         for dsTypeDescr in dsMap.values():
             if dsTypeDescr.name in allOutputs:
-                raise DuplicateOutputError("DatasetType `{}' appears more than "
-                                           "once as output".format(dsTypeDescr.name))
+                raise DuplicateOutputError(
+                    "DatasetType `{}' appears more than " "once as output".format(dsTypeDescr.name)
+                )
         outputs[idx] = set(dsTypeDescr.name for dsTypeDescr in dsMap.values())
         allOutputs.update(outputs[idx])
 

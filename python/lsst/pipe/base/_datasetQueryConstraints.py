@@ -26,9 +26,8 @@ graph building query.
 
 __all__ = ("DatasetQueryConstraintVariant",)
 
-from typing import Type, Protocol, Iterable, Iterator
-
 import warnings
+from typing import Iterable, Iterator, Protocol, Type
 
 
 class DatasetQueryConstraintVariant(Iterable, Protocol):
@@ -54,9 +53,10 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
     Variants can be directly used, or automatically be selected by using the
     `fromExpression` class method given a valid string.
     """
-    ALL: 'Type[_ALL]'
-    OFF: 'Type[_OFF]'
-    LIST: 'Type[_LIST]'
+
+    ALL: "Type[_ALL]"
+    OFF: "Type[_OFF]"
+    LIST: "Type[_LIST]"
 
     @classmethod
     def __subclasshook__(cls, subclass):
@@ -65,7 +65,7 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
         return False
 
     @classmethod
-    def fromExpression(cls, expression: str) -> 'DatasetQueryConstraintVariant':
+    def fromExpression(cls, expression: str) -> "DatasetQueryConstraintVariant":
         """Select and return the correct Variant that corresponds to the input
         expression.
 
@@ -75,15 +75,15 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
         """
         if not isinstance(expression, str):
             raise ValueError("Expression must be a string")
-        elif expression == 'all':
+        elif expression == "all":
             return cls.ALL
-        elif expression == 'off':
+        elif expression == "off":
             return cls.OFF
         else:
             if " " in expression:
                 warnings.warn("Witespace found in expression will be trimmed", RuntimeWarning)
-                expression = expression.replace(' ', '')
-            members = expression.split(',')
+                expression = expression.replace(" ", "")
+            members = expression.split(",")
             return cls.LIST(members)
 
 
@@ -143,8 +143,10 @@ class _LIST(DatasetQueryConstraintVariant, metaclass=_LISTMETA):
 
 
 def suppressInit(self):
-    raise NotImplementedError("DatasetQueryConstraintVariants cannot be directly instantiated. "
-                              "Please use the variants or the fromExpression class method")
+    raise NotImplementedError(
+        "DatasetQueryConstraintVariants cannot be directly instantiated. "
+        "Please use the variants or the fromExpression class method"
+    )
 
 
 DatasetQueryConstraintVariant.__init__ = suppressInit

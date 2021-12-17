@@ -19,23 +19,28 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from itertools import chain
 import os
 import pickle
+import random
 import tempfile
-from typing import Iterable
 import unittest
 import uuid
-import random
-from lsst.daf.butler import DimensionUniverse
+from itertools import chain
+from typing import Iterable
 
-from lsst.pipe.base import (QuantumGraph, TaskDef, PipelineTask, PipelineTaskConfig, PipelineTaskConnections,
-                            DatasetTypeName)
 import lsst.pipe.base.connectionTypes as cT
-from lsst.daf.butler import Quantum, DatasetRef, DataCoordinate, DatasetType, Config
-from lsst.pex.config import Field
-from lsst.pipe.base.graph.quantumNode import QuantumNode
 import lsst.utils.tests
+from lsst.daf.butler import Config, DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Quantum
+from lsst.pex.config import Field
+from lsst.pipe.base import (
+    DatasetTypeName,
+    PipelineTask,
+    PipelineTaskConfig,
+    PipelineTaskConnections,
+    QuantumGraph,
+    TaskDef,
+)
+from lsst.pipe.base.graph.quantumNode import QuantumNode
 
 try:
     import boto3
@@ -44,25 +49,17 @@ except ImportError:
     boto3 = None
 
     def mock_s3(cls):
-        """A no-op decorator in case moto mock_s3 can not be imported.
-        """
+        """A no-op decorator in case moto mock_s3 can not be imported."""
         return cls
 
-METADATA = {'a': [1, 2, 3]}
+
+METADATA = {"a": [1, 2, 3]}
 
 
 class Dummy1Connections(PipelineTaskConnections, dimensions=("A", "B")):
-    initOutput = cT.InitOutput(name="Dummy1InitOutput",
-                               storageClass="ExposureF",
-                               doc="n/a")
-    input = cT.Input(name="Dummy1Input",
-                     storageClass="ExposureF",
-                     doc="n/a",
-                     dimensions=("A", "B"))
-    output = cT.Output(name="Dummy1Output",
-                       storageClass="ExposureF",
-                       doc="n/a",
-                       dimensions=("A", "B"))
+    initOutput = cT.InitOutput(name="Dummy1InitOutput", storageClass="ExposureF", doc="n/a")
+    input = cT.Input(name="Dummy1Input", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
+    output = cT.Output(name="Dummy1Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy1Config(PipelineTaskConfig, pipelineConnections=Dummy1Connections):
@@ -74,20 +71,10 @@ class Dummy1PipelineTask(PipelineTask):
 
 
 class Dummy2Connections(PipelineTaskConnections, dimensions=("A", "B")):
-    initInput = cT.InitInput(name="Dummy1InitOutput",
-                             storageClass="ExposureF",
-                             doc="n/a")
-    initOutput = cT.InitOutput(name="Dummy2InitOutput",
-                               storageClass="ExposureF",
-                               doc="n/a")
-    input = cT.Input(name="Dummy1Output",
-                     storageClass="ExposureF",
-                     doc="n/a",
-                     dimensions=("A", "B"))
-    output = cT.Output(name="Dummy2Output",
-                       storageClass="ExposureF",
-                       doc="n/a",
-                       dimensions=("A", "B"))
+    initInput = cT.InitInput(name="Dummy1InitOutput", storageClass="ExposureF", doc="n/a")
+    initOutput = cT.InitOutput(name="Dummy2InitOutput", storageClass="ExposureF", doc="n/a")
+    input = cT.Input(name="Dummy1Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
+    output = cT.Output(name="Dummy2Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy2Config(PipelineTaskConfig, pipelineConnections=Dummy2Connections):
@@ -99,20 +86,10 @@ class Dummy2PipelineTask(PipelineTask):
 
 
 class Dummy3Connections(PipelineTaskConnections, dimensions=("A", "B")):
-    initInput = cT.InitInput(name="Dummy2InitOutput",
-                             storageClass="ExposureF",
-                             doc="n/a")
-    initOutput = cT.InitOutput(name="Dummy3InitOutput",
-                               storageClass="ExposureF",
-                               doc="n/a")
-    input = cT.Input(name="Dummy2Output",
-                     storageClass="ExposureF",
-                     doc="n/a",
-                     dimensions=("A", "B"))
-    output = cT.Output(name="Dummy3Output",
-                       storageClass="ExposureF",
-                       doc="n/a",
-                       dimensions=("A", "B"))
+    initInput = cT.InitInput(name="Dummy2InitOutput", storageClass="ExposureF", doc="n/a")
+    initOutput = cT.InitOutput(name="Dummy3InitOutput", storageClass="ExposureF", doc="n/a")
+    input = cT.Input(name="Dummy2Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
+    output = cT.Output(name="Dummy3Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy3Config(PipelineTaskConfig, pipelineConnections=Dummy3Connections):
@@ -126,14 +103,8 @@ class Dummy3PipelineTask(PipelineTask):
 # Test if a Task that does not interact with the other Tasks works fine in
 # the graph.
 class Dummy4Connections(PipelineTaskConnections, dimensions=("A", "B")):
-    input = cT.Input(name="Dummy4Input",
-                     storageClass="ExposureF",
-                     doc="n/a",
-                     dimensions=("A", "B"))
-    output = cT.Output(name="Dummy4Output",
-                       storageClass="ExposureF",
-                       doc="n/a",
-                       dimensions=("A", "B"))
+    input = cT.Input(name="Dummy4Input", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
+    output = cT.Output(name="Dummy4Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy4Config(PipelineTaskConfig, pipelineConnections=Dummy4Connections):
@@ -145,46 +116,56 @@ class Dummy4PipelineTask(PipelineTask):
 
 
 class QuantumGraphTestCase(unittest.TestCase):
-    """Tests the various functions of a quantum graph
-    """
+    """Tests the various functions of a quantum graph"""
+
     def setUp(self):
-        config = Config({
-            "version": 1,
-            "skypix": {
-                "common": "htm7",
-                "htm": {
-                    "class": "lsst.sphgeom.HtmPixelization",
-                    "max_level": 24,
-                }
-            },
-            "elements": {
-                "A": {
-                    "keys": [{
-                        "name": "id",
-                        "type": "int",
-                    }],
-                    "storage": {
-                        "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+        config = Config(
+            {
+                "version": 1,
+                "skypix": {
+                    "common": "htm7",
+                    "htm": {
+                        "class": "lsst.sphgeom.HtmPixelization",
+                        "max_level": 24,
                     },
                 },
-                "B": {
-                    "keys": [{
-                        "name": "id",
-                        "type": "int",
-                    }],
-                    "storage": {
-                        "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+                "elements": {
+                    "A": {
+                        "keys": [
+                            {
+                                "name": "id",
+                                "type": "int",
+                            }
+                        ],
+                        "storage": {
+                            "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+                        },
                     },
-                }
-            },
-            "packers": {}
-        })
+                    "B": {
+                        "keys": [
+                            {
+                                "name": "id",
+                                "type": "int",
+                            }
+                        ],
+                        "storage": {
+                            "cls": "lsst.daf.butler.registry.dimensions.table.TableDimensionRecordStorage",
+                        },
+                    },
+                },
+                "packers": {},
+            }
+        )
         universe = DimensionUniverse(config=config)
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
         tasks = []
-        for task, label in ((Dummy1PipelineTask, "R"), (Dummy2PipelineTask, "S"), (Dummy3PipelineTask, "T"),
-                            (Dummy4PipelineTask, "U")):
+        for task, label in (
+            (Dummy1PipelineTask, "R"),
+            (Dummy2PipelineTask, "S"),
+            (Dummy3PipelineTask, "T"),
+            (Dummy4PipelineTask, "U"),
+        ):
             config = task.ConfigClass()
             taskDef = TaskDef(f"__main__.{task.__qualname__}", config, task, label)
             tasks.append(taskDef)
@@ -192,36 +173,42 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections = taskDef.connections
             for a, b in ((1, 2), (3, 4)):
                 if connections.initInputs:
-                    initInputDSType = DatasetType(connections.initInput.name,
-                                                  tuple(),
-                                                  storageClass=connections.initInput.storageClass,
-                                                  universe=universe)
-                    initRefs = [DatasetRef(initInputDSType,
-                                           DataCoordinate.makeEmpty(universe))]
+                    initInputDSType = DatasetType(
+                        connections.initInput.name,
+                        tuple(),
+                        storageClass=connections.initInput.storageClass,
+                        universe=universe,
+                    )
+                    initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
                 else:
                     initRefs = None
-                inputDSType = DatasetType(connections.input.name,
-                                          connections.input.dimensions,
-                                          storageClass=connections.input.storageClass,
-                                          universe=universe,
-                                          )
-                inputRefs = [DatasetRef(inputDSType, DataCoordinate.standardize({"A": a, "B": b},
-                                                                                universe=universe))]
-                outputDSType = DatasetType(connections.output.name,
-                                           connections.output.dimensions,
-                                           storageClass=connections.output.storageClass,
-                                           universe=universe,
-                                           )
-                outputRefs = [DatasetRef(outputDSType, DataCoordinate.standardize({"A": a, "B": b},
-                                                                                  universe=universe))]
+                inputDSType = DatasetType(
+                    connections.input.name,
+                    connections.input.dimensions,
+                    storageClass=connections.input.storageClass,
+                    universe=universe,
+                )
+                inputRefs = [
+                    DatasetRef(inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
+                ]
+                outputDSType = DatasetType(
+                    connections.output.name,
+                    connections.output.dimensions,
+                    storageClass=connections.output.storageClass,
+                    universe=universe,
+                )
+                outputRefs = [
+                    DatasetRef(outputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
+                ]
                 quantumSet.add(
-                    Quantum(taskName=task.__qualname__,
-                            dataId=DataCoordinate.standardize({"A": a, "B": b}, universe=universe),
-                            taskClass=task,
-                            initInputs=initRefs,
-                            inputs={inputDSType: inputRefs},
-                            outputs={outputDSType: outputRefs}
-                            )
+                    Quantum(
+                        taskName=task.__qualname__,
+                        dataId=DataCoordinate.standardize({"A": a, "B": b}, universe=universe),
+                        taskClass=task,
+                        initInputs=initRefs,
+                        inputs={inputDSType: inputRefs},
+                        outputs={outputDSType: outputRefs},
+                    )
                 )
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
@@ -234,10 +221,9 @@ class QuantumGraphTestCase(unittest.TestCase):
         # different as it will be __main__ here, but qualified to the
         # unittest module name when restored
         # Updates in place
-        for saved, loaded in zip(graph1.taskGraph,
-                                 graph2.taskGraph):
-            saved.taskName = saved.taskName.split('.')[-1]
-            loaded.taskName = loaded.taskName.split('.')[-1]
+        for saved, loaded in zip(graph1.taskGraph, graph2.taskGraph):
+            saved.taskName = saved.taskName.split(".")[-1]
+            loaded.taskName = loaded.taskName.split(".")[-1]
 
     def testTaskGraph(self):
         for taskDef in self.quantumMap.keys():
@@ -271,7 +257,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertEqual(self.quantumMap[self.tasks[2]] | self.quantumMap[self.tasks[3]], outputs)
 
     def testLength(self):
-        self.assertEqual(len(self.qGraph), 2*len(self.tasks))
+        self.assertEqual(len(self.qGraph), 2 * len(self.tasks))
 
     def testGetQuantaForTask(self):
         for task in self.tasks:
@@ -284,27 +270,28 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(quanta_in_node, self.quantumMap[task])
 
     def testFindTasksWithInput(self):
-        self.assertEqual(tuple(self.qGraph.findTasksWithInput(DatasetTypeName("Dummy1Output")))[0],
-                         self.tasks[1])
+        self.assertEqual(
+            tuple(self.qGraph.findTasksWithInput(DatasetTypeName("Dummy1Output")))[0], self.tasks[1]
+        )
 
     def testFindTasksWithOutput(self):
         self.assertEqual(self.qGraph.findTaskWithOutput(DatasetTypeName("Dummy1Output")), self.tasks[0])
 
     def testTaskWithDSType(self):
-        self.assertEqual(set(self.qGraph.tasksWithDSType(DatasetTypeName("Dummy1Output"))),
-                         set(self.tasks[:2]))
+        self.assertEqual(
+            set(self.qGraph.tasksWithDSType(DatasetTypeName("Dummy1Output"))), set(self.tasks[:2])
+        )
 
     def testFindTaskDefByName(self):
-        self.assertEqual(self.qGraph.findTaskDefByName(Dummy1PipelineTask.__qualname__)[0],
-                         self.tasks[0])
+        self.assertEqual(self.qGraph.findTaskDefByName(Dummy1PipelineTask.__qualname__)[0], self.tasks[0])
 
     def testFindTaskDefByLabel(self):
-        self.assertEqual(self.qGraph.findTaskDefByLabel("R"),
-                         self.tasks[0])
+        self.assertEqual(self.qGraph.findTaskDefByLabel("R"), self.tasks[0])
 
     def testFindQuantaWIthDSType(self):
-        self.assertEqual(self.qGraph.findQuantaWithDSType(DatasetTypeName("Dummy1Input")),
-                         self.quantumMap[self.tasks[0]])
+        self.assertEqual(
+            self.qGraph.findQuantaWithDSType(DatasetTypeName("Dummy1Input")), self.quantumMap[self.tasks[0]]
+        )
 
     def testAllDatasetTypes(self):
         allDatasetTypes = set(self.qGraph.allDatasetTypes)
@@ -328,7 +315,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         # dimensions
         self.assertFalse(self.qGraph.isConnected)
         # make a broken subset
-        filteredNodes = [n for n in self.qGraph if n.taskDef.label != 'U']
+        filteredNodes = [n for n in self.qGraph if n.taskDef.label != "U"]
         subset = self.qGraph.subset((filteredNodes[0], filteredNodes[1]))
         # True because we subset to only one chain of graphs
         self.assertTrue(subset.isConnected)
@@ -408,7 +395,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertFalse(self.qGraph.findCycle())
 
     def testSaveLoad(self):
-        with tempfile.TemporaryFile(suffix='.qgraph') as tmpFile:
+        with tempfile.TemporaryFile(suffix=".qgraph") as tmpFile:
             self.qGraph.save(tmpFile)
             tmpFile.seek(0)
             restore = QuantumGraph.load(tmpFile, self.universe)
@@ -417,11 +404,9 @@ class QuantumGraphTestCase(unittest.TestCase):
             # Load in just one node
             tmpFile.seek(0)
             nodeId = [n.nodeId for n in self.qGraph][0]
-            restoreSub = QuantumGraph.load(tmpFile, self.universe,
-                                           nodes=(nodeId,))
+            restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(nodeId,))
             self.assertEqual(len(restoreSub), 1)
-            self.assertEqual(list(restoreSub)[0],
-                             restore.getQuantumNodeByNodeId(nodeId))
+            self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
 
     def testSaveLoadUri(self):
         uri = None
@@ -433,24 +418,30 @@ class QuantumGraphTestCase(unittest.TestCase):
                 self.assertEqual(restore.metadata, METADATA)
                 self._cleanGraphs(self.qGraph, restore)
                 self.assertEqual(self.qGraph, restore)
-                nodeNumberId = random.randint(0, len(self.qGraph)-1)
+                nodeNumberId = random.randint(0, len(self.qGraph) - 1)
                 nodeNumber = [n.nodeId for n in self.qGraph][nodeNumberId]
-                restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber,),
-                                                  graphID=self.qGraph._buildId)
+                restoreSub = QuantumGraph.loadUri(
+                    uri, self.universe, nodes=(nodeNumber,), graphID=self.qGraph._buildId
+                )
                 self.assertEqual(len(restoreSub), 1)
-                self.assertEqual(list(restoreSub)[0],
-                                 restore.getQuantumNodeByNodeId(nodeNumber))
+                self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeNumber))
                 # verify that more than one node works
-                nodeNumberId2 = random.randint(0, len(self.qGraph)-1)
+                nodeNumberId2 = random.randint(0, len(self.qGraph) - 1)
                 # ensure it is a different node number
                 while nodeNumberId2 == nodeNumberId:
-                    nodeNumberId2 = random.randint(0, len(self.qGraph)-1)
+                    nodeNumberId2 = random.randint(0, len(self.qGraph) - 1)
                 nodeNumber2 = [n.nodeId for n in self.qGraph][nodeNumberId2]
                 restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeNumber, nodeNumber2))
                 self.assertEqual(len(restoreSub), 2)
-                self.assertEqual(set(restoreSub),
-                                 set((restore.getQuantumNodeByNodeId(nodeNumber),
-                                     restore.getQuantumNodeByNodeId(nodeNumber2))))
+                self.assertEqual(
+                    set(restoreSub),
+                    set(
+                        (
+                            restore.getQuantumNodeByNodeId(nodeNumber),
+                            restore.getQuantumNodeByNodeId(nodeNumber2),
+                        )
+                    ),
+                )
                 # verify an error when requesting a non existant node number
                 with self.assertRaises(ValueError):
                     QuantumGraph.loadUri(uri, self.universe, nodes=(99,))
@@ -472,8 +463,8 @@ class QuantumGraphTestCase(unittest.TestCase):
     @mock_s3
     def testSaveLoadUriS3(self):
         # Test loading a quantum graph from an mock s3 store
-        conn = boto3.resource('s3', region_name="us-east-1")
-        conn.create_bucket(Bucket='testBucket')
+        conn = boto3.resource("s3", region_name="us-east-1")
+        conn.create_bucket(Bucket="testBucket")
         uri = "s3://testBucket/qgraph.qgraph"
         self.qGraph.saveUri(uri)
         restore = QuantumGraph.loadUri(uri, self.universe)
@@ -482,8 +473,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         nodeId = list(self.qGraph)[0].nodeId
         restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeId,))
         self.assertEqual(len(restoreSub), 1)
-        self.assertEqual(list(restoreSub)[0],
-                         restore.getQuantumNodeByNodeId(nodeId))
+        self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))

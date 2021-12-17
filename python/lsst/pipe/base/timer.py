@@ -24,14 +24,17 @@
 __all__ = ["logInfo", "timeMethod"]
 
 import logging
-from deprecated.sphinx import deprecated
 from typing import Any, Callable
+
 import lsst.utils.timer
+from deprecated.sphinx import deprecated
 
 
-@deprecated(reason="logInfo has been replaced by lsst.utils.timer.logInfo."
-            " Will be removed after v25.",
-            version="v24", category=FutureWarning)
+@deprecated(
+    reason="logInfo has been replaced by lsst.utils.timer.logInfo." " Will be removed after v25.",
+    version="v24",
+    category=FutureWarning,
+)
 def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     """Log timer information to ``obj.metadata`` and ``obj.log``.
 
@@ -73,9 +76,11 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     return lsst.utils.timer.logInfo(obj, prefix, logLevel=logLevel, metadata=metadata, logger=logger)
 
 
-@deprecated(reason="timeMethod has been replaced by lsst.utils.timer.timeMethod."
-            " Will be removed after v25.",
-            version="v24", category=FutureWarning)
+@deprecated(
+    reason="timeMethod has been replaced by lsst.utils.timer.timeMethod." " Will be removed after v25.",
+    version="v24",
+    category=FutureWarning,
+)
 def timeMethod(*args: Any, **kwargs: Any) -> Callable:
     """Decorator to measure duration of a method.
 
