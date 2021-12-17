@@ -44,7 +44,6 @@ from typing import Union, Iterable
 import itertools
 import string
 
-from . import config as configMod
 from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
                               Output, BaseConnection, BaseInput)
 from ._status import NoWorkFound
@@ -385,7 +384,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         self.initOutputs = set(self.initOutputs)
         self.allConnections = dict(self.allConnections)
 
-        if config is None or not isinstance(config, configMod.PipelineTaskConfig):
+        from .config import PipelineTaskConfig  # local import to avoid cycle
+
+        if config is None or not isinstance(config, PipelineTaskConfig):
             raise ValueError("PipelineTaskConnections must be instantiated with"
                              " a PipelineTaskConfig instance")
         self.config = config
