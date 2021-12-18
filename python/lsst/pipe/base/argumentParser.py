@@ -476,13 +476,13 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument(
             "--output",
             dest="rawOutput",
-            help="path to output data repository (need not exist), " f"relative to ${DEFAULT_OUTPUT_NAME}",
+            help=f"path to output data repository (need not exist), relative to ${DEFAULT_OUTPUT_NAME}",
         )
         self.add_argument(
             "--rerun",
             dest="rawRerun",
             metavar="[INPUT:]OUTPUT",
-            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; " "optionally sets ROOT to ROOT/rerun/INPUT",
+            help="rerun name: sets OUTPUT to ROOT/rerun/OUTPUT; optionally sets ROOT to ROOT/rerun/INPUT",
         )
         self.add_argument(
             "-c",

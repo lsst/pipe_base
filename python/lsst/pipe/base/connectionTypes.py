@@ -153,7 +153,7 @@ class DimensionedConnection(BaseConnection):
     def __post_init__(self):
         if isinstance(self.dimensions, str):
             raise TypeError(
-                "Dimensions must be iterable of dimensions, got str," "possibly omitted trailing comma"
+                "Dimensions must be iterable of dimensions, got str, possibly omitted trailing comma"
             )
         if not isinstance(self.dimensions, typing.Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")

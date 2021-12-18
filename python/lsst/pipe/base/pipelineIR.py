@@ -59,7 +59,7 @@ class PipelineYamlLoader(yaml.SafeLoader):
         duplicates = {k for k, i in all_keys.items() if i != 1}
         if duplicates:
             raise KeyError(
-                "Pipeline files must not have duplicated keys, " f"{duplicates} appeared multiple times"
+                f"Pipeline files must not have duplicated keys, {duplicates} appeared multiple times"
             )
         return mapping
 
@@ -143,7 +143,7 @@ class LabeledSubset:
             subset = value.pop("subset", None)
             if subset is None:
                 raise ValueError(
-                    "If a labeled subset is specified as a mapping, it must contain the key " "'subset'"
+                    "If a labeled subset is specified as a mapping, it must contain the key 'subset'"
                 )
             description = value.pop("description", None)
         elif isinstance(value, abcIterable):
@@ -427,7 +427,7 @@ class ImportIR:
         """
         if self.include and self.exclude:
             raise ValueError(
-                "Both an include and an exclude list cant be specified" " when declaring a pipeline import"
+                "Both an include and an exclude list cant be specified when declaring a pipeline import"
             )
         tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not KeepInstrument:
@@ -675,7 +675,7 @@ class PipelineIR:
         # from this pipeline
         if accumulate_labeled_subsets.keys() & self.tasks.keys():
             raise ValueError(
-                "Labeled subset names must be unique amongst imports in both labels and " " named Subsets"
+                "Labeled subset names must be unique amongst imports in both labels and  named Subsets"
             )
         # merge in the named subsets for self so this document can override any
         # that have been delcared

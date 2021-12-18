@@ -79,9 +79,7 @@ class _DatasetTracker(Generic[_T, _U]):
             Raised if key is already declared to be produced by another value
         """
         if (existing := self._producers.get(key)) is not None and existing != value:
-            raise ValueError(
-                f"Only one node is allowed to produce {key}, " f"the current producer is {existing}"
-            )
+            raise ValueError(f"Only one node is allowed to produce {key}, the current producer is {existing}")
         self._producers[key] = value
         if self._createInverse:
             self._itemsDict[value].add(key)

@@ -613,7 +613,7 @@ class _PipelineScaffolding:
             queryArgs["collections"] = collections
         else:
             raise ValueError(
-                f"Unable to handle type {datasetQueryConstraint} given as " "datasetQueryConstraint."
+                f"Unable to handle type {datasetQueryConstraint} given as datasetQueryConstraint."
             )
 
         with registry.queryDataIds(**queryArgs).materialize() as commonDataIds:

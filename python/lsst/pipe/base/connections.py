@@ -407,7 +407,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
         if config is None or not isinstance(config, PipelineTaskConfig):
             raise ValueError(
-                "PipelineTaskConnections must be instantiated with" " a PipelineTaskConfig instance"
+                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
             )
         self.config = config
         # Extract the template names that were defined in the config instance
@@ -496,7 +496,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 # to handle, throw
                 else:
                     raise ValueError(
-                        f"Attribute with name {attributeName} has no counterpoint " "in input quantum"
+                        f"Attribute with name {attributeName} has no counterpoint in input quantum"
                     )
         return inputDatasetRefs, outputDatasetRefs
 

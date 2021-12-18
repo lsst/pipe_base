@@ -31,7 +31,7 @@ from deprecated.sphinx import deprecated
 
 
 @deprecated(
-    reason="logInfo has been replaced by lsst.utils.timer.logInfo." " Will be removed after v25.",
+    reason="logInfo has been replaced by lsst.utils.timer.logInfo. Will be removed after v25.",
     version="v24",
     category=FutureWarning,
 )
@@ -77,7 +77,7 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
 
 
 @deprecated(
-    reason="timeMethod has been replaced by lsst.utils.timer.timeMethod." " Will be removed after v25.",
+    reason="timeMethod has been replaced by lsst.utils.timer.timeMethod. Will be removed after v25.",
     version="v24",
     category=FutureWarning,
 )

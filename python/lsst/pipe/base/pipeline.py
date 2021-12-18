@@ -96,7 +96,7 @@ class LabelSpecifier:
     def __post_init__(self):
         if self.labels is not None and (self.begin or self.end):
             raise ValueError(
-                "This struct can only be initialized with a labels set or " "a begin (and/or) end specifier"
+                "This struct can only be initialized with a labels set or a begin (and/or) end specifier"
             )
 
 
@@ -340,7 +340,7 @@ class Pipeline:
             if labelSpecifier.end is not None:
                 if labelSpecifier.end not in labels:
                     raise ValueError(
-                        f"End of range subset, {labelSpecifier.end}, not found in pipeline " "definition"
+                        f"End of range subset, {labelSpecifier.end}, not found in pipeline definition"
                     )
 
             labelSet = set()
@@ -381,7 +381,7 @@ class Pipeline:
             if "," in label_subset:
                 if ".." in label_subset:
                     raise ValueError(
-                        "Can only specify a list of labels or a range" "when loading a Pipline not both"
+                        "Can only specify a list of labels or a rangewhen loading a Pipline not both"
                     )
                 args = {"labels": set(label_subset.split(","))}
             # labels supplied as a range
@@ -634,7 +634,7 @@ class Pipeline:
                 if not success:
                     extra_info = f": {contract.msg}" if contract.msg is not None else ""
                     raise pipelineIR.ContractError(
-                        f"Contract(s) '{contract.contract}' were not " f"satisfied{extra_info}"
+                        f"Contract(s) '{contract.contract}' were not satisfied{extra_info}"
                     )
 
         taskDefs = sorted(taskDefs, key=lambda x: x.label)

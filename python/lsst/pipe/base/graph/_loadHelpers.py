@@ -241,7 +241,7 @@ class DefaultLoadHelper:
             remainder = nodes - self.headerInfo.map.keys()
             if remainder:
                 raise ValueError(
-                    f"Nodes {remainder} were requested, but could not be found in the input " "graph"
+                    f"Nodes {remainder} were requested, but could not be found in the input graph"
                 )
             _readBytes = self._readBytes
         return self.deserializer.constructGraph(nodes, _readBytes, universe)

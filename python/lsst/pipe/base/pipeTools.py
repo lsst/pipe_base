@@ -97,7 +97,7 @@ def isPipelineOrdered(pipeline, taskFactory=None):
         for attr in iterConnections(taskDef.connections, "outputs"):
             if attr.name in producerIndex:
                 raise DuplicateOutputError(
-                    "DatasetType `{}' appears more than " "once as output".format(attr.name)
+                    "DatasetType `{}' appears more than once as output".format(attr.name)
                 )
             producerIndex[attr.name] = idx
 
@@ -152,7 +152,7 @@ def orderPipeline(pipeline):
         for dsTypeDescr in dsMap.values():
             if dsTypeDescr.name in allOutputs:
                 raise DuplicateOutputError(
-                    "DatasetType `{}' appears more than " "once as output".format(dsTypeDescr.name)
+                    "DatasetType `{}' appears more than once as output".format(dsTypeDescr.name)
                 )
         outputs[idx] = set(dsTypeDescr.name for dsTypeDescr in dsMap.values())
         allOutputs.update(outputs[idx])

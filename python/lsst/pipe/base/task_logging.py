@@ -26,7 +26,7 @@ from lsst.utils.logging import TRACE, VERBOSE, getLogger
 
 
 @deprecated(
-    reason="getTaskLogger has been replaced by lsst.utils.logging.getLogger." " Will be removed after v24.",
+    reason="getTaskLogger has been replaced by lsst.utils.logging.getLogger. Will be removed after v24.",
     version="v24",
     category=FutureWarning,
 )

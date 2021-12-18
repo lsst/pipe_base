@@ -111,7 +111,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             configConnectionsNamespace = {}
             for fieldName, obj in connectionsClass.allConnections.items():
                 configConnectionsNamespace[fieldName] = pexConfig.Field(
-                    dtype=str, doc=f"name for " f"connection {fieldName}", default=obj.name
+                    dtype=str, doc=f"name for connection {fieldName}", default=obj.name
                 )
             # If there are default templates also add them as fields to
             # configure the template values
@@ -130,7 +130,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             # add it to the Config class that is currently being declared
             dct["connections"] = pexConfig.ConfigField(
                 dtype=Connections,
-                doc="Configurations describing the" " connections of the PipelineTask to datatypes",
+                doc="Configurations describing the connections of the PipelineTask to datatypes",
             )
             dct["ConnectionsConfigClass"] = Connections
             dct["ConnectionsClass"] = connectionsClass
