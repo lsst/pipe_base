@@ -667,7 +667,20 @@ class Pipeline:
     def __eq__(self, other: object):
         if not isinstance(other, Pipeline):
             return False
-        return self._pipelineIR == other._pipelineIR
+        elif self._pipelineIR == other._pipelineIR:
+            # Shortcut: if the IR is the same, the expanded pipeline must be
+            # the same as well.  But the converse is not true.
+            return True
+        else:
+            self_expanded = {td.label: (td.taskClass,) for td in self}
+            other_expanded = {td.label: (td.taskClass,) for td in other}
+            if self_expanded != other_expanded:
+                return False
+        # After DM-27847, we should compare configuration here, or better,
+        # delegated to TaskDef.__eq__ after making that compare configurations.
+        raise NotImplementedError(
+            "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
+        )
 
 
 @dataclass(frozen=True)
