@@ -23,10 +23,10 @@
 """
 
 import unittest
-import pytest
 
-import lsst.utils.tests
 import lsst.pipe.base as pipeBase
+import lsst.utils.tests
+import pytest
 
 
 class TestConnectionsClass(unittest.TestCase):
@@ -37,8 +37,7 @@ class TestConnectionsClass(unittest.TestCase):
         self.test_dims = ("a", "b")
 
     def testConnectionsDeclaration(self):
-        """Tests the declaration of a Connections Class
-        """
+        """Tests the declaration of a Connections Class"""
         with pytest.raises(TypeError):
             # This should raise because this Connections class is created with
             # no dimensions
@@ -49,53 +48,60 @@ class TestConnectionsClass(unittest.TestCase):
             # This should raise because this Connections class is created with
             # out template defaults
             class TestConnectionsTemplate(pipeBase.PipelineTaskConnections, dimensions=self.test_dims):
-                field = pipeBase.connectionTypes.Input(doc="Test", name="{template}test",
-                                                       dimensions=self.test_dims,
-                                                       storageClass='Dummy')
+                field = pipeBase.connectionTypes.Input(
+                    doc="Test", name="{template}test", dimensions=self.test_dims, storageClass="Dummy"
+                )
 
         # This declaration should raise no exceptions
         class TestConnectionsWithDimensions(pipeBase.PipelineTaskConnections, dimensions=self.test_dims):
             pass
 
         # This should not raise
-        class TestConnectionsWithTemplate(pipeBase.PipelineTaskConnections, dimensions=self.test_dims,
-                                          defaultTemplates={"template": "working"}):
-            field = pipeBase.connectionTypes.Input(doc="Test", name="{template}test",
-                                                   dimensions=self.test_dims,
-                                                   storageClass='Dummy')
+        class TestConnectionsWithTemplate(
+            pipeBase.PipelineTaskConnections,
+            dimensions=self.test_dims,
+            defaultTemplates={"template": "working"},
+        ):
+            field = pipeBase.connectionTypes.Input(
+                doc="Test", name="{template}test", dimensions=self.test_dims, storageClass="Dummy"
+            )
 
     def testConnectionsOnConnectionsClass(self):
         class TestConnections(pipeBase.PipelineTaskConnections, dimensions=self.test_dims):
-            initInput1 = pipeBase.connectionTypes.InitInput(doc="Test Init input", name="init_input",
-                                                            storageClass='Dummy')
-            initInput2 = pipeBase.connectionTypes.InitInput(doc="Test Init input", name="init_input2",
-                                                            storageClass='Dummy')
+            initInput1 = pipeBase.connectionTypes.InitInput(
+                doc="Test Init input", name="init_input", storageClass="Dummy"
+            )
+            initInput2 = pipeBase.connectionTypes.InitInput(
+                doc="Test Init input", name="init_input2", storageClass="Dummy"
+            )
 
-            initOutput1 = pipeBase.connectionTypes.InitOutput(doc="Test Init output", name="init_output1",
-                                                              storageClass='Dummy')
-            initOutput2 = pipeBase.connectionTypes.InitOutput(doc="Test Init output", name="init_output2",
-                                                              storageClass='Dummy')
+            initOutput1 = pipeBase.connectionTypes.InitOutput(
+                doc="Test Init output", name="init_output1", storageClass="Dummy"
+            )
+            initOutput2 = pipeBase.connectionTypes.InitOutput(
+                doc="Test Init output", name="init_output2", storageClass="Dummy"
+            )
 
-            input1 = pipeBase.connectionTypes.Input(doc="test input", name="input2",
-                                                    dimensions=self.test_dims,
-                                                    storageClass='Dummy')
-            input2 = pipeBase.connectionTypes.Input(doc="test input", name="input2",
-                                                    dimensions=self.test_dims,
-                                                    storageClass='Dummy')
+            input1 = pipeBase.connectionTypes.Input(
+                doc="test input", name="input2", dimensions=self.test_dims, storageClass="Dummy"
+            )
+            input2 = pipeBase.connectionTypes.Input(
+                doc="test input", name="input2", dimensions=self.test_dims, storageClass="Dummy"
+            )
 
-            prereqInputs1 = pipeBase.connectionTypes.PrerequisiteInput(doc="test input", name="pre_input1",
-                                                                       dimensions=self.test_dims,
-                                                                       storageClass='Dummy')
-            prereqInputs2 = pipeBase.connectionTypes.PrerequisiteInput(doc="test input", name="pre_input2",
-                                                                       dimensions=self.test_dims,
-                                                                       storageClass='Dummy')
+            prereqInputs1 = pipeBase.connectionTypes.PrerequisiteInput(
+                doc="test input", name="pre_input1", dimensions=self.test_dims, storageClass="Dummy"
+            )
+            prereqInputs2 = pipeBase.connectionTypes.PrerequisiteInput(
+                doc="test input", name="pre_input2", dimensions=self.test_dims, storageClass="Dummy"
+            )
 
-            output1 = pipeBase.connectionTypes.Output(doc="test output", name="output",
-                                                      dimensions=self.test_dims,
-                                                      storageClass='Dummy')
-            output2 = pipeBase.connectionTypes.Output(doc="test output", name="output",
-                                                      dimensions=self.test_dims,
-                                                      storageClass='Dummy')
+            output1 = pipeBase.connectionTypes.Output(
+                doc="test output", name="output", dimensions=self.test_dims, storageClass="Dummy"
+            )
+            output2 = pipeBase.connectionTypes.Output(
+                doc="test output", name="output", dimensions=self.test_dims, storageClass="Dummy"
+            )
 
         self.assertEqual(TestConnections.initInputs, frozenset(["initInput1", "initInput2"]))
         self.assertEqual(TestConnections.initOutputs, frozenset(["initOutput1", "initOutput2"]))
@@ -104,15 +110,17 @@ class TestConnectionsClass(unittest.TestCase):
         self.assertEqual(TestConnections.outputs, frozenset(["output1", "output2"]))
 
     def buildTestConnections(self):
-        class TestConnectionsWithTemplate(pipeBase.PipelineTaskConnections, dimensions=self.test_dims,
-                                          defaultTemplates={"template": "working"}):
-            field = pipeBase.connectionTypes.Input(doc="Test", name="{template}test",
-                                                   dimensions=self.test_dims,
-                                                   storageClass='Dummy')
-            field2 = pipeBase.connectionTypes.Output(doc="Test", name="field2Type",
-                                                     dimensions=self.test_dims,
-                                                     storageClass='Dummy',
-                                                     multiple=True)
+        class TestConnectionsWithTemplate(
+            pipeBase.PipelineTaskConnections,
+            dimensions=self.test_dims,
+            defaultTemplates={"template": "working"},
+        ):
+            field = pipeBase.connectionTypes.Input(
+                doc="Test", name="{template}test", dimensions=self.test_dims, storageClass="Dummy"
+            )
+            field2 = pipeBase.connectionTypes.Output(
+                doc="Test", name="field2Type", dimensions=self.test_dims, storageClass="Dummy", multiple=True
+            )
 
             def adjustQuantum(self, datasetRefMap):
                 if len(datasetRefMap.field) < 2:
@@ -136,8 +144,9 @@ class TestConnectionsClass(unittest.TestCase):
     def testBuildDatasetRefs(self):
         connections = self.buildTestConnections()
 
-        mockQuantum = pipeBase.Struct(inputs={"fromConfigtest": ["a"]},
-                                      outputs={"field2FromConfig": ["b", "c"]})
+        mockQuantum = pipeBase.Struct(
+            inputs={"fromConfigtest": ["a"]}, outputs={"field2FromConfig": ["b", "c"]}
+        )
 
         inputRefs, outputRefs = connections.buildDatasetRefs(mockQuantum)
         self.assertEqual(inputRefs.field, "a")
@@ -145,28 +154,31 @@ class TestConnectionsClass(unittest.TestCase):
 
     def testAdjustQuantum(self):
         connections = self.buildTestConnections()
-        mockQuantum = pipeBase.Struct(inputs={"fromConfigtest": ["a"]},
-                                      outputs={"field2FromConfig": ["b", "c"]})
+        mockQuantum = pipeBase.Struct(
+            inputs={"fromConfigtest": ["a"]}, outputs={"field2FromConfig": ["b", "c"]}
+        )
         inputRefs, outputRefs = connections.buildDatasetRefs(mockQuantum)
         with self.assertRaises(ValueError):
             connections.adjustQuantum(inputRefs)
 
     def testDimensionCheck(self):
         with self.assertRaises(TypeError):
+
             class TestConnectionsWithBrokenDimensionsStr(pipeBase.PipelineTask, dimensions=("a")):
                 pass
 
         with self.assertRaises(TypeError):
+
             class TestConnectionsWithBrokenDimensionsIter(pipeBase.PipelineTask, dimensions=2):
                 pass
 
         with self.assertRaises(TypeError):
-            pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=("a"), name="output",
-                                            storageClass="mock")
+            pipeBase.connectionTypes.Output(
+                Doc="mock doc", dimensions=("a"), name="output", storageClass="mock"
+            )
 
         with self.assertRaises(TypeError):
-            pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=1, name="output",
-                                            storageClass="mock")
+            pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=1, name="output", storageClass="mock")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

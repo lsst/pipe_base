@@ -19,21 +19,21 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import json
 import logging
+import numbers
 import time
 import unittest
-import numbers
-import json
-import yaml
 
-import lsst.utils.tests
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.utils.timer import timeMethod
+import lsst.utils.tests
+import yaml
 
 # Whilst in transition the test can't tell which type is
 # going to be used for metadata.
 from lsst.pipe.base.task import _TASK_METADATA_TYPE
+from lsst.utils.timer import timeMethod
 
 
 class AddConfig(pexConfig.Config):
@@ -101,19 +101,18 @@ class AddMultTask(pipeBase.Task):
 
     @timeMethod
     def failDec(self):
-        """A method that fails with a decorator
-        """
+        """A method that fails with a decorator"""
         raise RuntimeError("failDec intentional error")
 
     def failCtx(self):
-        """A method that fails inside a context manager
-        """
+        """A method that fails inside a context manager"""
         with self.timer("failCtx"):
             raise RuntimeError("failCtx intentional error")
 
 
 class AddMultTask2(AddMultTask):
     """Subclass that gets an automatic logger prefix."""
+
     _add_module_logger_prefix = True
 
 
@@ -126,8 +125,7 @@ class AddTwiceTask(AddTask):
 
 
 class TaskTestCase(unittest.TestCase):
-    """A test case for Task
-    """
+    """A test case for Task"""
 
     def setUp(self):
         self.valDict = dict()
@@ -136,8 +134,7 @@ class TaskTestCase(unittest.TestCase):
         self.valDict = None
 
     def testBasics(self):
-        """Test basic construction and use of a task
-        """
+        """Test basic construction and use of a task"""
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
@@ -152,8 +149,7 @@ class TaskTestCase(unittest.TestCase):
                     self.assertAlmostEqual(ret.val, (val + addend) * multiplicand)
 
     def testNames(self):
-        """Test getName() and getFullName()
-        """
+        """Test getName() and getFullName()"""
         addMultTask = AddMultTask()
         self.assertEqual(addMultTask.getName(), "addMult")
         self.assertEqual(addMultTask.add.getName(), "add")
@@ -172,8 +168,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.mult._fullName, "addMult.mult")
 
     def testLog(self):
-        """Test the Task's logger
-        """
+        """Test the Task's logger"""
         addMultTask = AddMultTask()
         self.assertEqual(addMultTask.log.name, "addMult")
         self.assertEqual(addMultTask.add.log.name, "addMult.add")
@@ -187,8 +182,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask2.log.name, f"{__name__}.addMult")
 
     def testGetFullMetadata(self):
-        """Test getFullMetadata()
-        """
+        """Test getFullMetadata()"""
         addMultTask = AddMultTask()
         addMultTask.run(val=1.234)  # Add some metadata
         fullMetadata = addMultTask.getFullMetadata()
@@ -220,8 +214,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(len(fullMetadata["addMult:mult"]), 0)
 
     def testReplace(self):
-        """Test replacing one subtask with another
-        """
+        """Test replacing one subtask with another"""
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
@@ -234,8 +227,7 @@ class TaskTestCase(unittest.TestCase):
                     self.assertAlmostEqual(ret.val, (val + (2 * addend)) * multiplicand)
 
     def testFail(self):
-        """Test timers when the code they are timing fails
-        """
+        """Test timers when the code they are timing fails"""
         addMultTask = AddMultTask()
         try:
             addMultTask.failDec()
@@ -249,34 +241,36 @@ class TaskTestCase(unittest.TestCase):
             self.assertIn("failCtxEndCpuTime", addMultTask.metadata)
 
     def testTimeMethod(self):
-        """Test that the timer is adding the right metadata
-        """
+        """Test that the timer is adding the right metadata"""
         addMultTask = AddMultTask()
 
         # Run twice to ensure we are additive.
         addMultTask.run(val=1.1)
         addMultTask.run(val=2.0)
         # Check existence and type
-        for key, keyType in (("Utc", str),
-                             ("CpuTime", float),
-                             ("UserTime", float),
-                             ("SystemTime", float),
-                             ("MaxResidentSetSize", numbers.Integral),
-                             ("MinorPageFaults", numbers.Integral),
-                             ("MajorPageFaults", numbers.Integral),
-                             ("BlockInputs", numbers.Integral),
-                             ("BlockOutputs", numbers.Integral),
-                             ("VoluntaryContextSwitches", numbers.Integral),
-                             ("InvoluntaryContextSwitches", numbers.Integral),
-                             ):
+        for key, keyType in (
+            ("Utc", str),
+            ("CpuTime", float),
+            ("UserTime", float),
+            ("SystemTime", float),
+            ("MaxResidentSetSize", numbers.Integral),
+            ("MinorPageFaults", numbers.Integral),
+            ("MajorPageFaults", numbers.Integral),
+            ("BlockInputs", numbers.Integral),
+            ("BlockOutputs", numbers.Integral),
+            ("VoluntaryContextSwitches", numbers.Integral),
+            ("InvoluntaryContextSwitches", numbers.Integral),
+        ):
             for when in ("Start", "End"):
                 for method in ("run", "context"):
                     name = method + when + key
-                    self.assertIn(name, addMultTask.metadata,
-                                  name + " is missing from task metadata")
-                    self.assertIsInstance(addMultTask.metadata.getScalar(name), keyType,
-                                          f"{name} is not of the right type "
-                                          f"({keyType} vs {type(addMultTask.metadata.getScalar(name))})")
+                    self.assertIn(name, addMultTask.metadata, name + " is missing from task metadata")
+                    self.assertIsInstance(
+                        addMultTask.metadata.getScalar(name),
+                        keyType,
+                        f"{name} is not of the right type "
+                        f"({keyType} vs {type(addMultTask.metadata.getScalar(name))})",
+                    )
         # Some basic sanity checks
         currCpuTime = time.process_time()
         self.assertLessEqual(

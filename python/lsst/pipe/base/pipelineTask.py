@@ -24,9 +24,9 @@
 
 __all__ = ["PipelineTask"]  # Classes in this module
 
-from .task import Task
 from .butlerQuantumContext import ButlerQuantumContext
 from .connections import InputQuantizedConnection, OutputQuantizedConnection
+from .task import Task
 
 
 class PipelineTask(Task):
@@ -80,6 +80,7 @@ class PipelineTask(Task):
         IDs.  While it is optional for the base class, subclasses are
         permitted to require this argument.
     """
+
     canMultiprocess = True
 
     def __init__(self, *, config=None, log=None, initInputs=None, **kwargs):
@@ -128,8 +129,12 @@ class PipelineTask(Task):
         """
         raise NotImplementedError("run() is not implemented")
 
-    def runQuantum(self, butlerQC: ButlerQuantumContext, inputRefs: InputQuantizedConnection,
-                   outputRefs: OutputQuantizedConnection):
+    def runQuantum(
+        self,
+        butlerQC: ButlerQuantumContext,
+        inputRefs: InputQuantizedConnection,
+        outputRefs: OutputQuantizedConnection,
+    ):
         """Method to do butler IO and or transforms to provide in memory
         objects for tasks run method
 

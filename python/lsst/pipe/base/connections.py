@@ -32,23 +32,29 @@ __all__ = [
     "PipelineTaskConnections",
     "ScalarError",
     "iterConnections",
-    "ScalarError"
+    "ScalarError",
 ]
-
-from collections import UserDict, namedtuple
-from dataclasses import dataclass
-from types import SimpleNamespace
-import typing
-from typing import Union, Iterable
 
 import itertools
 import string
+import typing
+from collections import UserDict, namedtuple
+from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import Iterable, Union
 
-from . import config as configMod
-from .connectionTypes import (InitInput, InitOutput, Input, PrerequisiteInput,
-                              Output, BaseConnection, BaseInput)
-from ._status import NoWorkFound
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
+
+from ._status import NoWorkFound
+from .connectionTypes import (
+    BaseConnection,
+    BaseInput,
+    InitInput,
+    InitOutput,
+    Input,
+    Output,
+    PrerequisiteInput,
+)
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -73,41 +79,42 @@ class PipelineTaskConnectionDict(UserDict):
     what exists in __dict__, but provides a simple place to lookup and
     iterate on only these variables.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize class level variables used to track any declared
         # class level variables that are instances of
         # connectionTypes.BaseConnection
-        self.data['inputs'] = []
-        self.data['prerequisiteInputs'] = []
-        self.data['outputs'] = []
-        self.data['initInputs'] = []
-        self.data['initOutputs'] = []
-        self.data['allConnections'] = {}
+        self.data["inputs"] = []
+        self.data["prerequisiteInputs"] = []
+        self.data["outputs"] = []
+        self.data["initInputs"] = []
+        self.data["initOutputs"] = []
+        self.data["allConnections"] = {}
 
     def __setitem__(self, name, value):
         if isinstance(value, Input):
-            self.data['inputs'].append(name)
+            self.data["inputs"].append(name)
         elif isinstance(value, PrerequisiteInput):
-            self.data['prerequisiteInputs'].append(name)
+            self.data["prerequisiteInputs"].append(name)
         elif isinstance(value, Output):
-            self.data['outputs'].append(name)
+            self.data["outputs"].append(name)
         elif isinstance(value, InitInput):
-            self.data['initInputs'].append(name)
+            self.data["initInputs"].append(name)
         elif isinstance(value, InitOutput):
-            self.data['initOutputs'].append(name)
+            self.data["initOutputs"].append(name)
         # This should not be an elif, as it needs tested for
         # everything that inherits from BaseConnection
         if isinstance(value, BaseConnection):
-            object.__setattr__(value, 'varName', name)
-            self.data['allConnections'][name] = value
+            object.__setattr__(value, "varName", name)
+            self.data["allConnections"][name] = value
         # defer to the default behavior
         super().__setitem__(name, value)
 
 
 class PipelineTaskConnectionsMetaclass(type):
-    """Metaclass used in the declaration of PipelineTaskConnections classes
-    """
+    """Metaclass used in the declaration of PipelineTaskConnections classes"""
+
     def __prepare__(name, bases, **kwargs):  # noqa: 805
         # Create an instance of our special dict to catch and track all
         # variables that are instances of connectionTypes.BaseConnection
@@ -120,26 +127,30 @@ class PipelineTaskConnectionsMetaclass(type):
         return dct
 
     def __new__(cls, name, bases, dct, **kwargs):
-        dimensionsValueError = TypeError("PipelineTaskConnections class must be created with a dimensions "
-                                         "attribute which is an iterable of dimension names")
+        dimensionsValueError = TypeError(
+            "PipelineTaskConnections class must be created with a dimensions "
+            "attribute which is an iterable of dimension names"
+        )
 
-        if name != 'PipelineTaskConnections':
+        if name != "PipelineTaskConnections":
             # Verify that dimensions are passed as a keyword in class
             # declaration
-            if 'dimensions' not in kwargs:
+            if "dimensions" not in kwargs:
                 for base in bases:
-                    if hasattr(base, 'dimensions'):
-                        kwargs['dimensions'] = base.dimensions
+                    if hasattr(base, "dimensions"):
+                        kwargs["dimensions"] = base.dimensions
                         break
-                if 'dimensions' not in kwargs:
+                if "dimensions" not in kwargs:
                     raise dimensionsValueError
             try:
-                if isinstance(kwargs['dimensions'], str):
-                    raise TypeError("Dimensions must be iterable of dimensions, got str,"
-                                    "possibly omitted trailing comma")
-                if not isinstance(kwargs['dimensions'], typing.Iterable):
+                if isinstance(kwargs["dimensions"], str):
+                    raise TypeError(
+                        "Dimensions must be iterable of dimensions, got str,"
+                        "possibly omitted trailing comma"
+                    )
+                if not isinstance(kwargs["dimensions"], typing.Iterable):
                     raise TypeError("Dimensions must be iterable of dimensions")
-                dct['dimensions'] = set(kwargs['dimensions'])
+                dct["dimensions"] = set(kwargs["dimensions"])
             except TypeError as exc:
                 raise dimensionsValueError from exc
             # Lookup any python string templates that may have been used in the
@@ -147,7 +158,7 @@ class PipelineTaskConnectionsMetaclass(type):
             allTemplates = set()
             stringFormatter = string.Formatter()
             # Loop over all connections
-            for obj in dct['allConnections'].values():
+            for obj in dct["allConnections"].values():
                 nameValue = obj.name
                 # add all the parameters to the set of templates
                 for param in stringFormatter.parse(nameValue):
@@ -158,35 +169,39 @@ class PipelineTaskConnectionsMetaclass(type):
             # together
             mergeDict = {}
             for base in bases[::-1]:
-                if hasattr(base, 'defaultTemplates'):
+                if hasattr(base, "defaultTemplates"):
                     mergeDict.update(base.defaultTemplates)
-            if 'defaultTemplates' in kwargs:
-                mergeDict.update(kwargs['defaultTemplates'])
+            if "defaultTemplates" in kwargs:
+                mergeDict.update(kwargs["defaultTemplates"])
 
             if len(mergeDict) > 0:
-                kwargs['defaultTemplates'] = mergeDict
+                kwargs["defaultTemplates"] = mergeDict
 
             # Verify that if templated strings were used, defaults were
             # supplied as an argument in the declaration of the connection
             # class
-            if len(allTemplates) > 0 and 'defaultTemplates' not in kwargs:
-                raise TypeError("PipelineTaskConnection class contains templated attribute names, but no "
-                                "defaut templates were provided, add a dictionary attribute named "
-                                "defaultTemplates which contains the mapping between template key and value")
+            if len(allTemplates) > 0 and "defaultTemplates" not in kwargs:
+                raise TypeError(
+                    "PipelineTaskConnection class contains templated attribute names, but no "
+                    "defaut templates were provided, add a dictionary attribute named "
+                    "defaultTemplates which contains the mapping between template key and value"
+                )
             if len(allTemplates) > 0:
                 # Verify all templates have a default, and throw if they do not
-                defaultTemplateKeys = set(kwargs['defaultTemplates'].keys())
+                defaultTemplateKeys = set(kwargs["defaultTemplates"].keys())
                 templateDifference = allTemplates.difference(defaultTemplateKeys)
                 if templateDifference:
                     raise TypeError(f"Default template keys were not provided for {templateDifference}")
                 # Verify that templates do not share names with variable names
                 # used for a connection, this is needed because of how
                 # templates are specified in an associated config class.
-                nameTemplateIntersection = allTemplates.intersection(set(dct['allConnections'].keys()))
+                nameTemplateIntersection = allTemplates.intersection(set(dct["allConnections"].keys()))
                 if len(nameTemplateIntersection) > 0:
-                    raise TypeError(f"Template parameters cannot share names with Class attributes"
-                                    f" (conflicts are {nameTemplateIntersection}).")
-            dct['defaultTemplates'] = kwargs.get('defaultTemplates', {})
+                    raise TypeError(
+                        f"Template parameters cannot share names with Class attributes"
+                        f" (conflicts are {nameTemplateIntersection})."
+                    )
+            dct["defaultTemplates"] = kwargs.get("defaultTemplates", {})
 
         # Convert all the connection containers into frozensets so they cannot
         # be modified at the class scope
@@ -216,6 +231,7 @@ class QuantizedConnection(SimpleNamespace):
     by examining all the connections defined on the
     `PipelineTaskConnectionsClass`.
     """
+
     def __init__(self, **kwargs):
         # Create a variable to track what attributes are added. This is used
         # later when iterating over this QuantizedConnection instance
@@ -230,8 +246,9 @@ class QuantizedConnection(SimpleNamespace):
         object.__delattr__(self, name)
         self._attributes.remove(name)
 
-    def __iter__(self) -> typing.Generator[typing.Tuple[str, typing.Union[DatasetRef,
-                                           typing.List[DatasetRef]]], None, None]:
+    def __iter__(
+        self,
+    ) -> typing.Generator[typing.Tuple[str, typing.Union[DatasetRef, typing.List[DatasetRef]]], None, None]:
         """Make an Iterator for this QuantizedConnection
 
         Iterating over a QuantizedConnection will yield a tuple with the name
@@ -266,6 +283,7 @@ class DeferredDatasetRef(namedtuple("DeferredDatasetRefBase", "datasetRef")):
         The `lsst.daf.butler.DatasetRef` that will be eventually used to
         resolve a dataset
     """
+
     __slots__ = ()
 
 
@@ -377,7 +395,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
-    def __init__(self, *, config: 'PipelineTaskConfig' = None):
+    def __init__(self, *, config: "PipelineTaskConfig" = None):
         self.inputs = set(self.inputs)
         self.prerequisiteInputs = set(self.prerequisiteInputs)
         self.outputs = set(self.outputs)
@@ -385,28 +403,35 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         self.initOutputs = set(self.initOutputs)
         self.allConnections = dict(self.allConnections)
 
-        if config is None or not isinstance(config, configMod.PipelineTaskConfig):
-            raise ValueError("PipelineTaskConnections must be instantiated with"
-                             " a PipelineTaskConfig instance")
+        from .config import PipelineTaskConfig  # local import to avoid cycle
+
+        if config is None or not isinstance(config, PipelineTaskConfig):
+            raise ValueError(
+                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
+            )
         self.config = config
         # Extract the template names that were defined in the config instance
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time
-        templateValues = {name: getattr(config.connections, name) for name in getattr(self,
-                          'defaultTemplates').keys()}
+        templateValues = {
+            name: getattr(config.connections, name) for name in getattr(self, "defaultTemplates").keys()
+        }
         # Extract the configured value corresponding to each connection
         # variable. I.e. for each connection identifier, populate a override
         # for the connection.name attribute
-        self._nameOverrides = {name: getattr(config.connections, name).format(**templateValues)
-                               for name in self.allConnections.keys()}
+        self._nameOverrides = {
+            name: getattr(config.connections, name).format(**templateValues)
+            for name in self.allConnections.keys()
+        }
 
         # connections.name corresponds to a dataset type name, create a reverse
         # mapping that goes from dataset type name to attribute identifier name
         # (variable name) on the connection class
         self._typeNameToVarName = {v: k for k, v in self._nameOverrides.items()}
 
-    def buildDatasetRefs(self, quantum: Quantum) -> typing.Tuple[InputQuantizedConnection,
-                                                                 OutputQuantizedConnection]:
+    def buildDatasetRefs(
+        self, quantum: Quantum
+    ) -> typing.Tuple[InputQuantizedConnection, OutputQuantizedConnection]:
         """Builds QuantizedConnections corresponding to input Quantum
 
         Parameters
@@ -426,8 +451,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         outputDatasetRefs = OutputQuantizedConnection()
         # operate on a reference object and an interable of names of class
         # connection attributes
-        for refs, names in zip((inputDatasetRefs, outputDatasetRefs),
-                               (itertools.chain(self.inputs, self.prerequisiteInputs), self.outputs)):
+        for refs, names in zip(
+            (inputDatasetRefs, outputDatasetRefs),
+            (itertools.chain(self.inputs, self.prerequisiteInputs), self.outputs),
+        ):
             # get a name of a class connection attribute
             for attributeName in names:
                 # get the attribute identified by name
@@ -468,8 +495,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 # Specified attribute is not in inputs or outputs dont know how
                 # to handle, throw
                 else:
-                    raise ValueError(f"Attribute with name {attributeName} has no counterpoint "
-                                     "in input quantum")
+                    raise ValueError(
+                        f"Attribute with name {attributeName} has no counterpoint in input quantum"
+                    )
         return inputDatasetRefs, outputDatasetRefs
 
     def adjustQuantum(
@@ -478,8 +506,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         outputs: typing.Dict[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
         label: str,
         data_id: DataCoordinate,
-    ) -> tuple.Tuple[typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
-                     typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]]]:
+    ) -> tuple.Tuple[
+        typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
+        typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
+    ]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
         of the activator.
@@ -605,9 +635,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         return {}, {}
 
 
-def iterConnections(connections: PipelineTaskConnections,
-                    connectionType: Union[str, Iterable[str]]
-                    ) -> typing.Generator[BaseConnection, None, None]:
+def iterConnections(
+    connections: PipelineTaskConnections, connectionType: Union[str, Iterable[str]]
+) -> typing.Generator[BaseConnection, None, None]:
     """Creates an iterator over the selected connections type which yields
     all the defined connections of that type.
 
@@ -687,17 +717,11 @@ class AdjustQuantumHelper:
         for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = getattr(connections, name)
             dataset_type_name = connection.name
-            inputs_by_connection[name] = (
-                connection,
-                tuple(self.inputs.get(dataset_type_name, ()))
-            )
+            inputs_by_connection[name] = (connection, tuple(self.inputs.get(dataset_type_name, ())))
         for name in itertools.chain(connections.outputs):
             connection = getattr(connections, name)
             dataset_type_name = connection.name
-            outputs_by_connection[name] = (
-                connection,
-                tuple(self.outputs.get(dataset_type_name, ()))
-            )
+            outputs_by_connection[name] = (connection, tuple(self.outputs.get(dataset_type_name, ())))
         # Actually call adjustQuantum.
         adjusted_inputs_by_connection, adjusted_outputs_by_connection = connections.adjustQuantum(
             inputs_by_connection,

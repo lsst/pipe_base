@@ -21,20 +21,20 @@
 #
 __all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
 
+import contextlib
+import functools
 import sys
 import traceback
-import functools
-import contextlib
 
+import lsst.afw.table as afwTable
 import lsst.log
 import lsst.utils.introspection
 import lsst.utils.logging
-from lsst.base import disableImplicitThreading
-import lsst.afw.table as afwTable
-from .task import Task, TaskError
-from .struct import Struct
+from lsst.base import Packages, disableImplicitThreading
+
 from .argumentParser import ArgumentParser
-from lsst.base import Packages
+from .struct import Struct
+from .task import Task, TaskError
 
 
 def _runPool(pool, timeout, function, iterable):
@@ -81,6 +81,7 @@ def profile(filename, log=None):
         yield
         return
     from cProfile import Profile
+
     profile = Profile()
     if log is not None:
         log.info("Enabling cProfile profiling")
@@ -169,7 +170,7 @@ class TaskRunner:
     .. __: http://stackoverflow.com/questions/1408356/
     """
 
-    TIMEOUT = 3600*24*30
+    TIMEOUT = 3600 * 24 * 30
     """Default timeout (seconds) for multiprocessing."""
 
     def __init__(self, TaskClass, parsedCmd, doReturnResults=False):
@@ -180,9 +181,9 @@ class TaskRunner:
         self.doRaise = bool(parsedCmd.doraise)
         self.clobberConfig = bool(parsedCmd.clobberConfig)
         self.doBackup = not bool(parsedCmd.noBackupConfig)
-        self.numProcesses = int(getattr(parsedCmd, 'processes', 1))
+        self.numProcesses = int(getattr(parsedCmd, "processes", 1))
 
-        self.timeout = getattr(parsedCmd, 'timeout', None)
+        self.timeout = getattr(parsedCmd, "timeout", None)
         if self.timeout is None or self.timeout <= 0:
             self.timeout = self.TIMEOUT
 
@@ -225,6 +226,7 @@ class TaskRunner:
         disableImplicitThreading()  # To prevent thread contention
         if self.numProcesses > 1:
             import multiprocessing
+
             self.prepareForMultiProcessing()
             pool = multiprocessing.Pool(processes=self.numProcesses, maxtasksperchild=1)
             mapFunc = functools.partial(_runPool, pool, self.timeout)
@@ -241,8 +243,10 @@ class TaskRunner:
                     # Run the task using self.__call__
                     resultList = list(mapFunc(self, targetList))
             else:
-                log.warning("Not running the task because there is no data to process; "
-                            "you may preview data using \"--show data\"")
+                log.warning(
+                    "Not running the task because there is no data to process; "
+                    'you may preview data using "--show data"'
+                )
 
         if pool is not None:
             pool.close()
@@ -423,8 +427,8 @@ class TaskRunner:
         elif isinstance(dataRef, (list, tuple)):
             lsst.log.MDC("LABEL", str([ref.dataId for ref in dataRef if hasattr(ref, "dataId")]))
         task = self.makeTask(args=args)
-        result = None                   # in case the task fails
-        exitStatus = 0                  # exit status for the shell
+        result = None  # in case the task fails
+        exitStatus = 0  # exit status for the shell
         if self.doRaise:
             result = self.runTask(task, dataRef, kwargs)
         else:
@@ -441,8 +445,12 @@ class TaskRunner:
                 if hasattr(dataRef, "dataId"):
                     task.log.fatal("Failed on dataId=%s: %s: %s", dataRef.dataId, eName, e)
                 elif isinstance(dataRef, (list, tuple)):
-                    task.log.fatal("Failed on dataIds=[%s]: %s: %s",
-                                   ", ".join(str(ref.dataId) for ref in dataRef), eName, e)
+                    task.log.fatal(
+                        "Failed on dataIds=[%s]: %s: %s",
+                        ", ".join(str(ref.dataId) for ref in dataRef),
+                        eName,
+                        e,
+                    )
                 else:
                     task.log.fatal("Failed on dataRef=%s: %s: %s", dataRef, eName, e)
 
@@ -581,6 +589,7 @@ class CmdLineTask(Task):
     - The data returned by ``runDataRef`` must be picklable if your task is to
       support multiprocessing.
     """
+
     RunnerClass = TaskRunner
     canMultiprocess = True
 
@@ -721,8 +730,9 @@ class CmdLineTask(Task):
         information).
         """
         parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument(name="--id", datasetType="raw",
-                               help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3")
+        parser.add_id_argument(
+            name="--id", datasetType="raw", help="data IDs, e.g. --id visit=12345 ccd=1,2^0,3"
+        )
         return parser
 
     def writeConfig(self, butler, clobber=False, doBackup=True):
@@ -755,8 +765,10 @@ class CmdLineTask(Task):
             try:
                 oldConfig = butler.get(configName, immediate=True)
             except Exception as exc:
-                raise type(exc)(f"Unable to read stored config file {configName} (exc); "
-                                "consider using --clobber-config")
+                raise type(exc)(
+                    f"Unable to read stored config file {configName} (exc); "
+                    "consider using --clobber-config"
+                )
 
             def logConfigMismatch(msg):
                 self.log.fatal("Comparing configuration: %s", msg)
@@ -765,7 +777,8 @@ class CmdLineTask(Task):
                 raise TaskError(
                     f"Config does not match existing task config {configName!r} on disk; "
                     "tasks configurations must be consistent within the same output repo "
-                    "(override with --clobber-config)")
+                    "(override with --clobber-config)"
+                )
         else:
             butler.put(self.config, configName)
 
@@ -806,7 +819,8 @@ class CmdLineTask(Task):
                     raise TaskError(
                         f"New schema does not match schema {dataset!r} on disk; "
                         "schemas must be consistent within the same output repo "
-                        "(override with --clobber-config)")
+                        "(override with --clobber-config)"
+                    )
             else:
                 butler.put(catalog, schemaDataset)
 
@@ -867,8 +881,10 @@ class CmdLineTask(Task):
         try:
             old = butler.get(dataset, immediate=True)
         except Exception as exc:
-            raise type(exc)(f"Unable to read stored version dataset {dataset} ({exc}); "
-                            "consider using --clobber-versions or --no-versions")
+            raise type(exc)(
+                f"Unable to read stored version dataset {dataset} ({exc}); "
+                "consider using --clobber-versions or --no-versions"
+            )
         # Note that because we can only detect python modules that have been
         # imported, the stored list of products may be more or less complete
         # than what we have now.  What's important is that the products that
@@ -877,7 +893,8 @@ class CmdLineTask(Task):
         if diff:
             versions_str = "; ".join(f"{pkg}: {diff[pkg][1]} vs {diff[pkg][0]}" for pkg in diff)
             raise TaskError(
-                f"Version mismatch ({versions_str}); consider using --clobber-versions or --no-versions")
+                f"Version mismatch ({versions_str}); consider using --clobber-versions or --no-versions"
+            )
         # Update the old set of packages in case we have more packages that
         # haven't been persisted.
         extra = packages.extra(old)

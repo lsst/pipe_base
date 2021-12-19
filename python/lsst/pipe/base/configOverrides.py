@@ -25,12 +25,11 @@
 __all__ = ["ConfigOverrides"]
 
 import ast
+import inspect
+from enum import Enum
 from operator import attrgetter
 
 from lsst.utils import doImport
-
-import inspect
-from enum import Enum
 
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
 
@@ -84,8 +83,7 @@ class ConfigExpressionParser(ast.NodeVisitor):
         return tuple(self.visit_List(node))
 
     def visit_Constant(self, node):
-        """This method is visited if the node is a constant
-        """
+        """This method is visited if the node is a constant"""
         return node.value
 
     def visit_Dict(self, node):
@@ -107,7 +105,7 @@ class ConfigExpressionParser(ast.NodeVisitor):
         """
         if isinstance(node.op, ast.USub):
             value = self.visit(node.operand)
-            return -1*value
+            return -1 * value
         self.generic_visit(node)
 
     def generic_visit(self, node):
@@ -200,7 +198,7 @@ class ConfigOverrides:
 
     def _parser(self, value, configParser):
         try:
-            value = configParser.visit(ast.parse(value, mode='eval').body)
+            value = configParser.visit(ast.parse(value, mode="eval").body)
         except Exception:
             # This probably means it is a specific user string such as a URI.
             # Let the value return as a string to attempt to continue to
@@ -229,7 +227,7 @@ class ConfigOverrides:
         mod = inspect.getmodule(config)
         vars.update({k: v for k, v in mod.__dict__.items() if not k.startswith("__")})
         # put the supplied config in the variables dictionary
-        vars['config'] = config
+        vars["config"] = config
 
         # Create a parser for config expressions that may be strings
         configParser = ConfigExpressionParser(namespace=vars)

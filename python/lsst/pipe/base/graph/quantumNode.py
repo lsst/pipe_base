@@ -19,17 +19,25 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
+
 import uuid
 
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 from dataclasses import dataclass
-from pydantic import BaseModel
 from typing import Dict, NewType, Optional, Tuple
 
+from lsst.daf.butler import (
+    DatasetRef,
+    DimensionRecord,
+    DimensionRecordsAccumulator,
+    DimensionUniverse,
+    Quantum,
+    SerializedQuantum,
+)
+from pydantic import BaseModel
+
 from ..pipeline import TaskDef
-from lsst.daf.butler import (Quantum, DatasetRef, SerializedQuantum, DimensionUniverse, DimensionRecord,
-                             DimensionRecordsAccumulator)
 
 BuildId = NewType("BuildId", str)
 
@@ -60,6 +68,7 @@ class NodeId:
     stability are made. New implementations might change the `NodeId`, or
     provide more or less guarantees.
     """
+
     number: int
     """The unique position of the node within the graph assigned at graph
     creation.
@@ -76,6 +85,7 @@ class QuantumNode:
     The quantum attribute represents the data that is to be processed at this
     node.
     """
+
     quantum: Quantum
     """The unit of data that is to be processed by this graph node"""
     taskDef: TaskDef
@@ -106,25 +116,34 @@ class QuantumNode:
         return self._precomputedHash
 
     def __repr__(self):
-        """Make more human readable string representation.
-        """
-        return (f"{self.__class__.__name__}(quantum={self.quantum}, "
-                f"taskDef={self.taskDef}, nodeId={self.nodeId})")
+        """Make more human readable string representation."""
+        return (
+            f"{self.__class__.__name__}(quantum={self.quantum}, "
+            f"taskDef={self.taskDef}, nodeId={self.nodeId})"
+        )
 
     def to_simple(self, accumulator: Optional[DimensionRecordsAccumulator] = None) -> SerializedQuantumNode:
-        return SerializedQuantumNode(quantum=self.quantum.to_simple(accumulator=accumulator),
-                                     taskLabel=self.taskDef.label,
-                                     nodeId=self.nodeId)
+        return SerializedQuantumNode(
+            quantum=self.quantum.to_simple(accumulator=accumulator),
+            taskLabel=self.taskDef.label,
+            nodeId=self.nodeId,
+        )
 
     @classmethod
-    def from_simple(cls, simple: SerializedQuantumNode, taskDefMap: Dict[str, TaskDef],
-                    universe: DimensionUniverse,
-                    recontitutedDimensions: Optional[Dict[int, Tuple[str, DimensionRecord]]] = None
-                    ) -> QuantumNode:
-        return QuantumNode(quantum=Quantum.from_simple(simple.quantum, universe,
-                                                       reconstitutedDimensions=recontitutedDimensions),
-                           taskDef=taskDefMap[simple.taskLabel],
-                           nodeId=simple.nodeId)
+    def from_simple(
+        cls,
+        simple: SerializedQuantumNode,
+        taskDefMap: Dict[str, TaskDef],
+        universe: DimensionUniverse,
+        recontitutedDimensions: Optional[Dict[int, Tuple[str, DimensionRecord]]] = None,
+    ) -> QuantumNode:
+        return QuantumNode(
+            quantum=Quantum.from_simple(
+                simple.quantum, universe, reconstitutedDimensions=recontitutedDimensions
+            ),
+            taskDef=taskDefMap[simple.taskLabel],
+            nodeId=simple.nodeId,
+        )
 
 
 class SerializedQuantumNode(BaseModel):
@@ -136,8 +155,8 @@ class SerializedQuantumNode(BaseModel):
     def direct(cls, *, quantum, taskLabel, nodeId):
         node = SerializedQuantumNode.__new__(cls)
         setter = object.__setattr__
-        setter(node, 'quantum', SerializedQuantum.direct(**quantum))
-        setter(node, 'taskLabel', taskLabel)
-        setter(node, 'nodeId', uuid.UUID(nodeId))
-        setter(node, '__fields_set__', {"quantum", "taskLabel", "nodeId"})
+        setter(node, "quantum", SerializedQuantum.direct(**quantum))
+        setter(node, "taskLabel", taskLabel)
+        setter(node, "nodeId", uuid.UUID(nodeId))
+        setter(node, "__fields_set__", {"quantum", "taskLabel", "nodeId"})
         return node

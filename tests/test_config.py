@@ -24,14 +24,13 @@
 
 import unittest
 
-import lsst.utils.tests
 import lsst.pex.config as pexConfig
-from lsst.daf.butler import StorageClass, StorageClassFactory
 import lsst.pipe.base as pipeBase
+import lsst.utils.tests
+from lsst.daf.butler import StorageClass, StorageClassFactory
 
 
-class NullConnections(pipeBase.PipelineTaskConnections,
-                      dimensions=()):
+class NullConnections(pipeBase.PipelineTaskConnections, dimensions=()):
     pass
 
 
@@ -40,10 +39,8 @@ class NoResourceTask(pipeBase.PipelineTask):
     ConfigClass = pipeBase.PipelineTaskConfig
 
 
-class OneConfig(pipeBase.PipelineTaskConfig,
-                pipelineConnections=NullConnections):
-    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
-                                      doc="Resource configuration")
+class OneConfig(pipeBase.PipelineTaskConfig, pipelineConnections=NullConnections):
+    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig, doc="Resource configuration")
 
 
 class OneTask(pipeBase.PipelineTask):
@@ -51,10 +48,8 @@ class OneTask(pipeBase.PipelineTask):
     ConfigClass = OneConfig
 
 
-class TwoConfig(pipeBase.PipelineTaskConfig,
-                pipelineConnections=NullConnections):
-    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig,
-                                      doc="Resource configuration")
+class TwoConfig(pipeBase.PipelineTaskConfig, pipelineConnections=NullConnections):
+    resources = pexConfig.ConfigField(dtype=pipeBase.ResourceConfig, doc="Resource configuration")
 
     def setDefaults(self):
         self.resources.minMemoryMB = 1024
@@ -67,8 +62,7 @@ class TwoTask(pipeBase.PipelineTask):
 
 
 class TaskTestCase(unittest.TestCase):
-    """A test case for Task
-    """
+    """A test case for Task"""
 
     @classmethod
     def setUpClass(cls):
@@ -76,15 +70,13 @@ class TaskTestCase(unittest.TestCase):
             StorageClassFactory().registerStorageClass(StorageClass(name))
 
     def testNoResource(self):
-        """Test for a task without resource config
-        """
+        """Test for a task without resource config"""
         task = NoResourceTask()
         res_config = task.getResourceConfig()
         self.assertIs(res_config, None)
 
     def testOneResource(self):
-        """Test for a task with resource config
-        """
+        """Test for a task with resource config"""
         task = OneTask()
         res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)
@@ -92,8 +84,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(res_config.minNumCores, 1)
 
     def testTwoResource(self):
-        """Test for a task with resource config and special defaults
-        """
+        """Test for a task with resource config and special defaults"""
         task = TwoTask()
         res_config = task.getResourceConfig()
         self.assertIsNot(res_config, None)

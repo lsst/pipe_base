@@ -29,7 +29,6 @@ from lsst.pipe.base import getTaskLogger
 
 
 class TestLogging(unittest.TestCase):
-
     def testLogLevels(self):
         """Check that the new log levels look reasonable."""
 

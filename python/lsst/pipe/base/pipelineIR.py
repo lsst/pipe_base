@@ -22,18 +22,17 @@ from __future__ import annotations
 
 __all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", "TaskIR", "LabeledSubset")
 
+import copy
+import os
+import re
+import warnings
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from deprecated.sphinx import deprecated
-from typing import Any, List, Set, Union, Generator, MutableMapping, Optional, Dict, Type, Mapping
+from typing import Any, Dict, Generator, List, Mapping, MutableMapping, Optional, Set, Type, Union
 
-import copy
-import re
-import os
 import yaml
-import warnings
-
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import ButlerURI
 
 
@@ -46,6 +45,7 @@ class PipelineYamlLoader(yaml.SafeLoader):
     an exception if it finds that there are multiple instances of the same key
     found inside a pipeline file at a given scope.
     """
+
     def construct_mapping(self, node, deep=False):
         # do the call to super first so that it can do all the other forms of
         # checking on this node. If you check the uniqueness of keys first
@@ -58,21 +58,23 @@ class PipelineYamlLoader(yaml.SafeLoader):
         all_keys = Counter(key_node.value for key_node, _ in node.value)
         duplicates = {k for k, i in all_keys.items() if i != 1}
         if duplicates:
-            raise KeyError("Pipeline files must not have duplicated keys, "
-                           f"{duplicates} appeared multiple times")
+            raise KeyError(
+                f"Pipeline files must not have duplicated keys, {duplicates} appeared multiple times"
+            )
         return mapping
 
 
 class ContractError(Exception):
-    """An exception that is raised when a pipeline contract is not satisfied
-    """
+    """An exception that is raised when a pipeline contract is not satisfied"""
+
     pass
 
 
 @dataclass
 class ContractIR:
-    """Intermediate representation of contracts read from a pipeline yaml file.
-    """
+    """Intermediate representation of configuration contracts read from a
+    pipeline yaml file."""
+
     contract: str
     """A string of python code representing one or more conditions on configs
     in a pipeline. This code-as-string should, once evaluated, should be True
@@ -83,11 +85,10 @@ class ContractIR:
     """
 
     def to_primitives(self) -> Dict[str, str]:
-        """Convert to a representation used in yaml serialization
-        """
+        """Convert to a representation used in yaml serialization"""
         accumulate = {"contract": self.contract}
         if self.msg is not None:
-            accumulate['msg'] = self.msg
+            accumulate["msg"] = self.msg
         return accumulate
 
     def __eq__(self, other: object):
@@ -104,6 +105,7 @@ class LabeledSubset:
     """Intermediate representation of named subset of task labels read from
     a pipeline yaml file.
     """
+
     label: str
     """The label used to identify the subset of task labels.
     """
@@ -140,22 +142,24 @@ class LabeledSubset:
         if isinstance(value, MutableMapping):
             subset = value.pop("subset", None)
             if subset is None:
-                raise ValueError("If a labeled subset is specified as a mapping, it must contain the key "
-                                 "'subset'")
+                raise ValueError(
+                    "If a labeled subset is specified as a mapping, it must contain the key 'subset'"
+                )
             description = value.pop("description", None)
         elif isinstance(value, abcIterable):
             subset = value
             description = None
         else:
-            raise ValueError(f"There was a problem parsing the labeled subset {label}, make sure the "
-                             "definition is either a valid yaml list, or a mapping with keys "
-                             "(subset, description) where subset points to a yaml list, and description is "
-                             "associated with a string")
+            raise ValueError(
+                f"There was a problem parsing the labeled subset {label}, make sure the "
+                "definition is either a valid yaml list, or a mapping with keys "
+                "(subset, description) where subset points to a yaml list, and description is "
+                "associated with a string"
+            )
         return LabeledSubset(label, set(subset), description)
 
     def to_primitives(self) -> Dict[str, Union[List[str], str]]:
-        """Convert to a representation used in yaml serialization
-        """
+        """Convert to a representation used in yaml serialization"""
         accumulate: Dict[str, Union[List[str], str]] = {"subset": list(self.subset)}
         if self.description is not None:
             accumulate["description"] = self.description
@@ -184,17 +188,18 @@ class ParametersIR:
         config:
           field2: parameters.shared_value
     """
+
     mapping: MutableMapping[str, str]
     """A mutable mapping of identifiers as keys, and shared configuration
     as values.
     """
+
     def update(self, other: Optional[ParametersIR]):
         if other is not None:
             self.mapping.update(other.mapping)
 
     def to_primitives(self) -> MutableMapping[str, str]:
-        """Convert to a representation used in yaml serialization
-        """
+        """Convert to a representation used in yaml serialization"""
         return self.mapping
 
     def __contains__(self, value: str) -> bool:
@@ -212,6 +217,7 @@ class ConfigIR:
     """Intermediate representation of configurations read from a pipeline yaml
     file.
     """
+
     python: Union[str, None] = None
     """A string of python code that is used to modify a configuration. This can
     also be None if there are no modifications to do.
@@ -234,8 +240,7 @@ class ConfigIR:
     """
 
     def to_primitives(self) -> Dict[str, Union[str, dict, List[str]]]:
-        """Convert to a representation used in yaml serialization
-        """
+        """Convert to a representation used in yaml serialization"""
         accumulate = {}
         for name in ("python", "dataId", "file"):
             # if this attribute is thruthy add it to the accumulation
@@ -269,9 +274,11 @@ class ConfigIR:
             if match and match.group(1) in parameters:
                 new_config.rest[key] = parameters[match.group(1)]
             if match and match.group(1) not in parameters:
-                warnings.warn(f"config {key} contains value {match.group(0)} which is formatted like a "
-                              "Pipeline parameter but was not found within the Pipeline, if this was not "
-                              "intentional, check for a typo")
+                warnings.warn(
+                    f"config {key} contains value {match.group(0)} which is formatted like a "
+                    "Pipeline parameter but was not found within the Pipeline, if this was not "
+                    "intentional, check for a typo"
+                )
         return new_config
 
     def maybe_merge(self, other_config: "ConfigIR") -> Generator["ConfigIR", None, None]:
@@ -292,8 +299,13 @@ class ConfigIR:
             the configs could be merged or not respectively.
         """
         # Verify that the config blocks can be merged
-        if self.dataId != other_config.dataId or self.python or other_config.python or\
-                self.file or other_config.file:
+        if (
+            self.dataId != other_config.dataId
+            or self.python
+            or other_config.python
+            or self.file
+            or other_config.file
+        ):
             yield from (self, other_config)
             return
 
@@ -316,8 +328,9 @@ class ConfigIR:
     def __eq__(self, other: object):
         if not isinstance(other, ConfigIR):
             return False
-        elif all(getattr(self, attr) == getattr(other, attr) for attr in
-                 ("python", "dataId", "file", "rest")):
+        elif all(
+            getattr(self, attr) == getattr(other, attr) for attr in ("python", "dataId", "file", "rest")
+        ):
             return True
         else:
             return False
@@ -325,8 +338,8 @@ class ConfigIR:
 
 @dataclass
 class TaskIR:
-    """Intermediate representation of tasks read from a pipeline yaml file.
-    """
+    """Intermediate representation of tasks read from a pipeline yaml file."""
+
     label: str
     """An identifier used to refer to a task.
     """
@@ -340,11 +353,10 @@ class TaskIR:
     """
 
     def to_primitives(self) -> Dict[str, Union[str, List[dict]]]:
-        """Convert to a representation used in yaml serialization
-        """
-        accumulate: Dict[str, Union[str, List[dict]]] = {'class': self.klass}
+        """Convert to a representation used in yaml serialization"""
+        accumulate: Dict[str, Union[str, List[dict]]] = {"class": self.klass}
         if self.config:
-            accumulate['config'] = [c.to_primitives() for c in self.config]
+            accumulate["config"] = [c.to_primitives() for c in self.config]
         return accumulate
 
     def add_or_update_config(self, other_config: ConfigIR):
@@ -369,8 +381,7 @@ class TaskIR:
     def __eq__(self, other: object):
         if not isinstance(other, TaskIR):
             return False
-        elif all(getattr(self, attr) == getattr(other, attr) for attr in
-                 ("label", "klass", "config")):
+        elif all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config")):
             return True
         else:
             return False
@@ -378,8 +389,8 @@ class TaskIR:
 
 @dataclass
 class ImportIR:
-    """An intermediate representation of imported pipelines
-    """
+    """An intermediate representation of imported pipelines"""
+
     location: str
     """This is the location of the pipeline to inherit. The path should be
     specified as an absolute path. Environment variables may be used in the
@@ -415,16 +426,20 @@ class ImportIR:
             A pipeline generated from the imported pipeline file
         """
         if self.include and self.exclude:
-            raise ValueError("Both an include and an exclude list cant be specified"
-                             " when declaring a pipeline import")
+            raise ValueError(
+                "Both an include and an exclude list cant be specified when declaring a pipeline import"
+            )
         tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not KeepInstrument:
             tmp_pipeline.instrument = self.instrument
 
         included_labels = set()
         for label in tmp_pipeline.tasks:
-            if (self.include and label in self.include) or (self.exclude and label not in self.exclude)\
-                    or (self.include is None and self.exclude is None):
+            if (
+                (self.include and label in self.include)
+                or (self.exclude and label not in self.exclude)
+                or (self.include is None and self.exclude is None)
+            ):
                 included_labels.add(label)
 
         # Handle labeled subsets being specified in the include or exclude
@@ -449,8 +464,10 @@ class ImportIR:
     def __eq__(self, other: object):
         if not isinstance(other, ImportIR):
             return False
-        elif all(getattr(self, attr) == getattr(other, attr) for attr in
-                 ("location", "include", "exclude", "importContracts")):
+        elif all(
+            getattr(self, attr) == getattr(other, attr)
+            for attr in ("location", "include", "exclude", "importContracts")
+        ):
             return True
         else:
             return False
@@ -474,6 +491,7 @@ class PipelineIR:
         - If more than one instrument is specified
         - If more than one inherited pipeline share a label
     """
+
     def __init__(self, loaded_yaml):
         # Check required fields are present
         if "description" not in loaded_yaml:
@@ -567,8 +585,10 @@ class PipelineIR:
         # Pipeline
         for labeled_subset in self.labeled_subsets.values():
             if not labeled_subset.subset.issubset(self.tasks.keys()):
-                raise ValueError(f"Labels {labeled_subset.subset - self.tasks.keys()} were not found in the "
-                                 "declared pipeline")
+                raise ValueError(
+                    f"Labels {labeled_subset.subset - self.tasks.keys()} were not found in the "
+                    "declared pipeline"
+                )
         # Verify subset labels are not already task labels
         label_intersection = self.labeled_subsets.keys() & self.tasks.keys()
         if label_intersection:
@@ -583,6 +603,7 @@ class PipelineIR:
             A dictionary which matches the structure that would be produced by
             a yaml reader which parses a pipeline definition document
         """
+
         def process_args(argument: Union[str, dict]) -> dict:
             if isinstance(argument, str):
                 return {"location": argument}
@@ -594,15 +615,18 @@ class PipelineIR:
                 if "instrument" in argument and argument["instrument"] == "None":
                     argument["instrument"] = None
                 return argument
+
         if not {"inherits", "imports"} - loaded_yaml.keys():
             raise ValueError("Cannot define both inherits and imports sections, use imports")
         tmp_import = loaded_yaml.pop("inherits", None)
         if tmp_import is None:
             tmp_import = loaded_yaml.pop("imports", None)
         else:
-            warnings.warn("The 'inherits' key is deprecated, and will be "
-                          "removed around June 2021. Please use the key "
-                          "'imports' instead")
+            warnings.warn(
+                "The 'inherits' key is deprecated, and will be "
+                "removed around June 2021. Please use the key "
+                "'imports' instead"
+            )
         if tmp_import is None:
             self.imports = []
         elif isinstance(tmp_import, list):
@@ -619,32 +643,40 @@ class PipelineIR:
             if self.instrument is None:
                 self.instrument = tmp_IR.instrument
             elif self.instrument != tmp_IR.instrument and tmp_IR.instrument is not None:
-                msg = ("Only one instrument can be declared in a pipeline or its imports. "
-                       f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
-                       f"defines {tmp_IR.instrument}.")
+                msg = (
+                    "Only one instrument can be declared in a pipeline or its imports. "
+                    f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
+                    f"defines {tmp_IR.instrument}."
+                )
                 raise ValueError(msg)
             if duplicate_labels := accumulate_tasks.keys() & tmp_IR.tasks.keys():
-                msg = ("Task labels in the imported pipelines must be unique. "
-                       f"These labels appear multiple times: {duplicate_labels}")
+                msg = (
+                    "Task labels in the imported pipelines must be unique. "
+                    f"These labels appear multiple times: {duplicate_labels}"
+                )
                 raise ValueError(msg)
             accumulate_tasks.update(tmp_IR.tasks)
             self.contracts.extend(tmp_IR.contracts)
             # verify that tmp_IR has unique labels for named subset among
             # existing labeled subsets, and with existing task labels.
             overlapping_subsets = accumulate_labeled_subsets.keys() & tmp_IR.labeled_subsets.keys()
-            task_subset_overlap = ((accumulate_labeled_subsets.keys() | tmp_IR.labeled_subsets.keys())
-                                   & accumulate_tasks.keys())
+            task_subset_overlap = (
+                accumulate_labeled_subsets.keys() | tmp_IR.labeled_subsets.keys()
+            ) & accumulate_tasks.keys()
             if overlapping_subsets or task_subset_overlap:
-                raise ValueError("Labeled subset names must be unique amongst imports in both labels and "
-                                 f" named Subsets. Duplicate: {overlapping_subsets | task_subset_overlap}")
+                raise ValueError(
+                    "Labeled subset names must be unique amongst imports in both labels and "
+                    f" named Subsets. Duplicate: {overlapping_subsets | task_subset_overlap}"
+                )
             accumulate_labeled_subsets.update(tmp_IR.labeled_subsets)
             accumulated_parameters.update(tmp_IR.parameters)
 
         # verify that any accumulated labeled subsets dont clash with a label
         # from this pipeline
         if accumulate_labeled_subsets.keys() & self.tasks.keys():
-            raise ValueError("Labeled subset names must be unique amongst imports in both labels and "
-                             " named Subsets")
+            raise ValueError(
+                "Labeled subset names must be unique amongst imports in both labels and  named Subsets"
+            )
         # merge in the named subsets for self so this document can override any
         # that have been delcared
         accumulate_labeled_subsets.update(self.labeled_subsets)
@@ -685,7 +717,7 @@ class PipelineIR:
         for label, definition in tmp_tasks.items():
             if isinstance(definition, str):
                 definition = {"class": definition}
-            config = definition.get('config', None)
+            config = definition.get("config", None)
             if config is None:
                 task_config_ir = None
             else:
@@ -698,10 +730,11 @@ class PipelineIR:
                         file = []
                     elif not isinstance(file, list):
                         file = [file]
-                    task_config_ir.append(ConfigIR(python=c.pop("python", None),
-                                                   dataId=c.pop("dataId", None),
-                                                   file=file,
-                                                   rest=c))
+                    task_config_ir.append(
+                        ConfigIR(
+                            python=c.pop("python", None), dataId=c.pop("dataId", None), file=file, rest=c
+                        )
+                    )
             self.tasks[label] = TaskIR(label, definition["class"], task_config_ir)
 
     def _remove_contracts(self, label: str):
@@ -761,11 +794,12 @@ class PipelineIR:
         labelSpecifier.difference_update(toRemove)
         labelSpecifier.update(toAdd)
         # verify all the labels are in the pipeline
-        if not labelSpecifier.issubset(pipeline.tasks.keys()
-                                       | pipeline.labeled_subsets):
+        if not labelSpecifier.issubset(pipeline.tasks.keys() | pipeline.labeled_subsets):
             difference = labelSpecifier.difference(pipeline.tasks.keys())
-            raise ValueError("Not all supplied labels (specified or named subsets) are in the pipeline "
-                             f"definition, extra labels: {difference}")
+            raise ValueError(
+                "Not all supplied labels (specified or named subsets) are in the pipeline "
+                f"definition, extra labels: {difference}"
+            )
         # copy needed so as to not modify while iterating
         pipeline_labels = set(pipeline.tasks.keys())
         # Remove the labels from the pipelineIR, and any contracts that contain
@@ -799,8 +833,11 @@ class PipelineIR:
         return cls(loaded_yaml)
 
     @classmethod
-    @deprecated(reason="This has been replaced with `from_uri`. will be removed after v23",
-                version="v21.0,", category=FutureWarning)  # type: ignore
+    @deprecated(
+        reason="This has been replaced with `from_uri`. will be removed after v23",
+        version="v21.0,",
+        category=FutureWarning,
+    )  # type: ignore
     def from_file(cls, filename: str) -> PipelineIR:
         """Create a `PipelineIR` object from the document specified by the
         input path.
@@ -849,8 +886,11 @@ class PipelineIR:
             loaded_yaml = yaml.load(local.read(), Loader=PipelineYamlLoader)
             return cls(loaded_yaml)
 
-    @deprecated(reason="This has been replaced with `write_to_uri`. will be removed after v23",
-                version="v21.0,", category=FutureWarning)  # type: ignore
+    @deprecated(
+        reason="This has been replaced with `write_to_uri`. will be removed after v23",
+        version="v21.0,",
+        category=FutureWarning,
+    )  # type: ignore
     def to_file(self, filename: str):
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified path.
@@ -875,23 +915,23 @@ class PipelineIR:
         butlerUri.write(yaml.dump(self.to_primitives(), sort_keys=False).encode())
 
     def to_primitives(self) -> Dict[str, Any]:
-        """Convert to a representation used in yaml serialization
-        """
+        """Convert to a representation used in yaml serialization"""
         accumulate = {"description": self.description}
         if self.instrument is not None:
-            accumulate['instrument'] = self.instrument
+            accumulate["instrument"] = self.instrument
         if self.parameters:
-            accumulate['parameters'] = self._sort_by_str(self.parameters.to_primitives())
-        accumulate['tasks'] = {m: t.to_primitives() for m, t in self.tasks.items()}
+            accumulate["parameters"] = self._sort_by_str(self.parameters.to_primitives())
+        accumulate["tasks"] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
             # sort contracts lexicographical order by the contract string in
             # absence of any other ordering principle
             contracts_list = [c.to_primitives() for c in self.contracts]
             contracts_list.sort(key=lambda x: x["contract"])
-            accumulate['contracts'] = contracts_list
+            accumulate["contracts"] = contracts_list
         if self.labeled_subsets:
-            accumulate['subsets'] = self._sort_by_str({k: v.to_primitives() for
-                                                       k, v in self.labeled_subsets.items()})
+            accumulate["subsets"] = self._sort_by_str(
+                {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
+            )
         return accumulate
 
     def reorder_tasks(self, task_labels: List[str]) -> None:
@@ -927,13 +967,11 @@ class PipelineIR:
         return {key: arg[key] for key in keys}
 
     def __str__(self) -> str:
-        """Instance formatting as how it would look in yaml representation
-        """
+        """Instance formatting as how it would look in yaml representation"""
         return yaml.dump(self.to_primitives(), sort_keys=False)
 
     def __repr__(self) -> str:
-        """Instance formatting as how it would look in yaml representation
-        """
+        """Instance formatting as how it would look in yaml representation"""
         return str(self)
 
     def __eq__(self, other: object):
@@ -941,10 +979,14 @@ class PipelineIR:
             return False
         # special case contracts because it is a list, but order is not
         # important
-        elif (all(getattr(self, attr) == getattr(other, attr) for attr in
-                  ("tasks", "instrument", "labeled_subsets", "parameters"))
-              and len(self.contracts) == len(other.contracts)
-              and all(c in self.contracts for c in other.contracts)):
+        elif (
+            all(
+                getattr(self, attr) == getattr(other, attr)
+                for attr in ("tasks", "instrument", "labeled_subsets", "parameters")
+            )
+            and len(self.contracts) == len(other.contracts)
+            and all(c in self.contracts for c in other.contracts)
+        ):
             return True
         else:
             return False

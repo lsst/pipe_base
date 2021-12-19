@@ -19,8 +19,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import unittest
 import json
+import unittest
 
 try:
     import numpy
@@ -31,7 +31,6 @@ from lsst.pipe.base import TaskMetadata
 
 
 class TaskMetadataTestCase(unittest.TestCase):
-
     def testTaskMetadata(self):
         """Full test of TaskMetadata API."""
         meta = TaskMetadata()

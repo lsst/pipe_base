@@ -32,6 +32,7 @@ from numbers import Number
 #  Imports for other modules --
 # -----------------------------
 import lsst.pex.config as pexConfig
+
 from .connections import PipelineTaskConnections
 
 # ----------------------------------
@@ -53,17 +54,20 @@ class TemplateField(pexConfig.Field):
     sometimes the quoting to get appropriate values as strings gets
     complicated. This will simplify the process greatly.
     """
+
     def _validateValue(self, value):
         if value is None:
             return
 
         if not (isinstance(value, str) or isinstance(value, Number)):
-            raise TypeError(f"Value {value} is of incorrect type {pexConfig.config._typeStr(value)}."
-                            f" Expected type str or a number")
+            raise TypeError(
+                f"Value {value} is of incorrect type {pexConfig.config._typeStr(value)}."
+                f" Expected type str or a number"
+            )
         if self.check is not None and not self.check(value):
             ValueError("Value {value} is not a valid value")
 
-    def __set__(self, instance, value, at=None, label='assignment'):
+    def __set__(self, instance, value, at=None, label="assignment"):
         # validate first, even though validate will be called in super
         self._validateValue(value)
         # now, explicitly make it into a string
@@ -86,18 +90,19 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     assigned to the Config class under construction with the attribute name
     `ConnectionsConfigClass`.
     """
+
     def __new__(cls, name, bases, dct, **kwargs):
         if name != "PipelineTaskConfig":
             # Verify that a connection class was specified and the argument is
             # an instance of PipelineTaskConfig
-            if 'pipelineConnections' not in kwargs:
+            if "pipelineConnections" not in kwargs:
                 for base in bases:
                     if hasattr(base, "connections"):
-                        kwargs['pipelineConnections'] = base.connections.dtype.ConnectionsClass
+                        kwargs["pipelineConnections"] = base.connections.dtype.ConnectionsClass
                         break
-            if 'pipelineConnections' not in kwargs:
+            if "pipelineConnections" not in kwargs:
                 raise NameError("PipelineTaskConfig or a base class must be defined with connections class")
-            connectionsClass = kwargs['pipelineConnections']
+            connectionsClass = kwargs["pipelineConnections"]
             if not issubclass(connectionsClass, PipelineTaskConnections):
                 raise ValueError("Can only assign a PipelineTaskConnections Class to pipelineConnections")
 
@@ -105,30 +110,30 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             # config (under the attribute name "connections")
             configConnectionsNamespace = {}
             for fieldName, obj in connectionsClass.allConnections.items():
-                configConnectionsNamespace[fieldName] = pexConfig.Field(dtype=str,
-                                                                        doc=f"name for "
-                                                                            f"connection {fieldName}",
-                                                                        default=obj.name)
+                configConnectionsNamespace[fieldName] = pexConfig.Field(
+                    dtype=str, doc=f"name for connection {fieldName}", default=obj.name
+                )
             # If there are default templates also add them as fields to
             # configure the template values
-            if hasattr(connectionsClass, 'defaultTemplates'):
+            if hasattr(connectionsClass, "defaultTemplates"):
                 docString = "Template parameter used to format corresponding field template parameter"
                 for templateName, default in connectionsClass.defaultTemplates.items():
-                    configConnectionsNamespace[templateName] = TemplateField(dtype=str,
-                                                                             doc=docString,
-                                                                             default=default)
+                    configConnectionsNamespace[templateName] = TemplateField(
+                        dtype=str, doc=docString, default=default
+                    )
             # add a reference to the connection class used to create this sub
             # config
-            configConnectionsNamespace['ConnectionsClass'] = connectionsClass
+            configConnectionsNamespace["ConnectionsClass"] = connectionsClass
 
             # Create a new config class with the fields defined above
             Connections = type("Connections", (pexConfig.Config,), configConnectionsNamespace)
             # add it to the Config class that is currently being declared
-            dct['connections'] = pexConfig.ConfigField(dtype=Connections,
-                                                       doc='Configurations describing the'
-                                                           ' connections of the PipelineTask to datatypes')
-            dct['ConnectionsConfigClass'] = Connections
-            dct['ConnectionsClass'] = connectionsClass
+            dct["connections"] = pexConfig.ConfigField(
+                dtype=Connections,
+                doc="Configurations describing the connections of the PipelineTask to datatypes",
+            )
+            dct["ConnectionsConfigClass"] = Connections
+            dct["ConnectionsClass"] = connectionsClass
         inst = super().__new__(cls, name, bases, dct)
         return inst
 
@@ -154,12 +159,19 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     created config class is then attached to the `PipelineTaskConfig` via a
     `~lsst.pex.config.ConfigField` with the attribute name `connections`.
     """
+
     saveMetadata = pexConfig.Field(
-        dtype=bool, default=True, optional=False,
-        doc="Flag to enable/disable metadata saving for a task, enabled by default.")
+        dtype=bool,
+        default=True,
+        optional=False,
+        doc="Flag to enable/disable metadata saving for a task, enabled by default.",
+    )
     saveLogOutput = pexConfig.Field(
-        dtype=bool, default=True, optional=False,
-        doc="Flag to enable/disable saving of log output for a task, enabled by default.")
+        dtype=bool,
+        default=True,
+        optional=False,
+        doc="Flag to enable/disable saving of log output for a task, enabled by default.",
+    )
 
 
 class ResourceConfig(pexConfig.Config):
@@ -176,7 +188,11 @@ class ResourceConfig(pexConfig.Config):
     value will be configured through overrides based on some external
     estimates.
     """
-    minMemoryMB = pexConfig.Field(dtype=int, default=None, optional=True,
-                                  doc="Minimal memory needed by task, can be None if estimate is unknown.")
-    minNumCores = pexConfig.Field(dtype=int, default=1,
-                                  doc="Minimal number of cores needed by task.")
+
+    minMemoryMB = pexConfig.Field(
+        dtype=int,
+        default=None,
+        optional=True,
+        doc="Minimal memory needed by task, can be None if estimate is unknown.",
+    )
+    minNumCores = pexConfig.Field(dtype=int, default=1, doc="Minimal number of cores needed by task.")

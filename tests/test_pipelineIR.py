@@ -1,4 +1,3 @@
-
 # This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
@@ -25,8 +24,8 @@ import tempfile
 import textwrap
 import unittest
 
-from lsst.pipe.base.pipelineIR import PipelineIR, ConfigIR
 import lsst.utils.tests
+from lsst.pipe.base.pipelineIR import ConfigIR, PipelineIR
 
 
 class ConfigIRTestCase(unittest.TestCase):
@@ -44,8 +43,9 @@ class ConfigIRTestCase(unittest.TestCase):
 
     def testMergeConfig(self):
         # Create some configs to merge
-        config1 = ConfigIR(python="config.foo=6", dataId={"visit": 7}, file=["test1.py"],
-                           rest={"a": 1, "b": 2})
+        config1 = ConfigIR(
+            python="config.foo=6", dataId={"visit": 7}, file=["test1.py"], rest={"a": 1, "b": 2}
+        )
         config2 = ConfigIR(python=None, dataId=None, file=["test2.py"], rest={"c": 1, "d": 2})
         config3 = ConfigIR(python="config.bar=7", dataId=None, file=["test3.py"], rest={"c": 1, "d": 2})
         config4 = ConfigIR(python=None, dataId=None, file=["test4.py"], rest={"c": 3, "e": 4})
@@ -73,8 +73,7 @@ class ConfigIRTestCase(unittest.TestCase):
 
 
 class PipelineIRTestCase(unittest.TestCase):
-    """A test case for PipelineIR objects
-    """
+    """A test case for PipelineIR objects"""
 
     def setUp(self):
         pass
@@ -101,23 +100,27 @@ class PipelineIRTestCase(unittest.TestCase):
         # This should raise a FileNotFoundError, as there are imported defined
         # so the __init__ method should pass but the imported file does not
         # exist
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports: /dummy_pipeline.yaml
-        """)
+        """
+        )
 
         with self.assertRaises(FileNotFoundError):
             PipelineIR.from_string(pipeline_str)
 
     def testTaskParsing(self):
         # Should be able to parse a task defined both ways
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
             modB:
               class: test.modB
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(list(pipeline.tasks.keys()), ["modA", "modB"])
@@ -125,76 +128,89 @@ class PipelineIRTestCase(unittest.TestCase):
 
     def testImportParsing(self):
         # This should raise, as the two pipelines, both define the same label
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline1.yaml
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-        """)
+        """
+        )
         # "modA" is the duplicated label, and it should appear in the error.
         with self.assertRaisesRegex(ValueError, "modA"):
             PipelineIR.from_string(pipeline_str)
 
         # This should pass, as the conflicting task is excluded
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               exclude: modA
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(set(pipeline.tasks.keys()), set(["modA", "modB"]))
 
         # This should pass, as the conflicting task is no in includes
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               include: modB
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(set(pipeline.tasks.keys()), set(["modA", "modB"]))
 
         # Test that you cant include and exclude a task
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               exclude: modA
               include: modB
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-        """)
+        """
+        )
 
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
         # Test that contracts are imported
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline1.yaml
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
         # Test that contracts are not imported
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
               importContracts: False
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts, [])
 
         # Test that configs are imported when defining the same task again
         # with the same label
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
@@ -203,13 +219,15 @@ class PipelineIRTestCase(unittest.TestCase):
             class: "test.moduleA"
             config:
                 value2: 2
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
 
         # Test that configs are not imported when redefining the task
         # associated with a label
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
@@ -218,22 +236,26 @@ class PipelineIRTestCase(unittest.TestCase):
             class: "test.moduleAReplace"
             config:
                 value2: 2
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
 
         # Test that named subsets are imported
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
         self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modA"})
 
         # Test that imported and redeclaring a named subset works
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
@@ -242,70 +264,82 @@ class PipelineIRTestCase(unittest.TestCase):
         subsets:
           modSubset:
             - modE
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.labeled_subsets.keys(), {"modSubset"})
         self.assertEqual(pipeline.labeled_subsets["modSubset"].subset, {"modE"})
 
         # Test that imported from two pipelines that both declare a named
         # subset with the same name fails
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
             - $PIPE_BASE_DIR/tests/testPipeline3.yaml
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
         # Test that imported a named subset that duplicates a label declared
         # in this pipeline fails
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
         tasks:
           modSubset: "test.moduleE"
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
         # Test that imported fails if a named subset and task label conflict
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
             - $PIPE_BASE_DIR/tests/testPipeline2.yaml
             - $PIPE_BASE_DIR/tests/testPipeline4.yaml
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
     def testReadParameters(self):
         # verify that parameters section are read in from a pipeline
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         parameters:
           value1: A
           value2: B
         tasks:
           modA: ModuleA
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.parameters.mapping, {"value1": "A", "value2": "B"})
 
     def testTaskParameterLabel(self):
         # verify that "parameters" cannot be used as a task label
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
           parameters: modA
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
     def testParameterImporting(self):
         # verify that importing parameters happens correctly
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
           - $PIPE_BASE_DIR/tests/testPipeline1.yaml
@@ -315,57 +349,68 @@ class PipelineIRTestCase(unittest.TestCase):
 
         parameters:
           value4: valued
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
-        self.assertEqual(pipeline.parameters.mapping, {"value4": "valued", "value1": "valueNew",
-                                                       "value2": "valueB",
-                                                       "value3": "valueC"})
+        self.assertEqual(
+            pipeline.parameters.mapping,
+            {"value4": "valued", "value1": "valueNew", "value2": "valueB", "value3": "valueC"},
+        )
 
     def testImportingInstrument(self):
         # verify an instrument is imported, or ignored, (Or otherwise modified
         # for potential future use)
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
           - $PIPE_BASE_DIR/tests/testPipeline1.yaml
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.instrument, "test.instrument")
 
         # verify that an imported pipeline can have its instrument set to None
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
           - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
             instrument: None
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.instrument, None)
 
         # verify that an imported pipeline can have its instrument modified
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         imports:
           - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
             instrument: new.instrument
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.instrument, "new.instrument")
 
         # Test that multiple instruments can't be defined,
         # and that the error message tells you what instruments were found.
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         instrument: new.instrument
         imports:
           - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
-        """)
+        """
+        )
         with self.assertRaisesRegex(ValueError, "new.instrument .* test.instrument."):
             PipelineIR.from_string(pipeline_str)
 
     def testParameterConfigFormatting(self):
         # verify that a config properly is formatted with parameters
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         parameters:
           value1: A
@@ -374,10 +419,11 @@ class PipelineIRTestCase(unittest.TestCase):
             class: ModuleA
             config:
               testKey: parameters.value1
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
-        newConfig = pipeline.tasks['modA'].config[0].formatted(pipeline.parameters)
-        self.assertEqual(newConfig.rest['testKey'], "A")
+        newConfig = pipeline.tasks["modA"].config[0].formatted(pipeline.parameters)
+        self.assertEqual(newConfig.rest["testKey"], "A")
 
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
@@ -386,7 +432,8 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
         # Verify that a contract message is loaded
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
@@ -395,13 +442,15 @@ class PipelineIRTestCase(unittest.TestCase):
         contracts:
             - contract: modA.foo == modB.Bar
               msg: "Test message"
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.contracts[0].msg, "Test message")
 
     def testReadNamedSubsets(self):
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
@@ -418,7 +467,8 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modC
                 - modD
               description: "A test named subset"
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.labeled_subsets.keys(), {"subset1", "subset2"})
 
@@ -426,11 +476,11 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline.labeled_subsets["subset1"].description, None)
 
         self.assertEqual(pipeline.labeled_subsets["subset2"].subset, {"modC", "modD"})
-        self.assertEqual(pipeline.labeled_subsets["subset2"].description,
-                         "A test named subset")
+        self.assertEqual(pipeline.labeled_subsets["subset2"].description, "A test named subset")
 
         # verify that forgetting a subset key is an error
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
@@ -444,13 +494,15 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modC
                 - modD
               description: "A test named subset"
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
         # verify putting a label in a named subset that is not in the task is
         # an error
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
@@ -463,25 +515,29 @@ class PipelineIRTestCase(unittest.TestCase):
               - modC
               - modD
               - modE
-        """)
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
     def testInstrument(self):
         # Verify that if instrument is defined it is parsed out
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         instrument: dummyCam
         tasks:
             modA: test.moduleA
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.instrument, "dummyCam")
 
     def testReadTaskConfig(self):
         # Verify that a task with a config is read in correctly
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA:
@@ -491,7 +547,8 @@ class PipelineIRTestCase(unittest.TestCase):
                     propertyB: 7
                     file: testfile.py
                     python: "config.testDict['a'] = 9"
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].file, ["testfile.py"])
@@ -499,7 +556,8 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"propertyA": 6, "propertyB": 7})
 
         # Verify that multiple files are read fine
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA:
@@ -508,13 +566,15 @@ class PipelineIRTestCase(unittest.TestCase):
                     file:
                         - testfile.py
                         - otherFile.py
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].file, ["testfile.py", "otherFile.py"])
 
         # Test reading multiple Config entries
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA:
@@ -525,7 +585,8 @@ class PipelineIRTestCase(unittest.TestCase):
                       dataId: {"visit": 6}
                     - propertyA: 8
                       propertyB: 9
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"propertyA": 6, "propertyB": 7})
@@ -535,7 +596,8 @@ class PipelineIRTestCase(unittest.TestCase):
 
     def testSerialization(self):
         # Test creating a pipeline, writing it to a file, reading the file
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         instrument: dummyCam
         imports:
@@ -557,7 +619,8 @@ class PipelineIRTestCase(unittest.TestCase):
             subA:
                - modA
                - modC
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
 
@@ -568,25 +631,28 @@ class PipelineIRTestCase(unittest.TestCase):
         self.assertEqual(pipeline, loaded_pipeline)
 
     def testSorting(self):
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test.modA
             modB:
               class: test.modB
-        """)
+        """
+        )
 
         pipeline = PipelineIR.from_string(pipeline_str)
-        newKeyOrder = ['modB', 'modA']
+        newKeyOrder = ["modB", "modA"]
         pipeline.reorder_tasks(newKeyOrder)
         self.assertEqual(list(pipeline.tasks.keys()), newKeyOrder)
         with self.assertRaises(KeyError):
-            pipeline.reorder_tasks(['modB'])
+            pipeline.reorder_tasks(["modB"])
         with self.assertRaises(KeyError):
-            pipeline.reorder_tasks(['modD'])
+            pipeline.reorder_tasks(["modD"])
 
     def testSortingPrimitives(self):
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         parameters:
           value2: A
@@ -608,34 +674,39 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modA
                 - modB
               description: "A test named subset"
-        """)
+        """
+        )
         pipeline = PipelineIR.from_string(pipeline_str)
         primitives = pipeline.to_primitives()
 
         # verify subsets
-        self.assertEqual(list(pipeline.labeled_subsets.keys()), ['subset2', 'subset1'])
-        self.assertEqual(list(primitives['subsets'].keys()), ['subset1', 'subset2'])
+        self.assertEqual(list(pipeline.labeled_subsets.keys()), ["subset2", "subset1"])
+        self.assertEqual(list(primitives["subsets"].keys()), ["subset1", "subset2"])
 
         # verify parameters
-        self.assertEqual(list(pipeline.parameters.mapping.keys()), ['value2', 'value1'])
-        self.assertEqual(list(primitives['parameters'].keys()), ['value1', 'value2'])
+        self.assertEqual(list(pipeline.parameters.mapping.keys()), ["value2", "value1"])
+        self.assertEqual(list(primitives["parameters"].keys()), ["value1", "value2"])
 
         # verify contracts
-        self.assertEqual([c.contract for c in pipeline.contracts],
-                         ["modB.foo == modA.Bar", "modA.foo == modB.Bar"])
-        self.assertEqual([c['contract'] for c in primitives['contracts']],
-                         ["modA.foo == modB.Bar", "modB.foo == modA.Bar"])
+        self.assertEqual(
+            [c.contract for c in pipeline.contracts], ["modB.foo == modA.Bar", "modA.foo == modB.Bar"]
+        )
+        self.assertEqual(
+            [c["contract"] for c in primitives["contracts"]], ["modA.foo == modB.Bar", "modB.foo == modA.Bar"]
+        )
 
     def testPipelineYamlLoader(self):
         # Tests that an exception is thrown in the case a key is used multiple
         # times in a given scope within a pipeline file
-        pipeline_str = textwrap.dedent("""
+        pipeline_str = textwrap.dedent(
+            """
         description: Test Pipeline
         tasks:
             modA: test1
             modB: test2
             modA: test3
-        """)
+        """
+        )
         self.assertRaises(KeyError, PipelineIR.from_string, pipeline_str)
 
 

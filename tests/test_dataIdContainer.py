@@ -25,8 +25,8 @@ import unittest
 import unittest.mock
 
 import lsst.daf.persistence
-import lsst.utils.tests
 import lsst.pipe.base as pipeBase
+import lsst.utils.tests
 
 
 class DataIdContainerTestCase(lsst.utils.tests.TestCase):

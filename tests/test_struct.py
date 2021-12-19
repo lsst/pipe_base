@@ -21,13 +21,12 @@
 #
 import unittest
 
-import lsst.utils.tests
 import lsst.pipe.base as pipeBase
+import lsst.utils.tests
 
 
 class StructTestCase(unittest.TestCase):
-    """A test case for Struct
-    """
+    """A test case for Struct"""
 
     def setUp(self):
         self.valDict = dict(
@@ -41,8 +40,7 @@ class StructTestCase(unittest.TestCase):
         self.valDict = None
 
     def testInit(self):
-        """Test Struct.__init__
-        """
+        """Test Struct.__init__"""
         s = pipeBase.Struct(**self.valDict)
         self.assertEqual(self.valDict, s.getDict())
 
@@ -50,14 +48,12 @@ class StructTestCase(unittest.TestCase):
             self.assertEqual(getattr(s, name), val)
 
     def testInitException(self):
-        """Test that struct key names cannot start with double underscores.
-        """
+        """Test that struct key names cannot start with double underscores."""
         with self.assertRaises(RuntimeError):
             pipeBase.Struct(__foo=13)
 
     def testSet(self):
-        """Test adding values via struct.name=val
-        """
+        """Test adding values via struct.name=val"""
         s = pipeBase.Struct()
         for name, val in self.valDict.items():
             setattr(s, name, val)
@@ -65,8 +61,7 @@ class StructTestCase(unittest.TestCase):
         self.assertEqual(self.valDict, s.getDict())
 
     def testCopy(self):
-        """Test copy, which returns a shallow copy
-        """
+        """Test copy, which returns a shallow copy"""
         s = pipeBase.Struct(**self.valDict)
         sc = s.copy()
         self.assertEqual(s.getDict(), sc.getDict())
@@ -80,8 +75,7 @@ class StructTestCase(unittest.TestCase):
         self.assertNotEqual(s, sc)
 
     def testMergeItems(self):
-        """Test mergeItems
-        """
+        """Test mergeItems"""
         s = pipeBase.Struct(**self.valDict)
         newS = pipeBase.Struct()
         newS.mergeItems(s)

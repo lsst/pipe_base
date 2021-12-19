@@ -26,14 +26,15 @@ __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import itertools
 import logging
-import numpy
 
+import lsst.daf.butler.tests as butlerTests
+import lsst.pex.config as pexConfig
+import numpy
 from lsst.base import Packages
 from lsst.daf.butler import Butler, ButlerURI, Config, DatasetType
-import lsst.daf.butler.tests as butlerTests
 from lsst.daf.butler.core.logging import ButlerLogRecords
-import lsst.pex.config as pexConfig
 from lsst.utils import doImport
+
 from ... import base as pipeBase
 from .. import connectionTypes as cT
 from ..graphBuilder import DatasetQueryConstraintVariant as DSQVariant
@@ -46,7 +47,6 @@ _LOG = logging.getLogger(__name__)
 # can not explicitly depend on Instrument because pipe_base does not explicitly
 # depend on obs_base.
 class SimpleInstrument:
-
     def __init__(self, *args, **kwargs):
         pass
 
@@ -58,33 +58,43 @@ class SimpleInstrument:
         pass
 
 
-class AddTaskConnections(pipeBase.PipelineTaskConnections,
-                         dimensions=("instrument", "detector"),
-                         defaultTemplates={"in_tmpl": "_in", "out_tmpl": "_out"}):
+class AddTaskConnections(
+    pipeBase.PipelineTaskConnections,
+    dimensions=("instrument", "detector"),
+    defaultTemplates={"in_tmpl": "_in", "out_tmpl": "_out"},
+):
     """Connections for AddTask, has one input and two outputs,
     plus one init output.
     """
-    input = cT.Input(name="add_dataset{in_tmpl}",
-                     dimensions=["instrument", "detector"],
-                     storageClass="NumpyArray",
-                     doc="Input dataset type for this task")
-    output = cT.Output(name="add_dataset{out_tmpl}",
-                       dimensions=["instrument", "detector"],
-                       storageClass="NumpyArray",
-                       doc="Output dataset type for this task")
-    output2 = cT.Output(name="add2_dataset{out_tmpl}",
-                        dimensions=["instrument", "detector"],
-                        storageClass="NumpyArray",
-                        doc="Output dataset type for this task")
-    initout = cT.InitOutput(name="add_init_output{out_tmpl}",
-                            storageClass="NumpyArray",
-                            doc="Init Output dataset type for this task")
+
+    input = cT.Input(
+        name="add_dataset{in_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Input dataset type for this task",
+    )
+    output = cT.Output(
+        name="add_dataset{out_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Output dataset type for this task",
+    )
+    output2 = cT.Output(
+        name="add2_dataset{out_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Output dataset type for this task",
+    )
+    initout = cT.InitOutput(
+        name="add_init_output{out_tmpl}",
+        storageClass="NumpyArray",
+        doc="Init Output dataset type for this task",
+    )
 
 
-class AddTaskConfig(pipeBase.PipelineTaskConfig,
-                    pipelineConnections=AddTaskConnections):
-    """Config for AddTask.
-    """
+class AddTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=AddTaskConnections):
+    """Config for AddTask."""
+
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
 
 
@@ -123,6 +133,7 @@ class AddTaskFactoryMock(pipeBase.TaskFactory):
     It also defines some bookkeeping variables used by AddTask to report
     progress to unit tests.
     """
+
     def __init__(self, stopAt=-1):
         self.countExec = 0  # incremented by AddTask
         self.stopAt = stopAt  # AddTask raises exception at this call to run()
@@ -151,17 +162,21 @@ def registerDatasetTypes(registry, pipeline):
         toExpandedPipeline on a `~lsst.pipe.base.Pipeline` object
     """
     for taskDef in pipeline:
-        configDatasetType = DatasetType(taskDef.configDatasetName, {},
-                                        storageClass="Config",
-                                        universe=registry.dimensions)
-        packagesDatasetType = DatasetType("packages", {},
-                                          storageClass="Packages",
-                                          universe=registry.dimensions)
+        configDatasetType = DatasetType(
+            taskDef.configDatasetName, {}, storageClass="Config", universe=registry.dimensions
+        )
+        packagesDatasetType = DatasetType(
+            "packages", {}, storageClass="Packages", universe=registry.dimensions
+        )
         datasetTypes = pipeBase.TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
-        for datasetType in itertools.chain(datasetTypes.initInputs, datasetTypes.initOutputs,
-                                           datasetTypes.inputs, datasetTypes.outputs,
-                                           datasetTypes.prerequisites,
-                                           [configDatasetType, packagesDatasetType]):
+        for datasetType in itertools.chain(
+            datasetTypes.initInputs,
+            datasetTypes.initOutputs,
+            datasetTypes.inputs,
+            datasetTypes.outputs,
+            datasetTypes.prerequisites,
+            [configDatasetType, packagesDatasetType],
+        ):
             _LOG.info("Registering %s with registry", datasetType)
             # this is a no-op if it already exists and is consistent,
             # and it raises if it is inconsistent. But components must be
@@ -198,7 +213,7 @@ def makeSimplePipeline(nQuanta, instrument=None):
     for lvl in range(nQuanta):
         pipeline.addTask(AddTask, f"task{lvl}")
         pipeline.addConfigOverride(f"task{lvl}", "connections.in_tmpl", lvl)
-        pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", lvl+1)
+        pipeline.addConfigOverride(f"task{lvl}", "connections.out_tmpl", lvl + 1)
     if instrument:
         pipeline.addInstrument(instrument)
     return pipeline
@@ -274,8 +289,7 @@ def populateButler(pipeline, butler, datasetTypes=None):
 
     # Add all needed dimensions to registry
     butler.registry.insertDimensionData("instrument", dict(name=instrumentName))
-    butler.registry.insertDimensionData("detector", dict(instrument=instrumentName,
-                                                         id=0, full_name="det0"))
+    butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0, full_name="det0"))
 
     taskDefMap = dict((taskDef.label, taskDef) for taskDef in taskDefs)
     # Add inputs to butler
@@ -303,14 +317,23 @@ def populateButler(pipeline, butler, datasetTypes=None):
                 elif dsType.endswith("_log"):
                     data = ButlerLogRecords.from_records([])
                 else:
-                    data = numpy.array([0., 1., 2., 5.])
+                    data = numpy.array([0.0, 1.0, 2.0, 5.0])
                 butler.put(data, dsType, run=run, instrument=instrumentName, detector=0)
 
 
-def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, callPopulateButler=True, run="test",
-                     skipExistingIn=None, inMemory=True, userQuery="",
-                     datasetTypes=None,
-                     datasetQueryConstraint: DSQVariant = DSQVariant.ALL):
+def makeSimpleQGraph(
+    nQuanta=5,
+    pipeline=None,
+    butler=None,
+    root=None,
+    callPopulateButler=True,
+    run="test",
+    skipExistingIn=None,
+    inMemory=True,
+    userQuery="",
+    datasetTypes=None,
+    datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
+):
     """Make simple QuantumGraph for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory registry
@@ -378,14 +401,18 @@ def makeSimpleQGraph(nQuanta=5, pipeline=None, butler=None, root=None, callPopul
     # Make the graph
     _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
     builder = pipeBase.GraphBuilder(registry=butler.registry, skipExistingIn=skipExistingIn)
-    _LOG.debug("Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
-               butler.collections, run or butler.run, userQuery)
+    _LOG.debug(
+        "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
+        butler.collections,
+        run or butler.run,
+        userQuery,
+    )
     qgraph = builder.makeGraph(
         pipeline,
         collections=butler.collections,
         run=run or butler.run,
         userQuery=userQuery,
-        datasetQueryConstraint=datasetQueryConstraint
+        datasetQueryConstraint=datasetQueryConstraint,
     )
 
     return butler, qgraph

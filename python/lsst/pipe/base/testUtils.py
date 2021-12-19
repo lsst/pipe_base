@@ -20,22 +20,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-__all__ = ["assertValidInitOutput",
-           "assertValidOutput",
-           "getInitInputs",
-           "lintConnections",
-           "makeQuantum",
-           "runTestQuantum",
-           ]
+__all__ = [
+    "assertValidInitOutput",
+    "assertValidOutput",
+    "getInitInputs",
+    "lintConnections",
+    "makeQuantum",
+    "runTestQuantum",
+]
 
 
-from collections import defaultdict
 import collections.abc
 import itertools
 import unittest.mock
+from collections import defaultdict
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Quantum, StorageClassFactory, \
-    SkyPixDimension
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    Quantum,
+    SkyPixDimension,
+    StorageClassFactory,
+)
 from lsst.pipe.base import ButlerQuantumContext
 
 
@@ -89,10 +96,7 @@ def makeQuantum(task, butler, dataId, ioDataIds):
                 outputs[ref.datasetType].append(ref)
         except (ValueError, KeyError) as e:
             raise ValueError(f"Error in connection {name}.") from e
-    quantum = Quantum(taskClass=type(task),
-                      dataId=dataId,
-                      inputs=inputs,
-                      outputs=outputs)
+    quantum = Quantum(taskClass=type(task), dataId=dataId, inputs=inputs, outputs=outputs)
     return quantum
 
 
@@ -236,8 +240,7 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
         ref = DatasetRef(datasetType=datasetType, dataId=dataId)
         return ref
     except KeyError as e:
-        raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") \
-            from e
+        raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") from e
 
 
 def _resolveTestQuantumInputs(butler, quantum):
@@ -262,8 +265,9 @@ def _resolveTestQuantumInputs(butler, quantum):
         newRefsForDatasetType = []
         for ref in refsForDatasetType:
             if ref.id is None:
-                resolvedRef = butler.registry.findDataset(ref.datasetType, ref.dataId,
-                                                          collections=butler.collections)
+                resolvedRef = butler.registry.findDataset(
+                    ref.datasetType, ref.dataId, collections=butler.collections
+                )
                 if resolvedRef is None:
                     raise ValueError(
                         f"Cannot find {ref.datasetType.name} with id {ref.dataId} "
@@ -302,8 +306,9 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
     connections = task.config.ConnectionsClass(config=task.config)
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
     if mockRun:
-        with unittest.mock.patch.object(task, "run") as mock, \
-                unittest.mock.patch("lsst.pipe.base.ButlerQuantumContext.put"):
+        with unittest.mock.patch.object(task, "run") as mock, unittest.mock.patch(
+            "lsst.pipe.base.ButlerQuantumContext.put"
+        ):
             task.runQuantum(butlerQc, inputRefs, outputRefs)
             return mock
     else:
@@ -342,10 +347,9 @@ def _assertAttributeMatchesConnection(obj, attrName, connection):
     else:
         # use lazy evaluation to not use StorageClassFactory unless
         # necessary
-        if isinstance(attrValue, collections.abc.Sequence) \
-                and not issubclass(
-                    StorageClassFactory().getStorageClass(connection.storageClass).pytype,
-                    collections.abc.Sequence):
+        if isinstance(attrValue, collections.abc.Sequence) and not issubclass(
+            StorageClassFactory().getStorageClass(connection.storageClass).pytype, collections.abc.Sequence
+        ):
             raise AssertionError(f"Expected {attrName} to be a single value, got {attrValue!r} instead.")
     # no test for storageClass, as I'm not sure how much persistence
     # depends on duck-typing
@@ -420,18 +424,21 @@ def getInitInputs(butler, config):
     for name in connections.initInputs:
         attribute = getattr(connections, name)
         # Get full dataset type to check for consistency problems
-        dsType = DatasetType(attribute.name, butler.registry.dimensions.extract(set()),
-                             attribute.storageClass)
+        dsType = DatasetType(
+            attribute.name, butler.registry.dimensions.extract(set()), attribute.storageClass
+        )
         # All initInputs have empty data IDs
         initInputs[name] = butler.get(dsType)
 
     return initInputs
 
 
-def lintConnections(connections, *,
-                    checkMissingMultiple=True,
-                    checkUnnecessaryMultiple=True,
-                    ):
+def lintConnections(
+    connections,
+    *,
+    checkMissingMultiple=True,
+    checkUnnecessaryMultiple=True,
+):
     """Inspect a connections class for common errors.
 
     These tests are designed to detect misuse of connections features in
@@ -466,10 +473,14 @@ def lintConnections(connections, *,
         connection = connections.allConnections[name]
         connDimensions = set(connection.dimensions)
         if checkMissingMultiple and not connection.multiple and connDimensions > quantumDimensions:
-            errors += f"Connection {name} may be called with multiple values of " \
+            errors += (
+                f"Connection {name} may be called with multiple values of "
                 f"{connDimensions - quantumDimensions} but has multiple=False.\n"
+            )
         if checkUnnecessaryMultiple and connection.multiple and connDimensions <= quantumDimensions:
-            errors += f"Connection {name} has multiple=True but can only be called with one " \
+            errors += (
+                f"Connection {name} has multiple=True but can only be called with one "
                 f"value of {connDimensions} for each {quantumDimensions}.\n"
+            )
     if errors:
         raise AssertionError(errors)

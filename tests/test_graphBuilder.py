@@ -24,16 +24,15 @@
 import logging
 import unittest
 
-from lsst.pipe.base.tests import simpleQGraph
-from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
 import lsst.utils.tests
+from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
+from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
 
 _LOG = logging.getLogger(__name__)
 
 
 class GraphBuilderTestCase(unittest.TestCase):
-
     def testDefault(self):
         """Simple test to verify makeSimpleQGraph can be used to make a Quantum
         Graph."""
@@ -43,15 +42,15 @@ class GraphBuilderTestCase(unittest.TestCase):
             # by default makeSimpleQGraph makes a graph with 5 nodes
             self.assertEqual(len(qgraph), 5)
             constraint = DatasetQueryConstraintVariant.OFF
-            _, qgraph2 = simpleQGraph.makeSimpleQGraph(butler=butler,
-                                                       datasetQueryConstraint=constraint,
-                                                       callPopulateButler=False)
+            _, qgraph2 = simpleQGraph.makeSimpleQGraph(
+                butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
+            )
             self.assertEqual(len(qgraph2), 5)
             self.assertEqual(qgraph, qgraph2)
-            constraint = DatasetQueryConstraintVariant.fromExpression('add_dataset0')
-            _, qgraph3 = simpleQGraph.makeSimpleQGraph(butler=butler,
-                                                       datasetQueryConstraint=constraint,
-                                                       callPopulateButler=False)
+            constraint = DatasetQueryConstraintVariant.fromExpression("add_dataset0")
+            _, qgraph3 = simpleQGraph.makeSimpleQGraph(
+                butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
+            )
             self.assertEqual(qgraph2, qgraph3)
 
     def testAddInstrumentMismatch(self):
@@ -59,12 +58,10 @@ class GraphBuilderTestCase(unittest.TestCase):
         query does not match the instrument in the pipeline."""
         with temporaryDirectory() as root:
             pipeline = simpleQGraph.makeSimplePipeline(
-                nQuanta=5,
-                instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument")
+                nQuanta=5, instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
+            )
             with self.assertRaises(RuntimeError):
-                simpleQGraph.makeSimpleQGraph(root=root,
-                                              pipeline=pipeline,
-                                              userQuery="instrument = 'foo'")
+                simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery="instrument = 'foo'")
 
 
 if __name__ == "__main__":

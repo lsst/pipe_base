@@ -31,8 +31,8 @@ special-case code for each generation.
 
 __all__ = ("ShimButler", "ShimButlerSubset", "ShimDataRef")
 
-from lsst.daf.persistence import NoResults
 from lsst.daf.butler import StorageClassFactory
+from lsst.daf.persistence import NoResults
 
 
 class ShimButler:
@@ -69,7 +69,7 @@ class ShimButler:
             for component in StorageClassFactory().getStorageClass("Exposure").components:
                 suffix = f"_{component}"
                 if datasetType.endswith(suffix):
-                    return "{}.{}".format(datasetType[:-len(suffix)], component)
+                    return "{}.{}".format(datasetType[: -len(suffix)], component)
         return datasetType
 
     def datasetExists(self, datasetType, dataId=None, write=False, **rest):
@@ -133,7 +133,8 @@ class ShimButler:
         fullDataId = self._makeDataId(dataId, **rest)
         if datasetType.endswith("_sub"):
             import lsst.afw.image
-            datasetType = datasetType[:-len("_sub")]
+
+            datasetType = datasetType[: -len("_sub")]
             parameters = dict(bbox=fullDataId.pop("bbox"))
             origin = fullDataId.pop("imageOrigin", lsst.afw.image.PARENT)
             parameters["origin"] = origin
@@ -309,10 +310,8 @@ class ShimDataRef:
         """
         if datasetType is None:
             datasetType = self.butlerSubset.datasetType
-        return self.butlerSubset.butler.datasetExists(
-            datasetType, self.dataId, write=write, **rest)
+        return self.butlerSubset.butler.datasetExists(datasetType, self.dataId, write=write, **rest)
 
     def getButler(self):
-        """Return the (shim) Butler used by this DataRef.
-        """
+        """Return the (shim) Butler used by this DataRef."""
         return self.butlerSubset.butler

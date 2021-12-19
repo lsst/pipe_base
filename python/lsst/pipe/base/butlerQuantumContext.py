@@ -24,11 +24,12 @@
 
 __all__ = ("ButlerQuantumContext",)
 
-from .connections import InputQuantizedConnection, OutputQuantizedConnection, DeferredDatasetRef
-from .struct import Struct
-from lsst.daf.butler import DatasetRef, Butler, Quantum
+from typing import Any, List, Sequence, Union
 
-from typing import Any, Union, List, Sequence
+from lsst.daf.butler import Butler, DatasetRef, Quantum
+
+from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
+from .struct import Struct
 
 
 class ButlerQuantumContext:
@@ -67,6 +68,7 @@ class ButlerQuantumContext:
     ``pipe_base/ctrl_mpexec`` separation of concerns that will be addressed in
     the future.
     """
+
     def __init__(self, butler: Butler, quantum: Quantum):
         self.quantum = quantum
         self.registry = butler.registry
@@ -144,8 +146,11 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to get")
 
-    def put(self, values: Union[Struct, List[Any], Any],
-            dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef]):
+    def put(
+        self,
+        values: Union[Struct, List[Any], Any],
+        dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef],
+    ):
         """Puts data into the butler
 
         Parameters
@@ -178,8 +183,10 @@ class ButlerQuantumContext:
         """
         if isinstance(dataset, OutputQuantizedConnection):
             if not isinstance(values, Struct):
-                raise ValueError("dataset is a OutputQuantizedConnection, a Struct with corresponding"
-                                 " attributes must be passed as the values to put")
+                raise ValueError(
+                    "dataset is a OutputQuantizedConnection, a Struct with corresponding"
+                    " attributes must be passed as the values to put"
+                )
             for name, refs in dataset:
                 valuesAttribute = getattr(values, name)
                 if isinstance(refs, list):
