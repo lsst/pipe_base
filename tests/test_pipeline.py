@@ -22,7 +22,6 @@
 """Simple unit test for Pipeline.
 """
 
-import tempfile
 import textwrap
 import unittest
 
@@ -167,20 +166,6 @@ class TaskTestCase(unittest.TestCase):
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
-
-        # verify the keys keys were sorted after a call to str
-        self.assertEqual([t.label for t in pipeline.toExpandedPipeline()], ["add", "mult"])
-
-        pipeline = Pipeline("test")
-        pipeline.addTask(MultTask, "mult")
-        pipeline.addTask(AddTask, "add")
-
-        # verify that writing out the file sorts it
-        with tempfile.NamedTemporaryFile() as tf:
-            pipeline.write_to_uri(tf.name)
-            loadedPipeline = Pipeline.from_uri(tf.name)
-
-        self.assertEqual([t.label for t in loadedPipeline.toExpandedPipeline()], ["add", "mult"])
 
 
 class PipelineTestCase(unittest.TestCase):
