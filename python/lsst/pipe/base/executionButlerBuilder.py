@@ -27,9 +27,10 @@ import itertools
 from collections import defaultdict
 from typing import Callable, DefaultDict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
-from lsst.daf.butler import Butler, ButlerURI, Config, DataCoordinate, DatasetRef, DatasetType
+from lsst.daf.butler import Butler, Config, DataCoordinate, DatasetRef, DatasetType
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 from lsst.daf.butler.transfers import RepoExportContext
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_class_of
 
 from .graph import QuantumGraph, QuantumNode
@@ -142,7 +143,7 @@ def _export(
     return yamlBuffer
 
 
-def _setupNewButler(butler: Butler, outputLocation: ButlerURI, dirExists: bool) -> Butler:
+def _setupNewButler(butler: Butler, outputLocation: ResourcePath, dirExists: bool) -> Butler:
     # Set up the new butler object at the specified location
     if dirExists:
         # Remove the existing table, if the code got this far and this exists
@@ -218,7 +219,7 @@ def _import(
 def buildExecutionButler(
     butler: Butler,
     graph: QuantumGraph,
-    outputLocation: Union[str, ButlerURI],
+    outputLocation: ResourcePathExpression,
     run: str,
     *,
     clobber: bool = False,
@@ -242,9 +243,9 @@ def buildExecutionButler(
     graph : `QuantumGraph`
         Graph containing nodes that are to be exported into an execution
         butler
-    outputLocation : `str` or `~lsst.daf.butler.ButlerURI`
+    outputLocation : convertible to `ResourcePath
         URI Location at which the execution butler is to be exported. May be
-        specified as a string or a ButlerURI instance.
+        specified as a string or a `ResourcePath` instance.
     run : `str` optional
         The run collection that the exported datasets are to be placed in. If
         None, the default value in registry.defaults will be used.
@@ -282,7 +283,7 @@ def buildExecutionButler(
         Raised if specified output URI does not correspond to a directory
     """
     # We know this must refer to a directory.
-    outputLocation = ButlerURI(outputLocation, forceDirectory=True)
+    outputLocation = ResourcePath(outputLocation, forceDirectory=True)
 
     # Do this first to Fail Fast if the output exists
     if (dirExists := outputLocation.exists()) and not clobber:

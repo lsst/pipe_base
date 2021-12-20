@@ -27,7 +27,7 @@ s, and discussing common conventions when creating `Pipelines`.
 A Basic Pipeline
 ----------------
 
-`Pipeline` documents are written using yaml syntax. If you are unfamiliar with 
+`Pipeline` documents are written using yaml syntax. If you are unfamiliar with
 yaml, there are many guides across the internet, but the basic idea is that it
 is a simple markup language to describe key, value mappings, and lists of
 values (which may be further mappings).
@@ -109,12 +109,12 @@ configuration options that alter the way the task executes. Because
 description field) some tasks may need specific configurations set to
 enable/disable behavior in the context of the specific `Pipeline`.
 
-To configure a task associated with a particular label, the value associated 
+To configure a task associated with a particular label, the value associated
 with the label must be changed from the qualified task name to a new
 sub-mapping. This new sub mapping should have two keys, ``class`` and
 ``config``.
 
-The ``class`` key should point to the same qualified task name as before. The 
+The ``class`` key should point to the same qualified task name as before. The
 value associated with the ``config`` keyword is itself a mapping where
 configuration overrides are declared. The example below shows this behavior
 in action.
@@ -371,7 +371,7 @@ extend the total `Pipeline`.
 
 If a ``label`` declared in the the ``tasks`` section was declared in one of
 the imported ``Pipelines``, one of two things happen. If the label is
-associated with the same `PipelineTask` that was declared in the imported 
+associated with the same `PipelineTask` that was declared in the imported
 pipeline, this definition will be extended. This means that any configs
 declared in the imported `Pipeline` will be merged with configs declared in
 the current `Pipeline` with the current declaration taking config precedence.
@@ -421,7 +421,7 @@ is loaded.
 
 The simplest form of a `Pipeline` specification is the URI at which the
 `Pipeline` can be found. This URI may be any supported by
-`lsst.daf.butler.ButlerURI`. In the case that the pipeline resides in a file
+`lsst.resources.ResourcePath`. In the case that the pipeline resides in a file
 located on a filesystem accessible by the machine that will be processing the
 `Pipeline` (i.e. a file URI), there is no need to preface the URI with
 ``file://``, a bare file path is assumed to be a file based URI.

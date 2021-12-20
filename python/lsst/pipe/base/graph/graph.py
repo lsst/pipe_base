@@ -54,7 +54,8 @@ from typing import (
 )
 
 import networkx as nx
-from lsst.daf.butler import ButlerURI, DatasetRef, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from lsst.daf.butler import DatasetRef, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from lsst.resources import ResourcePath, ResourcePathExpression
 from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
@@ -717,14 +718,14 @@ class QuantumGraph:
 
         Parameters
         ----------
-        uri : `ButlerURI` or `str`
+        uri : convertible to `ResourcePath`
             URI to where the graph should be saved.
         """
         buffer = self._buildSaveObject()
-        butlerUri = ButlerURI(uri)
-        if butlerUri.getExtension() not in (".qgraph"):
+        path = ResourcePath(uri)
+        if path.getExtension() not in (".qgraph"):
             raise TypeError(f"Can currently only save a graph in qgraph format not {uri}")
-        butlerUri.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
+        path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
     @property
     def metadata(self) -> Optional[MappingProxyType[str, Any]]:
@@ -736,7 +737,7 @@ class QuantumGraph:
     @classmethod
     def loadUri(
         cls,
-        uri: Union[ButlerURI, str],
+        uri: ResourcePathExpression,
         universe: DimensionUniverse,
         nodes: Optional[Iterable[Union[str, uuid.UUID]]] = None,
         graphID: Optional[BuildId] = None,
@@ -746,7 +747,7 @@ class QuantumGraph:
 
         Parameters
         ----------
-        uri : `ButlerURI` or `str`
+        uri : convertible to `ResourcePath`
             URI from where to load the graph.
         universe: `~lsst.daf.butler.DimensionUniverse`
             DimensionUniverse instance, not used by the method itself but
@@ -789,8 +790,8 @@ class QuantumGraph:
         initialization. To make sure that DimensionUniverse exists this method
         accepts dummy DimensionUniverse argument.
         """
-        uri = ButlerURI(uri)
-        # With ButlerURI we have the choice of always using a local file
+        uri = ResourcePath(uri)
+        # With ResourcePath we have the choice of always using a local file
         # or reading in the bytes directly. Reading in bytes can be more
         # efficient for reasonably-sized pickle files when the resource
         # is remote. For now use the local file variant. For a local file
@@ -810,16 +811,15 @@ class QuantumGraph:
         return qgraph
 
     @classmethod
-    def readHeader(cls, uri: Union[ButlerURI, str], minimumVersion: int = 3) -> Optional[str]:
+    def readHeader(cls, uri: ResourcePathExpression, minimumVersion: int = 3) -> Optional[str]:
         """Read the header of a `QuantumGraph` pointed to by the uri parameter
         and return it as a string.
 
         Parameters
         ----------
-        uri : `~lsst.daf.butler.ButlerURI` or `str`
+        uri : convertible to `ResourcePath`
             The location of the `QuantumGraph` to load. If the argument is a
-            string, it must correspond to a valid `~lsst.daf.butler.ButlerURI`
-            path.
+            string, it must correspond to a valid `ResourcePath` path.
         minimumVersion : int
             Minimum version of a save file to load. Set to -1 to load all
             versions. Older versions may need to be loaded, and re-saved
@@ -839,7 +839,7 @@ class QuantumGraph:
             Raised if the extention of the file specified by uri is not a
             `QuantumGraph` extention.
         """
-        uri = ButlerURI(uri)
+        uri = ResourcePath(uri)
         if uri.getExtension() in (".pickle", ".pkl"):
             raise ValueError("Reading a header from a pickle save is not supported")
         elif uri.getExtension() in (".qgraph"):
