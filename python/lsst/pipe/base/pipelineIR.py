@@ -32,7 +32,6 @@ __all__ = (
 )
 
 import copy
-import os
 import re
 import warnings
 from collections import Counter
@@ -70,7 +69,8 @@ def standardize_uri_in_pipeline(path: str, directory: Optional[ButlerURI]) -> Bu
     RuntimeError
         Raised if ``path`` is relative but ``directory`` is `None`.
     """
-    uri = ButlerURI(os.path.expandvars(path), forceAbsolute=False)
+    # ButlerURI will expand variables automatically.
+    uri = ButlerURI(path, forceAbsolute=False)
     if not uri.isabs():
         if directory is not None:
             uri = directory.join(uri)
