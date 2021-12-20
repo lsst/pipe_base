@@ -451,11 +451,6 @@ class Pipeline:
         return cls.fromIR(copy.deepcopy(pipeline._pipelineIR))
 
     def __str__(self) -> str:
-        # tasks need sorted each call because someone might have added or
-        # removed task, and caching changes does not seem worth the small
-        # overhead
-        labels = [td.label for td in self._toExpandedPipelineImpl(checkContracts=False)]
-        self._pipelineIR.reorder_tasks(labels)
         return str(self._pipelineIR)
 
     def addInstrument(self, instrument: Union[Instrument, str]) -> None:
@@ -594,11 +589,6 @@ class Pipeline:
         self._pipelineIR.to_file(filename)
 
     def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
-        # tasks need sorted each call because someone might have added or
-        # removed task, and caching changes does not seem worth the small
-        # overhead
-        labels = [td.label for td in self._toExpandedPipelineImpl(checkContracts=False)]
-        self._pipelineIR.reorder_tasks(labels)
         self._pipelineIR.write_to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
@@ -617,9 +607,6 @@ class Pipeline:
             If a dataId is supplied in a config block. This is in place for
             future use
         """
-        yield from self._toExpandedPipelineImpl()
-
-    def _toExpandedPipelineImpl(self, checkContracts=True) -> Iterable[TaskDef]:
         taskDefs = []
         for label in self._pipelineIR.tasks:
             taskDefs.append(self._buildTaskDef(label))
