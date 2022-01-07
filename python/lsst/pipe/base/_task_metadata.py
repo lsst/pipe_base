@@ -133,6 +133,29 @@ class TaskMetadata(BaseModel):
             metadata[key] = value
         return metadata
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the class to a simple dictionary.
+
+        Returns
+        -------
+        d : `dict`
+            Simple dictionary that can contain scalar values, array values
+            or other dictionary values.
+
+        Notes
+        -----
+        Unlike `dict()`, this method hides the model layout and combines
+        scalars, arrays, and other metadata in the same dictionary. Can be
+        used when a simple dictionary is needed.  Use
+        `TaskMetadata.from_dict()` to convert it back.
+        """
+        d = {}
+        d.update(self.scalars)
+        d.update(self.arrays)
+        for k, v in self.metadata.items():
+            d[k] = v.to_dict()
+        return d
+
     def add(self, name, value):
         """Store a new value, adding to a list if one already exists.
 

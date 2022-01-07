@@ -180,6 +180,9 @@ class TaskMetadataTestCase(unittest.TestCase):
         self.assertEqual(meta.getArray("d"), [1, 2])
         self.assertEqual(meta["e.h.i"], 4)
 
+        d2 = meta.to_dict()
+        self.assertEqual(d2, d)
+
         j = meta.json()
         meta2 = TaskMetadata.parse_obj(json.loads(j))
         self.assertEqual(meta2, meta)
