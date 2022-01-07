@@ -42,7 +42,7 @@ from ._task_metadata import TaskMetadata
 # Initially Task metadata was stored as a PropertyList but we want
 # to migrate to TaskMetadata to have explicit control over how it works
 # and how it is serialized.
-METADATA_COMPATIBILITY = True
+METADATA_COMPATIBILITY = False
 
 if METADATA_COMPATIBILITY:
     import lsst.daf.base as dafBase
