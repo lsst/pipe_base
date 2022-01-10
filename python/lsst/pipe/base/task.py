@@ -38,20 +38,11 @@ except ImportError:
 
 from ._task_metadata import TaskMetadata
 
-# The Task metadata can be represented as different Python types.
-# Initially Task metadata was stored as a PropertyList but we want
-# to migrate to TaskMetadata to have explicit control over how it works
-# and how it is serialized.
-METADATA_COMPATIBILITY = False
-
-if METADATA_COMPATIBILITY:
-    import lsst.daf.base as dafBase
-
-    _TASK_METADATA_TYPE = dafBase.PropertyList
-    _TASK_FULL_METADATA_TYPE = dafBase.PropertySet
-else:
-    _TASK_METADATA_TYPE = TaskMetadata
-    _TASK_FULL_METADATA_TYPE = TaskMetadata
+# This defines the Python type to use for task metadata. It is a private
+# class variable that can be accessed by other closely-related middleware
+# code and test code.
+_TASK_METADATA_TYPE = TaskMetadata
+_TASK_FULL_METADATA_TYPE = TaskMetadata
 
 
 class TaskError(Exception):
@@ -119,7 +110,7 @@ class Task:
     - ``log``: an `logging.Logger` or subclass.
     - ``config``: task-specific configuration; an instance of ``ConfigClass``
       (see below).
-    - ``metadata``: an `lsst.daf.base.PropertyList` or `TaskMetadata` for
+    - ``metadata``: a `TaskMetadata` for
       collecting task-specific metadata, e.g. data quality and performance
       metrics. This is data that is only meant to be persisted, never to be
       used by the task.
@@ -279,7 +270,7 @@ class Task:
 
         Returns
         -------
-        metadata : `lsst.daf.base.PropertySet` or `TaskMetadata`
+        metadata : `TaskMetadata`
             The keys are the full task name.
             Values are metadata for the top-level task and all subtasks,
             sub-subtasks, etc.

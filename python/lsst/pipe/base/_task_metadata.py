@@ -104,7 +104,7 @@ class TaskMetadata(BaseModel):
 
         Parameters
         ----------
-        ps : `lsst.daf.base.PropertySet` or `TaskMetadata`
+        ps : `PropertySetLike` or `TaskMetadata`
             A ``PropertySet``-like object to be transformed to a
             `TaskMetadata`. A `TaskMetadata` can be copied using this
             class method.
