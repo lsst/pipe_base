@@ -902,13 +902,20 @@ class TaskDatasetTypes:
         # optionally add output dataset for metadata
         outputs = makeDatasetTypesSet("outputs", freeze=False)
         if taskDef.metadataDatasetName is not None:
-            # Metadata is supposed to be of the PropertySet type, its
-            # dimensions correspond to a task quantum
+            # Metadata is supposed to be of the TaskMetadata type, its
+            # dimensions correspond to a task quantum.
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
-            if _TASK_METADATA_TYPE is TaskMetadata:
-                storageClass = "TaskMetadata"
+
+            # Allow the storage class definition to be read from the existing
+            # dataset type definition if present.
+            try:
+                current = registry.getDatasetType(taskDef.metadataDatasetName)
+            except KeyError:
+                # No previous definition so use the default.
+                storageClass = "TaskMetadata" if _TASK_METADATA_TYPE is TaskMetadata else "PropertySet"
             else:
-                storageClass = "PropertySet"
+                storageClass = current.storageClass.name
+
             outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)}
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.

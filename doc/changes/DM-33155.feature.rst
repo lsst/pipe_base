@@ -1,0 +1,4 @@
+* Add ``TaskMetadata.to_dict()`` method (this is now used by the ``PropertySet.from_mapping()`` method and triggered by the Butler if type conversion is needed).
+* Use the existing metadata storage class definition if one already exists in a repository.
+* Switch `~lsst.pipe.base.Task` to use `~lsst.pipe.base.TaskMetadata` for storing task metadata, rather than ``lsst.daf.base.PropertySet``.
+  This removes a C++ dependency from the middleware.

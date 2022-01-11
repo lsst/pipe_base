@@ -43,7 +43,7 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
     obj : `lsst.pipe.base.Task`-type or `None`
         A `~lsst.pipe.base.Task` or any other object with these two attributes:
 
-        - ``metadata`` an instance of `lsst.daf.base.PropertyList`` (or other
+        - ``metadata`` an instance of `~lsst.pipe.base.TaskMetadata` (or other
           object with ``add(name, value)`` method).
         - ``log`` an instance of `logging.Logger` or subclass.
 
@@ -55,7 +55,7 @@ def logInfo(obj, prefix, logLevel=logging.DEBUG, metadata=None, logger=None):
         ``prefix = End`` when the method ends.
     logLevel : `int`, optional
         Log level (an `logging` level constant, such as `logging.DEBUG`).
-    metadata : `lsst.daf.base.PropertyList`, optional
+    metadata : `lsst.pipe.base.TaskMetadata`, optional
         Metadata object to write entries to, overriding ``obj.metadata``.
     logger : `logging.Logger`
         Log object to write entries to, overriding ``obj.log``.
