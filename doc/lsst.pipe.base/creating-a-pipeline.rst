@@ -23,6 +23,10 @@ verifying configuration, specifying subsets of tasks, creating `Pipeline`\ s
 using composition, a basic introduction to options when running `Pipeline`\
 s, and discussing common conventions when creating `Pipelines`.
 
+.. _pipeline_creating_intro:
+
+.. _pipeline_creating_format:
+
 ----------------
 A Basic Pipeline
 ----------------
@@ -98,6 +102,8 @@ Tasks define their inputs and outputs which are used to construct an
 execution graph of the specified tasks. A consequence of this is if a
 pipeline does not define all the tasks required to generate all needed inputs
 and outputs it will get caught before any execution occurs.
+
+.. _pipeline_creating_config:
 
 -----------------
 Configuring Tasks
@@ -179,6 +185,8 @@ the previous one to use the ``python`` key.
           config.calibrate.astrometry.sourceSelector['references'].flags.bad = flags
 
 
+.. _pipeline_creating_parameters:
+
 ----------
 Parameters
 ----------
@@ -221,6 +229,8 @@ config field use the same value, it is not restricted to dataset types.
 :ref:`pipeline-running-intro` introduces how to run `Pipeline`\ s and will
 talk about how to dynamically set a ``parameters`` value at `Pipeline`
 invocation time.
+
+.. _pipeline_creating_contracts:
 
 ----------------------------------
 Verifying Configuration: Contracts
@@ -285,6 +295,8 @@ validation. It is possible for someone to change the configuration of one of
 the fields before a `Pipeline` is run. Because of this, ``contracts`` should
 always be written without regards to how ``parameters`` are used.
 
+.. _pipeline_creating_subsets:
+
 -------
 Subsets
 -------
@@ -326,6 +338,8 @@ which show the same ``subset`` defined in both styles.
 Once a ``subset`` is created the label associated with it can be used in
 any context where task labels are accepted.  Examples of this will be shown
 in :ref:`pipeline-running-intro`.
+
+.. _pipeline_creating_imports:
 
 -----------
 Importing
@@ -383,6 +397,8 @@ the label with be considered re-declared and the declaration in the current
 `Pipeline` will be used.  The declaration defined in the imported `Pipeline`
 is dropped.
 
+
+.. _pipeline_creating_obs_package:
 
 --------------------------------------
 obs\_* package overrides for Pipelines
@@ -471,6 +487,8 @@ labeled subsets when specifying a parameter list. A `Pipeline` URI that
 specifies a subset based on our previous example would look like the following:
 
 ``$PIPE_TASKS_DIR/pipelines/DRP.yaml#processCcd``
+
+.. _pipeline_conventions:
 
 --------------------
 Pipeline conventions
