@@ -26,6 +26,11 @@ import unittest
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+
+try:
+    import lsst.pipe.base.argumentParser as argumentParser
+except ImportError:
+    argumentParser = None
 import lsst.utils.tests
 
 
@@ -63,6 +68,7 @@ class MainTask(pipeBase.Task):
 c = MainTaskConfig()
 
 
+@unittest.skipIf(argumentParser is None, "Gen2 argument parser is not available")
 class ShowTasksTestCase(unittest.TestCase):
     """A test case for the code that implements ArgumentParser's --show tasks
     option.
@@ -85,7 +91,7 @@ class ShowTasksTestCase(unittest.TestCase):
         tempStdOut = io.StringIO()
         savedStdOut, sys.stdout = sys.stdout, tempStdOut
         try:
-            pipeBase.argumentParser.showTaskHierarchy(config)
+            argumentParser.showTaskHierarchy(config)
         finally:
             sys.stdout = savedStdOut
         formatRead = tempStdOut.getvalue().strip()
