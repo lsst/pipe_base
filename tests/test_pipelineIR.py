@@ -27,6 +27,9 @@ import unittest
 import lsst.utils.tests
 from lsst.pipe.base.pipelineIR import ConfigIR, PipelineIR
 
+# Find where the test pipelines exist and store it in an environment variable.
+os.environ["TESTDIR"] = os.path.dirname(__file__)
+
 
 class ConfigIRTestCase(unittest.TestCase):
     """A test case for ConfigIR Objects
@@ -132,8 +135,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline1.yaml
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline1.yaml
+            - $TESTDIR/testPipeline2.yaml
         """
         )
         # "modA" is the duplicated label, and it should appear in the error.
@@ -145,9 +148,9 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            - location: $TESTDIR/testPipeline1.yaml
               exclude: modA
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -158,9 +161,9 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            - location: $TESTDIR/testPipeline1.yaml
               include: modB
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         """
         )
 
@@ -172,10 +175,10 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            - location: $TESTDIR/testPipeline1.yaml
               exclude: modA
               include: modB
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         """
         )
 
@@ -187,7 +190,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            - $TESTDIR/testPipeline1.yaml
         """
         )
 
@@ -199,7 +202,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+            - location: $TESTDIR/testPipeline1.yaml
               importContracts: False
         """
         )
@@ -213,7 +216,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         tasks:
           modA:
             class: "test.moduleA"
@@ -230,7 +233,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         tasks:
           modA:
             class: "test.moduleAReplace"
@@ -246,7 +249,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -258,7 +261,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         tasks:
           modE: "test.moduleE"
         subsets:
@@ -276,8 +279,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-            - $PIPE_BASE_DIR/tests/testPipeline3.yaml
+            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/testPipeline3.yaml
         """
         )
         with self.assertRaises(ValueError):
@@ -289,7 +292,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
+            - $TESTDIR/testPipeline2.yaml
         tasks:
           modSubset: "test.moduleE"
         """
@@ -302,8 +305,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $PIPE_BASE_DIR/tests/testPipeline2.yaml
-            - $PIPE_BASE_DIR/tests/testPipeline4.yaml
+            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/testPipeline4.yaml
         """
         )
         with self.assertRaises(ValueError):
@@ -342,8 +345,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - $PIPE_BASE_DIR/tests/testPipeline1.yaml
-          - location: $PIPE_BASE_DIR/tests/testPipeline2.yaml
+          - $TESTDIR/testPipeline1.yaml
+          - location: $TESTDIR/testPipeline2.yaml
             exclude:
               - modA
 
@@ -364,7 +367,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - $TESTDIR/testPipeline1.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -375,7 +378,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - location: $TESTDIR/testPipeline1.yaml
             instrument: None
         """
         )
@@ -387,7 +390,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - location: $TESTDIR/testPipeline1.yaml
             instrument: new.instrument
         """
         )
@@ -401,7 +404,7 @@ class PipelineIRTestCase(unittest.TestCase):
         description: Test Pipeline
         instrument: new.instrument
         imports:
-          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - location: $TESTDIR/testPipeline1.yaml
         """
         )
         with self.assertRaisesRegex(ValueError, "new.instrument .* test.instrument."):
@@ -427,7 +430,7 @@ class PipelineIRTestCase(unittest.TestCase):
 
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
-        location = os.path.expandvars("$PIPE_BASE_DIR/tests/testPipeline1.yaml")
+        location = os.path.expandvars("$TESTDIR/testPipeline1.yaml")
         pipeline = PipelineIR.from_file(location)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
@@ -601,7 +604,7 @@ class PipelineIRTestCase(unittest.TestCase):
         description: Test Pipeline
         instrument: dummyCam
         imports:
-          - location: $PIPE_BASE_DIR/tests/testPipeline1.yaml
+          - location: $TESTDIR/testPipeline1.yaml
             instrument: None
         tasks:
             modC:
