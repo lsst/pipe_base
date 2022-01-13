@@ -31,8 +31,9 @@ import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
 from lsst.base import Packages
-from lsst.daf.butler import Butler, ButlerURI, Config, DatasetType
+from lsst.daf.butler import Butler, Config, DatasetType
 from lsst.daf.butler.core.logging import ButlerLogRecords
+from lsst.resources import ResourcePath
 from lsst.utils import doImport
 
 from ... import base as pipeBase
@@ -236,7 +237,7 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
     butler : `~lsst.daf.butler.Butler`
         Data butler instance.
     """
-    root = ButlerURI(root, forceDirectory=True)
+    root = ResourcePath(root, forceDirectory=True)
     if not root.isLocal:
         raise ValueError(f"Only works with local root not {root}")
     config = Config()

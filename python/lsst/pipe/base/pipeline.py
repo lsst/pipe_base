@@ -53,7 +53,8 @@ from typing import (
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import ButlerURI, DatasetType, NamedValueSet, Registry, SkyPixDimension
+from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImport
 
 from . import pipelineIR, pipeTools
@@ -246,25 +247,27 @@ class Pipeline:
         return cls.from_uri(filename)
 
     @classmethod
-    def from_uri(cls, uri: Union[str, ButlerURI]) -> Pipeline:
+    def from_uri(cls, uri: ResourcePathExpression) -> Pipeline:
         """Load a pipeline defined in a pipeline yaml file at a location
         specified by a URI.
 
         Parameters
         ----------
-        uri: `str` or `ButlerURI`
-           If a string is supplied this should be a URI path that points to a
-           pipeline defined in yaml format. This uri may also supply
-           additional labels to be used in subsetting the loaded Pipeline.
-           These labels are separated from the path by a \\#, and may be
-           specified as a comma separated list, or a range denoted as
-           beginning..end. Beginning or end may be empty, in which case the
-           range will be a half open interval. Unlike python iteration
-           bounds, end bounds are *INCLUDED*. Note that range based selection
-           is not well defined for pipelines that are not linear in nature,
-           and correct behavior is not guaranteed, or may vary from run to
-           run. The same specifiers can be used with a ButlerURI object, by
-           being the sole contents in the fragments attribute.
+        uri: convertible to `ResourcePath`
+            If a string is supplied this should be a URI path that points to a
+            pipeline defined in yaml format, either as a direct path to the
+            yaml file, or as a directory containing a "pipeline.yaml" file (the
+            form used by `write_to_uri` with ``expand=True``). This uri may
+            also supply additional labels to be used in subsetting the loaded
+            Pipeline.  These labels are separated from the path by a \\#, and
+            may be specified as a comma separated list, or a range denoted as
+            beginning..end. Beginning or end may be empty, in which case the
+            range will be a half open interval. Unlike python iteration bounds,
+            end bounds are *INCLUDED*. Note that range based selection is not
+            well defined for pipelines that are not linear in nature, and
+            correct behavior is not guaranteed, or may vary from run to run.
+            The same specifiers can be used with a `ResourcePath` object, by
+            being the sole contents in the fragments attribute.
 
         Returns
         -------
@@ -356,7 +359,7 @@ class Pipeline:
         return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
-    def _parse_file_specifier(uri: Union[str, ButlerURI]) -> Tuple[ButlerURI, Optional[LabelSpecifier]]:
+    def _parse_file_specifier(uri: ResourcePathExpression) -> Tuple[ResourcePath, Optional[LabelSpecifier]]:
         """Split appart a uri and any possible label subsets"""
         if isinstance(uri, str):
             # This is to support legacy pipelines during transition
@@ -370,7 +373,8 @@ class Pipeline:
                 )
             if uri.count("#") > 1:
                 raise ValueError("Only one set of labels is allowed when specifying a pipeline to load")
-            uri = ButlerURI(uri)
+        # Everything else can be converted directly to ResourcePath.
+        uri = ResourcePath(uri)
         label_subset = uri.fragment or None
 
         specifier: Optional[LabelSpecifier]
@@ -593,10 +597,16 @@ class Pipeline:
     def toFile(self, filename: str) -> None:
         self._pipelineIR.to_file(filename)
 
-    def write_to_uri(self, uri: Union[str, ButlerURI]) -> None:
-        # tasks need sorted each call because someone might have added or
-        # removed task, and caching changes does not seem worth the small
-        # overhead
+    def write_to_uri(self, uri: ResourcePathExpression) -> None:
+        """Write the pipeline to a file or directory.
+
+        Parameters
+        ----------
+        uri : convertible to `ResourcePath`
+            URI to write to; may have any scheme with `ResourcePath` write
+            support or no scheme for a local file/directory.  Should have a
+            ``.yaml``.
+        """
         labels = [td.label for td in self._toExpandedPipelineImpl(checkContracts=False)]
         self._pipelineIR.reorder_tasks(labels)
         self._pipelineIR.write_to_uri(uri)
