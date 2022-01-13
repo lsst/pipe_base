@@ -853,39 +853,16 @@ documentation for more info on the parameters argument.
 
 .. _PipelineTask-processing-altering-what-is-processed:
 
-----------------------------------------------
-Altering what is processed prior to processing ## THIS IS OUT OF DATE & THE CORRESPONDING EXAMPLE
-----------------------------------------------
+---------------------------------------------
+Checking and altering quanta before execution
+---------------------------------------------
 
-Your task is getting quite complicated, and is beginning to unitize 
-features of Pipeline tasks that most tasks will not use. These are meant
-to describe what is available to you as a programmer, please do not take it
-as a hammer and go looking for nails.
+When a `QuantumGraph` is first created, the tasks it will run are given an opportunity to make limited adjustments and raise exceptions if a quantum does not meet its needs in more subtle ways, via a call to `PipelineTaskConnections.adjustQuantum`.
+This method is also called just before each quantum is executed, since predecessor quanta may not have actually produced some of the outputs they were predicted to, and that will change the inputs that are available to the current quantum.
 
-The example task is now doing photometry, optionally doing local background
-subtraction, and masking out problematic areas over an entire focal plane.
-This leads to a potentially problematic situation. When the activator system
-populates the lists of data-sets defined by your connection class, it will
-look for all data-sets that match the specified dimensions of your task. It
-may occur that processing was done to produce all the catalogs, backgrounds,
-and exposures, but someone failed to ingest a mask for some of the detectors
-in a focal plane. Though this is not the only failure one can imagine, it is
-demonstrative of the issue at hand. How should your task handle this kind of
-issue?
-
-Connection classes have a method called `adjustQuantum` that is well suited
-for just this sort of thing. This method gives a connection class an
-opportunity to inspect the quantum of work that is to be run, and make any
-alterations it deems necessary prior to execution. This can be as simple as
-raising an exception if something is missing, or as complicated an rewriting
-the quantum. Our task will do the latter, if any detector position is laking
-a mask, all the other data-sets for that detector will be removed from the
-quantum, and will not be processed. This is not the only way to handle this
-type of failure, but it ensures what can be run is run. This situation is
-unique to the problem of processing an entire focal plain, had the example
-stuck with including a detector in our tasks dimensions, the execution system
-would have naturally done this for us, but it would have made a far more
-boring demo. With this all in mind, take look at your connection class.
+For the vast majority of `PipelineTask` subclasses, the default implementation provided by the base class should be adequate, and even classes that wish to override it should always delegate to `super`, as the base class implementation performs the checks implied by the ``multiple`` and ``minumum`` arguments to connection fields.
+Overriding `~PipelineTaskConnections.adjustQuantum` is most useful for tasks that have more than one connection with ``multiple=True``, and the data IDs of these connections are closely related, such as when the presence of one input dataset implies the production of a corresponding output dataset.
+That's exactly what should happens with `ApertureTask` now; it should produce an ``outputCatalog`` dataset for a data ID only when all input datasets for that data ID are present:
 
 .. code-block:: python
 
@@ -894,41 +871,50 @@ boring demo. With this all in mind, take look at your connection class.
                                 dimensions=("visit", "detector", "band")):
         ...
 
-        def adjustQuantum(self, datasetRefMap):
-            # Turn the lists DatasetRefs corresponding to each of the input
-            # connections into sets of just their dataIds.
-            exposuresSet = {x.dataId for x in datasetRefMap.exposures}
-            inputCatalogsSet = {x.dataId for x in datasetRefMap.inputCatalogs}
-            backgroundsSet = {x.dataId for x in datasetRefMap.backgrounds}
-            areaMasksSet = {x.dataId for x in datasetRefMap.areaMasks}
+        def adjustQuantum(self, inputs, outputs, label, data_id):
+            # Find the data IDs common to all multiple=True inputs.
+            input_names = ("exposures", "inputCatalogs", "backgrounds")
+            inputs_by_data_id = []
+            for name in input_names:
+                inputs_by_data_id.append(
+                    {ref.dataId: ref for ref in inputs[name][1]}
+                )
+            # Intersection looks messy because dict_keys only supports |.
+            # not an "intersection" method.
+            data_ids_to_keep = functools.reduce(
+                operator.__and__,
+                (d.keys() for d in inputs_by_data_id)
+            )
+            # Pull out just the DatasetRefs that are in common in the inputs
+            # and order them consistently (note that consistent ordering is not
+            # automatic).
+            adjusted_inputs = {}
+            for name, refs in zip(input_names, inputs_by_data_id):
+                adjusted_inputs[name] = (
+                    inputs[name][0],
+                    [refs[data_id] for data_id in data_ids_to_keep],
+                )
+                # Also update the full dict of inputs, so we can pass it to
+                # super() later.
+                inputs[name] = adjusted_inputs[name]
+            # Do the same for the outputs.
+            outputs_by_data_id = {
+                ref.dataId: ref for ref in outputs["outputCatalogs"][1]
+            }
+            adjusted_outputs = {
+                "outputCatalogs": (
+                    outputs["outputCatalogs"][0],
+                    [outputs_by_data_id[data_id]
+                     for data_id in data_ids_to_keep]
+                )
+            }
+            outputs["outputCatalogs"] = adjusted_outputs["outputCatalogs"]
+            # Delegate to super(); ignore results because they are guaranteed
+            # to be empty.
+            super().adjustQuantum(inputs, outputs, label, data_id)
+            return adjusted_inputs, adjusted_outputs
 
-            # Find the intersection of all the set of dataIds. This intersection
-            # is the set of ids for which each connection has associated data
-            commonDataIds = exposuresSet.intersection(inputCatalogsSet).\
-                intersection(backgroundsSet).\
-                intersection(areaMasksSet)
-
-            # Rewrite the datasetRefMap to only contain dataIds in the pre-computed
-            # intersection
-            for name, refs in datasetRefMap:
-                tempList = [x for x in refs if x.dataId in commonDataIds]
-                setattr(datasetRefMap, name, tempList)
-
-            return datasetRefMap
-
-The argument `datasetRefMap` in `adustQuantum` is a variable of type
-`~lsst.pipe.base.InputQuantizedConnection`. This data-structure has
-attributes with names corresponding to the variable names of the connections
-defined in the connections class. The value of these attributes are the
-`lsst.daf.butler.DatasetRef`\ s that the execution system found associated with
-each connection. These `lsst.daf.butler.DatasetRef`\ s are what will be loaded
-from the butler and supplied as arguments in the execution of your task. This
-method create sets out of the data ids corresponding to each of your inputs,
-and then finds the intersection of all the dataIds. This ensures that only ids
-that have all data products are to be processed. This common set is then used
-to filter down the list associated with each of the input types. The
-`datasetRefMap` is then returned where it will be used to generate a unit of
-processing to be executed.
+See the documentation for `~PipelineTaskConnections.adjustQuantum` for additional details on overriding it.
 
 The aggregated task can be seen in :ref:`pipeline-appendix-h`
 

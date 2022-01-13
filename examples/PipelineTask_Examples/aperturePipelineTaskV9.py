@@ -1,5 +1,8 @@
 import numpy as np
+import functools
 import math
+import operator
+from typing import List, Mapping, Optional
 
 import lsst.pipe.base as pipeBase
 import lsst.pex.config as pexConfig
@@ -67,35 +70,46 @@ class ApertureTaskConnections(
         deferLoad=True,
     )
 
-    def adjustQuantum(self, datasetRefMap):
-        # Turn the lists DatasetRefs corresponding to each of the input
-        # connections into sets of just their dataIds.
-        exposuresSet = {x.dataId for x in datasetRefMap.exposures}
-        inputCatalogsSet = {x.dataId for x in datasetRefMap.inputCatalogs}
-        backgroundsSet = {x.dataId for x in datasetRefMap.backgrounds}
-        areaMasksSet = {x.dataId for x in datasetRefMap.areaMasks}
-
-        # Find the intersection of all the set of dataIds. This intersection
-        # is the set of ids for which each connection has associated data
-        commonDataIds = (
-            exposuresSet.intersection(inputCatalogsSet)
-            .intersection(backgroundsSet)
-            .intersection(areaMasksSet)
-        )
-
-        # Rewrite the datasetRefMap to only contain dataIds in the pre-computed
-        # intersection
-        for name, refs in datasetRefMap:
-            tempList = [x for x in refs if x.dataId in commonDataIds]
-            setattr(datasetRefMap, name, tempList)
-
-        return datasetRefMap
-
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
         if config.doLocalBackground is False:
             self.inputs.remove("backgrounds")
+
+    def adjustQuantum(self, inputs, outputs, label, data_id):
+        # Find the data IDs common to all multiple=True inputs.
+        input_names = ("exposures", "inputCatalogs", "backgrounds")
+        inputs_by_data_id = []
+        for name in input_names:
+            inputs_by_data_id.append({ref.dataId: ref for ref in inputs[name][1]})
+        # Intersection looks messy because dict_keys only supports |.
+        # not an "intersection" method.
+        data_ids_to_keep = functools.reduce(operator.__and__, (d.keys() for d in inputs_by_data_id))
+        # Pull out just the DatasetRefs that are in common in the inputs
+        # and order them consistently (note that consistent ordering is not
+        # automatic).
+        adjusted_inputs = {}
+        for name, refs in zip(input_names, inputs_by_data_id):
+            adjusted_inputs[name] = (
+                inputs[name][0],
+                [refs[data_id] for data_id in data_ids_to_keep],
+            )
+            # Also update the full dict of inputs, so we can pass it to
+            # super() later.
+            inputs[name] = adjusted_inputs[name]
+        # Do the same for the outputs.
+        outputs_by_data_id = {ref.dataId: ref for ref in outputs["outputCatalogs"][1]}
+        adjusted_outputs = {
+            "outputCatalogs": (
+                outputs["outputCatalogs"][0],
+                [outputs_by_data_id[data_id] for data_id in data_ids_to_keep],
+            )
+        }
+        outputs["outputCatalogs"] = adjusted_outputs["outputCatalogs"]
+        # Delegate to super(); ignore results because they are guaranteed
+        # to be empty.
+        super().adjustQuantum(inputs, outputs, label, data_id)
+        return adjusted_inputs, adjusted_outputs
 
 
 class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections):
