@@ -6,3 +6,6 @@ git+https://github.com/lsst/daf_butler@main#egg=daf_butler
 git+https://github.com/lsst/utils@main#egg=lsst_utils
 git+https://github.com/lsst/resources@main#egg=lsst_resources
 git+https://github.com/lsst/pex_config@main#egg=pex_config
+# For now a S3 class is loaded unconditionally
+boto3
+botocore
