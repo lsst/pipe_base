@@ -41,6 +41,7 @@ from lsst.pipe.base import (
     TaskDef,
 )
 from lsst.pipe.base.graph.quantumNode import QuantumNode
+from lsst.utils.introspection import get_full_type_name
 
 try:
     import boto3
@@ -167,7 +168,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             (Dummy4PipelineTask, "U"),
         ):
             config = task.ConfigClass()
-            taskDef = TaskDef(f"__main__.{task.__qualname__}", config, task, label)
+            taskDef = TaskDef(get_full_type_name(task), config, task, label)
             tasks.append(taskDef)
             quantumSet = set()
             connections = taskDef.connections

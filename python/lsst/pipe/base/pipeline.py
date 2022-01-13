@@ -56,6 +56,7 @@ from typing import (
 from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImport
+from lsst.utils.introspection import get_full_type_name
 
 from . import pipelineIR, pipeTools
 from ._task_metadata import TaskMetadata
@@ -478,7 +479,7 @@ class Pipeline:
         else:
             # TODO: assume that this is a subclass of Instrument, no type
             # checking
-            instrument = f"{instrument.__module__}.{instrument.__qualname__}"
+            instrument = get_full_type_name(instrument)
         self._pipelineIR.instrument = instrument
 
     def getInstrument(self) -> Instrument:

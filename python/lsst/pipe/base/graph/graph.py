@@ -54,6 +54,7 @@ from typing import (
 import networkx as nx
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
 from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.introspection import get_full_type_name
 from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
@@ -895,7 +896,7 @@ class QuantumGraph:
             taskDescription = {}
             # save the fully qualified name, as TaskDef not not require this,
             # but by doing so can save space and is easier to transport
-            taskDescription["taskName"] = f"{taskDef.taskClass.__module__}.{taskDef.taskClass.__qualname__}"
+            taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
             # other end
             stream = io.StringIO()
