@@ -301,17 +301,11 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertEqual(allNodes[0].quantum, subsetList[0].quantum)
         self.assertEqual(self.qGraph._buildId, subset._buildId)
 
-    def testIsConnected(self):
+    def testSubsetToConnected(self):
         # False because there are two quantum chains for two distinct sets of
         # dimensions
         self.assertFalse(self.qGraph.isConnected)
-        # make a broken subset
-        filteredNodes = [n for n in self.qGraph if n.taskDef.label != "U"]
-        subset = self.qGraph.subset((filteredNodes[0], filteredNodes[1]))
-        # True because we subset to only one chain of graphs
-        self.assertTrue(subset.isConnected)
 
-    def testSubsetToConnected(self):
         connectedGraphs = self.qGraph.subsetToConnected()
         self.assertEqual(len(connectedGraphs), 4)
         self.assertTrue(connectedGraphs[0].isConnected)
