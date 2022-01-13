@@ -25,12 +25,6 @@ class ApertureTaskConnections(
         name="calexp",
         multiple=True,
     )
-    inputCatalog = connectionTypes.Input(
-        doc="Input catalog with existing measurements",
-        dimensions=("visit", "detector", "band"),
-        storageClass="SourceCatalog",
-        name="src",
-    )
     backgrounds = connectionTypes.Input(
         doc="Background model for the exposure",
         storageClass="Background",
@@ -49,11 +43,12 @@ class ApertureTaskConnections(
         name="src",
         multiple=True,
     )
-    outputCatalog = connectionTypes.Output(
+    outputCatalogs = connectionTypes.Output(
         doc="Aperture measurements",
         dimensions=("visit", "detector", "band"),
         storageClass="SourceCatalog",
         name="{outputName}",
+        multiple=True,
     )
     outputSchema = connectionTypes.InitOutput(
         doc="Schema created in Aperture PipelineTask",

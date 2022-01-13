@@ -24,12 +24,7 @@ class ApertureTaskConnections(
         storageClass="ExposureF",
         name="calexp",
         multiple=True,
-    )
-    inputCatalog = connectionTypes.Input(
-        doc="Input catalog with existing measurements",
-        dimensions=("visit", "detector", "band"),
-        storageClass="SourceCatalog",
-        name="src",
+        deferLoad=True,
     )
     backgrounds = connectionTypes.Input(
         doc="Background model for the exposure",
@@ -37,6 +32,7 @@ class ApertureTaskConnections(
         name="calexpBackground",
         dimensions=("visit", "detector", "band"),
         multiple=True,
+        deferLoad=True,
     )
     inputCatalogs = connectionTypes.Input(
         doc="Input catalog with existing measurements",
@@ -48,12 +44,14 @@ class ApertureTaskConnections(
         storageClass="SourceCatalog",
         name="src",
         multiple=True,
+        deferLoad=True,
     )
-    outputCatalog = connectionTypes.Output(
+    outputCatalogs = connectionTypes.Output(
         doc="Aperture measurements",
         dimensions=("visit", "detector", "band"),
         storageClass="SourceCatalog",
         name="{outputName}",
+        multiple=True,
     )
     outputSchema = connectionTypes.InitOutput(
         doc="Schema created in Aperture PipelineTask",
@@ -66,13 +64,14 @@ class ApertureTaskConnections(
         dimensions=("visit", "detector", "band"),
         name="ApAreaMask",
         multiple=True,
+        deferLoad=True,
     )
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
         if config.doLocalBackground is False:
-            self.inputs.remove("background")
+            self.inputs.remove("backgrounds")
 
 
 class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections):

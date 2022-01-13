@@ -597,38 +597,51 @@ follows.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  defaultTemplates={"outputName":
-                                                    "customAperture"},
-                                  dimensions=("visit", "band")):
-        exposures = connectionTypes.Input(doc="Input exposure to make "
-                                              "measurements on",
-                                          dimensions=("visit", "detector", "band"),
-                                          storageClass="ExposureF",
-                                          name="calexp",
-                                          multiple=True)
-        inputCatalogs = connectionTypes.Input(doc="Input catalog with existing "
-                                                  "measurements",
-                                              dimensions=("visit", "detector",
-                                                          "band"),
-                                              storageClass="SourceCatalog",
-                                              name="src",
-                                              multiple=True) 
-        backgrounds = connectionTypes.Input(doc="Background model for the exposure",
-                                            storageClass="Background",
-                                            dimensions=("visit", "detector",
-                                                        "band"),
-                                            name="calexpBackground",
-                                            multiple=True)
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections,
+        defaultTemplates={"outputName": "customAperture"},
+        dimensions=("visit", "band"),
+    ):
+        exposures = connectionTypes.Input(
+            doc="Input exposure to make measurements on",
+            dimensions=("visit", "detector", "band"),
+            storageClass="ExposureF",
+            name="calexp",
+            multiple=True,
+        )
+        backgrounds = connectionTypes.Input(
+            doc="Background model for the exposure",
+            storageClass="Background",
+            name="calexpBackground",
+            dimensions=("visit", "detector", "band"),
+            multiple=True,
+        )
+        inputCatalogs = connectionTypes.Input(
+            doc="Input catalog with existing measurements",
+            dimensions=(
+                "visit",
+                "detector",
+                "band",
+            ),
+            storageClass="SourceCatalog",
+            name="src",
+            multiple=True,
+        )
+        outputCatalogs = connectionTypes.Output(
+            doc="Aperture measurements",
+            dimensions=("visit", "detector", "band"),
+            storageClass="SourceCatalog",
+            name="{outputName}",
+            multiple=True,
+        )
         ...
-
         areaMasks = connectionTypes.PrerequisiteInput(
-                                         doc="A mask of areas to be ignored",
-                                         storageClass="Mask",
-                                         dimensions=("visit", "detector",
-                                                     "band"),
-                                         name="ApAreaMask",
-                                         multiple=True)
+            doc="A mask of areas to be ignored",
+            storageClass="Mask",
+            dimensions=("visit", "detector", "band"),
+            name="ApAreaMask",
+            multiple=True,
+        )
         ...
 
 The dimensions of your ``ApertureTaskConnections`` class are now ``visit`` and
@@ -748,42 +761,48 @@ this in place.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  defaultTemplates={"outputName":
-                                                    "customAperture"},
-                                  dimensions=("visit", "band")):
-        exposures = connectionTypes.Input(doc="Input exposure to make "
-                                              "measurements on",
-                                          dimensions=("visit", "detector", "band"),
-                                          storageClass="ExposureF",
-                                          name="calexp",
-                                          multiple=True,
-                                          deferLoad=True)
-        inputCatalogs = connectionTypes.Input(doc="Input catalog with existing "
-                                                  "measurements",
-                                              dimensions=("visit", "detector",
-                                                          "band"),
-                                              storageClass="SourceCatalog",
-                                              name="src",
-                                              multiple=True,
-                                              deferLoad=True)
-        backgrounds = connectionTypes.Input(doc="Background model for the exposure",
-                                            storageClass="Background",
-                                            dimensions=("visit", "detector",
-                                                        "band"),
-                                            name="calexpBackground",
-                                            multiple=True,
-                                            deferLoad=True)
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections,
+        defaultTemplates={"outputName": "customAperture"},
+        dimensions=("visit", "band"),
+    ):
+        exposures = connectionTypes.Input(
+            doc="Input exposure to make measurements on",
+            dimensions=("visit", "detector", "band"),
+            storageClass="ExposureF",
+            name="calexp",
+            multiple=True,
+            deferLoad=True,
+        )
+        backgrounds = connectionTypes.Input(
+            doc="Background model for the exposure",
+            storageClass="Background",
+            name="calexpBackground",
+            dimensions=("visit", "detector", "band"),
+            multiple=True,
+            deferLoad=True,
+        )
+        inputCatalogs = connectionTypes.Input(
+            doc="Input catalog with existing measurements",
+            dimensions=(
+                "visit",
+                "detector",
+                "band",
+            ),
+            storageClass="SourceCatalog",
+            name="src",
+            multiple=True,
+            deferLoad=True,
+        )
         ...
-
         areaMasks = connectionTypes.PrerequisiteInput(
-                                         doc="A mask of areas to be ignored",
-                                         storageClass="Mask",
-                                         dimensions=("visit", "detector",
-                                                     "band"),
-                                         name="ApAreaMask",
-                                         multiple=True,
-                                         deferLoad=True)
+            doc="A mask of areas to be ignored",
+            storageClass="Mask",
+            dimensions=("visit", "detector", "band"),
+            name="ApAreaMask",
+            multiple=True,
+            deferLoad=True,
+        )
         ...
 
 Take a look at how the `run` method changes to make use of this.
