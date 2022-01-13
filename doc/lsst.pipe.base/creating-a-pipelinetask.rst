@@ -131,9 +131,9 @@ not tied to the exact band passes of an individual telescope filter).
 
 Next, take a look at the fields defined on your new connection class. These
 are defined in a similar way as defining a configuration class, but instead
-of using `~lsst.pex.config.Field` types from :ref:`lsst.pex.pex_config`,
+of using `~lsst.pex.config.Field` types from `lsst.pex.config`,
 connection classes make use of connection types defined in
-:ref:`lsst.pipe.pipe_base`. These connections define the inputs and outputs that
+`lsst.pipe.base.connectionTypes`. These connections define the inputs and outputs that
 a |PipelineTask| will expect to make use of. Each of these connections documents
 what the connection is, what dimensions represent this data product (in this
 case they are the same as the task itself, in the
@@ -215,12 +215,12 @@ is executed. Take a look what the connection class looks like.
     class ApertureTask(pipeBase.PipelineTask):
 
         ...
-        
-        def __init__(self, config: pexConfig.Config, initInputs: Mapping,
+
+        def __init__(self, config: pexConfig.Config, initInput: Mapping,
                      *args, **kwargs):
             ...
-            inputSchema = initInputs['inputSchema'].schema
-        
+            inputSchema = initInput['inputSchema'].schema
+
             # Create a camera mapper to create a copy of the input schema
             self.mapper = afwTable.SchemaMapper(inputSchema)
             self.mapper.addMinimalSchema(inputSchema, True)
@@ -228,12 +228,12 @@ is executed. Take a look what the connection class looks like.
             # Add the new field
             self.apKey = self.mapper.editOutputSchema().addField("apFlux",
                                                                  type=np.float64,
-                                                                 doc="Ap flux 
+                                                                 doc="Ap flux
                                                                      "measured")
-            
+
             # Get the output schema
             self.schema = self.mapper.getOutputSchema()
-        
+
             # create the catalog in which new measurements will be stored
             self.outputCatalog = afwTable.SourceCatalog(self.schema)
 
@@ -295,20 +295,20 @@ class.
         outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
                                                   storageClass="SourceCatalog",
                                                   name="customAperture_schema")
-                                                        
+
         ...
 
 
     class ApertureTask(pipeBase.PipelineTask):
 
         ...
-        
-        def __init__(self, config: pexConfig.Config, initInputs:Mapping,
+
+        def __init__(self, config: pexConfig.Config, initInput:Mapping,
                      *args, **kwargs):
             ...
             # Get the output schema
             self.schema = mapper.getOutputSchema()
-        
+
             # Create the output catalog
             self.outputCatalog = afwTable.SourceCatalog(self.schema)
 
@@ -375,7 +375,7 @@ various configuration options.
 
         def __init__(self, *, config=None):
             super().__init__(config=config)
-            
+
             if config.doLocalBackground is False:
                 self.inputs.remove("background")
 
@@ -406,7 +406,7 @@ take into account that a background may or may not be supplied.
     ...
 
     class ApertureTask(pipeBase.PipelineTask):
-        
+
         ...
 
         def run(self, exposure: afwImage.Exposure,
@@ -438,7 +438,7 @@ take into account that a background may or may not be supplied.
                     flux -= np.sum(mask)*localBackground
 
                 ...
-            
+
             return pipeBase.Struct(outputCatalog=self.outputCatalogs)
 
 The ``run`` method now takes an argument named ``background``, which defaults to
@@ -452,8 +452,9 @@ subtraction.
 To bring this all together, see :ref:`pipeline-appendix-c`
 
 
-Data-set name configuration and templates 
------------------------------------------
+----------------------------------------
+Dataset name configuration and templates
+----------------------------------------
 Now that you have the option to control results of processing with a
 configuration option (turning on and off local background subtraction) it may
 be useful for a user who turns on local background subtraction to change the
@@ -511,7 +512,7 @@ providing a way to template data-set type names.
         outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
                                                   storageClass="SourceCatalog",
                                                   name="{outputName}_schema")
-        
+
 
 In the modified connection class, the ``outputSchema`` and ``outputCatalog``
 connections now have python format strings, which are referred to with the
@@ -644,18 +645,17 @@ follows.
         )
         ...
 
-The dimensions of your ``ApertureTaskConnections`` class are now ``visit`` and
-``band``. However, all of your input datasets are themselves still defined
-over each of these dimensions, and also `detector`. That is to say you get
-one `calexp` for every unique combination of ``exposure``\ 's dimensions.
-Because the tasks' dimensions are a more inclusive set of dimensions (less
+The dimensions of your `ApertureTaskConnections` class are now ``visit`` and
+``band``. However, all of your input data-sets are themselves still defined
+over each of these dimensions, and also ``detector``. That is to say you get
+one ``calexp`` for ever unique combination of ``exposure``\ 's dimensions.
+Because the tasks's dimensions are a more inclusive set of dimensions (less
 specified) you should expect that for a given unit of processing, there will be
-multiple values for each of the input dataset types along the `detector`
+multiple values for each of the input data-set types along the ``detector``
 dimension. For example, in LSST there will be 189 detectors in each visit. You
 indicate to the execution framework that you expect there to be a list of
-datasets for each input (and in this case prerequisite input) by annotating
-the connection with the argument ``multiple``. This ensures the values passed
-will be inside of a list container.
+datasets for each connection by adding ``multiple=True`` to its declaration.
+This ensures the values passed will be inside of a list container.
 
 As a caveat, depending on the exact data that has been ingested/processed,
 there may only be one data-set that matches this combination of dimensions
@@ -959,7 +959,7 @@ it. Take a look at how ``runQuantum`` is defined in ``PipelineTask``.
             inputs = butlerQC.get(inputRefs)
             outputs = self.run(**inputs)
             butlerQC.put(outputs, outputRefs)
-        
+
         ...
 
 If this looks pretty strait forward to you, then great! This function is
@@ -971,7 +971,7 @@ wonder how it relates to a butler. If you are paying attention, you
 might know from the type annotation that the QC stands for QuantumContext,
 but that does not really give many clues does it? A `ButlerQuantumContext`
 object is simply a `~lsst.daf.butler.Butler` that has special information
-about the unit of data your task will be processing, i.e. the quantum, as well 
+about the unit of data your task will be processing, i.e. the quantum, as well
 as extra functionality attached to it.
 
 `~lsst.daf.butler.DatasetRef`\ s that can be used to interact with specific
@@ -1031,7 +1031,7 @@ demoing the concepts here.
             inputs = {}
             for name, refs in inputRefs:
                 inputs[name] = butlerQC.get(refs)
-            
+
             # Record the lengths of each input catalog
             lengths = []
 
@@ -1050,7 +1050,7 @@ demoing the concepts here.
             inputs['lengths'] = lengths
             output = self.run(**inputs)
             butlerQC.put(output, outputRefs.OutputCatalog)
-        
+
         def run(self, exposures: List[afwImage.Exposure],
                 lengths: List[int],
                 areaMasks: List[afwImage.Mask],
