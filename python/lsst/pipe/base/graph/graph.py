@@ -20,8 +20,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-from lsst.daf.butler.core.datasets.type import DatasetType
-
 __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
 import io
@@ -54,7 +52,7 @@ from typing import (
 )
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
 from lsst.resources import ResourcePath, ResourcePathExpression
 from networkx.drawing.nx_agraph import write_dot
 
