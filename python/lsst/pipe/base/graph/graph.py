@@ -894,8 +894,7 @@ class QuantumGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
             taskDescription = {}
-            # save the fully qualified name, as TaskDef not not require this,
-            # but by doing so can save space and is easier to transport
+            # save the fully qualified name.
             taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
             # other end
