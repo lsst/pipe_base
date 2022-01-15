@@ -30,7 +30,11 @@ import logging
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
-from lsst.base import Packages
+
+try:
+    from lsst.base import Packages
+except ImportError:
+    Packages = None
 from lsst.daf.butler import Butler, Config, DatasetType
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
@@ -166,8 +170,9 @@ def registerDatasetTypes(registry, pipeline):
         configDatasetType = DatasetType(
             taskDef.configDatasetName, {}, storageClass="Config", universe=registry.dimensions
         )
+        storageClass = "Packages" if Packages is not None else "StructuredDataDict"
         packagesDatasetType = DatasetType(
-            "packages", {}, storageClass="Packages", universe=registry.dimensions
+            "packages", {}, storageClass=storageClass, universe=registry.dimensions
         )
         datasetTypes = pipeBase.TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
         for datasetType in itertools.chain(
@@ -301,8 +306,9 @@ def populateButler(pipeline, butler, datasetTypes=None):
             butler.registry.registerRun(run)
         for dsType in dsTypes:
             if dsType == "packages":
-                # Version is intentionally inconsistent
-                data = Packages({"python": "9.9.99"})
+                # Version is intentionally inconsistent.
+                # Dict is convertible to Packages if Packages is installed.
+                data = {"python": "9.9.99"}
                 butler.put(data, dsType, run=run)
             else:
                 if dsType.endswith("_config"):

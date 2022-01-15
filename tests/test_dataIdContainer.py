@@ -24,15 +24,22 @@
 import unittest
 import unittest.mock
 
-import lsst.daf.persistence
-import lsst.pipe.base as pipeBase
+try:
+    import lsst.daf.persistence as dafPersistence
+except ImportError:
+    dafPersistence = None
+try:
+    from lsst.pipe.base import DataIdContainer
+except ImportError:
+    DataIdContainer = None
 import lsst.utils.tests
 
 
+@unittest.skipIf(DataIdContainer is None or dafPersistence is None, "Gen2 infrastructure is not available")
 class DataIdContainerTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
-        self.container = pipeBase.DataIdContainer()
-        self.butler = unittest.mock.MagicMock(spec=lsst.daf.persistence.Butler)
+        self.container = DataIdContainer()
+        self.butler = unittest.mock.MagicMock(spec=dafPersistence.Butler)
 
     def test_castDataIdsNoneDatasetType(self):
         """Raise RuntimeError if we haven't set container.datasetType."""

@@ -1,9 +1,19 @@
 from . import connectionTypes, pipelineIR
 from ._status import *
 from ._task_metadata import *
-from .argumentParser import *
+
+try:
+    from .argumentParser import *
+except ImportError:
+    # Gen2 imports are optional.
+    pass
 from .butlerQuantumContext import *
-from .cmdLineTask import *
+
+try:
+    from .cmdLineTask import *
+except ImportError:
+    # Gen2 imports are optional.
+    pass
 from .config import *
 from .connections import *
 from .executionButlerBuilder import *

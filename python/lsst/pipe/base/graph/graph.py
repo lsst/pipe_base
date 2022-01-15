@@ -20,8 +20,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-from lsst.daf.butler.core.datasets.type import DatasetType
-
 __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
 import io
@@ -54,8 +52,9 @@ from typing import (
 )
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
 from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.introspection import get_full_type_name
 from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
@@ -895,9 +894,8 @@ class QuantumGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
             taskDescription = {}
-            # save the fully qualified name, as TaskDef not not require this,
-            # but by doing so can save space and is easier to transport
-            taskDescription["taskName"] = f"{taskDef.taskClass.__module__}.{taskDef.taskClass.__qualname__}"
+            # save the fully qualified name.
+            taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
             # other end
             stream = io.StringIO()
