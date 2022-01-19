@@ -509,7 +509,7 @@ class Pipeline:
         if isinstance(task, str):
             taskName = task
         elif issubclass(task, PipelineTask):
-            taskName = f"{task.__module__}.{task.__qualname__}"
+            taskName = get_full_type_name(task)
         else:
             raise ValueError(
                 "task must be either a child class of PipelineTask or a string containing"
