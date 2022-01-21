@@ -901,7 +901,7 @@ class TaskDatasetTypes:
                             # the registry definition.
                             if not is_input:
                                 datasetType = registryDatasetType
-                            _LOG.warning(
+                            _LOG.debug(
                                 "Dataset types differ (task %s != registry %s) but are compatible"
                                 " for %s in %s.",
                                 datasetType,
