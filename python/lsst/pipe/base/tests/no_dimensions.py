@@ -30,7 +30,15 @@ __all__ = (
 from typing import Dict
 
 from lsst.pex.config import Field
-from lsst.pipe.base import PipelineTask, PipelineTaskConfig, PipelineTaskConnections, Struct, connectionTypes
+from lsst.pipe.base import (
+    PipelineTask,
+    PipelineTaskConfig,
+    PipelineTaskConnections,
+    Struct,
+    TaskMetadata,
+    connectionTypes,
+)
+from lsst.utils.introspection import get_full_type_name
 
 
 class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
@@ -45,6 +53,7 @@ class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
 class NoDimensionsTestConfig(PipelineTaskConfig, pipelineConnections=NoDimensionsTestConnections):
     key = Field(dtype=str, doc="String key for the dict entry the task sets.", default="one")
     value = Field(dtype=int, doc="Integer value for the dict entry the task sets.", default=1)
+    outputSC = Field(dtype=str, doc="Output storage class requested", default="dict")
 
 
 class NoDimensionsTestTask(PipelineTask):
@@ -73,6 +82,15 @@ class NoDimensionsTestTask(PipelineTask):
         result : `lsst.pipe.base.Struct`
             Struct with a single ``output`` attribute.
         """
+        self.log.info("Run method given data of type: %s", get_full_type_name(input))
         output = input.copy()
         output[self.config.key] = self.config.value
+
+        # Can change the return type via configuration.
+        if "TaskMetadata" in self.config.outputSC:
+            output = TaskMetadata.from_dict(output)
+        elif type(output) == TaskMetadata:
+            # Want the output to be a dict
+            output = output.to_dict()
+        self.log.info("Run method returns data of type: %s", get_full_type_name(output))
         return Struct(output=output)

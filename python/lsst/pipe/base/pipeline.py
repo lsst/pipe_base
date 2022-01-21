@@ -509,7 +509,7 @@ class Pipeline:
         if isinstance(task, str):
             taskName = task
         elif issubclass(task, PipelineTask):
-            taskName = f"{task.__module__}.{task.__qualname__}"
+            taskName = get_full_type_name(task)
         else:
             raise ValueError(
                 "task must be either a child class of PipelineTask or a string containing"
@@ -791,7 +791,11 @@ class TaskDatasetTypes:
             is set to None.
         """
 
-        def makeDatasetTypesSet(connectionType: str, freeze: bool = True) -> NamedValueSet[DatasetType]:
+        def makeDatasetTypesSet(
+            connectionType: str,
+            is_input: bool,
+            freeze: bool = True,
+        ) -> NamedValueSet[DatasetType]:
             """Constructs a set of true `DatasetType` objects
 
             Parameters
@@ -799,6 +803,9 @@ class TaskDatasetTypes:
             connectionType : `str`
                 Name of the connection type to produce a set for, corresponds
                 to an attribute of type `list` on the connection class instance
+            is_input : `bool`
+                These are input dataset types, else they are output dataset
+                types.
             freeze : `bool`, optional
                 If `True`, call `NamedValueSet.freeze` on the object returned.
 
@@ -879,27 +886,51 @@ class TaskDatasetTypes:
                         )
 
                     if registryDatasetType and datasetType != registryDatasetType:
-                        try:
-                            # Explicitly check for storage class just to make
-                            # more specific message.
-                            _ = datasetType.storageClass
-                        except KeyError:
+                        # The dataset types differ but first check to see if
+                        # they are compatible before raising.
+                        if is_input:
+                            # This DatasetType must be compatible on get.
+                            is_compatible = datasetType.is_compatible_with(registryDatasetType)
+                        else:
+                            # Has to be able to be converted to expect type
+                            # on put.
+                            is_compatible = registryDatasetType.is_compatible_with(datasetType)
+                        if is_compatible:
+                            # For inputs we want the pipeline to use the
+                            # pipeline definition, for outputs it should use
+                            # the registry definition.
+                            if not is_input:
+                                datasetType = registryDatasetType
+                            _LOG.debug(
+                                "Dataset types differ (task %s != registry %s) but are compatible"
+                                " for %s in %s.",
+                                datasetType,
+                                registryDatasetType,
+                                "input" if is_input else "output",
+                                taskDef.label,
+                            )
+                        else:
+                            try:
+                                # Explicitly check for storage class just to
+                                # make more specific message.
+                                _ = datasetType.storageClass
+                            except KeyError:
+                                raise ValueError(
+                                    "Storage class does not exist for supplied dataset type "
+                                    f"{datasetType} for {taskDef.label}."
+                                ) from None
                             raise ValueError(
-                                "Storage class does not exist for supplied dataset type "
-                                f"{datasetType} for {taskDef.label}."
-                            ) from None
-                        raise ValueError(
-                            f"Supplied dataset type ({datasetType}) inconsistent with "
-                            f"registry definition ({registryDatasetType}) "
-                            f"for {taskDef.label}."
-                        )
+                                f"Supplied dataset type ({datasetType}) inconsistent with "
+                                f"registry definition ({registryDatasetType}) "
+                                f"for {taskDef.label}."
+                            )
                 datasetTypes.add(datasetType)
             if freeze:
                 datasetTypes.freeze()
             return datasetTypes
 
         # optionally add initOutput dataset for config
-        initOutputs = makeDatasetTypesSet("initOutputs", freeze=False)
+        initOutputs = makeDatasetTypesSet("initOutputs", is_input=False, freeze=False)
         if include_configs:
             initOutputs.add(
                 DatasetType(
@@ -911,7 +942,7 @@ class TaskDatasetTypes:
         initOutputs.freeze()
 
         # optionally add output dataset for metadata
-        outputs = makeDatasetTypesSet("outputs", freeze=False)
+        outputs = makeDatasetTypesSet("outputs", is_input=False, freeze=False)
         if taskDef.metadataDatasetName is not None:
             # Metadata is supposed to be of the TaskMetadata type, its
             # dimensions correspond to a task quantum.
@@ -936,10 +967,10 @@ class TaskDatasetTypes:
         outputs.freeze()
 
         return cls(
-            initInputs=makeDatasetTypesSet("initInputs"),
+            initInputs=makeDatasetTypesSet("initInputs", is_input=True),
             initOutputs=initOutputs,
-            inputs=makeDatasetTypesSet("inputs"),
-            prerequisites=makeDatasetTypesSet("prerequisiteInputs"),
+            inputs=makeDatasetTypesSet("inputs", is_input=True),
+            prerequisites=makeDatasetTypesSet("prerequisiteInputs", is_input=True),
             outputs=outputs,
         )
 
@@ -1122,7 +1153,9 @@ class PipelineDatasetTypes:
         def checkConsistency(a: NamedValueSet, b: NamedValueSet):
             common = a.names & b.names
             for name in common:
-                if a[name] != b[name]:
+                # Any compatibility is allowed. This function does not know
+                # if a dataset type is to be used for input or output.
+                if not (a[name].is_compatible_with(b[name]) or b[name].is_compatible_with(a[name])):
                     raise ValueError(f"Conflicting definitions for dataset type: {a[name]} != {b[name]}.")
 
         checkConsistency(allInitInputs, allInitOutputs)
