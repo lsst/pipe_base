@@ -78,6 +78,10 @@ def _accumulate(
                 # be inserted into the new registry
                 for ref in refs:
                     if ref.id is not None:
+                        # If this is a component we want the composite to be
+                        # exported.
+                        if ref.isComponent():
+                            ref = ref.makeCompositeRef()
                         exports.add(ref)
                     else:
                         if ref.isComponent():
@@ -118,7 +122,11 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], exports: Set[D
     BackendClass = getClassOf(butler._config["repo_transfer_formats", "yaml", "export"])
     backend = BackendClass(yamlBuffer)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
-    exporter.saveDatasets(exports)
+
+    # Need to ensure that the dimension records for input are transferred.
+    # Butler.transfer_from() does not (yet) transfer records.
+    dataIds = set(ref.dataId for ref in exports)
+    exporter.saveDataIds(dataIds)
 
     # Need to ensure that the dimension records for outputs are
     # transferred.
@@ -295,4 +303,15 @@ def buildExecutionButler(butler: Butler,
 
     newButler = _setupNewButler(butler, outputLocation, dirExists)
 
-    return _import(yamlBuffer, newButler, inserts, run, butlerModifier)
+    newButler = _import(yamlBuffer, newButler, inserts, run, butlerModifier)
+
+    # Transfer the existing datasets directly from the source butler.
+    newButler.transfer_from(
+        butler,
+        exports,
+        transfer="auto",  # No transfers should be happening.
+        skip_missing=False,  # Everything should exist.
+        register_dataset_types=True,
+    )
+
+    return newButler
