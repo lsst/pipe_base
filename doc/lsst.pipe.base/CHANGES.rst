@@ -1,3 +1,12 @@
+pipe_base v23.0.1 2022-02-02
+============================
+
+Miscellaneous Changes of Minor Interest
+---------------------------------------
+
+- Execution butler creation time has been reduced significantly by avoiding unnecessary checks for existence of files in the datastore. (`DM-33345 <https://jira.lsstcorp.org/browse/DM-33345>`_)
+
+
 pipe_base v23.0.0 2021-12-10
 ============================
 
