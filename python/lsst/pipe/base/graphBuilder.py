@@ -125,9 +125,54 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             A new dictionary instance.
         """
         combined = ChainMap(first, *rest)
-        return cls(
-            {datasetType: combined[datasetType] for datasetType in datasetTypes}, universe=first.universe
-        )
+        # If there are dataset type mismatches a name look up for the dataset
+        # types in combined will be useful.
+        combined_by_name = {k.name: k for k in combined}
+
+        _dict = {}
+        missing = set()
+        incompatible = {}
+        for datasetType in datasetTypes:
+            if datasetType in combined:
+                _dict[datasetType] = combined[datasetType]
+            else:
+                # The dataset type is not found. It may not be listed
+                # or it may be that it is there with the same name
+                # but different definition.
+                if datasetType.name in combined_by_name:
+                    # This implies some inconsistency in definitions
+                    # for connections. If there is support for storage
+                    # class conversion we can let it slide.
+                    # At this point we do not know
+                    # where the inconsistency is but trust that down
+                    # stream code will be more explicit about input
+                    # vs output incompatibilities.
+                    existing = combined_by_name[datasetType.name]
+                    if existing.is_compatible_with(datasetType) or datasetType.is_compatible_with(existing):
+                        _LOG.warning(
+                            "Dataset type mismatch (%s != %s) but continuing since they are compatible",
+                            datasetType,
+                            existing,
+                        )
+                        _dict[datasetType] = combined[existing]
+                    else:
+                        incompatible[datasetType] = existing
+                else:
+                    missing.add(datasetType)
+
+        if missing or incompatible:
+            reasons = []
+            if missing:
+                reasons.append(
+                    "DatasetTypes {'.'.join(missing)} not present in list of known types: "
+                    + ", ".join(d.name for d in combined)
+                )
+            if incompatible:
+                for x, y in incompatible.items():
+                    reasons.append(f"{x} incompatible with {y}")
+            raise KeyError("Errors matching dataset types: " + " & ".join(reasons))
+
+        return cls(_dict, universe=first.universe)
 
     @property
     def dimensions(self) -> DimensionGraph:
