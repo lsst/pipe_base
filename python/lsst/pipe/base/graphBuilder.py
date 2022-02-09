@@ -125,17 +125,22 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             A new dictionary instance.
         """
         combined = ChainMap(first, *rest)
-        # If there are dataset type mismatches a name look up for the dataset
-        # types in combined will be useful.
-        combined_by_name = {k.name: k for k in combined}
 
-        _dict = {}
-        missing = set()
-        incompatible = {}
-        for datasetType in datasetTypes:
-            if datasetType in combined:
-                _dict[datasetType] = combined[datasetType]
-            else:
+        # Dataset types known to match immediately can be processed
+        # without checks.
+        matches = combined.keys() & set(datasetTypes)
+        _dict = {k: combined[k] for k in matches}
+
+        if len(_dict) < len(datasetTypes):
+            # Work out which ones are missing.
+            missing_datasetTypes = set(datasetTypes) - _dict.keys()
+
+            # Get the known names for comparison.
+            combined_by_name = {k.name: k for k in combined}
+
+            missing = set()
+            incompatible = {}
+            for datasetType in missing_datasetTypes:
                 # The dataset type is not found. It may not be listed
                 # or it may be that it is there with the same name
                 # but different definition.
@@ -160,17 +165,17 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
                 else:
                     missing.add(datasetType)
 
-        if missing or incompatible:
-            reasons = []
-            if missing:
-                reasons.append(
-                    "DatasetTypes {'.'.join(missing)} not present in list of known types: "
-                    + ", ".join(d.name for d in combined)
-                )
-            if incompatible:
-                for x, y in incompatible.items():
-                    reasons.append(f"{x} incompatible with {y}")
-            raise KeyError("Errors matching dataset types: " + " & ".join(reasons))
+            if missing or incompatible:
+                reasons = []
+                if missing:
+                    reasons.append(
+                        "DatasetTypes {'.'.join(missing)} not present in list of known types: "
+                        + ", ".join(d.name for d in combined)
+                    )
+                if incompatible:
+                    for x, y in incompatible.items():
+                        reasons.append(f"{x} incompatible with {y}")
+                raise KeyError("Errors matching dataset types: " + " & ".join(reasons))
 
         return cls(_dict, universe=first.universe)
 
