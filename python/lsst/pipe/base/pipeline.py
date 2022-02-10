@@ -1172,7 +1172,11 @@ class PipelineDatasetTypes:
             initIntermediates=frozen(allInitInputs & allInitOutputs),
             initOutputs=frozen(allInitOutputs - allInitInputs),
             inputs=frozen(allInputs - allOutputs - intermediateComponents),
-            intermediates=frozen(allInputs & allOutputs | intermediateComponents),
+            # If there are storage class differences in inputs and outputs
+            # the intermediates have to choose priority. Here choose that
+            # inputs to tasks much match the requested storage class by
+            # applying the inputs over the top of the outputs.
+            intermediates=frozen(allOutputs & allInputs | intermediateComponents),
             outputs=frozen(allOutputs - allInputs - intermediateComposites),
             prerequisites=frozen(prerequisites),
             byTask=MappingProxyType(byTask),  # MappingProxyType -> frozen view of dict for immutability
