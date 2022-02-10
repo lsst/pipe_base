@@ -24,4 +24,4 @@ jobs:
         run: isort --check-only python/ tests/
 
       - name: Run black
-        run: black --check --verbose --diff python/ tests/
+        run: black --check --verbose --diff python/ tests/ examples/
