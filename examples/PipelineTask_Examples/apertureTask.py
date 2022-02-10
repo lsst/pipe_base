@@ -6,7 +6,7 @@ import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 from lsst.geom import Point2I
 
-from lsst.pipe.base import connectionTypes
+from lsst.pipe.base import connectionTypes  # noqa: F401
 
 
 class ApertureTaskConfig(pexConfig.Config):

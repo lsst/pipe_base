@@ -13,8 +13,6 @@ from lsst.geom import Point2I
 
 from lsst.pipe.base import connectionTypes
 
-from typing import Mapping, Optional, List
-
 
 class ApertureTaskConnections(
     pipeBase.PipelineTaskConnections,
