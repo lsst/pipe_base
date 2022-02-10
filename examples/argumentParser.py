@@ -36,8 +36,8 @@ import lsst.pipe.base as pipeBase
 
 
 class ExampleConfig(pexConfig.Config):
-    """Config for argument parser example
-    """
+    """Config for argument parser example"""
+
     oneInt = pexConfig.Field(
         dtype=int,
         doc="Example integer value",

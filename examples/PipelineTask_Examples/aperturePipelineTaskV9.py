@@ -13,40 +13,60 @@ from lsst.pipe.base import connectionTypes
 from typing import Mapping, Optional, List
 
 
-class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                              defaultTemplates={"outputName": "customAperture"},
-                              dimensions=("visit", "band")):
-    exposures = connectionTypes.Input(doc="Input exposure to make measurements on",
-                                      dimensions=("visit", "detector", "band"),
-                                      storageClass="ExposureF",
-                                      name="calexp",
-                                      multiple=True)
-    inputCatalog = connectionTypes.Input(doc="Input catalog with existing measurements",
-                                         dimensions=("visit", "detector", "band"),
-                                         storageClass="SourceCatalog",
-                                         name="src")
-    backgrounds = connectionTypes.Input(doc="Background model for the exposure",
-                                        storageClass="Background",
-                                        name="calexpBackground",
-                                        dimensions=("visit", "detector", "band"),
-                                        multiple=True)
-    inputCatalogs = connectionTypes.Input(doc="Input catalog with existing measurements",
-                                          dimensions=("visit", "detector", "band",),
-                                          storageClass="SourceCatalog",
-                                          name="src",
-                                          multiple=True)
-    outputCatalog = connectionTypes.Output(doc="Aperture measurements",
-                                           dimensions=("visit", "detector", "band"),
-                                           storageClass="SourceCatalog",
-                                           name="{outputName}")
-    outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
-                                              storageClass="SourceCatalog",
-                                              name="{outputName}_schema")
-    areaMasks = connectionTypes.PrerequisiteInput(doc="A mask of areas to be ignored",
-                                                  storageClass="Mask",
-                                                  dimensions=("visit", "detector", "band"),
-                                                  name="ApAreaMask",
-                                                  multiple=True)
+class ApertureTaskConnections(
+    pipeBase.PipelineTaskConnections,
+    defaultTemplates={"outputName": "customAperture"},
+    dimensions=("visit", "band"),
+):
+    exposures = connectionTypes.Input(
+        doc="Input exposure to make measurements on",
+        dimensions=("visit", "detector", "band"),
+        storageClass="ExposureF",
+        name="calexp",
+        multiple=True,
+    )
+    inputCatalog = connectionTypes.Input(
+        doc="Input catalog with existing measurements",
+        dimensions=("visit", "detector", "band"),
+        storageClass="SourceCatalog",
+        name="src",
+    )
+    backgrounds = connectionTypes.Input(
+        doc="Background model for the exposure",
+        storageClass="Background",
+        name="calexpBackground",
+        dimensions=("visit", "detector", "band"),
+        multiple=True,
+    )
+    inputCatalogs = connectionTypes.Input(
+        doc="Input catalog with existing measurements",
+        dimensions=(
+            "visit",
+            "detector",
+            "band",
+        ),
+        storageClass="SourceCatalog",
+        name="src",
+        multiple=True,
+    )
+    outputCatalog = connectionTypes.Output(
+        doc="Aperture measurements",
+        dimensions=("visit", "detector", "band"),
+        storageClass="SourceCatalog",
+        name="{outputName}",
+    )
+    outputSchema = connectionTypes.InitOutput(
+        doc="Schema created in Aperture PipelineTask",
+        storageClass="SourceCatalog",
+        name="{outputName}_schema",
+    )
+    areaMasks = connectionTypes.PrerequisiteInput(
+        doc="A mask of areas to be ignored",
+        storageClass="Mask",
+        dimensions=("visit", "detector", "band"),
+        name="ApAreaMask",
+        multiple=True,
+    )
 
     def adjustQuantum(self, datasetRefMap):
         # Turn the lists DatasetRefs corresponding to each of the input
@@ -58,9 +78,11 @@ class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
 
         # Find the intersection of all the set of dataIds. This intersection
         # is the set of ids for which each connection has associated data
-        commonDataIds = exposuresSet.intersection(inputCatalogsSet).\
-            intersection(backgroundsSet).\
-            intersection(areaMasksSet)
+        commonDataIds = (
+            exposuresSet.intersection(inputCatalogsSet)
+            .intersection(backgroundsSet)
+            .intersection(areaMasksSet)
+        )
 
         # Rewrite the datasetRefMap to only contain dataIds in the pre-computed
         # intersection
@@ -77,12 +99,11 @@ class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
             self.inputs.remove("background")
 
 
-class ApertureTaskConfig(pipeBase.PipelineTaskConfig,
-                         pipelineConnections=ApertureTaskConnections):
+class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections):
     apRad = pexConfig.Field(doc="Radius of aperture", dtype=int, default=4)
-    doLocalBackground = pexConfig.Field(doc="Should the background be added "
-                                            "before doing photometry",
-                                        dtype=bool, default=False)
+    doLocalBackground = pexConfig.Field(
+        doc="Should the background be added " "before doing photometry", dtype=bool, default=False
+    )
 
 
 class ApertureTask(pipeBase.PipelineTask):
@@ -93,16 +114,16 @@ class ApertureTask(pipeBase.PipelineTask):
     def __init__(self, config: pexConfig.Config, initInput: Mapping, *args, **kwargs):
         super().__init__(config=config, *args, **kwargs)
         self.apRad = self.config.apRad
-        inputSchema = initInput['inputSchema'].schema
+        inputSchema = initInput["inputSchema"].schema
 
         # Create a camera mapper to create a copy of the input schema
         self.mapper = afwTable.SchemaMapper(inputSchema)
         self.mapper.addMinimalSchema(inputSchema, True)
 
         # Add the new field
-        self.apKey = self.mapper.editOutputSchema().addField("apFlux",
-                                                             type=np.float64,
-                                                             doc="Ap flux measured")
+        self.apKey = self.mapper.editOutputSchema().addField(
+            "apFlux", type=np.float64, doc="Ap flux measured"
+        )
 
         # Get the output schema
         self.schema = self.mapper.getOutputSchema()
@@ -114,9 +135,12 @@ class ApertureTask(pipeBase.PipelineTask):
         # matches an initOut so will be persisted
         self.outputSchema = afwTable.SourceCatalog(self.schema)
 
-    def runQuantum(self, butlerQC: pipeBase.ButlerQuantumContext,
-                   inputRefs: pipeBase.InputQuantizedConnection,
-                   outputRefs: pipeBase.OutputQuantizedConnection):
+    def runQuantum(
+        self,
+        butlerQC: pipeBase.ButlerQuantumContext,
+        inputRefs: pipeBase.InputQuantizedConnection,
+        outputRefs: pipeBase.OutputQuantizedConnection,
+    ):
         inputs = {}
         for name, refs in inputRefs:
             inputs[name] = butlerQC.get(refs)
@@ -125,28 +149,30 @@ class ApertureTask(pipeBase.PipelineTask):
         lengths = []
 
         # Remove the input catalogs from the list of inputs to the run method
-        inputCatalogs = inputs.pop('inputCatalogs')
+        inputCatalogs = inputs.pop("inputCatalogs")
 
         # Add in all the input catalogs into the output catalog
         cumulativeLength = 0
         for inCatHandle in inputCatalogs:
             inCat = inCatHandle.get()
-            lengths.append(len(inCat)+cumulativeLength)
+            lengths.append(len(inCat) + cumulativeLength)
             cumulativeLength += len(inCat)
             self.outputCatalog.extend(inCat, mapper=self.mapper)
 
         # Add the catalog lengths to the inputs to the run method
-        inputs['lengths'] = lengths
+        inputs["lengths"] = lengths
         output = self.run(**inputs)
         butlerQC.put(output, outputRefs.OutputCatalog)
 
-    def run(self, exposures: List[afwImage.Exposure],
-            lengths: List[int],
-            areaMasks: List[afwImage.Mask],
-            backgrounds: Optional[List[afwMath.BackgroundList]] = None
-            ) -> pipeBase.Struct:
+    def run(
+        self,
+        exposures: List[afwImage.Exposure],
+        lengths: List[int],
+        areaMasks: List[afwImage.Mask],
+        backgrounds: Optional[List[afwMath.BackgroundList]] = None,
+    ) -> pipeBase.Struct:
         # set dimension cutouts to 3 times the apRad times 2 (for diameter)
-        dimensions = (3*self.apRad*2, 3*self.apRad*2)
+        dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 
         # Get indexes for each pixel
         indy, indx = np.indices(dimensions)
@@ -181,23 +207,23 @@ class ApertureTask(pipeBase.PipelineTask):
                 source.set(self.apKey, math.nan)
                 continue
             # Create a cutout
-            stamp = exposure.image.array[center[0]-3*self.apRad: center[0]+3*self.apRad,
-                                         center[1]-3*self.apRad: center[1]+3*self.apRad]
-            distance = ((indy - center[0])**2
-                        + (indx - center[0])**2)**0.5
+            stamp = exposure.image.array[
+                center[0] - 3 * self.apRad : center[0] + 3 * self.apRad,
+                center[1] - 3 * self.apRad : center[1] + 3 * self.apRad,
+            ]
+            distance = ((indy - center[0]) ** 2 + (indx - center[0]) ** 2) ** 0.5
             mask = distance < self.apRad
-            flux = np.sum(stamp*mask)
+            flux = np.sum(stamp * mask)
 
             # Do local background subtraction
             if backgrounds is not None:
-                outerAn = distance < 2.5*self.apRad
-                innerAn = distance < 1.5*self.apRad
+                outerAn = distance < 2.5 * self.apRad
+                innerAn = distance < 1.5 * self.apRad
                 annulus = outerAn - innerAn
-                localBackground = np.mean(exposure.image.array*annulus)
-                flux -= np.sum(mask)*localBackground
+                localBackground = np.mean(exposure.image.array * annulus)
+                flux -= np.sum(mask) * localBackground
 
             # Set the flux field of this source
             source.set(self.apKey, flux)
 
         return pipeBase.Struct(outputCatalog=self.outputCatalog)
-
