@@ -25,7 +25,7 @@ import itertools
 import numbers
 import warnings
 from collections.abc import Sequence
-from typing import Any, Collection, Dict, List, Mapping, Protocol, Union
+from typing import Any, Collection, Dict, Iterator, List, Mapping, Optional, Protocol, Set, Tuple, Union
 
 from deprecated.sphinx import deprecated
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
@@ -52,7 +52,7 @@ class PropertySetLike(Protocol):
         ...
 
 
-def _isListLike(v):
+def _isListLike(v: Any) -> bool:
     return isinstance(v, Sequence) and not isinstance(v, str)
 
 
@@ -149,14 +149,14 @@ class TaskMetadata(BaseModel):
         used when a simple dictionary is needed.  Use
         `TaskMetadata.from_dict()` to convert it back.
         """
-        d = {}
+        d: Dict[str, Any] = {}
         d.update(self.scalars)
         d.update(self.arrays)
         for k, v in self.metadata.items():
             d[k] = v.to_dict()
         return d
 
-    def add(self, name, value):
+    def add(self, name: str, value: Any) -> None:
         """Store a new value, adding to a list if one already exists.
 
         Parameters
@@ -185,7 +185,10 @@ class TaskMetadata(BaseModel):
 
             if key0 in self.scalars:
                 # Convert scalar to array.
-                self.arrays[key0] = [self.scalars.pop(key0)]
+                # MyPy should be able to figure out that List[Union[T1, T2]] is
+                # compatible with  Union[List[T1], List[T2]] if the list has
+                # only one element, but it can't.
+                self.arrays[key0] = [self.scalars.pop(key0)]  # type: ignore
 
             if key0 in self.arrays:
                 # Check that the type is not changing.
@@ -204,7 +207,7 @@ class TaskMetadata(BaseModel):
         version=_DEPRECATION_VERSION,
         category=FutureWarning,
     )
-    def getAsDouble(self, key):
+    def getAsDouble(self, key: str) -> float:
         """Return the value cast to a `float`.
 
         Parameters
@@ -224,7 +227,7 @@ class TaskMetadata(BaseModel):
         """
         return float(self.__getitem__(key))
 
-    def getScalar(self, key):
+    def getScalar(self, key: str) -> Union[str, int, float, bool]:
         """Retrieve a scalar item even if the item is a list.
 
         Parameters
@@ -234,7 +237,7 @@ class TaskMetadata(BaseModel):
 
         Returns
         -------
-        value : Any
+        value : `str`, `int`, `float`, or `bool`
             Either the value associated with the key or, if the key
             corresponds to a list, the last item in the list.
 
@@ -247,7 +250,7 @@ class TaskMetadata(BaseModel):
         # getScalar() is the default behavior for __getitem__.
         return self[key]
 
-    def getArray(self, key):
+    def getArray(self, key: str) -> List[Any]:
         """Retrieve an item as a list even if it is a scalar.
 
         Parameters
@@ -282,7 +285,7 @@ class TaskMetadata(BaseModel):
             # Report the correct key.
             raise KeyError(f"'{key}' not found") from None
 
-    def names(self, topLevelOnly: bool = True):
+    def names(self, topLevelOnly: bool = True) -> Set[str]:
         """Return the hierarchical keys from the metadata.
 
         Parameters
@@ -318,7 +321,7 @@ class TaskMetadata(BaseModel):
                     names.update({k + "." + item for item in v.names(topLevelOnly=topLevelOnly)})
             return names
 
-    def paramNames(self, topLevelOnly):
+    def paramNames(self, topLevelOnly: bool) -> Set[str]:
         """Return hierarchical names.
 
         Parameters
@@ -350,7 +353,7 @@ class TaskMetadata(BaseModel):
         version=_DEPRECATION_VERSION,
         category=FutureWarning,
     )
-    def set(self, key, item):
+    def set(self, key: str, item: Any) -> None:
         """Set the value of the supplied key."""
         self.__setitem__(key, item)
 
@@ -359,7 +362,7 @@ class TaskMetadata(BaseModel):
         version=_DEPRECATION_VERSION,
         category=FutureWarning,
     )
-    def remove(self, key):
+    def remove(self, key: str) -> None:
         """Remove the item without raising if absent."""
         try:
             self.__delitem__(key)
@@ -368,7 +371,7 @@ class TaskMetadata(BaseModel):
             pass
 
     @staticmethod
-    def _getKeys(key):
+    def _getKeys(key: str) -> List[str]:
         """Return the key hierarchy.
 
         Parameters
@@ -392,26 +395,30 @@ class TaskMetadata(BaseModel):
             raise KeyError(f"Invalid key '{key}': only string keys are allowed") from None
         return keys
 
-    def keys(self):
+    def keys(self) -> Tuple[str, ...]:
         """Return the top-level keys."""
         return tuple(k for k in self)
 
-    def items(self):
+    def items(self) -> Iterator[Tuple[str, Any]]:
         """Yield the top-level keys and values."""
         for k, v in itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items()):
             yield (k, v)
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the number of items."""
         return len(self.scalars) + len(self.arrays) + len(self.metadata)
 
-    def __iter__(self):
+    # This is actually a Liskov substitution violation, because
+    # pydantic.BaseModel says __iter__ should return something else.  But the
+    # pydantic docs say to do exactly this to in order to make a mapping-like
+    # BaseModel, so that's what we do.
+    def __iter__(self) -> Iterator[str]:  # type: ignore
         """Return an iterator over each key."""
         # The order of keys is not preserved since items can move
         # from scalar to array.
         return itertools.chain(iter(self.scalars), iter(self.arrays), iter(self.metadata))
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         """Retrieve the item associated with the key.
 
         Parameters
@@ -450,13 +457,17 @@ class TaskMetadata(BaseModel):
         except KeyError:
             raise KeyError(f"'{key}' not found") from None
 
-    def __setitem__(self, key, item):
+    def __setitem__(self, key: str, item: Any) -> None:
         """Store the given item."""
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
-            slots = {"array": self.arrays, "scalar": self.scalars, "metadata": self.metadata}
-            primary = None
+            slots: Dict[str, Dict[str, Any]] = {
+                "array": self.arrays,
+                "scalar": self.scalars,
+                "metadata": self.metadata,
+            }
+            primary: Optional[Dict[str, Any]] = None
             slot_type, item = self._validate_value(item)
             primary = slots.pop(slot_type, None)
             if primary is None:
@@ -478,7 +489,7 @@ class TaskMetadata(BaseModel):
         self.scalars.pop(key0, None)
         self.arrays.pop(key0, None)
 
-    def __contains__(self, key):
+    def __contains__(self, key: str) -> bool:
         """Determine if the key exists."""
         keys = self._getKeys(key)
         key0 = keys.pop(0)
@@ -489,7 +500,7 @@ class TaskMetadata(BaseModel):
             return ".".join(keys) in self.metadata[key0]
         return False
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str) -> None:
         """Remove the specified item.
 
         Raises
@@ -500,7 +511,11 @@ class TaskMetadata(BaseModel):
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
-            for property in (self.scalars, self.arrays, self.metadata):
+            # MyPy can't figure out that this way to combine the types in the
+            # tuple is the one that matters, and annotating a local variable
+            # helps it out.
+            properties: Tuple[Dict[str, Any], ...] = (self.scalars, self.arrays, self.metadata)
+            for property in properties:
                 if key0 in property:
                     del property[key0]
                     return
@@ -512,7 +527,7 @@ class TaskMetadata(BaseModel):
             # Report the correct key.
             raise KeyError(f"'{key}' not found'") from None
 
-    def _validate_value(self, value):
+    def _validate_value(self, value: Any) -> Tuple[str, Any]:
         """Validate the given value.
 
         Parameters
@@ -558,6 +573,7 @@ class TaskMetadata(BaseModel):
 
             if type0 not in _ALLOWED_PRIMITIVE_TYPES:
                 # Must check to see if we got numpy floats or something.
+                type_cast: type
                 if isinstance(value[0], numbers.Integral):
                     type_cast = int
                 elif isinstance(value[0], numbers.Real):
