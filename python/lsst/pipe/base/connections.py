@@ -38,10 +38,10 @@ __all__ = [
 import itertools
 import string
 import typing
-from collections import UserDict, namedtuple
+from collections import UserDict
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Iterable, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Set, Union
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
@@ -80,7 +80,7 @@ class PipelineTaskConnectionDict(UserDict):
     iterate on only these variables.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         # Initialize class level variables used to track any declared
         # class level variables that are instances of
@@ -92,7 +92,7 @@ class PipelineTaskConnectionDict(UserDict):
         self.data["initOutputs"] = []
         self.data["allConnections"] = {}
 
-    def __setitem__(self, name, value):
+    def __setitem__(self, name: str, value: Any) -> None:
         if isinstance(value, Input):
             self.data["inputs"].append(name)
         elif isinstance(value, PrerequisiteInput):
@@ -237,7 +237,7 @@ class QuantizedConnection(SimpleNamespace):
         # later when iterating over this QuantizedConnection instance
         object.__setattr__(self, "_attributes", set())
 
-    def __setattr__(self, name: str, value: typing.Union[DatasetRef, typing.List[DatasetRef]]):
+    def __setattr__(self, name: str, value: typing.Union[DatasetRef, typing.List[DatasetRef]]) -> None:
         # Capture the attribute name as it is added to this object
         self._attributes.add(name)
         super().__setattr__(name, value)
@@ -273,9 +273,10 @@ class OutputQuantizedConnection(QuantizedConnection):
     pass
 
 
-class DeferredDatasetRef(namedtuple("DeferredDatasetRefBase", "datasetRef")):
-    """Class which denotes that a datasetRef should be treated as deferred when
-    interacting with the butler
+@dataclass(frozen=True)
+class DeferredDatasetRef:
+    """A wrapper class for `DatasetRef` that indicates that a `PipelineTask`
+    should receive a `DeferredDatasetHandle` instead of an in-memory dataset.
 
     Parameters
     ----------
@@ -284,7 +285,17 @@ class DeferredDatasetRef(namedtuple("DeferredDatasetRefBase", "datasetRef")):
         resolve a dataset
     """
 
-    __slots__ = ()
+    datasetRef: DatasetRef
+
+    @property
+    def datasetType(self) -> DatasetType:
+        """The dataset type for this dataset."""
+        return self.datasetRef.datasetType
+
+    @property
+    def dataId(self) -> DataCoordinate:
+        """The data ID for this dataset."""
+        return self.datasetRef.dataId
 
 
 class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
@@ -395,13 +406,15 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
+    dimensions: ClassVar[Set[str]]
+
     def __init__(self, *, config: "PipelineTaskConfig" = None):
-        self.inputs = set(self.inputs)
-        self.prerequisiteInputs = set(self.prerequisiteInputs)
-        self.outputs = set(self.outputs)
-        self.initInputs = set(self.initInputs)
-        self.initOutputs = set(self.initOutputs)
-        self.allConnections = dict(self.allConnections)
+        self.inputs: Set[str] = set(self.inputs)
+        self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
+        self.outputs: Set[str] = set(self.outputs)
+        self.initInputs: Set[str] = set(self.initInputs)
+        self.initOutputs: Set[str] = set(self.initOutputs)
+        self.allConnections: Dict[str, BaseConnection] = dict(self.allConnections)
 
         from .config import PipelineTaskConfig  # local import to avoid cycle
 
@@ -461,18 +474,21 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 attribute = getattr(self, attributeName)
                 # Branch if the attribute dataset type is an input
                 if attribute.name in quantum.inputs:
-                    # Get the DatasetRefs
-                    quantumInputRefs = quantum.inputs[attribute.name]
                     # if the dataset is marked to load deferred, wrap it in a
                     # DeferredDatasetRef
+                    quantumInputRefs: Union[List[DatasetRef], List[DeferredDatasetRef]]
                     if attribute.deferLoad:
-                        quantumInputRefs = [DeferredDatasetRef(datasetRef=ref) for ref in quantumInputRefs]
+                        quantumInputRefs = [
+                            DeferredDatasetRef(datasetRef=ref) for ref in quantum.inputs[attribute.name]
+                        ]
+                    else:
+                        quantumInputRefs = list(quantum.inputs[attribute.name])
                     # Unpack arguments that are not marked multiples (list of
                     # length one)
                     if not attribute.multiple:
                         if len(quantumInputRefs) > 1:
                             raise ScalarError(
-                                f"Received multiple datasets "
+                                "Received multiple datasets "
                                 f"{', '.join(str(r.dataId) for r in quantumInputRefs)} "
                                 f"for scalar connection {attributeName} "
                                 f"({quantumInputRefs[0].datasetType.name}) "
@@ -480,18 +496,19 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                             )
                         if len(quantumInputRefs) == 0:
                             continue
-                        quantumInputRefs = quantumInputRefs[0]
-                    # Add to the QuantizedConnection identifier
-                    setattr(refs, attributeName, quantumInputRefs)
+                        setattr(refs, attributeName, quantumInputRefs[0])
+                    else:
+                        # Add to the QuantizedConnection identifier
+                        setattr(refs, attributeName, quantumInputRefs)
                 # Branch if the attribute dataset type is an output
                 elif attribute.name in quantum.outputs:
                     value = quantum.outputs[attribute.name]
                     # Unpack arguments that are not marked multiples (list of
                     # length one)
                     if not attribute.multiple:
-                        value = value[0]
-                    # Add to the QuantizedConnection identifier
-                    setattr(refs, attributeName, value)
+                        setattr(refs, attributeName, value[0])
+                    else:
+                        setattr(refs, attributeName, value)
                 # Specified attribute is not in inputs or outputs dont know how
                 # to handle, throw
                 else:
@@ -506,7 +523,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         outputs: typing.Dict[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
         label: str,
         data_id: DataCoordinate,
-    ) -> tuple.Tuple[
+    ) -> typing.Tuple[
         typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
         typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
     ]:
@@ -598,22 +615,22 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         not be produced because the corresponding input is missing as early as
         possible.
         """
-        for name, (connection, refs) in inputs.items():
-            dataset_type_name = connection.name
-            if not connection.multiple and len(refs) > 1:
+        for name, (input_connection, refs) in inputs.items():
+            dataset_type_name = input_connection.name
+            if not input_connection.multiple and len(refs) > 1:
                 raise ScalarError(
                     f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
                     f"for non-multiple input connection {label}.{name} ({dataset_type_name}) "
                     f"for quantum data ID {data_id}."
                 )
-            if len(refs) < connection.minimum:
-                if isinstance(connection, PrerequisiteInput):
+            if len(refs) < input_connection.minimum:
+                if isinstance(input_connection, PrerequisiteInput):
                     # This branch should only be possible during QG generation,
                     # or if someone deleted the dataset between making the QG
                     # and trying to run it.  Either one should be a hard error.
                     raise FileNotFoundError(
                         f"Not enough datasets ({len(refs)}) found for non-optional connection {label}.{name} "
-                        f"({dataset_type_name}) with minimum={connection.minimum} for quantum data ID "
+                        f"({dataset_type_name}) with minimum={input_connection.minimum} for quantum data ID "
                         f"{data_id}."
                     )
                 else:
@@ -623,10 +640,10 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                     # execution.  It can trigger during execution if the input
                     # wasn't actually created by an upstream task in the same
                     # graph.
-                    raise NoWorkFound(label, name, connection)
-        for name, (connection, refs) in outputs.items():
-            dataset_type_name = connection.name
-            if not connection.multiple and len(refs) > 1:
+                    raise NoWorkFound(label, name, input_connection)
+        for name, (output_connection, refs) in outputs.items():
+            dataset_type_name = output_connection.name
+            if not output_connection.multiple and len(refs) > 1:
                 raise ScalarError(
                     f"Found multiple datasets {', '.join(str(r.dataId) for r in refs)} "
                     f"for non-multiple output connection {label}.{name} ({dataset_type_name}) "
@@ -723,9 +740,13 @@ class AdjustQuantumHelper:
             dataset_type_name = connection.name
             outputs_by_connection[name] = (connection, tuple(self.outputs.get(dataset_type_name, ())))
         # Actually call adjustQuantum.
+        # MyPy correctly complains that this call is not quite legal, but the
+        # method docs explain exactly what's expected and it's the behavior we
+        # want.  It'd be nice to avoid this if we ever have to change the
+        # interface anyway, but not an immediate problem.
         adjusted_inputs_by_connection, adjusted_outputs_by_connection = connections.adjustQuantum(
-            inputs_by_connection,
-            outputs_by_connection,
+            inputs_by_connection,  # type: ignore
+            outputs_by_connection,  # type: ignore
             label,
             data_id,
         )
