@@ -25,7 +25,7 @@ import uuid
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 from dataclasses import dataclass
-from typing import Dict, NewType, Optional, Tuple
+from typing import Any, Dict, NewType, Optional, Tuple
 
 from lsst.daf.butler import (
     DatasetRef,
@@ -97,7 +97,7 @@ class QuantumNode:
     creation.
     """
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # use setattr here to preserve the frozenness of the QuantumNode
         self._precomputedHash: int
         object.__setattr__(self, "_precomputedHash", hash((self.taskDef.label, self.quantum)))
@@ -115,7 +115,7 @@ class QuantumNode:
         """
         return self._precomputedHash
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Make more human readable string representation."""
         return (
             f"{self.__class__.__name__}(quantum={self.quantum}, "
@@ -152,7 +152,7 @@ class SerializedQuantumNode(BaseModel):
     nodeId: uuid.UUID
 
     @classmethod
-    def direct(cls, *, quantum, taskLabel, nodeId):
+    def direct(cls, *, quantum: Dict[str, Any], taskLabel: str, nodeId: str) -> SerializedQuantumNode:
         node = SerializedQuantumNode.__new__(cls)
         setter = object.__setattr__
         setter(node, "quantum", SerializedQuantum.direct(**quantum))

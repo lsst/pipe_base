@@ -31,7 +31,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Mapping, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Optional, Set, Tuple, Type
 
 import networkx as nx
 from lsst.daf.butler import DimensionRecord, DimensionUniverse, Quantum, SerializedDimensionRecord
@@ -52,11 +52,14 @@ class StructSizeDescriptor:
     (number of bytes) of whatever the formatter string is for a deserializer
     """
 
-    def __get__(self, inst, owner) -> int:
+    def __get__(self, inst: Optional[DeserializerBase], owner: Type[DeserializerBase]) -> int:
         return struct.calcsize(owner.FMT_STRING())
 
 
-@dataclass
+# MyPy doesn't seem to like the idea of an abstract dataclass.  It seems to
+# work, but maybe we're doing something that isn't really supported (or maybe
+# I misunderstood the error message).
+@dataclass  # type: ignore
 class DeserializerBase(ABC):
     @classmethod
     @abstractmethod
@@ -169,7 +172,7 @@ class DeserializerV1(DeserializerBase):
     def FMT_STRING(cls) -> str:
         return ">QQ"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.taskDefMapSize, self.nodeMapSize = struct.unpack(self.FMT_STRING(), self.sizeBytes)
 
     @property
@@ -190,7 +193,7 @@ class DeserializerV1(DeserializerBase):
 
     def constructGraph(
         self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
-    ):
+    ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
@@ -292,7 +295,7 @@ class DeserializerV2(DeserializerBase):
     def FMT_STRING(cls) -> str:
         return ">Q"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         (self.mapSize,) = struct.unpack(self.FMT_STRING(), self.sizeBytes)
 
     @property
@@ -320,7 +323,7 @@ class DeserializerV2(DeserializerBase):
 
     def constructGraph(
         self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
-    ):
+    ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
@@ -451,7 +454,7 @@ class DeserializerV3(DeserializerBase):
     def FMT_STRING(cls) -> str:
         return ">Q"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.infoSize: int
         (self.infoSize,) = struct.unpack(self.FMT_STRING(), self.sizeBytes)
 
@@ -479,12 +482,12 @@ class DeserializerV3(DeserializerBase):
 
     def constructGraph(
         self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
-    ):
+    ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
         graph = nx.DiGraph()
-        loadedTaskDef: Mapping[str, TaskDef] = {}
+        loadedTaskDef: Dict[str, TaskDef] = {}
         container = {}
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
@@ -513,8 +516,8 @@ class DeserializerV3(DeserializerBase):
 
                 # bytes are compressed, so decompress them
                 taskDefDump = json.loads(lzma.decompress(_readBytes(start, stop)))
-                taskClass: PipelineTask = doImport(taskDefDump["taskName"])  # type: ignore
-                config: Config = taskClass.ConfigClass()  # type: ignore
+                taskClass: Type[PipelineTask] = doImport(taskDefDump["taskName"])  # type: ignore
+                config: Config = taskClass.ConfigClass()
                 config.loadFromStream(taskDefDump["config"])
                 # Rebuild TaskDef
                 recreatedTaskDef = TaskDef(
@@ -540,28 +543,28 @@ class DeserializerV3(DeserializerBase):
             # reconstitute the node, passing in the dictionaries for the
             # loaded TaskDefs and dimension records. These are used to ensure
             # that each unique record is only loaded once
-            node = QuantumNode.from_simple(nodeDeserialized, loadedTaskDef, universe, recontitutedDimensions)
-            container[node.nodeId] = node
-            taskToQuantumNode[loadedTaskDef[nodeTaskLabel]].add(node)
+            qnode = QuantumNode.from_simple(nodeDeserialized, loadedTaskDef, universe, recontitutedDimensions)
+            container[qnode.nodeId] = qnode
+            taskToQuantumNode[loadedTaskDef[nodeTaskLabel]].add(qnode)
 
             # recreate the relations between each node from stored info
-            graph.add_node(node)
-            for id in self.infoMappings.map[node.nodeId]["inputs"]:
+            graph.add_node(qnode)
+            for id in self.infoMappings.map[qnode.nodeId]["inputs"]:
                 # uuid is stored as a string, turn it back into a uuid
                 id = uuid.UUID(id)
                 # if the id is not yet in the container, dont make a connection
                 # this is not an issue, because once it is, that id will add
                 # the reverse connection
                 if id in container:
-                    graph.add_edge(container[id], node)
-            for id in self.infoMappings.map[node.nodeId]["outputs"]:
+                    graph.add_edge(container[id], qnode)
+            for id in self.infoMappings.map[qnode.nodeId]["outputs"]:
                 # uuid is stored as a string, turn it back into a uuid
                 id = uuid.UUID(id)
                 # if the id is not yet in the container, dont make a connection
                 # this is not an issue, because once it is, that id will add
                 # the reverse connection
                 if id in container:
-                    graph.add_edge(node, container[id])
+                    graph.add_edge(qnode, container[id])
 
         newGraph = object.__new__(QuantumGraph)
         newGraph._metadata = self.infoMappings.metadata

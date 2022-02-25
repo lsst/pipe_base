@@ -24,10 +24,10 @@ __all__ = ("_DatasetTracker", "DatasetTypeName", "_pruner")
 
 from collections import defaultdict
 from itertools import chain
-from typing import DefaultDict, Dict, Generic, Iterable, NewType, Optional, Set, TypeVar
+from typing import DefaultDict, Dict, Generic, Iterable, List, NewType, Optional, Set, TypeVar
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, NamedKeyDict, Quantum
+from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
 from lsst.pipe.base.connections import AdjustQuantumHelper
 
 from .._status import NoWorkFound
@@ -63,7 +63,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict: DefaultDict[_U, Set[_T]] = defaultdict(set)
 
-    def addProducer(self, key: _T, value: _U):
+    def addProducer(self, key: _T, value: _U) -> None:
         """Add a key which is produced by some value.
 
         Parameters
@@ -84,7 +84,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeProducer(self, key: _T, value: _U):
+    def removeProducer(self, key: _T, value: _U) -> None:
         """Remove a value (e.g. QuantumNode or TaskDef) from being considered
         a producer of the corresponding key. It is not an error to remove a
         key that is not in the tracker.
@@ -101,7 +101,7 @@ class _DatasetTracker(Generic[_T, _U]):
             if result := self._itemsDict.get(value):
                 result.discard(key)
 
-    def addConsumer(self, key: _T, value: _U):
+    def addConsumer(self, key: _T, value: _U) -> None:
         """Add a key which is consumed by some value.
 
         Parameters
@@ -115,7 +115,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeConsumer(self, key: _T, value: _U):
+    def removeConsumer(self, key: _T, value: _U) -> None:
         """Remove a value (e.g. QuantumNode or TaskDef) from being considered
         a consumer of the corresponding key. It is not an error to remove a
         key that is not in the tracker.
@@ -127,14 +127,13 @@ class _DatasetTracker(Generic[_T, _U]):
         value : TypeVar
             The type associated with the consumption of the key
         """
-        result = self._consumers.get(key)
-        if result := self._consumers.get(key):
+        if (result := self._consumers.get(key)) is not None:
             result.discard(value)
         if self._createInverse:
             if result := self._itemsDict.get(value):
                 result.discard(key)
 
-    def getConsumers(self, key: _T) -> set[_U]:
+    def getConsumers(self, key: _T) -> Set[_U]:
         """Return all values associated with the consumption of the supplied
         key.
 
@@ -207,7 +206,7 @@ class _DatasetTracker(Generic[_T, _U]):
         """Return all tracked keys."""
         return self._producers.keys() | self._consumers.keys()
 
-    def remove(self, key: _T):
+    def remove(self, key: _T) -> None:
         """Remove a key and its corresponding value from the tracker, this is
         a no-op if the key is not in the tracker.
 
@@ -240,7 +239,7 @@ def _pruner(
     refsToRemove: Iterable[DatasetRef],
     *,
     alreadyPruned: Optional[Set[QuantumNode]] = None,
-):
+) -> None:
     r"""Prune supplied dataset refs out of datasetRefDict container, recursing
     to additional nodes dependant on pruned refs. This function modifies
     datasetRefDict in-place.
@@ -292,7 +291,7 @@ def _pruner(
                 toRemove = ref
 
             tmpRefs = set(connectionRefs).difference((toRemove,))
-            tmpConnections = NamedKeyDict(node.quantum.inputs.items())
+            tmpConnections = NamedKeyDict[DatasetType, List[DatasetRef]](node.quantum.inputs.items())
             tmpConnections[toRemove.datasetType] = list(tmpRefs)
             helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
             assert node.quantum.dataId is not None, (

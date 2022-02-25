@@ -36,7 +36,9 @@ from itertools import chain
 from types import MappingProxyType
 from typing import (
     Any,
+    BinaryIO,
     DefaultDict,
+    Deque,
     Dict,
     FrozenSet,
     Generator,
@@ -134,7 +136,7 @@ class QuantumGraph:
         _buildId: Optional[BuildId] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         pruneRefs: Optional[Iterable[DatasetRef]] = None,
-    ):
+    ) -> None:
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
@@ -191,6 +193,7 @@ class QuantumGraph:
                                 sub = sub.makeCompositeRef()
                             self._datasetRefDict.addConsumer(sub, value)
                     else:
+                        assert isinstance(dsRef, DatasetRef)
                         if dsRef.isComponent():
                             dsRef = dsRef.makeCompositeRef()
                         self._datasetRefDict.addConsumer(dsRef, value)
@@ -199,7 +202,7 @@ class QuantumGraph:
 
         if pruneRefs is not None:
             # track what refs were pruned and prune the graph
-            prunes = set()
+            prunes: Set[QuantumNode] = set()
             _pruner(self._datasetRefDict, pruneRefs, alreadyPruned=prunes)
 
             # recreate the taskToQuantumNode dict removing nodes that have been
@@ -345,10 +348,10 @@ class QuantumGraph:
             quantumMap[node.taskDef].add(node.quantum)
 
         # convert to standard dict to prevent accidental key insertion
-        quantumMap = dict(quantumMap.items())
+        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
 
         newInst._buildGraphs(
-            quantumMap,
+            quantumDict,
             _quantumToNodeId={n.quantum: n.nodeId for n in self},
             metadata=self._metadata,
             pruneRefs=refs,
@@ -570,7 +573,7 @@ class QuantumGraph:
                 return True
         return False
 
-    def writeDotGraph(self, output: Union[str, io.BufferedIOBase]):
+    def writeDotGraph(self, output: Union[str, io.BufferedIOBase]) -> None:
         """Write out the graph as a dot graph.
 
         Parameters
@@ -603,11 +606,11 @@ class QuantumGraph:
             quantumMap[node.taskDef].add(node.quantum)
 
         # convert to standard dict to prevent accidental key insertion
-        quantumMap = dict(quantumMap.items())
+        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({})
         newInst._buildGraphs(
-            quantumMap,
+            quantumDict,
             _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
             _buildId=self._buildId,
             metadata=self._metadata,
@@ -712,7 +715,7 @@ class QuantumGraph:
         except nx.NetworkXNoCycle:
             return []
 
-    def saveUri(self, uri):
+    def saveUri(self, uri: ResourcePathExpression) -> None:
         """Save `QuantumGraph` to the specified URI.
 
         Parameters
@@ -738,7 +741,7 @@ class QuantumGraph:
         cls,
         uri: ResourcePathExpression,
         universe: DimensionUniverse,
-        nodes: Optional[Iterable[Union[str, uuid.UUID]]] = None,
+        nodes: Optional[Iterable[uuid.UUID]] = None,
         graphID: Optional[BuildId] = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
@@ -846,18 +849,15 @@ class QuantumGraph:
         else:
             raise ValueError("Only know how to handle files saved as `qgraph`")
 
-    def buildAndPrintHeader(self):
+    def buildAndPrintHeader(self) -> None:
         """Creates a header that would be used in a save of this object and
         prints it out to standard out.
         """
         _, header = self._buildSaveObject(returnHeader=True)
         print(json.dumps(header))
 
-    def save(self, file: io.IO[bytes]):
+    def save(self, file: BinaryIO) -> None:
         """Save QuantumGraph to a file.
-
-        Presently we store QuantumGraph in pickle format, this could
-        potentially change in the future if better format is found.
 
         Parameters
         ----------
@@ -869,13 +869,13 @@ class QuantumGraph:
 
     def _buildSaveObject(self, returnHeader: bool = False) -> Union[bytearray, Tuple[bytearray, Dict]]:
         # make some containers
-        jsonData = deque()
+        jsonData: Deque[bytes] = deque()
         # node map is a list because json does not accept mapping keys that
         # are not strings, so we store a list of key, value pairs that will
         # be converted to a mapping on load
         nodeMap = []
         taskDefMap = {}
-        headerData = {}
+        headerData: Dict[str, Any] = {}
 
         # Store the QauntumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
@@ -1010,7 +1010,7 @@ class QuantumGraph:
     @classmethod
     def load(
         cls,
-        file: io.IO[bytes],
+        file: BinaryIO,
         universe: DimensionUniverse,
         nodes: Optional[Iterable[uuid.UUID]] = None,
         graphID: Optional[BuildId] = None,
@@ -1068,8 +1068,7 @@ class QuantumGraph:
             qgraph = pickle.load(file)
             warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
         except pickle.UnpicklingError:
-            # needed because we don't have Protocols yet
-            with LoadHelper(file, minimumVersion) as loader:  # type: ignore
+            with LoadHelper(file, minimumVersion) as loader:
                 qgraph = loader.load(universe, nodes, graphID)
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
@@ -1086,7 +1085,7 @@ class QuantumGraph:
         yield from nx.topological_sort(self.taskGraph)
 
     @property
-    def graphID(self):
+    def graphID(self) -> BuildId:
         """Returns the ID generated by the graph at construction time"""
         return self._buildId
 
@@ -1113,7 +1112,7 @@ class QuantumGraph:
             universe = dId.graph.universe
         return {"reduced": self._buildSaveObject(), "graphId": self._buildId, "universe": universe}
 
-    def __setstate__(self, state: dict):
+    def __setstate__(self, state: dict) -> None:
         """Reconstructs the state of the graph from the information persisted
         in getstate.
         """
