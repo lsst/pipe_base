@@ -25,6 +25,7 @@ import logging
 import unittest
 
 import lsst.utils.tests
+from lsst.daf.butler.registry import UserExpressionError
 from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
@@ -60,7 +61,7 @@ class GraphBuilderTestCase(unittest.TestCase):
             pipeline = simpleQGraph.makeSimplePipeline(
                 nQuanta=5, instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
             )
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(UserExpressionError):
                 simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery="instrument = 'foo'")
 
 
