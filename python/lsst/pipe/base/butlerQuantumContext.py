@@ -30,9 +30,12 @@ from typing import Any, List, Sequence, Union
 
 from lsst.daf.butler import Butler, DatasetRef, Quantum
 from lsst.utils.introspection import get_full_type_name
+from lsst.utils.logging import PeriodicLogger, getLogger
 
 from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
 from .struct import Struct
+
+_LOG = getLogger(__name__)
 
 
 class ButlerQuantumContext:
@@ -142,17 +145,58 @@ class ButlerQuantumContext:
             Raised if a `DatasetRef` is passed to get that is not defined in
             the quantum object
         """
+        # Set up a periodic logger so log messages can be issued if things
+        # are taking too long.
+        periodic = PeriodicLogger(_LOG)
+
         if isinstance(dataset, InputQuantizedConnection):
             retVal = {}
-            for name, ref in dataset:
+            n_connections = len(dataset)
+            n_retrieved = 0
+            for i, (name, ref) in enumerate(dataset):
                 if isinstance(ref, list):
-                    val = [self._get(r) for r in ref]
+                    val = []
+                    n_refs = len(ref)
+                    for j, r in enumerate(ref):
+                        val.append(self._get(r))
+                        n_retrieved += 1
+                        periodic.log(
+                            "Retrieved %d out of %d datasets for connection '%s' (%d out of %d)",
+                            j + 1,
+                            n_refs,
+                            name,
+                            i + 1,
+                            n_connections,
+                        )
                 else:
                     val = self._get(ref)
+                    periodic.log(
+                        "Retrieved dataset for connection '%s' (%d out of %d)",
+                        name,
+                        i + 1,
+                        n_connections,
+                    )
+                    n_retrieved += 1
                 retVal[name] = val
+            if periodic.num_issued > 0:
+                # This took long enough that we issued some periodic log
+                # messages, so issue a final confirmation message as well.
+                _LOG.verbose(
+                    "Completed retrieval of %d datasets from %d connections", n_retrieved, n_connections
+                )
             return retVal
         elif isinstance(dataset, list):
-            return [self._get(x) for x in dataset]
+            n_datasets = len(dataset)
+            retrieved = []
+            for i, x in enumerate(dataset):
+                # Mypy is not sure of the type of x because of the union
+                # of lists so complains. Ignoring it is more efficient
+                # than adding an isinstance assert.
+                retrieved.append(self._get(x))  # type: ignore
+                periodic.log("Retrieved %d out of %d datasets", i + 1, n_datasets)
+            if periodic.num_issued > 0:
+                _LOG.verbose("Completed retrieval of %d datasets", n_datasets)
+            return retrieved
         elif isinstance(dataset, DatasetRef) or isinstance(dataset, DeferredDatasetRef):
             return self._get(dataset)
         else:

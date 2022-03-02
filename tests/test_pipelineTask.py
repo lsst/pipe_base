@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+import lsst.utils.logging
 import lsst.utils.tests
 from lsst.daf.butler import DataCoordinate, DatasetRef, DimensionUniverse, Quantum
 
@@ -147,10 +148,44 @@ class PipelineTaskTestCase(unittest.TestCase):
             butler.put(100 + i, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
 
         # run task on each quanta
+        checked_get = False
         for quantum in quanta:
             butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
             inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
             task.runQuantum(butlerQC, inputRefs, outputRefs)
+
+            # Test getting of datasets in different ways.
+            # (only need to do this one time)
+            if not checked_get:
+                # Force the periodic logger to issue messages.
+                lsst.utils.logging.PeriodicLogger.LOGGING_INTERVAL = 0.0
+
+                checked_get = True
+                with self.assertLogs(level=lsst.utils.logging.VERBOSE) as cm:
+                    input_data = butlerQC.get(inputRefs)
+                self.assertIn("Completed", cm.output[-1])
+                self.assertEqual(len(input_data), len(inputRefs))
+
+                # In this test there are no multiples returned.
+                refs = [ref for _, ref in inputRefs]
+                with self.assertLogs(level=lsst.utils.logging.VERBOSE) as cm:
+                    list_get = butlerQC.get(refs)
+
+                lsst.utils.logging.PeriodicLogger.LOGGING_INTERVAL = 600.0
+
+                self.assertIn("Completed", cm.output[-1])
+                self.assertEqual(len(list_get), len(input_data))
+                self.assertIsInstance(list_get[0], int)
+                scalar_get = butlerQC.get(refs[0])
+                self.assertEqual(scalar_get, list_get[0])
+
+                with self.assertRaises(TypeError):
+                    butlerQC.get({})
+
+                # Output ref won't be known to this quantum.
+                outputs = [ref for _, ref in outputRefs]
+                with self.assertRaises(ValueError):
+                    butlerQC.get(outputs[0])
 
         # look at the output produced by the task
         outputName = connections.output.name
