@@ -672,11 +672,7 @@ class _PipelineScaffolding:
                 f"Unable to handle type {datasetQueryConstraint} given as datasetQueryConstraint."
             )
 
-        # MyPy complains here that we're assuming SqlRegistry, not
-        # RemoteRegistry, based on what we're doing with what queryDataIds
-        # returns.  It's right, but we don't care since RemoteRegistry isn't
-        # really useful for anything yet.
-        with registry.queryDataIds(**queryArgs).materialize() as commonDataIds:  # type: ignore
+        with registry.queryDataIds(**queryArgs).materialize() as commonDataIds:
             _LOG.debug("Expanding data IDs.")
             commonDataIds = commonDataIds.expanded()
             _LOG.debug("Iterating over query results to associate quanta with datasets.")
@@ -982,10 +978,8 @@ class _PipelineScaffolding:
                             prereq_refs = []
                     else:
                         # Most general case.
-                        # MyPy complains here because it doesn't like that we
-                        # are assuming SqlRegistry's return type.
                         prereq_refs = list(
-                            registry.queryDatasets(  # type: ignore
+                            registry.queryDatasets(
                                 datasetType, collections=collections, dataId=quantum.dataId, findFirst=True
                             ).expanded()
                         )
