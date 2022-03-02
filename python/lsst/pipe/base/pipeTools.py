@@ -22,6 +22,8 @@
 """Module defining few methods to manipulate or query pipelines.
 """
 
+from __future__ import annotations
+
 # No one should do import * from this module
 __all__ = ["isPipelineOrdered", "orderPipeline"]
 
@@ -29,11 +31,16 @@ __all__ = ["isPipelineOrdered", "orderPipeline"]
 #  Imports of standard modules --
 # -------------------------------
 import itertools
+from typing import TYPE_CHECKING, Iterable, List, Optional, Union
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
 from .connections import iterConnections
+
+if TYPE_CHECKING:
+    from .pipeline import Pipeline, TaskDef
+    from .taskFactory import TaskFactory
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -64,7 +71,9 @@ class PipelineDataCycleError(Exception):
     pass
 
 
-def isPipelineOrdered(pipeline, taskFactory=None):
+def isPipelineOrdered(
+    pipeline: Union[Pipeline, Iterable[TaskDef]], taskFactory: Optional[TaskFactory] = None
+) -> bool:
     """Checks whether tasks in pipeline are correctly ordered.
 
     Pipeline is correctly ordered if for any DatasetType produced by a task
@@ -116,7 +125,7 @@ def isPipelineOrdered(pipeline, taskFactory=None):
     return True
 
 
-def orderPipeline(pipeline):
+def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
     """Re-order tasks in pipeline to satisfy data dependencies.
 
     When possible new ordering keeps original relative order of the tasks.
@@ -159,8 +168,7 @@ def orderPipeline(pipeline):
 
         # task inputs
         connectionInputs = itertools.chain(taskDef.connections.inputs, taskDef.connections.prerequisiteInputs)
-        dsMap = [getattr(taskDef.connections, name).name for name in connectionInputs]
-        inputs[idx] = set(dsMap)
+        inputs[idx] = set(getattr(taskDef.connections, name).name for name in connectionInputs)
         allInputs.update(inputs[idx])
 
     # for simplicity add pseudo-node which is a producer for all pre-existing
