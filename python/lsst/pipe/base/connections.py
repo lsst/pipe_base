@@ -246,6 +246,9 @@ class QuantizedConnection(SimpleNamespace):
         object.__delattr__(self, name)
         self._attributes.remove(name)
 
+    def __len__(self) -> int:
+        return len(self._attributes)
+
     def __iter__(
         self,
     ) -> typing.Generator[typing.Tuple[str, typing.Union[DatasetRef, typing.List[DatasetRef]]], None, None]:
