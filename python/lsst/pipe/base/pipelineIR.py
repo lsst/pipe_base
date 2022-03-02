@@ -46,7 +46,7 @@ class PipelineYamlLoader(yaml.SafeLoader):
     found inside a pipeline file at a given scope.
     """
 
-    def construct_mapping(self, node, deep=False):
+    def construct_mapping(self, node: yaml.Node, deep: bool = False) -> Mapping[str, Any]:
         # do the call to super first so that it can do all the other forms of
         # checking on this node. If you check the uniqueness of keys first
         # it would save the work that super does in the case of a failure, but
@@ -91,7 +91,7 @@ class ContractIR:
             accumulate["msg"] = self.msg
         return accumulate
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, ContractIR):
             return False
         elif self.contract == other.contract and self.msg == other.msg:
@@ -194,7 +194,7 @@ class ParametersIR:
     as values.
     """
 
-    def update(self, other: Optional[ParametersIR]):
+    def update(self, other: Optional[ParametersIR]) -> None:
         if other is not None:
             self.mapping.update(other.mapping)
 
@@ -325,7 +325,7 @@ class ConfigIR:
 
         yield self
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConfigIR):
             return False
         elif all(
@@ -359,7 +359,7 @@ class TaskIR:
             accumulate["config"] = [c.to_primitives() for c in self.config]
         return accumulate
 
-    def add_or_update_config(self, other_config: ConfigIR):
+    def add_or_update_config(self, other_config: ConfigIR) -> None:
         """Adds a `ConfigIR` to this task if one is not present. Merges configs
         if there is a `ConfigIR` present and the dataId keys of both configs
         match, otherwise adds a new entry to the config list. The exception to
@@ -378,7 +378,7 @@ class TaskIR:
             return
         self.config.extend(self.config.pop().maybe_merge(other_config))
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskIR):
             return False
         elif all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config")):
@@ -461,7 +461,7 @@ class ImportIR:
 
         return tmp_pipeline
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, ImportIR):
             return False
         elif all(
@@ -492,7 +492,7 @@ class PipelineIR:
         - If more than one inherited pipeline share a label
     """
 
-    def __init__(self, loaded_yaml):
+    def __init__(self, loaded_yaml: Dict[str, Any]):
         # Check required fields are present
         if "description" not in loaded_yaml:
             raise ValueError("A pipeline must be declared with a description")
@@ -528,7 +528,7 @@ class PipelineIR:
         # verify named subsets, must be done after inheriting
         self._verify_labeled_subsets()
 
-    def _read_contracts(self, loaded_yaml):
+    def _read_contracts(self, loaded_yaml: Dict[str, Any]) -> None:
         """Process the contracts portion of the loaded yaml document
 
         Parameters
@@ -540,14 +540,14 @@ class PipelineIR:
         loaded_contracts = loaded_yaml.pop("contracts", [])
         if isinstance(loaded_contracts, str):
             loaded_contracts = [loaded_contracts]
-        self.contracts = []
+        self.contracts: List[ContractIR] = []
         for contract in loaded_contracts:
             if isinstance(contract, dict):
                 self.contracts.append(ContractIR(**contract))
             if isinstance(contract, str):
                 self.contracts.append(ContractIR(contract=contract))
 
-    def _read_parameters(self, loaded_yaml):
+    def _read_parameters(self, loaded_yaml: Dict[str, Any]) -> None:
         """Process the parameters portion of the loaded yaml document
 
         Parameters
@@ -561,7 +561,7 @@ class PipelineIR:
             raise ValueError("The parameters section must be a yaml mapping")
         self.parameters = ParametersIR(loaded_parameters)
 
-    def _read_labeled_subsets(self, loaded_yaml: dict):
+    def _read_labeled_subsets(self, loaded_yaml: Dict[str, Any]) -> None:
         """Process the subsets portion of the loaded yaml document
 
         Parameters
@@ -571,13 +571,13 @@ class PipelineIR:
             by a yaml reader which parses a pipeline definition document
         """
         loaded_subsets = loaded_yaml.pop("subsets", {})
-        self.labeled_subsets = {}
+        self.labeled_subsets: Dict[str, LabeledSubset] = {}
         if not loaded_subsets and "subset" in loaded_yaml:
             raise ValueError("Top level key should be subsets and not subset, add an s")
         for key, value in loaded_subsets.items():
             self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
 
-    def _verify_labeled_subsets(self):
+    def _verify_labeled_subsets(self) -> None:
         """Verifies that all the labels in each named subset exist within the
         pipeline.
         """
@@ -594,7 +594,7 @@ class PipelineIR:
         if label_intersection:
             raise ValueError(f"Labeled subsets can not use the same label as a task: {label_intersection}")
 
-    def _read_imports(self, loaded_yaml):
+    def _read_imports(self, loaded_yaml: Dict[str, Any]) -> None:
         """Process the inherits portion of the loaded yaml document
 
         Parameters
@@ -628,15 +628,15 @@ class PipelineIR:
                 "'imports' instead"
             )
         if tmp_import is None:
-            self.imports = []
+            self.imports: List[ImportIR] = []
         elif isinstance(tmp_import, list):
             self.imports = [ImportIR(**process_args(args)) for args in tmp_import]
         else:
             self.imports = [ImportIR(**process_args(tmp_import))]
 
         # integrate any imported pipelines
-        accumulate_tasks = {}
-        accumulate_labeled_subsets = {}
+        accumulate_tasks: Dict[str, TaskIR] = {}
+        accumulate_labeled_subsets: Dict[str, LabeledSubset] = {}
         accumulated_parameters = ParametersIR({})
         for other_pipeline in self.imports:
             tmp_IR = other_pipeline.toPipelineIR()
@@ -693,11 +693,11 @@ class PipelineIR:
                         accumulate_tasks[label].add_or_update_config(config)
             else:
                 accumulate_tasks[label] = task
-        self.tasks = accumulate_tasks
+        self.tasks: Dict[str, TaskIR] = accumulate_tasks
         accumulated_parameters.update(self.parameters)
         self.parameters = accumulated_parameters
 
-    def _read_tasks(self, loaded_yaml):
+    def _read_tasks(self, loaded_yaml: Dict[str, Any]) -> None:
         """Process the tasks portion of the loaded yaml document
 
         Parameters
@@ -737,7 +737,7 @@ class PipelineIR:
                     )
             self.tasks[label] = TaskIR(label, definition["class"], task_config_ir)
 
-    def _remove_contracts(self, label: str):
+    def _remove_contracts(self, label: str) -> None:
         """Remove any contracts that contain the given label
 
         String comparison used in this way is not the most elegant and may
@@ -820,7 +820,7 @@ class PipelineIR:
         return pipeline
 
     @classmethod
-    def from_string(cls, pipeline_string: str):
+    def from_string(cls, pipeline_string: str) -> PipelineIR:
         """Create a `PipelineIR` object from a string formatted like a pipeline
         document
 
@@ -837,7 +837,7 @@ class PipelineIR:
         reason="This has been replaced with `from_uri`. will be removed after v23",
         version="v21.0,",
         category=FutureWarning,
-    )  # type: ignore
+    )
     def from_file(cls, filename: str) -> PipelineIR:
         """Create a `PipelineIR` object from the document specified by the
         input path.
@@ -900,7 +900,7 @@ class PipelineIR:
     def write_to_uri(
         self,
         uri: ResourcePathExpression,
-    ):
+    ) -> None:
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified uri.
 
@@ -972,7 +972,7 @@ class PipelineIR:
         """Instance formatting as how it would look in yaml representation"""
         return str(self)
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, PipelineIR):
             return False
         # special case contracts because it is a list, but order is not

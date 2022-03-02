@@ -22,11 +22,23 @@
 """This module defines PipelineTask class and related methods.
 """
 
+from __future__ import annotations
+
 __all__ = ["PipelineTask"]  # Classes in this module
+
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional, Type, Union
 
 from .butlerQuantumContext import ButlerQuantumContext
 from .connections import InputQuantizedConnection, OutputQuantizedConnection
 from .task import Task
+
+if TYPE_CHECKING:
+    import logging
+
+    from lsst.utils.logging import LsstLogAdapter
+
+    from .config import PipelineTaskConfig, ResourceConfig
+    from .struct import Struct
 
 
 class PipelineTask(Task):
@@ -81,12 +93,20 @@ class PipelineTask(Task):
         permitted to require this argument.
     """
 
-    canMultiprocess = True
+    ConfigClass: ClassVar[Type[PipelineTaskConfig]]
+    canMultiprocess: ClassVar[bool] = True
 
-    def __init__(self, *, config=None, log=None, initInputs=None, **kwargs):
+    def __init__(
+        self,
+        *,
+        config: Optional[PipelineTaskConfig] = None,
+        log: Optional[Union[logging.Logger, LsstLogAdapter]] = None,
+        initInputs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ):
         super().__init__(config=config, log=log, **kwargs)
 
-    def run(self, **kwargs):
+    def run(self, **kwargs: Any) -> Struct:
         """Run task algorithm on in-memory data.
 
         This method should be implemented in a subclass. This method will
@@ -134,7 +154,7 @@ class PipelineTask(Task):
         butlerQC: ButlerQuantumContext,
         inputRefs: InputQuantizedConnection,
         outputRefs: OutputQuantizedConnection,
-    ):
+    ) -> None:
         """Method to do butler IO and or transforms to provide in memory
         objects for tasks run method
 
@@ -160,7 +180,7 @@ class PipelineTask(Task):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def getResourceConfig(self):
+    def getResourceConfig(self) -> Optional[ResourceConfig]:
         """Return resource configuration for this task.
 
         Returns

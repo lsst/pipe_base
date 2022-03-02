@@ -22,9 +22,19 @@
 """Module defining TaskFactory interface.
 """
 
+from __future__ import annotations
+
 __all__ = ["TaskFactory"]
 
 from abc import ABCMeta, abstractmethod
+from typing import TYPE_CHECKING, Optional, Type
+
+if TYPE_CHECKING:
+    from lsst.daf.butler import Butler
+
+    from .config import PipelineTaskConfig
+    from .configOverrides import ConfigOverrides
+    from .pipelineTask import PipelineTask
 
 
 class TaskFactory(metaclass=ABCMeta):
@@ -35,7 +45,14 @@ class TaskFactory(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def makeTask(self, taskClass, name, config, overrides, butler):
+    def makeTask(
+        self,
+        taskClass: Type[PipelineTask],
+        name: Optional[str],
+        config: Optional[PipelineTaskConfig],
+        overrides: Optional[ConfigOverrides],
+        butler: Optional[Butler],
+    ) -> PipelineTask:
         """Create new PipelineTask instance from its class.
 
         Parameters

@@ -796,9 +796,9 @@ log4j.appender.A1.layout.ConversionPattern=%c %p: %m%n
 
         if namespace.debug:
             try:
-                import debug
+                import debug  # type: ignore
 
-                assert debug  # silence pyflakes
+                assert debug  # silence pyflakes (above silences mypy)
             except ImportError:
                 print("Warning: no 'debug' module found", file=sys.stderr)
                 namespace.debug = False
