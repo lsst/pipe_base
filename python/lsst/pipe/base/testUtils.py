@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 
 __all__ = [
     "assertValidInitOutput",
@@ -34,19 +35,37 @@ import collections.abc
 import itertools
 import unittest.mock
 from collections import defaultdict
+from typing import TYPE_CHECKING, AbstractSet, Any, Dict, Mapping, Optional, Sequence, Set, Union
 
 from lsst.daf.butler import (
+    Butler,
     DataCoordinate,
+    DataId,
     DatasetRef,
     DatasetType,
+    Dimension,
+    DimensionUniverse,
     Quantum,
     SkyPixDimension,
     StorageClassFactory,
 )
-from lsst.pipe.base import ButlerQuantumContext
+from lsst.pipe.base.connectionTypes import BaseConnection, DimensionedConnection
+
+from .butlerQuantumContext import ButlerQuantumContext
+
+if TYPE_CHECKING:
+    from .config import PipelineTaskConfig
+    from .connections import PipelineTaskConnections
+    from .pipelineTask import PipelineTask
+    from .struct import Struct
 
 
-def makeQuantum(task, butler, dataId, ioDataIds):
+def makeQuantum(
+    task: PipelineTask,
+    butler: Butler,
+    dataId: DataId,
+    ioDataIds: Mapping[str, Union[DataId, Sequence[DataId]]],
+) -> Quantum:
     """Create a Quantum for a particular data ID(s).
 
     Parameters
@@ -96,11 +115,20 @@ def makeQuantum(task, butler, dataId, ioDataIds):
                 outputs[ref.datasetType].append(ref)
         except (ValueError, KeyError) as e:
             raise ValueError(f"Error in connection {name}.") from e
-    quantum = Quantum(taskClass=type(task), dataId=dataId, inputs=inputs, outputs=outputs)
+    quantum = Quantum(
+        taskClass=type(task),
+        dataId=DataCoordinate.standardize(dataId, universe=butler.registry.dimensions),
+        inputs=inputs,
+        outputs=outputs,
+    )
     return quantum
 
 
-def _checkDimensionsMatch(universe, expected, actual):
+def _checkDimensionsMatch(
+    universe: DimensionUniverse,
+    expected: Union[AbstractSet[str], AbstractSet[Dimension]],
+    actual: Union[AbstractSet[str], AbstractSet[Dimension]],
+) -> None:
     """Test whether two sets of dimensions agree after conversions.
 
     Parameters
@@ -121,7 +149,9 @@ def _checkDimensionsMatch(universe, expected, actual):
         raise ValueError(f"Mismatch in dimensions; expected {expected} but got {actual}.")
 
 
-def _simplify(universe, dimensions):
+def _simplify(
+    universe: DimensionUniverse, dimensions: Union[AbstractSet[str], AbstractSet[Dimension]]
+) -> Set[str]:
     """Reduce a set of dimensions to a string-only form.
 
     Parameters
@@ -137,11 +167,11 @@ def _simplify(universe, dimensions):
         A copy of ``dimensions`` reduced to string form, with all spatial
         dimensions simplified to ``skypix``.
     """
-    simplified = set()
+    simplified: Set[str] = set()
     for dimension in dimensions:
         # skypix not a real Dimension, handle it first
         if dimension == "skypix":
-            simplified.add(dimension)
+            simplified.add(dimension)  # type: ignore
         else:
             # Need a Dimension to test spatialness
             fullDimension = universe[dimension] if isinstance(dimension, str) else dimension
@@ -152,7 +182,7 @@ def _simplify(universe, dimensions):
     return simplified
 
 
-def _checkDataIdMultiplicity(name, dataIds, multiple):
+def _checkDataIdMultiplicity(name: str, dataIds: Union[DataId, Sequence[DataId]], multiple: bool) -> None:
     """Test whether data IDs are scalars for scalar connections and sequences
     for multiple connections.
 
@@ -179,7 +209,7 @@ def _checkDataIdMultiplicity(name, dataIds, multiple):
             raise ValueError(f"Expected single data ID for {name}, got {dataIds}.")
 
 
-def _normalizeDataIds(dataIds):
+def _normalizeDataIds(dataIds: Union[DataId, Sequence[DataId]]) -> Sequence[DataId]:
     """Represent both single and multiple data IDs as a list.
 
     Parameters
@@ -199,7 +229,9 @@ def _normalizeDataIds(dataIds):
         return [dataIds]
 
 
-def _refFromConnection(butler, connection, dataId, **kwargs):
+def _refFromConnection(
+    butler: Butler, connection: DimensionedConnection, dataId: DataId, **kwargs: Any
+) -> DatasetRef:
     """Create a DatasetRef for a connection in a collection.
 
     Parameters
@@ -222,7 +254,7 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
     """
     universe = butler.registry.dimensions
     # DatasetRef only tests if required dimension is missing, but not extras
-    _checkDimensionsMatch(universe, connection.dimensions, dataId.keys())
+    _checkDimensionsMatch(universe, set(connection.dimensions), dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
 
     # skypix is a PipelineTask alias for "some spatial index", Butler doesn't
@@ -243,7 +275,7 @@ def _refFromConnection(butler, connection, dataId, **kwargs):
         raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") from e
 
 
-def _resolveTestQuantumInputs(butler, quantum):
+def _resolveTestQuantumInputs(butler: Butler, quantum: Quantum) -> None:
     """Look up all input datasets a test quantum in the `Registry` to resolve
     all `DatasetRef` objects (i.e. ensure they have not-`None` ``id`` and
     ``run`` attributes).
@@ -279,7 +311,9 @@ def _resolveTestQuantumInputs(butler, quantum):
         refsForDatasetType[:] = newRefsForDatasetType
 
 
-def runTestQuantum(task, butler, quantum, mockRun=True):
+def runTestQuantum(
+    task: PipelineTask, butler: Butler, quantum: Quantum, mockRun: bool = True
+) -> Optional[unittest.mock.Mock]:
     """Run a PipelineTask on a Quantum.
 
     Parameters
@@ -316,7 +350,7 @@ def runTestQuantum(task, butler, quantum, mockRun=True):
         return None
 
 
-def _assertAttributeMatchesConnection(obj, attrName, connection):
+def _assertAttributeMatchesConnection(obj: Any, attrName: str, connection: BaseConnection) -> None:
     """Test that an attribute on an object matches the specification given in
     a connection.
 
@@ -355,7 +389,7 @@ def _assertAttributeMatchesConnection(obj, attrName, connection):
     # depends on duck-typing
 
 
-def assertValidOutput(task, result):
+def assertValidOutput(task: PipelineTask, result: Struct) -> None:
     """Test that the output of a call to ``run`` conforms to its own
     connections.
 
@@ -380,7 +414,7 @@ def assertValidOutput(task, result):
         _assertAttributeMatchesConnection(result, name, connection)
 
 
-def assertValidInitOutput(task):
+def assertValidInitOutput(task: PipelineTask) -> None:
     """Test that a constructed task conforms to its own init-connections.
 
     Parameters
@@ -401,7 +435,7 @@ def assertValidInitOutput(task):
         _assertAttributeMatchesConnection(task, name, connection)
 
 
-def getInitInputs(butler, config):
+def getInitInputs(butler: Butler, config: PipelineTaskConfig) -> Dict[str, Any]:
     """Return the initInputs object that would have been passed to a
     `~lsst.pipe.base.PipelineTask` constructor.
 
@@ -434,11 +468,11 @@ def getInitInputs(butler, config):
 
 
 def lintConnections(
-    connections,
+    connections: PipelineTaskConnections,
     *,
-    checkMissingMultiple=True,
-    checkUnnecessaryMultiple=True,
-):
+    checkMissingMultiple: bool = True,
+    checkUnnecessaryMultiple: bool = True,
+) -> None:
     """Inspect a connections class for common errors.
 
     These tests are designed to detect misuse of connections features in
@@ -470,7 +504,7 @@ def lintConnections(
     # connectionTypes.DimensionedConnection is implementation detail,
     # don't use it.
     for name in itertools.chain(connections.inputs, connections.prerequisiteInputs, connections.outputs):
-        connection = connections.allConnections[name]
+        connection: DimensionedConnection = connections.allConnections[name]  # type: ignore
         connDimensions = set(connection.dimensions)
         if checkMissingMultiple and not connection.multiple and connDimensions > quantumDimensions:
             errors += (
