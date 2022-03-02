@@ -57,7 +57,7 @@ from typing import (
 #  Imports for other modules --
 from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
 from lsst.resources import ResourcePath, ResourcePathExpression
-from lsst.utils import doImport
+from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
 from . import pipelineIR, pipeTools
@@ -492,14 +492,13 @@ class Pipeline:
             instrument = get_full_type_name(instrument)
         self._pipelineIR.instrument = instrument
 
-    def getInstrument(self) -> Instrument:
+    def getInstrument(self) -> Optional[str]:
         """Get the instrument from the pipeline.
 
         Returns
         -------
-        instrument : `~lsst.daf.butler.instrument.Instrument`, `str`, or None
-            A derived class object of a `lsst.daf.butler.instrument`, a string
-            corresponding to a fully qualified `lsst.daf.butler.instrument`
+        instrument : `str`, or None
+            The fully qualified name of a `lsst.obs.base.Instrument` subclass,
             name, or None if the pipeline does not have an instrument.
         """
         return self._pipelineIR.instrument
@@ -530,7 +529,7 @@ class Pipeline:
             # be defined without label which is not acceptable, use task
             # _DefaultName in that case
             if isinstance(task, str):
-                task_class = doImport(task)
+                task_class = doImportType(task)
             label = task_class._DefaultName
         self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
 
@@ -664,7 +663,7 @@ class Pipeline:
     def _buildTaskDef(self, label: str) -> TaskDef:
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
-        taskClass: Type[PipelineTask] = doImport(taskIR.klass)  # type: ignore
+        taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
         taskName = taskClass.__qualname__
         config = taskClass.ConfigClass()
         overrides = ConfigOverrides()

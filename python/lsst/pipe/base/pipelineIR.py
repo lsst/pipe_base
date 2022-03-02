@@ -23,21 +23,22 @@ from __future__ import annotations
 __all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", "TaskIR", "LabeledSubset")
 
 import copy
+import enum
 import os
 import re
 import warnings
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Mapping, MutableMapping, Optional, Set, Type, Union
+from typing import Any, Dict, Generator, List, Literal, Mapping, MutableMapping, Optional, Set, Union
 
 import yaml
 from deprecated.sphinx import deprecated
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 
-class KeepInstrument:
-    pass
+class _Tags(enum.Enum):
+    KeepInstrument = enum.auto()
 
 
 class PipelineYamlLoader(yaml.SafeLoader):
@@ -409,11 +410,11 @@ class ImportIR:
     """Boolean attribute to dictate if contracts should be inherited with the
     pipeline or not.
     """
-    instrument: Union[Type[KeepInstrument], str, None] = KeepInstrument
+    instrument: Union[Literal[_Tags.KeepInstrument], str, None] = _Tags.KeepInstrument
     """Instrument to assign to the Pipeline at import. The default value of
-    KEEP_INSTRUMENT indicates that whatever instrument the pipeline is declared
-    with will not be modified. Setting this value to None will drop any
-    declared instrument prior to import.
+    `_Tags.KeepInstrument`` indicates that whatever instrument the pipeline is
+    declared with will not be modified. Setting this value to None will drop
+    any declared instrument prior to import.
     """
 
     def toPipelineIR(self) -> "PipelineIR":
@@ -430,7 +431,7 @@ class ImportIR:
                 "Both an include and an exclude list cant be specified when declaring a pipeline import"
             )
         tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
-        if self.instrument is not KeepInstrument:
+        if self.instrument is not _Tags.KeepInstrument:
             tmp_pipeline.instrument = self.instrument
 
         included_labels = set()
@@ -511,7 +512,7 @@ class PipelineIR:
         inst = loaded_yaml.pop("instrument", None)
         if isinstance(inst, list):
             raise ValueError("Only one top level instrument can be defined in a pipeline")
-        self.instrument = inst
+        self.instrument: Optional[str] = inst
 
         # Process any contracts
         self._read_contracts(loaded_yaml)

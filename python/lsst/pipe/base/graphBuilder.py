@@ -48,7 +48,7 @@ from lsst.daf.butler import (
     Registry,
 )
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
-from lsst.utils import doImport
+from lsst.utils import doImportType
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from ._status import NoWorkFound
@@ -1146,15 +1146,15 @@ class GraphBuilder(object):
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
         if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
             raise ValueError("Pipeline requires input datasets but no input collections provided.")
-        instrument = None
+        instrument_class: Optional[Any] = None
         if isinstance(pipeline, Pipeline):
-            instrument = pipeline.getInstrument()
-            if isinstance(instrument, str):
-                instrument = doImport(instrument)
+            instrument_class_name = pipeline.getInstrument()
+            if instrument_class_name is not None:
+                instrument_class = doImportType(instrument_class_name)
             pipeline = list(pipeline.toExpandedPipeline())
-        if instrument is not None:
+        if instrument_class is not None:
             dataId = DataCoordinate.standardize(
-                instrument=instrument.getName(), universe=self.registry.dimensions
+                instrument=instrument_class.getName(), universe=self.registry.dimensions
             )
         else:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)

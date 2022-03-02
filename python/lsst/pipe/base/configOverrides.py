@@ -29,7 +29,7 @@ import inspect
 from enum import Enum
 from operator import attrgetter
 
-from lsst.utils import doImport
+from lsst.utils import doImportType
 
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
 
@@ -193,7 +193,7 @@ class ConfigOverrides:
             The _DefaultName of a task associated with a config, used to look
             up overrides from the instrument.
         """
-        instrument_cls: type = doImport(instrument)  # type: ignore
+        instrument_cls: type = doImportType(instrument)
         instrument_lib = instrument_cls()
         self._overrides.append((OverrideTypes.Instrument, (instrument_lib, task_name)))
 

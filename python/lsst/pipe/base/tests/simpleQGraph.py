@@ -40,7 +40,7 @@ except ImportError:
 from lsst.daf.butler import Butler, Config, DatasetType
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
-from lsst.utils import doImport
+from lsst.utils import doImportType
 
 from .. import connectionTypes as cT
 from ..config import PipelineTaskConfig
@@ -310,9 +310,8 @@ def populateButler(
 
     instrument = pipeline.getInstrument()
     if instrument is not None:
-        if isinstance(instrument, str):
-            instrument = doImport(instrument)
-        instrumentName = instrument.getName()
+        instrument_class = doImportType(instrument)
+        instrumentName = instrument_class.getName()
     else:
         instrumentName = "INSTR"
 
