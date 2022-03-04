@@ -29,6 +29,7 @@ __all__ = ("ButlerQuantumContext",)
 from typing import Any, List, Sequence, Union
 
 from lsst.daf.butler import Butler, DatasetRef, Quantum
+from lsst.utils.introspection import get_full_type_name
 
 from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
 from .struct import Struct
@@ -155,7 +156,9 @@ class ButlerQuantumContext:
         elif isinstance(dataset, DatasetRef) or isinstance(dataset, DeferredDatasetRef):
             return self._get(dataset)
         else:
-            raise TypeError("Dataset argument is not a type that can be used to get")
+            raise TypeError(
+                f"Dataset argument ({get_full_type_name(dataset)}) is not a type that can be used to get"
+            )
 
     def put(
         self,
