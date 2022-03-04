@@ -20,7 +20,11 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
+from __future__ import annotations
+
 __all__ = ["Struct"]
+
+from typing import Any, Dict
 
 
 class Struct:
@@ -63,11 +67,11 @@ class Struct:
 
     """
 
-    def __init__(self, **keyArgs):
+    def __init__(self, **keyArgs: Any):
         for name, val in keyArgs.items():
             self.__safeAdd(name, val)
 
-    def __safeAdd(self, name, val):
+    def __safeAdd(self, name: str, val: Any) -> None:
         """Add a field if it does not already exist and name does not start
         with ``__`` (two underscores).
 
@@ -90,7 +94,7 @@ class Struct:
             raise RuntimeError(f"Item name {name!r} invalid; must not begin with __")
         setattr(self, name, val)
 
-    def getDict(self):
+    def getDict(self) -> Dict[str, Any]:
         """Get a dictionary of fields in this struct.
 
         Returns
@@ -101,7 +105,7 @@ class Struct:
         """
         return self.__dict__.copy()
 
-    def mergeItems(self, struct, *nameList):
+    def mergeItems(self, struct: Struct, *nameList: str) -> None:
         """Copy specified fields from another struct, provided they don't
         already exist.
 
@@ -130,7 +134,7 @@ class Struct:
         for name in nameList:
             self.__safeAdd(name, getattr(struct, name))
 
-    def copy(self):
+    def copy(self) -> Struct:
         """Make a one-level-deep copy (values are not copied).
 
         Returns
@@ -140,12 +144,12 @@ class Struct:
         """
         return Struct(**self.getDict())
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return self.__dict__ == other.__dict__
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.__dict__)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         itemsStr = "; ".join(f"{name}={val}" for name, val in self.getDict().items())
         return f"{self.__class__.__name__}({itemsStr})"

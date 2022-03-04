@@ -21,12 +21,16 @@
 
 """Module defining config classes for PipelineTask.
 """
+
+from __future__ import annotations
+
 __all__ = ["ResourceConfig", "PipelineTaskConfig"]
 
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
 from numbers import Number
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
 
 # -----------------------------
 #  Imports for other modules --
@@ -35,9 +39,14 @@ import lsst.pex.config as pexConfig
 
 from .connections import PipelineTaskConnections
 
+if TYPE_CHECKING:
+    from lsst.pex.config.callStack import StackFrame
+
 # ----------------------------------
 #  Local non-exported definitions --
 # ----------------------------------
+
+_S = TypeVar("_S", bound="PipelineTaskConfigMeta")
 
 # ------------------------
 #  Exported definitions --
@@ -55,7 +64,7 @@ class TemplateField(pexConfig.Field):
     complicated. This will simplify the process greatly.
     """
 
-    def _validateValue(self, value):
+    def _validateValue(self, value: Any) -> None:
         if value is None:
             return
 
@@ -67,7 +76,13 @@ class TemplateField(pexConfig.Field):
         if self.check is not None and not self.check(value):
             ValueError("Value {value} is not a valid value")
 
-    def __set__(self, instance, value, at=None, label="assignment"):
+    def __set__(
+        self,
+        instance: pexConfig.Field,
+        value: Any,
+        at: Optional[StackFrame] = None,
+        label: str = "assignment",
+    ) -> None:
         # validate first, even though validate will be called in super
         self._validateValue(value)
         # now, explicitly make it into a string
@@ -91,7 +106,9 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     `ConnectionsConfigClass`.
     """
 
-    def __new__(cls, name, bases, dct, **kwargs):
+    def __new__(
+        cls: Type[_S], name: str, bases: Tuple[PipelineTaskConfig, ...], dct: Dict[str, Any], **kwargs: Any
+    ) -> _S:
         if name != "PipelineTaskConfig":
             # Verify that a connection class was specified and the argument is
             # an instance of PipelineTaskConfig
@@ -137,7 +154,9 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
         inst = super().__new__(cls, name, bases, dct)
         return inst
 
-    def __init__(self, name, bases, dct, **kwargs):
+    def __init__(
+        self, name: str, bases: Tuple[Type[PipelineTaskConfig], ...], dct: Dict[str, Any], **kwargs: Any
+    ):
         # This overrides the default init to drop the kwargs argument. Python
         # metaclasses will have this argument set if any kwargs are passes at
         # class construction time, but should be consumed before calling

@@ -27,7 +27,7 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "B
 
 import dataclasses
 import typing
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Union
 
 from lsst.daf.butler import (
     CollectionSearch,
@@ -98,7 +98,9 @@ class BaseConnection:
         # information provided by the connection class instance
         return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
 
-    def makeDatasetType(self, universe: DimensionUniverse, parentStorageClass: Optional[StorageClass] = None):
+    def makeDatasetType(
+        self, universe: DimensionUniverse, parentStorageClass: Optional[Union[StorageClass, str]] = None
+    ) -> DatasetType:
         """Construct a true `DatasetType` instance with normalized dimensions.
 
         Parameters
@@ -106,7 +108,7 @@ class BaseConnection:
         universe : `lsst.daf.butler.DimensionUniverse`
             Set of all known dimensions to be used to normalize the dimension
             names specified in config.
-        parentStorageClass : `lsst.daf.butler.StorageClass`, optional
+        parentStorageClass : `lsst.daf.butler.StorageClass` or `str`, optional
             Parent storage class for component datasets; `None` otherwise.
 
         Returns
@@ -158,7 +160,9 @@ class DimensionedConnection(BaseConnection):
         if not isinstance(self.dimensions, typing.Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
 
-    def makeDatasetType(self, universe: DimensionUniverse, parentStorageClass: Optional[StorageClass] = None):
+    def makeDatasetType(
+        self, universe: DimensionUniverse, parentStorageClass: Optional[Union[StorageClass, str]] = None
+    ) -> DatasetType:
         """Construct a true `DatasetType` instance with normalized dimensions.
 
         Parameters
@@ -166,7 +170,7 @@ class DimensionedConnection(BaseConnection):
         universe : `lsst.daf.butler.DimensionUniverse`
             Set of all known dimensions to be used to normalize the dimension
             names specified in config.
-        parentStorageClass : `lsst.daf.butler.StorageClass`, optional
+        parentStorageClass : `lsst.daf.butler.StorageClass` or `str`, optional
             Parent storage class for component datasets; `None` otherwise.
 
         Returns

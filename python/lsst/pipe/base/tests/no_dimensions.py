@@ -27,7 +27,7 @@ __all__ = (
     "NoDimensionsTestTask",
 )
 
-from typing import Dict
+from typing import Dict, Union
 
 from lsst.pex.config import Field
 from lsst.pipe.base import (
@@ -68,7 +68,10 @@ class NoDimensionsTestTask(PipelineTask):
     ConfigClass = NoDimensionsTestConfig
     _DefaultName = "noDimensionsTest"
 
-    def run(self, input: Dict[str, int]) -> Struct:
+    # The completely flexible arguments to run aren't really valid inheritance;
+    # the base class method exists just as a place to put a docstring, so we
+    # tell mypy to ignore it.
+    def run(self, input: Union[TaskMetadata, Dict[str, int]]) -> Struct:  # type: ignore
         """Run the task, adding the configured key-value pair to the input
         argument and returning it as the output.
 
@@ -88,7 +91,7 @@ class NoDimensionsTestTask(PipelineTask):
 
         # Can change the return type via configuration.
         if "TaskMetadata" in self.config.outputSC:
-            output = TaskMetadata.from_dict(output)
+            output = TaskMetadata.from_dict(output)  # type: ignore
         elif type(output) == TaskMetadata:
             # Want the output to be a dict
             output = output.to_dict()

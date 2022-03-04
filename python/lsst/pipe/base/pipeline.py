@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
+    AbstractSet,
     ClassVar,
     Dict,
     Generator,
@@ -48,6 +49,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Type,
     Union,
 )
 
@@ -55,7 +57,7 @@ from typing import (
 #  Imports for other modules --
 from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
 from lsst.resources import ResourcePath, ResourcePathExpression
-from lsst.utils import doImport
+from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
 from . import pipelineIR, pipeTools
@@ -67,6 +69,7 @@ from .task import _TASK_METADATA_TYPE
 
 if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
     from lsst.obs.base import Instrument
+    from lsst.pex.config import Config
 
 # ----------------------------------
 #  Local non-exported definitions --
@@ -95,7 +98,7 @@ class LabelSpecifier:
     begin: Optional[str] = None
     end: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.labels is not None and (self.begin or self.end):
             raise ValueError(
                 "This struct can only be initialized with a labels set or a begin (and/or) end specifier"
@@ -131,7 +134,13 @@ class TaskDef:
         be used.
     """
 
-    def __init__(self, taskName=None, config=None, taskClass=None, label=None):
+    def __init__(
+        self,
+        taskName: Optional[str] = None,
+        config: Optional[Config] = None,
+        taskClass: Optional[Type[PipelineTask]] = None,
+        label: Optional[str] = None,
+    ):
         if taskName is None:
             if taskClass is None:
                 raise ValueError("At least one of `taskName` and `taskClass` must be provided.")
@@ -181,7 +190,7 @@ class TaskDef:
         else:
             return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         rep = "TaskDef(" + self.taskName
         if self.label:
             rep += ", label=" + self.label
@@ -196,7 +205,7 @@ class TaskDef:
         # after DM-27847
         return self.taskClass == other.taskClass and self.label == other.label
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.taskClass, self.label))
 
 
@@ -401,7 +410,8 @@ class Pipeline:
             else:
                 args = {"labels": {label_subset}}
 
-            specifier = LabelSpecifier(**args)
+            # MyPy doesn't like how cavalier kwarg construction is with types.
+            specifier = LabelSpecifier(**args)  # type: ignore
         else:
             specifier = None
 
@@ -441,7 +451,7 @@ class Pipeline:
         return pipeline
 
     @classmethod
-    def fromPipeline(cls, pipeline: pipelineIR.PipelineIR) -> Pipeline:
+    def fromPipeline(cls, pipeline: Pipeline) -> Pipeline:
         """Create a new pipeline by copying an already existing `Pipeline`.
 
         Parameters
@@ -482,19 +492,18 @@ class Pipeline:
             instrument = get_full_type_name(instrument)
         self._pipelineIR.instrument = instrument
 
-    def getInstrument(self) -> Instrument:
+    def getInstrument(self) -> Optional[str]:
         """Get the instrument from the pipeline.
 
         Returns
         -------
-        instrument : `~lsst.daf.butler.instrument.Instrument`, `str`, or None
-            A derived class object of a `lsst.daf.butler.instrument`, a string
-            corresponding to a fully qualified `lsst.daf.butler.instrument`
+        instrument : `str`, or None
+            The fully qualified name of a `lsst.obs.base.Instrument` subclass,
             name, or None if the pipeline does not have an instrument.
         """
         return self._pipelineIR.instrument
 
-    def addTask(self, task: Union[PipelineTask, str], label: str) -> None:
+    def addTask(self, task: Union[Type[PipelineTask], str], label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
         associated with the supplied label.
 
@@ -520,8 +529,8 @@ class Pipeline:
             # be defined without label which is not acceptable, use task
             # _DefaultName in that case
             if isinstance(task, str):
-                task = doImport(task)
-            label = task._DefaultName
+                task_class = doImportType(task)
+            label = task_class._DefaultName
         self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
 
     def removeTask(self, label: str) -> None:
@@ -630,7 +639,7 @@ class Pipeline:
         """
         yield from self._toExpandedPipelineImpl()
 
-    def _toExpandedPipelineImpl(self, checkContracts=True) -> Iterable[TaskDef]:
+    def _toExpandedPipelineImpl(self, checkContracts: bool = True) -> Iterable[TaskDef]:
         taskDefs = []
         for label in self._pipelineIR.tasks:
             taskDefs.append(self._buildTaskDef(label))
@@ -654,7 +663,7 @@ class Pipeline:
     def _buildTaskDef(self, label: str) -> TaskDef:
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
-        taskClass = doImport(taskIR.klass)
+        taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
         taskName = taskClass.__qualname__
         config = taskClass.ConfigClass()
         overrides = ConfigOverrides()
@@ -685,10 +694,10 @@ class Pipeline:
     def __getitem__(self, item: str) -> TaskDef:
         return self._buildTaskDef(item)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._pipelineIR.tasks)
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Pipeline):
             return False
         return self._pipelineIR == other._pipelineIR
@@ -831,7 +840,7 @@ class TaskDatasetTypes:
             This function is a closure over the variables ``registry`` and
             ``taskDef``, and ``storage_class_mapping``.
             """
-            datasetTypes = NamedValueSet()
+            datasetTypes = NamedValueSet[DatasetType]()
             for c in iterConnections(taskDef.connections, connectionType):
                 dimensions = set(getattr(c, "dimensions", set()))
                 if "skypix" in dimensions:
@@ -958,11 +967,11 @@ class TaskDatasetTypes:
             else:
                 storageClass = current.storageClass.name
 
-            outputs |= {DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)}
+            outputs.update({DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)})
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
-            outputs |= {DatasetType(taskDef.logOutputDatasetName, dimensions, "ButlerLogRecords")}
+            outputs.update({DatasetType(taskDef.logOutputDatasetName, dimensions, "ButlerLogRecords")})
 
         outputs.freeze()
 
@@ -1083,11 +1092,11 @@ class PipelineDatasetTypes:
             prerequisite.  This indicates that the Tasks cannot be run as part
             of the same `Pipeline`.
         """
-        allInputs = NamedValueSet()
-        allOutputs = NamedValueSet()
-        allInitInputs = NamedValueSet()
-        allInitOutputs = NamedValueSet()
-        prerequisites = NamedValueSet()
+        allInputs = NamedValueSet[DatasetType]()
+        allOutputs = NamedValueSet[DatasetType]()
+        allInitInputs = NamedValueSet[DatasetType]()
+        allInitOutputs = NamedValueSet[DatasetType]()
+        prerequisites = NamedValueSet[DatasetType]()
         byTask = dict()
         if include_packages:
             allInitOutputs.add(
@@ -1113,11 +1122,11 @@ class PipelineDatasetTypes:
                 include_configs=include_configs,
                 storage_class_mapping=typeStorageclassMap,
             )
-            allInitInputs |= thisTask.initInputs
-            allInitOutputs |= thisTask.initOutputs
-            allInputs |= thisTask.inputs
-            prerequisites |= thisTask.prerequisites
-            allOutputs |= thisTask.outputs
+            allInitInputs.update(thisTask.initInputs)
+            allInitOutputs.update(thisTask.initOutputs)
+            allInputs.update(thisTask.inputs)
+            prerequisites.update(thisTask.prerequisites)
+            allOutputs.update(thisTask.outputs)
             byTask[taskDef.label] = thisTask
         if not prerequisites.isdisjoint(allInputs):
             raise ValueError(
@@ -1134,8 +1143,8 @@ class PipelineDatasetTypes:
         # Make sure that components which are marked as inputs get treated as
         # intermediates if there is an output which produces the composite
         # containing the component
-        intermediateComponents = NamedValueSet()
-        intermediateComposites = NamedValueSet()
+        intermediateComponents = NamedValueSet[DatasetType]()
+        intermediateComposites = NamedValueSet[DatasetType]()
         outputNameMapping = {dsType.name: dsType for dsType in allOutputs}
         for dsType in allInputs:
             # get the name of a possible component
@@ -1150,7 +1159,7 @@ class PipelineDatasetTypes:
                     intermediateComponents.add(dsType)
                     intermediateComposites.add(outputNameMapping[name])
 
-        def checkConsistency(a: NamedValueSet, b: NamedValueSet):
+        def checkConsistency(a: NamedValueSet, b: NamedValueSet) -> None:
             common = a.names & b.names
             for name in common:
                 # Any compatibility is allowed. This function does not know
@@ -1163,7 +1172,8 @@ class PipelineDatasetTypes:
         checkConsistency(allInputs, intermediateComposites)
         checkConsistency(allOutputs, intermediateComposites)
 
-        def frozen(s: NamedValueSet) -> NamedValueSet:
+        def frozen(s: AbstractSet[DatasetType]) -> NamedValueSet[DatasetType]:
+            assert isinstance(s, NamedValueSet)
             s.freeze()
             return s
 

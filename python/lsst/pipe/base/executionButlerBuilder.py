@@ -176,7 +176,7 @@ def _setupNewButler(butler: Butler, outputLocation: ResourcePath, dirExists: boo
 
     # record the current root of the datastore if it is specified relative
     # to the butler root
-    if config.get(("datastore", "root")) == BUTLER_ROOT_TAG:
+    if config.get(("datastore", "root")) == BUTLER_ROOT_TAG and butler._config.configDir is not None:
         config["datastore", "root"] = butler._config.configDir.geturl()
     config["datastore", "trust_get_request"] = True
 

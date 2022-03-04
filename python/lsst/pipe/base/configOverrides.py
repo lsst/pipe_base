@@ -29,7 +29,7 @@ import inspect
 from enum import Enum
 from operator import attrgetter
 
-from lsst.utils import doImport
+from lsst.utils import doImportType
 
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
 
@@ -170,7 +170,7 @@ class ConfigOverrides:
         """
         self._overrides.append((OverrideTypes.Value, (field, value)))
 
-    def addPythonOverride(self, python_snippet: str):
+    def addPythonOverride(self, python_snippet: str) -> None:
         """Add Overrides by running a snippit of python code against a config.
 
         Parameters
@@ -181,7 +181,7 @@ class ConfigOverrides:
         """
         self._overrides.append((OverrideTypes.Python, python_snippet))
 
-    def addInstrumentOverride(self, instrument: str, task_name: str):
+    def addInstrumentOverride(self, instrument: str, task_name: str) -> None:
         """Apply any overrides that an instrument has for a task
 
         Parameters
@@ -193,7 +193,8 @@ class ConfigOverrides:
             The _DefaultName of a task associated with a config, used to look
             up overrides from the instrument.
         """
-        instrument_lib = doImport(instrument)()
+        instrument_cls: type = doImportType(instrument)
+        instrument_lib = instrument_cls()
         self._overrides.append((OverrideTypes.Instrument, (instrument_lib, task_name)))
 
     def _parser(self, value, configParser):

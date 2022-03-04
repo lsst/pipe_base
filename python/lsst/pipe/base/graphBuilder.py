@@ -33,7 +33,7 @@ import logging
 from collections import ChainMap
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Set
+from typing import Any, Collection, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Union
 
 from lsst.daf.butler import (
     CollectionSearch,
@@ -45,8 +45,10 @@ from lsst.daf.butler import (
     DimensionUniverse,
     NamedKeyDict,
     Quantum,
+    Registry,
 )
-from lsst.utils import doImport
+from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
+from lsst.utils import doImportType
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from ._status import NoWorkFound
@@ -77,7 +79,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
         Universe of all possible dimensions.
     """
 
-    def __init__(self, *args, universe: DimensionGraph):
+    def __init__(self, *args: Any, universe: DimensionUniverse):
         super().__init__(*args)
         self.universe = universe
 
@@ -104,7 +106,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
 
     @classmethod
     def fromSubset(
-        cls, datasetTypes: Iterable[DatasetType], first: _DatasetDict, *rest: _DatasetDict
+        cls, datasetTypes: Collection[DatasetType], first: _DatasetDict, *rest: _DatasetDict
     ) -> _DatasetDict:
         """Return a new dictionary by extracting items corresponding to the
         given keys from one or more existing dictionaries.
@@ -269,7 +271,7 @@ class _QuantumScaffolding:
 
     __slots__ = ("task", "dataId", "inputs", "outputs", "prerequisites")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"_QuantumScaffolding(taskDef={self.task.taskDef}, dataId={self.dataId}, ...)"
 
     task: _TaskScaffolding
@@ -365,10 +367,10 @@ class _TaskScaffolding:
         self.inputs = _DatasetDict.fromSubset(datasetTypes.inputs, parent.inputs, parent.intermediates)
         self.outputs = _DatasetDict.fromSubset(datasetTypes.outputs, parent.intermediates, parent.outputs)
         self.prerequisites = _DatasetDict.fromSubset(datasetTypes.prerequisites, parent.prerequisites)
-        self.dataIds = set()
+        self.dataIds: Set[DataCoordinate] = set()
         self.quanta = {}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         # Default dataclass-injected __repr__ gets caught in an infinite loop
         # because of back-references.
         return f"_TaskScaffolding(taskDef={self.taskDef}, ...)"
@@ -498,7 +500,7 @@ class _PipelineScaffolding:
        per-task `_QuantumScaffolding` objects.
     """
 
-    def __init__(self, pipeline, *, registry):
+    def __init__(self, pipeline: Union[Pipeline, Iterable[TaskDef]], *, registry: Registry):
         _LOG.debug("Initializing data structures for QuantumGraph generation.")
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
@@ -535,7 +537,7 @@ class _PipelineScaffolding:
             for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values())
         ]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         # Default dataclass-injected __repr__ gets caught in an infinite loop
         # because of back-references.
         return f"_PipelineScaffolding(tasks={self.tasks}, ...)"
@@ -591,12 +593,12 @@ class _PipelineScaffolding:
     @contextmanager
     def connectDataIds(
         self,
-        registry,
-        collections,
-        userQuery,
-        externalDataId,
+        registry: Registry,
+        collections: Any,
+        userQuery: Optional[str],
+        externalDataId: DataCoordinate,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
-    ):
+    ) -> Iterator[DataCoordinateQueryResults]:
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
         This method populates `_TaskScaffolding.dataIds` and
@@ -643,7 +645,11 @@ class _PipelineScaffolding:
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
         _LOG.debug("Submitting data ID query and materializing results.")
-        queryArgs = {"dimensions": self.dimensions, "where": userQuery, "dataId": externalDataId}
+        queryArgs: Dict[str, Any] = {
+            "dimensions": self.dimensions,
+            "where": userQuery,
+            "dataId": externalDataId,
+        }
         if datasetQueryConstraint == DatasetQueryConstraintVariant.ALL:
             _LOG.debug("Constraining graph query using all datasets in pipeline.")
             queryArgs["datasets"] = list(self.inputs)
@@ -679,11 +685,12 @@ class _PipelineScaffolding:
                 # We remember both those that already existed and those that we
                 # create now.
                 refsForRow = {}
-                dataIdCacheForRow: Mapping[DimensionGraph, DataCoordinate] = {}
+                dataIdCacheForRow: Dict[DimensionGraph, DataCoordinate] = {}
                 for datasetType, refs in itertools.chain(
                     self.inputs.items(), self.intermediates.items(), self.outputs.items()
                 ):
-                    if not (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)):
+                    datasetDataId: Optional[DataCoordinate]
+                    if (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)) is None:
                         datasetDataId = commonDataId.subset(datasetType.dimensions)
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
                     ref = refs.get(datasetDataId)
@@ -742,15 +749,15 @@ class _PipelineScaffolding:
 
     def resolveDatasetRefs(
         self,
-        registry,
-        collections,
-        run,
-        commonDataIds,
+        registry: Registry,
+        collections: Any,
+        run: Optional[str],
+        commonDataIds: DataCoordinateQueryResults,
         *,
-        skipExistingIn=None,
-        clobberOutputs=True,
+        skipExistingIn: Any = None,
+        clobberOutputs: bool = True,
         constrainedByAllDatasets: bool = True,
-    ):
+    ) -> None:
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
 
@@ -892,10 +899,12 @@ class _PipelineScaffolding:
                 len(task.quanta),
                 task.taskDef.label,
             )
+            # The way iterConnections is designed makes it impossible to
+            # annotate precisely enough to satisfy MyPy here.
             lookupFunctions = {
-                c.name: c.lookupFunction
+                c.name: c.lookupFunction  # type: ignore
                 for c in iterConnections(task.taskDef.connections, "prerequisiteInputs")
-                if c.lookupFunction is not None
+                if c.lookupFunction is not None  # type: ignore
             }
             dataIdsFailed = []
             dataIdsSucceeded = []
@@ -935,9 +944,9 @@ class _PipelineScaffolding:
                                 )
                 # Update the input DatasetRefs to the resolved ones we already
                 # searched for.
-                for datasetType, refs in quantum.inputs.items():
-                    for ref in task.inputs.extract(datasetType, refs.keys()):
-                        refs[ref.dataId] = ref
+                for datasetType, input_refs in quantum.inputs.items():
+                    for ref in task.inputs.extract(datasetType, input_refs.keys()):
+                        input_refs[ref.dataId] = ref
                 # Look up prerequisite datasets in the input collection(s).
                 # These may have dimensions that extend beyond those we queried
                 # for originally, because we want to permit those data ID
@@ -947,7 +956,7 @@ class _PipelineScaffolding:
                     if lookupFunction is not None:
                         # PipelineTask has provided its own function to do the
                         # lookup.  This always takes precedence.
-                        refs = list(lookupFunction(datasetType, registry, quantum.dataId, collections))
+                        prereq_refs = list(lookupFunction(datasetType, registry, quantum.dataId, collections))
                     elif (
                         datasetType.isCalibration()
                         and datasetType.dimensions <= quantum.dataId.graph
@@ -958,7 +967,7 @@ class _PipelineScaffolding:
                         # temporal join on a non-dimension-based timespan yet.
                         timespan = quantum.dataId.timespan
                         try:
-                            refs = [
+                            prereq_refs = [
                                 registry.findDataset(
                                     datasetType, quantum.dataId, collections=collections, timespan=timespan
                                 )
@@ -966,16 +975,16 @@ class _PipelineScaffolding:
                         except KeyError:
                             # This dataset type is not present in the registry,
                             # which just means there are no datasets here.
-                            refs = []
+                            prereq_refs = []
                     else:
                         # Most general case.
-                        refs = list(
+                        prereq_refs = list(
                             registry.queryDatasets(
                                 datasetType, collections=collections, dataId=quantum.dataId, findFirst=True
                             ).expanded()
                         )
                     quantum.prerequisites[datasetType].update(
-                        {ref.dataId: ref for ref in refs if ref is not None}
+                        {ref.dataId: ref for ref in prereq_refs if ref is not None}
                     )
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
@@ -1008,7 +1017,7 @@ class _PipelineScaffolding:
                 else:
                     raise AssertionError("OutputExistsError should have already been raised.")
 
-    def makeQuantumGraph(self, metadata: Optional[Mapping[str, Any]] = None):
+    def makeQuantumGraph(self, metadata: Optional[Mapping[str, Any]] = None) -> QuantumGraph:
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
 
@@ -1074,7 +1083,7 @@ class GraphBuilder(object):
         executing.
     """
 
-    def __init__(self, registry, skipExistingIn=None, clobberOutputs=True):
+    def __init__(self, registry: Registry, skipExistingIn: Any = None, clobberOutputs: bool = True):
         self.registry = registry
         self.dimensions = registry.dimensions
         self.skipExistingIn = skipExistingIn
@@ -1082,13 +1091,13 @@ class GraphBuilder(object):
 
     def makeGraph(
         self,
-        pipeline,
-        collections,
-        run,
-        userQuery,
+        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        collections: Any,
+        run: Optional[str],
+        userQuery: Optional[str],
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         metadata: Optional[Mapping[str, Any]] = None,
-    ):
+    ) -> QuantumGraph:
         """Create execution graph for a pipeline.
 
         Parameters
@@ -1131,15 +1140,15 @@ class GraphBuilder(object):
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
         if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
             raise ValueError("Pipeline requires input datasets but no input collections provided.")
-        instrument = None
+        instrument_class: Optional[Any] = None
         if isinstance(pipeline, Pipeline):
-            instrument = pipeline.getInstrument()
-            if isinstance(instrument, str):
-                instrument = doImport(instrument)
+            instrument_class_name = pipeline.getInstrument()
+            if instrument_class_name is not None:
+                instrument_class = doImportType(instrument_class_name)
             pipeline = list(pipeline.toExpandedPipeline())
-        if instrument is not None:
+        if instrument_class is not None:
             dataId = DataCoordinate.standardize(
-                instrument=instrument.getName(), universe=self.registry.dimensions
+                instrument=instrument_class.getName(), universe=self.registry.dimensions
             )
         else:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)

@@ -20,16 +20,26 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-from uuid import UUID
-
 __all__ = ("LoadHelper",)
 
 import functools
 import io
 import struct
-from collections import UserDict
 from dataclasses import dataclass
-from typing import IO, TYPE_CHECKING, Iterable, Optional, Type, Union
+from types import TracebackType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    Callable,
+    ContextManager,
+    Iterable,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
+from uuid import UUID
 
 from lsst.daf.butler import DimensionUniverse
 from lsst.resources import ResourcePath
@@ -37,12 +47,16 @@ from lsst.resources.file import FileResourcePath
 from lsst.resources.s3 import S3ResourcePath
 
 if TYPE_CHECKING:
-    from . import QuantumGraph
+    from ._versionDeserializers import DeserializerBase
+    from .graph import QuantumGraph
+
+
+_T = TypeVar("_T")
 
 
 # Create a custom dict that will return the desired default if a key is missing
-class RegistryDict(UserDict):
-    def __missing__(self, key):
+class RegistryDict(dict):
+    def __missing__(self, key: Any) -> Type[DefaultLoadHelper]:
         return DefaultLoadHelper
 
 
@@ -50,7 +64,7 @@ class RegistryDict(UserDict):
 HELPER_REGISTRY = RegistryDict()
 
 
-def register_helper(URICLass: Union[Type[ResourcePath], Type[io.IO[bytes]]]):
+def register_helper(URIClass: Union[Type[ResourcePath], Type[BinaryIO]]) -> Callable[[_T], _T]:
     """Used to register classes as Load helpers
 
     When decorating a class the parameter is the class of "handle type", i.e.
@@ -64,12 +78,12 @@ def register_helper(URICLass: Union[Type[ResourcePath], Type[io.IO[bytes]]]):
 
     Parameters
     ----------
-    URIClass : Type of `~lsst.resources.ResourcePath` or `~io.IO` of bytes
+    URIClass : Type of `~lsst.resources.ResourcePath` or `~IO` of bytes
         type for which the decorated class should be mapped to
     """
 
-    def wrapper(class_):
-        HELPER_REGISTRY[URICLass] = class_
+    def wrapper(class_: _T) -> _T:
+        HELPER_REGISTRY[URIClass] = class_
         return class_
 
     return wrapper
@@ -93,7 +107,7 @@ class DefaultLoadHelper:
 
     Parameters
     ----------
-    uriObject : `~lsst.resources.ResourcePath` or `io.IO` of bytes
+    uriObject : `~lsst.resources.ResourcePath` or `IO` of bytes
         This is the object that will be used to retrieve the raw bytes of the
         save.
     minimumVersion : `int`
@@ -113,11 +127,11 @@ class DefaultLoadHelper:
         minimum specified version.
     """
 
-    def __init__(self, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int):
+    def __init__(self, uriObject: Union[ResourcePath, BinaryIO], minimumVersion: int):
         headerBytes = self.__setup_impl(uriObject, minimumVersion)
         self.headerInfo = self.deserializer.readHeaderInfo(headerBytes)
 
-    def __setup_impl(self, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int) -> bytes:
+    def __setup_impl(self, uriObject: Union[ResourcePath, BinaryIO], minimumVersion: int) -> bytes:
         self.uriObject = uriObject
         # need to import here to avoid cyclic imports
         from ._versionDeserializers import DESERIALIZER_MAP
@@ -136,7 +150,7 @@ class DefaultLoadHelper:
         if magic != MAGIC_BYTES:
             raise ValueError(
                 "This file does not appear to be a quantum graph save got magic bytes "
-                f"{magic}, expected {MAGIC_BYTES}"
+                f"{magic!r}, expected {MAGIC_BYTES!r}"
             )
 
         # unpack the save version bytes and verify it is a version that this
@@ -168,7 +182,10 @@ class DefaultLoadHelper:
         # deserializer. This will be the bytes that describe the following
         # byte boundaries of the header info
         sizeBytes = self._readBytes(preambleSize, preambleSize + deserializerClass.structSize)
-        self.deserializer = deserializerClass(preambleSize, sizeBytes)
+        # DeserializerBase subclasses are required to have the same constructor
+        # signature as the base class itself, but there is no way to express
+        # this in the type system, so we just tell MyPy to ignore it.
+        self.deserializer: DeserializerBase = deserializerClass(preambleSize, sizeBytes)  # type: ignore
 
         # get the header info
         headerBytes = self._readBytes(
@@ -177,9 +194,7 @@ class DefaultLoadHelper:
         return headerBytes
 
     @classmethod
-    def dumpHeader(
-        cls, uriObject: Union[ResourcePath, io.IO[bytes]], minimumVersion: int = 3
-    ) -> Optional[str]:
+    def dumpHeader(cls, uriObject: Union[ResourcePath, BinaryIO], minimumVersion: int = 3) -> Optional[str]:
         instance = cls.__new__(cls)
         headerBytes = instance.__setup_impl(uriObject, minimumVersion)
         header = instance.deserializer.unpackHeader(headerBytes)
@@ -189,7 +204,7 @@ class DefaultLoadHelper:
     def load(
         self,
         universe: DimensionUniverse,
-        nodes: Optional[Iterable[Union[str, UUID]]] = None,
+        nodes: Optional[Iterable[UUID]] = None,
         graphID: Optional[str] = None,
     ) -> QuantumGraph:
         """Loads in the specified nodes from the graph
@@ -203,7 +218,7 @@ class DefaultLoadHelper:
         universe: `~lsst.daf.butler.DimensionUniverse`
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
-        nodes : `Iterable` of `int` or `None`
+        nodes : `Iterable` of `UUID` or `None`
             The nodes to load from the graph, loads all if value is None
             (the default)
         graphID : `str` or `None`
@@ -228,10 +243,10 @@ class DefaultLoadHelper:
             raise ValueError("graphID does not match that of the graph being loaded")
         # Read in specified nodes, or all the nodes
         if nodes is None:
-            nodes = list(self.headerInfo.map.keys())
+            nodes = set(self.headerInfo.map.keys())
             # if all nodes are to be read, force the reader from the base class
             # that will read all they bytes in one go
-            _readBytes = functools.partial(DefaultLoadHelper._readBytes, self)
+            _readBytes: Callable[[int, int], bytes] = functools.partial(DefaultLoadHelper._readBytes, self)
         else:
             # only some bytes are being read using the reader specialized for
             # this class
@@ -259,7 +274,7 @@ class DefaultLoadHelper:
             self.buffer = self.uriObject.read()
         return self.buffer[start:stop]
 
-    def close(self):
+    def close(self) -> None:
         """Cleans up an instance if needed. Base class does nothing"""
         pass
 
@@ -285,6 +300,8 @@ class S3LoadHelper(DefaultLoadHelper):
         response["Body"].close()
         return body
 
+    uriObject: S3ResourcePath
+
 
 @register_helper(FileResourcePath)
 class FileLoadHelper(DefaultLoadHelper):
@@ -295,12 +312,14 @@ class FileLoadHelper(DefaultLoadHelper):
         self.fileHandle.seek(start)
         return self.fileHandle.read(stop - start)
 
-    def close(self):
+    def close(self) -> None:
         if hasattr(self, "fileHandle"):
             self.fileHandle.close()
 
+    uriObject: FileResourcePath
 
-@register_helper(io.IOBase)  # type: ignore
+
+@register_helper(BinaryIO)
 class OpenFileHandleHelper(DefaultLoadHelper):
     # This handler is special in that it does not get initialized with a
     # ResourcePath, but an open file handle.
@@ -312,9 +331,9 @@ class OpenFileHandleHelper(DefaultLoadHelper):
 
     # This helper does support partial loading
 
-    def __init__(self, uriObject: io.IO[bytes], minimumVersion: int):
+    def __init__(self, uriObject: BinaryIO, minimumVersion: int):
         # Explicitly annotate type and not infer from super
-        self.uriObject: io.IO[bytes]
+        self.uriObject: BinaryIO
         super().__init__(uriObject, minimumVersion=minimumVersion)
         # This differs from the default __init__ to force the io object
         # back to the beginning so that in the case the entire file is to
@@ -328,7 +347,7 @@ class OpenFileHandleHelper(DefaultLoadHelper):
 
 
 @dataclass
-class LoadHelper:
+class LoadHelper(ContextManager[DefaultLoadHelper]):
     """This is a helper class to assist with selecting the appropriate loader
     and managing any contexts that may be needed.
 
@@ -342,7 +361,7 @@ class LoadHelper:
     to be a valid `QuantumGraph` save file.
     """
 
-    uri: Union[ResourcePath, IO[bytes]]
+    uri: Union[ResourcePath, BinaryIO]
     """ResourcePath object from which the `QuantumGraph` is to be loaded
     """
     minimumVersion: int
@@ -353,19 +372,30 @@ class LoadHelper:
     production.
     """
 
-    def __enter__(self):
+    def __enter__(self) -> DefaultLoadHelper:
         # Only one handler is registered for anything that is an instance of
         # IOBase, so if any type is a subtype of that, set the key explicitly
         # so the correct loader is found, otherwise index by the type
         self._loaded = self._determineLoader()(self.uri, self.minimumVersion)
         return self._loaded
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(
+        self,
+        type: Optional[Type[BaseException]],
+        value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
         self._loaded.close()
 
     def _determineLoader(self) -> Type[DefaultLoadHelper]:
-        if isinstance(self.uri, io.IOBase):
-            key = io.IOBase
+        key: Union[Type[ResourcePath], Type[BinaryIO]]
+        # Typing for file-like types is a mess; BinaryIO isn't actually
+        # a base class of what open(..., 'rb') returns, and MyPy claims
+        # that IOBase and BinaryIO actually have incompatible method
+        # signatures.  IOBase *is* a base class of what open(..., 'rb')
+        # returns, so it's what we have to use at runtime.
+        if isinstance(self.uri, io.IOBase):  # type: ignore
+            key = BinaryIO
         else:
             key = type(self.uri)
         return HELPER_REGISTRY[key]

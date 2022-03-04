@@ -19,6 +19,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 """Module defining a butler like object specialized to a specific quantum.
 """
 
@@ -82,7 +84,7 @@ class ButlerQuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.__butler = butler
 
-    def _get(self, ref: DatasetRef) -> Any:
+    def _get(self, ref: Union[DeferredDatasetRef, DatasetRef]) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
@@ -93,11 +95,20 @@ class ButlerQuantumContext:
             self._checkMembership(ref, self.allInputs)
             return self.__butler.getDirect(ref)
 
-    def _put(self, value: Any, ref: DatasetRef):
+    def _put(self, value: Any, ref: DatasetRef) -> None:
         self._checkMembership(ref, self.allOutputs)
         self.__butler.put(value, ref)
 
-    def get(self, dataset: Union[InputQuantizedConnection, List[DatasetRef], DatasetRef]) -> Any:
+    def get(
+        self,
+        dataset: Union[
+            InputQuantizedConnection,
+            List[DatasetRef],
+            List[DeferredDatasetRef],
+            DatasetRef,
+            DeferredDatasetRef,
+        ],
+    ) -> Any:
         """Fetches data from the butler
 
         Parameters
@@ -150,7 +161,7 @@ class ButlerQuantumContext:
         self,
         values: Union[Struct, List[Any], Any],
         dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef],
-    ):
+    ) -> None:
         """Puts data into the butler
 
         Parameters
@@ -208,7 +219,7 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
-    def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set):
+    def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set) -> None:
         """Internal function used to check if a DatasetRef is part of the input
         quantum
 

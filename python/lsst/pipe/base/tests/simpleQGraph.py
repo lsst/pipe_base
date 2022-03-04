@@ -21,11 +21,13 @@
 
 """Bunch of common classes and methods for use in unit tests.
 """
+from __future__ import annotations
 
 __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import itertools
 import logging
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Type, Union
 
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
@@ -38,12 +40,24 @@ except ImportError:
 from lsst.daf.butler import Butler, Config, DatasetType
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
-from lsst.utils import doImport
+from lsst.utils import doImportType
 
-from ... import base as pipeBase
 from .. import connectionTypes as cT
+from ..config import PipelineTaskConfig
+from ..connections import PipelineTaskConnections
+from ..graph import QuantumGraph
 from ..graphBuilder import DatasetQueryConstraintVariant as DSQVariant
+from ..graphBuilder import GraphBuilder
+from ..pipeline import Pipeline, TaskDatasetTypes, TaskDef
+from ..pipelineTask import PipelineTask
+from ..struct import Struct
 from ..task import _TASK_FULL_METADATA_TYPE
+from ..taskFactory import TaskFactory
+
+if TYPE_CHECKING:
+    from lsst.daf.butler import Registry
+
+    from ..configOverrides import ConfigOverrides
 
 _LOG = logging.getLogger(__name__)
 
@@ -52,19 +66,19 @@ _LOG = logging.getLogger(__name__)
 # can not explicitly depend on Instrument because pipe_base does not explicitly
 # depend on obs_base.
 class SimpleInstrument:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         pass
 
     @staticmethod
-    def getName():
+    def getName() -> str:
         return "INSTRU"
 
-    def applyConfigOverrides(self, name, config):
+    def applyConfigOverrides(self, name: str, config: pexConfig.Config) -> None:
         pass
 
 
 class AddTaskConnections(
-    pipeBase.PipelineTaskConnections,
+    PipelineTaskConnections,
     dimensions=("instrument", "detector"),
     defaultTemplates={"in_tmpl": "_in", "out_tmpl": "_out"},
 ):
@@ -97,13 +111,13 @@ class AddTaskConnections(
     )
 
 
-class AddTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=AddTaskConnections):
+class AddTaskConfig(PipelineTaskConfig, pipelineConnections=AddTaskConnections):
     """Config for AddTask."""
 
     addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
 
 
-class AddTask(pipeBase.PipelineTask):
+class AddTask(PipelineTask):
     """Trivial PipelineTask for testing, has some extras useful for specific
     unit tests.
     """
@@ -114,10 +128,10 @@ class AddTask(pipeBase.PipelineTask):
     initout = numpy.array([999])
     """InitOutputs for this task"""
 
-    taskFactory = None
+    taskFactory: Optional[AddTaskFactoryMock] = None
     """Factory that makes instances"""
 
-    def run(self, input):
+    def run(self, input: int) -> Struct:  # type: ignore
 
         if self.taskFactory:
             # do some bookkeeping
@@ -129,31 +143,38 @@ class AddTask(pipeBase.PipelineTask):
         output = input + self.config.addend
         output2 = output + self.config.addend
         _LOG.info("input = %s, output = %s, output2 = %s", input, output, output2)
-        return pipeBase.Struct(output=output, output2=output2)
+        return Struct(output=output, output2=output2)
 
 
-class AddTaskFactoryMock(pipeBase.TaskFactory):
+class AddTaskFactoryMock(TaskFactory):
     """Special task factory that instantiates AddTask.
 
     It also defines some bookkeeping variables used by AddTask to report
     progress to unit tests.
     """
 
-    def __init__(self, stopAt=-1):
+    def __init__(self, stopAt: int = -1):
         self.countExec = 0  # incremented by AddTask
         self.stopAt = stopAt  # AddTask raises exception at this call to run()
 
-    def makeTask(self, taskClass, name, config, overrides, butler):
+    def makeTask(
+        self,
+        taskClass: Type[PipelineTask],
+        name: Optional[str],
+        config: Optional[PipelineTaskConfig],
+        overrides: Optional[ConfigOverrides],
+        butler: Optional[Butler],
+    ) -> PipelineTask:
         if config is None:
             config = taskClass.ConfigClass()
             if overrides:
                 overrides.applyTo(config)
         task = taskClass(config=config, initInputs=None, name=name)
-        task.taskFactory = self
+        task.taskFactory = self  # type: ignore
         return task
 
 
-def registerDatasetTypes(registry, pipeline):
+def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[TaskDef]]) -> None:
     """Register all dataset types used by tasks in a registry.
 
     Copied and modified from `PreExecInit.initializeDatasetTypes`.
@@ -174,7 +195,7 @@ def registerDatasetTypes(registry, pipeline):
         packagesDatasetType = DatasetType(
             "packages", {}, storageClass=storageClass, universe=registry.dimensions
         )
-        datasetTypes = pipeBase.TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
+        datasetTypes = TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
         for datasetType in itertools.chain(
             datasetTypes.initInputs,
             datasetTypes.initOutputs,
@@ -191,7 +212,7 @@ def registerDatasetTypes(registry, pipeline):
                 registry.registerDatasetType(datasetType)
 
 
-def makeSimplePipeline(nQuanta, instrument=None):
+def makeSimplePipeline(nQuanta: int, instrument: Optional[str] = None) -> Pipeline:
     """Make a simple Pipeline for tests.
 
     This is called by ``makeSimpleQGraph`` if no pipeline is passed to that
@@ -213,7 +234,7 @@ def makeSimplePipeline(nQuanta, instrument=None):
     pipeline : `~lsst.pipe.base.Pipeline`
         The created pipeline object.
     """
-    pipeline = pipeBase.Pipeline("test pipeline")
+    pipeline = Pipeline("test pipeline")
     # make a bunch of tasks that execute in well defined order (via data
     # dependencies)
     for lvl in range(nQuanta):
@@ -242,19 +263,21 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
     butler : `~lsst.daf.butler.Butler`
         Data butler instance.
     """
-    root = ResourcePath(root, forceDirectory=True)
-    if not root.isLocal:
-        raise ValueError(f"Only works with local root not {root}")
+    root_path = ResourcePath(root, forceDirectory=True)
+    if not root_path.isLocal:
+        raise ValueError(f"Only works with local root not {root_path}")
     config = Config()
     if not inMemory:
-        config["registry", "db"] = f"sqlite:///{root.ospath}/gen3.sqlite"
+        config["registry", "db"] = f"sqlite:///{root_path.ospath}/gen3.sqlite"
         config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
-    repo = butlerTests.makeTestRepo(root, {}, config=config)
+    repo = butlerTests.makeTestRepo(str(root_path), {}, config=config)
     butler = Butler(butler=repo, run=run)
     return butler
 
 
-def populateButler(pipeline, butler, datasetTypes=None):
+def populateButler(
+    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] = None
+) -> None:
     """Populate data butler with data needed for test.
 
     Initializes data butler with a bunch of items:
@@ -287,9 +310,8 @@ def populateButler(pipeline, butler, datasetTypes=None):
 
     instrument = pipeline.getInstrument()
     if instrument is not None:
-        if isinstance(instrument, str):
-            instrument = doImport(instrument)
-        instrumentName = instrument.getName()
+        instrument_class = doImportType(instrument)
+        instrumentName = instrument_class.getName()
     else:
         instrumentName = "INSTR"
 
@@ -308,7 +330,7 @@ def populateButler(pipeline, butler, datasetTypes=None):
             if dsType == "packages":
                 # Version is intentionally inconsistent.
                 # Dict is convertible to Packages if Packages is installed.
-                data = {"python": "9.9.99"}
+                data: Any = {"python": "9.9.99"}
                 butler.put(data, dsType, run=run)
             else:
                 if dsType.endswith("_config"):
@@ -329,18 +351,18 @@ def populateButler(pipeline, butler, datasetTypes=None):
 
 
 def makeSimpleQGraph(
-    nQuanta=5,
-    pipeline=None,
-    butler=None,
-    root=None,
-    callPopulateButler=True,
-    run="test",
-    skipExistingIn=None,
-    inMemory=True,
-    userQuery="",
-    datasetTypes=None,
+    nQuanta: int = 5,
+    pipeline: Optional[Pipeline] = None,
+    butler: Optional[Butler] = None,
+    root: Optional[str] = None,
+    callPopulateButler: bool = True,
+    run: str = "test",
+    skipExistingIn: Any = None,
+    inMemory: bool = True,
+    userQuery: str = "",
+    datasetTypes: Optional[Dict[Optional[str], List[str]]] = None,
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
-):
+) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory registry
@@ -407,7 +429,7 @@ def makeSimpleQGraph(
 
     # Make the graph
     _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
-    builder = pipeBase.GraphBuilder(registry=butler.registry, skipExistingIn=skipExistingIn)
+    builder = GraphBuilder(registry=butler.registry, skipExistingIn=skipExistingIn)
     _LOG.debug(
         "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
         butler.collections,
