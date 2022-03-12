@@ -65,6 +65,22 @@ class PipelineYamlLoader(yaml.SafeLoader):
         return mapping
 
 
+class MultilineStringDumper(yaml.Dumper):
+    """Custom YAML dumper that makes multi-line strings use the '|'
+    continuation style instead of unreadable newlines and tons of quotes.
+
+    Basic approach is taken from
+    https://stackoverflow.com/questions/8640959/how-can-i-control-what-scalar-form-pyyaml-uses-for-my-data,
+    but is written as a Dumper subclass to make its effects non-global (vs
+    `yaml.add_representer`).
+    """
+
+    def represent_scalar(self, tag: str, value: Any, style: Optional[str] = None) -> yaml.ScalarNode:
+        if style is None and tag == "tag:yaml.org,2002:str" and len(value.splitlines()) > 1:
+            style = "|"
+        return super().represent_scalar(tag, value, style)
+
+
 class ContractError(Exception):
     """An exception that is raised when a pipeline contract is not satisfied"""
 
@@ -911,7 +927,7 @@ class PipelineIR:
             Location of document to write a `PipelineIR` object.
         """
         with ResourcePath(uri).open("w") as buffer:
-            yaml.dump(self.to_primitives(), buffer, sort_keys=False)
+            yaml.dump(self.to_primitives(), buffer, sort_keys=False, Dumper=MultilineStringDumper)
 
     def to_primitives(self) -> Dict[str, Any]:
         """Convert to a representation used in yaml serialization"""
@@ -967,7 +983,7 @@ class PipelineIR:
 
     def __str__(self) -> str:
         """Instance formatting as how it would look in yaml representation"""
-        return yaml.dump(self.to_primitives(), sort_keys=False)
+        return yaml.dump(self.to_primitives(), sort_keys=False, Dumper=MultilineStringDumper)
 
     def __repr__(self) -> str:
         """Instance formatting as how it would look in yaml representation"""
