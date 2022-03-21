@@ -1,4 +1,5 @@
 from . import connectionTypes, pipelineIR
+from ._instrument import *
 from ._status import *
 from ._task_metadata import *
 
