@@ -178,6 +178,67 @@ class Instrument(metaclass=ABCMeta):
         return instrument_cls(collection_prefix=collection_prefix)
 
     @staticmethod
+    def from_string(
+        name: str, registry: Optional[Registry] = None, collection_prefix: Optional[str] = None
+    ) -> Instrument:
+        """Return an instance from the short name or class name.
+
+        If the instrument name is not qualified (does not contain a '.') and a
+        butler registry is provided, this will attempt to load the instrument
+        using `Instrument.fromName()`. Otherwise the instrument will be
+        imported and instantiated.
+
+        Parameters
+        ----------
+        name : `str`
+            The name or fully-qualified class name of an instrument.
+        registry : `lsst.daf.butler.Registry`, optional
+            Butler registry to query to find information about the instrument,
+            by default `None`.
+        collection_prefix : `str`, optional
+            Prefix for collection names to use instead of the intrument's own
+            name. This is primarily for use in simulated-data repositories,
+            where the instrument name may not be necessary and/or sufficient
+            to distinguish between collections.
+
+        Returns
+        -------
+        instrument : `Instrument`
+            The instantiated instrument.
+
+        Raises
+        ------
+        RuntimeError
+            Raised if the instrument can not be imported, instantiated, or
+            obtained from the registry.
+        TypeError
+            Raised if the instrument is not a subclass of
+            `~lsst.pipe.base.Instrument`.
+
+        See Also
+        --------
+        Instrument.fromName()
+        """
+        if "." not in name and registry is not None:
+            try:
+                instr = Instrument.fromName(name, registry, collection_prefix=collection_prefix)
+            except Exception as err:
+                raise RuntimeError(
+                    f"Could not get instrument from name: {name}. Failed with exception: {err}"
+                ) from err
+        else:
+            try:
+                instr_class = doImportType(name)
+            except Exception as err:
+                raise RuntimeError(
+                    f"Could not import instrument: {name}. Failed with exception: {err}"
+                ) from err
+            instr = instr_class(collection_prefix=collection_prefix)
+        if not isinstance(instr, Instrument):
+            raise TypeError(f"{name} is not an Instrument subclass.")
+        return instr
+
+    @staticmethod
     def importAll(registry: Registry) -> None:
         """Import all the instruments known to this registry.
 
