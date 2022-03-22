@@ -32,11 +32,6 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Ty
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
-
-try:
-    from lsst.base import Packages
-except ImportError:
-    Packages = None
 from lsst.daf.butler import Butler, Config, DataId, DatasetType, Formatter
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
@@ -192,7 +187,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[
         configDatasetType = DatasetType(
             taskDef.configDatasetName, {}, storageClass="Config", universe=registry.dimensions
         )
-        storageClass = "Packages" if Packages is not None else "StructuredDataDict"
+        storageClass = "Packages"
         packagesDatasetType = DatasetType(
             "packages", {}, storageClass=storageClass, universe=registry.dimensions
         )
