@@ -40,6 +40,7 @@ from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     AbstractSet,
+    Callable,
     ClassVar,
     Dict,
     Generator,
@@ -224,6 +225,19 @@ class TaskDef:
 
     def __hash__(self) -> int:
         return hash((self.taskClass, self.label))
+
+    @classmethod
+    def _unreduce(cls, taskName: str, config: Config, label: str) -> TaskDef:
+        """Custom callable for unpickling.
+
+        All arguments are forwarded directly to the constructor; this
+        trampoline is only needed because ``__reduce__`` callables can't be
+        called with keyword arguments.
+        """
+        return cls(taskName=taskName, config=config, label=label)
+
+    def __reduce__(self) -> Tuple[Callable[[str, Config, str], TaskDef], Tuple[str, Config, str]]:
+        return (self._unreduce, (self.taskName, self.config, self.label))
 
 
 class Pipeline:

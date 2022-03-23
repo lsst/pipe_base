@@ -22,6 +22,7 @@
 """Simple unit test for Pipeline.
 """
 
+import pickle
 import textwrap
 import unittest
 
@@ -40,6 +41,8 @@ class PipelineTestCase(unittest.TestCase):
         self.assertIsInstance(task1.config, AddTask.ConfigClass)
         self.assertIsNotNone(task1.taskClass)
         self.assertEqual(task1.label, "add_task")
+        task1a = pickle.loads(pickle.dumps(task1))
+        self.assertEqual(task1, task1a)
 
     def testEmpty(self):
         """Creating empty pipeline"""
