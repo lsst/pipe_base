@@ -161,14 +161,14 @@ class PipelineTaskTestCase(unittest.TestCase):
                 lsst.utils.logging.PeriodicLogger.LOGGING_INTERVAL = 0.0
 
                 checked_get = True
-                with self.assertLogs(level=lsst.utils.logging.VERBOSE) as cm:
+                with self.assertLogs("lsst.pipe.base", level=lsst.utils.logging.VERBOSE) as cm:
                     input_data = butlerQC.get(inputRefs)
                 self.assertIn("Completed", cm.output[-1])
                 self.assertEqual(len(input_data), len(inputRefs))
 
                 # In this test there are no multiples returned.
                 refs = [ref for _, ref in inputRefs]
-                with self.assertLogs(level=lsst.utils.logging.VERBOSE) as cm:
+                with self.assertLogs("lsst.pipe.base", level=lsst.utils.logging.VERBOSE) as cm:
                     list_get = butlerQC.get(refs)
 
                 lsst.utils.logging.PeriodicLogger.LOGGING_INTERVAL = 600.0

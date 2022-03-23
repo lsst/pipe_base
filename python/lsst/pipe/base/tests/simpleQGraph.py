@@ -32,17 +32,13 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Ty
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
-
-try:
-    from lsst.base import Packages
-except ImportError:
-    Packages = None
-from lsst.daf.butler import Butler, Config, DatasetType
+from lsst.daf.butler import Butler, Config, DataId, DatasetType, Formatter
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
 
 from .. import connectionTypes as cT
+from .._instrument import Instrument
 from ..config import PipelineTaskConfig
 from ..connections import PipelineTaskConnections
 from ..graph import QuantumGraph
@@ -62,10 +58,7 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger(__name__)
 
 
-# SimpleInstrument has an instrument-like API as needed for unit testing, but
-# can not explicitly depend on Instrument because pipe_base does not explicitly
-# depend on obs_base.
-class SimpleInstrument:
+class SimpleInstrument(Instrument):
     def __init__(self, *args: Any, **kwargs: Any):
         pass
 
@@ -73,7 +66,10 @@ class SimpleInstrument:
     def getName() -> str:
         return "INSTRU"
 
-    def applyConfigOverrides(self, name: str, config: pexConfig.Config) -> None:
+    def getRawFormatter(self, dataId: DataId) -> Type[Formatter]:
+        return Formatter
+
+    def register(self, registry: Registry, *, update: bool = False) -> None:
         pass
 
 
@@ -191,7 +187,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[
         configDatasetType = DatasetType(
             taskDef.configDatasetName, {}, storageClass="Config", universe=registry.dimensions
         )
-        storageClass = "Packages" if Packages is not None else "StructuredDataDict"
+        storageClass = "Packages"
         packagesDatasetType = DatasetType(
             "packages", {}, storageClass=storageClass, universe=registry.dimensions
         )
