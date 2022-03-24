@@ -124,8 +124,9 @@ class TaskDef:
         not provided, ``taskClass`` must be provided and
         ``taskClass.ConfigClass()`` will be used.
     taskClass : `type`, optional
-        `PipelineTask` class object, can be ``None``. If ``None`` then
-        framework will have to locate and load class.
+        `PipelineTask` class object; if provided and ``taskName`` is as well,
+        the caller guarantees that they are consistent.  If not provided,
+        ``taskName`` is used to import the type.
     label : `str`, optional
         Task label, usually a short string unique in a pipeline.  If not
         provided, ``taskClass`` must be, and ``taskClass._DefaultName`` will
@@ -143,6 +144,8 @@ class TaskDef:
             if taskClass is None:
                 raise ValueError("At least one of `taskName` and `taskClass` must be provided.")
             taskName = get_full_type_name(taskClass)
+        elif taskClass is None:
+            taskClass = doImportType(taskName)
         if config is None:
             if taskClass is None:
                 raise ValueError("`taskClass` must be provided if `config` is not.")
