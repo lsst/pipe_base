@@ -176,9 +176,25 @@ class TaskDef:
         metadata is not to be saved (`str`)
         """
         if self.config.saveMetadata:
-            return self.label + "_metadata"
+            return self.makeMetadataDatasetName(self.label)
         else:
             return None
+
+    @classmethod
+    def makeMetadataDatasetName(cls, label: str) -> str:
+        """Construct the name of the dataset type for metadata for a task.
+
+        Parameters
+        ----------
+        label : `str`
+            Label for the task within its pipeline.
+
+        Returns
+        -------
+        name : `str`
+            Name of the task's metadata dataset type.
+        """
+        return f"{label}_metadata"
 
     @property
     def logOutputDatasetName(self) -> Optional[str]:

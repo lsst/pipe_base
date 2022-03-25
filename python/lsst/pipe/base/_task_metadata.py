@@ -457,6 +457,28 @@ class TaskMetadata(BaseModel):
         except KeyError:
             raise KeyError(f"'{key}' not found") from None
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Retrieve the item associated with the key or a default.
+
+        Parameters
+        ----------
+        key : `str`
+            The key to retrieve. Can be dot-separated hierarchical.
+        default
+            The value to return if the key doesnot exist.
+
+        Returns
+        -------
+        value : `TaskMetadata`, `float`, `int`, `bool`, `str`
+            A scalar value.  If the key refers to an array, the final element
+            is returned and not the array itself; this is consistent with
+            `__getitem__` and `PropertySet.get`, but not ``to_dict().get``.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
     def __setitem__(self, key: str, item: Any) -> None:
         """Store the given item."""
         keys = self._getKeys(key)

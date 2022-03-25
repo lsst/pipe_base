@@ -712,6 +712,15 @@ class PipelineIRTestCase(unittest.TestCase):
         )
         self.assertRaises(KeyError, PipelineIR.from_string, pipeline_str)
 
+    def testMultiLineStrings(self):
+        """Test that multi-line strings in pipelines are written with
+        '|' continuation-syntax instead of explicit newlines.
+        """
+        pipeline_ir = PipelineIR({"description": "Line 1\nLine2\n", "tasks": {"modA": "task1"}})
+        string = str(pipeline_ir)
+        self.assertIn("|", string)
+        self.assertNotIn(r"\n", string)
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
