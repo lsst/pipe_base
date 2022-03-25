@@ -38,10 +38,11 @@ __all__ = [
 import itertools
 import string
 import typing
-from collections import UserDict
+from collections import UserDict, ChainMap
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, ClassVar, Dict, Iterable, List, Set, Union
+from typing import Any, ClassVar, Iterable, List, Mapping, Set, Union, Optional, MutableMapping, TypeVar
+from warnings import warn
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
@@ -58,6 +59,8 @@ from .connectionTypes import (
 
 if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
+
+T = TypeVar("T", bound=BaseConnection)
 
 
 class ScalarError(TypeError):
@@ -85,31 +88,28 @@ class PipelineTaskConnectionDict(UserDict):
         # Initialize class level variables used to track any declared
         # class level variables that are instances of
         # connectionTypes.BaseConnection
-        self.data["inputs"] = []
-        self.data["prerequisiteInputs"] = []
-        self.data["outputs"] = []
-        self.data["initInputs"] = []
-        self.data["initOutputs"] = []
-        self.data["allConnections"] = {}
+        inputs = self.data["_inputs"] = {}
+        pre_inputs = self.data["_prerequisiteInputs"] = {}
+        outputs = self.data["_outputs"] = {}
+        init_inputs = self.data["_initInputs"] = {}
+        init_outputs = self.data["_initOutputs"] = {}
+        self.data["_allConnections"] = ChainMap(inputs, pre_inputs, outputs, init_inputs, init_outputs)
 
     def __setitem__(self, name: str, value: Any) -> None:
         if isinstance(value, Input):
-            self.data["inputs"].append(name)
+            self.data["_inputs"][name] = value
         elif isinstance(value, PrerequisiteInput):
-            self.data["prerequisiteInputs"].append(name)
+            self.data["_prerequisiteInputs"][name] = value
         elif isinstance(value, Output):
-            self.data["outputs"].append(name)
+            self.data["_outputs"][name] = value
         elif isinstance(value, InitInput):
-            self.data["initInputs"].append(name)
+            self.data["_initInputs"][name] = value
         elif isinstance(value, InitOutput):
-            self.data["initOutputs"].append(name)
+            self.data["_initOutputs"][name] = value
         # This should not be an elif, as it needs tested for
         # everything that inherits from BaseConnection
-        if isinstance(value, BaseConnection):
-            object.__setattr__(value, "varName", name)
-            self.data["allConnections"][name] = value
-        # defer to the default behavior
-        super().__setitem__(name, value)
+        if not isinstance(value, BaseConnection):
+            super().__setitem__(name, value)
 
 
 class PipelineTaskConnectionsMetaclass(type):
@@ -122,7 +122,7 @@ class PipelineTaskConnectionsMetaclass(type):
         dct = PipelineTaskConnectionDict()
         for base in bases:
             if isinstance(base, PipelineTaskConnectionsMetaclass):
-                for name, value in base.allConnections.items():
+                for name, value in base._allConnections.items():
                     dct[name] = value
         return dct
 
@@ -158,7 +158,7 @@ class PipelineTaskConnectionsMetaclass(type):
             allTemplates = set()
             stringFormatter = string.Formatter()
             # Loop over all connections
-            for obj in dct["allConnections"].values():
+            for obj in dct["_allConnections"].values():
                 nameValue = obj.name
                 # add all the parameters to the set of templates
                 for param in stringFormatter.parse(nameValue):
@@ -195,7 +195,7 @@ class PipelineTaskConnectionsMetaclass(type):
                 # Verify that templates do not share names with variable names
                 # used for a connection, this is needed because of how
                 # templates are specified in an associated config class.
-                nameTemplateIntersection = allTemplates.intersection(set(dct["allConnections"].keys()))
+                nameTemplateIntersection = allTemplates.intersection(set(dct["_allConnections"].keys()))
                 if len(nameTemplateIntersection) > 0:
                     raise TypeError(
                         f"Template parameters cannot share names with Class attributes"
@@ -203,10 +203,9 @@ class PipelineTaskConnectionsMetaclass(type):
                     )
             dct["defaultTemplates"] = kwargs.get("defaultTemplates", {})
 
-        # Convert all the connection containers into frozensets so they cannot
-        # be modified at the class scope
-        for connectionName in ("inputs", "prerequisiteInputs", "outputs", "initInputs", "initOutputs"):
-            dct[connectionName] = frozenset(dct[connectionName])
+        # create a space for sub connection classes to be registered
+        dct['_registeredSubConnections'] = {}
+
         # our custom dict type must be turned into an actual dict to be used in
         # type.__new__
         return super().__new__(cls, name, bases, dict(dct))
@@ -218,6 +217,12 @@ class PipelineTaskConnectionsMetaclass(type):
         # __init__ on the type metaclass. This is in accordance with python
         # documentation on metaclasses
         super().__init__(name, bases, dct)
+
+    def registerSubConnections(cls, name: str):
+        def wrapper(connectionsClass: "PipelineTaskConnections"):
+            cls._registeredSubConnections[name] = connectionsClass
+            return connectionsClass
+        return wrapper
 
 
 class QuantizedConnection(SimpleNamespace):
@@ -411,14 +416,97 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     dimensions: ClassVar[Set[str]]
 
-    def __init__(self, *, config: "PipelineTaskConfig" = None):
-        self.inputs: Set[str] = set(self.inputs)
-        self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
-        self.outputs: Set[str] = set(self.outputs)
-        self.initInputs: Set[str] = set(self.initInputs)
-        self.initOutputs: Set[str] = set(self.initOutputs)
-        self.allConnections: Dict[str, BaseConnection] = dict(self.allConnections)
+    @property
+    def inputs(self) -> set[str]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._legacy_input
 
+    @inputs.setter
+    def inputs(self, value) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._legacy_input = value
+
+    @property
+    def prerequisiteInputs(self) -> set[str]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._legacy_input
+
+    @prerequisiteInputs.setter
+    def prerequisiteInputs(self, value) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._legacy_input = value
+
+    @property
+    def outputs(self) -> set[str]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._legacy_input
+
+    @outputs.setter
+    def outputs(self, value) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._legacy_input = value
+
+    @property
+    def initInputs(self) -> set[str]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._legacy_input
+
+    @initInputs.setter
+    def initInputs(self, value) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._legacy_input = value
+
+    @property
+    def initOutputs(self) -> set[str]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._legacy_input
+
+    @initOutputs.setter
+    def initOutputs(self, value) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._legacy_input = value
+
+    @property
+    def allConnections(self) -> MutableMapping[str, BaseConnection]:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        return self._allConnections
+
+    @allConnections.setter
+    def allConnections(self, value: MutableMapping[str, BaseConnection]) -> None:
+        warn("Modifying connections in this way is deprecated", DeprecationWarning)
+        self._allConnections = value
+
+    def __new__(cls, *, config: "PipelineTaskConfig" = None,
+                additional_connections: Optional[Mapping[str, BaseConnection]] = None,
+                additional_templates: Optional[Mapping[str, str]] = None):
+        inst = cls()
+
+        ac_processed = PipelineTaskConnectionDict(additional_connections)
+        inst._inputs = {**cls._inputs, **ac_processed._inputs}
+        inst._prerequisiteInputs = {**cls._prerequisiteInputs, **ac_processed._prerequisiteInputs}
+        inst._outputs = {**cls._outputs, **ac_processed._outputs}
+        inst._initInputs = {**cls._initInputs, **ac_processed._initInputs}
+        inst._initOutputs = {**cls.initOutputs, **ac_processed.initOutputs}
+        inst._modifications = {}
+        inst._allConnections = ChainMap(inst._modifications, inst._inputs, inst._prerequisiteInputs,
+                                        inst._outputs,
+                                        inst._initInputs, inst._initOutputs)
+
+        # support existing legacy way of modifying connections, will be
+        # deprecated
+        inst._legacy_input: set[str] = set(inst._inputs.keys())
+        inst._legacy_prerequisiteInputs: set[str] = set(inst._prerequitsiteInputs.keys())
+        inst._legacy_outputs: set[str] = set(inst._outputs.keys())
+        inst._legacy_initInitInputs: set[str] = set(inst._initInputs.keys())
+        inst._legacy_initOutputs: set[str] = set(inst._initOutputs.keys())
+
+        # make a local copy of the default templates
+        inst.defaultTemplates = {**cls.defaultTemplates, **additional_templates}
+        inst._activeSubConnections = []
+
+        # SHOULD RE VALIDATE TEMPLATES HERE
+
+    def __init__(self, *, config: "PipelineTaskConfig" = None):
         from .config import PipelineTaskConfig  # local import to avoid cycle
 
         if config is None or not isinstance(config, PipelineTaskConfig):
@@ -426,24 +514,53 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
             )
         self.config = config
+
         # Extract the template names that were defined in the config instance
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time
-        templateValues = {
+        self.templateValues = {
             name: getattr(config.connections, name) for name in getattr(self, "defaultTemplates").keys()
         }
-        # Extract the configured value corresponding to each connection
-        # variable. I.e. for each connection identifier, populate a override
-        # for the connection.name attribute
-        self._nameOverrides = {
-            name: getattr(config.connections, name).format(**templateValues)
-            for name in self.allConnections.keys()
-        }
-
         # connections.name corresponds to a dataset type name, create a reverse
         # mapping that goes from dataset type name to attribute identifier name
         # (variable name) on the connection class
-        self._typeNameToVarName = {v: k for k, v in self._nameOverrides.items()}
+        self._typeNameToVarName = {v.name: k for k, v in self._allConnections.items()}
+
+    def activateSubConnections(self, subConnectionsName: str) -> None:
+        self._activeSubConnections.append(subConnectionsName)
+
+    def deActivateSubConnections(self, subConnectionsName: str) -> None:
+        self._activeSubConnections.pop(subConnectionsName)
+
+    def _updateConnections(self, connections: Mapping[str, T]) -> Mapping[str, T]:
+        updates = {}
+        for name, connection in connections.items():
+            connectionDict = connection.asdict()
+            configOverride = getattr(self.config.connections, name)
+            connectionDict['name'] = configOverride.name
+            updates[name] = type(connection)
+
+
+    def _accumulateSubConnections(self, connectionsAttr: str) -> Mapping[str, Any]:
+        accumulator: dict[str, BaseConnection] = {**getattr(self, connectionsAttr)}
+        for sub in self._activeSubConnections:
+            accumulator.update(getattr(sub, connectionsAttr))
+        return accumulator
+
+    def getInputs(self) -> Mapping[str, Input]:
+        return self._updateConnections(self._accumulateSubConnections('_inputs'))
+
+    def getPrerequisiteInputs(self) -> Mapping[str, PrerequisiteInput]:
+        return self._updateConnections(self._accumulateSubConnections('_prerequisiteInputs'))
+
+    def getOutputs(self) -> Mapping[str, Output]:
+        return self._updateConnections(self._accumulateSubConnections('_outputs'))
+
+    def getInitInputs(self) -> Mapping[str, InitInput]:
+        return self._updateConnections(self._accumulateSubConnections('_initInputs'))
+
+    def getInitOutputs(self) -> Mapping[str, InitOutput]:
+        return self._updateConnections(self._accumulateSubConnections('_initOutputs'))
 
     def buildDatasetRefs(
         self, quantum: Quantum

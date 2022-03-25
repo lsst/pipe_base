@@ -31,6 +31,7 @@ __all__ = ["ResourceConfig", "PipelineTaskConfig"]
 # -------------------------------
 from numbers import Number
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
+import weakref
 
 # -----------------------------
 #  Imports for other modules --
@@ -38,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
 import lsst.pex.config as pexConfig
 
 from .connections import PipelineTaskConnections
+from .connectionTypes import BaseConnection
 
 if TYPE_CHECKING:
     from lsst.pex.config.callStack import StackFrame
@@ -88,6 +90,29 @@ class TemplateField(pexConfig.Field):
         # now, explicitly make it into a string
         value = str(value)
         super().__set__(instance, value, at, label)
+
+
+class ConnectionsFieldProxy:
+    def __init__(self, parentField: "ConnectionsField"):
+        self.parent = weakref.ref(parentField)
+
+    def addConnection(self, name: str, connection: BaseConnection):
+        pass
+
+
+class ConnectionsConfig(pexConfig.Config):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._addedConnections: list[BaseConnection] = []
+
+    def __getattribute__(self, __name: str) -> Any:
+        # This means the field is already present
+        if hasattr(self, __name):
+            return super().__getattribute__(__name)
+        # There is no existing connection, accept incase someone adds the
+        # connection later. The validate method will be sure that there is
+        # a connection for each override
+        else
 
 
 class PipelineTaskConfigMeta(pexConfig.ConfigMeta):

@@ -65,39 +65,6 @@ class BaseConnection:
     doc: str = ""
     multiple: bool = False
 
-    def __get__(self, inst, klass):
-        """Descriptor method
-
-        This is a method used to turn a connection into a descriptor.
-        When a connection is added to a connection class, it is a class level
-        variable. This method makes accessing this connection, on the
-        instance of the connection class owning this connection, return a
-        result specialized for that instance. In the case of connections
-        this specifically means names specified in a config instance will
-        be visible instead of the default names for the connection.
-        """
-        # If inst is None, this is being accessed by the class and not an
-        # instance, return this connection itself
-        if inst is None:
-            return self
-        # If no object cache exists, create one to track the instances this
-        # connection has been accessed by
-        if not hasattr(inst, "_connectionCache"):
-            object.__setattr__(inst, "_connectionCache", {})
-        # Look up an existing cached instance
-        idSelf = id(self)
-        if idSelf in inst._connectionCache:
-            return inst._connectionCache[idSelf]
-        # Accumulate the parameters that define this connection
-        params = {}
-        for field in dataclasses.fields(self):
-            params[field.name] = getattr(self, field.name)
-        # Get the name override defined by the instance of the connection class
-        params["name"] = inst._nameOverrides[self.varName]
-        # Return a new instance of this connection specialized with the
-        # information provided by the connection class instance
-        return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
-
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: Optional[Union[StorageClass, str]] = None
     ) -> DatasetType:
