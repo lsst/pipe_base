@@ -239,7 +239,7 @@ class ConfigOverrides:
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
                 with override.open("r") as buffer:
-                    config.loadFromStream(buffer, filename=str(override))
+                    config.loadFromStream(buffer, filename=override.ospath)
             elif otype is OverrideTypes.Value:
                 field, value = override
                 if isinstance(value, str):
