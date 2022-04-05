@@ -1,0 +1,1 @@
+Made the ordering of input ``Quantum``s deterministic in graph building.

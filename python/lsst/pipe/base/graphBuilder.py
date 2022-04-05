@@ -397,6 +397,8 @@ class _QuantumScaffolding:
         """
         allInputs = self.inputs.unpackMultiRefs()
         allInputs.update(self.prerequisites.unpackMultiRefs())
+        for name, refs in allInputs.items():
+            allInputs[name] = sorted(refs, key=lambda rr: rr.dataId)
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
         # This will raise if one of the check conditions is not met, which is
@@ -406,7 +408,10 @@ class _QuantumScaffolding:
         # input behave like a regular input; adjustQuantum should only raise
         # NoWorkFound if a regular input is missing, and it shouldn't be
         # possible for us to have generated ``self`` if that's true.
-        helper = AdjustQuantumHelper(inputs=allInputs, outputs=self.outputs.unpackMultiRefs())
+        outputs = self.outputs.unpackMultiRefs()
+        for name, refs in outputs.items():
+            outputs[name] = sorted(refs, key=lambda rr: rr.dataId)
+        helper = AdjustQuantumHelper(inputs=allInputs, outputs=outputs)
         helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
         initInputs = self.task.initInputs.unpackSingleRefs()
         quantum_records: Optional[Mapping[str, DatastoreRecordData]] = None
