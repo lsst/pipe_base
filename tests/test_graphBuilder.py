@@ -21,11 +21,13 @@
 
 """Tests of things related to the GraphBuilder class."""
 
+import io
 import logging
 import unittest
 
 import lsst.utils.tests
 from lsst.daf.butler.registry import UserExpressionError
+from lsst.pipe.base import QuantumGraph
 from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
@@ -63,6 +65,42 @@ class GraphBuilderTestCase(unittest.TestCase):
             )
             with self.assertRaises(UserExpressionError):
                 simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery="instrument = 'foo'")
+
+    def test_datastore_records(self):
+        """Test for generating datastore records."""
+        with temporaryDirectory() as root:
+            # need FileDatastore for this tests
+            butler, qgraph1 = simpleQGraph.makeSimpleQGraph(
+                root=root, inMemory=False, makeDatastoreRecords=True
+            )
+
+            # save and reload
+            buffer = io.BytesIO()
+            qgraph1.save(buffer)
+            buffer.seek(0)
+            qgraph2 = QuantumGraph.load(buffer, universe=butler.dimensions)
+            del buffer
+
+            for qgraph in (qgraph1, qgraph2):
+                self.assertEqual(len(qgraph), 5)
+                for i, qnode in enumerate(qgraph):
+                    quantum = qnode.quantum
+                    self.assertIsNotNone(quantum.datastore_records)
+                    # only the first quantum has a pre-existing input
+                    if i == 0:
+                        datastore_name = "FileDatastore@<butlerRoot>"
+                        self.assertEqual(set(quantum.datastore_records.keys()), {datastore_name})
+                        records_data = quantum.datastore_records[datastore_name]
+                        records = dict(records_data.records)
+                        self.assertEqual(len(records), 1)
+                        _, records = records.popitem()
+                        records = records["file_datastore_records"]
+                        self.assertEqual(
+                            [record.path for record in records],
+                            ["test/add_dataset0/add_dataset0_INSTR_det0_test.pickle"],
+                        )
+                    else:
+                        self.assertEqual(quantum.datastore_records, {})
 
 
 if __name__ == "__main__":
