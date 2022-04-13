@@ -1,0 +1,2 @@
+Topological sorting of pipelines on write has been disabled; the order in which the pipeline tasks were read/added is preserved instead.
+This makes it unnecessary to import all tasks referenced by the pipeline in order to write it.

@@ -40,6 +40,7 @@ from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     AbstractSet,
+    Callable,
     ClassVar,
     Dict,
     Generator,
@@ -116,18 +117,17 @@ class TaskDef:
     Attributes
     ----------
     taskName : `str`, optional
-        `PipelineTask` class name, currently it is not specified whether this
-        is a fully-qualified name or partial name (e.g. ``module.TaskClass``).
-        Framework should be prepared to handle all cases.  If not provided,
-        ``taskClass`` must be, and ``taskClass.__name__`` is used.
+        The fully-qualified `PipelineTask` class name.  If not provided,
+        ``taskClass`` must be.
     config : `lsst.pex.config.Config`, optional
         Instance of the configuration class corresponding to this task class,
         usually with all overrides applied. This config will be frozen.  If
         not provided, ``taskClass`` must be provided and
         ``taskClass.ConfigClass()`` will be used.
     taskClass : `type`, optional
-        `PipelineTask` class object, can be ``None``. If ``None`` then
-        framework will have to locate and load class.
+        `PipelineTask` class object; if provided and ``taskName`` is as well,
+        the caller guarantees that they are consistent.  If not provided,
+        ``taskName`` is used to import the type.
     label : `str`, optional
         Task label, usually a short string unique in a pipeline.  If not
         provided, ``taskClass`` must be, and ``taskClass._DefaultName`` will
@@ -144,7 +144,9 @@ class TaskDef:
         if taskName is None:
             if taskClass is None:
                 raise ValueError("At least one of `taskName` and `taskClass` must be provided.")
-            taskName = taskClass.__name__
+            taskName = get_full_type_name(taskClass)
+        elif taskClass is None:
+            taskClass = doImportType(taskName)
         if config is None:
             if taskClass is None:
                 raise ValueError("`taskClass` must be provided if `config` is not.")
@@ -223,6 +225,19 @@ class TaskDef:
 
     def __hash__(self) -> int:
         return hash((self.taskClass, self.label))
+
+    @classmethod
+    def _unreduce(cls, taskName: str, config: Config, label: str) -> TaskDef:
+        """Custom callable for unpickling.
+
+        All arguments are forwarded directly to the constructor; this
+        trampoline is only needed because ``__reduce__`` callables can't be
+        called with keyword arguments.
+        """
+        return cls(taskName=taskName, config=config, label=label)
+
+    def __reduce__(self) -> Tuple[Callable[[str, Config, str], TaskDef], Tuple[str, Config, str]]:
+        return (self._unreduce, (self.taskName, self.config, self.label))
 
 
 class Pipeline:
@@ -482,11 +497,6 @@ class Pipeline:
         return cls.fromIR(copy.deepcopy(pipeline._pipelineIR))
 
     def __str__(self) -> str:
-        # tasks need sorted each call because someone might have added or
-        # removed task, and caching changes does not seem worth the small
-        # overhead
-        labels = [td.label for td in self._toExpandedPipelineImpl(checkContracts=False)]
-        self._pipelineIR.reorder_tasks(labels)
         return str(self._pipelineIR)
 
     def addInstrument(self, instrument: Union[Instrument, str]) -> None:
@@ -633,8 +643,6 @@ class Pipeline:
             support or no scheme for a local file/directory.  Should have a
             ``.yaml``.
         """
-        labels = [td.label for td in self._toExpandedPipelineImpl(checkContracts=False)]
-        self._pipelineIR.reorder_tasks(labels)
         self._pipelineIR.write_to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
@@ -653,9 +661,6 @@ class Pipeline:
             If a dataId is supplied in a config block. This is in place for
             future use
         """
-        yield from self._toExpandedPipelineImpl()
-
-    def _toExpandedPipelineImpl(self, checkContracts: bool = True) -> Iterable[TaskDef]:
         taskDefs = []
         for label in self._pipelineIR.tasks:
             taskDefs.append(self._buildTaskDef(label))
@@ -680,7 +685,7 @@ class Pipeline:
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
         taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
-        taskName = taskClass.__qualname__
+        taskName = get_full_type_name(taskClass)
         config = taskClass.ConfigClass()
         overrides = ConfigOverrides()
         if self._pipelineIR.instrument is not None:
@@ -716,7 +721,20 @@ class Pipeline:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Pipeline):
             return False
-        return self._pipelineIR == other._pipelineIR
+        elif self._pipelineIR == other._pipelineIR:
+            # Shortcut: if the IR is the same, the expanded pipeline must be
+            # the same as well.  But the converse is not true.
+            return True
+        else:
+            self_expanded = {td.label: (td.taskClass,) for td in self}
+            other_expanded = {td.label: (td.taskClass,) for td in other}
+            if self_expanded != other_expanded:
+                return False
+        # After DM-27847, we should compare configuration here, or better,
+        # delegated to TaskDef.__eq__ after making that compare configurations.
+        raise NotImplementedError(
+            "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
+        )
 
 
 @dataclass(frozen=True)

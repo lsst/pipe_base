@@ -629,8 +629,8 @@ class PipelineIRTestCase(unittest.TestCase):
 
         # Create the temp file, write and read
         with tempfile.NamedTemporaryFile() as tf:
-            pipeline.to_file(tf.name)
-            loaded_pipeline = PipelineIR.from_file(tf.name)
+            pipeline.write_to_uri(tf.name)
+            loaded_pipeline = PipelineIR.from_uri(tf.name)
         self.assertEqual(pipeline, loaded_pipeline)
 
     def testSorting(self):

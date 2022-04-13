@@ -29,6 +29,7 @@ import inspect
 from enum import Enum
 from operator import attrgetter
 
+from lsst.resources import ResourcePath
 from lsst.utils import doImportType
 
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
@@ -147,10 +148,11 @@ class ConfigOverrides:
 
         Parameters
         ----------
-        filename : str
-            Path to the override file.
+        filename : convertible to `ResourcePath`
+            Path or URI to the override file.  All URI schemes supported by
+            `ResourcePath` are supported.
         """
-        self._overrides.append((OverrideTypes.File, filename))
+        self._overrides.append((OverrideTypes.File, ResourcePath(filename)))
 
     def addValueOverride(self, field, value):
         """Add override for a specific field.
@@ -215,6 +217,7 @@ class ConfigOverrides:
         Parameters
         ----------
         config : `pex.Config`
+            Configuration to apply to; modified in place.
 
         Raises
         ------
@@ -235,7 +238,8 @@ class ConfigOverrides:
 
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
-                config.load(override)
+                with override.open("r") as buffer:
+                    config.loadFromStream(buffer, filename=override.ospath)
             elif otype is OverrideTypes.Value:
                 field, value = override
                 if isinstance(value, str):
