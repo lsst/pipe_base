@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "lsst-versions"]
+build-backend = "setuptools.build_meta"
+
 [tool.towncrier]
     package = "lsst.pipe.base"
     package_dir = "python"
@@ -44,3 +48,6 @@ target-version = ["py38"]
 [tool.isort]
 profile = "black"
 line_length = 110
+
+[tool.lsst_versions]
+write_to = "python/lsst/pipe/base/version.py"
