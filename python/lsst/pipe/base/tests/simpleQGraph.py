@@ -358,6 +358,7 @@ def makeSimpleQGraph(
     userQuery: str = "",
     datasetTypes: Optional[Dict[Optional[str], List[str]]] = None,
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
+    makeDatastoreRecords: bool = False,
 ) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
@@ -401,6 +402,8 @@ def makeSimpleQGraph(
         The query constraint variant that should be used to constrain the
         query based on dataset existence, defaults to
         `DatasetQueryConstraintVariant.ALL`.
+    makeDatastoreRecords : `bool`, optional
+        If `True` then add datstore records to generated quanta.
 
     Returns
     -------
@@ -425,7 +428,11 @@ def makeSimpleQGraph(
 
     # Make the graph
     _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
-    builder = GraphBuilder(registry=butler.registry, skipExistingIn=skipExistingIn)
+    builder = GraphBuilder(
+        registry=butler.registry,
+        skipExistingIn=skipExistingIn,
+        datastore=butler.datastore if makeDatastoreRecords else None,
+    )
     _LOG.debug(
         "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
         butler.collections,

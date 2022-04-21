@@ -41,6 +41,8 @@ from lsst.daf.butler import (
     DataCoordinate,
     DatasetRef,
     DatasetType,
+    Datastore,
+    DatastoreRecordData,
     DimensionGraph,
     DimensionUniverse,
     NamedKeyDict,
@@ -301,8 +303,14 @@ class _QuantumScaffolding:
     quantum.
     """
 
-    def makeQuantum(self) -> Quantum:
+    def makeQuantum(self, datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None) -> Quantum:
         """Transform the scaffolding object into a true `Quantum` instance.
+
+        Parameters
+        ----------
+        datastore_records : `dict` [ `str`, `DatastoreRecordData` ], optional
+            If not `None` then fill datastore records in each generated Quantum
+            using the records from this structure.
 
         Returns
         -------
@@ -322,13 +330,25 @@ class _QuantumScaffolding:
         # possible for us to have generated ``self`` if that's true.
         helper = AdjustQuantumHelper(inputs=allInputs, outputs=self.outputs.unpackMultiRefs())
         helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
+        initInputs = self.task.initInputs.unpackSingleRefs()
+        quantum_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        if datastore_records is not None:
+            quantum_records = {}
+            input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
+            input_refs += list(initInputs.values())
+            input_ids = set(ref.id for ref in input_refs if ref.id is not None)
+            for datastore_name, records in datastore_records.items():
+                matching_records = records.subset(input_ids)
+                if matching_records is not None:
+                    quantum_records[datastore_name] = matching_records
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
-            initInputs=self.task.initInputs.unpackSingleRefs(),
+            initInputs=initInputs,
             inputs=helper.inputs,
             outputs=helper.outputs,
+            datastore_records=quantum_records,
         )
 
 
@@ -415,12 +435,23 @@ class _TaskScaffolding:
     this task with that data ID.
     """
 
-    def makeQuantumSet(self, unresolvedRefs: Optional[Set[DatasetRef]] = None) -> Set[Quantum]:
+    def makeQuantumSet(
+        self,
+        unresolvedRefs: Optional[Set[DatasetRef]] = None,
+        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None,
+    ) -> Set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
+
+        Parameters
+        ----------
+        unresolvedRefs : `set` [ `DatasetRef` ], optional
+            Input dataset refs that have not been found.
+        datastore_records : `dict`
+
 
         Returns
         -------
-        nodes : `set` of `Quantum
+        nodes : `set` of `Quantum`
             The `Quantum` elements corresponding to this task.
         """
         if unresolvedRefs is None:
@@ -428,7 +459,7 @@ class _TaskScaffolding:
         outputs = set()
         for q in self.quanta.values():
             try:
-                tmpQuanta = q.makeQuantum()
+                tmpQuanta = q.makeQuantum(datastore_records)
                 outputs.add(tmpQuanta)
             except (NoWorkFound, FileNotFoundError) as exc:
                 refs = itertools.chain.from_iterable(self.inputs.unpackMultiRefs().values())
@@ -1017,7 +1048,9 @@ class _PipelineScaffolding:
                 else:
                     raise AssertionError("OutputExistsError should have already been raised.")
 
-    def makeQuantumGraph(self, metadata: Optional[Mapping[str, Any]] = None) -> QuantumGraph:
+    def makeQuantumGraph(
+        self, metadata: Optional[Mapping[str, Any]] = None, datastore: Optional[Datastore] = None
+    ) -> QuantumGraph:
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
 
@@ -1027,15 +1060,32 @@ class _PipelineScaffolding:
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
             JSON.
+        datastore : `Datastore`, optional
+            If not `None` then fill datastore records in each generated
+            Quantum.
 
         Returns
         -------
         graph : `QuantumGraph`
             The full `QuantumGraph`.
         """
+
+        def _make_refs(dataset_dict: _DatasetDict) -> Iterable[DatasetRef]:
+            """Extract all DatasetRefs from the dictionaries"""
+            for ref_dict in dataset_dict.values():
+                yield from ref_dict.values()
+
+        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        if datastore is not None:
+            datastore_records = datastore.export_records(
+                itertools.chain(
+                    _make_refs(self.inputs), _make_refs(self.initInputs), _make_refs(self.prerequisites)
+                )
+            )
+
         graphInput: Dict[TaskDef, Set[Quantum]] = {}
         for task in self.tasks:
-            qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs)
+            qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
 
         graph = QuantumGraph(graphInput, metadata=metadata, pruneRefs=self.unfoundRefs)
@@ -1065,7 +1115,7 @@ class PrerequisiteMissingError(GraphBuilderError):
     pass
 
 
-class GraphBuilder(object):
+class GraphBuilder:
     """GraphBuilder class is responsible for building task execution graph from
     a Pipeline.
 
@@ -1081,13 +1131,22 @@ class GraphBuilder(object):
         If `True` (default), allow quanta to created even if partial outputs
         exist; this requires the same behavior behavior to be enabled when
         executing.
+    datastore : `Datastore`, optional
+        If not `None` then fill datastore records in each generated Quantum.
     """
 
-    def __init__(self, registry: Registry, skipExistingIn: Any = None, clobberOutputs: bool = True):
+    def __init__(
+        self,
+        registry: Registry,
+        skipExistingIn: Any = None,
+        clobberOutputs: bool = True,
+        datastore: Optional[Datastore] = None,
+    ):
         self.registry = registry
         self.dimensions = registry.dimensions
         self.skipExistingIn = skipExistingIn
         self.clobberOutputs = clobberOutputs
+        self.datastore = datastore
 
     def makeGraph(
         self,
@@ -1165,4 +1224,4 @@ class GraphBuilder(object):
                 clobberOutputs=self.clobberOutputs,
                 constrainedByAllDatasets=condition,
             )
-        return scaffolding.makeQuantumGraph(metadata=metadata)
+        return scaffolding.makeQuantumGraph(metadata=metadata, datastore=self.datastore)
