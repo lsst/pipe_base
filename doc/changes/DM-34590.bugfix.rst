@@ -1,1 +1,0 @@
-Fixed a bug where the Gen2 argument parser required an unused parameter for `--longlog`.
