@@ -199,6 +199,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         cls.repo = butlerTests.makeTestRepo(cls.root)
         butlerTests.addDataIdValue(cls.repo, "instrument", "notACam")
+        butlerTests.addDataIdValue(cls.repo, "physical_filter", "V", band="g")
         butlerTests.addDataIdValue(cls.repo, "visit", 101)
         butlerTests.addDataIdValue(cls.repo, "visit", 102)
         butlerTests.addDataIdValue(cls.repo, "skymap", "sky")
