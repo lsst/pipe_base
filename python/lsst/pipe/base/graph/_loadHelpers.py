@@ -35,6 +35,7 @@ from typing import (
     ContextManager,
     Iterable,
     Optional,
+    Set,
     Type,
     TypeVar,
     Union,
@@ -204,7 +205,7 @@ class DefaultLoadHelper:
     def load(
         self,
         universe: DimensionUniverse,
-        nodes: Optional[Iterable[UUID]] = None,
+        nodes: Optional[Iterable[Union[UUID, str]]] = None,
         graphID: Optional[str] = None,
     ) -> QuantumGraph:
         """Loads in the specified nodes from the graph
@@ -218,7 +219,7 @@ class DefaultLoadHelper:
         universe: `~lsst.daf.butler.DimensionUniverse`
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
-        nodes : `Iterable` of `UUID` or `None`
+        nodes : `Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
             (the default)
         graphID : `str` or `None`
@@ -242,8 +243,9 @@ class DefaultLoadHelper:
         if graphID is not None and self.headerInfo._buildId != graphID:
             raise ValueError("graphID does not match that of the graph being loaded")
         # Read in specified nodes, or all the nodes
+        nodeSet: Set[UUID]
         if nodes is None:
-            nodes = set(self.headerInfo.map.keys())
+            nodeSet = set(self.headerInfo.map.keys())
             # if all nodes are to be read, force the reader from the base class
             # that will read all they bytes in one go
             _readBytes: Callable[[int, int], bytes] = functools.partial(DefaultLoadHelper._readBytes, self)
@@ -251,15 +253,15 @@ class DefaultLoadHelper:
             # only some bytes are being read using the reader specialized for
             # this class
             # create a set to ensure nodes are only loaded once
-            nodes = {UUID(n) if isinstance(n, str) else n for n in nodes}
+            nodeSet = {UUID(n) if isinstance(n, str) else n for n in nodes}
             # verify that all nodes requested are in the graph
-            remainder = nodes - self.headerInfo.map.keys()
+            remainder = nodeSet - self.headerInfo.map.keys()
             if remainder:
                 raise ValueError(
                     f"Nodes {remainder} were requested, but could not be found in the input graph"
                 )
             _readBytes = self._readBytes
-        return self.deserializer.constructGraph(nodes, _readBytes, universe)
+        return self.deserializer.constructGraph(nodeSet, _readBytes, universe)
 
     def _readBytes(self, start: int, stop: int) -> bytes:
         """Loads the specified byte range from the ResourcePath object

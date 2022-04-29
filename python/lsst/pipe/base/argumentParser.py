@@ -509,7 +509,12 @@ class ArgumentParser(argparse.ArgumentParser):
             help="logging level; supported levels are [trace|debug|info|warn|error|fatal]",
             metavar="LEVEL|COMPONENT=LEVEL",
         )
-        self.add_argument("--longlog", action=LongLogAction, help="use a more verbose format for the logging")
+        self.add_argument(
+            "--longlog",
+            nargs=0,
+            action=LongLogAction,
+            help="use a more verbose format for the logging",
+        )
         self.add_argument("--debug", action="store_true", help="enable debugging output?")
         self.add_argument(
             "--doraise",
