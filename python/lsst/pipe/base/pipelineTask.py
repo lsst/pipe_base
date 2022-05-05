@@ -32,6 +32,7 @@ from __future__ import annotations
 
 __all__ = ["PipelineTask"]  # Classes in this module
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from .connections import InputQuantizedConnection, OutputQuantizedConnection
@@ -112,7 +113,9 @@ class PipelineTask(Task):
     ):
         super().__init__(config=config, log=log, **kwargs)
 
-    def run(self, **kwargs: Any) -> Struct:
+    run: Callable[..., Struct]  # The 'run' method for subclasses will have a different signature
+
+    def run(self, **kwargs: Any) -> Struct:  # type: ignore
         """Run task algorithm on in-memory data.
 
         This method should be implemented in a subclass. This method will
