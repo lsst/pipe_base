@@ -123,6 +123,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         config = Config(
             {
                 "version": 1,
+                "namespace": "pipe_base_test",
                 "skypix": {
                     "common": "htm7",
                     "htm": {
