@@ -217,7 +217,7 @@ class Instrument(metaclass=ABCMeta):
 
         See Also
         --------
-        Instrument.fromName()
+        Instrument.fromName
         """
         if "." not in name and registry is not None:
             try:
