@@ -198,7 +198,7 @@ def _export(
     # Yaml is hard coded, since the class controls both ends of the
     # export/import
     BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
-    backend = BackendClass(yamlBuffer)
+    backend = BackendClass(yamlBuffer, universe=butler.registry.dimensions)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
 
     # Need to ensure that the dimension records for input are transferred.
