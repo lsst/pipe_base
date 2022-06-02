@@ -274,7 +274,7 @@ def _import(
     yamlBuffer: io.StringIO,
     newButler: Butler,
     inserts: DataSetTypeMap,
-    run: str,
+    run: Optional[str],
     butlerModifier: Optional[Callable[[Butler], Butler]],
 ) -> Butler:
     # This method takes the exports from the existing butler, imports
@@ -320,7 +320,7 @@ def buildExecutionButler(
     butler: Butler,
     graph: QuantumGraph,
     outputLocation: ResourcePathExpression,
-    run: str,
+    run: Optional[str],
     *,
     clobber: bool = False,
     butlerModifier: Optional[Callable[[Butler], Butler]] = None,
@@ -346,7 +346,7 @@ def buildExecutionButler(
     outputLocation : convertible to `ResourcePath
         URI Location at which the execution butler is to be exported. May be
         specified as a string or a `ResourcePath` instance.
-    run : `str` optional
+    run : `str`, optional
         The run collection that the exported datasets are to be placed in. If
         None, the default value in registry.defaults will be used.
     clobber : `bool`, Optional
