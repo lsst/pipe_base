@@ -2,10 +2,10 @@ pyyaml >= 5.1
 pydantic
 numpy >= 1.17
 networkx
-git+https://github.com/lsst/daf_butler@main#egg=daf_butler
-git+https://github.com/lsst/utils@main#egg=lsst_utils
-git+https://github.com/lsst/resources@main#egg=lsst_resources
-git+https://github.com/lsst/pex_config@main#egg=pex_config
+lsst-daf-butler
+lsst-utils
+lsst-resources
+lsst-pex-config
 # For now a S3 class is loaded unconditionally
 boto3
 botocore
