@@ -10,10 +10,11 @@ on:
 
 jobs:
   build_and_test:
-    # runs-on: ubuntu-latest
-    # Need >= 20.04 for modern sqlite. Can switch to latest when
-    # github change
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+
     steps:
       - uses: actions/checkout@v3
         with:
@@ -22,7 +23,7 @@ jobs:
 
       - uses: conda-incubator/setup-miniconda@v2
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python-version }}
           channels: conda-forge,defaults
           channel-priority: strict
           show-channel-urls: true
