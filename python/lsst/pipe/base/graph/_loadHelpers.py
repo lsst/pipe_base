@@ -204,7 +204,7 @@ class DefaultLoadHelper:
 
     def load(
         self,
-        universe: DimensionUniverse,
+        universe: Optional[DimensionUniverse] = None,
         nodes: Optional[Iterable[Union[UUID, str]]] = None,
         graphID: Optional[str] = None,
     ) -> QuantumGraph:
@@ -216,9 +216,11 @@ class DefaultLoadHelper:
 
         Parameters
         ----------
-        universe: `~lsst.daf.butler.DimensionUniverse`
+        universe: `~lsst.daf.butler.DimensionUniverse` or None
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
+            If None the universe saved with the graph is used if possible,
+            otherwise the global universe is used.
         nodes : `Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
             (the default)

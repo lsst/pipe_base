@@ -125,8 +125,9 @@ class QuantumGraph:
         quanta: Mapping[TaskDef, Set[Quantum]],
         metadata: Optional[Mapping[str, Any]] = None,
         pruneRefs: Optional[Iterable[DatasetRef]] = None,
+        universe: Optional[DimensionUniverse] = None,
     ):
-        self._buildGraphs(quanta, metadata=metadata, pruneRefs=pruneRefs)
+        self._buildGraphs(quanta, metadata=metadata, pruneRefs=pruneRefs, universe=universe)
 
     def _buildGraphs(
         self,
@@ -136,10 +137,14 @@ class QuantumGraph:
         _buildId: Optional[BuildId] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         pruneRefs: Optional[Iterable[DatasetRef]] = None,
+        universe: Optional[DimensionUniverse] = None,
     ) -> None:
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
+        if universe is None:
+            universe = DimensionUniverse()
+        self._universe = universe
         self._metadata = metadata
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structures used to identify relations between components;
@@ -740,7 +745,7 @@ class QuantumGraph:
     def loadUri(
         cls,
         uri: ResourcePathExpression,
-        universe: DimensionUniverse,
+        universe: Optional[DimensionUniverse] = None,
         nodes: Optional[Iterable[uuid.UUID]] = None,
         graphID: Optional[BuildId] = None,
         minimumVersion: int = 3,
@@ -751,9 +756,11 @@ class QuantumGraph:
         ----------
         uri : convertible to `ResourcePath`
             URI from where to load the graph.
-        universe: `~lsst.daf.butler.DimensionUniverse`
+        universe: `~lsst.daf.butler.DimensionUniverse` optional
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
+            If None it is loaded from the QuantumGraph saved structure. Only
+            pass this argument to overload explicitly.
         nodes: iterable of `int` or None
             Numbers that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
@@ -883,6 +890,10 @@ class QuantumGraph:
         headerData["GraphBuildID"] = self.graphID
         headerData["Metadata"] = self._metadata
 
+        # Store the universe this graph was created with
+        universeConfig = self._universe.dimensionConfig
+        headerData["universe"] = universeConfig.toDict()
+
         # counter for the number of bytes processed thus far
         count = 0
         # serialize out the task Defs recording the start and end bytes of each
@@ -1011,7 +1022,7 @@ class QuantumGraph:
     def load(
         cls,
         file: BinaryIO,
-        universe: DimensionUniverse,
+        universe: Optional[DimensionUniverse] = None,
         nodes: Optional[Iterable[uuid.UUID]] = None,
         graphID: Optional[BuildId] = None,
         minimumVersion: int = 3,
@@ -1022,9 +1033,11 @@ class QuantumGraph:
         ----------
         file : `io.IO` of bytes
             File with pickle data open in binary mode.
-        universe: `~lsst.daf.butler.DimensionUniverse`
+        universe: `~lsst.daf.butler.DimensionUniverse`, optional
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
+            If None it is loaded from the QuantumGraph saved structure. Only
+            pass this argument to overload explicitly.
         nodes: iterable of `int` or None
             Numbers that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
