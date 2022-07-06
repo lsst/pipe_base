@@ -27,7 +27,7 @@ __all__ = (
     "NoDimensionsTestTask",
 )
 
-from typing import Dict, Union
+from typing import Dict, Union, cast
 
 from lsst.pex.config import Field
 from lsst.pipe.base import (
@@ -51,9 +51,9 @@ class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
 
 
 class NoDimensionsTestConfig(PipelineTaskConfig, pipelineConnections=NoDimensionsTestConnections):
-    key = Field(dtype=str, doc="String key for the dict entry the task sets.", default="one")
-    value = Field(dtype=int, doc="Integer value for the dict entry the task sets.", default=1)
-    outputSC = Field(dtype=str, doc="Output storage class requested", default="dict")
+    key = Field[str](doc="String key for the dict entry the task sets.", default="one")
+    value = Field[int](doc="Integer value for the dict entry the task sets.", default=1)
+    outputSC = Field[str](doc="Output storage class requested", default="dict")
 
 
 class NoDimensionsTestTask(PipelineTask):
@@ -90,7 +90,7 @@ class NoDimensionsTestTask(PipelineTask):
         output[self.config.key] = self.config.value
 
         # Can change the return type via configuration.
-        if "TaskMetadata" in self.config.outputSC:
+        if "TaskMetadata" in cast(NoDimensionsTestConfig, self.config).outputSC:
             output = TaskMetadata.from_dict(output)  # type: ignore
         elif type(output) == TaskMetadata:
             # Want the output to be a dict
