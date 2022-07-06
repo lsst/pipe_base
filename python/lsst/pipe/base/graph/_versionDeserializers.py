@@ -41,7 +41,6 @@ from lsst.daf.butler import (
     Quantum,
     SerializedDimensionRecord,
 )
-from lsst.pex.config import Config
 from lsst.utils import doImportType
 
 from ..config import PipelineTaskConfig
