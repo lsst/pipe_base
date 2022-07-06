@@ -27,7 +27,7 @@ __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import itertools
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
 
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
@@ -110,7 +110,7 @@ class AddTaskConnections(
 class AddTaskConfig(PipelineTaskConfig, pipelineConnections=AddTaskConnections):
     """Config for AddTask."""
 
-    addend = pexConfig.Field(doc="amount to add", dtype=int, default=3)
+    addend = pexConfig.Field[int](doc="amount to add", default=3)
 
 
 class AddTask(PipelineTask):
@@ -135,6 +135,7 @@ class AddTask(PipelineTask):
                 raise RuntimeError("pretend something bad happened")
             self.taskFactory.countExec += 1
 
+        self.config = cast(AddTaskConfig, self.config)
         self.metadata.add("add", self.config.addend)
         output = input + self.config.addend
         output2 = output + self.config.addend
