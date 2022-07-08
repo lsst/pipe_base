@@ -112,6 +112,16 @@ class QuantumGraph:
     metadata : Optional Mapping of `str` to primitives
         This is an optional parameter of extra data to carry with the graph.
         Entries in this mapping should be able to be serialized in JSON.
+    pruneRefs : iterable [ `DatasetRef` ], optional
+        Set of dataset refs to exclude from a graph.
+    initInputs : `Mapping`, optional
+        Maps tasks to their InitInput dataset refs. Dataset refs can be either
+        resolved or non-resolved. Presently the same dataset refs are included
+        in each `Quantum` for the same task.
+    initOutputs : `Mapping`, optional
+        Maps tasks to their InitOutput dataset refs. Dataset refs can be either
+        resolved or non-resolved. For intermediate resolved refs their dataset
+        ID must match ``initInputs`` and Quantum ``initInputs``.
 
     Raises
     ------
@@ -126,8 +136,17 @@ class QuantumGraph:
         metadata: Optional[Mapping[str, Any]] = None,
         pruneRefs: Optional[Iterable[DatasetRef]] = None,
         universe: Optional[DimensionUniverse] = None,
+        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
+        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
     ):
-        self._buildGraphs(quanta, metadata=metadata, pruneRefs=pruneRefs, universe=universe)
+        self._buildGraphs(
+            quanta,
+            metadata=metadata,
+            pruneRefs=pruneRefs,
+            universe=universe,
+            initInputs=initInputs,
+            initOutputs=initOutputs,
+        )
 
     def _buildGraphs(
         self,
@@ -138,6 +157,8 @@ class QuantumGraph:
         metadata: Optional[Mapping[str, Any]] = None,
         pruneRefs: Optional[Iterable[DatasetRef]] = None,
         universe: Optional[DimensionUniverse] = None,
+        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
+        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
     ) -> None:
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
@@ -273,6 +294,13 @@ class QuantumGraph:
         # convert default dict into a regular to prevent accidental key
         # insertion
         self._taskToQuantumNode = dict(self._taskToQuantumNode.items())
+
+        self._initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
+        self._initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
+        if initInputs is not None:
+            self._initInputRefs = {taskDef: list(refs) for taskDef, refs in initInputs.items()}
+        if initOutputs is not None:
+            self._initOutputRefs = {taskDef: list(refs) for taskDef, refs in initOutputs.items()}
 
     @property
     def taskGraph(self) -> nx.DiGraph:
@@ -757,6 +785,39 @@ class QuantumGraph:
             return None
         return MappingProxyType(self._metadata)
 
+    def initInputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+        """Return DatasetRefs for a given task InitInputs.
+
+        Parameters
+        ----------
+        taskDef : `TaskDef`
+            Task definition structure.
+
+        Returns
+        -------
+        refs : `list` [ `DatasetRef` ] or None
+            DatasetRef for the task InitInput, can be `None`. This can return
+            either resolved or non-resolved reference.
+        """
+        return self._initInputRefs.get(taskDef)
+
+    def initOutputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+        """Return DatasetRefs for a given task InitOutputs.
+
+        Parameters
+        ----------
+        taskDef : `TaskDef`
+            Task definition structure.
+
+        Returns
+        -------
+        refs : `list` [ `DatasetRef` ] or None
+            DatasetRefs for the task InitOutput, can be `None`. This can return
+            either resolved or non-resolved reference. Resolved reference will
+            match Quantum's initInputs if this is an intermediate dataset type.
+        """
+        return self._initOutputRefs.get(taskDef)
+
     @classmethod
     def loadUri(
         cls,
@@ -924,7 +985,7 @@ class QuantumGraph:
         for taskDef in self.taskGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
-            taskDescription = {}
+            taskDescription: Dict[str, Any] = {}
             # save the fully qualified name.
             taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
@@ -933,6 +994,10 @@ class QuantumGraph:
             taskDef.config.saveToStream(stream)
             taskDescription["config"] = stream.getvalue()
             taskDescription["label"] = taskDef.label
+            if (refs := self._initInputRefs.get(taskDef)) is not None:
+                taskDescription["initInputRefs"] = [ref.to_json() for ref in refs]
+            if (refs := self._initOutputRefs.get(taskDef)) is not None:
+                taskDescription["initOutputRefs"] = [ref.to_json() for ref in refs]
 
             inputs = []
             outputs = []
@@ -1162,6 +1227,8 @@ class QuantumGraph:
         self._taskToQuantumNode = qgraph._taskToQuantumNode
         self._taskGraph = qgraph._taskGraph
         self._connectedQuanta = qgraph._connectedQuanta
+        self._initInputRefs = qgraph._initInputRefs
+        self._initOutputRefs = qgraph._initOutputRefs
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, QuantumGraph):

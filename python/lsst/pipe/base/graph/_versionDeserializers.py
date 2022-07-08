@@ -31,10 +31,23 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Optional, Set, Tuple, Type
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    ClassVar,
+    DefaultDict,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    cast,
+)
 
 import networkx as nx
 from lsst.daf.butler import (
+    DatasetRef,
     DimensionConfig,
     DimensionRecord,
     DimensionUniverse,
@@ -520,6 +533,8 @@ class DeserializerV3(DeserializerBase):
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
         recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
+        initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
+        initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
 
         if universe is not None:
             if not universe.isCompatibleWith(self.infoMappings.universe):
@@ -565,6 +580,16 @@ class DeserializerV3(DeserializerBase):
                     label=taskDefDump["label"],
                 )
                 loadedTaskDef[nodeTaskLabel] = recreatedTaskDef
+
+                # initInputRefs and initOutputRefs are optional
+                if (refs := taskDefDump.get("initInputRefs")) is not None:
+                    initInputRefs[recreatedTaskDef] = [
+                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                    ]
+                if (refs := taskDefDump.get("initOutputRefs")) is not None:
+                    initOutputRefs[recreatedTaskDef] = [
+                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                    ]
 
                 # rebuild the mappings that associate dataset type names with
                 # TaskDefs
@@ -613,6 +638,8 @@ class DeserializerV3(DeserializerBase):
         newGraph._taskToQuantumNode = dict(taskToQuantumNode.items())
         newGraph._taskGraph = datasetDict.makeNetworkXGraph()
         newGraph._connectedQuanta = graph
+        newGraph._initInputRefs = initInputRefs
+        newGraph._initOutputRefs = initOutputRefs
         return newGraph
 
 

@@ -102,6 +102,39 @@ class GraphBuilderTestCase(unittest.TestCase):
                     else:
                         self.assertEqual(quantum.datastore_records, {})
 
+    def testResolveRefs(self):
+        """Test for GraphBuilder with resolveRefs=True."""
+
+        with temporaryDirectory() as root:
+            # Make a regular graph, only inputs are resolved.
+            _, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
+            self.assertEqual(len(qgraph), 5)
+            for node in qgraph:
+                quantum = node.quantum
+                for datasetType, refs in quantum.inputs.items():
+                    if datasetType.name == "add_dataset0":
+                        self.assertTrue(all(ref.id is not None for ref in refs))
+                    else:
+                        self.assertTrue(all(ref.id is None for ref in refs))
+                for datasetType, refs in quantum.outputs.items():
+                    self.assertTrue(all(ref.id is None for ref in refs))
+
+        with temporaryDirectory() as root:
+            # Make a resolved graph, all refs should be resolved.
+            _, qgraph = simpleQGraph.makeSimpleQGraph(root=root, resolveRefs=True)
+            self.assertEqual(len(qgraph), 5)
+            for node in qgraph:
+                quantum = node.quantum
+                for datasetType, refs in quantum.inputs.items():
+                    self.assertTrue(all(ref.id is not None for ref in refs))
+                for datasetType, refs in quantum.outputs.items():
+                    self.assertTrue(all(ref.id is not None for ref in refs))
+            for taskDef in qgraph.iterTaskGraph():
+                if (refs := qgraph.initInputRefs(taskDef)) is not None:
+                    self.assertTrue(all(ref.id is not None for ref in refs))
+                if (refs := qgraph.initOutputRefs(taskDef)) is not None:
+                    self.assertTrue(all(ref.id is not None for ref in refs))
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

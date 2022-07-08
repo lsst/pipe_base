@@ -360,6 +360,7 @@ def makeSimpleQGraph(
     datasetTypes: Optional[Dict[Optional[str], List[str]]] = None,
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
     makeDatastoreRecords: bool = False,
+    resolveRefs: bool = False,
 ) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
@@ -405,6 +406,9 @@ def makeSimpleQGraph(
         `DatasetQueryConstraintVariant.ALL`.
     makeDatastoreRecords : `bool`, optional
         If `True` then add datstore records to generated quanta.
+    resolveRefs : `bool`, optional
+        If `True` then resolve all input references and generate random dataset
+        IDs for all output and intermediate datasets.
 
     Returns
     -------
@@ -446,6 +450,7 @@ def makeSimpleQGraph(
         run=run or butler.run,
         userQuery=userQuery,
         datasetQueryConstraint=datasetQueryConstraint,
+        resolveRefs=resolveRefs,
     )
 
     return butler, qgraph
