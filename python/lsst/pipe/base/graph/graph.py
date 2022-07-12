@@ -759,8 +759,9 @@ class QuantumGraph:
         universe: `~lsst.daf.butler.DimensionUniverse` optional
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
-            If None it is loaded from the QuantumGraph saved structure. Only
-            pass this argument to overload explicitly.
+            If None it is loaded from the QuantumGraph saved structure. If
+            supplied, the DimensionUniverse from the loaded `QuantumGraph`
+            will be validated against the supplied argument for compatibility.
         nodes: iterable of `int` or None
             Numbers that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
@@ -790,6 +791,9 @@ class QuantumGraph:
             `QuantumGraph` or if graphID parameter does not match the graph
             being loaded or if the supplied uri does not point at a valid
             `QuantumGraph` save file.
+        RuntimeError
+            Raise if Supplied DimensionUniverse is not compatible with the
+            DimensionUniverse saved in the graph
 
 
         Notes
@@ -1036,8 +1040,9 @@ class QuantumGraph:
         universe: `~lsst.daf.butler.DimensionUniverse`, optional
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
-            If None it is loaded from the QuantumGraph saved structure. Only
-            pass this argument to overload explicitly.
+            If None it is loaded from the QuantumGraph saved structure. If
+            supplied, the DimensionUniverse from the loaded `QuantumGraph`
+            will be validated against the supplied argument for compatibility.
         nodes: iterable of `int` or None
             Numbers that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all

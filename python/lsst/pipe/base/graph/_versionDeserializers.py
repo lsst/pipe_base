@@ -519,7 +519,12 @@ class DeserializerV3(DeserializerBase):
         taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
         recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
 
-        if universe is None:
+        if universe is not None:
+            if not universe.checkCompatibility(self.infoMappings.universe):
+                raise RuntimeError(
+                    "The saved dimension universe is not compatible with the supplied universe"
+                )
+        else:
             universe = self.infoMappings.universe
 
         for node in nodes:

@@ -219,8 +219,9 @@ class DefaultLoadHelper:
         universe: `~lsst.daf.butler.DimensionUniverse` or None
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
-            If None the universe saved with the graph is used if possible,
-            otherwise the global universe is used.
+            The universe saved with the graph is used, but if one is passed
+            it will be used to validate the compatibility with the loaded
+            graph universe.
         nodes : `Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
             (the default)
@@ -240,6 +241,9 @@ class DefaultLoadHelper:
             Raised if one or more of the nodes requested is not in the
             `QuantumGraph` or if graphID parameter does not match the graph
             being loaded.
+        RuntimeError
+            Raise if Supplied DimensionUniverse is not compatible with the
+            DimensionUniverse saved in the graph
         """
         # verify this is the expected graph
         if graphID is not None and self.headerInfo._buildId != graphID:
