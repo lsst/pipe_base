@@ -120,7 +120,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     """Tests the various functions of a quantum graph"""
 
     def setUp(self):
-        config = Config(
+        self.config = Config(
             {
                 "version": 1,
                 "namespace": "pipe_base_test",
@@ -158,7 +158,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 "packers": {},
             }
         )
-        universe = DimensionUniverse(config=config)
+        universe = DimensionUniverse(config=self.config)
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
         tasks = []
@@ -392,6 +392,22 @@ class QuantumGraphTestCase(unittest.TestCase):
             restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(nodeId,))
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
+
+            # Different universes.
+            tmpFile.seek(0)
+            different_config = self.config.copy()
+            different_config["version"] = 1_000_000
+            different_universe = DimensionUniverse(config=different_config)
+            with self.assertLogs("lsst.daf.butler", "INFO"):
+                QuantumGraph.load(tmpFile, different_universe)
+
+            different_config["namespace"] = "incompatible"
+            different_universe = DimensionUniverse(config=different_config)
+            print("Trying with uni ", different_universe)
+            tmpFile.seek(0)
+            with self.assertRaises(RuntimeError) as cm:
+                QuantumGraph.load(tmpFile, different_universe)
+            self.assertIn("not compatible with", str(cm.exception))
 
     def testSaveLoadUri(self):
         uri = None
