@@ -520,7 +520,7 @@ class DeserializerV3(DeserializerBase):
         recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
 
         if universe is not None:
-            if not universe.checkCompatibility(self.infoMappings.universe):
+            if not universe.isCompatibleWith(self.infoMappings.universe):
                 raise RuntimeError(
                     "The saved dimension universe is not compatible with the supplied universe"
                 )
