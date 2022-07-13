@@ -521,8 +521,10 @@ class DeserializerV3(DeserializerBase):
 
         if universe is not None:
             if not universe.isCompatibleWith(self.infoMappings.universe):
+                saved = self.infoMappings.universe
                 raise RuntimeError(
-                    "The saved dimension universe is not compatible with the supplied universe"
+                    f"The saved dimension universe ({saved.namespace}@v{saved.version}) is not "
+                    f"compatible with the supplied universe ({universe.namespace}@v{universe.version})."
                 )
         else:
             universe = self.infoMappings.universe
