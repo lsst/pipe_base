@@ -78,7 +78,7 @@ class TemplateField(pexConfig.Field):
 
     def __set__(
         self,
-        instance: pexConfig.Field,
+        instance: pexConfig.Config,
         value: Any,
         at: Optional[StackFrame] = None,
         label: str = "assignment",
@@ -107,7 +107,11 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     """
 
     def __new__(
-        cls: Type[_S], name: str, bases: Tuple[PipelineTaskConfig, ...], dct: Dict[str, Any], **kwargs: Any
+        cls: Type[_S],
+        name: str,
+        bases: Tuple[type[PipelineTaskConfig], ...],
+        dct: Dict[str, Any],
+        **kwargs: Any,
     ) -> _S:
         if name != "PipelineTaskConfig":
             # Verify that a connection class was specified and the argument is
@@ -125,10 +129,10 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
 
             # Create all the fields that will be used in the newly created sub
             # config (under the attribute name "connections")
-            configConnectionsNamespace = {}
+            configConnectionsNamespace: dict[str, pexConfig.Field] = {}
             for fieldName, obj in connectionsClass.allConnections.items():
-                configConnectionsNamespace[fieldName] = pexConfig.Field(
-                    dtype=str, doc=f"name for connection {fieldName}", default=obj.name
+                configConnectionsNamespace[fieldName] = pexConfig.Field[str](
+                    doc=f"name for connection {fieldName}", default=obj.name
                 )
             # If there are default templates also add them as fields to
             # configure the template values
@@ -179,14 +183,17 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     `~lsst.pex.config.ConfigField` with the attribute name `connections`.
     """
 
-    saveMetadata = pexConfig.Field(
-        dtype=bool,
+    connections: pexConfig.ConfigField
+    """Field which refers to a dynamically added configuration class which is
+    based on a PipelineTaskConnections class.
+    """
+
+    saveMetadata = pexConfig.Field[bool](
         default=True,
         optional=False,
         doc="Flag to enable/disable metadata saving for a task, enabled by default.",
     )
-    saveLogOutput = pexConfig.Field(
-        dtype=bool,
+    saveLogOutput = pexConfig.Field[bool](
         default=True,
         optional=False,
         doc="Flag to enable/disable saving of log output for a task, enabled by default.",
@@ -208,10 +215,9 @@ class ResourceConfig(pexConfig.Config):
     estimates.
     """
 
-    minMemoryMB = pexConfig.Field(
-        dtype=int,
+    minMemoryMB = pexConfig.Field[int](
         default=None,
         optional=True,
         doc="Minimal memory needed by task, can be None if estimate is unknown.",
     )
-    minNumCores = pexConfig.Field(dtype=int, default=1, doc="Minimal number of cores needed by task.")
+    minNumCores = pexConfig.Field[int](default=1, doc="Minimal number of cores needed by task.")
