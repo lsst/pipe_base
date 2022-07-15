@@ -100,8 +100,7 @@ task).
 .. code-block:: python
 
     class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                dimensions=("visit", "detector",
-                                            "abstract_filter")):
+                                dimensions=("visit", "detector", "band")):,
         exposure = connectionTypes.Input(doc="Input exposure to make measurements "
                                               "on",
                                          dimensions=("visit", "detector"),
@@ -290,7 +289,7 @@ class.
 
     class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
                                   dimensions=("visit", "detector",
-                                              "abstract_filter", "skymap")):
+                                              "band", "skymap")):
         ...
         outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
                                                   storageClass="SourceCatalog",
@@ -364,12 +363,12 @@ various configuration options.
 
     class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
                                   dimensions=("visit", "detector",
-                                              "abstract_filter", "skymap")):
+                                              "band", "skymap")):
         ...
         background = ct.Input(doc="Background model for the exposure",
                               storageClass="Background",
                               name="calexpBackground",
-                              dimensions=("visit", "detector", "abstract_filter",
+                              dimensions=("visit", "detector", "band",
                                           "skymap"))
         ...
 
