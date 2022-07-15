@@ -201,11 +201,6 @@ def _export(
     backend = BackendClass(yamlBuffer, universe=butler.registry.dimensions)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
 
-    # Need to ensure that the dimension records for input are transferred.
-    # Butler.transfer_from() does not (yet) transfer records.
-    dataIds = set(ref.dataId for ref in exports)
-    exporter.saveDataIds(dataIds)
-
     # Need to ensure that the dimension records for outputs are
     # transferred.
     for _, dataIds in inserts.items():
@@ -453,6 +448,7 @@ def buildExecutionButler(
         transfer=transfer,
         skip_missing=False,  # Everything should exist.
         register_dataset_types=True,
+        transfer_dimensions=True,
     )
 
     return newButler
