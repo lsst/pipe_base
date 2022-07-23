@@ -142,9 +142,6 @@ class QuantumGraph:
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
-        if universe is None:
-            universe = DimensionUniverse()
-        self._universe = universe
         self._metadata = metadata
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structures used to identify relations between components;
@@ -173,6 +170,15 @@ class QuantumGraph:
             # a newly created QuantumNode to the appropriate input/output
             # field.
             for quantum in quantumSet:
+                if quantum.dataId is not None:
+                    if universe is None:
+                        universe = quantum.dataId.universe
+                    elif universe != quantum.dataId.universe:
+                        raise RuntimeError(
+                            "Mismatched dimension universes in QuantumGraph construction: "
+                            f"{universe} != {quantum.dataId.universe}. "
+                        )
+
                 if _quantumToNodeId:
                     if (nodeId := _quantumToNodeId.get(quantum)) is None:
                         raise ValueError(
@@ -248,6 +254,14 @@ class QuantumGraph:
                     f"{', '.join(emptyTasks)} task(s) have no nodes associated with them "
                     f"after graph pruning; {', '.join(culprits)} caused over-pruning"
                 )
+
+        # Dimension universe
+        if universe is None:
+            raise RuntimeError(
+                "Dimension universe or at least one quantum with a data ID "
+                "must be provided when constructing a QuantumGraph."
+            )
+        self._universe = universe
 
         # Graph of quanta relations
         self._connectedQuanta = self._datasetRefDict.makeNetworkXGraph()
@@ -360,6 +374,7 @@ class QuantumGraph:
             _quantumToNodeId={n.quantum: n.nodeId for n in self},
             metadata=self._metadata,
             pruneRefs=refs,
+            universe=self._universe,
         )
         return newInst
 
@@ -613,12 +628,13 @@ class QuantumGraph:
         # convert to standard dict to prevent accidental key insertion
         quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
-        newInst = type(self)({})
+        newInst = type(self)({}, universe=self._universe)
         newInst._buildGraphs(
             quantumDict,
             _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
             _buildId=self._buildId,
             metadata=self._metadata,
+            universe=self._universe,
         )
         return newInst
 

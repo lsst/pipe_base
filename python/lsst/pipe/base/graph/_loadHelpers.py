@@ -267,6 +267,8 @@ class DefaultLoadHelper:
                     f"Nodes {remainder} were requested, but could not be found in the input graph"
                 )
             _readBytes = self._readBytes
+        if universe is None:
+            universe = self.headerInfo.universe
         return self.deserializer.constructGraph(nodeSet, _readBytes, universe)
 
     def _readBytes(self, start: int, stop: int) -> bytes:
