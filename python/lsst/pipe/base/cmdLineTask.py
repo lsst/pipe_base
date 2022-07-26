@@ -19,7 +19,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner", "LegacyTaskRunner"]
+__all__ = ["CmdLineTask", "TaskRunner", "ButlerInitializedTaskRunner"]
 
 import contextlib
 import functools
@@ -502,18 +502,6 @@ class TaskRunner:
 
         """
         return task.runDataRef(dataRef, **kwargs)
-
-
-class LegacyTaskRunner(TaskRunner):
-    r"""A `TaskRunner` for `CmdLineTask`\ s which calls the `Task`\ 's `run`
-    method on a `dataRef` rather than the `runDataRef` method.
-    """
-
-    def runTask(self, task, dataRef, kwargs):
-        """Call `run` for this task instead of `runDataRef`.  See
-        `TaskRunner.runTask` above for details.
-        """
-        return task.run(dataRef, **kwargs)
 
 
 class ButlerInitializedTaskRunner(TaskRunner):
