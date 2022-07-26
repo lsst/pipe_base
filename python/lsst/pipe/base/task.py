@@ -133,35 +133,15 @@ class Task:
       metrics. This is data that is only meant to be persisted, never to be
       used by the task.
 
-    Subclasses typically have a method named ``runDataRef`` to perform the
-    main data processing. Details:
-
-    - ``runDataRef`` should process the minimum reasonable amount of data,
-      typically a single CCD.  Iteration, if desired, is performed by a caller
-      of the method. This is good design and allows multiprocessing without
-      the run method having to support it directly.
-    - If ``runDataRef`` can persist or unpersist data:
-
-      - ``runDataRef`` should accept a butler data reference (or a collection
-        of data references, if appropriate, e.g. coaddition).
-      - There should be a way to run the task without persisting data.
-        Typically the run method returns all data, even if it is persisted, and
-        the task's config method offers a flag to disable persistence.
-
-    **Deprecated:** Tasks other than cmdLineTask.CmdLineTask%s should *not*
-    accept a blob such as a butler data reference.  How we will handle data
-    references is still TBD, so don't make changes yet!
-    RHL 2014-06-27
+    Use a `lsst.pipe.base.PipelineTask` subclass to perform I/O with a
+    Butler.
 
     Subclasses must also have an attribute ``ConfigClass`` that is a subclass
     of `lsst.pex.config.Config` which configures the task. Subclasses should
     also have an attribute ``_DefaultName``: the default name if there is no
     parent task. ``_DefaultName`` is required for subclasses of
-    `~lsst.pipe.base.CmdLineTask` and recommended for subclasses of Task
+    `~lsst.pipe.base.PipeLineTask` and recommended for subclasses of Task
     because it simplifies construction (e.g. for unit tests).
-
-    Tasks intended to be run from the command line should be subclasses of
-    `~lsst.pipe.base.CmdLineTask` not Task.
     """
 
     ConfigClass: ClassVar[Type[Config]]

@@ -671,7 +671,7 @@ def iterConnections(
         outputs, prerequisiteInputs, initInputs, initOutputs.
 
     Yields
-    -------
+    ------
     connection: `BaseConnection`
         A connection defined on the input connections object of the type
         supplied.  The yielded value Will be an derived type of

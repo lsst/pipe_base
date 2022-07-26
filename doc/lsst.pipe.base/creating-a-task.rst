@@ -11,7 +11,7 @@ This document describes how to write a data processing task.
 For an introduction to data processing tasks, please read :doc:`task-framework-overview`.
 It also helps to have a basic understanding of data repositories and how to use the butler to read and write data (to be written; for now read existing tasks to see how it is done).
 
-After reading this document you may wish to read :doc:`creating-a-command-line-task`.
+After reading this document you may wish to read :doc:`creating-a-pipelinetask`.
 
 .. _creating-a-task-intro:
 
@@ -23,7 +23,6 @@ Tasks are subclasses of `lsst.pipe.base.Task` in general or `lsst.pipe.base.CmdL
 Tasks are constructed by calling ``__init__`` with the :ref:`task configuration <creating-a-task-configuration>`.
 Occasionally additional arguments are required (see the task's documentation for details).
 `lsst.pipe.base.Task` has a few other arguments that are usually only specified when a task is created as a subtask of another task; you will probably never have to specify them yourself.
-(Command-line tasks are often constructed and run by calling `lsst.pipe.base.parseAndRun`, as described in :doc:`creating-a-command-line-task`.)
 
 Tasks typically have a ``run`` method that executes the task's main function.
 See :ref:`creating-a-task-class-methods` for more information.
@@ -114,11 +113,7 @@ Tasks require several class variables to function:
   For example ``exampleCmdLineTask.ExampleCmdLineConfig`` creates the statistics subtask with name ``stats`` because the config field for that subtask is ``stats = lsst.pex.config.ConfigurableField(...)``.
 
   Task names are used for the hierarchy of task and subtask metadata.
-  Also, for command-line tasks the name is used as a component of the of the dataset type for saving the task's configuration and metadata; see :ref:`creating-a-command-line-task-persisting-config-and-metadata` for more information.
-
-- ``RunnerClass``: only needed for command-line tasks; see :doc:`creating-a-command-line-task` for more information.
-
-- ``canMultiprocess``: only needed for command-line tasks; see :doc:`creating-a-command-line-task` for more information.
+  Also, for command-line tasks the name is used as a component of the of the dataset type for saving the task's configuration and metadata.
 
 Here are the class variables for ``ExampleCmdLineTask``:
 

@@ -62,7 +62,6 @@ Developing tasks and command-line tasks
    :maxdepth: 1
 
    creating-a-task.rst
-   creating-a-command-line-task.rst
    testing-a-pipeline-task.rst
    creating-a-pipelinetask.rst
 

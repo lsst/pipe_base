@@ -1,9 +1,6 @@
 setupRequired(daf_butler)
-setupRequired(daf_persistence)
-setupRequired(log)
 setupRequired(pex_config)
 setupRequired(utils)
-setupRequired(afw)
 setupRequired(resources)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)

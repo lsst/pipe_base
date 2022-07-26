@@ -7,7 +7,7 @@ Creating a Pipeline
 **Note**
 This guide assumes some knowledge about
 `PipelineTask`\ s, and so if you would like you can check out
-:doc:`Creating a PipelineTask <creating-a-pipelinetask.rst>` for info on what
+:doc:`Creating a PipelineTask <creating-a-pipelinetask>` for info on what
 a `PipelineTask` is and how to make one. Otherwise, this guide attempts to be
 mostly stand alone, and should be readable with minimal references.
 
