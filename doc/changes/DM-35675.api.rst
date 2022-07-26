@@ -1,0 +1,2 @@
+Replaced ``CmdLineTask`` and ``ArgumentParser`` with non-functioning stubs, disabling all Gen2 functionality.
+A deprecation message is now issued but the classes do nothing.
