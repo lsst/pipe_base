@@ -870,8 +870,8 @@ class PipelineIR:
         pipelineIR : `PipelineIR`
             The loaded pipeline
 
-        Note
-        ----
+        Notes
+        -----
         This method is deprecated, please use from_uri
         """
         return cls.from_uri(filename)

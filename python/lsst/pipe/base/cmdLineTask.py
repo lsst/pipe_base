@@ -117,9 +117,7 @@ class TaskRunner:
     -----
     Each command-line task (subclass of `lsst.pipe.base.CmdLineTask`) has a
     task runner. By default it is this class, but some tasks require a
-    subclass. See the manual :ref:`creating-a-command-line-task` for more
-    information. See `CmdLineTask.parseAndRun` to see how a task runner is
-    used.
+    subclass.
 
     You may use this task runner for your command-line task if your task has a
     ``runDataRef`` method that takes exactly one argument: a butler data
@@ -182,9 +180,7 @@ class CmdLineTask(Task):
 
     Notes
     -----
-    See :ref:`task-framework-overview` to learn what tasks are and
-    :ref:`creating-a-command-line-task` for more information about writing
-    command-line tasks.
+    See :ref:`task-framework-overview` to learn what tasks.
 
     Subclasses must specify the following class variables:
 
