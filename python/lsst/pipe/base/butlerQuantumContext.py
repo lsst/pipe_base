@@ -26,7 +26,7 @@ from __future__ import annotations
 
 __all__ = ("ButlerQuantumContext",)
 
-from typing import Any, List, Sequence, Union
+from typing import Any, List, Optional, Sequence, Union
 
 from lsst.daf.butler import Butler, DatasetRef, Quantum
 from lsst.utils.introspection import get_full_type_name
@@ -88,13 +88,14 @@ class ButlerQuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.__butler = butler
 
-    def _get(self, ref: Union[DeferredDatasetRef, DatasetRef]) -> Any:
+    def _get(self, ref: Optional[Union[DeferredDatasetRef, DatasetRef]]) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
             self._checkMembership(ref.datasetRef, self.allInputs)
             return self.__butler.getDirectDeferred(ref.datasetRef)
-
+        elif ref is None:
+            return None
         else:
             self._checkMembership(ref, self.allInputs)
             return self.__butler.getDirect(ref)
@@ -107,10 +108,11 @@ class ButlerQuantumContext:
         self,
         dataset: Union[
             InputQuantizedConnection,
-            List[DatasetRef],
-            List[DeferredDatasetRef],
+            List[Optional[DatasetRef]],
+            List[Optional[DeferredDatasetRef]],
             DatasetRef,
             DeferredDatasetRef,
+            None,
         ],
     ) -> Any:
         """Fetches data from the butler
@@ -122,7 +124,9 @@ class ButlerQuantumContext:
             describes all the inputs of a quantum, a list of
             `~lsst.daf.butler.DatasetRef`, or a single
             `~lsst.daf.butler.DatasetRef`. The function will get and return
-            the corresponding datasets from the butler.
+            the corresponding datasets from the butler. If `None` is passed in
+            place of a `~lsst.daf.butler.DatasetRef` then the corresponding
+            returned object will be `None`.
 
         Returns
         -------
@@ -192,12 +196,12 @@ class ButlerQuantumContext:
                 # Mypy is not sure of the type of x because of the union
                 # of lists so complains. Ignoring it is more efficient
                 # than adding an isinstance assert.
-                retrieved.append(self._get(x))  # type: ignore
+                retrieved.append(self._get(x))
                 periodic.log("Retrieved %d out of %d datasets", i + 1, n_datasets)
             if periodic.num_issued > 0:
                 _LOG.verbose("Completed retrieval of %d datasets", n_datasets)
             return retrieved
-        elif isinstance(dataset, DatasetRef) or isinstance(dataset, DeferredDatasetRef):
+        elif isinstance(dataset, DatasetRef) or isinstance(dataset, DeferredDatasetRef) or dataset is None:
             return self._get(dataset)
         else:
             raise TypeError(
