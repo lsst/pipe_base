@@ -113,7 +113,7 @@ class PipelineTaskTestCase(unittest.TestCase):
             ),
         )
 
-    def _makeQuanta(self, config):
+    def _makeQuanta(self, config, nquanta=100):
         """Create set of Quanta"""
         universe = DimensionUniverse()
         connections = config.connections.ConnectionsClass(config=config)
@@ -122,7 +122,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         dstype1 = connections.output.makeDatasetType(universe)
 
         quanta = []
-        for visit in range(100):
+        for visit in range(nquanta):
             inputRef = self._makeDSRefVisit(dstype0, visit, universe)
             outputRef = self._makeDSRefVisit(dstype1, visit, universe)
             quantum = Quantum(
@@ -243,6 +243,50 @@ class PipelineTaskTestCase(unittest.TestCase):
         for i, quantum in enumerate(quanta2):
             ref = quantum.outputs[outputName][0]
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3 + 200)
+
+    def testButlerQC(self):
+        """Test for ButlerQuantumContext."""
+
+        butler = ButlerMock()
+        task = AddTask(config=AddConfig())
+        connections = task.config.connections.ConnectionsClass(config=task.config)
+
+        # make one quantum
+        (quantum,) = self._makeQuanta(task.config, 1)
+
+        # add input data to butler
+        dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
+        ref = quantum.inputs[dstype0.name][0]
+        butler.put(100, pipeBase.Struct(datasetType=dstype0.name, dataId=ref.dataId))
+
+        butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+
+        # Pass ref as single argument or a list.
+        obj = butlerQC.get(ref)
+        self.assertEqual(obj, 100)
+        obj = butlerQC.get([ref])
+        self.assertEqual(obj, [100])
+
+        # Pass None instead of a ref.
+        obj = butlerQC.get(None)
+        self.assertIsNone(obj)
+        obj = butlerQC.get([None])
+        self.assertEqual(obj, [None])
+
+        # COmbine a ref and None.
+        obj = butlerQC.get([ref, None])
+        self.assertEqual(obj, [100, None])
+
+        # Use refs from a QuantizedConnection.
+        inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
+        obj = butlerQC.get(inputRefs)
+        self.assertEqual(obj, {"input": 100})
+
+        # Add few None values to a QuantizedConnection.
+        inputRefs.input = [None, ref]
+        inputRefs.input2 = None
+        obj = butlerQC.get(inputRefs)
+        self.assertEqual(obj, {"input": [None, 100], "input2": None})
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
