@@ -37,7 +37,7 @@ jobs:
         shell: bash -l {0}
         run: |
           pip install -r requirements.txt
-          pip install moto
+          pip install moto pandas
 
       # We have two cores so we can speed up the testing with xdist
       - name: Install pytest packages
