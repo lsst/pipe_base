@@ -25,6 +25,12 @@ from lsst.daf.butler import DataCoordinate, DimensionUniverse, StorageClassConfi
 from lsst.daf.butler.tests import MetricsExample
 from lsst.pipe.base import InMemoryDatasetHandle
 
+try:
+    import numpy as np
+    import pandas as pd
+except ImportError:
+    pd = None
+
 storageClasses = """
 Integer:
   pytype: int
@@ -128,6 +134,73 @@ class TestDatasetHandle(unittest.TestCase):
 
         # Ensure the original has not been modified.
         self.assertEqual(len(metric.data), 4)
+
+
+@unittest.skipUnless(pd is not None, "Cannot test InMemoryDataset(DataFrame) without pandas.")
+class TestDataFrameDatasetHandle(unittest.TestCase):
+    def test_single_index_dataframe(self):
+        data = np.zeros(5, dtype=[("index", "i4"), ("a", "f8"), ("b", "f8"), ("c", "f8"), ("ddd", "f8")])
+        data["index"][:] = np.arange(5)
+        data["a"] = np.random.randn(5)
+        data["b"] = np.random.randn(5)
+        data["c"] = np.random.randn(5)
+        data["ddd"] = np.random.randn(5)
+        df1 = pd.DataFrame(data)
+        df1 = df1.set_index("index")
+        all_columns = df1.columns.append(pd.Index(df1.index.names))
+
+        hdl = InMemoryDatasetHandle(df1)
+
+        # Test component
+        columns = hdl.get(component="columns")
+        self.assertTrue(all_columns.equals(columns))
+
+        with self.assertRaises(KeyError):
+            hdl.get(component="none")
+
+        # Test parameters
+        df2 = hdl.get()
+        self.assertTrue(df1.equals(df2))
+        df3 = hdl.get(parameters={"columns": ["a", "c"]})
+        self.assertTrue(df1.loc[:, ["a", "c"]].equals(df3))
+        df4 = hdl.get(parameters={"columns": "a"})
+        self.assertTrue(df1.loc[:, ["a"]].equals(df4))
+        df5 = hdl.get(parameters={"columns": ["index", "a"]})
+        self.assertTrue(df1.loc[:, ["a"]].equals(df5))
+        df6 = hdl.get(parameters={"columns": "ddd"})
+        self.assertTrue(df1.loc[:, ["ddd"]].equals(df6))
+        # Passing an unrecognized column should be a ValueError.
+        with self.assertRaises(ValueError):
+            hdl.get(parameters={"columns": ["e"]})
+
+    def test_multi_index_dataframe(self):
+        columns1 = pd.MultiIndex.from_tuples(
+            [
+                ("g", "a"),
+                ("g", "b"),
+                ("g", "c"),
+                ("r", "a"),
+                ("r", "b"),
+                ("r", "c"),
+            ],
+            names=["filter", "column"],
+        )
+        df1 = pd.DataFrame(np.random.randn(5, 6), index=np.arange(5, dtype=int), columns=columns1)
+
+        hdl = InMemoryDatasetHandle(df1)
+
+        # Read the whole DataFrame.
+        df2 = hdl.get()
+        self.assertTrue(df1.equals(df2))
+        # Read just the column descriptions.
+        columns2 = hdl.get(component="columns")
+        self.assertTrue(df1.columns.equals(columns2))
+
+        # Read just some columns a few different ways.
+        with self.assertRaises(NotImplementedError):
+            hdl.get(parameters={"columns": {"filter": "g"}})
+        with self.assertRaises(NotImplementedError):
+            hdl.get(parameters={"columns": {"filter": ["r"], "column": "a"}})
 
 
 if __name__ == "__main__":
