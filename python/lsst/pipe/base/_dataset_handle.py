@@ -26,7 +26,6 @@ import dataclasses
 from typing import Any, Optional
 
 from lsst.daf.butler import DataCoordinate, DimensionUniverse, StorageClass, StorageClassFactory
-from lsst.utils.introspection import get_full_type_name
 
 
 # Use an empty dataID as a default.
@@ -69,6 +68,12 @@ class InMemoryDatasetHandle:
             will modify the stored object. If the stored object is `None` this
             method always returns `None` regardless of any component request or
             parameters.
+
+        Raises
+        ------
+        KeyError
+            Raised if a component or parameters are used but no storage
+            class can be found.
         """
         if self.inMemoryDataset is None:
             return None
@@ -121,22 +126,26 @@ class InMemoryDatasetHandle:
             return self.inMemoryDataset
 
     def _getStorageClass(self) -> StorageClass:
+        """Return the relevant storage class.
+
+        Returns
+        -------
+        storageClass : `StorageClass`
+            The storage class associated with this handle, or one derived
+            from the python type of the stored object.
+
+        Raises
+        ------
+        KeyError
+            Raised if the storage class could not be found.
+        """
         factory = StorageClassFactory()
         if self.storageClass:
             return factory.getStorageClass(self.storageClass)
 
         # Need to match python type.
         pytype = type(self.inMemoryDataset)
-        for storageClass in factory.values():
-            # It is possible for a single python type to refer to multiple
-            # storage classes such that this could be quite fragile.
-            if storageClass.is_type(pytype):
-                return storageClass
-
-        raise ValueError(
-            "Unable to find a StorageClass with associated with type "
-            f"{get_full_type_name(self.inMemoryDataset)}"
-        )
+        return factory.findStorageClass(pytype)
 
     inMemoryDataset: Any
     """The object to store in this dataset handle for later retrieval.
