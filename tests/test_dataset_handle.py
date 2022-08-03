@@ -77,7 +77,7 @@ class TestDatasetHandle(unittest.TestCase):
 
         self.assertEqual(hdl.get(), inMemoryDataset)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(KeyError):
             # Will not be able to find a matching StorageClass.
             hdl.get(parameters={"key": "value"})
 
