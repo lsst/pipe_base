@@ -1,0 +1,2 @@
+Relocated ``lsst.pipe.base.cmdLineTask.profile`` to ``lsst.utils.timer.profile``.
+This was relocated as part of the Gen2 removal that includes the removal of ``CmdLineTask``.
