@@ -28,6 +28,11 @@ from deprecated.sphinx import deprecated
 from .task import Task
 
 
+@deprecated(
+    reason="Replaced by lsst.utils.timer.profile().  Will be removed after v26.0",
+    version="v25.0",
+    category=FutureWarning,
+)
 @contextlib.contextmanager
 def profile(filename, log=None):
     """Context manager for profiling with cProfile.
