@@ -159,9 +159,20 @@ class QuantumGraphTestCase(unittest.TestCase):
             }
         )
         universe = DimensionUniverse(config=self.config)
+
+        def _makeDatasetType(connection):
+            return DatasetType(
+                connection.name,
+                getattr(connection, "dimensions", ()),
+                storageClass=connection.storageClass,
+                universe=universe,
+            )
+
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
         tasks = []
+        initInputs = {}
+        initOutputs = {}
         for task, label in (
             (Dummy1PipelineTask, "R"),
             (Dummy2PipelineTask, "S"),
@@ -173,32 +184,22 @@ class QuantumGraphTestCase(unittest.TestCase):
             tasks.append(taskDef)
             quantumSet = set()
             connections = taskDef.connections
+            if connections.initInputs:
+                initInputDSType = _makeDatasetType(connections.initInput)
+                initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
+                initInputs[taskDef] = initRefs
+            else:
+                initRefs = None
+            if connections.initOutputs:
+                initOutputDSType = _makeDatasetType(connections.initOutput)
+                initRefs = [DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe))]
+                initOutputs[taskDef] = initRefs
+            inputDSType = _makeDatasetType(connections.input)
+            outputDSType = _makeDatasetType(connections.output)
             for a, b in ((1, 2), (3, 4)):
-                if connections.initInputs:
-                    initInputDSType = DatasetType(
-                        connections.initInput.name,
-                        tuple(),
-                        storageClass=connections.initInput.storageClass,
-                        universe=universe,
-                    )
-                    initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
-                else:
-                    initRefs = None
-                inputDSType = DatasetType(
-                    connections.input.name,
-                    connections.input.dimensions,
-                    storageClass=connections.input.storageClass,
-                    universe=universe,
-                )
                 inputRefs = [
                     DatasetRef(inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
                 ]
-                outputDSType = DatasetType(
-                    connections.output.name,
-                    connections.output.dimensions,
-                    storageClass=connections.output.storageClass,
-                    universe=universe,
-                )
                 outputRefs = [
                     DatasetRef(outputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
                 ]
@@ -215,7 +216,9 @@ class QuantumGraphTestCase(unittest.TestCase):
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
         self.quantumMap = quantumMap
-        self.qGraph = QuantumGraph(quantumMap, metadata=METADATA, universe=universe)
+        self.qGraph = QuantumGraph(
+            quantumMap, metadata=METADATA, universe=universe, initInputs=initInputs, initOutputs=initOutputs
+        )
         self.universe = universe
 
     def testTaskGraph(self):
@@ -392,6 +395,16 @@ class QuantumGraphTestCase(unittest.TestCase):
             restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(nodeId,))
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
+            # Check that InitInput and InitOutput refs are restored correctly.
+            for taskDef in restore.iterTaskGraph():
+                if taskDef.label in ("S", "T"):
+                    refs = restore.initInputRefs(taskDef)
+                    self.assertIsNotNone(refs)
+                    self.assertGreater(len(refs), 0)
+                if taskDef.label in ("R", "S", "T"):
+                    refs = restore.initOutputRefs(taskDef)
+                    self.assertIsNotNone(refs)
+                    self.assertGreater(len(refs), 0)
 
             # Different universes.
             tmpFile.seek(0)
