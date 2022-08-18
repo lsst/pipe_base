@@ -947,7 +947,7 @@ it. Take a look at how ``runQuantum`` is defined in ``PipelineTask``.
 
         ...
 
-If this looks pretty strait forward to you, then great! This function is
+If this looks pretty straight forward to you, then great! This function is
 tightly packed, but short to make the barrier to overloading it as low as
 possible.
 
@@ -964,13 +964,13 @@ data-sets managed by the butler. See the description of the
 `InputQuantizedConnection` type in the section
 :ref:`PipelineTask-processing-altering-what-is-processed` for more
 information on `QuantizedConnection`\ s, noting that
-`OutputQuantizedConnection` functions in the same manor but with output
+`OutputQuantizedConnection` functions in the same manner but with output
 `lsst.daf.butler.DatasetRef`\ s.
 
 The ``butlerQC`` object has a ``get`` method that knows how understand the
 structure of an `InputQuantizedConnection` and load in all of the inputs
 supplied in the inputRefs. However, the ``get`` method also understand
-`list`\ s or single instances of `~lsst.dab.butler.DatasetRef`\ s. Likewise
+`list`\ s or single instances of `~lsst.daf.butler.DatasetRef`\ s. Likewise
 the ``butlerQC`` object also has a ``put`` method that mirrors all the
 capabilities of the ``get`` method, put for putting outputs into the butler.
 
