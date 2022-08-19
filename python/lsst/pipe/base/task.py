@@ -200,6 +200,7 @@ class Task:
         # Get a logger (that might be a subclass of logging.Logger).
         self.log: lsst.utils.logging.LsstLogAdapter = lsst.utils.logging.getLogger(loggerName)
         self.config: Config = config
+        self.config.validate()
         if lsstDebug:
             self._display = lsstDebug.Info(self.__module__).display
         else:
