@@ -7,7 +7,7 @@
 Retargeting subtasks of tasks
 #############################
 
-Subtasks of :ref:`tasks <creating-a-pipelinetask>` are dynamically retargetable, meaning that you can configure which task class is run by a parent class.
+Subtasks of :ref:`tasks <pipe-base-creating-a-pipelinetask>` are dynamically retargetable, meaning that you can configure which task class is run by a parent class.
 Subtask retargeting is a special case of task configuration.
 
 A common use of retargeting is to change a default subtask for a camera-specific one.
