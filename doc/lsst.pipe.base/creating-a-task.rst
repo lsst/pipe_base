@@ -51,7 +51,7 @@ Some important details of configurations:
   What units does it have?
 
 - Subtasks are specified in your configuration as fields of type `lsst.pex.config.ConfigurableField` or (less commonly) `lsst.pex.config.RegistryField`.
-  This allows subtasks to be :doc:`retargeted <command-line-task-retargeting-howto>` (replaced with a variant subtask).
+  This allows subtasks to be :doc:`retargeted <task-retargeting-howto>` (replaced with a variant subtask).
   For more information see :ref:`creating-a-task-subtasks`.
 
   `~lsst.pipe.tasks.exampleStatsTasks.ExampleSigmaClippedStatsTask` uses configuration class `~lsst.pipe.tasks.exampleStatsTasks.ExampleSigmaClippedStatsConfig`:
@@ -113,7 +113,7 @@ Tasks require several class variables to function:
   For example ``exampleTask.ExampleConfig`` creates the statistics subtask with name ``stats`` because the config field for that subtask is ``stats = lsst.pex.config.ConfigurableField(...)``.
 
   Task names are used for the hierarchy of task and subtask metadata.
-  Also, for command-line tasks the name is used as a component of the of the dataset type for saving the task's configuration and metadata.
+  Also, for pipeline tasks the name may be used as a component of the dataset type for saving the task's configuration and metadata.
 
 Here are the class variables for ``ExampleTask``:
 
@@ -275,13 +275,13 @@ There are advantages to each:
     Thus using an `lsst.pex.config.RegistryField` offers the opportunity to specify suitable overrides for more than one variant subtask, making it safer for the user to use those variants.
     Of course this can get out of hand if there are many variants, so users should not assume that all variants have suitable overrides.
 
-  - Retargeting a subtask can be done using :option:`--config` on the command line, as long as the module containing the desired subtask has been imported:
+  - Retargeting a subtask can be done using ``--config`` on the ``pipetask`` command line, as long as the module containing the desired subtask has been imported:
 
     .. code-block:: python
 
        config.registrySubtask.name = "foo"
 
-    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using :option:`--config-file`, never :option:`--config`):
+    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using ``--config-file`` with ``pipetask``, never ``--config``):
 
     .. code-block:: python
 
