@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, List, Literal, Mapping, MutableMapping, Optional, Set, Union
 
 import yaml
-from deprecated.sphinx import deprecated
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 
@@ -851,32 +850,6 @@ class PipelineIR:
         return cls(loaded_yaml)
 
     @classmethod
-    @deprecated(
-        reason="This has been replaced with `from_uri`. will be removed after v23",
-        version="v21.0,",
-        category=FutureWarning,
-    )
-    def from_file(cls, filename: str) -> PipelineIR:
-        """Create a `PipelineIR` object from the document specified by the
-        input path.
-
-        Parameters
-        ----------
-        filename : `str`
-            Location of document to use in creating a `PipelineIR` object.
-
-        Returns
-        -------
-        pipelineIR : `PipelineIR`
-            The loaded pipeline
-
-        Notes
-        -----
-        This method is deprecated, please use from_uri
-        """
-        return cls.from_uri(filename)
-
-    @classmethod
     def from_uri(cls, uri: ResourcePathExpression) -> PipelineIR:
         """Create a `PipelineIR` object from the document specified by the
         input uri.
@@ -895,22 +868,6 @@ class PipelineIR:
         with loaded_uri.open("r") as buffer:
             loaded_yaml = yaml.load(buffer, Loader=PipelineYamlLoader)
             return cls(loaded_yaml)
-
-    @deprecated(
-        reason="This has been replaced with `write_to_uri`. will be removed after v23",
-        version="v21.0,",
-        category=FutureWarning,
-    )  # type: ignore
-    def to_file(self, filename: str):
-        """Serialize this `PipelineIR` object into a yaml formatted string and
-        write the output to a file at the specified path.
-
-        Parameters
-        ----------
-        filename : `str`
-            Location of document to write a `PipelineIR` object.
-        """
-        self.write_to_uri(filename)
 
     def write_to_uri(
         self,

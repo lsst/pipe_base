@@ -633,7 +633,7 @@ class Pipeline:
         self._pipelineIR.tasks[label].add_or_update_config(newConfig)
 
     def toFile(self, filename: str) -> None:
-        self._pipelineIR.to_file(filename)
+        self.write_to_uri(filename)
 
     def write_to_uri(self, uri: ResourcePathExpression) -> None:
         """Write the pipeline to a file or directory.
