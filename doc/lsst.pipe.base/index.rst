@@ -47,7 +47,6 @@ Using command-line tasks
    command-line-task-data-repo-howto.rst
    command-line-task-dataid-howto.rst
    command-line-task-config-howto.rst
-   command-line-task-retargeting-howto.rst
    command-line-task-prov-howto.rst
    command-line-task-logging-howto.rst
    command-line-task-parallel-howto.rst
@@ -64,6 +63,7 @@ Developing tasks and command-line tasks
    creating-a-task.rst
    testing-a-pipeline-task.rst
    creating-a-pipelinetask.rst
+   task-retargeting-howto.rst
 
 .. _lsst-pipe-base-developing-pipelines:
 
