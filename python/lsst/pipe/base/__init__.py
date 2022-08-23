@@ -13,7 +13,6 @@ from .pipeline import *
 from .pipelineTask import *
 from .struct import *
 from .task import *
-from .task_logging import getTaskLogger
 from .taskFactory import *
 from .timer import *
 from .version import *
