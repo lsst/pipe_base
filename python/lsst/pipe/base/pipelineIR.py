@@ -502,6 +502,7 @@ class PipelineIR:
     ------
     ValueError
         Raised if:
+
         - a pipeline is declared without a description;
         - no tasks are declared in a pipeline, and no pipelines are to be
           inherited;
