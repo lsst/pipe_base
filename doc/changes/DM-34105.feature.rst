@@ -1,3 +1,0 @@
-* Added `lsst.pipe.base.Instrument` to represent an instrument in Butler registry.
-* Added ``butler register-instrument`` command.
-* Added a formatter for pex_config `Config` objects.
