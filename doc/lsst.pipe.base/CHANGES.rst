@@ -1,5 +1,42 @@
-pipe_base v23.0.1 2022-02-02
-============================
+lsst-pipe-base v24.0.0 (2022-08-26)
+===================================
+
+New Features
+------------
+
+- Add the ability for user control over dataset constraints in `~lsst.pipe.base.QuantumGraph` creation. (`DM-31769 <https://jira.lsstcorp.org/browse/DM-31769>`_)
+- Builds using ``setuptools`` now calculate versions from the Git repository, including the use of alpha releases for those associated with weekly tags. (`DM-32408 <https://jira.lsstcorp.org/browse/DM-32408>`_)
+- Improve diagnostics for empty `~lsst.pipe.base.QuantumGraph`. (`DM-32459 <https://jira.lsstcorp.org/browse/DM-32459>`_)
+- A new class has been written for handling `~lsst.pipe.base.Task` metadata.
+  `lsst.pipe.base.TaskMetadata` will in future become the default metadata class for `~lsst.pipe.base.Task`, replacing ``lsst.daf.base.PropertySet``.
+  The new metadata class is not yet enabled by default. (`DM-32682 <https://jira.lsstcorp.org/browse/DM-32682>`_)
+- * Add ``TaskMetadata.to_dict()`` method (this is now used by the ``lsst.daf.base.PropertySet.from_mapping()`` method and triggered by the Butler if type conversion is needed).
+  * Use the existing metadata storage class definition if one already exists in a repository.
+  * Switch `~lsst.pipe.base.Task` to use `~lsst.pipe.base.TaskMetadata` for storing task metadata, rather than ``lsst.daf.base.PropertySet``.
+    This removes a C++ dependency from the middleware. (`DM-33155 <https://jira.lsstcorp.org/browse/DM-33155>`_)
+- * Added `lsst.pipe.base.Instrument` to represent an instrument in Butler registry.
+  * Added ``butler register-instrument`` command (relocated from ``obs_base``).
+  * Added a formatter for ``pex_config`` `~lsst.pex.config.Config` objects. (`DM-34105 <https://jira.lsstcorp.org/browse/DM-34105>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed a bug where imported pipeline parameters were taking preference over "top-level" preferences (`DM-32080 <https://jira.lsstcorp.org/browse/DM-32080>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- If a `~lsst.pipe.base.PipelineTask` has connections that have a different storage class for a dataset type than the one defined in registry, this will now be allowed if the  storage classes are compatible.
+  The `~lsst.pipe.base.Task` ``run()`` method will be given the Python type it expects and can return the Python type it has declared it returns.
+  The Butler will do the type conversion automatically. (`DM-33303 <https://jira.lsstcorp.org/browse/DM-33303>`_)
+- Topological sorting of pipelines on write has been disabled; the order in which the pipeline tasks were read/added is preserved instead.
+  This makes it unnecessary to import all tasks referenced by the pipeline in order to write it. (`DM-34155 <https://jira.lsstcorp.org/browse/DM-34155>`_)
+
+
+lsst-pipe-base v23.0.1 (2022-02-02)
+===================================
 
 Miscellaneous Changes of Minor Interest
 ---------------------------------------
@@ -7,8 +44,8 @@ Miscellaneous Changes of Minor Interest
 - Execution butler creation time has been reduced significantly by avoiding unnecessary checks for existence of files in the datastore. (`DM-33345 <https://jira.lsstcorp.org/browse/DM-33345>`_)
 
 
-pipe_base v23.0.0 2021-12-10
-============================
+lsst-pipe-base v23.0.0 (2021-12-10)
+===================================
 
 New Features
 ------------
@@ -38,8 +75,8 @@ Other Changes and Additions
 - New documentation on writing pipelines has been added. (`DM-27416 <https://jira.lsstcorp.org/browse/DM-27416>`_)
 
 
-pipe_base v22.0 (2021-04-01)
-============================
+lsst-pipe-base v22.0 (2021-04-01)
+=================================
 
 New Features
 ------------

@@ -1,3 +1,0 @@
-If a `PipelineTask` has connections that have a different storage class for a dataset type than the one defined in registry, this will now be allowed if the  storage classes are compatible.
-The `Task` ``run`` method will be given the Python type it expects and can return the Python type it has declared it returns.
-The Butler will do the type conversion automatically.
