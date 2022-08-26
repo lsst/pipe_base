@@ -86,7 +86,9 @@ def makeQuantum(
     quantum : `lsst.daf.butler.Quantum`
         A quantum for ``task``, when called with ``dataIds``.
     """
-    connections = task.config.ConnectionsClass(config=task.config)
+    # This is a type ignore, because `connections` is a dynamic class, but
+    # it for sure will have this property
+    connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
 
     try:
         _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
@@ -337,7 +339,9 @@ def runTestQuantum(
     """
     _resolveTestQuantumInputs(butler, quantum)
     butlerQc = ButlerQuantumContext(butler, quantum)
-    connections = task.config.ConnectionsClass(config=task.config)
+    # This is a type ignore, because `connections` is a dynamic class, but
+    # it for sure will have this property
+    connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
     if mockRun:
         with unittest.mock.patch.object(task, "run") as mock, unittest.mock.patch(
@@ -407,7 +411,9 @@ def assertValidOutput(task: PipelineTask, result: Struct) -> None:
         Raised if ``result`` does not match what's expected from ``task's``
         connections.
     """
-    connections = task.config.ConnectionsClass(config=task.config)
+    # This is a type ignore, because `connections` is a dynamic class, but
+    # it for sure will have this property
+    connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
 
     for name in connections.outputs:
         connection = connections.__getattribute__(name)
@@ -428,7 +434,9 @@ def assertValidInitOutput(task: PipelineTask) -> None:
         Raised if ``task`` does not have the state expected from ``task's``
         connections.
     """
-    connections = task.config.ConnectionsClass(config=task.config)
+    # This is a type ignore, because `connections` is a dynamic class, but
+    # it for sure will have this property
+    connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
 
     for name in connections.initOutputs:
         connection = connections.__getattribute__(name)

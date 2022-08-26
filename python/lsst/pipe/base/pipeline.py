@@ -52,6 +52,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    cast,
 )
 
 # -----------------------------
@@ -63,6 +64,7 @@ from lsst.utils.introspection import get_full_type_name
 
 from . import pipelineIR, pipeTools
 from ._task_metadata import TaskMetadata
+from .config import PipelineTaskConfig
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
 from .pipelineTask import PipelineTask
@@ -119,7 +121,7 @@ class TaskDef:
     taskName : `str`, optional
         The fully-qualified `PipelineTask` class name.  If not provided,
         ``taskClass`` must be.
-    config : `lsst.pex.config.Config`, optional
+    config : `lsst.pipe.base.config.PipelineTaskConfig`, optional
         Instance of the configuration class corresponding to this task class,
         usually with all overrides applied. This config will be frozen.  If
         not provided, ``taskClass`` must be provided and
@@ -137,7 +139,7 @@ class TaskDef:
     def __init__(
         self,
         taskName: Optional[str] = None,
-        config: Optional[Config] = None,
+        config: Optional[PipelineTaskConfig] = None,
         taskClass: Optional[Type[PipelineTask]] = None,
         label: Optional[str] = None,
     ):
@@ -203,7 +205,7 @@ class TaskDef:
         """Name of a dataset type for log output from this task, `None` if
         logs are not to be saved (`str`)
         """
-        if self.config.saveLogOutput:
+        if cast(PipelineTaskConfig, self.config).saveLogOutput:
             return self.label + "_log"
         else:
             return None
@@ -227,7 +229,7 @@ class TaskDef:
         return hash((self.taskClass, self.label))
 
     @classmethod
-    def _unreduce(cls, taskName: str, config: Config, label: str) -> TaskDef:
+    def _unreduce(cls, taskName: str, config: PipelineTaskConfig, label: str) -> TaskDef:
         """Custom callable for unpickling.
 
         All arguments are forwarded directly to the constructor; this
@@ -236,7 +238,7 @@ class TaskDef:
         """
         return cls(taskName=taskName, config=config, label=label)
 
-    def __reduce__(self) -> Tuple[Callable[[str, Config, str], TaskDef], Tuple[str, Config, str]]:
+    def __reduce__(self) -> Tuple[Callable[[str, PipelineTaskConfig, str], TaskDef], Tuple[str, Config, str]]:
         return (self._unreduce, (self.taskName, self.config, self.label))
 
 

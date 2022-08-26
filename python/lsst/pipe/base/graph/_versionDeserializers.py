@@ -35,9 +35,9 @@ from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Optiona
 
 import networkx as nx
 from lsst.daf.butler import DimensionRecord, DimensionUniverse, Quantum, SerializedDimensionRecord
-from lsst.pex.config import Config
 from lsst.utils import doImportType
 
+from ..config import PipelineTaskConfig
 from ..pipeline import TaskDef
 from ..pipelineTask import PipelineTask
 from ._implDetails import DatasetTypeName, _DatasetTracker
@@ -517,7 +517,7 @@ class DeserializerV3(DeserializerBase):
                 # bytes are compressed, so decompress them
                 taskDefDump = json.loads(lzma.decompress(_readBytes(start, stop)))
                 taskClass: Type[PipelineTask] = doImportType(taskDefDump["taskName"])
-                config: Config = taskClass.ConfigClass()
+                config: PipelineTaskConfig = taskClass.ConfigClass()
                 config.loadFromStream(taskDefDump["config"])
                 # Rebuild TaskDef
                 recreatedTaskDef = TaskDef(
