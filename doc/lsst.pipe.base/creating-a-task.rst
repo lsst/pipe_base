@@ -18,7 +18,7 @@ After reading this document you may wish to read :doc:`creating-a-pipelinetask`.
 Introduction
 ============
 
-Tasks are subclasses of `lsst.pipe.base.Task` in general or `lsst.pipe.base.CmdLineTask` for command-line tasks.
+Tasks are subclasses of `lsst.pipe.base.Task` in general or `lsst.pipe.base.PipelineTask` for tasks that should be run within pipelines.
 
 Tasks are constructed by calling ``__init__`` with the :ref:`task configuration <creating-a-task-configuration>`.
 Occasionally additional arguments are required (see the task's documentation for details).
@@ -51,7 +51,7 @@ Some important details of configurations:
   What units does it have?
 
 - Subtasks are specified in your configuration as fields of type `lsst.pex.config.ConfigurableField` or (less commonly) `lsst.pex.config.RegistryField`.
-  This allows subtasks to be :doc:`retargeted <command-line-task-retargeting-howto>` (replaced with a variant subtask).
+  This allows subtasks to be :doc:`retargeted <task-retargeting-howto>` (replaced with a variant subtask).
   For more information see :ref:`creating-a-task-subtasks`.
 
   `~lsst.pipe.tasks.exampleStatsTasks.ExampleSigmaClippedStatsTask` uses configuration class `~lsst.pipe.tasks.exampleStatsTasks.ExampleSigmaClippedStatsConfig`:
@@ -80,12 +80,12 @@ Some important details of configurations:
 
 The configuration class is specified as ``ExampleSigmaClippedStatsTask`` class variable ``ConfigClass``, as described in :ref:`creating-a-task-class-variables`.
 
-Here is the config for ``ExampleCmdLineTask``, a task that calls one subtask named ``stats``; notice the `lsst.pex.config.ConfigurableField`:
+Here is the config for ``ExampleTask``, a task that calls one subtask named ``stats``; notice the `lsst.pex.config.ConfigurableField`:
 
 .. code-block:: python
 
-   class ExampleCmdLineConfig(pexConfig.Config):
-       """Configuration for ExampleCmdLineTask.
+   class ExampleConfig(pexConfig.Config):
+       """Configuration for ExampleTask.
        """
        stats = pexConfig.ConfigurableField(
            doc="Subtask to compute statistics of an image",
@@ -108,18 +108,18 @@ Tasks require several class variables to function:
 - ``ConfigClass``: the :ref:`configuration class <creating-a-task-configuration>` used by the task.
 
 - ``_DefaultName``: a string used as the default name for the task.
-  This is required for a command-line task (`~pipe.base.cmdLineTask.CmdLineTask`), and strongly recommended for other tasks because it makes them easier to construct for unit tests.
+  This is required for a pipeline task (`~pipe.base.PipelineTask`), and strongly recommended for other tasks because it makes them easier to construct for unit tests.
   Note that when a task creates a subtask, it ignores the subtask's ``_DefaultName`` and assigns the name of the config parameter as the subtask's name.
-  For example ``exampleCmdLineTask.ExampleCmdLineConfig`` creates the statistics subtask with name ``stats`` because the config field for that subtask is ``stats = lsst.pex.config.ConfigurableField(...)``.
+  For example ``exampleTask.ExampleConfig`` creates the statistics subtask with name ``stats`` because the config field for that subtask is ``stats = lsst.pex.config.ConfigurableField(...)``.
 
   Task names are used for the hierarchy of task and subtask metadata.
-  Also, for command-line tasks the name is used as a component of the of the dataset type for saving the task's configuration and metadata.
+  Also, for pipeline tasks the name may be used as a component of the dataset type for saving the task's configuration and metadata.
 
-Here are the class variables for ``ExampleCmdLineTask``:
+Here are the class variables for ``ExampleTask``:
 
 .. code-block:: python
 
-   ConfigClass = ExampleCmdLineConfig
+   ConfigClass = ExampleConfig
    _DefaultName = "exampleTask"
 
 .. _creating-a-task-class-methods:
@@ -147,31 +147,31 @@ Use the ``__init__`` method (task constructor) to do the following:
   For an example of such a task `lsst.pipe.tasks.calibrate.CalibrateTask`.
 - Initialize any other instance variables your task needs.
 
-Here is ``exampleCmdLineTask.ExampleCmdLineTask.__init__``:
+Here is ``exampleTask.ExampleTask.__init__``:
 
 .. code-block:: python
 
    def __init__(self, *args, **kwargs):
-       """Construct an ExampleCmdLineTask
+       """Construct an ExampleTask
+
        Call the parent class constructor and make the "stats" subtask from the config field of the same name.
        """
-       pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
+       super().__init__(self, *args, **kwargs)
        self.makeSubtask("stats")
 
 That task creates a subtask named ``stats`` to compute image statistics.
-Here is the ``__init__`` method for the default version of the `stats` subtask:
-
-exampleTask.ExampleSigmaClippedStatsTask, which is slightly more interesting:
+Here is the ``__init__`` method for the default version of the ``stats`` subtask ``exampleTask.ExampleSigmaClippedStatsTask``, which is slightly more interesting:
 
 .. code-block:: python
 
    def __init__(self, *args, **kwargs):
-       """!Construct an ExampleSigmaClippedStatsTask
+       """Construct an ExampleSigmaClippedStatsTask
+
        The init method may compute anything that that does not require data.
        In this case we create a statistics control object using the config
        (which cannot change once the task is created).
        """
-       pipeBase.Task.__init__(self, *args, **kwargs)
+       super().__init__(self, *args, **kwargs)
        self._badPixelMask = MaskU.getPlaneBitMask(self.config.badMaskPlanes)
        self._statsControl = afwMath.StatisticsControl()
        self._statsControl.setNumSigmaClip(self.config.numSigmaClip)
@@ -185,6 +185,8 @@ Both of these are constants, and thus are the same for each invocation of the ``
 
 Task execution methods
 ----------------------
+
+For a detailed overview of creating a `~lsst.pipe.base.PipelineTask` see :doc:`creating-a-pipelinetask`.
 
 The run method
 ^^^^^^^^^^^^^^
@@ -210,73 +212,6 @@ We strongly recommend that you make your task stateless, by not using instance v
 Pass data between methods by calling and returning it.
 This makes the task much easier to reason about, since processing one item of data cannot affect future items of data.
 
-The runDataRef method
-^^^^^^^^^^^^^^^^^^^^^
-
-In addition to ``run``, many tasks have a ``runDataRef`` method which accepts a Butler data reference; loads appropriate data from it; calls ``run``; and writes the results back to the Butler.
-This is required for all command-line tasks.
-
-Examples
-^^^^^^^^
-
-The example ``exampleCmdLineTask.ExampleCmdLineTask`` is so simple that it needs no other methods; ``runDataRef`` does everything:
-
-.. code-block:: python
-
-   @lsst.utils.timer.timeMethod
-   def runDataRef(self, dataRef):
-       """Compute a few statistics on the image plane of an exposure
-       @param dataRef: data reference for a calibrated science exposure ("calexp")
-       @return a pipeBase Struct containing:
-       - mean: mean of image plane
-       - meanErr: uncertainty in mean
-       - stdDev: standard deviation of image plane
-       - stdDevErr: uncertainty in standard deviation
-       """
-       self.log.info("Processing data ID %s" % (dataRef.dataId,))
-       if self.config.doFail:
-           raise pipeBase.TaskError("Raising TaskError by request (config.doFail=True)")
-       # Unpersist the raw exposure pointed to by the data reference
-       rawExp = dataRef.get("raw")
-       maskedImage = rawExp.getMaskedImage()
-       # Support extra debug output.
-       # -
-       import lsstDebug
-       display = lsstDebug.Info(__name__).display
-       if display:
-           frame = 1
-           mtv(rawExp, frame=frame, title="exposure")
-       # return the pipe_base Struct that is returned by self.stats.run
-       return self.stats.run(maskedImage)
-
-The statistics are actually computed by the ``stats`` subtask.
-Here is the ``run`` method for the default version of that task: ``exampleTask.ExampleSigmaClippedStatsTask.run``:
-
-.. code-block:: python
-
-   @lsst.utils.timer.timeMethod
-   def run(self, maskedImage):
-       """!Compute and return statistics for a masked image
-       @param[in] maskedImage: masked image (an lsst::afw::MaskedImage)
-       @return a pipeBase Struct containing:
-       - mean: mean of image plane
-       - meanErr: uncertainty in mean
-       - stdDev: standard deviation of image plane
-       - stdDevErr: uncertainty in standard deviation
-       """
-       statObj = afwMath.makeStatistics(maskedImage, afwMath.MEANCLIP | afwMath.STDEVCLIP | afwMath.ERRORS,
-                                        self._statsControl)
-       mean, meanErr = statObj.getResult(afwMath.MEANCLIP)
-       stdDev, stdDevErr = statObj.getResult(afwMath.STDEVCLIP)
-       self.log.info("clipped mean=%0.2f; meanErr=%0.2f; stdDev=%0.2f; stdDevErr=%0.2f" %
-                     (mean, meanErr, stdDev, stdDevErr))
-       return pipeBase.Struct(
-           mean=mean,
-           meanErr=meanErr,
-           stdDev=stdDev,
-           stdDevErr=stdDevErr,
-       )
-
 .. _creating-a-task-debug-variables:
 
 Debug variables
@@ -295,8 +230,8 @@ For example, to look for a debug variable named "display":
       # ...
       pass
 
-.. FIXME create link when lsstDebug documentation is ready.
-.. See \ref baseDebug for more information about debug variables, including how to specify them while running a command-line task.
+.. FIXME lsstDebug comes from ``base`` but that is not a dependency of
+.. this package. Linking to the base documentation is therefore problematic.
 
 .. _creating-a-task-docs:
 
@@ -340,13 +275,13 @@ There are advantages to each:
     Thus using an `lsst.pex.config.RegistryField` offers the opportunity to specify suitable overrides for more than one variant subtask, making it safer for the user to use those variants.
     Of course this can get out of hand if there are many variants, so users should not assume that all variants have suitable overrides.
 
-  - Retargeting a subtask can be done using :option:`--config` on the command line, as long as the module containing the desired subtask has been imported:
+  - Retargeting a subtask can be done using ``--config`` on the ``pipetask`` command line, as long as the module containing the desired subtask has been imported:
 
     .. code-block:: python
 
        config.registrySubtask.name = "foo"
 
-    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using :option:`--config-file`, never :option:`--config`):
+    By comparison, a subtask specified as an `lsst.pex.config.ConfigurableField` can only be retargeted from a config override file (e.g. using ``--config-file`` with ``pipetask``, never ``--config``):
 
     .. code-block:: python
 

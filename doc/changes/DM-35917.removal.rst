@@ -1,0 +1,3 @@
+* ``ArgumentParser``, ``CmdLineTask``, and ``TaskRunner`` classes have been removed and associated gen2 documentation.
+* The ``PipelineIR.from_file()`` method has been removed.
+* The ``getTaskLogger`` function has been removed.

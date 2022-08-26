@@ -430,8 +430,8 @@ class PipelineIRTestCase(unittest.TestCase):
 
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
-        location = os.path.expandvars("$TESTDIR/testPipeline1.yaml")
-        pipeline = PipelineIR.from_file(location)
+        location = "$TESTDIR/testPipeline1.yaml"
+        pipeline = PipelineIR.from_uri(location)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
         # Verify that a contract message is loaded

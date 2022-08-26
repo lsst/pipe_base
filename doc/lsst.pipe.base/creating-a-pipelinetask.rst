@@ -1,3 +1,5 @@
+.. _pipe-base-creating-a-pipelinetask:
+
 #######################
 Creating a PipelineTask
 #######################
