@@ -1,7 +1,7 @@
 # lsst-pipe-base
 
 [![pypi](https://img.shields.io/pypi/v/lsst-pipe-base.svg)](https://pypi.org/project/lsst-pipe-base/)
-[![codecov](https://codecov.io/gh/lsst/pipe_base/branch/master/graph/badge.svg?token=nTEA5ZAYiD)](https://codecov.io/gh/lsst/pipe_base)
+[![codecov](https://codecov.io/gh/lsst/pipe_base/branch/main/graph/badge.svg?token=nTEA5ZAYiD)](https://codecov.io/gh/lsst/pipe_base)
 
 Pipeline infrastructure code for the [Rubin Science Pipelines](https://pipelines.lsst.io).
 
