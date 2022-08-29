@@ -259,12 +259,7 @@ def _refFromConnection(
     _checkDimensionsMatch(universe, set(connection.dimensions), dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
 
-    # skypix is a PipelineTask alias for "some spatial index", Butler doesn't
-    # understand it. Code copied from TaskDatasetTypes.fromTaskDef
-    if "skypix" in connection.dimensions:
-        datasetType = butler.registry.getDatasetType(connection.name)
-    else:
-        datasetType = connection.makeDatasetType(universe)
+    datasetType = butler.registry.getDatasetType(connection.name)
 
     try:
         butler.registry.getDatasetType(datasetType.name)
