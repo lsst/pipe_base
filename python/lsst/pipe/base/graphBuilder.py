@@ -784,12 +784,13 @@ class _PipelineScaffolding:
                         ref = refsForRow[datasetType.name]
                         quantum.outputs[datasetType.name][ref.dataId] = ref
             if n < 0:
+                _LOG.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
                 emptiness_explained = False
                 for message in commonDataIds.explain_no_results():
-                    _LOG.warning(message)
+                    _LOG.critical(message)
                     emptiness_explained = True
                 if not emptiness_explained:
-                    _LOG.warning(
+                    _LOG.critical(
                         "To reproduce this query for debugging purposes, run "
                         "Registry.queryDataIds with these arguments:"
                     )
@@ -798,14 +799,14 @@ class _PipelineScaffolding:
                     # put these args in an easier-to-construct equivalent form
                     # so they can read it more easily and copy and paste into
                     # a Python terminal.
-                    _LOG.warning("  dimensions=%s,", list(queryArgs["dimensions"].names))
-                    _LOG.warning("  dataId=%s,", queryArgs["dataId"].byName())
+                    _LOG.critical("  dimensions=%s,", list(queryArgs["dimensions"].names))
+                    _LOG.critical("  dataId=%s,", queryArgs["dataId"].byName())
                     if queryArgs["where"]:
-                        _LOG.warning("  where=%s,", repr(queryArgs["where"]))
+                        _LOG.critical("  where=%s,", repr(queryArgs["where"]))
                     if "datasets" in queryArgs:
-                        _LOG.warning("  datasets=%s,", [t.name for t in queryArgs["datasets"]])
+                        _LOG.critical("  datasets=%s,", [t.name for t in queryArgs["datasets"]])
                     if "collections" in queryArgs:
-                        _LOG.warning("  collections=%s,", list(queryArgs["collections"]))
+                        _LOG.critical("  collections=%s,", list(queryArgs["collections"]))
             _LOG.debug("Finished processing %d rows from data ID query.", n)
             yield commonDataIds
 
