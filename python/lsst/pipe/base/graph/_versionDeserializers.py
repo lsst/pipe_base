@@ -75,10 +75,7 @@ class StructSizeDescriptor:
         return struct.calcsize(owner.FMT_STRING())
 
 
-# MyPy doesn't seem to like the idea of an abstract dataclass.  It seems to
-# work, but maybe we're doing something that isn't really supported (or maybe
-# I misunderstood the error message).
-@dataclass  # type: ignore
+@dataclass
 class DeserializerBase(ABC):
     @classmethod
     @abstractmethod
