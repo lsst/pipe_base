@@ -27,17 +27,10 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "B
 
 import dataclasses
 import typing
-from typing import Callable, Iterable, Optional, Union
+from collections.abc import Callable, Iterable, Sequence
+from typing import Optional, Union
 
-from lsst.daf.butler import (
-    CollectionSearch,
-    DataCoordinate,
-    DatasetRef,
-    DatasetType,
-    DimensionUniverse,
-    Registry,
-    StorageClass,
-)
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -319,7 +312,7 @@ class PrerequisiteInput(BaseInput):
     """
 
     lookupFunction: Optional[
-        Callable[[DatasetType, Registry, DataCoordinate, CollectionSearch], Iterable[DatasetRef]]
+        Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]]
     ] = None
 
 

@@ -36,7 +36,6 @@ from dataclasses import dataclass
 from typing import Any, Collection, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Tuple, Union
 
 from lsst.daf.butler import (
-    CollectionSearch,
     CollectionType,
     DataCoordinate,
     DatasetIdGenEnum,
@@ -51,6 +50,7 @@ from lsst.daf.butler import (
     Registry,
 )
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
+from lsst.daf.butler.registry.wildcards import CollectionWildcard
 from lsst.utils import doImportType
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
@@ -670,8 +670,7 @@ class _PipelineScaffolding:
             Registry for the data repository; used for all data ID queries.
         collections
             Expressions representing the collections to search for input
-            datasets.  May be any of the types accepted by
-            `lsst.daf.butler.CollectionSearch.fromExpression`.
+            datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         userQuery : `str` or `None`
             User-provided expression to limit the data IDs processed.
         externalDataId : `DataCoordinate`
@@ -834,8 +833,7 @@ class _PipelineScaffolding:
             Registry for the data repository; used for all data ID queries.
         collections
             Expressions representing the collections to search for input
-            datasets.  May be any of the types accepted by
-            `lsst.daf.butler.CollectionSearch.fromExpression`.
+            datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
@@ -844,8 +842,8 @@ class _PipelineScaffolding:
             Result of a previous call to `connectDataIds`.
         skipExistingIn
             Expressions representing the collections to search for existing
-            output datasets that should be skipped.  May be any of the types
-            accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
+            output datasets that should be skipped.  See
+            :ref:`daf_butler_ordered_collection_searches` for allowed types.
             `None` or empty string/sequence disables skipping.
         clobberOutputs : `bool`, optional
             If `True` (default), allow quanta to created even if outputs exist;
@@ -868,13 +866,13 @@ class _PipelineScaffolding:
             and ``skipExistingIn`` does not include output run, or if only
             some outputs are present and ``clobberOutputs`` is `False`.
         """
-        skipCollections: Optional[CollectionSearch] = None
+        skip_collections_wildcard: CollectionWildcard | None = None
         skipExistingInRun = False
         if skipExistingIn:
-            skipCollections = CollectionSearch.fromExpression(skipExistingIn)
+            skip_collections_wildcard = CollectionWildcard.from_expression(skipExistingIn)
             if run:
                 # as optimization check in the explicit list of names first
-                skipExistingInRun = run in skipCollections.explicitNames()
+                skipExistingInRun = run in skip_collections_wildcard.strings
                 if not skipExistingInRun:
                     # need to flatten it and check again
                     skipExistingInRun = run in registry.queryCollections(
@@ -889,7 +887,7 @@ class _PipelineScaffolding:
 
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
-        if run is not None or skipCollections is not None:
+        if run is not None or skip_collections_wildcard is not None:
             for datasetType, refs in itertools.chain(
                 self.initIntermediates.items(),
                 self.initOutputs.items(),
@@ -929,9 +927,9 @@ class _PipelineScaffolding:
 
                 # And check skipExistingIn too, if RUN collection is in
                 # it is handled above
-                if skipCollections is not None:
+                if skip_collections_wildcard is not None:
                     resolvedRefQueryResults = subset.findDatasets(
-                        datasetType, collections=skipCollections, findFirst=True
+                        datasetType, collections=skip_collections_wildcard, findFirst=True
                     )
                     for resolvedRef in resolvedRefQueryResults:
                         assert resolvedRef.dataId in refs
@@ -993,7 +991,7 @@ class _PipelineScaffolding:
                 # datasets that already exist would have already caused an
                 # exception to be raised.  We never update the DatasetRefs in
                 # the quantum because those should never be resolved.
-                if skipCollections is not None or (run is not None and clobberOutputs):
+                if skip_collections_wildcard is not None or (run is not None and clobberOutputs):
                     resolvedRefs = []
                     unresolvedRefs = []
                     haveMetadata = False
@@ -1008,7 +1006,7 @@ class _PipelineScaffolding:
                     if resolvedRefs:
                         if haveMetadata or not unresolvedRefs:
                             dataIdsSucceeded.append(quantum.dataId)
-                            if skipCollections is not None:
+                            if skip_collections_wildcard is not None:
                                 continue
                         else:
                             dataIdsFailed.append(quantum.dataId)
@@ -1079,7 +1077,7 @@ class _PipelineScaffolding:
 
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
-                if skipCollections is not None:
+                if skip_collections_wildcard is not None:
                     _LOG.debug(
                         "Pruning successful %d quanta for task with label '%s' because all of their "
                         "outputs exist or metadata was written successfully.",
@@ -1195,8 +1193,8 @@ class GraphBuilder:
         Data butler instance.
     skipExistingIn
         Expressions representing the collections to search for existing
-        output datasets that should be skipped.  May be any of the types
-        accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
+        output datasets that should be skipped.  See
+        :ref:`daf_butler_ordered_collection_searches`.
     clobberOutputs : `bool`, optional
         If `True` (default), allow quanta to created even if partial outputs
         exist; this requires the same behavior behavior to be enabled when
@@ -1236,8 +1234,7 @@ class GraphBuilder:
             Pipeline definition, task names/classes and their configs.
         collections
             Expressions representing the collections to search for input
-            datasets.  May be any of the types accepted by
-            `lsst.daf.butler.CollectionSearch.fromExpression`.
+            datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
