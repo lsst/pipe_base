@@ -49,6 +49,7 @@ from lsst.daf.butler import (
     Quantum,
     Registry,
 )
+from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
 from lsst.utils import doImportType
@@ -885,6 +886,8 @@ class _PipelineScaffolding:
             assert run is not None, "run cannot be None when resolveRefs is True"
             idMaker = _DatasetIdMaker(registry, run)
 
+        resolvedRefQueryResults: Iterable[DatasetRef]
+
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
         if run is not None or skip_collections_wildcard is not None:
@@ -904,9 +907,12 @@ class _PipelineScaffolding:
 
                 # look at RUN collection first
                 if run is not None:
-                    resolvedRefQueryResults = subset.findDatasets(
-                        datasetType, collections=run, findFirst=True
-                    )
+                    try:
+                        resolvedRefQueryResults = subset.findDatasets(
+                            datasetType, collections=run, findFirst=True
+                        )
+                    except MissingDatasetTypeError:
+                        resolvedRefQueryResults = []
                     for resolvedRef in resolvedRefQueryResults:
                         # TODO: we could easily support per-DatasetType
                         # skipExisting and I could imagine that being useful -
@@ -928,9 +934,12 @@ class _PipelineScaffolding:
                 # And check skipExistingIn too, if RUN collection is in
                 # it is handled above
                 if skip_collections_wildcard is not None:
-                    resolvedRefQueryResults = subset.findDatasets(
-                        datasetType, collections=skip_collections_wildcard, findFirst=True
-                    )
+                    try:
+                        resolvedRefQueryResults = subset.findDatasets(
+                            datasetType, collections=skip_collections_wildcard, findFirst=True
+                        )
+                    except MissingDatasetTypeError:
+                        resolvedRefQueryResults = []
                     for resolvedRef in resolvedRefQueryResults:
                         assert resolvedRef.dataId in refs
                         refs[resolvedRef.dataId] = resolvedRef
@@ -941,9 +950,12 @@ class _PipelineScaffolding:
         self.unfoundRefs = set()
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
-            resolvedRefQueryResults = commonDataIds.subset(datasetType.dimensions, unique=True).findDatasets(
-                datasetType, collections=collections, findFirst=True
-            )
+            try:
+                resolvedRefQueryResults = commonDataIds.subset(
+                    datasetType.dimensions, unique=True
+                ).findDatasets(datasetType, collections=collections, findFirst=True)
+            except MissingDatasetTypeError:
+                resolvedRefQueryResults = []
             dataIdsNotFoundYet = set(refs.keys())
             for resolvedRef in resolvedRefQueryResults:
                 dataIdsNotFoundYet.discard(resolvedRef.dataId)
