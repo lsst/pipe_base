@@ -390,8 +390,8 @@ def makeSimpleQGraph(
         is None.
     skipExistingIn
         Expressions representing the collections to search for existing
-        output datasets that should be skipped.  May be any of the types
-        accepted by `lsst.daf.butler.CollectionSearch.fromExpression`.
+        output datasets that should be skipped.  See
+        :ref:`daf_butler_ordered_collection_searches`.
     inMemory : `bool`, optional
         If true make in-memory repository, only used if ``butler`` is `None`.
     userQuery : `str`, optional
