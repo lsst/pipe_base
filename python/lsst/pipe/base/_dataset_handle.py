@@ -38,7 +38,12 @@ class InMemoryDatasetHandle:
     """An in-memory version of a `~lsst.daf.butler.DeferredDatasetHandle`."""
 
     def get(
-        self, *, component: Optional[str] = None, parameters: Optional[dict] = None, **kwargs: dict
+        self,
+        *,
+        component: Optional[str] = None,
+        parameters: Optional[dict] = None,
+        storageClass: str | StorageClass | None = None,
+        **kwargs: dict,
     ) -> Any:
         """Retrieves the dataset pointed to by this handle
 
@@ -55,6 +60,12 @@ class InMemoryDatasetHandle:
             It defaults to None. If the value is not None, this dict will
             be merged with the parameters dict used to construct the
             `DeferredDatasetHandle` class.
+        storageClass : `StorageClass` or `str`, optional
+            The storage class to be used to override the Python type
+            returned by this method. By default the returned type matches
+            the type stored. Specifying a read `StorageClass` can force a
+            different type to be returned.
+            This type must be compatible with the original type.
         **kwargs
             This argument is deprecated and only exists to support legacy
             gen2 butler code during migration. It is completely ignored
@@ -87,42 +98,55 @@ class InMemoryDatasetHandle:
         else:
             mergedParameters = {}
 
+        returnStorageClass: StorageClass | None = None
+        if storageClass:
+            if isinstance(storageClass, str):
+                factory = StorageClassFactory()
+                returnStorageClass = factory.getStorageClass(storageClass)
+            else:
+                returnStorageClass = storageClass
+
         if component or mergedParameters:
             # This requires a storage class look up to locate the delegate
             # class.
-            storageClass = self._getStorageClass()
+            thisStorageClass = self._getStorageClass()
             inMemoryDataset = self.inMemoryDataset
 
             # Parameters for derived components are applied against the
             # composite.
-            if component in storageClass.derivedComponents:
-                storageClass.validateParameters(parameters)
+            if component in thisStorageClass.derivedComponents:
+                thisStorageClass.validateParameters(parameters)
 
                 # Process the parameters (hoping this never modified the
                 # original object).
-                inMemoryDataset = storageClass.delegate().handleParameters(inMemoryDataset, mergedParameters)
+                inMemoryDataset = thisStorageClass.delegate().handleParameters(
+                    inMemoryDataset, mergedParameters
+                )
                 mergedParameters = {}  # They have now been used
 
-                readStorageClass = storageClass.derivedComponents[component]
+                readStorageClass = thisStorageClass.derivedComponents[component]
             else:
                 if component:
-                    readStorageClass = storageClass.components[component]
+                    readStorageClass = thisStorageClass.components[component]
                 else:
-                    readStorageClass = storageClass
+                    readStorageClass = thisStorageClass
                 readStorageClass.validateParameters(mergedParameters)
 
             if component:
-                inMemoryDataset = storageClass.delegate().getComponent(inMemoryDataset, component)
+                inMemoryDataset = thisStorageClass.delegate().getComponent(inMemoryDataset, component)
 
             if mergedParameters:
                 inMemoryDataset = readStorageClass.delegate().handleParameters(
                     inMemoryDataset, mergedParameters
                 )
-
+            if returnStorageClass:
+                return returnStorageClass.coerce_type(inMemoryDataset)
             return inMemoryDataset
         else:
             # If there are no parameters or component requests the object
-            # can be returned as is.
+            # can be returned as is, but possibly with conversion.
+            if returnStorageClass:
+                return returnStorageClass.coerce_type(self.inMemoryDataset)
             return self.inMemoryDataset
 
     def _getStorageClass(self) -> StorageClass:
