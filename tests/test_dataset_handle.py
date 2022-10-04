@@ -51,6 +51,16 @@ StructuredDataTest:
     - slice
   derivedComponents:
     counter: Integer
+MetricsConversion:
+  # Special storage class to test conversions.
+  pytype: lsst.daf.butler.tests.MetricsExampleModel
+  delegate: lsst.daf.butler.tests.MetricsDelegate
+  converters:
+    lsst.daf.butler.tests.MetricsExample: lsst.daf.butler.tests.MetricsExampleModel.from_metrics
+StructuredDataTestListSet:
+  pytype: set
+  converters:
+    list: builtins.set
 """
 
 
@@ -62,8 +72,8 @@ class TestDatasetHandle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         config = StorageClassConfig.fromYaml(storageClasses)
-        factory = StorageClassFactory()
-        factory.addFromConfig(config)
+        cls.factory = StorageClassFactory()
+        cls.factory.addFromConfig(config)
 
     def test_dataset_handle_basic(self):
         inMemoryDataset = 42
@@ -128,6 +138,26 @@ class TestDatasetHandle(unittest.TestCase):
 
         # Ensure the original has not been modified.
         self.assertEqual(len(metric.data), 4)
+
+    def test_handle_conversion(self):
+        metric = MetricsExample(summary={"a": 1, "b": 2}, output={"c": {"d": 5}}, data=[1, 2, 3, 4])
+
+        # Test conversion with no components or parameters.
+        hdl = InMemoryDatasetHandle(metric)
+        retrieved = hdl.get()  # Reset the reference.
+        converted = hdl.get(storageClass="MetricsConversion")
+        self.assertIsNot(type(converted), type(retrieved))
+        self.assertEqual(retrieved, converted)
+
+        # Again with a full storage class.
+        sc = self.factory.getStorageClass("MetricsConversion")
+        converted2 = hdl.get(storageClass=sc)
+        self.assertEqual(converted2, converted)
+
+        # Conversion of component.
+        data = hdl.get(component="data", storageClass="StructuredDataTestListSet")
+        self.assertIsInstance(data, set)
+        self.assertEqual(data, set(converted.data))
 
 
 if __name__ == "__main__":
