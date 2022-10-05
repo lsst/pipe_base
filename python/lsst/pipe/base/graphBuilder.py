@@ -732,6 +732,11 @@ class _PipelineScaffolding:
                 f"Unable to handle type {datasetQueryConstraint} given as datasetQueryConstraint."
             )
 
+        if "datasets" in queryArgs:
+            for i, dataset_type in enumerate(queryArgs["datasets"]):
+                if dataset_type.isComponent():
+                    queryArgs["datasets"][i] = dataset_type.makeCompositeDatasetType()
+
         with registry.queryDataIds(**queryArgs).materialize() as commonDataIds:
             _LOG.debug("Expanding data IDs.")
             commonDataIds = commonDataIds.expanded()
@@ -904,6 +909,7 @@ class _PipelineScaffolding:
                 )
                 isInit = datasetType in self.initIntermediates or datasetType in self.initOutputs
                 subset = commonDataIds.subset(datasetType.dimensions, unique=True)
+                assert not datasetType.isComponent(), "Output datasets cannot be components."
 
                 # look at RUN collection first
                 if run is not None:
@@ -950,16 +956,24 @@ class _PipelineScaffolding:
         self.unfoundRefs = set()
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
+            if datasetType.isComponent():
+                parent_dataset_type = datasetType.makeCompositeDatasetType()
+                component = datasetType.component()
+            else:
+                parent_dataset_type = datasetType
+                component = None
             try:
                 resolvedRefQueryResults = commonDataIds.subset(
                     datasetType.dimensions, unique=True
-                ).findDatasets(datasetType, collections=collections, findFirst=True)
+                ).findDatasets(parent_dataset_type, collections=collections, findFirst=True)
             except MissingDatasetTypeError:
                 resolvedRefQueryResults = []
             dataIdsNotFoundYet = set(refs.keys())
             for resolvedRef in resolvedRefQueryResults:
                 dataIdsNotFoundYet.discard(resolvedRef.dataId)
-                refs[resolvedRef.dataId] = resolvedRef
+                refs[resolvedRef.dataId] = (
+                    resolvedRef if component is None else resolvedRef.makeComponentRef(component)
+                )
             if dataIdsNotFoundYet:
                 if constrainedByAllDatasets:
                     raise RuntimeError(
@@ -1040,6 +1054,12 @@ class _PipelineScaffolding:
                 # for originally, because we want to permit those data ID
                 # values to differ across quanta and dataset types.
                 for datasetType in task.prerequisites:
+                    if datasetType.isComponent():
+                        parent_dataset_type = datasetType.makeCompositeDatasetType()
+                        component = datasetType.component()
+                    else:
+                        parent_dataset_type = datasetType
+                        component = None
                     lookupFunction = lookupFunctions.get(datasetType.name)
                     if lookupFunction is not None:
                         # PipelineTask has provided its own function to do the
@@ -1055,22 +1075,33 @@ class _PipelineScaffolding:
                         # temporal join on a non-dimension-based timespan yet.
                         timespan = quantum.dataId.timespan
                         try:
-                            prereq_refs = [
-                                registry.findDataset(
-                                    datasetType, quantum.dataId, collections=collections, timespan=timespan
-                                )
-                            ]
-                        except KeyError:
+                            prereq_ref = registry.findDataset(
+                                parent_dataset_type,
+                                quantum.dataId,
+                                collections=collections,
+                                timespan=timespan,
+                            )
+                            if prereq_ref is not None:
+                                if component is not None:
+                                    prereq_ref = prereq_ref.makeComponentRef(component)
+                                prereq_refs = [prereq_ref]
+                            else:
+                                prereq_refs = []
+                        except (KeyError, MissingDatasetTypeError):
                             # This dataset type is not present in the registry,
                             # which just means there are no datasets here.
                             prereq_refs = []
                     else:
                         # Most general case.
-                        prereq_refs = list(
-                            registry.queryDatasets(
-                                datasetType, collections=collections, dataId=quantum.dataId, findFirst=True
+                        prereq_refs = [
+                            prereq_ref if component is None else prereq_ref.makeComponentRef(component)
+                            for prereq_ref in registry.queryDatasets(
+                                parent_dataset_type,
+                                collections=collections,
+                                dataId=quantum.dataId,
+                                findFirst=True,
                             ).expanded()
-                        )
+                        ]
                     quantum.prerequisites[datasetType].update(
                         {ref.dataId: ref for ref in prereq_refs if ref is not None}
                     )
