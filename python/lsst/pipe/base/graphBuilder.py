@@ -909,7 +909,10 @@ class _PipelineScaffolding:
                 )
                 isInit = datasetType in self.initIntermediates or datasetType in self.initOutputs
                 subset = commonDataIds.subset(datasetType.dimensions, unique=True)
-                assert not datasetType.isComponent(), "Output datasets cannot be components."
+                # TODO: this assert incorrectly bans component inputs;
+                # investigate on DM-33027.
+                # assert not datasetType.isComponent(), \
+                #     "Output datasets cannot be components."
 
                 # look at RUN collection first
                 if run is not None:
