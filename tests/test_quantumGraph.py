@@ -258,6 +258,10 @@ class QuantumGraphTestCase(unittest.TestCase):
         for task in self.tasks:
             self.assertEqual(self.qGraph.getQuantaForTask(task), self.quantumMap[task])
 
+    def testGetNumberOfQuantaForTask(self):
+        for task in self.tasks:
+            self.assertEqual(self.qGraph.getNumberOfQuantaForTask(task), len(self.quantumMap[task]))
+
     def testGetNodesForTask(self):
         for task in self.tasks:
             nodes: Iterable[QuantumNode] = self.qGraph.getNodesForTask(task)

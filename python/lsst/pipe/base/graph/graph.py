@@ -440,7 +440,7 @@ class QuantumGraph:
             The `set` of `Quantum` that is associated with the specified
             `TaskDef`.
         """
-        return frozenset(node.quantum for node in (self._taskToQuantumNode.get(taskDef) or tuple()))
+        return frozenset(node.quantum for node in self._taskToQuantumNode.get(taskDef, ()))
 
     def getNumberOfQuantaForTask(self, taskDef: TaskDef) -> int:
         """Return all the number of `Quantum` associated with a `TaskDef`.
@@ -456,7 +456,7 @@ class QuantumGraph:
             The number of `Quantum` that are associated with the specified
             `TaskDef`.
         """
-        return len(self._taskToQuantumNode.get(taskDef) or tuple())
+        return len(self._taskToQuantumNode.get(taskDef, ()))
 
     def getNodesForTask(self, taskDef: TaskDef) -> FrozenSet[QuantumNode]:
         """Return all the `QuantumNodes` associated with a `TaskDef`.
