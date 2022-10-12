@@ -913,12 +913,22 @@ class _PipelineScaffolding:
                 # investigate on DM-33027.
                 # assert not datasetType.isComponent(), \
                 #     "Output datasets cannot be components."
+                #
+                # Instead we have to handle them manually to avoid a
+                # deprecation warning, but it is at least confusing and
+                # possibly a bug for components to appear here at all.
+                if datasetType.isComponent():
+                    parent_dataset_type = datasetType.makeCompositeDatasetType()
+                    component = datasetType.component()
+                else:
+                    parent_dataset_type = datasetType
+                    component = None
 
                 # look at RUN collection first
                 if run is not None:
                     try:
                         resolvedRefQueryResults = subset.findDatasets(
-                            datasetType, collections=run, findFirst=True
+                            parent_dataset_type, collections=run, findFirst=True
                         )
                     except MissingDatasetTypeError:
                         resolvedRefQueryResults = []
@@ -938,20 +948,26 @@ class _PipelineScaffolding:
                         # to remember existing ones to avoid generating new
                         # dataset IDs for them.
                         if resolveRefs:
-                            refs[resolvedRef.dataId] = resolvedRef
+                            refs[resolvedRef.dataId] = (
+                                resolvedRef.makeComponentRef(component)
+                                if component is not None
+                                else resolvedRef
+                            )
 
                 # And check skipExistingIn too, if RUN collection is in
                 # it is handled above
                 if skip_collections_wildcard is not None:
                     try:
                         resolvedRefQueryResults = subset.findDatasets(
-                            datasetType, collections=skip_collections_wildcard, findFirst=True
+                            parent_dataset_type, collections=skip_collections_wildcard, findFirst=True
                         )
                     except MissingDatasetTypeError:
                         resolvedRefQueryResults = []
                     for resolvedRef in resolvedRefQueryResults:
                         assert resolvedRef.dataId in refs
-                        refs[resolvedRef.dataId] = resolvedRef
+                        refs[resolvedRef.dataId] = (
+                            resolvedRef.makeComponentRef(component) if component is not None else resolvedRef
+                        )
 
         # Look up input and initInput datasets in the input collection(s).
         # container to accumulate unfound refs, if the common dataIs were not
