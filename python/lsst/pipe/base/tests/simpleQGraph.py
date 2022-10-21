@@ -27,7 +27,8 @@ __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import itertools
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
@@ -361,6 +362,7 @@ def makeSimpleQGraph(
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
     makeDatastoreRecords: bool = False,
     resolveRefs: bool = False,
+    bind: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
@@ -409,6 +411,9 @@ def makeSimpleQGraph(
     resolveRefs : `bool`, optional
         If `True` then resolve all input references and generate random dataset
         IDs for all output and intermediate datasets.
+    bind : `Mapping`, optional
+        Mapping containing literal values that should be injected into the
+        ``userQuery`` expression, keyed by the identifiers they replace.
 
     Returns
     -------
@@ -439,10 +444,11 @@ def makeSimpleQGraph(
         datastore=butler.datastore if makeDatastoreRecords else None,
     )
     _LOG.debug(
-        "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r",
+        "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r bind=%s",
         butler.collections,
         run or butler.run,
         userQuery,
+        bind,
     )
     qgraph = builder.makeGraph(
         pipeline,
@@ -451,6 +457,7 @@ def makeSimpleQGraph(
         userQuery=userQuery,
         datasetQueryConstraint=datasetQueryConstraint,
         resolveRefs=resolveRefs,
+        bind=bind,
     )
 
     return butler, qgraph

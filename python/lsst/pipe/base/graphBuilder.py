@@ -659,6 +659,7 @@ class _PipelineScaffolding:
         userQuery: Optional[str],
         externalDataId: DataCoordinate,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
+        bind: Optional[Mapping[str, Any]] = None,
     ) -> Iterator[DataCoordinateQueryResults]:
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
@@ -683,6 +684,9 @@ class _PipelineScaffolding:
             The query constraint variant that should be used to constraint the
             query based on dataset existance, defaults to
             `DatasetQueryConstraintVariant.ALL`.
+        bind : `Mapping`, optional
+            Mapping containing literal values that should be injected into the
+            ``userQuery`` expression, keyed by the identifiers they replace.
 
         Returns
         -------
@@ -709,6 +713,7 @@ class _PipelineScaffolding:
             "dimensions": self.dimensions,
             "where": userQuery,
             "dataId": externalDataId,
+            "bind": bind,
         }
         if datasetQueryConstraint == DatasetQueryConstraintVariant.ALL:
             _LOG.debug("Constraining graph query using all datasets in pipeline.")
@@ -1287,6 +1292,7 @@ class GraphBuilder:
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         metadata: Optional[Mapping[str, Any]] = None,
         resolveRefs: bool = False,
+        bind: Optional[Mapping[str, Any]] = None,
     ) -> QuantumGraph:
         """Create execution graph for a pipeline.
 
@@ -1315,6 +1321,9 @@ class GraphBuilder:
             If `True` then resolve all input references and generate random
             dataset IDs for all output and intermediate datasets. True value
             requires ``run`` collection to be specified.
+        bind : `Mapping`, optional
+            Mapping containing literal values that should be injected into the
+            ``userQuery`` expression, keyed by the identifiers they replace.
 
         Returns
         -------
@@ -1348,7 +1357,7 @@ class GraphBuilder:
         else:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
         with scaffolding.connectDataIds(
-            self.registry, collections, userQuery, dataId, datasetQueryConstraint
+            self.registry, collections, userQuery, dataId, datasetQueryConstraint, bind
         ) as commonDataIds:
             condition = datasetQueryConstraint == DatasetQueryConstraintVariant.ALL
             scaffolding.resolveDatasetRefs(
