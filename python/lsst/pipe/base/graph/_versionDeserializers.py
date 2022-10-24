@@ -34,7 +34,13 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Callable, ClassVar, DefaultDict, Dict, Optional, Set, Tuple, Type
 
 import networkx as nx
-from lsst.daf.butler import DimensionRecord, DimensionUniverse, Quantum, SerializedDimensionRecord
+from lsst.daf.butler import (
+    DimensionConfig,
+    DimensionRecord,
+    DimensionUniverse,
+    Quantum,
+    SerializedDimensionRecord,
+)
 from lsst.utils import doImportType
 
 from ..config import PipelineTaskConfig
@@ -56,10 +62,7 @@ class StructSizeDescriptor:
         return struct.calcsize(owner.FMT_STRING())
 
 
-# MyPy doesn't seem to like the idea of an abstract dataclass.  It seems to
-# work, but maybe we're doing something that isn't really supported (or maybe
-# I misunderstood the error message).
-@dataclass  # type: ignore
+@dataclass
 class DeserializerBase(ABC):
     @classmethod
     @abstractmethod
@@ -112,7 +115,10 @@ class DeserializerBase(ABC):
         raise NotImplementedError("Base class does not implement this method")
 
     def constructGraph(
-        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+        self,
+        nodes: set[uuid.UUID],
+        _readBytes: Callable[[int, int], bytes],
+        universe: Optional[DimensionUniverse] = None,
     ) -> QuantumGraph:
         """Constructs a graph from the deserialized information.
 
@@ -192,7 +198,10 @@ class DeserializerV1(DeserializerBase):
         return None
 
     def constructGraph(
-        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+        self,
+        nodes: set[uuid.UUID],
+        _readBytes: Callable[[int, int], bytes],
+        universe: Optional[DimensionUniverse] = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
@@ -322,7 +331,10 @@ class DeserializerV2(DeserializerBase):
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
-        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+        self,
+        nodes: set[uuid.UUID],
+        _readBytes: Callable[[int, int], bytes],
+        universe: Optional[DimensionUniverse] = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
@@ -474,6 +486,14 @@ class DeserializerV3(DeserializerBase):
         infoMappings.dimensionRecords = {}
         for k, v in infoMap["DimensionRecords"].items():
             infoMappings.dimensionRecords[int(k)] = SerializedDimensionRecord(**v)
+        # This is important to be a get call here, so that it supports versions
+        # of saved quantum graph that might not have a saved universe without
+        # changing save format
+        if (universeConfig := infoMap.get("universe")) is not None:
+            universe = DimensionUniverse(config=DimensionConfig(universeConfig))
+        else:
+            universe = DimensionUniverse()
+        infoMappings.universe = universe
         self.infoMappings = infoMappings
         return infoMappings
 
@@ -481,7 +501,10 @@ class DeserializerV3(DeserializerBase):
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
-        self, nodes: set[uuid.UUID], _readBytes: Callable[[int, int], bytes], universe: DimensionUniverse
+        self,
+        nodes: set[uuid.UUID],
+        _readBytes: Callable[[int, int], bytes],
+        universe: Optional[DimensionUniverse] = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
@@ -492,6 +515,16 @@ class DeserializerV3(DeserializerBase):
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
         recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
+
+        if universe is not None:
+            if not universe.isCompatibleWith(self.infoMappings.universe):
+                saved = self.infoMappings.universe
+                raise RuntimeError(
+                    f"The saved dimension universe ({saved.namespace}@v{saved.version}) is not "
+                    f"compatible with the supplied universe ({universe.namespace}@v{universe.version})."
+                )
+        else:
+            universe = self.infoMappings.universe
 
         for node in nodes:
             start, stop = self.infoMappings.map[node]["bytes"]

@@ -120,7 +120,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     """Tests the various functions of a quantum graph"""
 
     def setUp(self):
-        config = Config(
+        self.config = Config(
             {
                 "version": 1,
                 "namespace": "pipe_base_test",
@@ -158,7 +158,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 "packers": {},
             }
         )
-        universe = DimensionUniverse(config=config)
+        universe = DimensionUniverse(config=self.config)
         # need to make a mapping of TaskDef to set of quantum
         quantumMap = {}
         tasks = []
@@ -215,7 +215,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
         self.quantumMap = quantumMap
-        self.qGraph = QuantumGraph(quantumMap, metadata=METADATA)
+        self.qGraph = QuantumGraph(quantumMap, metadata=METADATA, universe=universe)
         self.universe = universe
 
     def testTaskGraph(self):
@@ -393,13 +393,29 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
 
+            # Different universes.
+            tmpFile.seek(0)
+            different_config = self.config.copy()
+            different_config["version"] = 1_000_000
+            different_universe = DimensionUniverse(config=different_config)
+            with self.assertLogs("lsst.daf.butler", "INFO"):
+                QuantumGraph.load(tmpFile, different_universe)
+
+            different_config["namespace"] = "incompatible"
+            different_universe = DimensionUniverse(config=different_config)
+            print("Trying with uni ", different_universe)
+            tmpFile.seek(0)
+            with self.assertRaises(RuntimeError) as cm:
+                QuantumGraph.load(tmpFile, different_universe)
+            self.assertIn("not compatible with", str(cm.exception))
+
     def testSaveLoadUri(self):
         uri = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".qgraph") as tmpFile:
                 uri = tmpFile.name
                 self.qGraph.saveUri(uri)
-                restore = QuantumGraph.loadUri(uri, self.universe)
+                restore = QuantumGraph.loadUri(uri)
                 self.assertEqual(restore.metadata, METADATA)
                 self.assertEqual(self.qGraph, restore)
                 nodeNumberId = random.randint(0, len(self.qGraph) - 1)
@@ -451,7 +467,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         conn.create_bucket(Bucket="testBucket")
         uri = "s3://testBucket/qgraph.qgraph"
         self.qGraph.saveUri(uri)
-        restore = QuantumGraph.loadUri(uri, self.universe)
+        restore = QuantumGraph.loadUri(uri)
         self.assertEqual(self.qGraph, restore)
         nodeId = list(self.qGraph)[0].nodeId
         restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeId,))
@@ -461,6 +477,11 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testContains(self):
         firstNode = next(iter(self.qGraph))
         self.assertIn(firstNode, self.qGraph)
+
+    def testDimensionUniverseInSave(self):
+        _, header = self.qGraph._buildSaveObject(returnHeader=True)
+        # type ignore because buildSaveObject does not have method overload
+        self.assertEqual(header["universe"], self.universe.dimensionConfig.toDict())  # type: ignore
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

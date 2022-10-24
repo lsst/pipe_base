@@ -1,0 +1,2 @@
+QuantumGraph now saves the DimensionUniverse it was created with when it is persisted. This removes the need
+to explicitly pass the DimensionUniverse when loading a saved graph.
