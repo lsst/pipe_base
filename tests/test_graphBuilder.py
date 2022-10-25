@@ -66,6 +66,21 @@ class GraphBuilderTestCase(unittest.TestCase):
             with self.assertRaises(UserExpressionError):
                 simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery="instrument = 'foo'")
 
+    def testUserQueryBind(self):
+        """Verify that bind values work for user query."""
+        pipeline = simpleQGraph.makeSimplePipeline(
+            nQuanta=5, instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
+        )
+        instr = simpleQGraph.SimpleInstrument.getName()
+        # With a literal in the user query
+        with temporaryDirectory() as root:
+            simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery=f"instrument = '{instr}'")
+        # With a bind for the user query
+        with temporaryDirectory() as root:
+            simpleQGraph.makeSimpleQGraph(
+                root=root, pipeline=pipeline, userQuery="instrument = instr", bind={"instr": instr}
+            )
+
     def test_datastore_records(self):
         """Test for generating datastore records."""
         with temporaryDirectory() as root:
