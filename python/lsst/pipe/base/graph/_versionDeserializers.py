@@ -254,6 +254,7 @@ class DeserializerV1(DeserializerBase):
             _quantumToNodeId=quantumToNodeId,
             _buildId=self.returnValue._buildId,
             metadata=self.returnValue.metadata,
+            universe=universe,
         )
         return qGraph
 
@@ -387,6 +388,7 @@ class DeserializerV2(DeserializerBase):
             _quantumToNodeId=quantumToNodeId,
             _buildId=self.returnValue._buildId,
             metadata=self.returnValue.metadata,
+            universe=universe,
         )
         return qGraph
 

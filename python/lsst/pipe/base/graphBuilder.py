@@ -1088,7 +1088,9 @@ class _PipelineScaffolding:
             qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
 
-        graph = QuantumGraph(graphInput, metadata=metadata, pruneRefs=self.unfoundRefs)
+        graph = QuantumGraph(
+            graphInput, metadata=metadata, pruneRefs=self.unfoundRefs, universe=self.dimensions.universe
+        )
         return graph
 
 
