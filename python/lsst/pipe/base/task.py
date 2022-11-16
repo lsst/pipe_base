@@ -247,39 +247,8 @@ class Task:
 
         Returning catalogs rather than just schemas allows us to save e.g.
         slots for SourceCatalog as well.
-
-        See also
-        --------
-        Task.getAllSchemaCatalogs
         """
         return {}
-
-    def getAllSchemaCatalogs(self) -> Dict[str, Any]:
-        """Get schema catalogs for all tasks in the hierarchy, combining the
-        results into a single dict.
-
-        Returns
-        -------
-        schemacatalogs : `dict`
-            Keys are butler dataset type, values are a empty catalog (an
-            instance of the appropriate `lsst.afw.table` Catalog type) for all
-            tasks in the hierarchy, from the top-level task down
-            through all subtasks.
-
-        Notes
-        -----
-        This method may be called on any task in the hierarchy; it will return
-        the same answer, regardless.
-
-        The default implementation should always suffice. If your subtask uses
-        schemas the override `Task.getSchemaCatalogs`, not this method.
-        """
-        schemaDict = self.getSchemaCatalogs()
-        for wref in self._taskDict.values():
-            subtask = wref()
-            assert subtask is not None, "Unexpected garbage collection of subtask."
-            schemaDict.update(subtask.getSchemaCatalogs())
-        return schemaDict
 
     def getFullMetadata(self) -> TaskMetadata:
         """Get metadata for all tasks.
