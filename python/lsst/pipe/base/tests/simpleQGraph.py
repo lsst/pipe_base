@@ -274,7 +274,7 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
 
 
 def populateButler(
-    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] = None
+    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] | None = None
 ) -> None:
     """Populate data butler with data needed for test.
 

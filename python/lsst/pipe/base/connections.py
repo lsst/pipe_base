@@ -411,7 +411,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     dimensions: ClassVar[Set[str]]
 
-    def __init__(self, *, config: "PipelineTaskConfig" = None):
+    def __init__(self, *, config: "PipelineTaskConfig" | None = None):
         self.inputs: Set[str] = set(self.inputs)
         self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
         self.outputs: Set[str] = set(self.outputs)

@@ -30,7 +30,19 @@ import warnings
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Literal, Mapping, MutableMapping, Optional, Set, Union
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    Hashable,
+    List,
+    Literal,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Union,
+)
 
 import yaml
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -46,7 +58,7 @@ class PipelineYamlLoader(yaml.SafeLoader):
     found inside a pipeline file at a given scope.
     """
 
-    def construct_mapping(self, node: yaml.Node, deep: bool = False) -> Mapping[str, Any]:
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
         # do the call to super first so that it can do all the other forms of
         # checking on this node. If you check the uniqueness of keys first
         # it would save the work that super does in the case of a failure, but
