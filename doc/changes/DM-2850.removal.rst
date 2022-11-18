@@ -1,0 +1,2 @@
+Removed the ``Task.getSchemaCatalogs`` and ``Task.getAllSchemaCatalogs`` APIs.
+These were used by ``CmdLineTask`` but are no longer used in the current middleware.
