@@ -28,7 +28,6 @@ __all__ = ["PipelineTask"]  # Classes in this module
 
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional, Type, Union
 
-from .butlerQuantumContext import ButlerQuantumContext
 from .connections import InputQuantizedConnection, OutputQuantizedConnection
 from .task import Task
 
@@ -37,6 +36,7 @@ if TYPE_CHECKING:
 
     from lsst.utils.logging import LsstLogAdapter
 
+    from .butlerQuantumContext import ButlerQuantumContext
     from .config import PipelineTaskConfig, ResourceConfig
     from .struct import Struct
 
