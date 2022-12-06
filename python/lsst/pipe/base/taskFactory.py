@@ -30,10 +30,11 @@ from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Optional, Type
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import Butler
+    from lsst.daf.butler import Butler, DatasetRef, LimitedButler
 
     from .config import PipelineTaskConfig
     from .configOverrides import ConfigOverrides
+    from .pipeline import TaskDef
     from .pipelineTask import PipelineTask
 
 
@@ -79,10 +80,42 @@ class TaskFactory(metaclass=ABCMeta):
         Returns
         -------
         task : `PipelineTask`
-            Instance of a `PipelineTask` class or `None` on errors.
+            Instance of a `PipelineTask` class.
 
         Raises
         ------
         Any exceptions that are raised by PipelineTask constructor or its
         configuration class are propagated back to caller.
         """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def makeTaskFromLimited(
+        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: list[DatasetRef] | None
+    ) -> PipelineTask:
+        """Create new PipelineTask instance using limited Butler.
+
+        Parameters
+        ----------
+        taskDef : `~lsst.pipe.base.TaskDef`
+            Task definition structure.
+        butler : `lsst.daf.butler.LimitedButler`
+            Butler instance used to obtain initialization inputs for task.
+        initInputRefs : `list` of `~lsst.daf.butler.DatasetRef` or None
+            List of resolved dataset references for init inputs for this task.
+
+        Returns
+        -------
+        task : `PipelineTask`
+            Instance of a PipelineTask class.
+
+        Raises
+        ------
+        Any exceptions that are raised by PipelineTask constructor or its
+        configuration class are propagated back to caller.
+
+        Notes
+        -----
+        Compared to the `makeTask` method this one works with `LimitedButler`.
+        """
+        raise NotImplementedError()

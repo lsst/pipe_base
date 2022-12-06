@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union,
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
-from lsst.daf.butler import Butler, Config, DataId, DatasetType, Formatter
+from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, Formatter, LimitedButler
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
@@ -168,6 +168,15 @@ class AddTaskFactoryMock(TaskFactory):
             if overrides:
                 overrides.applyTo(config)
         task = taskClass(config=config, initInputs=None, name=name)
+        task.taskFactory = self  # type: ignore
+        return task
+
+    def makeTaskFromLimited(
+        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: list[DatasetRef] | None
+    ) -> PipelineTask:
+        taskClass = taskDef.taskClass
+        assert taskClass is not None
+        task = taskClass(config=taskDef.config, initInputs=None, name=taskDef.label)
         task.taskFactory = self  # type: ignore
         return task
 
@@ -332,7 +341,7 @@ def populateButler(
                 butler.put(data, dsType, run=run)
             else:
                 if dsType.endswith("_config"):
-                    # find a confing from matching task name or make a new one
+                    # find a config from matching task name or make a new one
                     taskLabel, _, _ = dsType.rpartition("_")
                     taskDef = taskDefMap.get(taskLabel)
                     if taskDef is not None:
