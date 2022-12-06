@@ -216,8 +216,15 @@ class QuantumGraphTestCase(unittest.TestCase):
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
         self.quantumMap = quantumMap
+        self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
+        globalInitOutputs = [DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe))]
         self.qGraph = QuantumGraph(
-            quantumMap, metadata=METADATA, universe=universe, initInputs=initInputs, initOutputs=initOutputs
+            quantumMap,
+            metadata=METADATA,
+            universe=universe,
+            initInputs=initInputs,
+            initOutputs=initOutputs,
+            globalInitOutputs=globalInitOutputs,
         )
         self.universe = universe
 
@@ -247,7 +254,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         inputs = {q.quantum for q in self.qGraph.inputQuanta}
         self.assertEqual(self.quantumMap[self.tasks[0]] | self.quantumMap[self.tasks[3]], inputs)
 
-    def testOutputtQuanta(self):
+    def testOutputQuanta(self):
         outputs = {q.quantum for q in self.qGraph.outputQuanta}
         self.assertEqual(self.quantumMap[self.tasks[2]] | self.quantumMap[self.tasks[3]], outputs)
 
@@ -308,6 +315,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         subsetList = list(subset)
         self.assertEqual(allNodes[0].quantum, subsetList[0].quantum)
         self.assertEqual(self.qGraph._buildId, subset._buildId)
+        self.assertEqual(len(subset.globalInitOutputRefs()), 1)
 
     def testSubsetToConnected(self):
         # False because there are two quantum chains for two distinct sets of
@@ -399,6 +407,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             restoreSub = QuantumGraph.load(tmpFile, self.universe, nodes=(nodeId,))
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
+            self.assertEqual(len(restoreSub.globalInitOutputRefs()), 1)
             # Check that InitInput and InitOutput refs are restored correctly.
             for taskDef in restore.iterTaskGraph():
                 if taskDef.label in ("S", "T"):
