@@ -22,11 +22,16 @@
 from typing import Any
 
 import click
-from lsst.daf.butler.cli.opt import repo_argument
+from lsst.daf.butler.cli.opt import (
+    options_file_option,
+    register_dataset_types_option,
+    repo_argument,
+    transfer_dimensions_option,
+)
 from lsst.daf.butler.cli.utils import ButlerCommand
 
 from ... import script
-from ..opt import instrument_argument
+from ..opt import instrument_argument, update_output_chain_option
 
 
 @click.command(short_help="Add an instrument definition to the repository", cls=ButlerCommand)
@@ -36,3 +41,22 @@ from ..opt import instrument_argument
 def register_instrument(*args: Any, **kwargs: Any) -> None:
     """Add an instrument to the data repository."""
     script.register_instrument(*args, **kwargs)
+
+
+@click.command(short_help="Transfer datasets from a graph to a butler.", cls=ButlerCommand)
+@click.argument("graph", required=True)
+@click.argument("dest", required=True)
+@register_dataset_types_option()
+@transfer_dimensions_option()
+@update_output_chain_option()
+@options_file_option()
+def transfer_from_graph(**kwargs: Any) -> None:
+    """Transfer datasets from a quantum graph to a destination butler.
+
+    SOURCE is a URI to the Butler repository containing the RUN dataset.
+
+    DEST is a URI to the Butler repository that will receive copies of the
+    datasets.
+    """
+    number = script.transfer_from_graph(**kwargs)
+    print(f"Number of datasets transferred: {number}")

@@ -19,8 +19,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from lsst.daf.butler.cli.utils import MWOptionDecorator
+__all__ = ("instrument_option", "update_output_chain_option")
+
+from lsst.daf.butler.cli.utils import MWOptionDecorator, unwrap
 
 instrument_option = MWOptionDecorator(
     "--instrument", help="The name or fully-qualified class name of an instrument."
+)
+
+
+update_output_chain_option = MWOptionDecorator(
+    "--update-output-chain",
+    help=unwrap(
+        """If quantum graph metadata includes output run name and output collection
+        which is a chain, update the chain definition to include run name as the
+        first collection in the chain."""
+    ),
+    is_flag=True,
+    default=False,
 )
