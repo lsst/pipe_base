@@ -188,10 +188,14 @@ class QuantumGraph:
             # `_DatasetTracker` for the connections name, with a value of
             # the TaskDef in the appropriate field
             for inpt in iterConnections(connections, ("inputs", "prerequisiteInputs", "initInputs")):
-                self._datasetDict.addConsumer(DatasetTypeName(inpt.name), taskDef)
+                # Have to handle components in inputs.
+                dataset_name, _, _ = inpt.name.partition(".")
+                self._datasetDict.addConsumer(DatasetTypeName(dataset_name), taskDef)
 
             for output in iterConnections(connections, ("outputs",)):
-                self._datasetDict.addProducer(DatasetTypeName(output.name), taskDef)
+                # Have to handle possible components in outputs.
+                dataset_name, _, _ = output.name.partition(".")
+                self._datasetDict.addProducer(DatasetTypeName(dataset_name), taskDef)
 
             # For each `Quantum` in the set of all `Quantum` for this task,
             # add a key to the `_DatasetTracker` that is a `DatasetRef` for one
