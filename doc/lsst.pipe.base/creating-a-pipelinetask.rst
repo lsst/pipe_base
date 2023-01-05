@@ -1057,7 +1057,7 @@ See :ref:`pipeline-appendix-i` for the complete example.
 
 Appendix A
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV1.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV1.py
     :language: python
     :linenos:
 
@@ -1066,7 +1066,7 @@ Appendix A
 
 Appendix B
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV2.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV2.py
     :language: python
     :linenos:
 
@@ -1074,7 +1074,7 @@ Appendix B
 
 Appendix C
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV3.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV3.py
     :language: python
     :linenos:
 
@@ -1082,7 +1082,7 @@ Appendix C
 
 Appendix D
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV4.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV4.py
     :language: python
     :linenos:
 
@@ -1090,7 +1090,7 @@ Appendix D
 
 Appendix E
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV5.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV5.py
     :language: python
     :linenos:
 
@@ -1098,7 +1098,7 @@ Appendix E
 
 Appendix F
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV6.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV6.py
     :language: python
     :linenos:
 
@@ -1106,7 +1106,7 @@ Appendix F
 
 Appendix G
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV7.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV7.py
     :language: python
     :linenos:
 
@@ -1114,7 +1114,7 @@ Appendix G
 
 Appendix H
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV8.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV8.py
     :language: python
     :linenos:
 
@@ -1122,7 +1122,7 @@ Appendix H
 
 Appendix I
 ==========
-.. literalinclude:: PipelineTask_Examples/aperturePipelineTaskV9.py
+.. literalinclude:: /_static/pipe_base/PipelineTask_Examples/aperturePipelineTaskV9.py
     :language: python
     :linenos:
 
