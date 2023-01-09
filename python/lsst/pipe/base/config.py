@@ -173,6 +173,9 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
         # documentation on metaclasses
         super().__init__(name, bases, dct)
 
+    ConnectionsClass: type[PipelineTaskConnections]
+    ConnectionsConfigClass: type[pexConfig.Config]
+
 
 class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     """Configuration class for `PipelineTask`
