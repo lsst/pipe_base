@@ -54,8 +54,6 @@ from ..taskFactory import TaskFactory
 if TYPE_CHECKING:
     from lsst.daf.butler import Registry
 
-    from ..configOverrides import ConfigOverrides
-
 _LOG = logging.getLogger(__name__)
 
 
@@ -156,23 +154,7 @@ class AddTaskFactoryMock(TaskFactory):
         self.stopAt = stopAt  # AddTask raises exception at this call to run()
 
     def makeTask(
-        self,
-        taskClass: Type[PipelineTask],
-        name: Optional[str],
-        config: Optional[PipelineTaskConfig],
-        overrides: Optional[ConfigOverrides],
-        butler: Optional[Butler],
-    ) -> PipelineTask:
-        if config is None:
-            config = taskClass.ConfigClass()
-            if overrides:
-                overrides.applyTo(config)
-        task = taskClass(config=config, initInputs=None, name=name)
-        task.taskFactory = self  # type: ignore
-        return task
-
-    def makeTaskFromLimited(
-        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: list[DatasetRef] | None
+        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: Iterable[DatasetRef] | None
     ) -> PipelineTask:
         taskClass = taskDef.taskClass
         assert taskClass is not None

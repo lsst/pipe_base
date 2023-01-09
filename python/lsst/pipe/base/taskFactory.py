@@ -27,13 +27,12 @@ from __future__ import annotations
 __all__ = ["TaskFactory"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Optional, Type
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import Butler, DatasetRef, LimitedButler
+    from lsst.daf.butler import DatasetRef, LimitedButler
 
-    from .config import PipelineTaskConfig
-    from .configOverrides import ConfigOverrides
     from .pipeline import TaskDef
     from .pipelineTask import PipelineTask
 
@@ -47,53 +46,9 @@ class TaskFactory(metaclass=ABCMeta):
 
     @abstractmethod
     def makeTask(
-        self,
-        taskClass: Type[PipelineTask],
-        name: Optional[str],
-        config: Optional[PipelineTaskConfig],
-        overrides: Optional[ConfigOverrides],
-        butler: Optional[Butler],
+        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: Iterable[DatasetRef] | None
     ) -> PipelineTask:
-        """Create new PipelineTask instance from its class.
-
-        Parameters
-        ----------
-        taskClass : `type`
-            `PipelineTask` sub-class.
-        name : `str` or `None`
-            The name of the new task; if `None` then use
-            ``taskClass._DefaultName``.
-        config : `pex.Config` or `None`
-            Configuration object, if `None` then use task-defined
-            configuration class (``taskClass.ConfigClass``) to create new
-            instance.
-        overrides : `ConfigOverrides` or `None`
-            Configuration overrides, this should contain all overrides to be
-            applied to a default task config, including instrument-specific,
-            obs-package specific, and possibly command-line overrides. This
-            parameter is exclusive with ``config``, only one of the two can be
-            specified as not-`None`.
-        butler : `~lsst.daf.butler.Butler` or None
-            Butler instance used to obtain initialization inputs for
-            PipelineTasks. If `None`, some PipelineTasks will not be usable
-
-        Returns
-        -------
-        task : `PipelineTask`
-            Instance of a `PipelineTask` class.
-
-        Raises
-        ------
-        Any exceptions that are raised by PipelineTask constructor or its
-        configuration class are propagated back to caller.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def makeTaskFromLimited(
-        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: list[DatasetRef] | None
-    ) -> PipelineTask:
-        """Create new PipelineTask instance using limited Butler.
+        """Create new PipelineTask instance from its `~lsst.pipe.base.TaskDef`.
 
         Parameters
         ----------
@@ -101,7 +56,7 @@ class TaskFactory(metaclass=ABCMeta):
             Task definition structure.
         butler : `lsst.daf.butler.LimitedButler`
             Butler instance used to obtain initialization inputs for task.
-        initInputRefs : `list` of `~lsst.daf.butler.DatasetRef` or None
+        initInputRefs : `Iterable` of `~lsst.daf.butler.DatasetRef` or `None`
             List of resolved dataset references for init inputs for this task.
 
         Returns
@@ -113,9 +68,5 @@ class TaskFactory(metaclass=ABCMeta):
         ------
         Any exceptions that are raised by PipelineTask constructor or its
         configuration class are propagated back to caller.
-
-        Notes
-        -----
-        Compared to the `makeTask` method this one works with `LimitedButler`.
         """
         raise NotImplementedError()
