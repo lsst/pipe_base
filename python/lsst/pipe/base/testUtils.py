@@ -333,7 +333,7 @@ def runTestQuantum(
         be queried for the arguments ``runQuantum`` passed to ``run``.
     """
     _resolveTestQuantumInputs(butler, quantum)
-    butlerQc = ButlerQuantumContext(butler, quantum)
+    butlerQc = ButlerQuantumContext.from_full(butler, quantum)
     # This is a type ignore, because `connections` is a dynamic class, but
     # it for sure will have this property
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore

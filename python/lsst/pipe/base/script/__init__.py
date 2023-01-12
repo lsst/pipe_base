@@ -20,3 +20,4 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .register_instrument import register_instrument
+from .transfer_from_graph import transfer_from_graph

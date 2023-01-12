@@ -509,6 +509,11 @@ class DeserializerV3(DeserializerBase):
         else:
             universe = DimensionUniverse()
         infoMappings.universe = universe
+        infoMappings.globalInitOutputRefs = []
+        if (json_refs := infoMap.get("GlobalInitOutputRefs")) is not None:
+            infoMappings.globalInitOutputRefs = [
+                DatasetRef.from_json(json_ref, universe=universe) for json_ref in json_refs
+            ]
         self.infoMappings = infoMappings
         return infoMappings
 
@@ -637,6 +642,8 @@ class DeserializerV3(DeserializerBase):
         newGraph._connectedQuanta = graph
         newGraph._initInputRefs = initInputRefs
         newGraph._initOutputRefs = initOutputRefs
+        newGraph._globalInitOutputRefs = self.infoMappings.globalInitOutputRefs
+        newGraph._universe = universe
         return newGraph
 
 

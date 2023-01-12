@@ -49,7 +49,7 @@ from lsst.daf.butler import (
     Quantum,
     Registry,
 )
-from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
 from lsst.utils import doImportType
@@ -501,12 +501,17 @@ class _DatasetIdMaker:
     def resolveRef(self, ref: DatasetRef) -> DatasetRef:
         if ref.id is not None:
             return ref
+        # For components we need their parent dataset type.
+        if ref.isComponent():
+            ref = ref.makeCompositeRef()
+            # Some basic check - parent should be resolved if this is an
+            # existing input, or it should be in the cache already if it is
+            # an intermediate.
+            if ref.id is None and (ref.datasetType, ref.dataId) not in self.resolved:
+                raise ValueError(f"Composite dataset is missing from cache: {ref}")
         key = ref.datasetType, ref.dataId
         if (resolved := self.resolved.get(key)) is None:
-            datasetId = self.datasetIdFactory.makeDatasetId(
-                self.run, ref.datasetType, ref.dataId, DatasetIdGenEnum.UNIQUE
-            )
-            resolved = ref.resolved(datasetId, self.run)
+            resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
             self.resolved[key] = resolved
         return resolved
 
@@ -567,7 +572,7 @@ class _PipelineScaffolding:
         # Aggregate and categorize the DatasetTypes in the Pipeline.
         datasetTypes = PipelineDatasetTypes.fromPipeline(pipeline, registry=registry)
         # Construct dictionaries that map those DatasetTypes to structures
-        # that will (later) hold addiitonal information about them.
+        # that will (later) hold additional information about them.
         for attr in (
             "initInputs",
             "initIntermediates",
@@ -649,6 +654,10 @@ class _PipelineScaffolding:
     Query" (`DimensionGraph`).
 
     This is required to be a superset of all task quantum dimensions.
+    """
+
+    globalInitOutputs: _DatasetDict | None = None
+    """Per-pipeline global output datasets (e.g. packages) (`_DatasetDict`)
     """
 
     @contextmanager
@@ -877,11 +886,21 @@ class _PipelineScaffolding:
             and ``skipExistingIn`` does not include output run, or if only
             some outputs are present and ``clobberOutputs`` is `False`.
         """
+        # Run may be provided but it does not have to exist, in that case we
+        # use it for resolving references but don't check it for existing refs.
+        run_exists = False
+        if run:
+            try:
+                run_exists = bool(registry.queryCollections(run))
+            except MissingCollectionError:
+                # Undocumented exception is raise if it does not exist
+                pass
+
         skip_collections_wildcard: CollectionWildcard | None = None
         skipExistingInRun = False
         if skipExistingIn:
             skip_collections_wildcard = CollectionWildcard.from_expression(skipExistingIn)
-            if run:
+            if run_exists:
                 # as optimization check in the explicit list of names first
                 skipExistingInRun = run in skip_collections_wildcard.strings
                 if not skipExistingInRun:
@@ -900,7 +919,7 @@ class _PipelineScaffolding:
 
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
-        if run is not None or skip_collections_wildcard is not None:
+        if run_exists or skip_collections_wildcard is not None:
             for datasetType, refs in itertools.chain(
                 self.initIntermediates.items(),
                 self.initOutputs.items(),
@@ -930,7 +949,7 @@ class _PipelineScaffolding:
                     component = None
 
                 # look at RUN collection first
-                if run is not None:
+                if run_exists:
                     try:
                         resolvedRefQueryResults = subset.findDatasets(
                             parent_dataset_type, collections=run, findFirst=True
@@ -1003,7 +1022,7 @@ class _PipelineScaffolding:
                     raise RuntimeError(
                         f"{len(dataIdsNotFoundYet)} dataset(s) of type "
                         f"'{datasetType.name}' was/were present in a previous "
-                        f"query, but could not be found now."
+                        f"query, but could not be found now. "
                         f"This is either a logic bug in QuantumGraph generation "
                         f"or the input collections have been modified since "
                         f"QuantumGraph generation began."
@@ -1041,7 +1060,7 @@ class _PipelineScaffolding:
                 # datasets that already exist would have already caused an
                 # exception to be raised.  We never update the DatasetRefs in
                 # the quantum because those should never be resolved.
-                if skip_collections_wildcard is not None or (run is not None and clobberOutputs):
+                if skip_collections_wildcard is not None or (run_exists and clobberOutputs):
                     resolvedRefs = []
                     unresolvedRefs = []
                     haveMetadata = False
@@ -1126,9 +1145,9 @@ class _PipelineScaffolding:
                                 findFirst=True,
                             ).expanded()
                         ]
-                    quantum.prerequisites[datasetType].update(
-                        {ref.dataId: ref for ref in prereq_refs if ref is not None}
-                    )
+                    prereq_refs_map = {ref.dataId: ref for ref in prereq_refs if ref is not None}
+                    quantum.prerequisites[datasetType].update(prereq_refs_map)
+                    task.prerequisites[datasetType].update(prereq_refs_map)
 
                 # Resolve all quantum inputs and outputs.
                 if idMaker:
@@ -1173,6 +1192,16 @@ class _PipelineScaffolding:
                 else:
                     raise AssertionError("OutputExistsError should have already been raised.")
 
+        # Collect initOutputs that do not belong to any task.
+        global_dataset_types: set[DatasetType] = set(self.initOutputs)
+        for task in self.tasks:
+            global_dataset_types -= set(task.initOutputs)
+        if global_dataset_types:
+            self.globalInitOutputs = _DatasetDict.fromSubset(global_dataset_types, self.initOutputs)
+            if idMaker is not None:
+                for refDict in self.globalInitOutputs.values():
+                    refDict.update(idMaker.resolveDict(refDict))
+
     def makeQuantumGraph(
         self, metadata: Optional[Mapping[str, Any]] = None, datastore: Optional[Datastore] = None
     ) -> QuantumGraph:
@@ -1216,6 +1245,11 @@ class _PipelineScaffolding:
         taskInitInputs = {task.taskDef: task.initInputs.unpackSingleRefs().values() for task in self.tasks}
         taskInitOutputs = {task.taskDef: task.initOutputs.unpackSingleRefs().values() for task in self.tasks}
 
+        globalInitOutputs: list[DatasetRef] = []
+        if self.globalInitOutputs is not None:
+            for refs_dict in self.globalInitOutputs.values():
+                globalInitOutputs.extend(refs_dict.values())
+
         graph = QuantumGraph(
             graphInput,
             metadata=metadata,
@@ -1223,6 +1257,7 @@ class _PipelineScaffolding:
             universe=self.dimensions.universe,
             initInputs=taskInitInputs,
             initOutputs=taskInitOutputs,
+            globalInitOutputs=globalInitOutputs,
         )
         return graph
 
@@ -1305,7 +1340,8 @@ class GraphBuilder:
             datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         run : `str`, optional
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
-            output datasets, if it already exists.
+            output datasets. Collection does not have to exist and it will be
+            created when graph is executed.
         userQuery : `str`
             String which defines user-defined selection for registry, should be
             empty or `None` if there is no restrictions on data selection.
