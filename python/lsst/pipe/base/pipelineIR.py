@@ -188,7 +188,7 @@ class LabeledSubset:
         return LabeledSubset(label, set(subset), description)
 
     def to_primitives(self) -> Dict[str, Union[List[str], str]]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization."""
         accumulate: Dict[str, Union[List[str], str]] = {"subset": list(self.subset)}
         if self.description is not None:
             accumulate["description"] = self.description
@@ -901,10 +901,7 @@ class PipelineIR:
             loaded_yaml = yaml.load(buffer, Loader=PipelineYamlLoader)
             return cls(loaded_yaml)
 
-    def write_to_uri(
-        self,
-        uri: ResourcePathExpression,
-    ) -> None:
+    def write_to_uri(self, uri: ResourcePathExpression) -> None:
         """Serialize this `PipelineIR` object into a yaml formatted string and
         write the output to a file at the specified uri.
 

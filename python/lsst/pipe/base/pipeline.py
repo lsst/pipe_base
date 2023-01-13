@@ -296,7 +296,7 @@ class Pipeline:
 
         Parameters
         ----------
-        uri: convertible to `ResourcePath`
+        uri : convertible to `ResourcePath`
             If a string is supplied this should be a URI path that points to a
             pipeline defined in yaml format, either as a direct path to the
             yaml file, or as a directory containing a "pipeline.yaml" file (the
@@ -314,7 +314,7 @@ class Pipeline:
 
         Returns
         -------
-        pipeline: `Pipeline`
+        pipeline : `Pipeline`
             The pipeline loaded from specified location with appropriate (if
             any) subsetting
 
