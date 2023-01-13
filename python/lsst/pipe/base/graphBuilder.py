@@ -501,14 +501,21 @@ class _DatasetIdMaker:
     def resolveRef(self, ref: DatasetRef) -> DatasetRef:
         if ref.id is not None:
             return ref
-        # For components we need their parent dataset type.
+
+        # For components we need their parent dataset ID.
         if ref.isComponent():
-            ref = ref.makeCompositeRef()
+            parent_ref = ref.makeCompositeRef()
             # Some basic check - parent should be resolved if this is an
             # existing input, or it should be in the cache already if it is
             # an intermediate.
-            if ref.id is None and (ref.datasetType, ref.dataId) not in self.resolved:
-                raise ValueError(f"Composite dataset is missing from cache: {ref}")
+            if parent_ref.id is None:
+                key = parent_ref.datasetType, parent_ref.dataId
+                if key not in self.resolved:
+                    raise ValueError(f"Composite dataset is missing from cache: {parent_ref}")
+                parent_ref = self.resolved[key]
+            assert parent_ref.id is not None and parent_ref.run is not None, "parent ref must be resolved"
+            return ref.resolved(parent_ref.id, parent_ref.run)
+
         key = ref.datasetType, ref.dataId
         if (resolved := self.resolved.get(key)) is None:
             resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
