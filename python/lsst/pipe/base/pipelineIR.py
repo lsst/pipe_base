@@ -30,20 +30,7 @@ import warnings
 from collections import Counter
 from collections.abc import Iterable as abcIterable
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Dict,
-    Generator,
-    Hashable,
-    Iterable,
-    List,
-    Literal,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Set,
-    Union,
-)
+from typing import Any, Dict, Generator, Hashable, List, Literal, MutableMapping, Optional, Set, Union
 
 import yaml
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -914,12 +901,18 @@ class PipelineIR:
             yaml.dump(self.to_primitives(), buffer, sort_keys=False, Dumper=MultilineStringDumper)
 
     def to_primitives(self) -> Dict[str, Any]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization
+
+        Returns
+        -------
+        primitives : `dict`
+            Dictionary that maps directly to the serialized YAML form.
+        """
         accumulate = {"description": self.description}
         if self.instrument is not None:
             accumulate["instrument"] = self.instrument
         if self.parameters:
-            accumulate["parameters"] = self._sort_by_str(self.parameters.to_primitives())
+            accumulate["parameters"] = self.parameters.to_primitives()
         accumulate["tasks"] = {m: t.to_primitives() for m, t in self.tasks.items()}
         if len(self.contracts) > 0:
             # sort contracts lexicographical order by the contract string in
@@ -928,42 +921,8 @@ class PipelineIR:
             contracts_list.sort(key=lambda x: x["contract"])
             accumulate["contracts"] = contracts_list
         if self.labeled_subsets:
-            accumulate["subsets"] = self._sort_by_str(
-                {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
-            )
+            accumulate["subsets"] = {k: v.to_primitives() for k, v in self.labeled_subsets.items()}
         return accumulate
-
-    def reorder_tasks(self, task_labels: List[str]) -> None:
-        """Changes the order tasks are stored internally. Useful for
-        determining the order things will appear in the serialized (or printed)
-        form.
-
-        Parameters
-        ----------
-        task_labels : `list` of `str`
-            A list corresponding to all the labels in the pipeline inserted in
-            the order the tasks are to be stored.
-
-        Raises
-        ------
-        KeyError
-            Raised if labels are supplied that are not in the pipeline, or if
-            not all labels in the pipeline were supplied in task_labels input.
-        """
-        # verify that all labels are in the input
-        _tmp_set = set(task_labels)
-        if remainder := (self.tasks.keys() - _tmp_set):
-            raise KeyError(f"Label(s) {remainder} are missing from the task label list")
-        if extra := (_tmp_set - self.tasks.keys()):
-            raise KeyError(f"Extra label(s) {extra} were in the input and are not in the pipeline")
-
-        newTasks = {key: self.tasks[key] for key in task_labels}
-        self.tasks = newTasks
-
-    @staticmethod
-    def _sort_by_str(arg: Mapping[str, Any]) -> Mapping[str, Any]:
-        keys = sorted(arg.keys())
-        return {key: arg[key] for key in keys}
 
     def __str__(self) -> str:
         """Instance formatting as how it would look in yaml representation"""
