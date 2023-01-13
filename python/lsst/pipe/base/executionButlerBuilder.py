@@ -107,6 +107,7 @@ def _validate_dataset_type(
 
 
 def _accumulate(
+    butler: Butler,
     graph: QuantumGraph,
     dataset_types: PipelineDatasetTypes,
 ) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
@@ -130,29 +131,50 @@ def _accumulate(
     datasetTypes: dict[Union[str, DatasetType], DatasetType] = {}
 
     # Add inserts for initOutputs (including initIntermediates); these are
-    # defined fully by their DatasetType, because they have no dimensions, and
-    # they are by definition not resolved.  initInputs are part of Quantum and
-    # that's the only place the graph stores the dataset IDs, so we process
-    # them there even though each Quantum for a task has the same ones.
+    # defined fully by their DatasetType, because they have no dimensions.
+    # initInputs are part of Quantum and that's the only place the graph stores
+    # the dataset IDs, so we process them there even though each Quantum for a
+    # task has the same ones.
     for dataset_type in itertools.chain(dataset_types.initIntermediates, dataset_types.initOutputs):
         dataset_type = _validate_dataset_type(dataset_type, datasetTypes)
         inserts[dataset_type].add(DataCoordinate.makeEmpty(dataset_type.dimensions.universe))
 
+    # Output references may be resolved even if they do not exist. Find all
+    # actually existing refs.
+    check_refs: Set[DatasetRef] = set()
     n: QuantumNode
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
             attr: Mapping[DatasetType, Union[DatasetRef, List[DatasetRef]]] = getattr(quantum, attrName)
-
             for type, refs in attr.items():
                 # This if block is because init inputs has a different
                 # signature for its items
                 if not isinstance(refs, list):
                     refs = [refs]
-                # iterate over all the references, if it has an id, it
-                # means it exists and should be exported, if not it should
-                # be inserted into the new registry
                 for ref in refs:
                     if ref.id is not None:
+                        # We could check existence of individual components,
+                        # but it should be less work to check their parent.
+                        if ref.isComponent():
+                            ref = ref.makeCompositeRef()
+                        check_refs.add(ref)
+    exist_map = butler.datastore.knows_these(check_refs)
+    existing_ids = set(ref.id for ref, exists in exist_map.items() if exists)
+    del exist_map
+
+    for quantum in (n.quantum for n in graph):
+        for attrName in ("initInputs", "inputs", "outputs"):
+            attr = getattr(quantum, attrName)
+
+            for type, refs in attr.items():
+                if not isinstance(refs, list):
+                    refs = [refs]
+                # iterate over all the references, if it exists and should be
+                # exported, if not it should be inserted into the new registry
+                for ref in refs:
+                    # Component dataset ID is the same as its parent ID, so
+                    # checking component in existing_ids works OK.
+                    if ref.id is not None and ref.id in existing_ids:
                         # If this is a component we want the composite to be
                         # exported.
                         if ref.isComponent():
@@ -431,7 +453,7 @@ def buildExecutionButler(
     # be told whether they plan to register dataset types later (DM-30845).
     dataset_types = PipelineDatasetTypes.fromPipeline(graph.iterTaskGraph(), registry=butler.registry)
 
-    exports, inserts = _accumulate(graph, dataset_types)
+    exports, inserts = _accumulate(butler, graph, dataset_types)
     yamlBuffer = _export(butler, collections, exports, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists, datastoreRoot)
