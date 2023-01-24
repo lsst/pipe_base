@@ -42,6 +42,7 @@ from typing import (
     Optional,
     Set,
     Union,
+    Iterable
 )
 
 import yaml
@@ -664,18 +665,38 @@ class PipelineIR:
         else:
             self.imports = [ImportIR(**process_args(tmp_import))]
 
+        self.merge_pipelines([fragment.toPipelineIR() for fragment in self.imports])
+
+    def merge_pipelines(self, pipelines: Iterable[PipelineIR]) -> None:
+        """Merge one or more other `PipelineIR` objects into this object.
+
+        Parameters
+        ----------
+        pipelines : `Iterable` of `PipelineIR` objects
+            An `Iterable` that contains one or more `PipelineIR` objects to
+            merge into this object.
+
+        Raises
+        ------
+        ValueError : Raised if there is a conflict in instrument specifications
+                     Raised if a task label appears in more than one of the
+                     input `PipelineIR` objects which are to be merged.
+                     Raise if a labeled subset appears in more than one of the
+                     input `PipelineIR` objects which are to be merged, and
+                     with any subset existing in this object.
+        """
         # integrate any imported pipelines
         accumulate_tasks: Dict[str, TaskIR] = {}
         accumulate_labeled_subsets: Dict[str, LabeledSubset] = {}
         accumulated_parameters = ParametersIR({})
-        for other_pipeline in self.imports:
-            tmp_IR = other_pipeline.toPipelineIR()
+
+        for tmp_IR in pipelines:
             if self.instrument is None:
                 self.instrument = tmp_IR.instrument
             elif self.instrument != tmp_IR.instrument and tmp_IR.instrument is not None:
                 msg = (
                     "Only one instrument can be declared in a pipeline or its imports. "
-                    f"Top level pipeline defines {self.instrument} but {other_pipeline.location} "
+                    f"Top level pipeline defines {self.instrument} but pipeline to merge "
                     f"defines {tmp_IR.instrument}."
                 )
                 raise ValueError(msg)
