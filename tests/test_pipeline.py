@@ -91,6 +91,21 @@ class PipelineTestCase(unittest.TestCase):
         pipeline1.mergePipeline(pipeline2)
         self.assertEqual(pipeline1._pipelineIR.tasks.keys(), set(("task0", "task1", "task2", "task3")))
 
+    def testFindingSubset(self):
+        pipeline = makeSimplePipeline(2)
+        pipeline._pipelineIR.labeled_subsets['test1'] = LabeledSubset('test1', set(), None)
+        pipeline._pipelineIR.labeled_subsets['test2'] = LabeledSubset('test2', set(), None)
+        pipeline._pipelineIR.labeled_subsets['test3'] = LabeledSubset('test3', set(), None)
+
+        pipeline.addLabelToSubset('test1', 'task0')
+        pipeline.addLabelToSubset('test3', 'task0')
+
+        with self.assertRaises(ValueError):
+            pipeline.findLabelInSubsets('missing_label')
+
+        self.assertEqual(pipeline.findLabelInSubsets('task0'), set(("test1", "test3")))
+
+
     def testParameters(self):
         """Test that parameters can be set and used to format"""
         pipeline_str = textwrap.dedent(
