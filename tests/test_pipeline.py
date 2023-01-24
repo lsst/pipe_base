@@ -28,6 +28,7 @@ import unittest
 
 import lsst.utils.tests
 from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
+from lsst.pipe.base.pipelineIR import LabeledSubset
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
 
@@ -60,6 +61,26 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(expandedPipeline[1].taskClass, AddTask)
         self.assertEqual(expandedPipeline[0].label, "task0")
         self.assertEqual(expandedPipeline[1].label, "task1")
+
+    def testModifySubset(self):
+        pipeline = makeSimplePipeline(2)
+
+        # Test adding labels.
+        with self.assertRaises(ValueError):
+            pipeline.addLabelToSubset('test', 'new_label')
+        pipeline._pipelineIR.labeled_subsets['test'] = LabeledSubset('test', set(), None)
+        with self.assertRaises(ValueError):
+            pipeline.addLabelToSubset('test', 'missing_label')
+        pipeline.addLabelToSubset('test', 'task0')
+        self.assertEqual(pipeline._pipelineIR.labeled_subsets['test'].subset, set(('task0',)))
+
+        # Test removing labels.
+        with self.assertRaises(ValueError):
+            pipeline.addLabelToSubset('missing_subset', 'task0')
+        with self.assertRaises(ValueError):
+            pipeline.addLabelToSubset('test', 'missing_label')
+        pipeline.removeLabelFromSubset('test', 'task0')
+        self.assertEqual(pipeline._pipelineIR.labeled_subsets['test'].subset, set())
 
     def testParameters(self):
         """Test that parameters can be set and used to format"""
