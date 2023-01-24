@@ -35,6 +35,7 @@ from typing import (
     Dict,
     Generator,
     Hashable,
+    Iterable,
     List,
     Literal,
     Mapping,
@@ -42,7 +43,6 @@ from typing import (
     Optional,
     Set,
     Union,
-    Iterable
 )
 
 import yaml
