@@ -1,0 +1,2 @@
+Added convince methods to the python api for Pipelines. These methods allow merging pipelines, adding labels
+to / removing labels from subsets, and finding subsets containing a specified label.
