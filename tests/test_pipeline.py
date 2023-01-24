@@ -82,6 +82,15 @@ class PipelineTestCase(unittest.TestCase):
         pipeline.removeLabelFromSubset('test', 'task0')
         self.assertEqual(pipeline._pipelineIR.labeled_subsets['test'].subset, set())
 
+    def testMergingPipelines(self):
+        pipeline1 = makeSimplePipeline(2)
+        pipeline2 = makeSimplePipeline(4)
+        pipeline2.removeTask('task0')
+        pipeline2.removeTask('task1')
+
+        pipeline1.mergePipeline(pipeline2)
+        self.assertEqual(pipeline1._pipelineIR.tasks.keys(), set(("task0", "task1", "task2", "task3")))
+
     def testParameters(self):
         """Test that parameters can be set and used to format"""
         pipeline_str = textwrap.dedent(
