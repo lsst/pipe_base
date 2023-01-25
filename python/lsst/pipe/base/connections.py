@@ -902,12 +902,6 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                         f"{data_id}."
                     )
                 else:
-                    # This branch should be impossible during QG generation,
-                    # because that algorithm can only make quanta whose inputs
-                    # are either already present or should be created during
-                    # execution.  It can trigger during execution if the input
-                    # wasn't actually created by an upstream task in the same
-                    # graph.
                     raise NoWorkFound(label, name, input_connection)
         for name, (output_connection, refs) in outputs.items():
             dataset_type_name = output_connection.name
