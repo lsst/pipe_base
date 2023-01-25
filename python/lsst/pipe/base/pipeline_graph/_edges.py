@@ -409,9 +409,9 @@ class ReadEdge(Edge):
             # always have empty dimensions.
             raw_dimensions=frozenset(getattr(connection, "dimensions", frozenset())),
             # PrerequisiteInput and InitInput connections don't have a
-            # .eferQueryConstraints, because they never constrain the initial
+            # .deferGraphConstraint, because they never constrain the initial
             # data ID query.
-            defer_query_constraint=getattr(connection, "deferQueryConstraint", False),
+            defer_query_constraint=getattr(connection, "deferGraphConstraint", False),
         )
 
     def _resolve_dataset_type(

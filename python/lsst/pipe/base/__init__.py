@@ -20,3 +20,7 @@ from .struct import *
 from .task import *
 from .taskFactory import *
 from .version import *
+
+# quantum_graph_builder, all_dimensions_quantum_graph_builder,
+# quantum_graph_skeleton, and prerequisite_helper symbols are intentionally not
+# lifted to package scope.
