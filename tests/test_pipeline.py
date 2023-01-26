@@ -101,9 +101,9 @@ class PipelineTestCase(unittest.TestCase):
         pipeline.addLabelToSubset("test3", "task0")
 
         with self.assertRaises(ValueError):
-            pipeline.findLabelInSubsets("missing_label")
+            pipeline.findSubsetsWithLabel("missing_label")
 
-        self.assertEqual(pipeline.findLabelInSubsets("task0"), set(("test1", "test3")))
+        self.assertEqual(pipeline.findSubsetsWithLabel("task0"), set(("test1", "test3")))
 
     def testParameters(self):
         """Test that parameters can be set and used to format"""

@@ -678,12 +678,13 @@ class PipelineIR:
 
         Raises
         ------
-        ValueError : Raised if there is a conflict in instrument specifications
-                     Raised if a task label appears in more than one of the
-                     input `PipelineIR` objects which are to be merged.
-                     Raise if a labeled subset appears in more than one of the
-                     input `PipelineIR` objects which are to be merged, and
-                     with any subset existing in this object.
+        ValueError
+            Raised if there is a conflict in instrument specifications.
+            Raised if a task label appears in more than one of the input
+            `PipelineIR` objects which are to be merged.
+            Raised if a labeled subset appears in more than one of the input
+            `PipelineIR` objects which are to be merged, and with any subset
+            existing in this object.
         """
         # integrate any imported pipelines
         accumulate_tasks: Dict[str, TaskIR] = {}
