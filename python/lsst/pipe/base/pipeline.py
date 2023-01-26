@@ -501,6 +501,96 @@ class Pipeline:
     def __str__(self) -> str:
         return str(self._pipelineIR)
 
+    def mergePipeline(self, pipeline: Pipeline) -> None:
+        """Merge another in-memory `Pipeline` object into this one.
+
+        This merges another pipeline into this object, as if it were declared
+        in the import block of the yaml definition of this pipeline. This
+        modifies this pipeline in place.
+
+        Parameters
+        ----------
+        pipeline : `Pipeline`
+            The `Pipeline` object that is to be merged into this object.
+        """
+        self._pipelineIR.merge_pipelines((pipeline._pipelineIR,))
+
+    def addLabelToSubset(self, subset: str, label: str) -> None:
+        """Add a task label from the specified subset.
+
+        Parameters
+        ----------
+        subset : `str`
+            The labeled subset to modify
+        label : `str`
+            The task label to add to the specified subset.
+
+        Raises
+        ------
+        ValueError
+            Raised if the specified subset does not exist within the pipeline.
+            Raised if the specified label does not exist within the pipeline.
+        """
+        if label not in self._pipelineIR.tasks:
+            raise ValueError(f"Label {label} does not appear within the pipeline")
+        if subset not in self._pipelineIR.labeled_subsets:
+            raise ValueError(f"Subset {subset} does not appear within the pipeline")
+        self._pipelineIR.labeled_subsets[subset].subset.add(label)
+
+    def removeLabelFromSubset(self, subset: str, label: str) -> None:
+        """Remove a task label from the specified subset.
+
+        Parameters
+        ----------
+        subset : `str`
+            The labeled subset to modify
+        label : `str`
+            The task label to remove from the specified subset.
+
+        Raises
+        ------
+        ValueError
+            Raised if the specified subset does not exist in the pipeline.
+            Raised if the specified label does not exist within the specified
+            subset.
+        """
+        if subset not in self._pipelineIR.labeled_subsets:
+            raise ValueError(f"Subset {subset} does not appear within the pipeline")
+        if label not in self._pipelineIR.labeled_subsets[subset].subset:
+            raise ValueError(f"Label {label} does not appear within the pipeline")
+        self._pipelineIR.labeled_subsets[subset].subset.remove(label)
+
+    def findSubsetsWithLabel(self, label: str) -> set[str]:
+        """Find any subsets which may contain the specified label.
+
+        This function returns the name of subsets which return the specified
+        label. May return an empty set if there are no subsets, or no subsets
+        containing the specified label.
+
+        Parameters
+        ----------
+        label : `str`
+            The task label to use in membership check
+
+        Returns
+        -------
+        subsets : `set` of `str`
+            Returns a set (possibly empty) of subsets names which contain the
+            specified label.
+
+        Raises
+        ------
+        ValueError
+            Raised if the specified label does not exist within this pipeline.
+        """
+        results = set()
+        if label not in self._pipelineIR.tasks:
+            raise ValueError(f"Label {label} does not appear within the pipeline")
+        for subset in self._pipelineIR.labeled_subsets.values():
+            if label in subset.subset:
+                results.add(subset.label)
+        return results
+
     def addInstrument(self, instrument: Union[Instrument, str]) -> None:
         """Add an instrument to the pipeline, or replace an instrument that is
         already defined.
