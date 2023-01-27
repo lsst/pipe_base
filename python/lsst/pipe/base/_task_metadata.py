@@ -27,7 +27,6 @@ import warnings
 from collections.abc import Sequence
 from typing import Any, Collection, Dict, Iterator, List, Mapping, Optional, Protocol, Set, Tuple, Union
 
-from deprecated.sphinx import deprecated
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 _DEPRECATION_REASON = "Will be removed after v25."
@@ -67,9 +66,6 @@ class TaskMetadata(BaseModel):
     Metadata item key of a task (`itemName` above) must not contain `.`,
     which serves as a separator in full metadata keys and turns
     the value into sub-dictionary. Arbitrary hierarchies are supported.
-
-    Deprecated methods are for compatibility with
-    the predecessor containers.
     """
 
     scalars: Dict[str, Union[StrictFloat, StrictInt, StrictBool, StrictStr]] = Field(default_factory=dict)
@@ -201,31 +197,6 @@ class TaskMetadata(BaseModel):
 
         self.metadata[key0].add(".".join(keys), value)
 
-    @deprecated(
-        reason="Cast the return value to float explicitly. " + _DEPRECATION_REASON,
-        version=_DEPRECATION_VERSION,
-        category=FutureWarning,
-    )
-    def getAsDouble(self, key: str) -> float:
-        """Return the value cast to a `float`.
-
-        Parameters
-        ----------
-        key : `str`
-            Item to return. Can be dot-separated hierarchical.
-
-        Returns
-        -------
-        value : `float`
-            The value cast to a `float`.
-
-        Raises
-        ------
-        KeyError
-            Raised if the item is not found.
-        """
-        return float(self.__getitem__(key))
-
     def getScalar(self, key: str) -> Union[str, int, float, bool]:
         """Retrieve a scalar item even if the item is a list.
 
@@ -346,28 +317,6 @@ class TaskMetadata(BaseModel):
             else:
                 paramNames.add(k)
         return paramNames
-
-    @deprecated(
-        reason="Use standard assignment syntax. " + _DEPRECATION_REASON,
-        version=_DEPRECATION_VERSION,
-        category=FutureWarning,
-    )
-    def set(self, key: str, item: Any) -> None:
-        """Set the value of the supplied key."""
-        self.__setitem__(key, item)
-
-    @deprecated(
-        reason="Use standard del dict syntax. " + _DEPRECATION_REASON,
-        version=_DEPRECATION_VERSION,
-        category=FutureWarning,
-    )
-    def remove(self, key: str) -> None:
-        """Remove the item without raising if absent."""
-        try:
-            self.__delitem__(key)
-        except KeyError:
-            # The PropertySet.remove() should always work.
-            pass
 
     @staticmethod
     def _getKeys(key: str) -> List[str]:
