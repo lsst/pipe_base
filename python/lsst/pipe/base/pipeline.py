@@ -30,7 +30,6 @@ import logging
 import os
 import re
 import urllib.parse
-import warnings
 
 # -------------------------------
 #  Imports of standard modules --
@@ -407,11 +406,9 @@ class Pipeline:
             # This is to support legacy pipelines during transition
             uri, num_replace = re.subn("[:](?!\\/\\/)", "#", uri)
             if num_replace:
-                warnings.warn(
-                    f"The pipeline file {uri} seems to use the legacy : to separate "
-                    "labels, this is deprecated and will be removed after June 2021, please use "
-                    "# instead.",
-                    category=FutureWarning,
+                raise ValueError(
+                    f"The pipeline file {uri} seems to use the legacy :"
+                    " to separate labels, please use # instead."
                 )
             if uri.count("#") > 1:
                 raise ValueError("Only one set of labels is allowed when specifying a pipeline to load")
