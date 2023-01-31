@@ -485,21 +485,6 @@ class QuantumGraphTestCase(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.qGraph.saveUri("test.notgraph")
 
-    @unittest.skipIf(not boto3, "Warning: boto3 AWS SDK not found!")
-    @mock_s3
-    def testSaveLoadUriS3(self):
-        # Test loading a quantum graph from an mock s3 store
-        conn = boto3.resource("s3", region_name="us-east-1")
-        conn.create_bucket(Bucket="testBucket")
-        uri = "s3://testBucket/qgraph.qgraph"
-        self.qGraph.saveUri(uri)
-        restore = QuantumGraph.loadUri(uri)
-        self.assertEqual(self.qGraph, restore)
-        nodeId = list(self.qGraph)[0].nodeId
-        restoreSub = QuantumGraph.loadUri(uri, self.universe, nodes=(nodeId,))
-        self.assertEqual(len(restoreSub), 1)
-        self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
-
     def testContains(self):
         firstNode = next(iter(self.qGraph))
         self.assertIn(firstNode, self.qGraph)

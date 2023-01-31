@@ -647,4 +647,8 @@ class DeserializerV3(DeserializerBase):
         return newGraph
 
 
-DESERIALIZER_MAP = {1: DeserializerV1, 2: DeserializerV2, 3: DeserializerV3}
+DESERIALIZER_MAP: dict[int, Type[DeserializerBase]] = {
+    1: DeserializerV1,
+    2: DeserializerV2,
+    3: DeserializerV3,
+}

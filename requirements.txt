@@ -6,6 +6,5 @@ git+https://github.com/lsst/daf_butler@main#egg=lsst-daf-butler
 git+https://github.com/lsst/utils@main#egg=lsst-utils
 git+https://github.com/lsst/resources@main#egg=lsst-resources
 git+https://github.com/lsst/pex_config@main#egg=lsst-pex-config
-# For now a S3 class is loaded unconditionally
-boto3
-botocore
+git+https://github.com/lsst/daf_relation@main#egg=lsst-daf-relation
+sqlalchemy >= 1.4, <2.0.0
