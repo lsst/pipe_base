@@ -1,16 +1,15 @@
-import numpy as np
 import functools
 import math
 import operator
 from typing import List, Mapping, Optional
 
-import lsst.pipe.base as pipeBase
-import lsst.pex.config as pexConfig
-import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
+import lsst.afw.table as afwTable
+import lsst.pex.config as pexConfig
+import lsst.pipe.base as pipeBase
+import numpy as np
 from lsst.geom import Point2I
-
 from lsst.pipe.base import connectionTypes
 
 
@@ -113,12 +112,11 @@ class ApertureTaskConnections(
 class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections):
     apRad = pexConfig.Field(doc="Radius of aperture", dtype=int, default=4)
     doLocalBackground = pexConfig.Field(
-        doc="Should the background be added " "before doing photometry", dtype=bool, default=False
+        doc="Should the background be added before doing photometry", dtype=bool, default=False
     )
 
 
 class ApertureTask(pipeBase.PipelineTask):
-
     ConfigClass = ApertureTaskConfig
     _DefaultName = "apertureDemoTask"
 

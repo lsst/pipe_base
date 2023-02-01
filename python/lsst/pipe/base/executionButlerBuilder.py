@@ -34,7 +34,7 @@ from lsst.daf.butler.transfers import RepoExportContext
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_class_of
 
-from .graph import QuantumGraph, QuantumNode
+from .graph import QuantumGraph
 from .pipeline import PipelineDatasetTypes
 
 DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
@@ -142,7 +142,6 @@ def _accumulate(
     # Output references may be resolved even if they do not exist. Find all
     # actually existing refs.
     check_refs: Set[DatasetRef] = set()
-    n: QuantumNode
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
             attr: Mapping[DatasetType, Union[DatasetRef, List[DatasetRef]]] = getattr(quantum, attrName)

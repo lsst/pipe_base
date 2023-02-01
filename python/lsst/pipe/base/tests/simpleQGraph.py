@@ -127,7 +127,6 @@ class AddTask(PipelineTask):
     """Factory that makes instances"""
 
     def run(self, input: int) -> Struct:  # type: ignore
-
         if self.taskFactory:
             # do some bookkeeping
             if self.taskFactory.stopAt == self.taskFactory.countExec:

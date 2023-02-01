@@ -145,8 +145,7 @@ class PipelineTaskConnectionsMetaclass(type):
             try:
                 if isinstance(kwargs["dimensions"], str):
                     raise TypeError(
-                        "Dimensions must be iterable of dimensions, got str,"
-                        "possibly omitted trailing comma"
+                        "Dimensions must be iterable of dimensions, got str,possibly omitted trailing comma"
                     )
                 if not isinstance(kwargs["dimensions"], typing.Iterable):
                     raise TypeError("Dimensions must be iterable of dimensions")
@@ -198,7 +197,7 @@ class PipelineTaskConnectionsMetaclass(type):
                 nameTemplateIntersection = allTemplates.intersection(set(dct["allConnections"].keys()))
                 if len(nameTemplateIntersection) > 0:
                     raise TypeError(
-                        f"Template parameters cannot share names with Class attributes"
+                        "Template parameters cannot share names with Class attributes"
                         f" (conflicts are {nameTemplateIntersection})."
                     )
             dct["defaultTemplates"] = kwargs.get("defaultTemplates", {})
