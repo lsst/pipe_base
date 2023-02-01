@@ -1029,10 +1029,10 @@ class _PipelineScaffolding:
                     raise RuntimeError(
                         f"{len(dataIdsNotFoundYet)} dataset(s) of type "
                         f"'{datasetType.name}' was/were present in a previous "
-                        f"query, but could not be found now. "
-                        f"This is either a logic bug in QuantumGraph generation "
-                        f"or the input collections have been modified since "
-                        f"QuantumGraph generation began."
+                        "query, but could not be found now. "
+                        "This is either a logic bug in QuantumGraph generation "
+                        "or the input collections have been modified since "
+                        "QuantumGraph generation began."
                     )
                 else:
                     # if the common dataIds were not constrained using all the

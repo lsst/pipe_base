@@ -61,7 +61,7 @@ class ApertureTaskConnections(pipeBase.PipelineTaskConnections, dimensions=("vis
 class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections):
     apRad = pexConfig.Field(doc="Radius of aperture", dtype=int, default=4)
     doLocalBackground = pexConfig.Field(
-        doc="Should the background be added " "before doing photometry", dtype=bool, default=False
+        doc="Should the background be added before doing photometry", dtype=bool, default=False
     )
 
 

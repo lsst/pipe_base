@@ -118,8 +118,7 @@ class QuantumNode:
     def __repr__(self) -> str:
         """Make more human readable string representation."""
         return (
-            f"{self.__class__.__name__}(quantum={self.quantum}, "
-            f"taskDef={self.taskDef}, nodeId={self.nodeId})"
+            f"{self.__class__.__name__}(quantum={self.quantum}, taskDef={self.taskDef}, nodeId={self.nodeId})"
         )
 
     def to_simple(self, accumulator: Optional[DimensionRecordsAccumulator] = None) -> SerializedQuantumNode:

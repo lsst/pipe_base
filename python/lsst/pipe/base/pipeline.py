@@ -380,8 +380,7 @@ class Pipeline:
             if labelSpecifier.begin is not None:
                 if labelSpecifier.begin not in labels:
                     raise ValueError(
-                        f"Beginning of range subset, {labelSpecifier.begin}, not found in "
-                        "pipeline definition"
+                        f"Beginning of range subset, {labelSpecifier.begin}, not found in pipeline definition"
                     )
             if labelSpecifier.end is not None:
                 if labelSpecifier.end not in labels:
@@ -973,9 +972,9 @@ class TaskDatasetTypes:
                         raise LookupError(
                             f"DatasetType '{c.name}' referenced by "
                             f"{type(taskDef.connections).__name__} uses 'skypix' as a dimension "
-                            f"placeholder, but does not already exist in the registry.  "
-                            f"Note that reference catalog names are now used as the dataset "
-                            f"type name instead of 'ref_cat'."
+                            "placeholder, but does not already exist in the registry.  "
+                            "Note that reference catalog names are now used as the dataset "
+                            "type name instead of 'ref_cat'."
                         ) from err
                     rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
                     rest2 = set(
