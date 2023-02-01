@@ -142,11 +142,9 @@ class GraphBuilderTestCase(unittest.TestCase):
 
         for resolveRefs in (False, True):
             with self.subTest(resolveRefs=resolveRefs):
-
                 assert_refs = _assert_resolved if resolveRefs else _assert_unresolved
 
                 with temporaryDirectory() as root:
-
                     _, qgraph = simpleQGraph.makeSimpleQGraph(root=root, resolveRefs=resolveRefs)
                     self.assertEqual(len(qgraph), 5)
 
