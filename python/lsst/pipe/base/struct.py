@@ -24,10 +24,11 @@ from __future__ import annotations
 
 __all__ = ["Struct"]
 
+from types import SimpleNamespace
 from typing import Any, Dict
 
 
-class Struct:
+class Struct(SimpleNamespace):
     """A container to which you can add fields as attributes.
 
     Parameters
