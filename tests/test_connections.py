@@ -164,7 +164,7 @@ class TestConnectionsClass(unittest.TestCase):
     def testDimensionCheck(self):
         with self.assertRaises(TypeError):
 
-            class TestConnectionsWithBrokenDimensionsStr(pipeBase.PipelineTask, dimensions=("a")):
+            class TestConnectionsWithBrokenDimensionsStr(pipeBase.PipelineTask, dimensions={"a"}):
                 pass
 
         with self.assertRaises(TypeError):
@@ -174,7 +174,7 @@ class TestConnectionsClass(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             pipeBase.connectionTypes.Output(
-                Doc="mock doc", dimensions=("a"), name="output", storageClass="mock"
+                Doc="mock doc", dimensions={"a"}, name="output", storageClass="mock"
             )
 
         with self.assertRaises(TypeError):
