@@ -1,16 +1,14 @@
-import numpy as np
 import math
+from typing import Mapping, Optional
 
-import lsst.pipe.base as pipeBase
-import lsst.pex.config as pexConfig
-import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
+import lsst.afw.table as afwTable
+import lsst.pex.config as pexConfig
+import lsst.pipe.base as pipeBase
+import numpy as np
 from lsst.geom import Point2I
-
 from lsst.pipe.base import connectionTypes
-
-from typing import Mapping, Optional
 
 
 class ApertureTaskConnections(
@@ -79,7 +77,6 @@ class ApertureTaskConfig(pipeBase.PipelineTaskConfig, pipelineConnections=Apertu
 
 
 class ApertureTask(pipeBase.PipelineTask):
-
     ConfigClass = ApertureTaskConfig
     _DefaultName = "apertureDemoTask"
 
