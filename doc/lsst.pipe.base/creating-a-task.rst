@@ -218,7 +218,7 @@ Debug variables
 ===============
 
 Debug variables are variables the user may set while running your task, to enable additional debug output.
-To have your task support debug variables, have it import ``lsstDebug`` and call ``lsstDebug.Info(__name__).varname`` to get the debug variable ``varname`` specific to your task.
+To have your task support debug variables, have it import :ref:`lsstDebug` and call ``lsstDebug.Info(__name__).varname`` to get the debug variable ``varname`` specific to your task.
 If you look for a variable the user has not specified, it will have a value of `False`.
 For example, to look for a debug variable named "display":
 
