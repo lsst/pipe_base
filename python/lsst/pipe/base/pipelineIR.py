@@ -653,11 +653,7 @@ class PipelineIR:
         if tmp_import is None:
             tmp_import = loaded_yaml.pop("imports", None)
         else:
-            warnings.warn(
-                "The 'inherits' key is deprecated, and will be "
-                "removed around June 2021. Please use the key "
-                "'imports' instead"
-            )
+            raise ValueError("The 'inherits' key is not supported. Please use the key 'imports' instead")
         if tmp_import is None:
             self.imports: List[ImportIR] = []
         elif isinstance(tmp_import, list):

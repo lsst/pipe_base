@@ -208,25 +208,6 @@ class TaskMetadataTestCase(unittest.TestCase):
         del meta3["e.new"]
         self.assertEqual(meta4, meta3)
 
-    def testDeprecated(self):
-        """Test the deprecated interface issues warnings."""
-        meta = TaskMetadata.from_dict({"a": 1, "b": 2})
-
-        with self.assertWarns(FutureWarning):
-            meta.set("c", 3)
-        self.assertEqual(meta["c"], 3)
-        with self.assertWarns(FutureWarning):
-            self.assertEqual(meta.getAsDouble("c"), 3.0)
-
-        with self.assertWarns(FutureWarning):
-            meta.remove("c")
-        self.assertNotIn("c", meta)
-        with self.assertWarns(FutureWarning):
-            meta.remove("d")
-
-        with self.assertWarns(FutureWarning):
-            self.assertEqual(meta.names(topLevelOnly=True), set(meta.keys()))
-
     @unittest.skipIf(not numpy, "Numpy is required for this test.")
     def testNumpy(self):
         meta = TaskMetadata()
