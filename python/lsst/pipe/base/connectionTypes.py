@@ -237,6 +237,62 @@ class BaseInput(DimensionedConnection):
 
 @dataclasses.dataclass(frozen=True)
 class Input(BaseInput):
+    """Class used for declaring PipelineTask input connections
+
+    Parameters
+    ----------
+    name : `str`
+        The default name used to identify the dataset type
+    storageClass : `str`
+        The storage class used when (un)/persisting the dataset type
+    multiple : `bool`
+        Indicates if this connection should expect to contain multiple objects
+        of the given dataset type.  Tasks with more than one connection with
+        ``multiple=True`` with the same dimensions may want to implement
+        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
+        the execution system as early as possible of outputs that will not be
+        produced because the corresponding input is missing.
+    dimensions : iterable of `str`
+        The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
+        to identify the dataset type identified by the specified name
+    deferLoad : `bool`
+        Indicates that this dataset type will be loaded as a
+        `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
+        object to load the object at a later time.
+    minimum : `bool`
+        Minimum number of datasets required for this connection, per quantum.
+        This is checked in the base implementation of
+        `PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
+        the minimum is not met for `Input` connections (causing the quantum to
+        be pruned, skipped, or never created, depending on the context), and
+        `FileNotFoundError` for `PrerequisiteInput` connections (causing
+        QuantumGraph generation to fail).  `PipelineTask` implementations may
+        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
+        for more fine-grained or configuration-driven constraints, as long as
+        they are compatible with this minium.
+    deferGraphConstraint: `bool`, optional
+        If `True`, do not include this dataset type's existence in the initial
+        query that starts the QuantumGraph generation process.  This can be
+        used to make QuantumGraph generation faster by avoiding redundant
+        datasets, and in certain cases it can (along with careful attention to
+        which tasks are included in the same QuantumGraph) be used to work
+        around the QuantumGraph generation algorithm's inflexible handling of
+        spatial overlaps.  This option has no effect when the connection is not
+        an overall input of the pipeline (or subset thereof) for which a graph
+        is being created, and it never affects the ordering of quanta.
+
+    Raises
+    ------
+    TypeError
+        Raised if ``minimum`` is greater than one but ``multiple=False``.
+    NotImplementedError
+        Raised if ``minimum`` is zero for a regular `Input` connection; this
+        is not currently supported by our QuantumGraph generation algorithm.
+    """
+
+    deferGraphConstraint: bool = False
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.minimum == 0:
