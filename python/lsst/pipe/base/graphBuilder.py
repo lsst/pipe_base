@@ -46,6 +46,7 @@ from lsst.daf.butler import (
     DimensionGraph,
     DimensionUniverse,
     NamedKeyDict,
+    NamedValueSet,
     Quantum,
     Registry,
 )
@@ -594,6 +595,7 @@ class _PipelineScaffolding:
                 attr,
                 _DatasetDict.fromDatasetTypes(getattr(datasetTypes, attr), universe=registry.dimensions),
             )
+        self.defaultDatasetQueryConstraints = datasetTypes.queryConstraints
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join
         # query.
@@ -653,6 +655,11 @@ class _PipelineScaffolding:
     prerequisites: _DatasetDict
     """Datasets that are consumed when running this pipeline and looked up
     per-Quantum when generating the graph (`_DatasetDict`).
+    """
+
+    defaultDatasetQueryConstraints: NamedValueSet[DatasetType]
+    """Datasets that should be used as constraints in the initial query,
+    according to tasks (`NamedValueSet`).
     """
 
     dimensions: DimensionGraph
@@ -732,8 +739,11 @@ class _PipelineScaffolding:
             "bind": bind,
         }
         if datasetQueryConstraint == DatasetQueryConstraintVariant.ALL:
-            _LOG.debug("Constraining graph query using all datasets in pipeline.")
-            queryArgs["datasets"] = list(self.inputs)
+            _LOG.debug(
+                "Constraining graph query using default of %s.",
+                list(self.defaultDatasetQueryConstraints.names),
+            )
+            queryArgs["datasets"] = list(self.defaultDatasetQueryConstraints)
             queryArgs["collections"] = collections
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.OFF:
             _LOG.debug("Not using dataset existence to constrain query.")
@@ -923,6 +933,16 @@ class _PipelineScaffolding:
             idMaker = _DatasetIdMaker(registry, run)
 
         resolvedRefQueryResults: Iterable[DatasetRef]
+
+        # Updating constrainedByAllDatasets here is not ideal, but we have a
+        # few different code paths that each transfer different pieces of
+        # information about what dataset query constraints were applied here,
+        # and none of them has the complete picture until we get here.  We're
+        # long overdue for a QG generation rewrite that will make this go away
+        # entirely anyway.
+        constrainedByAllDatasets = (
+            constrainedByAllDatasets and self.defaultDatasetQueryConstraints == self.inputs.keys()
+        )
 
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
