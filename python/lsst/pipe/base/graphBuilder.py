@@ -1055,6 +1055,11 @@ class _PipelineScaffolding:
                         "or the input collections have been modified since "
                         "QuantumGraph generation began."
                     )
+                elif not datasetType.dimensions:
+                    raise RuntimeError(
+                        f"Dataset {datasetType.name!r} (with no dimensions) could not be found in "
+                        f"collections {collections}."
+                    )
                 else:
                     # if the common dataIds were not constrained using all the
                     # input dataset types, it is possible that some data ids
