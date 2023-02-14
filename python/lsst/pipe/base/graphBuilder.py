@@ -682,7 +682,10 @@ class _PipelineScaffolding:
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
-        _LOG.debug("Submitting data ID query and materializing results.")
+        _LOG.debug(
+            "Submitting data ID query over dimensions %s and materializing results.",
+            list(self.dimensions.names),
+        )
         queryArgs: Dict[str, Any] = {
             "dimensions": self.dimensions,
             "where": userQuery,
