@@ -776,7 +776,6 @@ class _PipelineScaffolding:
             # quanta and then connecting them to each other.
             n = -1
             for n, commonDataId in enumerate(commonDataIds):
-                _LOG.debug("Next DataID = %s", commonDataId)
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
                 # We remember both those that already existed and those that we
@@ -793,7 +792,6 @@ class _PipelineScaffolding:
                     ref = refs.get(datasetDataId)
                     if ref is None:
                         ref = DatasetRef(datasetType, datasetDataId)
-                        _LOG.debug("Made new ref = %s", ref)
                         refs[datasetDataId] = ref
                     refsForRow[datasetType.name] = ref
                 # Create _QuantumScaffolding objects for all tasks from this
