@@ -46,6 +46,7 @@ from lsst.daf.butler import (
     DimensionGraph,
     DimensionUniverse,
     NamedKeyDict,
+    NamedValueSet,
     Quantum,
     Registry,
 )
@@ -582,6 +583,7 @@ class _PipelineScaffolding:
                 attr,
                 _DatasetDict.fromDatasetTypes(getattr(datasetTypes, attr), universe=registry.dimensions),
             )
+        self.defaultDatasetQueryConstraints = datasetTypes.queryConstraints
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join
         # query.
@@ -641,6 +643,11 @@ class _PipelineScaffolding:
     prerequisites: _DatasetDict
     """Datasets that are consumed when running this pipeline and looked up
     per-Quantum when generating the graph (`_DatasetDict`).
+    """
+
+    defaultDatasetQueryConstraints: NamedValueSet[DatasetType]
+    """Datasets that should be used as constraints in the initial query,
+    according to tasks (`NamedValueSet`).
     """
 
     dimensions: DimensionGraph
@@ -708,7 +715,10 @@ class _PipelineScaffolding:
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
         # obtain the dataset_ids for those inputs.
-        _LOG.debug("Submitting data ID query and materializing results.")
+        _LOG.debug(
+            "Submitting data ID query over dimensions %s and materializing results.",
+            list(self.dimensions.names),
+        )
         queryArgs: Dict[str, Any] = {
             "dimensions": self.dimensions,
             "where": userQuery,
@@ -716,8 +726,11 @@ class _PipelineScaffolding:
             "bind": bind,
         }
         if datasetQueryConstraint == DatasetQueryConstraintVariant.ALL:
-            _LOG.debug("Constraining graph query using all datasets in pipeline.")
-            queryArgs["datasets"] = list(self.inputs)
+            _LOG.debug(
+                "Constraining graph query using default of %s.",
+                list(self.defaultDatasetQueryConstraints.names),
+            )
+            queryArgs["datasets"] = list(self.defaultDatasetQueryConstraints)
             queryArgs["collections"] = collections
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.OFF:
             _LOG.debug("Not using dataset existence to constrain query.")
@@ -750,7 +763,6 @@ class _PipelineScaffolding:
             # quanta and then connecting them to each other.
             n = -1
             for n, commonDataId in enumerate(commonDataIds):
-                _LOG.debug("Next DataID = %s", commonDataId)
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
                 # We remember both those that already existed and those that we
@@ -767,7 +779,6 @@ class _PipelineScaffolding:
                     ref = refs.get(datasetDataId)
                     if ref is None:
                         ref = DatasetRef(datasetType, datasetDataId)
-                        _LOG.debug("Made new ref = %s", ref)
                         refs[datasetDataId] = ref
                     refsForRow[datasetType.name] = ref
                 # Create _QuantumScaffolding objects for all tasks from this
@@ -898,6 +909,16 @@ class _PipelineScaffolding:
 
         resolvedRefQueryResults: Iterable[DatasetRef]
 
+        # Updating constrainedByAllDatasets here is not ideal, but we have a
+        # few different code paths that each transfer different pieces of
+        # information about what dataset query constraints were applied here,
+        # and none of them has the complete picture until we get here.  We're
+        # long overdue for a QG generation rewrite that will make this go away
+        # entirely anyway.
+        constrainedByAllDatasets = (
+            constrainedByAllDatasets and self.defaultDatasetQueryConstraints == self.inputs.keys()
+        )
+
         # Look up [init] intermediate and output datasets in the output
         # collection, if there is an output collection.
         if run is not None or skip_collections_wildcard is not None:
@@ -1007,6 +1028,11 @@ class _PipelineScaffolding:
                         f"This is either a logic bug in QuantumGraph generation "
                         f"or the input collections have been modified since "
                         f"QuantumGraph generation began."
+                    )
+                elif not datasetType.dimensions:
+                    raise RuntimeError(
+                        f"Dataset {datasetType.name!r} (with no dimensions) could not be found in "
+                        f"collections {collections}."
                     )
                 else:
                     # if the common dataIds were not constrained using all the
