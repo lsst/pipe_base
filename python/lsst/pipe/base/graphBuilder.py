@@ -30,7 +30,7 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 import itertools
 import logging
-from collections import ChainMap
+from collections import ChainMap, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Collection, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Tuple, Union
@@ -1236,13 +1236,18 @@ class _PipelineScaffolding:
                     refDict.update(idMaker.resolveDict(refDict))
 
     def makeQuantumGraph(
-        self, metadata: Optional[Mapping[str, Any]] = None, datastore: Optional[Datastore] = None
+        self,
+        registry: Registry,
+        metadata: Optional[Mapping[str, Any]] = None,
+        datastore: Optional[Datastore] = None,
     ) -> QuantumGraph:
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
 
         Parameters
         ---------
+        registry : `lsst.daf.butler.Registry`
+            Registry for the data repository; used for all data ID queries.
         metadata : Optional Mapping of `str` to primitives
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
@@ -1291,8 +1296,62 @@ class _PipelineScaffolding:
             initInputs=taskInitInputs,
             initOutputs=taskInitOutputs,
             globalInitOutputs=globalInitOutputs,
+            registryDatasetTypes=self._get_registry_dataset_types(registry),
         )
         return graph
+
+    def _get_registry_dataset_types(self, registry: Registry) -> Iterable[DatasetType]:
+        """Make a list of all dataset types used by a graph as defined in
+        registry.
+        """
+        chain = [
+            self.initInputs,
+            self.initIntermediates,
+            self.initOutputs,
+            self.inputs,
+            self.intermediates,
+            self.outputs,
+            self.prerequisites,
+        ]
+        if self.globalInitOutputs is not None:
+            chain.append(self.globalInitOutputs)
+
+        # Collect names of all dataset types.
+        all_names: set[str] = set(dstype.name for dstype in itertools.chain(*chain))
+        dataset_types = {ds.name: ds for ds in registry.queryDatasetTypes(all_names)}
+
+        # Check for types that do not exist in registry yet:
+        # - inputs must exist
+        # - intermediates and outputs may not exist, but there must not be
+        #   more than one definition (e.g. differing in storage class)
+        # - prerequisites may not exist, treat it the same as outputs here
+        for dstype in itertools.chain(self.initInputs, self.inputs):
+            if dstype.name not in dataset_types:
+                raise MissingDatasetTypeError(f"Registry is missing an input dataset type {dstype}")
+
+        new_outputs: dict[str, set[DatasetType]] = defaultdict(set)
+        chain = [
+            self.initIntermediates,
+            self.initOutputs,
+            self.intermediates,
+            self.outputs,
+            self.prerequisites,
+        ]
+        if self.globalInitOutputs is not None:
+            chain.append(self.globalInitOutputs)
+        for dstype in itertools.chain(*chain):
+            if dstype.name not in dataset_types:
+                new_outputs[dstype.name].add(dstype)
+        for name, dstypes in new_outputs.items():
+            if len(dstypes) > 1:
+                raise ValueError(
+                    "Pipeline contains multiple definitions for a dataset type "
+                    f"which is not defined in registry yet: {dstypes}"
+                )
+            elif len(dstypes) == 1:
+                dataset_types[name] = dstypes.pop()
+
+        return dataset_types.values()
 
 
 # ------------------------
@@ -1439,4 +1498,6 @@ class GraphBuilder:
                 constrainedByAllDatasets=condition,
                 resolveRefs=resolveRefs,
             )
-        return scaffolding.makeQuantumGraph(metadata=metadata, datastore=self.datastore)
+        return scaffolding.makeQuantumGraph(
+            registry=self.registry, metadata=metadata, datastore=self.datastore
+        )

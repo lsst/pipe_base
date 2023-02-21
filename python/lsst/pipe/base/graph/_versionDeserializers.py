@@ -48,6 +48,7 @@ from typing import (
 import networkx as nx
 from lsst.daf.butler import (
     DatasetRef,
+    DatasetType,
     DimensionConfig,
     DimensionRecord,
     DimensionUniverse,
@@ -514,6 +515,11 @@ class DeserializerV3(DeserializerBase):
             infoMappings.globalInitOutputRefs = [
                 DatasetRef.from_json(json_ref, universe=universe) for json_ref in json_refs
             ]
+        infoMappings.registryDatasetTypes = []
+        if (json_refs := infoMap.get("RegistryDatasetTypes")) is not None:
+            infoMappings.registryDatasetTypes = [
+                DatasetType.from_json(json_ref, universe=universe) for json_ref in json_refs
+            ]
         self.infoMappings = infoMappings
         return infoMappings
 
@@ -643,6 +649,7 @@ class DeserializerV3(DeserializerBase):
         newGraph._initInputRefs = initInputRefs
         newGraph._initOutputRefs = initOutputRefs
         newGraph._globalInitOutputRefs = self.infoMappings.globalInitOutputRefs
+        newGraph._registryDatasetTypes = self.infoMappings.registryDatasetTypes
         newGraph._universe = universe
         return newGraph
 

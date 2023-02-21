@@ -162,6 +162,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         tasks = []
         initInputs = {}
         initOutputs = {}
+        dataset_types = set()
         for task, label in (
             (Dummy1PipelineTask, "R"),
             (Dummy2PipelineTask, "S"),
@@ -177,14 +178,18 @@ class QuantumGraphTestCase(unittest.TestCase):
                 initInputDSType = _makeDatasetType(connections.initInput)
                 initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
                 initInputs[taskDef] = initRefs
+                dataset_types.add(initInputDSType)
             else:
                 initRefs = None
             if connections.initOutputs:
                 initOutputDSType = _makeDatasetType(connections.initOutput)
                 initRefs = [DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe))]
                 initOutputs[taskDef] = initRefs
+                dataset_types.add(initOutputDSType)
             inputDSType = _makeDatasetType(connections.input)
+            dataset_types.add(inputDSType)
             outputDSType = _makeDatasetType(connections.output)
+            dataset_types.add(outputDSType)
             for a, b in ((1, 2), (3, 4)):
                 inputRefs = [
                     DatasetRef(inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
@@ -206,6 +211,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.tasks = tasks
         self.quantumMap = quantumMap
         self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
+        dataset_types.add(self.packagesDSType)
         globalInitOutputs = [DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe))]
         self.qGraph = QuantumGraph(
             quantumMap,
@@ -214,8 +220,10 @@ class QuantumGraphTestCase(unittest.TestCase):
             initInputs=initInputs,
             initOutputs=initOutputs,
             globalInitOutputs=globalInitOutputs,
+            registryDatasetTypes=dataset_types,
         )
         self.universe = universe
+        self.num_dataset_types = len(dataset_types)
 
     def testTaskGraph(self):
         for taskDef in self.quantumMap.keys():
@@ -299,12 +307,17 @@ class QuantumGraphTestCase(unittest.TestCase):
 
     def testSubset(self):
         allNodes = list(self.qGraph)
-        subset = self.qGraph.subset(allNodes[0])
+        firstNode = allNodes[0]
+        subset = self.qGraph.subset(firstNode)
         self.assertEqual(len(subset), 1)
         subsetList = list(subset)
-        self.assertEqual(allNodes[0].quantum, subsetList[0].quantum)
+        self.assertEqual(firstNode.quantum, subsetList[0].quantum)
         self.assertEqual(self.qGraph._buildId, subset._buildId)
         self.assertEqual(len(subset.globalInitOutputRefs()), 1)
+        # Depending on which task was first the list can contain different
+        # number of datasets. The first task can be either Dummy1 or Dummy4.
+        num_types = {"R": 4, "U": 3}
+        self.assertEqual(len(subset.registryDatasetTypes()), num_types[firstNode.taskDef.label])
 
     def testSubsetToConnected(self):
         # False because there are two quantum chains for two distinct sets of
@@ -397,6 +410,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(len(restoreSub), 1)
             self.assertEqual(list(restoreSub)[0], restore.getQuantumNodeByNodeId(nodeId))
             self.assertEqual(len(restoreSub.globalInitOutputRefs()), 1)
+            self.assertEqual(len(restoreSub.registryDatasetTypes()), self.num_dataset_types)
             # Check that InitInput and InitOutput refs are restored correctly.
             for taskDef in restore.iterTaskGraph():
                 if taskDef.label in ("S", "T"):
@@ -473,6 +487,22 @@ class QuantumGraphTestCase(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             self.qGraph.saveUri("test.notgraph")
+
+    def testSaveLoadNoRegistryDatasetTypes(self):
+        """Test for reading quantum that is missing registry dataset types.
+
+        This test depends on internals of QuantumGraph implementation, in
+        particular that empty list of registry dataset types is not stored,
+        which makes save file identical to the "old" format.
+        """
+        # Reset the list, this is safe as QuantumGraph itself does not use it.
+        self.qGraph._registryDatasetTypes = []
+        with tempfile.TemporaryFile(suffix=".qgraph") as tmpFile:
+            self.qGraph.save(tmpFile)
+            tmpFile.seek(0)
+            restore = QuantumGraph.load(tmpFile, self.universe)
+            self.assertEqual(self.qGraph, restore)
+            self.assertEqual(restore.registryDatasetTypes(), [])
 
     def testContains(self):
         firstNode = next(iter(self.qGraph))
