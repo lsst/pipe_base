@@ -65,6 +65,11 @@ class Instrument(metaclass=ABCMeta):
     """Instrument specific name to use when locating a policy or configuration
     file in the file system."""
 
+    raw_definition: tuple[str, tuple[str, ...], str] | None = None
+    """Dataset type definition to use for "raw" datasets. This is a tuple
+    of the dataset type name, a tuple of dimension names, and the storage class
+    name. If `None` the ingest system will use its default definition."""
+
     def __init__(self, collection_prefix: Optional[str] = None):
         if collection_prefix is None:
             collection_prefix = self.getName()

@@ -43,17 +43,6 @@ from lsst.pipe.base import (
 from lsst.pipe.base.graph.quantumNode import QuantumNode
 from lsst.utils.introspection import get_full_type_name
 
-try:
-    import boto3
-    from moto import mock_s3
-except ImportError:
-    boto3 = None
-
-    def mock_s3(cls):
-        """A no-op decorator in case moto mock_s3 can not be imported."""
-        return cls
-
-
 METADATA = {"a": [1, 2, 3]}
 
 

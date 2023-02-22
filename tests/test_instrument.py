@@ -53,6 +53,8 @@ class DummyInstrument(Instrument):
 class BadInstrument(DummyInstrument):
     """Instrument with wrong class name."""
 
+    raw_definition = ("raw2", ("instrument", "detector", "exposure"), "StructuredDataDict")
+
     @classmethod
     def getName(cls):
         return "BadInstrument"
@@ -94,6 +96,9 @@ class InstrumentTestCase(unittest.TestCase):
     def test_basics(self):
         self.assertEqual(self.instrument.getName(), self.name)
         self.assertEqual(self.instrument.getRawFormatter({}), JsonFormatter)
+        self.assertIsNone(DummyInstrument.raw_definition)
+        raw = BadInstrument.raw_definition
+        self.assertEqual(raw[2], "StructuredDataDict")
 
     def test_register(self):
         """Test that register() sets appropriate Dimensions."""
