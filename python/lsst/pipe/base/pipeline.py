@@ -67,6 +67,7 @@ from ._task_metadata import TaskMetadata
 from .config import PipelineTaskConfig
 from .configOverrides import ConfigOverrides
 from .connections import iterConnections
+from .connectionTypes import Input
 from .pipelineTask import PipelineTask
 from .task import _TASK_METADATA_TYPE
 
@@ -773,6 +774,12 @@ class TaskDatasetTypes:
     at the Pipeline level.
     """
 
+    queryConstraints: NamedValueSet[DatasetType]
+    """Regular inputs that should not be used as constraints on the initial
+    QuantumGraph generation data ID query, according to their tasks
+    (`NamedValueSet`).
+    """
+
     prerequisites: NamedValueSet[DatasetType]
     """Dataset types that are prerequisite inputs to this Task.
 
@@ -1011,10 +1018,18 @@ class TaskDatasetTypes:
 
         outputs.freeze()
 
+        inputs = makeDatasetTypesSet("inputs", is_input=True)
+        queryConstraints = NamedValueSet(
+            inputs[c.name]
+            for c in cast(Iterable[Input], iterConnections(taskDef.connections, "inputs"))
+            if not c.deferGraphConstraint
+        )
+
         return cls(
             initInputs=makeDatasetTypesSet("initInputs", is_input=True),
             initOutputs=initOutputs,
-            inputs=makeDatasetTypesSet("inputs", is_input=True),
+            inputs=inputs,
+            queryConstraints=queryConstraints,
             prerequisites=makeDatasetTypesSet("prerequisiteInputs", is_input=True),
             outputs=outputs,
         )
@@ -1059,6 +1074,12 @@ class PipelineDatasetTypes:
     If an input dataset needed for a Quantum cannot be found in the input
     collection(s), that Quantum (and all dependent Quanta) will not be
     produced.
+    """
+
+    queryConstraints: NamedValueSet[DatasetType]
+    """Regular inputs that should be used as constraints on the initial
+    QuantumGraph generation data ID query, according to their tasks
+    (`NamedValueSet`).
     """
 
     prerequisites: NamedValueSet[DatasetType]
@@ -1133,6 +1154,7 @@ class PipelineDatasetTypes:
         allInitInputs = NamedValueSet[DatasetType]()
         allInitOutputs = NamedValueSet[DatasetType]()
         prerequisites = NamedValueSet[DatasetType]()
+        queryConstraints = NamedValueSet[DatasetType]()
         byTask = dict()
         if include_packages:
             allInitOutputs.add(
@@ -1161,6 +1183,9 @@ class PipelineDatasetTypes:
             allInitInputs.update(thisTask.initInputs)
             allInitOutputs.update(thisTask.initOutputs)
             allInputs.update(thisTask.inputs)
+            # Inputs are query constraints if any task considers them a query
+            # constraint.
+            queryConstraints.update(thisTask.queryConstraints)
             prerequisites.update(thisTask.prerequisites)
             allOutputs.update(thisTask.outputs)
             byTask[taskDef.label] = thisTask
@@ -1213,11 +1238,14 @@ class PipelineDatasetTypes:
             s.freeze()
             return s
 
+        inputs = frozen(allInputs - allOutputs - intermediateComponents)
+
         return cls(
             initInputs=frozen(allInitInputs - allInitOutputs),
             initIntermediates=frozen(allInitInputs & allInitOutputs),
             initOutputs=frozen(allInitOutputs - allInitInputs),
-            inputs=frozen(allInputs - allOutputs - intermediateComponents),
+            inputs=inputs,
+            queryConstraints=frozen(queryConstraints & inputs),
             # If there are storage class differences in inputs and outputs
             # the intermediates have to choose priority. Here choose that
             # inputs to tasks much match the requested storage class by
