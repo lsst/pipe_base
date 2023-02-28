@@ -128,7 +128,6 @@ class AddTask(PipelineTask):
     """Factory that makes instances"""
 
     def run(self, input: int) -> Struct:  # type: ignore
-
         if self.taskFactory:
             # do some bookkeeping
             if self.taskFactory.stopAt == self.taskFactory.countExec:
@@ -273,7 +272,7 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
 
 
 def populateButler(
-    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] = None
+    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] | None = None
 ) -> None:
     """Populate data butler with data needed for test.
 
