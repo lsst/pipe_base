@@ -1,1 +1,0 @@
-lsst.pipe.base.testUtils.makeQuantum no longer crashes if given a connection that is set to a dataset component.
