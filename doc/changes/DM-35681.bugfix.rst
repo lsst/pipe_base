@@ -1,3 +1,0 @@
-Ensure QuantumGraphs are given a DimensionUniverse at construction.
-
-This fixes a mostly-spurious dimension universe inconsistency warning when reading QuantumGraphs, introduced on DM-35082.
