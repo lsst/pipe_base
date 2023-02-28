@@ -1,2 +1,0 @@
-A new class ``InMemoryDatasetHandle`` is now available.
-This class provides a variant of ``lsst.daf.butler.DeferredDatasetHandle`` that does not require a butler and lets you store your in-memory objects in something that looks like one and so can be passed to ``Task.run()`` methods that expect to be able to do deferred loading.
