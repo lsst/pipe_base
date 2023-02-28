@@ -404,7 +404,7 @@ class LoadHelper(ContextManager[DefaultLoadHelper]):
         # that IOBase and BinaryIO actually have incompatible method
         # signatures.  IOBase *is* a base class of what open(..., 'rb')
         # returns, so it's what we have to use at runtime.
-        if isinstance(self.uri, io.IOBase):  # type: ignore
+        if isinstance(self.uri, io.IOBase):
             key = BinaryIO
         else:
             key = type(self.uri)
