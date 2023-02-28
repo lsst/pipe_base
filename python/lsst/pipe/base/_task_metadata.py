@@ -169,7 +169,6 @@ class TaskMetadata(BaseModel):
         keys = self._getKeys(name)
         key0 = keys.pop(0)
         if len(keys) == 0:
-
             # If add() is being used, always store the value in the arrays
             # property as a list. It's likely there will be another call.
             slot_type, value = self._validate_value(value)
