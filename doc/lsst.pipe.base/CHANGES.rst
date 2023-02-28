@@ -29,6 +29,7 @@ API Changes
 Bug Fixes
 ---------
 
+- ``lsst.pipe.base.testUtils.makeQuantum`` no longer crashes if given a connection that is set to a dataset component. (`DM-35721 <https://jira.lsstcorp.org/browse/DM-35721>`_)
 - Ensure ``QuantumGraphs`` are given a ``DimensionUniverse`` at construction.
 
   This fixes a mostly-spurious dimension universe inconsistency warning when reading QuantumGraphs, introduced on `DM-35082 <https://jira.lsstcorp.org/browse/DM-35082>`_. (`DM-35681 <https://jira.lsstcorp.org/browse/DM-35681>`_)
