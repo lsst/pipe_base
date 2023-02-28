@@ -1,3 +1,23 @@
+lsst-pipe-base v24.1.0 (2023-02-23)
+===================================
+
+New Features
+------------
+
+- ``QuantumGraph`` now saves the ``DimensionUniverse`` it was created with when it is persisted. This removes the need
+  to explicitly pass the ``DimensionUniverse`` when loading a saved graph. (`DM-35082 <https://jira.lsstcorp.org/browse/DM-35082>`_)
+- Allow ``PipelineTasks`` to provide defaults for the ``--dataset-query-constraints`` option for the ``pipetask`` tool. (`DM-37786 <https://jira.lsstcorp.org/browse/DM-37786>`_)
+
+
+Bug Fixes
+---------
+
+- Ensure ``QuantumGraphs`` are given a ``DimensionUniverse`` at construction.
+
+  This fixes a mostly-spurious dimension universe inconsistency warning when reading ``QuantumGraphs``, introduced on `DM-35082 <https://jira.lsstcorp.org/browse/DM-35082>`_. (`DM-35681 <https://jira.lsstcorp.org/browse/DM-35681>`_)
+- Fix an error message that says that repository state has changed during ``QuantumGraph`` generation when init input datasets are just missing. (`DM-37786 <https://jira.lsstcorp.org/browse/DM-37786>`_)
+
+
 lsst-pipe-base v24.0.0 (2022-08-26)
 ===================================
 
