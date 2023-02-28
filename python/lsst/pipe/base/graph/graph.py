@@ -127,6 +127,10 @@ class QuantumGraph:
         objects include task configurations and package versions. Typically
         they have an empty DataId, but there is no real restriction on what
         can appear here.
+    registryDatasetTypes : iterable [ `DatasetType` ], optional
+        Dataset types which are used by this graph, their definitions must
+        match registry. If registry does not define dataset type yet, then
+        it should match one that will be created later.
 
     Raises
     ------
@@ -144,6 +148,7 @@ class QuantumGraph:
         initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
         initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
         globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
+        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
     ):
         self._buildGraphs(
             quanta,
@@ -153,6 +158,7 @@ class QuantumGraph:
             initInputs=initInputs,
             initOutputs=initOutputs,
             globalInitOutputs=globalInitOutputs,
+            registryDatasetTypes=registryDatasetTypes,
         )
 
     def _buildGraphs(
@@ -167,6 +173,7 @@ class QuantumGraph:
         initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
         initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
         globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
+        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
     ) -> None:
         """Builds the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
@@ -310,12 +317,15 @@ class QuantumGraph:
         self._initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
         self._initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
         self._globalInitOutputRefs: List[DatasetRef] = []
+        self._registryDatasetTypes: List[DatasetType] = []
         if initInputs is not None:
             self._initInputRefs = {taskDef: list(refs) for taskDef, refs in initInputs.items()}
         if initOutputs is not None:
             self._initOutputRefs = {taskDef: list(refs) for taskDef, refs in initOutputs.items()}
         if globalInitOutputs is not None:
             self._globalInitOutputRefs = list(globalInitOutputs)
+        if registryDatasetTypes is not None:
+            self._registryDatasetTypes = list(registryDatasetTypes)
 
     @property
     def taskGraph(self) -> nx.DiGraph:
@@ -413,6 +423,9 @@ class QuantumGraph:
         # convert to standard dict to prevent accidental key insertion
         quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
 
+        # This should not change set of tasks in a graph, so we can keep the
+        # same registryDatasetTypes as in the original graph.
+        # TODO: Do we need to copy initInputs/initOutputs?
         newInst._buildGraphs(
             quantumDict,
             _quantumToNodeId={n.quantum: n.nodeId for n in self},
@@ -420,6 +433,7 @@ class QuantumGraph:
             pruneRefs=refs,
             universe=self._universe,
             globalInitOutputs=self._globalInitOutputRefs,
+            registryDatasetTypes=self._registryDatasetTypes,
         )
         return newInst
 
@@ -682,14 +696,31 @@ class QuantumGraph:
         quantumSubgraph = self._connectedQuanta.subgraph(nodes).nodes
         quantumMap = defaultdict(set)
 
+        dataset_type_names: set[str] = set()
         node: QuantumNode
         for node in quantumSubgraph:
             quantumMap[node.taskDef].add(node.quantum)
+            dataset_type_names.update(
+                dstype.name
+                for dstype in chain(
+                    node.quantum.inputs.keys(), node.quantum.outputs.keys(), node.quantum.initInputs.keys()
+                )
+            )
+
+        # May need to trim dataset types from registryDatasetTypes.
+        for taskDef in quantumMap:
+            if refs := self.initOutputRefs(taskDef):
+                dataset_type_names.update(ref.datasetType.name for ref in refs)
+        dataset_type_names.update(ref.datasetType.name for ref in self._globalInitOutputRefs)
+        registryDatasetTypes = [
+            dstype for dstype in self._registryDatasetTypes if dstype.name in dataset_type_names
+        ]
 
         # convert to standard dict to prevent accidental key insertion
         quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({}, universe=self._universe)
+        # TODO: Do we need to copy initInputs/initOutputs?
         newInst._buildGraphs(
             quantumDict,
             _quantumToNodeId={n.quantum: n.nodeId for n in nodes},
@@ -697,6 +728,7 @@ class QuantumGraph:
             metadata=self._metadata,
             universe=self._universe,
             globalInitOutputs=self._globalInitOutputRefs,
+            registryDatasetTypes=registryDatasetTypes,
         )
         return newInst
 
@@ -861,6 +893,17 @@ class QuantumGraph:
             DatasetRefs for global InitOutputs.
         """
         return self._globalInitOutputRefs
+
+    def registryDatasetTypes(self) -> List[DatasetType]:
+        """Return dataset types used by this graph, their definitions match
+        dataset types from registry.
+
+        Returns
+        -------
+        refs : `list` [ `DatasetType` ]
+            Dataset types for this graph.
+        """
+        return self._registryDatasetTypes
 
     @classmethod
     def loadUri(
@@ -1115,6 +1158,9 @@ class QuantumGraph:
         if self._globalInitOutputRefs:
             headerData["GlobalInitOutputRefs"] = [ref.to_json() for ref in self._globalInitOutputRefs]
 
+        if self._registryDatasetTypes:
+            headerData["RegistryDatasetTypes"] = [dstype.to_json() for dstype in self._registryDatasetTypes]
+
         # dump the headerData to json
         header_encode = lzma.compress(json.dumps(headerData).encode())
 
@@ -1252,8 +1298,8 @@ class QuantumGraph:
     def __getstate__(self) -> dict:
         """Stores a compact form of the graph as a list of graph nodes, and a
         tuple of task labels and task configs. The full graph can be
-        reconstructed with this information, and it preseves the ordering of
-        the graph ndoes.
+        reconstructed with this information, and it preserves the ordering of
+        the graph nodes.
         """
         universe: Optional[DimensionUniverse] = None
         for node in self:
