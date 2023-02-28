@@ -1,1 +1,0 @@
-``InMemoryDatasetHandle`` now supports storage class conversion on ``get()``.

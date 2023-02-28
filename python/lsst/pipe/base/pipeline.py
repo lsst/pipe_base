@@ -1286,7 +1286,6 @@ class PipelineDatasetTypes:
             pipeline = pipeline.toExpandedPipeline()
 
         for taskDef in pipeline:
-
             # all task InitOutputs
             for name in taskDef.connections.initOutputs:
                 attribute = getattr(taskDef.connections, name)

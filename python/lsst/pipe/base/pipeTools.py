@@ -102,7 +102,6 @@ def isPipelineOrdered(
     # Build a map of DatasetType name to producer's index in a pipeline
     producerIndex = {}
     for idx, taskDef in enumerate(pipeline):
-
         for attr in iterConnections(taskDef.connections, "outputs"):
             if attr.name in producerIndex:
                 raise DuplicateOutputError(
@@ -112,7 +111,6 @@ def isPipelineOrdered(
 
     # check all inputs that are also someone's outputs
     for idx, taskDef in enumerate(pipeline):
-
         # get task input DatasetTypes, this can only be done via class method
         inputs = {name: getattr(taskDef.connections, name) for name in taskDef.connections.inputs}
         for dsTypeDescr in inputs.values():
@@ -180,7 +178,6 @@ def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
     queue = [-1]
     result = []
     while queue:
-
         # move to final list, drop -1
         idx = queue.pop(0)
         if idx >= 0:

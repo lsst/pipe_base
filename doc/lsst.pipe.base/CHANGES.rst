@@ -1,3 +1,63 @@
+lsst-pipe-base v25.0.0 (2023-02-28)
+===================================
+
+This is the first release without any support for the Generation 2 middleware.
+
+New Features
+------------
+
+- Added ``PipelineStepTester`` class, to enable testing that multi-step pipelines are able to run without error. (`DM-33779 <https://jira.lsstcorp.org/browse/DM-33779>`_)
+- ``QuantumGraph`` now saves the ``DimensionUniverse`` it was created with when it is persisted. This removes the need
+  to explicitly pass the ``DimensionUniverse`` when loading a saved graph. (`DM-35082 <https://jira.lsstcorp.org/browse/DM-35082>`_)
+- * Added support for transferring files into execution butler. (`DM-35494 <https://jira.lsstcorp.org/browse/DM-35494>`_)
+- A new class ``InMemoryDatasetHandle`` is now available.
+  This class provides a variant of ``lsst.daf.butler.DeferredDatasetHandle`` that does not require a butler and lets you store your in-memory objects in something that looks like one and so can be passed to ``Task.run()`` methods that expect to be able to do deferred loading. (`DM-35741 <https://jira.lsstcorp.org/browse/DM-35741>`_)
+- * Add unit test to cover the new ``getNumberOfQuantaForTask`` method.
+  * Add graph interface, ``getNumberOfQuantaForTask``, to determine number of quanta associated with a given ``taskDef``.
+  * Modifications to ``getQuantaForTask`` to support showing added additional quanta information in the logger. (`DM-36145 <https://jira.lsstcorp.org/browse/DM-36145>`_)
+- Allow ``PipelineTasks`` to provide defaults for the ``--dataset-query-constraints`` option for the ``pipetask`` tool. (`DM-37786 <https://jira.lsstcorp.org/browse/DM-37786>`_)
+
+
+API Changes
+-----------
+
+- ``ButlerQuantumContext.get`` method can accept `None` as a reference and returns `None` as a result object. (`DM-35752 <https://jira.lsstcorp.org/browse/DM-35752>`_)
+- ``GraphBuilder.makeGraph`` method adds ``bind`` parameter for bind values to use with the user expression. (`DM-36487 <https://jira.lsstcorp.org/browse/DM-36487>`_)
+- ``InMemoryDatasetHandle`` now supports storage class conversion on ``get()``. (`DM-4551 <https://jira.lsstcorp.org/browse/DM-4551>`_)
+
+
+Bug Fixes
+---------
+
+- ``lsst.pipe.base.testUtils.makeQuantum`` no longer crashes if given a connection that is set to a dataset component. (`DM-35721 <https://jira.lsstcorp.org/browse/DM-35721>`_)
+- Ensure ``QuantumGraphs`` are given a ``DimensionUniverse`` at construction.
+
+  This fixes a mostly-spurious dimension universe inconsistency warning when reading QuantumGraphs, introduced on `DM-35082 <https://jira.lsstcorp.org/browse/DM-35082>`_. (`DM-35681 <https://jira.lsstcorp.org/browse/DM-35681>`_)
+- Fixed an error message that says that repository state has changed during ``QuantumGraph`` generation when init input datasets are just missing. (`DM-37786 <https://jira.lsstcorp.org/browse/DM-37786>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Make diagnostic logging for empty ``QuantumGraphs`` harder to ignore.
+
+  Log messages have been upgraded from ``WARNING`` to ``FATAL``, and an exception traceback that tends to hide them has been removed. (`DM-36360 <https://jira.lsstcorp.org/browse/DM-36360>`_)
+
+
+An API Removal or Deprecation
+-----------------------------
+
+- Removed the ``Task.getSchemaCatalogs`` and ``Task.getAllSchemaCatalogs`` APIs.
+  These were used by ``CmdLineTask`` but are no longer used in the current middleware. (`DM-2850 <https://jira.lsstcorp.org/browse/DM-2850>`_)
+- Relocated ``lsst.pipe.base.cmdLineTask.profile`` to ``lsst.utils.timer.profile``.
+  This was relocated as part of the Gen2 removal that includes the removal of ``CmdLineTask``. (`DM-35697 <https://jira.lsstcorp.org/browse/DM-35697>`_)
+- * ``ArgumentParser``, ``CmdLineTask``, and ``TaskRunner`` classes have been removed and associated gen2 documentation.
+  * The ``PipelineIR.from_file()`` method has been removed.
+  * The ``getTaskLogger`` function has been removed. (`DM-35917 <https://jira.lsstcorp.org/browse/DM-35917>`_)
+- Replaced ``CmdLineTask`` and ``ArgumentParser`` with non-functioning stubs, disabling all Gen2 functionality.
+  A deprecation message is now issued but the classes do nothing. (`DM-35675 <https://jira.lsstcorp.org/browse/DM-35675>`_)
+
+
 lsst-pipe-base v24.0.0 (2022-08-26)
 ===================================
 

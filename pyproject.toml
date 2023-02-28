@@ -20,10 +20,10 @@ classifiers = [
 ]
 keywords=["lsst"]
 dependencies = [
-    "lsst-resources [s3]",
-    "lsst-utils",
-    "lsst-daf-butler",
-    "lsst-pex-config",
+    "lsst-resources [s3] >=25.0,<25.100",
+    "lsst-utils  >=25.0,<25.100",
+    "lsst-daf-butler  >=25.0,<25.100",
+    "lsst-pex-config  >=25.0,<25.100",
     "pydantic",
     "networkx",
     "pyyaml >= 5.1",
@@ -94,7 +94,7 @@ version = { attr = "lsst_versions.get_lsst_version" }
     [[tool.towncrier.type]]
         directory = "removal"
         name = "An API Removal or Deprecation"
-        showcontent = false
+        showcontent = true
 
 [tool.black]
 line-length = 110

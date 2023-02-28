@@ -130,8 +130,8 @@ class _DatasetTracker(Generic[_T, _U]):
         if (result := self._consumers.get(key)) is not None:
             result.discard(value)
         if self._createInverse:
-            if result := self._itemsDict.get(value):
-                result.discard(key)
+            if result_inverse := self._itemsDict.get(value):
+                result_inverse.discard(key)
 
     def getConsumers(self, key: _T) -> Set[_U]:
         """Return all values associated with the consumption of the supplied
