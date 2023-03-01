@@ -53,14 +53,12 @@ from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
 from . import automatic_connection_constants as acc
-from . import pipelineIR, pipeTools
+from . import pipeline_graph, pipelineIR
 from ._instrument import Instrument as PipeBaseInstrument
-from ._task_metadata import TaskMetadata
 from .config import PipelineTaskConfig
 from .connections import PipelineTaskConnections, iterConnections
 from .connectionTypes import Input
 from .pipelineTask import PipelineTask
-from .task import _TASK_METADATA_TYPE
 
 if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
     from lsst.obs.base import Instrument
@@ -749,6 +747,47 @@ class Pipeline:
         """
         self._pipelineIR.write_to_uri(uri)
 
+    def to_graph(self) -> pipeline_graph.PipelineGraph:
+        """Construct a pipeline graph from this pipeline.
+
+        Constructing a graph applies all configuration overrides, freezes all
+        configuration, checks all contracts, and checks for dataset type
+        consistency between tasks (as much as possible without access to a data
+        repository).  It cannot be reversed.
+
+        Returns
+        -------
+        graph : `pipeline_graph.PipelineGraph`
+            Representation of the pipeline as a graph.
+        """
+        instrument_class_name = self._pipelineIR.instrument
+        data_id = {}
+        if instrument_class_name is not None:
+            instrument_class = doImportType(instrument_class_name)
+            if instrument_class is not None:
+                data_id["instrument"] = instrument_class.getName()
+        graph = pipeline_graph.PipelineGraph(data_id=data_id)
+        graph.description = self._pipelineIR.description
+        for label in self._pipelineIR.tasks:
+            self._add_task_to_graph(label, graph)
+        if self._pipelineIR.contracts is not None:
+            label_to_config = {x.label: x.config for x in graph.tasks.values()}
+            for contract in self._pipelineIR.contracts:
+                # execute this in its own line so it can raise a good error
+                # message if there was problems with the eval
+                success = eval(contract.contract, None, label_to_config)
+                if not success:
+                    extra_info = f": {contract.msg}" if contract.msg is not None else ""
+                    raise pipelineIR.ContractError(
+                        f"Contract(s) '{contract.contract}' were not satisfied{extra_info}"
+                    )
+        for label, subset in self._pipelineIR.labeled_subsets.items():
+            graph.add_task_subset(
+                label, subset.subset, subset.description if subset.description is not None else ""
+            )
+        graph.sort()
+        return graph
+
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
         r"""Return a generator of `TaskDef`\s which can be used to create
         quantum graphs.
@@ -765,31 +804,22 @@ class Pipeline:
             If a dataId is supplied in a config block. This is in place for
             future use
         """
-        taskDefs = []
-        for label in self._pipelineIR.tasks:
-            taskDefs.append(self._buildTaskDef(label))
+        yield from self.to_graph()._iter_task_defs()
 
-        # lets evaluate the contracts
-        if self._pipelineIR.contracts is not None:
-            label_to_config = {x.label: x.config for x in taskDefs}
-            for contract in self._pipelineIR.contracts:
-                # execute this in its own line so it can raise a good error
-                # message if there was problems with the eval
-                success = eval(contract.contract, None, label_to_config)
-                if not success:
-                    extra_info = f": {contract.msg}" if contract.msg is not None else ""
-                    raise pipelineIR.ContractError(
-                        f"Contract(s) '{contract.contract}' were not satisfied{extra_info}"
-                    )
+    def _add_task_to_graph(self, label: str, graph: pipeline_graph.PipelineGraph) -> None:
+        """Add a single task from this pipeline to a pipeline graph that is
+        under construction.
 
-        taskDefs = sorted(taskDefs, key=lambda x: x.label)
-        yield from pipeTools.orderPipeline(taskDefs)
-
-    def _buildTaskDef(self, label: str) -> TaskDef:
+        Parameters
+        ----------
+        label : `str`
+            Label for the task to be added.
+        graph : `pipeline_graph.PipelineGraph`
+            Graph to add the task to.
+        """
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
         taskClass: type[PipelineTask] = doImportType(taskIR.klass)
-        taskName = get_full_type_name(taskClass)
         config = taskClass.ConfigClass()
         instrument: PipeBaseInstrument | None = None
         if (instrumentName := self._pipelineIR.instrument) is not None:
@@ -802,13 +832,19 @@ class Pipeline:
             self._pipelineIR.parameters,
             label,
         )
-        return TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label)
+        graph.add_task(label, taskClass, config)
 
     def __iter__(self) -> Generator[TaskDef, None, None]:
         return self.toExpandedPipeline()
 
     def __getitem__(self, item: str) -> TaskDef:
-        return self._buildTaskDef(item)
+        # Making a whole graph and then making a TaskDef from that is pretty
+        # backwards, but I'm hoping to deprecate this method shortly in favor
+        # of making the graph explicitly and working with its node objects.
+        graph = pipeline_graph.PipelineGraph()
+        self._add_task_to_graph(item, graph)
+        (result,) = graph._iter_task_defs()
+        return result
 
     def __len__(self) -> int:
         return len(self._pipelineIR.tasks)
@@ -1082,7 +1118,7 @@ class TaskDatasetTypes:
                 DatasetType(
                     taskDef.configDatasetName,
                     registry.dimensions.empty,
-                    storageClass="Config",
+                    storageClass=acc.CONFIG_INIT_OUTPUT_STORAGE_CLASS,
                 )
             )
         initOutputs.freeze()
@@ -1100,7 +1136,7 @@ class TaskDatasetTypes:
             current = registry.getDatasetType(taskDef.metadataDatasetName)
         except KeyError:
             # No previous definition so use the default.
-            storageClass = "TaskMetadata" if _TASK_METADATA_TYPE is TaskMetadata else "PropertySet"
+            storageClass = acc.METADATA_OUTPUT_STORAGE_CLASS
         else:
             storageClass = current.storageClass.name
         outputs.update({DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)})
@@ -1108,7 +1144,15 @@ class TaskDatasetTypes:
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
-            outputs.update({DatasetType(taskDef.logOutputDatasetName, dimensions, "ButlerLogRecords")})
+            outputs.update(
+                {
+                    DatasetType(
+                        taskDef.logOutputDatasetName,
+                        dimensions,
+                        acc.LOG_OUTPUT_STORAGE_CLASS,
+                    )
+                }
+            )
 
         outputs.freeze()
 

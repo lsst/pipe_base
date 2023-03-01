@@ -130,18 +130,6 @@ class PipelineToolsTestCase(unittest.TestCase):
         )
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
-    def testIsOrderedExceptions(self):
-        """Tests for pipeTools.isPipelineOrdered method exceptions"""
-        # two producers should throw ValueError
-        with self.assertRaises(pipeTools.DuplicateOutputError):
-            _makePipeline(
-                [
-                    ("A", "B", "task1"),
-                    ("B", "C", "task2"),
-                    ("A", "C", "task3"),
-                ]
-            )
-
     def testOrderPipeline(self):
         """Tests for pipeTools.orderPipeline method"""
         pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])
@@ -198,14 +186,6 @@ class PipelineToolsTestCase(unittest.TestCase):
 
     def testOrderPipelineExceptions(self):
         """Tests for pipeTools.orderPipeline method exceptions"""
-        with self.assertRaises(pipeTools.DuplicateOutputError):
-            _makePipeline(
-                [
-                    ("A", "B", "task1"),
-                    ("B", "C", "task2"),
-                    ("A", "C", "task3"),
-                ]
-            )
 
         # cycle in a graph should throw ValueError
         with self.assertRaises(pipeTools.PipelineDataCycleError):
