@@ -651,7 +651,7 @@ class PipelineIR:
 
         self.merge_pipelines([fragment.toPipelineIR() for fragment in self.imports])
 
-    def merge_pipelines(self, pipelines: Iterable[PipelineIR]) -> None:
+    def merge_pipelines(self, pipelines: abcIterable[PipelineIR]) -> None:
         """Merge one or more other `PipelineIR` objects into this object.
 
         Parameters
