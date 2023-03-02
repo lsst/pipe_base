@@ -170,8 +170,6 @@ class Edge(ABC):
         not when it is run.
     connection_name : `str`
         Internal name for the connection as seen by the task.
-    connection : `BaseConnection`
-        Post-configuration object to draw dataset type information from.
     """
 
     def __init__(
