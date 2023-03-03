@@ -47,8 +47,8 @@ class ButlerMock:
         self.datasets: dict[str, dict[DataCoordinate, Any]] = {}
         self.registry = SimpleNamespace(dimensions=DimensionUniverse())
 
-    def getDirect(self, ref: DatasetRef) -> Any:
-        # getDirect requires resolved ref
+    def get(self, ref: DatasetRef) -> Any:
+        # Requires resolved ref.
         assert ref.id is not None
         dsdata = self.datasets.get(ref.datasetType.name)
         if dsdata:

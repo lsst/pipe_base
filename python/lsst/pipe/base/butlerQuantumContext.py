@@ -130,12 +130,12 @@ class ButlerQuantumContext:
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
             self._checkMembership(ref.datasetRef, self.allInputs)
-            return self.__butler.getDirectDeferred(ref.datasetRef)
+            return self.__butler.getDeferred(ref.datasetRef)
         elif ref is None:
             return None
         else:
             self._checkMembership(ref, self.allInputs)
-            return self.__butler.getDirect(ref)
+            return self.__butler.get(ref)
 
     def _put(self, value: Any, ref: DatasetRef) -> None:
         """Store data in butler"""
