@@ -153,14 +153,17 @@ def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
     outputs = {}  # maps task index to its output DatasetType names
     allInputs = set()  # all inputs of all tasks
     allOutputs = set()  # all outputs of all tasks
+    dsTypeTaskLabels: dict[str, str] = {}  # maps DatasetType name to the label of its parent task
     for idx, taskDef in enumerate(pipeline):
         # task outputs
         dsMap = {name: getattr(taskDef.connections, name) for name in taskDef.connections.outputs}
         for dsTypeDescr in dsMap.values():
             if dsTypeDescr.name in allOutputs:
                 raise DuplicateOutputError(
-                    "DatasetType `{}' appears more than once as output".format(dsTypeDescr.name)
+                    f"DatasetType `{dsTypeDescr.name}' in task `{taskDef.label}' already appears as an "
+                    f"output in task `{dsTypeTaskLabels[dsTypeDescr.name]}'."
                 )
+            dsTypeTaskLabels[dsTypeDescr.name] = taskDef.label
         outputs[idx] = set(dsTypeDescr.name for dsTypeDescr in dsMap.values())
         allOutputs.update(outputs[idx])
 
