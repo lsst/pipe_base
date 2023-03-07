@@ -39,9 +39,10 @@ import itertools
 import string
 import typing
 from collections import UserDict
+from collections.abc import Mapping
 from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import Any, ClassVar, Dict, Iterable, List, Set, Union
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, ClassVar, Iterable, List, Set, Union
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
@@ -114,6 +115,13 @@ class PipelineTaskConnectionDict(UserDict):
 
 class PipelineTaskConnectionsMetaclass(type):
     """Metaclass used in the declaration of PipelineTaskConnections classes"""
+
+    initInputs: Set[str]
+    prerequisiteInputs: Set[str]
+    inputs: Set[str]
+    initOutputs: Set[str]
+    outputs: Set[str]
+    allConnections: Mapping[str, BaseConnection]
 
     def __prepare__(name, bases, **kwargs):  # noqa: 805
         # Create an instance of our special dict to catch and track all
@@ -217,6 +225,76 @@ class PipelineTaskConnectionsMetaclass(type):
         # __init__ on the type metaclass. This is in accordance with python
         # documentation on metaclasses
         super().__init__(name, bases, dct)
+
+    def __call__(cls, *, config: "PipelineTaskConfig" | None = None) -> PipelineTaskConnections:
+        # MyPy appears not to really understand metaclass.__call__ at all, so
+        # we need to tell it to ignore __new__ and __init__ calls here.
+        instance: PipelineTaskConnections = cls.__new__(cls)  # type: ignore
+        instance.inputs = set(cls.inputs)
+        instance.prerequisiteInputs = set(cls.prerequisiteInputs)
+        instance.outputs = set(cls.outputs)
+        instance.initInputs = set(cls.initInputs)
+        instance.initOutputs = set(cls.initOutputs)
+
+        from .config import PipelineTaskConfig  # local import to avoid cycle
+
+        if config is None or not isinstance(config, PipelineTaskConfig):
+            raise ValueError(
+                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
+            )
+        instance.config = config
+        # Extract the template names that were defined in the config instance
+        # by looping over the keys of the defaultTemplates dict specified at
+        # class declaration time
+        templateValues = {
+            name: getattr(config.connections, name) for name in getattr(instance, "defaultTemplates").keys()
+        }
+        # Extract the configured value corresponding to each connection
+        # variable. I.e. for each connection identifier, populate a override
+        # for the connection.name attribute
+        instance._nameOverrides = {
+            name: getattr(config.connections, name).format(**templateValues)
+            for name in cls.allConnections.keys()
+        }
+
+        # connections.name corresponds to a dataset type name, create a reverse
+        # mapping that goes from dataset type name to attribute identifier name
+        # (variable name) on the connection class
+        instance._typeNameToVarName = {v: k for k, v in instance._nameOverrides.items()}
+
+        # Set allConnections using the instances with name overrides.  We
+        # invoke __get__ on the descriptor objects directly since they're on a
+        # partially-constructed instance and we don't want to assume too much
+        # about what getattr is going to do, especially with all the
+        # metaprogramming going on here.  We wrap this in MappingProxyType so
+        # implementers don't complicate matters by trying to modify it.
+        instance.allConnections = MappingProxyType(
+            {name: getattr(cls, name).__get__(instance, cls) for name in cls.allConnections.keys()}
+        )
+
+        # Finally call __init__ - the base class implementation does nothing;
+        # we could have left some of the above implementation there (where it
+        # originated), but this makes it hard for derived class implementors to
+        # get things into a weird state (in which even reporting an error
+        # nicely is hard) by delegating to super().__init__ somewhere other
+        # than the beginning of their own __init__ or forgetting to implement
+        # it themselves.
+        instance.__init__(config=config)  # type: ignore
+
+        # Derived-class implementations may have changed the contents of the
+        # various kinds-of-connection sets or even allConnections; gather a
+        # set of all connections that remain in both.
+        # Drop removed connections from all attributes, and freeze them.
+        allRemainingConnections = {}
+        for attrName in ("initInputs", "prerequisiteInputs", "inputs", "initOutputs", "outputs"):
+            remainingConnectionNames = getattr(instance, attrName)
+            allRemainingConnections.update(
+                {name: instance.allConnections[name] for name in remainingConnectionNames}
+            )
+            setattr(instance, attrName, frozenset(remainingConnectionNames))
+        instance.allConnections = MappingProxyType(allRemainingConnections)
+
+        return instance
 
 
 class QuantizedConnection(SimpleNamespace):
@@ -411,38 +489,17 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     dimensions: ClassVar[Set[str]]
 
     def __init__(self, *, config: "PipelineTaskConfig" | None = None):
-        self.inputs: Set[str] = set(self.inputs)
-        self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
-        self.outputs: Set[str] = set(self.outputs)
-        self.initInputs: Set[str] = set(self.initInputs)
-        self.initOutputs: Set[str] = set(self.initOutputs)
-        self.allConnections: Dict[str, BaseConnection] = dict(self.allConnections)
+        pass
 
-        from .config import PipelineTaskConfig  # local import to avoid cycle
-
-        if config is None or not isinstance(config, PipelineTaskConfig):
-            raise ValueError(
-                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
-            )
-        self.config = config
-        # Extract the template names that were defined in the config instance
-        # by looping over the keys of the defaultTemplates dict specified at
-        # class declaration time
-        templateValues = {
-            name: getattr(config.connections, name) for name in getattr(self, "defaultTemplates").keys()
-        }
-        # Extract the configured value corresponding to each connection
-        # variable. I.e. for each connection identifier, populate a override
-        # for the connection.name attribute
-        self._nameOverrides = {
-            name: getattr(config.connections, name).format(**templateValues)
-            for name in self.allConnections.keys()
-        }
-
-        # connections.name corresponds to a dataset type name, create a reverse
-        # mapping that goes from dataset type name to attribute identifier name
-        # (variable name) on the connection class
-        self._typeNameToVarName = {v: k for k, v in self._nameOverrides.items()}
+    config: PipelineTaskConfig
+    initInputs: Set[str]
+    prerequisiteInputs: Set[str]
+    inputs: Set[str]
+    initOutputs: Set[str]
+    outputs: Set[str]
+    allConnections: Mapping[str, BaseConnection]
+    _nameOverrides: Mapping[str, str]
+    _typeNameToVarName: Mapping[str, str]
 
     def buildDatasetRefs(
         self, quantum: Quantum
