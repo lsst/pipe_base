@@ -282,17 +282,16 @@ class PipelineTaskConnectionsMetaclass(type):
         instance.__init__(config=config)  # type: ignore
 
         # Derived-class implementations may have changed the contents of the
-        # various kinds-of-connection sets or even allConnections; gather a
-        # set of all connections that remain in both.
-        # Drop removed connections from all attributes, and freeze them.
-        allRemainingConnections = {}
+        # various kinds-of-connection sets; update allConnections to have keys
+        # that are a union of all those.  We get values for the new
+        # allConnections from the attributes, since any dynamically added new
+        # ones will not be present in the old allConnections.
+        updatedAllConnections = {}
         for attrName in ("initInputs", "prerequisiteInputs", "inputs", "initOutputs", "outputs"):
-            remainingConnectionNames = getattr(instance, attrName)
-            allRemainingConnections.update(
-                {name: instance.allConnections[name] for name in remainingConnectionNames}
-            )
-            setattr(instance, attrName, frozenset(remainingConnectionNames))
-        instance.allConnections = MappingProxyType(allRemainingConnections)
+            updatedConnectionNames = getattr(instance, attrName)
+            updatedAllConnections.update({name: getattr(instance, name) for name in updatedConnectionNames})
+            setattr(instance, attrName, frozenset(updatedConnectionNames))
+        instance.allConnections = MappingProxyType(updatedAllConnections)
 
         return instance
 
