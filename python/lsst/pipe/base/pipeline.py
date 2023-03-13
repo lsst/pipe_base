@@ -61,6 +61,7 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
+from . import automatic_connection_constants as acc
 from . import pipelineIR, pipeTools
 from ._task_metadata import TaskMetadata
 from .config import PipelineTaskConfig
@@ -172,7 +173,7 @@ class TaskDef:
     @property
     def configDatasetName(self) -> str:
         """Name of a dataset type for configuration of this task (`str`)"""
-        return self.label + "_config"
+        return acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=self.label)
 
     @property
     def metadataDatasetName(self) -> Optional[str]:
@@ -198,7 +199,7 @@ class TaskDef:
         name : `str`
             Name of the task's metadata dataset type.
         """
-        return f"{label}_metadata"
+        return acc.METADATA_OUTPUT_TEMPLATE.format(label=label)
 
     @property
     def logOutputDatasetName(self) -> Optional[str]:
@@ -206,7 +207,7 @@ class TaskDef:
         logs are not to be saved (`str`)
         """
         if cast(PipelineTaskConfig, self.config).saveLogOutput:
-            return self.label + "_log"
+            return acc.LOG_OUTPUT_TEMPLATE.format(label=self.label)
         else:
             return None
 
