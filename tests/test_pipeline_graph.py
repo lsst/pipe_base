@@ -30,6 +30,7 @@
 import copy
 import io
 import logging
+import textwrap
 import unittest
 from typing import Any
 
@@ -49,6 +50,7 @@ from lsst.pipe.base.pipeline_graph import (
     PipelineGraphError,
     TaskImportMode,
     UnresolvedGraphError,
+    visualization,
 )
 from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
@@ -901,6 +903,87 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertEqual(
             self.graph.dataset_types["output_1"].storage_class_name, get_mock_name("TaskMetadata")
+        )
+
+    def check_visualization(self, graph: PipelineGraph, expected: str, **kwargs: Any) -> None:
+        """Run pipeline graph visualization with the given kwargs and check
+        that the output is the given expected string.
+
+        Parameters
+        ----------
+        graph : `lsst.pipe.base.pipeline_graph.PipelineGraph`
+            Pipeline graph to visualize.
+        expected : `str`
+            Expected output of the visualization.  Will be passed through
+            `textwrap.dedent`, to allow it to be written with triple-quotes.
+        **kwargs
+            Forwarded to `lsst.pipe.base.pipeline_graph.visualization.show`.
+        """
+        stream = io.StringIO()
+        visualization.show(graph, stream, **kwargs)
+        self.assertEqual(textwrap.dedent(expected), stream.getvalue())
+
+    def test_unresolved_visualization(self) -> None:
+        """Test pipeline graph text-based visualization on unresolved
+        graphs.
+        """
+        self.check_visualization(
+            self.graph,
+            """
+            ■  a
+            │
+            ■  b
+            """,
+            merge_input_trees=0,
+            merge_output_trees=0,
+            merge_intermediates=False,
+        )
+        self.check_visualization(
+            self.graph,
+            """
+            ○  input_1
+            │
+            ■  a
+            │
+            ○  intermediate_1
+            │
+            ■  b
+            │
+            ○  output_1
+            """,
+            dataset_types=True,
+        )
+
+    def test_resolved_visualization(self) -> None:
+        """Test pipeline graph text-based visualization on resolved graphs."""
+        self.graph.resolve(MockRegistry(dimensions=self.dimensions, dataset_types={}))
+        self.check_visualization(
+            self.graph,
+            """
+            ■  a: {} DynamicTestPipelineTask
+            │
+            ■  b: {} DynamicTestPipelineTask
+            """,
+            task_classes="concise",
+            merge_input_trees=0,
+            merge_output_trees=0,
+            merge_intermediates=False,
+        )
+        self.check_visualization(
+            self.graph,
+            """
+            ○  input_1: {} _mock_StructuredDataDict
+            │
+            ■  a: {} lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+            │
+            ○  intermediate_1: {} _mock_StructuredDataDict
+            │
+            ■  b: {} lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+            │
+            ○  output_1: {} _mock_StructuredDataDict
+            """,
+            task_classes="full",
+            dataset_types=True,
         )
 
 
