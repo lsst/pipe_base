@@ -23,7 +23,6 @@ from __future__ import annotations
 __all__ = ("Layout",)
 
 import itertools
-from collections import deque
 from typing import Generic, TextIO, TypeVar
 
 import networkx
@@ -36,86 +35,72 @@ _K = TypeVar("_K")
 
 
 class Layout(Generic[_K]):
-    def __init__(
-        self,
-        xgraph: networkx.DiGraph | None = None,
-        locations: dict[_K, int] | None = None,
-        x_max: int = 0,
-    ):
-        self.xgraph = xgraph if xgraph is not None else networkx.DiGraph()
-        self.locations = locations if locations is not None else {}
-        self.x_max = x_max
+    def __init__(self, graph: networkx.DiGraph):
+        self._todo_graph = graph
+        self._active_columns: dict[int, set[_K]] = {}
+        self.locations: dict[_K, int] = {}
+        self.x_max = 0
+        for component in list(networkx.algorithms.components.weakly_connected_components(graph)):
+            self._add_connected_graph(graph.subgraph(component))
+        assert not self._todo_graph, list(self._todo_graph)
+        del self._todo_graph
+        del self._active_columns
 
-    def build(self) -> None:
-        active_columns: dict[int, set[_K]] = {}
+    def _add_unblocked_node(self, node: _K) -> int:
+        assert self._todo_graph.in_degree(node) == 0, str(node)
+        for active_column_x, active_column_endpoints in list(self._active_columns.items()):
+            if node in active_column_endpoints:
+                active_column_endpoints.remove(node)
+                if not active_column_endpoints:
+                    del self._active_columns[active_column_x]
+        for node_x in itertools.count():
+            if node_x not in self._active_columns:
+                break
+        outgoing = set(self._todo_graph.successors(node))
+        self.locations[node] = node_x
+        self.x_max = max(node_x, self.x_max)
+        self._todo_graph.remove_node(node)
+        if outgoing:
+            self._active_columns[node_x] = outgoing
+        return node_x
 
-        def add_node(node: _K) -> int:
-            for active_column_x, active_column_endpoints in list(active_columns.items()):
-                if node in active_column_endpoints:
-                    active_column_endpoints.remove(node)
-                    if not active_column_endpoints:
-                        del active_columns[active_column_x]
-            for node_x in itertools.count():
-                if node_x not in active_columns:
-                    break
-            outgoing = set(self.xgraph.successors(node))
-            self.locations[node] = node_x
-            self.x_max = max(node_x, self.x_max)
-            if outgoing:
-                active_columns[node_x] = outgoing
-            return node_x
+    def _add_active_unblocked(self, avoid: _K) -> None:
+        while True:
+            # First we immediately add any nodes that don't have outgoing
+            # edges (since these won't occupy new columns for more than a
+            # single row), and remember the rest that are unblocked.
+            unblocked = set()
+            for node in list(itertools.chain.from_iterable(self._active_columns.values())):
+                if node != avoid and node in self._todo_graph and self._todo_graph.in_degree(node) == 0:
+                    if self._todo_graph.out_degree(node) == 0:
+                        self._add_unblocked_node(node)
+                    else:
+                        unblocked.add(node)
+            if not unblocked:
+                return
+            # Add the unblocked nodes that do have outgoing edges, starting
+            # with those that have the fewest outgoing edges, while recursing
+            # to include the nodes those unblock.
+            for node in sorted(unblocked, key=lambda n: self._todo_graph.out_degree(n), reverse=True):
+                self._add_unblocked_node(node)
 
-        def add_graph(xgraph: networkx.DiGraph) -> None:
-            n_components = 0
-            for component in networkx.algorithms.components.weakly_connected_components(xgraph):
-                if len(component) <= 2:
-                    for node in component:
-                        add_node(node)
-                else:
-                    add_connected_graph(xgraph.subgraph(component).copy())
-                n_components += 1
-
-        def add_connected_graph(xgraph: networkx.DiGraph) -> None:
-            order = list(networkx.algorithms.dag.lexicographical_topological_sort(xgraph))
-            backbone = deque(networkx.algorithms.dag.dag_longest_path(xgraph, topo_order=order))
-            current_node = backbone.popleft()
-            while backbone:
-                # Actually add the current node.
-                add_node(current_node)
-                next_node = backbone.popleft()
-
-                # Add nodes to terminate edges from previously-added nodes, as
-                # long as there are no paths from the next_node to them.
-                x = 0
-                while x <= self.x_max:
-                    if (active_column_endpoints := active_columns.get(x)) is not None:
-                        to_terminate_now = {
-                            node
-                            for node in active_column_endpoints
-                            if node != next_node
-                            and node in xgraph
-                            and not networkx.algorithms.shortest_paths.has_path(self.xgraph, next_node, node)
-                        }
-                        if to_terminate_now:
-                            if len(to_terminate_now) <= 2:
-                                for node in to_terminate_now:
-                                    add_node(node)
-                            else:
-                                add_graph(xgraph.subgraph(to_terminate_now))
-                            # Reset iteration because adding nodes adds new
-                            # edges that need to be terminated.
-                            x = 0
-                            continue
-                    x += 1
-
-                # Since next_node follows current_node along the longest path,
-                # there cannot be any other paths that connect them.  So we
-                # can update current to next and continue the loop.
-                current_node = next_node
-            # Add the last node.
-            add_node(current_node)
-
-        add_graph(self.xgraph)
+    def _add_connected_graph(self, xgraph: networkx.DiGraph) -> None:
+        for node in networkx.algorithms.dag.dag_longest_path(xgraph):
+            # Terminate all active edges that are now unblocked, continuing
+            # until there are none unblocked other than node.
+            self._add_active_unblocked(node)
+            ancestors = list(networkx.algorithms.dag.ancestors(self._todo_graph, node))
+            if ancestors:
+                # Recurse to actually add this node and all of its remaining
+                # ancestors to the graph.  Including this node in the subgraph
+                # ensures that it's connected.
+                ancestors.append(node)
+                self._add_connected_graph(self._todo_graph.subgraph(ancestors))
+            else:
+                self._add_unblocked_node(node)
+        # There can't be any remaining nodes in xgraph that had been blocked by
+        # the last node, since that would have made them part of the longest
+        # path.
 
     def print(self, stream: TextIO) -> None:
         for node, x in self.locations.items():
