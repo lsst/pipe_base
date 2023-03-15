@@ -22,7 +22,9 @@ from __future__ import annotations
 
 __all__ = ("Layout",)
 
+import dataclasses
 import itertools
+from collections.abc import Iterator
 from typing import Generic, TextIO, TypeVar
 
 import networkx
@@ -34,11 +36,20 @@ import networkx.algorithms.traversal
 _K = TypeVar("_K")
 
 
+@dataclasses.dataclass
+class LayoutRow(Generic[_K]):
+    node: _K
+    x: int
+    terminating: list[tuple[int, _K | None]] = dataclasses.field(default_factory=list)
+    continuing: list[tuple[int, _K, frozenset[_K]]] = dataclasses.field(default_factory=list)
+
+
 class Layout(Generic[_K]):
     def __init__(self, graph: networkx.DiGraph):
-        self._todo_graph = graph
+        self._graph = graph
+        self._todo_graph = graph.copy()
         self._active_columns: dict[int, set[_K]] = {}
-        self.locations: dict[_K, int] = {}
+        self._locations: dict[_K, int] = {}
         self.x_max = 0
         for component in list(networkx.algorithms.components.weakly_connected_components(graph)):
             self._add_connected_graph(graph.subgraph(component))
@@ -57,7 +68,7 @@ class Layout(Generic[_K]):
             if node_x not in self._active_columns:
                 break
         outgoing = set(self._todo_graph.successors(node))
-        self.locations[node] = node_x
+        self._locations[node] = node_x
         self.x_max = max(node_x, self.x_max)
         self._todo_graph.remove_node(node)
         if outgoing:
@@ -103,5 +114,22 @@ class Layout(Generic[_K]):
         # path.
 
     def print(self, stream: TextIO) -> None:
-        for node, x in self.locations.items():
-            print(f"{' ' * x}●{' ' * (self.x_max - x)} {node}", file=stream)
+        for row in self:
+            print(f"{' ' * row.x}●{' ' * (self.x_max - row.x)} {row.node}", file=stream)
+
+    def __iter__(self) -> Iterator[LayoutRow]:
+        active_edges: dict[_K, set[_K]] = {}
+        for node, node_x in self._locations.items():
+            row = LayoutRow(node, self.x_max - node_x)
+            for origin, destinations in active_edges.items():
+                if node in destinations:
+                    row.terminating.append((self.x_max - self._locations[origin], origin))
+                    destinations.remove(node)
+                if destinations:
+                    row.continuing.append(
+                        (self.x_max - self._locations[origin], origin, frozenset(destinations))
+                    )
+            row.terminating.sort()
+            row.continuing.sort()
+            yield row
+            active_edges[node] = set(self._graph.successors(node))
