@@ -22,13 +22,9 @@ from __future__ import annotations
 
 __all__ = ("LinePrinter",)
 
-from typing import TYPE_CHECKING, TextIO, TypeVar
+from typing import TextIO
 
-if TYPE_CHECKING:
-    from ._layout import Layout, LayoutRow
-
-
-_K = TypeVar("_K")
+from ._layout import _K, Layout, LayoutRow
 
 _CHAR_DECOMPOSITION = {
     # TODO: bitsets for values would be more efficient

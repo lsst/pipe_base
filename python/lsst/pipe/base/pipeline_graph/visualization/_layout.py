@@ -25,7 +25,7 @@ __all__ = ("Layout",)
 import dataclasses
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
-from typing import Generic, TextIO, TypeVar
+from typing import Generic, Protocol, TextIO, TypeVar
 
 import networkx
 import networkx.algorithms.components
@@ -33,7 +33,19 @@ import networkx.algorithms.dag
 import networkx.algorithms.shortest_paths
 import networkx.algorithms.traversal
 
-_K = TypeVar("_K")
+
+class KeyProtocol(Protocol):
+    def __eq__(self, arg: object) -> bool:
+        ...
+
+    def __hash__(self) -> int:
+        ...
+
+    def __lt__(self, arg: object) -> bool:
+        ...
+
+
+_K = TypeVar("_K", bound=KeyProtocol)
 
 
 @dataclasses.dataclass
@@ -45,7 +57,25 @@ class LayoutRow(Generic[_K]):
 
 
 class Layout(Generic[_K]):
-    def __init__(self, graph: networkx.DiGraph):
+    def __init__(
+        self,
+        graph: networkx.DiGraph,
+        *,
+        unique_edge_rank_factor: int = 1,
+        duplicate_edge_rank_factor: int = 1,
+        closing_edge_rank_factor: int = 2,
+        closing_node_rank_factor: int = 1,
+        interior_column_penalty: int = 2,
+        crossing_penalty: int = 1,
+        insertion_penalty_threshold: int = 2,
+    ):
+        self.unique_edge_rank_factor = unique_edge_rank_factor
+        self.duplicate_edge_rank_factor = duplicate_edge_rank_factor
+        self.closing_edge_rank_factor = closing_edge_rank_factor
+        self.closing_node_rank_factor = closing_node_rank_factor
+        self.interior_column_penalty = interior_column_penalty
+        self.crossing_penalty = crossing_penalty
+        self.insertion_penalty_threshold = insertion_penalty_threshold
         self._graph = graph
         self._active_columns: dict[int, set[_K]] = {}
         self._locations: dict[_K, int] = {}
@@ -59,27 +89,22 @@ class Layout(Generic[_K]):
 
     @property
     def width(self) -> int:
-        return self._x_max - self._x_min
+        return (self._x_max - self._x_min) // 2
 
-    def _compute_closing_rank(self, node: _K) -> int:
-        # Nodes with smaller ranks are added first.  Each outgoing edge adds 2
-        # to the rank, since we want to minimize edges duration.
-        rank = 2 * self._graph.out_degree(node)
-        if rank:
-            # If the rank has any outgoing edges at all, we add one more.
-            rank += 1
+    def _compute_row_rank(self, node: _K) -> int:
+        rank = 0
+        successors = set(self._graph.successors(node))
+        rank += self.duplicate_edge_rank_factor * len(successors)
         for destinations in self._active_columns.values():
             if node in destinations:
-                # Terminating an existing edge subtracts 2 from the rank, but
-                # terminating the last edge for an existing node subtracts one
-                # more.
+                rank -= self.closing_edge_rank_factor
                 if len(destinations) == 1:
-                    rank -= 3
-                else:
-                    rank -= 2
+                    rank -= self.closing_node_rank_factor
+            successors.difference_update(destinations)
+        rank += (self.unique_edge_rank_factor - self.duplicate_edge_rank_factor) * len(successors)
         return rank
 
-    def _find_candidate_columns(self, node: _K) -> tuple[list[int], list[int]]:
+    def _find_candidate_columns(self, node: _K) -> tuple[list[int], list[int], bool]:
         # The columns holding edges that will connect to this node.
         connecting_x = []
         # The columns holding edges that will connect to this node, leaving no
@@ -97,40 +122,54 @@ class Layout(Generic[_K]):
         connecting_x.sort()
         # If there are empty columns that were previously filled, those are
         # also candidates.
-        for x in range(self._x_min, self._x_max + 1):
+        for x in range(self._x_min, self._x_max + 2, 2):
             if x not in self._active_columns:
                 candidate_x.append(x)
         candidate_x.sort()
         if candidate_x:
-            return connecting_x, candidate_x
-        # If we have to add a new column, consider doing it on either side.
-        candidate_x.append(self._x_min - 1)
-        candidate_x.append(self._x_max + 1)
-        return connecting_x, candidate_x
+            return connecting_x, candidate_x, False
+        # If we have to add a new column, consider doing it on either side or
+        # between any pair of active columns.
+        candidate_x.append(self._x_min - 2)
+        candidate_x.extend(range(self._x_min + 1, self._x_max, 2))
+        candidate_x.append(self._x_max + 2)
+        return connecting_x, candidate_x, True
 
-    def _find_best_column(self, connecting_x: list[int], candidate_x: list[int]) -> int:
+    def _find_best_column(self, connecting_x: list[int], candidate_x: list[int]) -> tuple[int, int]:
         mid_x = (self._x_max + self._x_min) // 2
         best_x = candidate_x.pop()
-        best_n_crossings = self._count_crossings(connecting_x, best_x)
+        best_penalty = self._compute_column_penalty(connecting_x, best_x)
         while candidate_x:
             next_x = candidate_x.pop()
-            next_n_crossings = self._count_crossings(connecting_x, next_x)
-            if next_n_crossings < best_n_crossings or (
-                next_n_crossings == best_n_crossings and abs(next_x - mid_x) < abs(best_x - mid_x)
+            next_penalty = self._compute_column_penalty(connecting_x, next_x)
+            if next_penalty < best_penalty or (
+                next_penalty == best_penalty and abs(next_x - mid_x) < abs(best_x - mid_x)
             ):
                 best_x = next_x
-                best_n_crossings = best_n_crossings
-        return best_x
+                best_penalty = next_penalty
+        return best_x, best_penalty
 
-    def _count_crossings(self, connecting_x: list[int], node_x: int) -> int:
+    def _compute_column_penalty(self, connecting_x: list[int], node_x: int) -> int:
         if not connecting_x:
             return 0
         min_x = min(connecting_x[0], node_x)
         max_x = max(connecting_x[-1], node_x)
-        return sum(x in self._active_columns for x in range(min_x, max_x + 1))
+        return (
+            # Penalty is the (scaled) number of unrelated continuing (vertical)
+            # edges that the (horizontal) input edges for this node have to
+            # "hop"...
+            sum(
+                self.crossing_penalty
+                for x in range(min_x, max_x + 2)
+                if x in self._active_columns and x not in connecting_x
+            )
+            # ... plus an extra something if this is a proposal to insert a
+            # new column between two existing columns.
+            + (node_x % 2) * self.interior_column_penalty
+        )
 
     def _add_unblocked_node(self, node: _K) -> bool:
-        connecting_x, candidate_x = self._find_candidate_columns(node)
+        connecting_x, candidate_x, new_column = self._find_candidate_columns(node)
         # Delete this node from the active columns it is in, and delete any
         # entries that now have empty sets.
         for x in connecting_x:
@@ -138,7 +177,20 @@ class Layout(Generic[_K]):
             destinations.remove(node)
             if not destinations:
                 del self._active_columns[x]
-        node_x = self._find_best_column(connecting_x, candidate_x)
+        node_x, penalty = self._find_best_column(connecting_x, candidate_x)
+        if not new_column and penalty > self.insertion_penalty_threshold:
+            # We found an empty column, but it's got a pretty high penalty;
+            # try an insertion to see if we can do better.
+            candidate_x = [node_x]
+            candidate_x.append(self._x_min)
+            candidate_x.extend(range(self._x_min + 1, self._x_max, 2))
+            candidate_x.append(self._x_max)
+            node_x, _ = self._find_best_column(connecting_x, candidate_x)
+        if node_x % 2:
+            # We're inserting a new column between two existing ones; shift
+            # all existing column values above this one to make room while
+            # using only even numbers.
+            node_x = self._shift(node_x)
         successors = set(self._graph.successors(node))
         self._unblocked.remove(node)
         self._locations[node] = node_x
@@ -151,8 +203,19 @@ class Layout(Generic[_K]):
                     self._unblocked.add(successor)
         return bool(successors)
 
+    def _shift(self, x: int) -> int:
+        for node, old_x in self._locations.items():
+            if old_x > x:
+                self._locations[node] += 2
+        self._active_columns = {
+            old_x + 2 if old_x > x else old_x: destinations
+            for old_x, destinations in self._active_columns.items()
+        }
+        self._x_max += 2
+        return x + 1
+
     def _add_until_successors(self, nodes: Iterable[_K]) -> bool:
-        for node in nodes:
+        for node in sorted(nodes):
             if self._add_unblocked_node(node):
                 return True
         return False
@@ -161,26 +224,29 @@ class Layout(Generic[_K]):
         while self._unblocked:
             unblocked_by_rank = defaultdict(set)
             for node in self._unblocked:
-                unblocked_by_rank[self._compute_closing_rank(node)].add(node)
+                unblocked_by_rank[self._compute_row_rank(node)].add(node)
             for rank in sorted(unblocked_by_rank):
                 if self._add_until_successors(unblocked_by_rank[rank]):
                     break
 
     def print(self, stream: TextIO) -> None:
         for row in self:
-            print(f"{' ' * row.x}●{' ' * (self._x_max - row.x)} {row.node}", file=stream)
+            print(f"{' ' * row.x}●{' ' * (self.width - row.x)} {row.node}", file=stream)
+
+    def _external_location(self, x: int) -> int:
+        return (self._x_max - x) // 2
 
     def __iter__(self) -> Iterator[LayoutRow]:
         active_edges: dict[_K, set[_K]] = {}
         for node, node_x in self._locations.items():
-            row = LayoutRow(node, self._x_max - node_x)
+            row = LayoutRow(node, self._external_location(node_x))
             for origin, destinations in active_edges.items():
                 if node in destinations:
-                    row.connecting.append((self._x_max - self._locations[origin], origin))
+                    row.connecting.append((self._external_location(self._locations[origin]), origin))
                     destinations.remove(node)
                 if destinations:
                     row.continuing.append(
-                        (self._x_max - self._locations[origin], origin, frozenset(destinations))
+                        (self._external_location(self._locations[origin]), origin, frozenset(destinations))
                     )
             row.connecting.sort()
             row.continuing.sort()
