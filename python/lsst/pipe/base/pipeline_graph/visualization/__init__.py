@@ -21,4 +21,4 @@
 from __future__ import annotations
 
 from ._layout import *
-from ._line_printer import *
+from ._printer import *

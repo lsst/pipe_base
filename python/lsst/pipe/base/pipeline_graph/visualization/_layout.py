@@ -52,7 +52,7 @@ _K = TypeVar("_K", bound=KeyProtocol)
 class LayoutRow(Generic[_K]):
     node: _K
     x: int
-    connecting: list[tuple[int, _K | None]] = dataclasses.field(default_factory=list)
+    connecting: list[tuple[int, _K]] = dataclasses.field(default_factory=list)
     continuing: list[tuple[int, _K, frozenset[_K]]] = dataclasses.field(default_factory=list)
 
 
@@ -90,6 +90,10 @@ class Layout(Generic[_K]):
     @property
     def width(self) -> int:
         return (self._x_max - self._x_min) // 2
+
+    @property
+    def nodes(self) -> Iterable[_K]:
+        return self._locations.keys()
 
     def _compute_row_rank(self, node: _K) -> int:
         rank = 0
