@@ -88,8 +88,8 @@ class LineRow:
 
 
 class LinePrinter:
-    def __init__(self, x_max: int):
-        self.x_max = x_max
+    def __init__(self, width: int):
+        self.width = width
 
     def get_pad(self) -> str:
         return " "
@@ -98,22 +98,22 @@ class LinePrinter:
         return str(node)
 
     def get_node_symbol(self, node: _K) -> str:
-        return "█"
+        return "⬤"  # "█"
 
     def print_row(
         self,
         stream: TextIO,
         layout_row: LayoutRow[_K],
     ) -> None:
-        if layout_row.continuing or layout_row.terminating:
-            line_row = LineRow(self.x_max * 2 + 1, self.get_pad())
-            for x, _ in layout_row.terminating:
+        if layout_row.continuing or layout_row.connecting:
+            line_row = LineRow(self.width * 2 + 1, self.get_pad())
+            for x, _ in layout_row.connecting:
                 line_row.bend(2 * x, 2 * layout_row.x)
             for x, _, _ in layout_row.continuing:
                 line_row.vert(2 * x)
             stream.write(line_row.finish())
             stream.write("\n")
-        line_row = LineRow(self.x_max * 2 + 1, self.get_pad())
+        line_row = LineRow(self.width * 2 + 1, self.get_pad())
         for x, _, _ in layout_row.continuing:
             line_row.vert(2 * x)
         line_row.set(2 * layout_row.x, self.get_node_symbol(layout_row.node))

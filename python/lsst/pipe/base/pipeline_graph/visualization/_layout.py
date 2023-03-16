@@ -23,7 +23,6 @@ from __future__ import annotations
 __all__ = ("Layout",)
 
 import dataclasses
-import itertools
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from typing import Generic, TextIO, TypeVar
@@ -41,7 +40,7 @@ _K = TypeVar("_K")
 class LayoutRow(Generic[_K]):
     node: _K
     x: int
-    terminating: list[tuple[int, _K | None]] = dataclasses.field(default_factory=list)
+    connecting: list[tuple[int, _K | None]] = dataclasses.field(default_factory=list)
     continuing: list[tuple[int, _K, frozenset[_K]]] = dataclasses.field(default_factory=list)
 
 
@@ -50,82 +49,140 @@ class Layout(Generic[_K]):
         self._graph = graph
         self._active_columns: dict[int, set[_K]] = {}
         self._locations: dict[_K, int] = {}
-        self._last_x = 0
-        self.x_max = 0
-        for component in list(networkx.algorithms.components.weakly_connected_components(graph)):
-            self._add_connected_graph(graph.subgraph(component))
+        self._x_min = 0
+        self._x_max = 0
+        assert networkx.algorithms.components.is_weakly_connected(self._graph)
+        self._unblocked = set(next(networkx.algorithms.dag.topological_generations(self._graph)))
+        self._add_connected_graph()
+        del self._unblocked
         del self._active_columns
-        del self._last_x
+
+    @property
+    def width(self) -> int:
+        return self._x_max - self._x_min
 
     def _compute_closing_rank(self, node: _K) -> int:
+        # Nodes with smaller ranks are added first.  Each outgoing edge adds 2
+        # to the rank, since we want to minimize edges duration.
         rank = 2 * self._graph.out_degree(node)
+        if rank:
+            # If the rank has any outgoing edges at all, we add one more.
+            rank += 1
         for destinations in self._active_columns.values():
             if node in destinations:
-                rank -= 2
-        # Small bonus to rank if this ends an edge in the current column.
-        # if node in self._active_columns.get(self._last_x, frozenset()):
-        #     rank -= 1
+                # Terminating an existing edge subtracts 2 from the rank, but
+                # terminating the last edge for an existing node subtracts one
+                # more.
+                if len(destinations) == 1:
+                    rank -= 3
+                else:
+                    rank -= 2
         return rank
 
-    def _add_unblocked_node(self, node: _K) -> set[_K]:
-        node_x = None
-        for active_column_x, active_column_endpoints in list(self._active_columns.items()):
+    def _find_candidate_columns(self, node: _K) -> tuple[list[int], list[int]]:
+        # The columns holding edges that will connect to this node.
+        connecting_x = []
+        # The columns holding edges that will connect to this node, leaving no
+        # remaining edges in that column; if any of these exist, they'll be
+        # good candidates for where to put the new node, since they'll minimize
+        # crossings without adding a new column.
+        candidate_x = []
+        # Iterate over active columns to populate the above.
+        for active_column_x, active_column_endpoints in self._active_columns.items():
             if node in active_column_endpoints:
-                active_column_endpoints.remove(node)
-                if not active_column_endpoints:
-                    del self._active_columns[active_column_x]
-                    if node_x is None:
-                        node_x = active_column_x
-        if node_x is None:
-            for node_x in itertools.count():
-                if node_x not in self._active_columns:
-                    break
-        outgoing = set(self._graph.successors(node))
-        self._locations[node] = node_x
-        self.x_max = max(node_x, self.x_max)
-        self._last_x = node_x
-        if outgoing:
-            self._active_columns[node_x] = outgoing
-        return outgoing
+                connecting_x.append(active_column_x)
+                if len(active_column_endpoints) == 1:
+                    candidate_x.append(active_column_x)
+        # Sort the list of connecting columns so we can easily get min and max.
+        connecting_x.sort()
+        # If there are empty columns that were previously filled, those are
+        # also candidates.
+        for x in range(self._x_min, self._x_max + 1):
+            if x not in self._active_columns:
+                candidate_x.append(x)
+        candidate_x.sort()
+        if candidate_x:
+            return connecting_x, candidate_x
+        # If we have to add a new column, consider doing it on either side.
+        candidate_x.append(self._x_min - 1)
+        candidate_x.append(self._x_max + 1)
+        return connecting_x, candidate_x
 
-    def _add_until_successors(self, nodes: Iterable[_K], unblocked: set[_K]) -> bool:
-        for node in nodes:
-            successors = self._add_unblocked_node(node)
-            unblocked.remove(node)
+    def _find_best_column(self, connecting_x: list[int], candidate_x: list[int]) -> int:
+        mid_x = (self._x_max + self._x_min) // 2
+        best_x = candidate_x.pop()
+        best_n_crossings = self._count_crossings(connecting_x, best_x)
+        while candidate_x:
+            next_x = candidate_x.pop()
+            next_n_crossings = self._count_crossings(connecting_x, next_x)
+            if next_n_crossings < best_n_crossings or (
+                next_n_crossings == best_n_crossings and abs(next_x - mid_x) < abs(best_x - mid_x)
+            ):
+                best_x = next_x
+                best_n_crossings = best_n_crossings
+        return best_x
+
+    def _count_crossings(self, connecting_x: list[int], node_x: int) -> int:
+        if not connecting_x:
+            return 0
+        min_x = min(connecting_x[0], node_x)
+        max_x = max(connecting_x[-1], node_x)
+        return sum(x in self._active_columns for x in range(min_x, max_x + 1))
+
+    def _add_unblocked_node(self, node: _K) -> bool:
+        connecting_x, candidate_x = self._find_candidate_columns(node)
+        # Delete this node from the active columns it is in, and delete any
+        # entries that now have empty sets.
+        for x in connecting_x:
+            destinations = self._active_columns[x]
+            destinations.remove(node)
+            if not destinations:
+                del self._active_columns[x]
+        node_x = self._find_best_column(connecting_x, candidate_x)
+        successors = set(self._graph.successors(node))
+        self._unblocked.remove(node)
+        self._locations[node] = node_x
+        self._x_min = min(node_x, self._x_min)
+        self._x_max = max(node_x, self._x_max)
+        if successors:
+            self._active_columns[node_x] = successors
             for successor in successors:
                 if all(n in self._locations for n in self._graph.predecessors(successor)):
-                    unblocked.add(successor)
-            if successors:
-                return False
-        return True
+                    self._unblocked.add(successor)
+        return bool(successors)
 
-    def _add_connected_graph(self, xgraph: networkx.DiGraph) -> None:
-        unblocked = set(next(networkx.algorithms.dag.topological_generations(xgraph)))
-        while unblocked:
+    def _add_until_successors(self, nodes: Iterable[_K]) -> bool:
+        for node in nodes:
+            if self._add_unblocked_node(node):
+                return True
+        return False
+
+    def _add_connected_graph(self) -> None:
+        while self._unblocked:
             unblocked_by_rank = defaultdict(set)
-            for node in unblocked:
+            for node in self._unblocked:
                 unblocked_by_rank[self._compute_closing_rank(node)].add(node)
             for rank in sorted(unblocked_by_rank):
-                if not self._add_until_successors(unblocked_by_rank[rank], unblocked):
+                if self._add_until_successors(unblocked_by_rank[rank]):
                     break
 
     def print(self, stream: TextIO) -> None:
         for row in self:
-            print(f"{' ' * row.x}●{' ' * (self.x_max - row.x)} {row.node}", file=stream)
+            print(f"{' ' * row.x}●{' ' * (self._x_max - row.x)} {row.node}", file=stream)
 
     def __iter__(self) -> Iterator[LayoutRow]:
         active_edges: dict[_K, set[_K]] = {}
         for node, node_x in self._locations.items():
-            row = LayoutRow(node, self.x_max - node_x)
+            row = LayoutRow(node, self._x_max - node_x)
             for origin, destinations in active_edges.items():
                 if node in destinations:
-                    row.terminating.append((self.x_max - self._locations[origin], origin))
+                    row.connecting.append((self._x_max - self._locations[origin], origin))
                     destinations.remove(node)
                 if destinations:
                     row.continuing.append(
-                        (self.x_max - self._locations[origin], origin, frozenset(destinations))
+                        (self._x_max - self._locations[origin], origin, frozenset(destinations))
                     )
-            row.terminating.sort()
+            row.connecting.sort()
             row.continuing.sort()
             yield row
             active_edges[node] = set(self._graph.successors(node))
