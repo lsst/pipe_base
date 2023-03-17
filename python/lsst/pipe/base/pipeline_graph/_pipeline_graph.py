@@ -179,10 +179,6 @@ class PipelineGraph(Generic[_T, _D, _S]):
         return f"{type(self).__name__}({self.description!r}, tasks={self.tasks!s})"
 
     @property
-    def xgraph(self) -> networkx.DiGraph:
-        return self._xgraph.copy(as_view=True)
-
-    @property
     def description(self) -> str:
         """String description for this pipeline."""
         return self._description
@@ -233,26 +229,53 @@ class PipelineGraph(Generic[_T, _D, _S]):
                 for key in generation:
                     yield self._xgraph.nodes[key]["instance"]
 
-    def make_bipartite_xgraph(self, init: bool = False) -> networkx.DiGraph:
-        return self._xgraph.edge_subgraph([edge.key for edge in self.iter_edges(init)])
+    def make_xgraph(self, *, import_tasks: bool = False) -> networkx.DiGraph:
+        return self._transform_xgraph_state(self._xgraph.copy(), import_tasks)
 
-    def make_task_xgraph(self, init: bool = False) -> networkx.DiGraph:
-        bipartite_xgraph = self.make_bipartite_xgraph(init=init)
+    def make_bipartite_xgraph(self, init: bool = False, *, import_tasks: bool = False) -> networkx.DiGraph:
+        return self._transform_xgraph_state(self._make_bipartite_xgraph_internal(init).copy(), import_tasks)
+
+    def make_task_xgraph(self, init: bool = False, *, import_tasks: bool = False) -> networkx.DiGraph:
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
         task_keys = [
             key
             for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
             if bipartite == NodeType.TASK.bipartite
         ]
-        return networkx.algorithms.bipartite.projected_graph(bipartite_xgraph, task_keys)
+        return self._transform_xgraph_state(
+            networkx.algorithms.bipartite.projected_graph(bipartite_xgraph, task_keys), import_tasks
+        )
 
     def make_dataset_type_xgraph(self, init: bool = False) -> networkx.DiGraph:
-        bipartite_xgraph = self.make_bipartite_xgraph(init=init)
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
         dataset_type_keys = [
             key
             for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
             if bipartite == NodeType.DATASET_TYPE.bipartite
         ]
-        return networkx.algorithms.bipartite.projected_graph(bipartite_xgraph, dataset_type_keys)
+        return self._transform_xgraph_state(
+            networkx.algorithms.bipartite.projected_graph(bipartite_xgraph, dataset_type_keys), False
+        )
+
+    def _make_bipartite_xgraph_internal(self, init: bool) -> networkx.DiGraph:
+        return self._xgraph.edge_subgraph([edge.key for edge in self.iter_edges(init)])
+
+    def _transform_xgraph_state(
+        self, xgraph: networkx.DiGraph, import_tasks: bool = False
+    ) -> networkx.DiGraph:
+        state: dict[str, Any]
+        for state in xgraph.nodes.values():
+            try:
+                node: Node = state.pop("instance")
+            except KeyError:
+                breakpoint()
+                raise
+            state.update(node._to_xgraph_state(import_tasks))
+        for _, _, state in xgraph.edges(data=True):
+            edge: Edge | None = state.pop("instance", None)
+            if edge is not None:
+                state.update(edge._to_xgraph_state())
+        return xgraph
 
     @property
     def is_sorted(self) -> bool:
@@ -892,6 +915,7 @@ class ResolvedPipelineGraph(PipelineGraph[ResolvedTaskNode, ResolvedDatasetTypeN
         reader.read_stream(stream)
         result = ResolvedPipelineGraph.__new__(ResolvedPipelineGraph)
         result._init_from_args(reader.xgraph, reader.sort_keys, reader.labeled_subsets, reader.description)
+        result.universe = reader.universe
         return result
 
     @classmethod

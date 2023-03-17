@@ -148,6 +148,31 @@ class Node(ABC):
         """
         raise NotImplementedError()
 
+    @abstractmethod
+    def _to_xgraph_state(self, import_tasks: bool) -> dict[str, Any]:
+        """Unpack the content of this node into a dictionary that can be used
+        as the state dictionary for an external networkx graph.
+
+        Unlike `_serialize`, this may hold types that are not directly suitable
+        for JSON conversion, and it does not need to hold any edge state.  Like
+        `_serialize`, this should not include the node's key, as that is always
+        included in the graph separately.
+
+        Parameters
+        ----------
+        import_tasks : `bool`, optional
+            If `True`, import all task classes in order to ensure task class
+            objects and config objects are added.  If `False`, these are
+            included only for tasks that have already been imported and
+            configured.
+
+        Returns
+        -------
+        state : `dict`
+            Dictionary for an external networkx graph.
+        """
+        raise NotImplementedError()
+
 
 @immutable
 class Edge(ABC):
@@ -297,4 +322,18 @@ class Edge(ABC):
             "storage_class_name": self.storage_class_name,
             "connection_name": self._connection_name,
             **kwargs,
+        }
+
+    def _to_xgraph_state(self) -> dict[str, Any]:
+        """Unpack the content of this node into a dictionary that can be used
+        as the state dictionary for an external networkx graph.
+
+        Unlike `_serialize`, this may hold types that are not directly suitable
+        for JSON conversion, and it does not need to hold any edge state.  Like
+        `_serialize`, this should not include the node's key, as that is always
+        included in the graph separately.
+        """
+        return {
+            "storage_class_name": self.storage_class_name,
+            "is_init": bool,
         }

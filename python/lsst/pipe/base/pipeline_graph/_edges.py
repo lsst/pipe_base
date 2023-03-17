@@ -323,6 +323,12 @@ class ReadEdge(Edge):
             result["component"] = self.component
         return result
 
+    def _to_xgraph_state(self) -> dict[str, Any]:
+        result = super()._to_xgraph_state()
+        result["component"] = self.component
+        result["is_prerequisite"] = self.is_prerequisite
+        return result
+
 
 class WriteEdge(Edge):
     """Representation of an output connection (including init-outputs) in a

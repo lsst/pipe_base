@@ -276,6 +276,20 @@ class TaskInitNode(Node):
             object.__setattr__(self, "_data", self._data.import_and_configure(self.label))
         return cast(_TaskNodeImportedData, self._data)
 
+    def _to_xgraph_state(self, import_tasks: bool = False) -> dict[str, Any]:
+        # Docstring inherited.
+        if import_tasks or self._data.is_imported:
+            data = self._get_imported_data()
+            return {
+                "task_class": data.task_class,
+                "config": data.config,
+                "task_class_name": self.task_class_name,
+            }
+        else:
+            return {
+                "task_class_name": self.task_class_name,
+            }
+
 
 @immutable
 class TaskNode(Node):
@@ -526,6 +540,10 @@ class TaskNode(Node):
         )
         return result
 
+    def _to_xgraph_state(self, import_tasks: bool) -> dict[str, Any]:
+        # Docstring inherited.
+        return self.init._to_xgraph_state(import_tasks)
+
 
 @immutable
 class ResolvedTaskNode(TaskNode):
@@ -577,3 +595,9 @@ class ResolvedTaskNode(TaskNode):
     def _serialize(self, **kwargs: Any) -> dict[str, Any]:
         # Docstring inherited.
         return super()._serialize(dimensions=list(self.dimensions.names), **kwargs)
+
+    def _to_xgraph_state(self, import_tasks: bool) -> dict[str, Any]:
+        # Docstring inherited.
+        result = super()._to_xgraph_state(import_tasks)
+        result["dimensions"] = self.dimensions
+        return result

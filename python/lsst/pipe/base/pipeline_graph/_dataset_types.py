@@ -125,6 +125,10 @@ class DatasetTypeNode(Node):
         # Docstring inherited.
         return kwargs
 
+    def _to_xgraph_state(self, import_tasks: bool) -> dict[str, Any]:
+        # Docstring inherited.
+        return {}
+
 
 class ResolvedDatasetTypeNode(DatasetTypeNode):
     """A node in a resolved pipeline graph that represents a dataset type.
@@ -218,3 +222,12 @@ class ResolvedDatasetTypeNode(DatasetTypeNode):
             is_prerequisite=self.is_prerequisite,
             **kwargs,
         )
+
+    def _to_xgraph_state(self, import_tasks: bool) -> dict[str, Any]:
+        # Docstring inherited.
+        return {
+            "dataset_type": self.dataset_type,
+            "is_initial_query_constraint": self.is_initial_query_constraint,
+            "is_prerequisite": self.is_prerequisite,
+            "dimensions": self.dataset_type.dimensions,
+        }
