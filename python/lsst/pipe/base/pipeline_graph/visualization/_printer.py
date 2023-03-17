@@ -20,10 +20,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("Printer", "StyledPrinter", "make_default_printer", "make_colorama_printer")
+__all__ = ("Printer", "make_default_printer", "make_colorama_printer", "make_simple_printer")
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Generic, TextIO
 
 from ._layout import _K, Layout, LayoutRow
@@ -85,8 +85,71 @@ class PrintRow:
         return "".join(self._cells)
 
 
-class StyledPrintRow(PrintRow):
-    def __init__(self, width: int, pad: str, reset: str = ""):
+def _default_get_text(node: _K, x: int) -> str:
+    return str(node)
+
+
+def _default_get_symbol(node: _K, x: int) -> str:
+    return "⬤"
+
+
+def _default_get_style(node: _K, x: int) -> str:
+    return "⬤"
+
+
+class Printer(Generic[_K]):
+    def __init__(
+        self,
+        width: int,
+        *,
+        pad: str = " ",
+        make_blank_row: Callable[[int, str], PrintRow] = PrintRow,
+        get_text: Callable[[_K, int], str] = _default_get_text,
+        get_symbol: Callable[[_K, int], str] = _default_get_symbol,
+        get_style: Callable[[_K, int], str] = _default_get_style,
+    ):
+        self.width = width
+        self.pad = pad
+        self.make_blank_row = make_blank_row
+        self.get_text = get_text
+        self.get_symbol = get_symbol
+        self.get_style = get_style
+
+    def print_row(
+        self,
+        stream: TextIO,
+        layout_row: LayoutRow[_K],
+    ) -> None:
+        node_style = self.get_style(layout_row.node, layout_row.x)
+        if layout_row.continuing or layout_row.connecting:
+            print_row = self.make_blank_row(self.width * 2 + 1, self.pad)
+            for x, source in layout_row.connecting:
+                print_row.bend(
+                    2 * x,
+                    2 * layout_row.x,
+                    start_style=self.get_style(source, x),
+                    stop_style=node_style,
+                )
+            for x, source, _ in layout_row.continuing:
+                print_row.vert(2 * x, self.get_style(source, x))
+            stream.write(print_row.finish())
+            stream.write("\n")
+        print_row = self.make_blank_row(self.width * 2 + 1, self.pad)
+        for x, source, _ in layout_row.continuing:
+            print_row.vert(2 * x, self.get_style(source, x))
+        print_row.set(2 * layout_row.x, self.get_symbol(layout_row.node, layout_row.x), node_style)
+        stream.write(print_row.finish())
+        stream.write(self.pad * 2)
+        stream.write(self.get_text(layout_row.node, layout_row.x))
+        stream.write("\n")
+
+    def print(self, stream: TextIO, layout: Layout) -> None:
+        for layout_row in layout:
+            self.print_row(stream, layout_row)
+
+
+class TerminalPrintRow(PrintRow):
+    def __init__(self, width: int, pad: str, reset: str):
         super().__init__(width, pad)
         self._styles = [""] * width
         self._reset = reset
@@ -99,95 +162,67 @@ class StyledPrintRow(PrintRow):
         return "".join(f"{style}{char}{self._reset}" for char, style in zip(self._cells, self._styles))
 
 
-class Printer(Generic[_K]):
-    def __init__(self, width: int):
-        self.width = width
-
-    def make_blank_row(self) -> PrintRow:
-        return PrintRow(self.width * 2 + 1, self.get_pad())
-
-    def get_pad(self) -> str:
-        return " "
-
-    def get_node_text(self, node: _K) -> str:
-        return str(node)
-
-    def get_node_symbol(self, node: _K, x: int) -> str:
-        return "⬤"
-
-    def get_node_style(self, node: _K, x: int) -> str:
-        return ""
-
-    def print_row(
-        self,
-        stream: TextIO,
-        layout_row: LayoutRow[_K],
-    ) -> None:
-        node_style = self.get_node_style(layout_row.node, layout_row.x)
-        if layout_row.continuing or layout_row.connecting:
-            line_row = self.make_blank_row()
-            for x, source in layout_row.connecting:
-                line_row.bend(
-                    2 * x,
-                    2 * layout_row.x,
-                    start_style=self.get_node_style(source, x),
-                    stop_style=node_style,
-                )
-            for x, source, _ in layout_row.continuing:
-                line_row.vert(2 * x, self.get_node_style(source, x))
-            stream.write(line_row.finish())
-            stream.write("\n")
-        line_row = self.make_blank_row()
-        for x, source, _ in layout_row.continuing:
-            line_row.vert(2 * x, self.get_node_style(source, x))
-        line_row.set(2 * layout_row.x, self.get_node_symbol(layout_row.node, layout_row.x), node_style)
-        stream.write(line_row.finish())
-        stream.write(self.get_pad() * 2)
-        stream.write(self.get_node_text(layout_row.node))
-        stream.write("\n")
-
-    def print(self, stream: TextIO, layout: Layout) -> None:
-        for layout_row in layout:
-            self.print_row(stream, layout_row)
-
-
-class StyledPrinter(Printer[_K]):
-    def __init__(self, width: int, palette: Sequence[str], reset: str):
-        super().__init__(width)
-        self._palette = palette
-        self._reset = reset
-
-    def make_blank_row(self) -> PrintRow:
-        return StyledPrintRow(self.width * 2 + 1, self.get_pad(), self._reset)
-
-    def get_node_style(self, node: _K, x: int) -> str:
-        return self._palette[x % len(self._palette)]
-
-
-def make_colorama_printer(width: int) -> Printer | None:
+def make_colorama_printer(width: int, palette: Sequence[str] = ()) -> Printer | None:
     try:
         import colorama
     except ImportError:
         return None
-    palette = [
-        colorama.Fore.RED,
-        colorama.Fore.LIGHTBLUE_EX,
-        colorama.Fore.GREEN,
-        colorama.Fore.LIGHTMAGENTA_EX,
-        colorama.Fore.YELLOW,
-        colorama.Fore.LIGHTCYAN_EX,
-        colorama.Fore.LIGHTRED_EX,
-        colorama.Fore.BLUE,
-        colorama.Fore.LIGHTGREEN_EX,
-        colorama.Fore.MAGENTA,
-        colorama.Fore.LIGHTYELLOW_EX,
-        colorama.Fore.CYAN,
-    ]
-    return StyledPrinter(width, palette, reset=colorama.Fore.RESET)
+    if not palette:
+        palette = [
+            colorama.Fore.RED,
+            colorama.Fore.LIGHTBLUE_EX,
+            colorama.Fore.GREEN,
+            colorama.Fore.LIGHTMAGENTA_EX,
+            colorama.Fore.YELLOW,
+            colorama.Fore.LIGHTCYAN_EX,
+            colorama.Fore.LIGHTRED_EX,
+            colorama.Fore.BLUE,
+            colorama.Fore.LIGHTGREEN_EX,
+            colorama.Fore.MAGENTA,
+            colorama.Fore.LIGHTYELLOW_EX,
+            colorama.Fore.CYAN,
+        ]
+    else:
+        translate_color = {
+            "R": colorama.Fore.RED,
+            "RED": colorama.Fore.RED,
+            "LIGHTRED": colorama.Fore.LIGHTRED_EX,
+            "G": colorama.Fore.GREEN,
+            "GREEN": colorama.Fore.GREEN,
+            "LIGHTGREEN": colorama.Fore.LIGHTGREEN_EX,
+            "B": colorama.Fore.BLUE,
+            "BLUE": colorama.Fore.BLUE,
+            "LIGHTBLUE": colorama.Fore.LIGHTBLUE_EX,
+            "C": colorama.Fore.CYAN,
+            "CYAN": colorama.Fore.CYAN,
+            "LIGHTCYAN": colorama.Fore.LIGHTCYAN_EX,
+            "Y": colorama.Fore.YELLOW,
+            "YELLOW": colorama.Fore.YELLOW,
+            "LIGHTYELLOW": colorama.Fore.LIGHTYELLOW_EX,
+            "M": colorama.Fore.MAGENTA,
+            "MAGENTA": colorama.Fore.MAGENTA,
+            "LIGHTMAGENTA": colorama.Fore.LIGHTMAGENTA_EX,
+        }
+        palette = [translate_color.get(c.upper(), c) for c in palette]
+    return Printer(
+        width,
+        make_blank_row=lambda width, pad: TerminalPrintRow(width, pad, colorama.Style.RESET_ALL),
+        get_style=lambda node, x: palette[x % len(palette)],
+    )
 
 
-def make_default_printer(width: int) -> Printer:
-    if sys.stdout.isatty():
-        if printer := make_colorama_printer(width):
-            return printer
+def make_simple_printer(width: int) -> Printer:
     return Printer(width)
+
+
+def make_default_printer(width: int, color: bool | Sequence[str] | None = None) -> Printer:
+    if color is None:
+        if sys.stdout.isatty():
+            if printer := make_colorama_printer(width):
+                return printer
+    elif color:
+        palette = color if color is not True else ()
+        printer = make_colorama_printer(width, palette)
+        if printer is None:
+            raise ImportError("Cannot use color unless the 'colorama' module is available.")
+    return make_simple_printer(width)

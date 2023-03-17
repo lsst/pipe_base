@@ -25,7 +25,7 @@ __all__ = ("Layout",)
 import dataclasses
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
-from typing import Generic, Protocol, TextIO, TypeVar
+from typing import Generic, TextIO, TypeVar
 
 import networkx
 import networkx.algorithms.components
@@ -33,19 +33,7 @@ import networkx.algorithms.dag
 import networkx.algorithms.shortest_paths
 import networkx.algorithms.traversal
 
-
-class KeyProtocol(Protocol):
-    def __eq__(self, arg: object) -> bool:
-        ...
-
-    def __hash__(self) -> int:
-        ...
-
-    def __lt__(self, arg: object) -> bool:
-        ...
-
-
-_K = TypeVar("_K", bound=KeyProtocol)
+_K = TypeVar("_K")
 
 
 @dataclasses.dataclass
@@ -65,9 +53,9 @@ class Layout(Generic[_K]):
         duplicate_edge_rank_factor: int = 1,
         closing_edge_rank_factor: int = 2,
         closing_node_rank_factor: int = 1,
-        interior_column_penalty: int = 2,
+        interior_column_penalty: int = 3,
         crossing_penalty: int = 1,
-        insertion_penalty_threshold: int = 2,
+        insertion_penalty_threshold: int = 4,
     ):
         self.unique_edge_rank_factor = unique_edge_rank_factor
         self.duplicate_edge_rank_factor = duplicate_edge_rank_factor
@@ -219,7 +207,7 @@ class Layout(Generic[_K]):
         return x + 1
 
     def _add_until_successors(self, nodes: Iterable[_K]) -> bool:
-        for node in sorted(nodes):
+        for node in sorted(nodes, key=str):
             if self._add_unblocked_node(node):
                 return True
         return False

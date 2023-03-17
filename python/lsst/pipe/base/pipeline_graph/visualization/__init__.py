@@ -22,3 +22,4 @@ from __future__ import annotations
 
 from ._layout import *
 from ._printer import *
+from ._show import *
