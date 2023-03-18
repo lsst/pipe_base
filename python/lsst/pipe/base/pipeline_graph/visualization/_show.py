@@ -37,6 +37,7 @@ from lsst.daf.butler import DimensionGraph
 from .._abcs import NodeKey as UnmergedNodeKey
 from .._abcs import NodeType
 from .._pipeline_graph import PipelineGraph
+from .._tasks import TaskInitNode, TaskNode
 from ._layout import Layout
 from ._printer import make_default_printer
 
@@ -121,7 +122,7 @@ class MergeKey:
         xgraph: networkx.DiGraph,
         options: NodeAttributeOptions,
         depth: int,
-    ) -> list[dict[MergeKey, dict[UnmergedNodeKey, frozenset[UnmergedNodeKey]]]]:
+    ) -> list[dict[MergeKey, set[UnmergedNodeKey]]]:
         # Our goal is to obtain mappings that groups trees of nodes by the
         # attributes in a MergeKey.  The nested dictionaries are the root of a
         # tree and the nodes under that root, recursively (but not including
@@ -129,7 +130,7 @@ class MergeKey:
         # corresponding to a different depth for the trees it represents.  We
         # start with a special empty dict for "0-depth trees", since that makes
         # result[depth] valid and hence off-by-one errors less likely.
-        result: list[dict[MergeKey, dict[UnmergedNodeKey, frozenset[UnmergedNodeKey]]]] = [{}]
+        result: list[dict[MergeKey, set[UnmergedNodeKey]]] = [{}]
         if depth == 0:
             return result
         # We start with the nodes that have no predecessors in the graph.
@@ -155,9 +156,7 @@ class MergeKey:
             # Make a dictionary for the results at this depth, then start the
             # inner iteration over candidates and (after the first iteration)
             # their children.
-            result_for_depth: dict[MergeKey, dict[UnmergedNodeKey, frozenset[UnmergedNodeKey]]] = defaultdict(
-                dict
-            )
+            result_for_depth: dict[MergeKey, set[UnmergedNodeKey]] = defaultdict(set)
             for node, children in current_candidates.items():
                 # Make a MergeKey for this node and add it to the results for
                 # this depth.  Two nodes with the same MergeKey are roots of
@@ -165,7 +164,7 @@ class MergeKey:
                 # be merged (with isomorphism defined as both both structure
                 # and whatever comparisons are in 'options').
                 merge_key = MergeKey._from_xgraph_node(node, xgraph, frozenset(children.values()), options)
-                result_for_depth[merge_key][node] = frozenset(children.keys())
+                result_for_depth[merge_key].add(node)
                 if len(result) <= depth:
                     # See if this node's successor might be the root of a
                     # larger tree.
@@ -186,17 +185,21 @@ class MergeKey:
     def _apply_merges(
         cls,
         xgraph: networkx.DiGraph,
-        groups: list[dict[MergeKey, dict[UnmergedNodeKey, frozenset[UnmergedNodeKey]]]],
+        groups: list[dict[MergeKey, set[UnmergedNodeKey]]],
         is_tail: bool,
     ) -> None:
         while groups:
-            for merge_key, members_and_children in groups.pop().items():
-                remaining_members = members_and_children.keys() & xgraph.nodes.keys()
+            for merge_key, members in groups.pop().items():
+                remaining_members = members & xgraph.nodes.keys()
                 if len(remaining_members) < 2:
                     continue
                 new_node_key = MergedNodeKey(remaining_members)
                 for member_key in remaining_members:
-                    xgraph.remove_nodes_from(members_and_children[member_key])
+                    if is_tail:
+                        children = list(networkx.algorithms.dag.descendants(xgraph, member_key))
+                    else:
+                        children = list(networkx.algorithms.dag.ancestors(xgraph, member_key))
+                    xgraph.remove_nodes_from(children)
                     xgraph.remove_node(member_key)
                 new_edges: list[tuple[NodeKey, NodeKey]]
                 if is_tail:
@@ -225,6 +228,7 @@ def show(
     task_classes: bool = False,
     merge_input_trees: int = 2,
     merge_output_trees: int = 2,
+    include_automatic_connections: bool = False,
 ) -> None:
     if init is None:
         if not (tasks and dataset_types):
@@ -249,6 +253,20 @@ def show(
         dimensions=dimensions, storage_classes=storage_classes, task_classes=task_classes
     )
     options.check(pipeline_graph)
+
+    if dataset_types and not include_automatic_connections:
+        taskish_nodes: list[TaskNode | TaskInitNode] = []
+        for task_node in pipeline_graph.tasks.values():
+            if init is None or init is False:
+                taskish_nodes.append(task_node)
+            if init is None or init is True:
+                taskish_nodes.append(task_node.init)
+        for t in taskish_nodes:
+            xgraph.remove_nodes_from(
+                edge.dataset_type_key
+                for edge in t.iter_all_outputs()
+                if edge not in t.outputs and not xgraph.out_degree(edge.dataset_type_key)
+            )
 
     if merge_input_trees:
         MergeKey.merge_input_trees(xgraph, options, depth=merge_input_trees)

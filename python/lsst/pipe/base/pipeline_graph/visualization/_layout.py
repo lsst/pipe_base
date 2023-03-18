@@ -24,7 +24,7 @@ __all__ = ("Layout",)
 
 import dataclasses
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping, Set
 from typing import Generic, TextIO, TypeVar
 
 import networkx
@@ -44,23 +44,97 @@ class LayoutRow(Generic[_K]):
     continuing: list[tuple[int, _K, frozenset[_K]]] = dataclasses.field(default_factory=list)
 
 
+@dataclasses.dataclass
+class RowRanker:
+    unique_edge_score: int = 2
+    """Penalty for new edges to nodes that do not already have an active
+    incoming edge, reversed when the last edge from a node is closed.
+    """
+
+    duplicate_edge_score: int = 1
+    """Penalty for new edges to nodes that already have an active incoming
+    edge, reversed when any edge is closed.
+    """
+
+    max_depth: int = 2
+    """How deep to traverse each node's successors when computing its rank.
+    """
+
+    successor_block_score: int = 4
+    """Penalty for each blocking (not yet present) incoming edge on a successor
+    node when recursing with depth > 0.
+    """
+
+    def __call__(
+        self,
+        node: _K,
+        xgraph: networkx.DiGraph,
+        unblocked: Set[_K],
+        active_columns: Mapping[int, Set[_K]],
+        depth: int,
+    ) -> int:
+        rank = 0
+        successors = set(xgraph.successors(node))
+        duplicate_successors = successors.copy()
+        for destinations in active_columns.values():
+            # First subtract scores for the active edges this node closes.
+            if node in destinations:
+                if len(destinations) == 1:
+                    rank -= self.unique_edge_score
+                else:
+                    rank -= self.duplicate_edge_score
+            # Track which successors of this node already have an active edge.
+            duplicate_successors.difference_update(destinations)
+        rank += len(duplicate_successors) * self.duplicate_edge_score
+        rank += (len(successors) - len(duplicate_successors)) * self.unique_edge_score
+        depth += 1
+        if depth < self.max_depth:
+            # Copy the input unblocked and active_columns data structures so
+            # we can modify them safely when recursing.
+            unblocked = set(unblocked)
+            active_columns = dict(active_columns)
+            # We're not really adding a column here, so the key value doesn't
+            # matter as long as it's new.
+            active_columns[max(active_columns.keys(), default=-1) + 1] = successors
+            # Identify which of this node's successors would be unblocked if
+            # this node were added next; we'll also include their ranks.
+            to_recurse = []
+            blocked_successors = {successor: set(xgraph.predecessors(successor)) for successor in successors}
+            while blocked_successors:
+                for successor, blockers in blocked_successors.items():
+                    blockers.difference_update(unblocked)
+                    if not blockers:
+                        unblocked.add(successor)
+                        to_recurse.append(successor)
+                        break
+                else:
+                    # If we got all the way through the list of successors
+                    # without hitting the `break` above, anything left is going
+                    # to remain blocked.
+                    break
+                # We only get here if we did hit the first `break`, which means
+                # we can remove the successfully-unblocked node to shrink the
+                # list we iterate over next time.
+                del blocked_successors[successor]
+            for successor in to_recurse:
+                rank += self(successor, xgraph, unblocked, active_columns, depth)
+            for successor, blockers in blocked_successors.items():
+                rank += self(successor, xgraph, unblocked, active_columns, depth)
+                rank += len(blockers)
+        return rank
+
+
 class Layout(Generic[_K]):
     def __init__(
         self,
         graph: networkx.DiGraph,
         *,
-        unique_edge_rank_factor: int = 1,
-        duplicate_edge_rank_factor: int = 1,
-        closing_edge_rank_factor: int = 2,
-        closing_node_rank_factor: int = 1,
-        interior_column_penalty: int = 3,
+        row_ranker: RowRanker | None = None,
+        interior_column_penalty: int = 8,
         crossing_penalty: int = 1,
-        insertion_penalty_threshold: int = 4,
+        insertion_penalty_threshold: int = 3,
     ):
-        self.unique_edge_rank_factor = unique_edge_rank_factor
-        self.duplicate_edge_rank_factor = duplicate_edge_rank_factor
-        self.closing_edge_rank_factor = closing_edge_rank_factor
-        self.closing_node_rank_factor = closing_node_rank_factor
+        self.row_ranker = row_ranker if row_ranker is not None else RowRanker()
         self.interior_column_penalty = interior_column_penalty
         self.crossing_penalty = crossing_penalty
         self.insertion_penalty_threshold = insertion_penalty_threshold
@@ -82,19 +156,6 @@ class Layout(Generic[_K]):
     @property
     def nodes(self) -> Iterable[_K]:
         return self._locations.keys()
-
-    def _compute_row_rank(self, node: _K) -> int:
-        rank = 0
-        successors = set(self._graph.successors(node))
-        rank += self.duplicate_edge_rank_factor * len(successors)
-        for destinations in self._active_columns.values():
-            if node in destinations:
-                rank -= self.closing_edge_rank_factor
-                if len(destinations) == 1:
-                    rank -= self.closing_node_rank_factor
-            successors.difference_update(destinations)
-        rank += (self.unique_edge_rank_factor - self.duplicate_edge_rank_factor) * len(successors)
-        return rank
 
     def _find_candidate_columns(self, node: _K) -> tuple[list[int], list[int], bool]:
         # The columns holding edges that will connect to this node.
@@ -142,23 +203,21 @@ class Layout(Generic[_K]):
         return best_x, best_penalty
 
     def _compute_column_penalty(self, connecting_x: list[int], node_x: int) -> int:
+        # Start with a penalty for to inserting new column between two existing
+        # columns.
+        penalty = (node_x % 2) * self.interior_column_penalty
         if not connecting_x:
-            return 0
+            return penalty
         min_x = min(connecting_x[0], node_x)
         max_x = max(connecting_x[-1], node_x)
-        return (
-            # Penalty is the (scaled) number of unrelated continuing (vertical)
-            # edges that the (horizontal) input edges for this node have to
-            # "hop"...
-            sum(
-                self.crossing_penalty
-                for x in range(min_x, max_x + 2)
-                if x in self._active_columns and x not in connecting_x
-            )
-            # ... plus an extra something if this is a proposal to insert a
-            # new column between two existing columns.
-            + (node_x % 2) * self.interior_column_penalty
+        # Add the (scaled) number of unrelated continuing (vertical) edges that
+        # the (horizontal) input edges for this node would have to "hop".
+        penalty += sum(
+            self.crossing_penalty
+            for x in range(min_x, max_x + 2)
+            if x in self._active_columns and x not in connecting_x
         )
+        return penalty
 
     def _add_unblocked_node(self, node: _K) -> bool:
         connecting_x, candidate_x, new_column = self._find_candidate_columns(node)
@@ -216,7 +275,9 @@ class Layout(Generic[_K]):
         while self._unblocked:
             unblocked_by_rank = defaultdict(set)
             for node in self._unblocked:
-                unblocked_by_rank[self._compute_row_rank(node)].add(node)
+                unblocked_by_rank[
+                    self.row_ranker(node, self._graph, self._unblocked, self._active_columns, 0)
+                ].add(node)
             for rank in sorted(unblocked_by_rank):
                 if self._add_until_successors(unblocked_by_rank[rank]):
                     break
