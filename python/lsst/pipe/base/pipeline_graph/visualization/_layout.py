@@ -95,13 +95,10 @@ class Layout(Generic[_K]):
         self._x_min = 0
         self._x_max = 0
         self._add_graph(self._xgraph)
-        print(self._active_columns)
+        del self._active_columns
 
     def _add_single_node(self, node: _K) -> None:
         assert node not in self._locations
-        predecessors = set(self._xgraph.predecessors(node))
-        if not (predecessors <= self._locations.keys()):
-            print(f"{node} is missing predecessors: {predecessors - self._locations.keys()}.")
         if not self._locations:
             self._locations[node] = 0
             self._active_columns[0] = set(self._xgraph.successors(node))
@@ -143,11 +140,6 @@ class Layout(Generic[_K]):
             # all existing column values above this one to make room while
             # using only even numbers.
             best_x = self._shift(best_x)
-            print(f"Adding internal column for {node}.")
-        if best_x < self._x_min:
-            print(f"Adding new minimum node at {node}.")
-        if best_x > self._x_max:
-            print(f"Adding new minimum node at {node}.")
         self._x_min = min(self._x_min, best_x)
         self._x_max = max(self._x_max, best_x)
 
