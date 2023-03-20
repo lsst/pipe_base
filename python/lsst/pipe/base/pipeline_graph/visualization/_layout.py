@@ -23,7 +23,6 @@ from __future__ import annotations
 __all__ = ("Layout",)
 
 import dataclasses
-from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Set
 from typing import Generic, TextIO, TypeVar
 
@@ -45,182 +44,81 @@ class LayoutRow(Generic[_K]):
 
 
 @dataclasses.dataclass
-class RowRanker:
-    unique_edge_score: int = 2
-    """Penalty for new edges to nodes that do not already have an active
-    incoming edge, reversed when the last edge from a node is closed.
-    """
-
-    duplicate_edge_score: int = 1
-    """Penalty for new edges to nodes that already have an active incoming
-    edge, reversed when any edge is closed.
-    """
-
-    max_depth: int = 2
-    """How deep to traverse each node's successors when computing its rank.
-    """
-
-    successor_block_score: int = 4
-    """Penalty for each blocking (not yet present) incoming edge on a successor
-    node when recursing with depth > 0.
-    """
+class ColumnPenalty:
+    interior_column_penalty: int = 1
+    crossing_penalty: int = 1
+    insertion_penalty: int = 1
 
     def __call__(
         self,
-        node: _K,
-        xgraph: networkx.DiGraph,
-        unblocked: Set[_K],
+        connecting_x: list[int],
+        node_x: int,
         active_columns: Mapping[int, Set[_K]],
-        depth: int,
+        x_min: int,
+        x_max: int,
     ) -> int:
-        rank = 0
-        successors = set(xgraph.successors(node))
-        duplicate_successors = successors.copy()
-        for destinations in active_columns.values():
-            # First subtract scores for the active edges this node closes.
-            if node in destinations:
-                if len(destinations) == 1:
-                    rank -= self.unique_edge_score
-                else:
-                    rank -= self.duplicate_edge_score
-            # Track which successors of this node already have an active edge.
-            duplicate_successors.difference_update(destinations)
-        rank += len(duplicate_successors) * self.duplicate_edge_score
-        rank += (len(successors) - len(duplicate_successors)) * self.unique_edge_score
-        depth += 1
-        if depth < self.max_depth:
-            # Copy the input unblocked and active_columns data structures so
-            # we can modify them safely when recursing.
-            unblocked = set(unblocked)
-            active_columns = dict(active_columns)
-            # We're not really adding a column here, so the key value doesn't
-            # matter as long as it's new.
-            active_columns[max(active_columns.keys(), default=-1) + 1] = successors
-            # Identify which of this node's successors would be unblocked if
-            # this node were added next; we'll also include their ranks.
-            to_recurse = []
-            blocked_successors = {successor: set(xgraph.predecessors(successor)) for successor in successors}
-            while blocked_successors:
-                for successor, blockers in blocked_successors.items():
-                    blockers.difference_update(unblocked)
-                    if not blockers:
-                        unblocked.add(successor)
-                        to_recurse.append(successor)
-                        break
-                else:
-                    # If we got all the way through the list of successors
-                    # without hitting the `break` above, anything left is going
-                    # to remain blocked.
-                    break
-                # We only get here if we did hit the first `break`, which means
-                # we can remove the successfully-unblocked node to shrink the
-                # list we iterate over next time.
-                del blocked_successors[successor]
-            for successor in to_recurse:
-                rank += self(successor, xgraph, unblocked, active_columns, depth)
-            for successor, blockers in blocked_successors.items():
-                rank += self(successor, xgraph, unblocked, active_columns, depth)
-                rank += len(blockers)
-        return rank
+        # Start with a penalty for inserting a new column between two existing
+        # columns or on either side.
+        penalty = (node_x % 2) * (self.interior_column_penalty + self.insertion_penalty)
+        if node_x < x_min:
+            penalty += self.insertion_penalty
+        elif node_x > x_max:
+            penalty += self.insertion_penalty
+        # If there are no active edges connecting to this node, we're done.
+        if not connecting_x:
+            return penalty
+        # Find the bounds of the horizontal lines that connect
+        horizontal_min_x = min(connecting_x[0], node_x)
+        horizontal_max_x = max(connecting_x[-1], node_x)
+        # Add the (scaled) number of unrelated continuing (vertical) edges that
+        # the (horizontal) input edges for this node would have to "hop".
+        penalty += sum(
+            self.crossing_penalty
+            for x in range(horizontal_min_x, horizontal_max_x + 2)
+            if x in active_columns and x not in connecting_x
+        )
+        return penalty
 
 
 class Layout(Generic[_K]):
     def __init__(
         self,
-        graph: networkx.DiGraph,
-        *,
-        row_ranker: RowRanker | None = None,
-        interior_column_penalty: int = 8,
-        crossing_penalty: int = 1,
-        insertion_penalty_threshold: int = 3,
+        xgraph: networkx.DiGraph,
+        column_penalty: ColumnPenalty | None = None,
     ):
-        self.row_ranker = row_ranker if row_ranker is not None else RowRanker()
-        self.interior_column_penalty = interior_column_penalty
-        self.crossing_penalty = crossing_penalty
-        self.insertion_penalty_threshold = insertion_penalty_threshold
-        self._graph = graph
+        if column_penalty is None:
+            column_penalty = ColumnPenalty()
+        self._xgraph = xgraph
+        self._column_penalty = column_penalty
         self._active_columns: dict[int, set[_K]] = {}
         self._locations: dict[_K, int] = {}
         self._x_min = 0
         self._x_max = 0
-        assert networkx.algorithms.components.is_weakly_connected(self._graph)
-        self._unblocked = set(next(networkx.algorithms.dag.topological_generations(self._graph)))
-        self._add_connected_graph()
-        del self._unblocked
-        del self._active_columns
+        self._add_graph(self._xgraph)
+        print(self._active_columns)
 
-    @property
-    def width(self) -> int:
-        return (self._x_max - self._x_min) // 2
-
-    @property
-    def nodes(self) -> Iterable[_K]:
-        return self._locations.keys()
-
-    def _find_candidate_columns(self, node: _K) -> tuple[list[int], list[int], bool]:
+    def _add_single_node(self, node: _K) -> None:
+        assert node not in self._locations
+        predecessors = set(self._xgraph.predecessors(node))
+        if not (predecessors <= self._locations.keys()):
+            print(f"{node} is missing predecessors: {predecessors - self._locations.keys()}.")
+        if not self._locations:
+            self._locations[node] = 0
+            self._active_columns[0] = set(self._xgraph.successors(node))
+            return
+        # The candidates_x list holds columns where we could insert this node.
+        # We start with new columns on the outside and a new column between
+        # each pair of existing columns.  These are usually not very good
+        # candidates, but it's simpler to always include them and let the
+        # penalty system take care of it.
+        candidate_x = [self._x_max + 2, self._x_min - 2]
+        # candidate_x.extend(range(self._x_min + 1, self._x_max, 2))
         # The columns holding edges that will connect to this node.
         connecting_x = []
-        # The columns holding edges that will connect to this node, leaving no
-        # remaining edges in that column; if any of these exist, they'll be
-        # good candidates for where to put the new node, since they'll minimize
-        # crossings without adding a new column.
-        candidate_x = []
         # Iterate over active columns to populate the above.
         for active_column_x, active_column_endpoints in self._active_columns.items():
             if node in active_column_endpoints:
                 connecting_x.append(active_column_x)
-                if len(active_column_endpoints) == 1:
-                    candidate_x.append(active_column_x)
-        # Sort the list of connecting columns so we can easily get min and max.
-        connecting_x.sort()
-        # If there are empty columns that were previously filled, those are
-        # also candidates.
-        for x in range(self._x_min, self._x_max + 2, 2):
-            if x not in self._active_columns:
-                candidate_x.append(x)
-        candidate_x.sort()
-        if candidate_x:
-            return connecting_x, candidate_x, False
-        # If we have to add a new column, consider doing it on either side or
-        # between any pair of active columns.
-        candidate_x.append(self._x_min - 2)
-        candidate_x.extend(range(self._x_min + 1, self._x_max, 2))
-        candidate_x.append(self._x_max + 2)
-        return connecting_x, candidate_x, True
-
-    def _find_best_column(self, connecting_x: list[int], candidate_x: list[int]) -> tuple[int, int]:
-        mid_x = (self._x_max + self._x_min) // 2
-        best_x = candidate_x.pop()
-        best_penalty = self._compute_column_penalty(connecting_x, best_x)
-        while candidate_x:
-            next_x = candidate_x.pop()
-            next_penalty = self._compute_column_penalty(connecting_x, next_x)
-            if next_penalty < best_penalty or (
-                next_penalty == best_penalty and abs(next_x - mid_x) < abs(best_x - mid_x)
-            ):
-                best_x = next_x
-                best_penalty = next_penalty
-        return best_x, best_penalty
-
-    def _compute_column_penalty(self, connecting_x: list[int], node_x: int) -> int:
-        # Start with a penalty for to inserting new column between two existing
-        # columns.
-        penalty = (node_x % 2) * self.interior_column_penalty
-        if not connecting_x:
-            return penalty
-        min_x = min(connecting_x[0], node_x)
-        max_x = max(connecting_x[-1], node_x)
-        # Add the (scaled) number of unrelated continuing (vertical) edges that
-        # the (horizontal) input edges for this node would have to "hop".
-        penalty += sum(
-            self.crossing_penalty
-            for x in range(min_x, max_x + 2)
-            if x in self._active_columns and x not in connecting_x
-        )
-        return penalty
-
-    def _add_unblocked_node(self, node: _K) -> bool:
-        connecting_x, candidate_x, new_column = self._find_candidate_columns(node)
         # Delete this node from the active columns it is in, and delete any
         # entries that now have empty sets.
         for x in connecting_x:
@@ -228,31 +126,35 @@ class Layout(Generic[_K]):
             destinations.remove(node)
             if not destinations:
                 del self._active_columns[x]
-        node_x, penalty = self._find_best_column(connecting_x, candidate_x)
-        if not new_column and penalty > self.insertion_penalty_threshold:
-            # We found an empty column, but it's got a pretty high penalty;
-            # try an insertion to see if we can do better.
-            candidate_x = [node_x]
-            candidate_x.append(self._x_min)
-            candidate_x.extend(range(self._x_min + 1, self._x_max, 2))
-            candidate_x.append(self._x_max)
-            node_x, _ = self._find_best_column(connecting_x, candidate_x)
-        if node_x % 2:
+        # Add all empty columns between the current min and max as candidates.
+        for x in range(self._x_min, self._x_max + 2, 2):
+            if x not in self._active_columns:
+                candidate_x.append(x)
+        # Sort the list of connecting columns so we can easily get min and max.
+        connecting_x.sort()
+        best_x = min(
+            candidate_x,
+            key=lambda x: self._column_penalty(
+                connecting_x, x, self._active_columns, self._x_min, self._x_max
+            ),
+        )
+        if best_x % 2:
             # We're inserting a new column between two existing ones; shift
             # all existing column values above this one to make room while
             # using only even numbers.
-            node_x = self._shift(node_x)
-        successors = set(self._graph.successors(node))
-        self._unblocked.remove(node)
-        self._locations[node] = node_x
-        self._x_min = min(node_x, self._x_min)
-        self._x_max = max(node_x, self._x_max)
+            best_x = self._shift(best_x)
+            print(f"Adding internal column for {node}.")
+        if best_x < self._x_min:
+            print(f"Adding new minimum node at {node}.")
+        if best_x > self._x_max:
+            print(f"Adding new minimum node at {node}.")
+        self._x_min = min(self._x_min, best_x)
+        self._x_max = max(self._x_max, best_x)
+
+        self._locations[node] = best_x
+        successors = set(self._xgraph.successors(node))
         if successors:
-            self._active_columns[node_x] = successors
-            for successor in successors:
-                if all(n in self._locations for n in self._graph.predecessors(successor)):
-                    self._unblocked.add(successor)
-        return bool(successors)
+            self._active_columns[best_x] = successors
 
     def _shift(self, x: int) -> int:
         for node, old_x in self._locations.items():
@@ -265,22 +167,68 @@ class Layout(Generic[_K]):
         self._x_max += 2
         return x + 1
 
-    def _add_until_successors(self, nodes: Iterable[_K]) -> bool:
-        for node in sorted(nodes, key=str):
-            if self._add_unblocked_node(node):
-                return True
-        return False
+    def _add_graph(self, xgraph: networkx.DiGraph) -> None:
+        component_xgraphs_and_orders = []
+        single_nodes = []
+        for component_nodes in networkx.components.weakly_connected_components(xgraph):
+            if len(component_nodes) == 1:
+                single_nodes.append(component_nodes.pop())
+            else:
+                component_xgraph = xgraph.subgraph(component_nodes)
+                component_order = list(
+                    networkx.algorithms.dag.lexicographical_topological_sort(component_xgraph, key=str)
+                )
+                component_xgraphs_and_orders.append((component_xgraph, component_order))
+        # Add all single-node components in lexicographical order.
+        single_nodes.sort(key=str)
+        for node in single_nodes:
+            self._add_single_node(node)
+        # Sort component graphs by their size and then str of their first node.
+        component_xgraphs_and_orders.sort(key=lambda t: (len(t[1]), str(t[1][0])))
+        # Add subgraphs in that order.
+        for component_xgraph, component_order in component_xgraphs_and_orders:
+            self._add_connected_graph(component_xgraph, component_order)
 
-    def _add_connected_graph(self) -> None:
-        while self._unblocked:
-            unblocked_by_rank = defaultdict(set)
-            for node in self._unblocked:
-                unblocked_by_rank[
-                    self.row_ranker(node, self._graph, self._unblocked, self._active_columns, 0)
-                ].add(node)
-            for rank in sorted(unblocked_by_rank):
-                if self._add_until_successors(unblocked_by_rank[rank]):
-                    break
+    def _add_connected_graph(self, xgraph: networkx.DiGraph, order: list[_K] | None = None) -> None:
+        if order is None:
+            order = list(networkx.algorithms.dag.lexicographical_topological_sort(xgraph, key=str))
+        backbone: list[_K] = networkx.algorithms.dag.dag_longest_path(xgraph, topo_order=order)
+        current = backbone.pop(0)
+        self._add_blockers_of(current)
+        self._add_single_node(current)
+        descendants = frozenset(networkx.algorithms.dag.descendants(xgraph, current))
+        while backbone:
+            current = backbone.pop(0)
+            # Find descendants of the prevoius node that are:
+            # - in this subgraph
+            # - not descendants of the current node.
+            followers_of_previous = set(descendants)
+            descendants = frozenset(networkx.algorithms.dag.descendants(xgraph, current))
+            followers_of_previous.remove(current)
+            followers_of_previous.difference_update(descendants)
+            followers_of_previous.difference_update(self._locations.keys())
+            # Add those followers of the previous node.
+            self._add_graph(xgraph.subgraph(followers_of_previous))
+            # Add the current backbone node and all remaining blockers (which
+            # may not even be in this subgraph).
+            self._add_blockers_of(current)
+            self._add_single_node(current)
+        remaining = xgraph.copy()
+        remaining.remove_nodes_from(self._locations.keys())
+        self._add_graph(remaining)
+
+    def _add_blockers_of(self, node: _K) -> None:
+        blockers = set(networkx.algorithms.dag.ancestors(self._xgraph, node))
+        blockers.difference_update(self._locations.keys())
+        self._add_graph(self._xgraph.subgraph(blockers))
+
+    @property
+    def width(self) -> int:
+        return (self._x_max - self._x_min) // 2
+
+    @property
+    def nodes(self) -> Iterable[_K]:
+        return self._locations.keys()
 
     def print(self, stream: TextIO) -> None:
         for row in self:
@@ -301,7 +249,7 @@ class Layout(Generic[_K]):
                     row.continuing.append(
                         (self._external_location(self._locations[origin]), origin, frozenset(destinations))
                     )
-            row.connecting.sort()
-            row.continuing.sort()
+            row.connecting.sort(key=str)
+            row.continuing.sort(key=str)
             yield row
-            active_edges[node] = set(self._graph.successors(node))
+            active_edges[node] = set(self._xgraph.successors(node))
