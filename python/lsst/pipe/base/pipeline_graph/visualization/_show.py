@@ -27,7 +27,7 @@ import os.path
 import sys
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import ClassVar, TextIO
+from typing import ClassVar, TextIO, cast
 
 import networkx
 import networkx.algorithms.dag
@@ -46,25 +46,37 @@ class MergedNodeKey(frozenset[UnmergedNodeKey]):
     def __str__(self) -> str:
         members = [str(k) for k in self]
         members.sort(reverse=True)
-        terms: list[str] = []
+        terms: list[tuple[str, bool]] = []
         prefix = members.pop()
         exact = True
         while members:
             member = members.pop()
             common = os.path.commonprefix([member, prefix])
-            if len(common) < self.MIN_PREFIX_SIZE:
-                terms.append(prefix if exact else prefix + "*")
+            if len(common) < len(member) // self.MIN_PREFIX_FACTOR or len(common) < self.MIN_PREFIX_SIZE:
+                terms.append((prefix, exact))
                 prefix = member
                 exact = True
             elif len(common) < len(prefix):
                 exact = False
                 prefix = common
-        terms.append(prefix if exact else prefix + "*")
-        return f"({', '.join(terms)})"
+        terms.append((prefix, exact))
+        display_terms = []
+        for term, exact in terms:
+            if len(term) > self.MAX_PREFIX_SIZE:
+                term = f"{term[:self.MAX_PREFIX_SIZE]}…"
+            if exact:
+                display_terms.append(term)
+            else:
+                display_terms.append(f"{term}*")
+        return f"({', '.join(display_terms)})"
 
-    node_type: ClassVar[None] = None
+    @property
+    def node_type(self) -> NodeType:
+        return next(iter(self)).node_type
 
-    MIN_PREFIX_SIZE: ClassVar[int] = 3
+    MIN_PREFIX_SIZE: ClassVar[int] = 6
+    MAX_PREFIX_SIZE: ClassVar[int] = 12
+    MIN_PREFIX_FACTOR: ClassVar[int] = 3
 
 
 NodeKey = UnmergedNodeKey | MergedNodeKey
@@ -72,11 +84,14 @@ NodeKey = UnmergedNodeKey | MergedNodeKey
 
 @dataclasses.dataclass(frozen=True)
 class MergeKey:
-    parents: frozenset[UnmergedNodeKey]
+    parents: frozenset[NodeKey]
     dimensions: DimensionGraph | None
     storage_class_name: str | None
     task_class_name: str | None
     children: frozenset[MergeKey]
+
+    def with_parents(self, parents: frozenset[NodeKey]) -> MergeKey:
+        return dataclasses.replace(self, parents=parents)
 
     def without_parents(self) -> MergeKey:
         return dataclasses.replace(self, parents=frozenset())
@@ -170,9 +185,9 @@ class MergeKey:
                     # larger tree.
                     if len(merge_key.parents) == 1:
                         (parent,) = merge_key.parents
-                        next_candidates[parent][node] = merge_key.without_parents()
+                        next_candidates[cast(UnmergedNodeKey, parent)][node] = merge_key.without_parents()
                     else:
-                        nontrees.update(merge_key.parents)
+                        nontrees.update(cast(frozenset[UnmergedNodeKey], merge_key.parents))
             # Append the results for this depth.
             result.append(result_for_depth)
             # Trim out candidates that aren't trees after all.
@@ -188,24 +203,30 @@ class MergeKey:
         groups: list[dict[MergeKey, set[UnmergedNodeKey]]],
         is_tail: bool,
     ) -> None:
-        while groups:
-            for merge_key, members in groups.pop().items():
-                remaining_members = members & xgraph.nodes.keys()
-                if len(remaining_members) < 2:
-                    continue
-                new_node_key = MergedNodeKey(remaining_members)
-                for member_key in remaining_members:
-                    if is_tail:
-                        children = list(networkx.algorithms.dag.descendants(xgraph, member_key))
-                    else:
-                        children = list(networkx.algorithms.dag.ancestors(xgraph, member_key))
-                    xgraph.remove_nodes_from(children)
-                    xgraph.remove_node(member_key)
-                new_edges: list[tuple[NodeKey, NodeKey]]
-                if is_tail:
-                    new_edges = [(parent, new_node_key) for parent in merge_key.parents]
+        replacements: dict[NodeKey, MergedNodeKey] = {}
+        for group in reversed(groups):
+            new_group = defaultdict(set)
+            for merge_key, members in group.items():
+                if merge_key.parents & replacements.keys():
+                    replaced_parents = frozenset(replacements.get(p, p) for p in merge_key.parents)
+                    new_group[merge_key.with_parents(replaced_parents)].update(members)
                 else:
-                    new_edges = [(new_node_key, parent) for parent in merge_key.parents]
+                    new_group[merge_key].update(members)
+            for merge_key, members in new_group.items():
+                if len(members) < 2:
+                    continue
+                new_node_key = MergedNodeKey(frozenset(members))
+                new_edges: set[tuple[NodeKey, NodeKey]] = set()
+                for member_key in members:
+                    replacements[member_key] = new_node_key
+                    new_edges.update(
+                        (replacements.get(a, a), replacements.get(b, b))
+                        for a, b in xgraph.in_edges(member_key)
+                    )
+                    new_edges.update(
+                        (replacements.get(a, a), replacements.get(b, b))
+                        for a, b in xgraph.out_edges(member_key)
+                    )
                 xgraph.add_node(
                     new_node_key,
                     storage_class_name=merge_key.storage_class_name,
@@ -213,6 +234,7 @@ class MergeKey:
                     dimensions=merge_key.dimensions,
                 )
                 xgraph.add_edges_from(new_edges)
+        xgraph.remove_nodes_from(replacements.keys())
 
 
 def show(
@@ -226,8 +248,8 @@ def show(
     dimensions: bool,
     storage_classes: bool = False,
     task_classes: bool = False,
-    merge_input_trees: int = 2,
-    merge_output_trees: int = 2,
+    merge_input_trees: int = 4,
+    merge_output_trees: int = 4,
     include_automatic_connections: bool = False,
 ) -> None:
     if init is None:
@@ -292,8 +314,6 @@ def _get_symbol(node: NodeKey, x: int) -> str:
             return "▱"
         case NodeType.TASK_INIT:
             return "▣"
-        case None:
-            return "∗"
     raise ValueError(f"Unexpected node key: {node} of type {type(node)}.")
 
 
