@@ -20,12 +20,17 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("MergedNodeKey",)
+__all__ = (
+    "MergedNodeKey",
+    "merge_graph_input_trees",
+    "merge_graph_output_trees",
+    "merge_graph_intermediates",
+)
 
 import dataclasses
 import os.path
 from collections import defaultdict
-from typing import ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Iterable, TypeVar
 
 import networkx
 import networkx.algorithms.dag
@@ -76,6 +81,35 @@ class MergedNodeKey(frozenset[NodeKey]):
     MIN_PREFIX_FACTOR: ClassVar[int] = 3
 
 
+@dataclasses.dataclass(frozen=True)
+class _MergeKey(Generic[_P, _C]):
+    parents: frozenset[_P]
+    dimensions: DimensionGraph | None
+    storage_class_name: str | None
+    task_class_name: str | None
+    children: frozenset[_C]
+
+    @classmethod
+    def from_node_state(
+        cls,
+        state: dict[str, Any],
+        parents: Iterable[_P],
+        children: Iterable[_C],
+        options: NodeAttributeOptions,
+    ) -> _MergeKey[_P, _C]:
+        return cls(
+            parents=frozenset(parents),
+            dimensions=state["dimensions"] if options.dimensions else None,
+            storage_class_name=(state.get("storage_class_name") if options.storage_classes else None),
+            task_class_name=(state.get("task_class_name") if options.task_classes else None),
+            children=frozenset(children),
+        )
+
+
+_TreeGroupMergeKey = _MergeKey[NodeKey, "_TreeGroupMergeKey"]
+_TreeApplyMergeKey = _MergeKey[NodeKey, "_TreeApplyMergeKey"]
+
+
 def merge_graph_input_trees(xgraph: networkx.DiGraph, options: NodeAttributeOptions, depth: int) -> None:
     groups = _make_tree_merge_groups(xgraph, options, depth)
     _apply_tree_merges(xgraph, groups)
@@ -86,42 +120,32 @@ def merge_graph_output_trees(xgraph: networkx.DiGraph, options: NodeAttributeOpt
     _apply_tree_merges(xgraph, groups)
 
 
-@dataclasses.dataclass(frozen=True)
-class _MergeKey(Generic[_P, _C]):
-    parents: frozenset[_P]
-    dimensions: DimensionGraph | None
-    storage_class_name: str | None
-    task_class_name: str | None
-    children: frozenset[_C]
-
-    @classmethod
-    def _from_xgraph_node(
-        cls,
-        node: NodeKey | MergedNodeKey,
-        xgraph: networkx.DiGraph,
-        children: frozenset[_C],
-        options: NodeAttributeOptions,
-    ) -> _MergeKey[_P, _C]:
-        state = xgraph.nodes[node]
-        return cls(
-            parents=frozenset(xgraph.successors(node)),
-            dimensions=state["dimensions"] if options.dimensions else None,
-            storage_class_name=(
-                state["storage_class_name"]
-                if options.storage_classes and node.node_type is NodeType.DATASET_TYPE
-                else None
-            ),
-            task_class_name=(
-                state["task_class_name"]
-                if options.task_classes and node.node_type is not NodeType.DATASET_TYPE
-                else None
-            ),
-            children=children,
+def merge_graph_intermediates(xgraph: networkx.DiGraph, options: NodeAttributeOptions) -> None:
+    groups: dict[_MergeKey[NodeKey, NodeKey], set[NodeKey]] = defaultdict(set)
+    for node, state in xgraph.nodes.items():
+        merge_key = _MergeKey[NodeKey, NodeKey].from_node_state(
+            state,
+            xgraph.predecessors(node),
+            xgraph.successors(node),
+            options,
         )
-
-
-_TreeGroupMergeKey = _MergeKey[NodeKey, "_TreeGroupMergeKey"]
-_TreeApplyMergeKey = _MergeKey[NodeKey, "_TreeApplyMergeKey"]
+        if merge_key.parents and merge_key.children:
+            groups[merge_key].add(node)
+    for merge_key, members in groups.items():
+        if len(members) < 2:
+            continue
+        new_node_key = MergedNodeKey(frozenset(members))
+        xgraph.add_node(
+            new_node_key,
+            storage_class_name=merge_key.storage_class_name,
+            task_class_name=merge_key.task_class_name,
+            dimensions=merge_key.dimensions,
+        )
+        for parent in merge_key.parents:
+            xgraph.add_edge(parent, new_node_key)
+        for child in merge_key.children:
+            xgraph.add_edge(new_node_key, child)
+        xgraph.remove_nodes_from(members)
 
 
 def _make_tree_merge_groups(
@@ -167,8 +191,8 @@ def _make_tree_merge_groups(
             # isomorphic trees that have the same predecessor(s), and can be
             # merged (with isomorphism defined as both both structure and
             # whatever comparisons are in 'options').
-            merge_key = _TreeGroupMergeKey._from_xgraph_node(
-                node, xgraph, frozenset(children.values()), options
+            merge_key = _TreeGroupMergeKey.from_node_state(
+                xgraph.nodes[node], xgraph.successors(node), children.values(), options
             )
             result_for_depth[merge_key].add(node)
             if len(result) <= depth:

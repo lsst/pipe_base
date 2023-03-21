@@ -47,7 +47,7 @@ class LayoutRow(Generic[_K]):
 class ColumnPenalty:
     interior_column_penalty: int = 1
     crossing_penalty: int = 1
-    insertion_penalty: int = 1
+    insertion_penalty: int = 2
 
     def __call__(
         self,

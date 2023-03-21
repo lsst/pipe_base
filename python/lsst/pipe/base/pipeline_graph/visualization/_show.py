@@ -34,7 +34,12 @@ from .._abcs import NodeKey, NodeType
 from .._pipeline_graph import PipelineGraph
 from .._tasks import TaskInitNode, TaskNode
 from ._layout import Layout
-from ._merge import MergedNodeKey, merge_graph_input_trees, merge_graph_output_trees
+from ._merge import (
+    MergedNodeKey,
+    merge_graph_input_trees,
+    merge_graph_intermediates,
+    merge_graph_output_trees,
+)
 from ._options import NodeAttributeOptions
 from ._printer import make_default_printer
 
@@ -54,6 +59,7 @@ def show(
     task_classes: bool = False,
     merge_input_trees: int = 4,
     merge_output_trees: int = 4,
+    merge_intermediates: bool = True,
     include_automatic_connections: bool = False,
 ) -> None:
     if init is None:
@@ -98,6 +104,8 @@ def show(
         merge_graph_input_trees(xgraph, options, depth=merge_input_trees)
     if merge_output_trees:
         merge_graph_output_trees(xgraph, options, depth=merge_output_trees)
+    if merge_intermediates:
+        merge_graph_intermediates(xgraph, options)
 
     layout = Layout[DisplayNodeKey](xgraph)
 
