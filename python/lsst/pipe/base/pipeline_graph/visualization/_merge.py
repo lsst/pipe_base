@@ -28,7 +28,6 @@ __all__ = (
 )
 
 import dataclasses
-import os.path
 from collections import defaultdict
 from typing import Any, ClassVar, Generic, Iterable, TypeVar
 
@@ -48,29 +47,7 @@ class MergedNodeKey(frozenset[NodeKey]):
     def __str__(self) -> str:
         members = [str(k) for k in self]
         members.sort(reverse=True)
-        terms: list[tuple[str, bool]] = []
-        prefix = members.pop()
-        exact = True
-        while members:
-            member = members.pop()
-            common = os.path.commonprefix([member, prefix])
-            if len(common) < len(member) // self.MIN_PREFIX_FACTOR or len(common) < self.MIN_PREFIX_SIZE:
-                terms.append((prefix, exact))
-                prefix = member
-                exact = True
-            elif len(common) < len(prefix):
-                exact = False
-                prefix = common
-        terms.append((prefix, exact))
-        display_terms = []
-        for term, exact in terms:
-            if len(term) > self.MAX_PREFIX_SIZE:
-                term = f"{term[:self.MAX_PREFIX_SIZE]}…"
-            if exact:
-                display_terms.append(term)
-            else:
-                display_terms.append(f"{term}*")
-        return f"({', '.join(display_terms)})"
+        return ", ".join(members)
 
     @property
     def node_type(self) -> NodeType:

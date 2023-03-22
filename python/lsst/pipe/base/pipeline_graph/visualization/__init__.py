@@ -20,6 +20,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
+from ._formatting import *
 from ._layout import *
+from ._merge import *
+from ._options import *
 from ._printer import *
 from ._show import *

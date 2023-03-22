@@ -24,15 +24,13 @@ __all__ = ("show",)
 
 import sys
 from collections.abc import Sequence
+from shutil import get_terminal_size
 from typing import TextIO
 
-import networkx
-import networkx.algorithms.dag
-import networkx.algorithms.tree
-
-from .._abcs import NodeKey, NodeType
+from .._abcs import NodeKey
 from .._pipeline_graph import PipelineGraph
 from .._tasks import TaskInitNode, TaskNode
+from ._formatting import GetNodeText, get_node_symbol
 from ._layout import Layout
 from ._merge import (
     MergedNodeKey,
@@ -40,7 +38,7 @@ from ._merge import (
     merge_graph_intermediates,
     merge_graph_output_trees,
 )
-from ._options import NodeAttributeOptions
+from ._options import Brevity, NodeAttributeOptions
 from ._printer import make_default_printer
 
 DisplayNodeKey = NodeKey | MergedNodeKey
@@ -54,13 +52,14 @@ def show(
     dataset_types: bool = False,
     init: bool | None = False,
     color: bool | Sequence[str] | None = None,
-    dimensions: bool,
+    dimensions: Brevity | None = Brevity.CONCISE,
+    task_classes: Brevity | None = None,
     storage_classes: bool = False,
-    task_classes: bool = False,
     merge_input_trees: int = 4,
     merge_output_trees: int = 4,
     merge_intermediates: bool = True,
     include_automatic_connections: bool = False,
+    width: int | None = None,
 ) -> None:
     if init is None:
         if not (tasks and dataset_types):
@@ -77,7 +76,7 @@ def show(
     else:
         if dataset_types:
             xgraph = pipeline_graph.make_dataset_type_xgraph(init)
-            task_classes = False
+            task_classes = None
         else:
             raise ValueError("No tasks or dataset types to show.")
 
@@ -109,42 +108,15 @@ def show(
 
     layout = Layout[DisplayNodeKey](xgraph)
 
-    printer = make_default_printer(layout.width, color)
-    printer.get_symbol = _get_symbol
+    if width is None:
+        width, _ = get_terminal_size()
 
-    if dimensions or (tasks and task_classes) or (dataset_types and storage_classes):
-        printer.get_text = _GetText(xgraph, options)
+    printer = make_default_printer(layout.width, color)
+    printer.get_symbol = get_node_symbol
+
+    get_text = GetNodeText(xgraph, options, width - printer.width)
+    printer.get_text = get_text
 
     printer.print(stream, layout)
-
-
-def _get_symbol(node: DisplayNodeKey, x: int) -> str:
-    match node.node_type:
-        case NodeType.TASK:
-            return "■"
-        case NodeType.DATASET_TYPE:
-            return "▱"
-        case NodeType.TASK_INIT:
-            return "▣"
-    raise ValueError(f"Unexpected node key: {node} of type {type(node)}.")
-
-
-class _GetText:
-    def __init__(self, xgraph: networkx.DiGraph, options: NodeAttributeOptions):
-        self.xgraph = xgraph
-        self.options = options
-
-    def __call__(self, node: DisplayNodeKey, x: int) -> str:
-        state = self.xgraph.nodes[node]
-        terms = [f"{node}:"]
-        if self.options.dimensions:
-            terms.append(str(state["dimensions"]))
-        if (
-            self.options.task_classes
-            and node.node_type is NodeType.TASK
-            or node.node_type is NodeType.TASK_INIT
-        ):
-            terms.append(state["task_class_name"])
-        if self.options.storage_classes and node.node_type is NodeType.DATASET_TYPE:
-            terms.append(state["storage_class_name"])
-        return " ".join(terms)
+    for line in get_text.format_deferrals(width):
+        print(line, file=stream)

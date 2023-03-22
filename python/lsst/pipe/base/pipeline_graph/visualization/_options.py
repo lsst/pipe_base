@@ -20,21 +20,31 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("NodeAttributeOptions",)
+__all__ = ("NodeAttributeOptions", "Brevity")
 
 import dataclasses
+import enum
+from typing import Literal
 
 from .._pipeline_graph import PipelineGraph
 
 
+class Brevity(enum.Enum):
+    FULL = enum.auto()
+    CONCISE = enum.auto()
+
+    def __bool__(self) -> Literal[True]:
+        return True
+
+
 @dataclasses.dataclass
 class NodeAttributeOptions:
-    dimensions: bool
+    dimensions: Brevity | None
+    task_classes: Brevity | None
     storage_classes: bool
-    task_classes: bool
 
     def __bool__(self) -> bool:
-        return self.dimensions or self.storage_classes or self.task_classes
+        return bool(self.dimensions or self.storage_classes or self.task_classes)
 
     def check(self, pipeline_graph: PipelineGraph) -> None:
         is_resolved = hasattr(pipeline_graph, "universe")
