@@ -25,20 +25,20 @@ __all__ = ("show",)
 import sys
 from collections.abc import Sequence
 from shutil import get_terminal_size
-from typing import TextIO
+from typing import Literal, TextIO
 
 from .._abcs import NodeKey
 from .._pipeline_graph import PipelineGraph
 from .._tasks import TaskInitNode, TaskNode
 from ._formatting import GetNodeText, get_node_symbol
-from ._layout import Layout
+from ._layout import ColumnSelector, Layout
 from ._merge import (
     MergedNodeKey,
     merge_graph_input_trees,
     merge_graph_intermediates,
     merge_graph_output_trees,
 )
-from ._options import Brevity, NodeAttributeOptions
+from ._options import NodeAttributeOptions
 from ._printer import make_default_printer
 
 DisplayNodeKey = NodeKey | MergedNodeKey
@@ -52,14 +52,17 @@ def show(
     dataset_types: bool = False,
     init: bool | None = False,
     color: bool | Sequence[str] | None = None,
-    dimensions: Brevity | None = Brevity.CONCISE,
-    task_classes: Brevity | None = None,
-    storage_classes: bool = False,
+    dimensions: Literal["full"] | Literal["concise"] | Literal[False] | None = None,
+    task_classes: Literal["full"] | Literal["concise"] | Literal[False] | None = False,
+    storage_classes: bool | None = False,
     merge_input_trees: int = 4,
     merge_output_trees: int = 4,
     merge_intermediates: bool = True,
     include_automatic_connections: bool = False,
-    width: int | None = None,
+    width: int,
+    column_interior_penalty: int = 1,
+    column_crossing_penalty: int = 1,
+    column_insertion_penalty: int = 2,
 ) -> None:
     if init is None:
         if not (tasks and dataset_types):
@@ -83,7 +86,7 @@ def show(
     options = NodeAttributeOptions(
         dimensions=dimensions, storage_classes=storage_classes, task_classes=task_classes
     )
-    options.check(pipeline_graph)
+    options = options.checked(pipeline_graph)
 
     if dataset_types and not include_automatic_connections:
         taskish_nodes: list[TaskNode | TaskInitNode] = []
@@ -106,15 +109,20 @@ def show(
     if merge_intermediates:
         merge_graph_intermediates(xgraph, options)
 
-    layout = Layout[DisplayNodeKey](xgraph)
+    column_selector = ColumnSelector(
+        interior_penalty=column_interior_penalty,
+        crossing_penalty=column_crossing_penalty,
+        insertion_penalty=column_insertion_penalty,
+    )
+    layout = Layout[DisplayNodeKey](xgraph, column_selector)
 
-    if width is None:
+    if width < 0:
         width, _ = get_terminal_size()
 
     printer = make_default_printer(layout.width, color)
     printer.get_symbol = get_node_symbol
 
-    get_text = GetNodeText(xgraph, options, width - printer.width)
+    get_text = GetNodeText(xgraph, options, (width - printer.width) if width else 0)
     printer.get_text = get_text
 
     printer.print(stream, layout)

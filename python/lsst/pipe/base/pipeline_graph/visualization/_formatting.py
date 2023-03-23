@@ -31,7 +31,7 @@ from lsst.daf.butler import DimensionGraph
 
 from .._abcs import NodeKey, NodeType
 from ._merge import MergedNodeKey
-from ._options import Brevity, NodeAttributeOptions
+from ._options import NodeAttributeOptions
 
 DisplayNodeKey = NodeKey | MergedNodeKey
 
@@ -54,7 +54,7 @@ def get_node_symbol(node: DisplayNodeKey, x: int | None = None) -> str:
 
 
 class GetNodeText:
-    def __init__(self, xgraph: networkx.DiGraph, options: NodeAttributeOptions, width: int):
+    def __init__(self, xgraph: networkx.DiGraph, options: NodeAttributeOptions, width: int | None):
         self.xgraph = xgraph
         self.options = options
         self.width = width
@@ -62,7 +62,7 @@ class GetNodeText:
 
     def __call__(self, node: DisplayNodeKey, x: int, style: tuple[str, str]) -> str:
         state = self.xgraph.nodes[node]
-        terms: list[str] = [f"{node}: "]
+        terms: list[str] = [f"{node}:" if self.options else str(node)]
         if self.options.dimensions and node.node_type != NodeType.TASK_INIT:
             terms.append(self.format_dimensions(state["dimensions"]))
         if (
@@ -74,7 +74,7 @@ class GetNodeText:
         if self.options.storage_classes and node.node_type is NodeType.DATASET_TYPE:
             terms.append(state["storage_class_name"])
         description = " ".join(terms)
-        if len(description) > self.width:
+        if self.width and len(description) > self.width:
             index = f"[{len(self.deferred) + 1}]"
             self.deferred.append((index, style, terms))
             return f"{description[:self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
@@ -82,9 +82,9 @@ class GetNodeText:
 
     def format_dimensions(self, dimensions: DimensionGraph) -> str:
         match self.options.dimensions:
-            case Brevity.FULL:
+            case "full":
                 return str(dimensions)
-            case Brevity.CONCISE:
+            case "concise":
                 kept = set(dimensions)
                 done = False
                 while not done:
@@ -97,27 +97,26 @@ class GetNodeText:
                 # We still iterate over dimensions instead of kept to preserve
                 # order.
                 return f"{{{', '.join(d.name for d in dimensions if d in kept)}}}"
-            case None:
+            case False:
                 return ""
-        raise ValueError(
-            f"Display option for dimensions is not a Brevity value or None: {self.options.dimensions}."
-        )
+        raise ValueError(f"Invalid display option for dimensions: {self.options.dimensions!r}.")
 
     def format_task_class(self, task_class_name: str) -> str:
         match self.options.task_classes:
-            case Brevity.FULL:
+            case "full":
                 return task_class_name
-            case Brevity.CONCISE:
+            case "concise":
                 return task_class_name.split(".")[-1]
-            case None:
+            case False:
                 return ""
-        raise ValueError(
-            f"Display option for task_classes is not a Brevity value or None: {self.options.task_classes}."
-        )
+        raise ValueError(f"Invalid display option for task_classes: {self.options.task_classes!r}.")
 
-    def format_deferrals(self, width: int) -> Iterator[str]:
+    def format_deferrals(self, width: int | None) -> Iterator[str]:
         indent = "  "
         for index, style, terms in self.deferred:
             yield f"{style[0]}{index}{style[1]}"
             for term in terms:
-                yield from textwrap.wrap(term, width, initial_indent=indent, subsequent_indent=indent)
+                if width:
+                    yield from textwrap.wrap(term, width, initial_indent=indent, subsequent_indent=indent)
+                else:
+                    yield term

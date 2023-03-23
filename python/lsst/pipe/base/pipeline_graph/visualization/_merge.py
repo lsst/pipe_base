@@ -29,7 +29,7 @@ __all__ = (
 
 import dataclasses
 from collections import defaultdict
-from typing import Any, ClassVar, Generic, Iterable, TypeVar
+from typing import Any, Generic, Iterable, TypeVar
 
 import networkx
 import networkx.algorithms.dag
@@ -52,10 +52,6 @@ class MergedNodeKey(frozenset[NodeKey]):
     @property
     def node_type(self) -> NodeType:
         return next(iter(self)).node_type
-
-    MIN_PREFIX_SIZE: ClassVar[int] = 6
-    MAX_PREFIX_SIZE: ClassVar[int] = 12
-    MIN_PREFIX_FACTOR: ClassVar[int] = 3
 
 
 @dataclasses.dataclass(frozen=True)
@@ -108,6 +104,7 @@ def merge_graph_intermediates(xgraph: networkx.DiGraph, options: NodeAttributeOp
         )
         if merge_key.parents and merge_key.children:
             groups[merge_key].add(node)
+    replacements: dict[NodeKey, MergedNodeKey] = {}
     for merge_key, members in groups.items():
         if len(members) < 2:
             continue
@@ -119,9 +116,11 @@ def merge_graph_intermediates(xgraph: networkx.DiGraph, options: NodeAttributeOp
             dimensions=merge_key.dimensions,
         )
         for parent in merge_key.parents:
-            xgraph.add_edge(parent, new_node_key)
+            xgraph.add_edge(replacements.get(parent, parent), new_node_key)
         for child in merge_key.children:
-            xgraph.add_edge(new_node_key, child)
+            xgraph.add_edge(new_node_key, replacements.get(child, child))
+        for member in members:
+            replacements[member] = new_node_key
         xgraph.remove_nodes_from(members)
 
 

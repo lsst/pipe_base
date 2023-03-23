@@ -230,4 +230,5 @@ class ResolvedDatasetTypeNode(DatasetTypeNode):
             "is_initial_query_constraint": self.is_initial_query_constraint,
             "is_prerequisite": self.is_prerequisite,
             "dimensions": self.dataset_type.dimensions,
+            "storage_class_name": self.dataset_type.storageClass_name,
         }

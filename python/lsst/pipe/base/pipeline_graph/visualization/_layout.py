@@ -20,7 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("Layout",)
+__all__ = ("Layout", "ColumnSelector", "LayoutRow")
 
 import dataclasses
 from collections.abc import Iterable, Iterator, Mapping, Set
@@ -44,9 +44,9 @@ class LayoutRow(Generic[_K]):
 
 
 @dataclasses.dataclass
-class ColumnPenalty:
-    interior_column_penalty: int = 1
+class ColumnSelector:
     crossing_penalty: int = 1
+    interior_penalty: int = 1
     insertion_penalty: int = 2
 
     def __call__(
@@ -59,7 +59,7 @@ class ColumnPenalty:
     ) -> int:
         # Start with a penalty for inserting a new column between two existing
         # columns or on either side.
-        penalty = (node_x % 2) * (self.interior_column_penalty + self.insertion_penalty)
+        penalty = (node_x % 2) * (self.interior_penalty + self.insertion_penalty)
         if node_x < x_min:
             penalty += self.insertion_penalty
         elif node_x > x_max:
@@ -84,10 +84,10 @@ class Layout(Generic[_K]):
     def __init__(
         self,
         xgraph: networkx.DiGraph,
-        column_penalty: ColumnPenalty | None = None,
+        column_penalty: ColumnSelector | None = None,
     ):
         if column_penalty is None:
-            column_penalty = ColumnPenalty()
+            column_penalty = ColumnSelector()
         self._xgraph = xgraph
         self._column_penalty = column_penalty
         self._active_columns: dict[int, set[_K]] = {}

@@ -230,4 +230,5 @@ def make_default_printer(width: int, color: bool | Sequence[str] | None = None) 
         printer = make_colorama_printer(width, palette)
         if printer is None:
             raise ImportError("Cannot use color unless the 'colorama' module is available.")
+        return printer
     return make_simple_printer(width)

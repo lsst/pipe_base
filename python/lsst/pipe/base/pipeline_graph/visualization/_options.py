@@ -20,35 +20,35 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("NodeAttributeOptions", "Brevity")
+__all__ = ("NodeAttributeOptions",)
 
 import dataclasses
-import enum
 from typing import Literal
 
 from .._pipeline_graph import PipelineGraph
 
 
-class Brevity(enum.Enum):
-    FULL = enum.auto()
-    CONCISE = enum.auto()
-
-    def __bool__(self) -> Literal[True]:
-        return True
-
-
 @dataclasses.dataclass
 class NodeAttributeOptions:
-    dimensions: Brevity | None
-    task_classes: Brevity | None
-    storage_classes: bool
+    dimensions: Literal["full"] | Literal["concise"] | Literal[False] | None
+    task_classes: Literal["full"] | Literal["concise"] | Literal[False] | None
+    storage_classes: bool | None
 
     def __bool__(self) -> bool:
         return bool(self.dimensions or self.storage_classes or self.task_classes)
 
-    def check(self, pipeline_graph: PipelineGraph) -> None:
+    def checked(self, pipeline_graph: PipelineGraph) -> NodeAttributeOptions:
         is_resolved = hasattr(pipeline_graph, "universe")
         if self.dimensions and not is_resolved:
             raise ValueError("Cannot show dimensions unless they have been resolved.")
         if self.storage_classes and not is_resolved:
             raise ValueError("Cannot show storage classes unless they have been resolved.")
+        return NodeAttributeOptions(
+            dimensions=(
+                self.dimensions if self.dimensions is not None else ("concise" if is_resolved else False)
+            ),
+            task_classes=(
+                self.task_classes if self.task_classes is not None else ("concise" if is_resolved else False)
+            ),
+            storage_classes=(self.storage_classes if self.storage_classes is not None else is_resolved),
+        )
