@@ -142,11 +142,13 @@ class ButlerQuantumContext:
         self._checkMembership(ref, self.allOutputs)
         if self.__full_butler is not None:
             # If reference is resolved we need to unresolved it first.
+            # It is possible that we are putting a dataset into a different
+            # run than what was originally expected.
             if ref.id is not None:
                 ref = ref.unresolved()
             self.__full_butler.put(value, ref)
         else:
-            self.__butler.putDirect(value, ref)
+            self.__butler.put(value, ref)
 
     def get(
         self,
