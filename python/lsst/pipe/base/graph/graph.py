@@ -356,27 +356,27 @@ class QuantumGraph:
 
     @property
     def inputQuanta(self) -> Iterable[QuantumNode]:
-        """Make a `list` of all `QuantumNode` objects that are 'input' nodes
-        to the graph, meaning those nodes to not depend on any other nodes in
+        """Return all `QuantumNode` objects that are 'input' nodes
+        to the graph, meaning those nodes do not depend on any other nodes in
         the graph.
 
         Returns
         -------
         inputNodes : iterable of `QuantumNode`
-            A list of nodes that are inputs to the graph
+            An iterable of nodes that are inputs to the graph
         """
         return (q for q, n in self._connectedQuanta.in_degree if n == 0)
 
     @property
     def outputQuanta(self) -> Iterable[QuantumNode]:
-        """Make a `list` of all `QuantumNode` objects that are 'output' nodes
+        """Return all `QuantumNode` objects that are 'output' nodes
         to the graph, meaning those nodes have no nodes that depend them in
         the graph.
 
         Returns
         -------
         outputNodes : iterable of `QuantumNode`
-            A list of nodes that are outputs of the graph
+            An iterable of nodes that are outputs of the graph
         """
         return [q for q, n in self._connectedQuanta.out_degree if n == 0]
 
