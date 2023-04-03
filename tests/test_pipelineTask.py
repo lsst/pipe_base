@@ -47,8 +47,8 @@ class ButlerMock:
         self.datasets: dict[str, dict[DataCoordinate, Any]] = {}
         self.registry = SimpleNamespace(dimensions=DimensionUniverse())
 
-    def getDirect(self, ref: DatasetRef) -> Any:
-        # getDirect requires resolved ref
+    def get(self, ref: DatasetRef) -> Any:
+        # Requires resolved ref.
         assert ref.id is not None
         dsdata = self.datasets.get(ref.datasetType.name)
         if dsdata:
@@ -56,17 +56,10 @@ class ButlerMock:
         return None
 
     def put(self, inMemoryDataset: Any, dsRef: DatasetRef, producer: Any = None):
-        # put requires unresolved ref
-        assert dsRef.id is None
         key = dsRef.dataId
         name = dsRef.datasetType.name
         dsdata = self.datasets.setdefault(name, {})
         dsdata[key] = inMemoryDataset
-
-    def putDirect(self, obj: Any, ref: DatasetRef):
-        # putDirect requires resolved ref
-        assert ref.id is not None
-        self.put(obj, ref.unresolved())
 
 
 class AddConnections(pipeBase.PipelineTaskConnections, dimensions=["instrument", "visit"]):
@@ -182,7 +175,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta):
             ref = quantum.inputs[dstype0.name][0]
-            butler.putDirect(100 + i, ref)
+            butler.put(100 + i, ref)
 
         # run task on each quanta
         checked_get = False
@@ -265,7 +258,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         dstype0 = task1Connections.input.makeDatasetType(butler.registry.dimensions)
         for i, quantum in enumerate(quanta1):
             ref = quantum.inputs[dstype0.name][0]
-            butler.putDirect(100 + i, ref)
+            butler.put(100 + i, ref)
 
         butler_qc_factory = (
             pipeBase.ButlerQuantumContext.from_full
@@ -313,7 +306,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         # add input data to butler
         dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
         ref = quantum.inputs[dstype0.name][0]
-        butler.putDirect(100, ref)
+        butler.put(100, ref)
 
         butlerQC = pipeBase.ButlerQuantumContext.from_full(butler, quantum)
 
