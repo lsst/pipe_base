@@ -114,6 +114,9 @@ class QuantumGraph:
         Entries in this mapping should be able to be serialized in JSON.
     pruneRefs : iterable [ `DatasetRef` ], optional
         Set of dataset refs to exclude from a graph.
+    universe : `lsst.daf.butler.DimensionUniverse`, optional
+        The dimensions in which quanta can be defined. Need only be provided if
+        no quanta have data IDs.
     initInputs : `Mapping`, optional
         Maps tasks to their InitInput dataset refs. Dataset refs can be either
         resolved or non-resolved. Presently the same dataset refs are included
