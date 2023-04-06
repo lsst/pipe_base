@@ -37,6 +37,7 @@ from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, For
 from lsst.daf.butler.core.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
+from lsst.utils.introspection import get_full_type_name
 
 from .. import connectionTypes as cT
 from .._instrument import Instrument
@@ -300,11 +301,13 @@ def populateButler(
     if instrument is not None:
         instrument_class = doImportType(instrument)
         instrumentName = instrument_class.getName()
+        instrumentClass = get_full_type_name(instrument_class)
     else:
         instrumentName = "INSTR"
+        instrumentClass = None
 
     # Add all needed dimensions to registry
-    butler.registry.insertDimensionData("instrument", dict(name=instrumentName))
+    butler.registry.insertDimensionData("instrument", dict(name=instrumentName, class_name=instrumentClass))
     butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0, full_name="det0"))
 
     taskDefMap = dict((taskDef.label, taskDef) for taskDef in taskDefs)
@@ -345,6 +348,7 @@ def makeSimpleQGraph(
     root: Optional[str] = None,
     callPopulateButler: bool = True,
     run: str = "test",
+    instrument: Optional[str] = None,
     skipExistingIn: Any = None,
     inMemory: bool = True,
     userQuery: str = "",
@@ -380,6 +384,10 @@ def makeSimpleQGraph(
     run : `str`, optional
         Name of the RUN collection to add to butler, only used if ``butler``
         is None.
+    instrument : `str` or `None`, optional
+        The importable name of an instrument to be added to the pipeline or
+        if no instrument should be added then an empty string or `None`, by
+        default None. Only used if ``pipeline`` is `None`.
     skipExistingIn
         Expressions representing the collections to search for existing
         output datasets that should be skipped.  See
@@ -414,7 +422,7 @@ def makeSimpleQGraph(
     """
 
     if pipeline is None:
-        pipeline = makeSimplePipeline(nQuanta=nQuanta)
+        pipeline = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument)
 
     if butler is None:
         if root is None:
