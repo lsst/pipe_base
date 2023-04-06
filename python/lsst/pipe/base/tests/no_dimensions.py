@@ -87,7 +87,8 @@ class NoDimensionsTestTask(PipelineTask):
         """
         self.log.info("Run method given data of type: %s", get_full_type_name(input))
         output = input.copy()
-        output[self.config.key] = self.config.value
+        config = cast(NoDimensionsTestConfig, self.config)
+        output[config.key] = config.value
 
         # Can change the return type via configuration.
         if "TaskMetadata" in cast(NoDimensionsTestConfig, self.config).outputSC:
