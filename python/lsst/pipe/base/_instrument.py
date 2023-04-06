@@ -26,9 +26,9 @@ __all__ = ("Instrument",)
 import datetime
 import os.path
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Optional, Sequence, Type, Union
+from typing import TYPE_CHECKING, Optional, Sequence, Type, Union, cast
 
-from lsst.daf.butler import DataId, Formatter
+from lsst.daf.butler import DataCoordinate, DataId, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
 from lsst.utils import doImportType
 
@@ -175,12 +175,7 @@ class Instrument(metaclass=ABCMeta):
             raise TypeError(
                 f"Unexpected class name retrieved from {name} instrument dimension (got {cls_name})"
             )
-        instrument_cls: type = doImportType(cls_name)
-        if not issubclass(instrument_cls, Instrument):
-            raise TypeError(
-                f"{instrument_cls!r}, obtained from importing {cls_name}, is not an Instrument subclass."
-            )
-        return instrument_cls(collection_prefix=collection_prefix)
+        return Instrument._from_cls_name(cls_name, collection_prefix)
 
     @staticmethod
     def from_string(
@@ -242,6 +237,70 @@ class Instrument(metaclass=ABCMeta):
         if not isinstance(instr, Instrument):
             raise TypeError(f"{name} is not an Instrument subclass.")
         return instr
+
+    @staticmethod
+    def from_data_id(data_id: DataCoordinate, collection_prefix: Optional[str] = None) -> Instrument:
+        """Instantiate an `Instrument` object from a fully-expanded data ID.
+
+        Parameters
+        ----------
+        data_id : `DataCoordinate`
+            Expanded data ID that includes the instrument dimension.
+        collection_prefix : `str`, optional
+            Prefix for collection names to use instead of the intrument's own
+            name.  This is primarily for use in simulated-data repositories,
+            where the instrument name may not be necessary and/or sufficient to
+            distinguish between collections.
+
+        Returns
+        -------
+        instrument : `Instrument`
+            An instance of the relevant `Instrument`.
+
+        Raises
+        ------
+        TypeError
+            Raised if the class name retrieved is not a string or the imported
+            symbol is not an `Instrument` subclass.
+        """
+        return Instrument._from_cls_name(
+            cast(DimensionRecord, data_id.records["instrument"]).class_name, collection_prefix
+        )
+
+    @staticmethod
+    def _from_cls_name(cls_name: str, collection_prefix: str | None = None) -> Instrument:
+        """Instantiate an `Instrument` object type name.
+
+        This just provides common error-handling for `fromName` and
+        `from_data_id`
+
+        Parameters
+        ----------
+        cls_name : `str`
+            Fully-qualified name of the type.
+        collection_prefix : `str`, optional
+            Prefix for collection names to use instead of the intrument's own
+            name.  This is primarily for use in simulated-data repositories,
+            where the instrument name may not be necessary and/or sufficient to
+            distinguish between collections.
+
+        Returns
+        -------
+        instrument : `Instrument`
+            An instance of the relevant `Instrument`.
+
+        Raises
+        ------
+        TypeError
+            Raised if the class name retrieved is not a string or the imported
+            symbol is not an `Instrument` subclass.
+        """
+        instrument_cls: type = doImportType(cls_name)
+        if not issubclass(instrument_cls, Instrument):
+            raise TypeError(
+                f"{instrument_cls!r}, obtained from importing {cls_name}, is not an Instrument subclass."
+            )
+        return instrument_cls(collection_prefix=collection_prefix)
 
     @staticmethod
     def importAll(registry: Registry) -> None:
