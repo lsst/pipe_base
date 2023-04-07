@@ -160,11 +160,27 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
                     # stream code will be more explicit about input
                     # vs output incompatibilities.
                     existing = combined_by_name[datasetType.name]
-                    if existing.is_compatible_with(datasetType) or datasetType.is_compatible_with(existing):
-                        _LOG.warning(
-                            "Dataset type mismatch (%s != %s) but continuing since they are compatible",
-                            datasetType,
-                            existing,
+                    convertible_to_existing = existing.is_compatible_with(datasetType)
+                    convertible_from_existing = datasetType.is_compatible_with(existing)
+                    if convertible_to_existing and convertible_from_existing:
+                        _LOG.debug(
+                            "Dataset type %s has multiple fully-compatible storage classes %s and %s",
+                            datasetType.name,
+                            datasetType.storageClass_name,
+                            existing.storageClass_name,
+                        )
+                        _dict[datasetType] = combined[existing]
+                    elif convertible_to_existing or convertible_from_existing:
+                        # We'd need to refactor a fair amount to recognize
+                        # whether this is an error or not, so I'm not going to
+                        # bother until we need to do that for other reasons
+                        # (it won't be too long).
+                        _LOG.info(
+                            "Dataset type %s is present with multiple only partially-compatible storage "
+                            "classes %s and %s.",
+                            datasetType.name,
+                            datasetType.storageClass_name,
+                            existing.storageClass_name,
                         )
                         _dict[datasetType] = combined[existing]
                     else:
