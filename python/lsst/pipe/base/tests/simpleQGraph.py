@@ -387,7 +387,7 @@ def makeSimpleQGraph(
     instrument : `str` or `None`, optional
         The importable name of an instrument to be added to the pipeline or
         if no instrument should be added then an empty string or `None`, by
-        default None. Only used if ``pipeline`` is `None`.
+        default `None`. Only used if ``pipeline`` is `None`.
     skipExistingIn
         Expressions representing the collections to search for existing
         output datasets that should be skipped.  See
