@@ -2,6 +2,7 @@ pyyaml >= 5.1
 pydantic
 numpy >= 1.17
 networkx
+frozendict
 git+https://github.com/lsst/daf_butler@main#egg=lsst-daf-butler
 git+https://github.com/lsst/utils@main#egg=lsst-utils
 git+https://github.com/lsst/resources@main#egg=lsst-resources
