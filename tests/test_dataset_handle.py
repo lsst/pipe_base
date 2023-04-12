@@ -105,6 +105,18 @@ class TestDatasetHandle(unittest.TestCase):
         hdl = InMemoryDatasetHandle(42, dataId=dataId)
         self.assertIs(hdl.dataId, dataId)
 
+        dataId = {"tract": 5, "patch": 2, "instrument": "TestCam"}
+        hdl = InMemoryDatasetHandle(42, **dataId)
+        self.assertEqual(hdl.dataId, dataId)
+
+        hdl = InMemoryDatasetHandle(42, dataId=dataId, tract=6)
+        self.assertEqual(hdl.dataId["tract"], 6)
+
+        dataId = DataCoordinate.standardize({}, universe=DimensionUniverse(), instrument="DummyCam")
+        hdl = InMemoryDatasetHandle(42, dataId=dataId, physical_filter="g")
+        self.assertIsInstance(hdl.dataId, DataCoordinate)
+        self.assertEqual(hdl.dataId["physical_filter"], "g")
+
     def test_dataset_handle_metric(self):
         metric = MetricsExample(summary={"a": 1, "b": 2}, output={"c": {"d": 5}}, data=[1, 2, 3, 4])
 

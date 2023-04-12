@@ -25,6 +25,7 @@ __all__ = ["InMemoryDatasetHandle"]
 import dataclasses
 from typing import Any, Optional
 
+from frozendict import frozendict
 from lsst.daf.butler import DataCoordinate, DimensionUniverse, StorageClass, StorageClassFactory
 
 
@@ -33,9 +34,42 @@ def _default_dataId() -> DataCoordinate:
     return DataCoordinate.makeEmpty(DimensionUniverse())
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, init=False)
 class InMemoryDatasetHandle:
-    """An in-memory version of a `~lsst.daf.butler.DeferredDatasetHandle`."""
+    """An in-memory version of a `~lsst.daf.butler.DeferredDatasetHandle`.
+
+    If ``dataId`` is not specified, a default empty dataId will be constructed.
+    If ``kwargs`` are provided without specifying a ``dataId``, those
+    parameters will be converted into a dataId-like entity.
+    """
+
+    def __init__(
+        self,
+        inMemoryDataset: Any,
+        *,
+        storageClass: StorageClass | None = None,
+        parameters: dict[str, Any] | None = None,
+        dataId: dict[str, Any] | DataCoordinate | None = None,
+        **kwargs: Any,
+    ):
+        object.__setattr__(self, "inMemoryDataset", inMemoryDataset)
+        object.__setattr__(self, "storageClass", storageClass)
+        object.__setattr__(self, "parameters", parameters)
+        # Need to be able to construct a dataId from kwargs for convenience.
+        # This will not be a full DataCoordinate.
+        if dataId is None:
+            if kwargs:
+                dataId = frozendict(kwargs)  # type: ignore
+            else:
+                dataId = DataCoordinate.makeEmpty(DimensionUniverse())
+        elif kwargs:
+            if isinstance(dataId, DataCoordinate):
+                dataId = DataCoordinate.standardize(kwargs, defaults=dataId, universe=dataId.universe)
+            else:
+                new = dict(dataId)
+                new.update(kwargs)
+                dataId = frozendict(new)  # type: ignore
+        object.__setattr__(self, "dataId", dataId)
 
     def get(
         self,
@@ -170,6 +204,11 @@ class InMemoryDatasetHandle:
     """The object to store in this dataset handle for later retrieval.
     """
 
+    dataId: DataCoordinate | frozendict  # type:ignore
+    """The `~lsst.daf.butler.DataCoordinate` associated with this dataset
+    handle.
+    """
+
     storageClass: Optional[str] = None
     """The name of the `~lsst.daf.butler.StorageClass` associated with this
     dataset.
@@ -180,9 +219,4 @@ class InMemoryDatasetHandle:
     parameters: Optional[dict] = None
     """Optional parameters that may be used to specify a subset of the dataset
     to be loaded (`dict` or `None`).
-    """
-
-    dataId: DataCoordinate = dataclasses.field(default_factory=_default_dataId)
-    """The `~lsst.daf.butler.DataCoordinate` associated with this dataset
-    handle.
     """
