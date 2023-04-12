@@ -8,4 +8,3 @@ git+https://github.com/lsst/utils@main#egg=lsst-utils
 git+https://github.com/lsst/resources@main#egg=lsst-resources
 git+https://github.com/lsst/pex_config@main#egg=lsst-pex-config
 git+https://github.com/lsst/daf_relation@main#egg=lsst-daf-relation
-sqlalchemy >= 1.4, <2.0.0
