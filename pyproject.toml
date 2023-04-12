@@ -111,3 +111,5 @@ write_to = "python/lsst/pipe/base/version.py"
 [tool.pytest.ini_options]
 addopts = "--flake8"
 flake8-ignore = ["E203", "W503", "N802", "N803", "N806", "N812", "N815", "N816"]
+# Some unit tests open registry database and don't close it.
+open_files_ignore = ["gen3.sqlite3"]
