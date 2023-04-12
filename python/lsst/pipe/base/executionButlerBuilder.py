@@ -27,9 +27,9 @@ import itertools
 from collections import defaultdict
 from typing import Callable, DefaultDict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
-from lsst.daf.butler import Butler, Config, DataCoordinate, DatasetRef, DatasetType
+from lsst.daf.butler import Butler, Config, DataCoordinate, DatasetRef, DatasetType, Registry
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
-from lsst.daf.butler.registry import ConflictingDefinitionError
+from lsst.daf.butler.registry import ConflictingDefinitionError, MissingDatasetTypeError
 from lsst.daf.butler.transfers import RepoExportContext
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_class_of
@@ -41,7 +41,7 @@ DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
 
 
 def _validate_dataset_type(
-    candidate: DatasetType, previous: dict[Union[str, DatasetType], DatasetType]
+    candidate: DatasetType, previous: dict[Union[str, DatasetType], DatasetType], registry: Registry
 ) -> DatasetType:
     """Check the dataset types and return a consistent variant if there are
     different compatible options.
@@ -54,6 +54,9 @@ def _validate_dataset_type(
         Previous dataset types found, indexed by name and also by
         dataset type. The latter provides a quick way of returning a
         previously checked dataset type.
+    registry : `lsst.daf.butler.Registry`
+        Main registry whose dataset type registration should override the
+        given one if it exists.
 
     Returns
     -------
@@ -99,8 +102,16 @@ def _validate_dataset_type(
                 f"Dataset type incompatibility in graph: {prevDsType} not compatible with {candidate}"
             )
 
-    # New dataset type encountered. Store it by name and by dataset type
-    # so it will be validated immediately next time it comes up.
+    # We haven't seen this dataset type in this graph before, but it may
+    # already be in the registry.
+    try:
+        registryDsType = registry.getDatasetType(name)
+        previous[candidate] = registryDsType
+        return registryDsType
+    except MissingDatasetTypeError:
+        pass
+    # Dataset type is totally new.  Store it by name and by dataset type so
+    # it will be validated immediately next time it comes up.
     previous[name] = candidate
     previous[candidate] = candidate
     return candidate
@@ -136,7 +147,7 @@ def _accumulate(
     # the dataset IDs, so we process them there even though each Quantum for a
     # task has the same ones.
     for dataset_type in itertools.chain(dataset_types.initIntermediates, dataset_types.initOutputs):
-        dataset_type = _validate_dataset_type(dataset_type, datasetTypes)
+        dataset_type = _validate_dataset_type(dataset_type, datasetTypes, butler.registry)
         inserts[dataset_type].add(DataCoordinate.makeEmpty(dataset_type.dimensions.universe))
 
     # Output references may be resolved even if they do not exist. Find all
@@ -178,6 +189,14 @@ def _accumulate(
                         # exported.
                         if ref.isComponent():
                             ref = ref.makeCompositeRef()
+                        # Make sure we export this with the registry's dataset
+                        # type, since transfer_from doesn't handle storage
+                        # class differences (maybe it should, but it's not
+                        # bad to be defensive here even if that changes).
+                        type = _validate_dataset_type(type, datasetTypes, butler.registry)
+                        if type != ref.datasetType:
+                            ref = ref.overrideStorageClass(type.storageClass)
+                            assert ref.datasetType == type, "Dataset types should not differ in other ways."
                         exports.add(ref)
                     else:
                         if ref.isComponent():
@@ -185,7 +204,7 @@ def _accumulate(
                             # be part of some other upstream dataset, so it
                             # should be safe to skip them here
                             continue
-                        type = _validate_dataset_type(type, datasetTypes)
+                        type = _validate_dataset_type(type, datasetTypes, butler.registry)
                         inserts[type].add(ref.dataId)
     return exports, inserts
 
@@ -208,13 +227,12 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(
-    butler: Butler, collections: Optional[Iterable[str]], exports: Set[DatasetRef], inserts: DataSetTypeMap
-) -> io.StringIO:
-    # This exports the datasets that exist in the input butler using
-    # daf butler objects, however it reaches in deep and does not use the
-    # public methods so that it can export it to a string buffer and skip
-    # disk access.
+def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataSetTypeMap) -> io.StringIO:
+    # This exports relevant dimension records and collections using daf butler
+    # objects, however it reaches in deep and does not use the public methods
+    # so that it can export it to a string buffer and skip disk access.  This
+    # does not export the datasets themselves, since we use transfer_from for
+    # that.
     yamlBuffer = io.StringIO()
     # Yaml is hard coded, since the class controls both ends of the
     # export/import
@@ -336,23 +354,10 @@ def _import(
 
     # Register datasets to be produced and insert them into the registry
     for dsType, dataIds in inserts.items():
-        # There may be inconsistencies with storage class definitions
-        # so those differences must be checked.
-        try:
-            newButler.registry.registerDatasetType(dsType)
-        except ConflictingDefinitionError:
-            # We do not at this point know whether the dataset type is
-            # an intermediate (and so must be able to support conversion
-            # from the registry storage class to an input) or solely an output
-            # dataset type. Test both compatibilities.
-            registryDsType = newButler.registry.getDatasetType(dsType.name)
-            if registryDsType.is_compatible_with(dsType) and dsType.is_compatible_with(registryDsType):
-                # Ensure that we use the registry type when inserting.
-                dsType = registryDsType
-            else:
-                # Not compatible so re-raise the original exception.
-                raise
-
+        # Storage class differences should have already been resolved by calls
+        # _validate_dataset_type in _export, resulting in the Registry dataset
+        # type whenever that exists.
+        newButler.registry.registerDatasetType(dsType)
         newButler.registry.insertDatasets(dsType, dataIds, run)
 
     return newButler
@@ -453,7 +458,7 @@ def buildExecutionButler(
     dataset_types = PipelineDatasetTypes.fromPipeline(graph.iterTaskGraph(), registry=butler.registry)
 
     exports, inserts = _accumulate(butler, graph, dataset_types)
-    yamlBuffer = _export(butler, collections, exports, inserts)
+    yamlBuffer = _export(butler, collections, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists, datastoreRoot)
 
