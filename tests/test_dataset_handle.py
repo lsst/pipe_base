@@ -68,6 +68,13 @@ class SpecialThing:
     """Class known not to have associated StorageClass"""
 
 
+class NotCopyable(MetricsExample):
+    """Subclass of metrics that can't be copied."""
+
+    def __deepcopy__(self, memo=None):
+        raise RuntimeError("Can not be copied")
+
+
 class TestDatasetHandle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -80,6 +87,29 @@ class TestDatasetHandle(unittest.TestCase):
         hdl = InMemoryDatasetHandle(inMemoryDataset)
 
         self.assertEqual(hdl.get(), inMemoryDataset)
+
+    def test_dataset_handle_copy(self):
+        inMemoryDataset = [1, 2]
+        hdl = InMemoryDatasetHandle(inMemoryDataset, copy=False)
+
+        retrieved = hdl.get()
+        self.assertEqual(retrieved, inMemoryDataset)
+        retrieved.append(3)
+        self.assertEqual(retrieved, inMemoryDataset)
+
+        hdl = InMemoryDatasetHandle(inMemoryDataset, copy=True)
+        retrieved = hdl.get()
+        self.assertEqual(retrieved, inMemoryDataset)
+        retrieved.append(3)
+        self.assertNotEqual(retrieved, inMemoryDataset)
+
+        inMemoryDataset = NotCopyable(summary={"a": 1, "b": 2}, output={"c": {"d": 5}}, data=[1, 2, 3, 4])
+        hdl = InMemoryDatasetHandle(inMemoryDataset)
+        self.assertIs(hdl.get(), inMemoryDataset)
+
+        hdl = InMemoryDatasetHandle(inMemoryDataset, copy=True, storageClass="MetricsConversion")
+        with self.assertRaises(NotImplementedError):
+            hdl.get()
 
     def test_dataset_handle_unknown(self):
         inMemoryDataset = SpecialThing()

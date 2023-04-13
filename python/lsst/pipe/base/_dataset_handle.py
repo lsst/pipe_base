@@ -26,7 +26,14 @@ import dataclasses
 from typing import Any, Optional
 
 from frozendict import frozendict
-from lsst.daf.butler import DataCoordinate, DataId, DimensionUniverse, StorageClass, StorageClassFactory
+from lsst.daf.butler import (
+    DataCoordinate,
+    DataId,
+    DimensionUniverse,
+    StorageClass,
+    StorageClassDelegate,
+    StorageClassFactory,
+)
 
 
 # Use an empty dataID as a default.
@@ -50,11 +57,13 @@ class InMemoryDatasetHandle:
         storageClass: StorageClass | None = None,
         parameters: dict[str, Any] | None = None,
         dataId: DataId | None = None,
+        copy: bool = False,
         **kwargs: Any,
     ):
         object.__setattr__(self, "inMemoryDataset", inMemoryDataset)
         object.__setattr__(self, "storageClass", storageClass)
         object.__setattr__(self, "parameters", parameters)
+        object.__setattr__(self, "copy", copy)
         # Need to be able to construct a dataId from kwargs for convenience.
         # This will not be a full DataCoordinate.
         if dataId is None:
@@ -103,11 +112,11 @@ class InMemoryDatasetHandle:
         Returns
         -------
         return : `object`
-            The dataset pointed to by this handle. This is the actual object
-            that was initially stored and not a copy. Modifying this object
-            will modify the stored object. If the stored object is `None` this
-            method always returns `None` regardless of any component request or
-            parameters.
+            The dataset pointed to by this handle. Whether this returns the
+            original object or a copy is controlled by the ``copy`` property
+            of the handle that is set at handle construction time.
+            If the stored object is `None` this method always returns `None`
+            regardless of any component request or parameters.
 
         Raises
         ------
@@ -135,11 +144,31 @@ class InMemoryDatasetHandle:
             else:
                 returnStorageClass = storageClass
 
+        inMemoryDataset = self.inMemoryDataset
+
+        if self.copy:
+            # An optimization might be to defer copying until any components
+            # and parameters have been applied. This can be a problem since
+            # most component storage classes do not bother to define a
+            # storage class delegate and the default delegate uses deepcopy()
+            # which can fail if explicit support for deepcopy() is missing
+            # or pickle does not work.
+            # Copying will require a storage class be determined, which is
+            # not normally required for the default case of no parameters and
+            # no components.
+            thisStorageClass = self._getStorageClass()
+            try:
+                delegate = thisStorageClass.delegate()
+            except TypeError:
+                # Try the default copy options if no delegate is available.
+                delegate = StorageClassDelegate(thisStorageClass)
+
+            inMemoryDataset = delegate.copy(inMemoryDataset)
+
         if component or mergedParameters:
             # This requires a storage class look up to locate the delegate
             # class.
             thisStorageClass = self._getStorageClass()
-            inMemoryDataset = self.inMemoryDataset
 
             # Parameters for derived components are applied against the
             # composite.
@@ -168,6 +197,7 @@ class InMemoryDatasetHandle:
                 inMemoryDataset = readStorageClass.delegate().handleParameters(
                     inMemoryDataset, mergedParameters
                 )
+
             if returnStorageClass:
                 return returnStorageClass.coerce_type(inMemoryDataset)
             return inMemoryDataset
@@ -175,8 +205,8 @@ class InMemoryDatasetHandle:
             # If there are no parameters or component requests the object
             # can be returned as is, but possibly with conversion.
             if returnStorageClass:
-                return returnStorageClass.coerce_type(self.inMemoryDataset)
-            return self.inMemoryDataset
+                return returnStorageClass.coerce_type(inMemoryDataset)
+            return inMemoryDataset
 
     def _getStorageClass(self) -> StorageClass:
         """Return the relevant storage class.
@@ -220,3 +250,7 @@ class InMemoryDatasetHandle:
     """Optional parameters that may be used to specify a subset of the dataset
     to be loaded (`dict` or `None`).
     """
+
+    copy: bool = False
+    """Control whether a copy of the in-memory dataset is returned for every
+    call to get()."""
