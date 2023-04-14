@@ -23,6 +23,7 @@
 """
 
 import unittest
+import warnings
 from types import SimpleNamespace
 from typing import Any
 
@@ -37,6 +38,7 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionUniverse,
     Quantum,
+    UnresolvedRefWarning,
 )
 
 
@@ -117,19 +119,21 @@ class PipelineTaskTestCase(unittest.TestCase):
     def _makeDSRefVisit(
         self, dstype: DatasetType, visitId: int, universe: DimensionUniverse, resolve: bool = False
     ) -> DatasetRef:
-        ref = DatasetRef(
-            datasetType=dstype,
-            dataId=DataCoordinate.standardize(
-                detector="X",
-                visit=visitId,
-                physical_filter="a",
-                band="b",
-                instrument="TestInstrument",
-                universe=universe,
-            ),
-        )
-        if resolve:
-            ref = self._resolve_ref(ref)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+            ref = DatasetRef(
+                datasetType=dstype,
+                dataId=DataCoordinate.standardize(
+                    detector="X",
+                    visit=visitId,
+                    physical_filter="a",
+                    band="b",
+                    instrument="TestInstrument",
+                    universe=universe,
+                ),
+            )
+            if resolve:
+                ref = self._resolve_ref(ref)
         return ref
 
     def _makeQuanta(

@@ -30,6 +30,7 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 import itertools
 import logging
+import warnings
 from collections import ChainMap, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ from lsst.daf.butler import (
     NamedValueSet,
     Quantum,
     Registry,
+    UnresolvedRefWarning,
 )
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
@@ -742,7 +744,9 @@ class _PipelineScaffolding:
         for datasetType, refs in itertools.chain(
             self.initInputs.items(), self.initIntermediates.items(), self.initOutputs.items()
         ):
-            refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
         # Run one big query for the data IDs for task dimensions and regular
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
@@ -810,7 +814,9 @@ class _PipelineScaffolding:
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
                     ref = refs.get(datasetDataId)
                     if ref is None:
-                        ref = DatasetRef(datasetType, datasetDataId)
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                            ref = DatasetRef(datasetType, datasetDataId)
                         refs[datasetDataId] = ref
                     refsForRow[datasetType.name] = ref
                 # Create _QuantumScaffolding objects for all tasks from this

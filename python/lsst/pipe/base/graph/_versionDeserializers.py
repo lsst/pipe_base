@@ -27,6 +27,7 @@ import lzma
 import pickle
 import struct
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ from lsst.daf.butler import (
     DimensionUniverse,
     Quantum,
     SerializedDimensionRecord,
+    UnresolvedRefWarning,
 )
 from lsst.utils import doImportType
 
@@ -511,15 +513,17 @@ class DeserializerV3(DeserializerBase):
             universe = DimensionUniverse()
         infoMappings.universe = universe
         infoMappings.globalInitOutputRefs = []
-        if (json_refs := infoMap.get("GlobalInitOutputRefs")) is not None:
-            infoMappings.globalInitOutputRefs = [
-                DatasetRef.from_json(json_ref, universe=universe) for json_ref in json_refs
-            ]
-        infoMappings.registryDatasetTypes = []
-        if (json_refs := infoMap.get("RegistryDatasetTypes")) is not None:
-            infoMappings.registryDatasetTypes = [
-                DatasetType.from_json(json_ref, universe=universe) for json_ref in json_refs
-            ]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+            if (json_refs := infoMap.get("GlobalInitOutputRefs")) is not None:
+                infoMappings.globalInitOutputRefs = [
+                    DatasetRef.from_json(json_ref, universe=universe) for json_ref in json_refs
+                ]
+            infoMappings.registryDatasetTypes = []
+            if (json_refs := infoMap.get("RegistryDatasetTypes")) is not None:
+                infoMappings.registryDatasetTypes = [
+                    DatasetType.from_json(json_ref, universe=universe) for json_ref in json_refs
+                ]
         self.infoMappings = infoMappings
         return infoMappings
 
@@ -590,14 +594,16 @@ class DeserializerV3(DeserializerBase):
                 loadedTaskDef[nodeTaskLabel] = recreatedTaskDef
 
                 # initInputRefs and initOutputRefs are optional
-                if (refs := taskDefDump.get("initInputRefs")) is not None:
-                    initInputRefs[recreatedTaskDef] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
-                    ]
-                if (refs := taskDefDump.get("initOutputRefs")) is not None:
-                    initOutputRefs[recreatedTaskDef] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
-                    ]
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                    if (refs := taskDefDump.get("initInputRefs")) is not None:
+                        initInputRefs[recreatedTaskDef] = [
+                            cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        ]
+                    if (refs := taskDefDump.get("initOutputRefs")) is not None:
+                        initOutputRefs[recreatedTaskDef] = [
+                            cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        ]
 
                 # rebuild the mappings that associate dataset type names with
                 # TaskDefs
