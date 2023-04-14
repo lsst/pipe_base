@@ -34,6 +34,7 @@ import lsst.utils.tests
 from lsst.daf.butler import (
     DataCoordinate,
     DatasetIdFactory,
+    DatasetIdGenEnum,
     DatasetRef,
     DatasetType,
     DimensionUniverse,
@@ -113,27 +114,26 @@ class PipelineTaskTestCase(unittest.TestCase):
 
     datasetIdFactory = DatasetIdFactory()
 
-    def _resolve_ref(self, ref: DatasetRef) -> DatasetRef:
-        return self.datasetIdFactory.resolveRef(ref, "test")
-
     def _makeDSRefVisit(
         self, dstype: DatasetType, visitId: int, universe: DimensionUniverse, resolve: bool = False
     ) -> DatasetRef:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-            ref = DatasetRef(
-                datasetType=dstype,
-                dataId=DataCoordinate.standardize(
-                    detector="X",
-                    visit=visitId,
-                    physical_filter="a",
-                    band="b",
-                    instrument="TestInstrument",
-                    universe=universe,
-                ),
-            )
-            if resolve:
-                ref = self._resolve_ref(ref)
+        dataId = DataCoordinate.standardize(
+            detector="X",
+            visit=visitId,
+            physical_filter="a",
+            band="b",
+            instrument="TestInstrument",
+            universe=universe,
+        )
+        if resolve:
+            run = "test"
+            dataset_id = self.datasetIdFactory.makeDatasetId(run, dstype, dataId, DatasetIdGenEnum.UNIQUE)
+
+            ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run, id=dataset_id)
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                ref = DatasetRef(datasetType=dstype, dataId=dataId)
         return ref
 
     def _makeQuanta(
