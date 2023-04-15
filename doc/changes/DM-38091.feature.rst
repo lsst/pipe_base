@@ -1,0 +1,1 @@
+Modified ``InMemoryDatasetHandle`` to allow it to be constructed with keyword arguments that will be converted to the relevant DataId.
