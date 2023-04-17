@@ -33,8 +33,6 @@ import lsst.utils.logging
 import lsst.utils.tests
 from lsst.daf.butler import (
     DataCoordinate,
-    DatasetIdFactory,
-    DatasetIdGenEnum,
     DatasetRef,
     DatasetType,
     DimensionUniverse,
@@ -112,8 +110,6 @@ class AddTask2(pipeBase.PipelineTask):
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask"""
 
-    datasetIdFactory = DatasetIdFactory()
-
     def _makeDSRefVisit(
         self, dstype: DatasetType, visitId: int, universe: DimensionUniverse, resolve: bool = False
     ) -> DatasetRef:
@@ -127,9 +123,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         )
         if resolve:
             run = "test"
-            dataset_id = self.datasetIdFactory.makeDatasetId(run, dstype, dataId, DatasetIdGenEnum.UNIQUE)
-
-            ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run, id=dataset_id)
+            ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
         else:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=UnresolvedRefWarning)
