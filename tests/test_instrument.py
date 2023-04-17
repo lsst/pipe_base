@@ -23,10 +23,12 @@
 """
 
 import datetime
+import math
 import unittest
 
-from lsst.daf.butler import Registry, RegistryConfig
+from lsst.daf.butler import DataCoordinate, DimensionPacker, DimensionUniverse, Registry, RegistryConfig
 from lsst.daf.butler.formatters.json import JsonFormatter
+from lsst.pex.config import Config
 from lsst.pipe.base import Instrument
 from lsst.utils.introspection import get_full_type_name
 
@@ -38,10 +40,14 @@ class DummyInstrument(Instrument):
 
     def register(self, registry, update=False):
         detector_max = 2
+        visit_max = 10
+        exposure_max = 8
         record = {
             "instrument": self.getName(),
             "class_name": get_full_type_name(DummyInstrument),
             "detector_max": detector_max,
+            "visit_max": visit_max,
+            "exposure_max": exposure_max,
         }
         with registry.transaction():
             registry.syncDimensionData("instrument", record, update=update)
@@ -84,6 +90,10 @@ class UnimportableInstrument(DummyInstrument):
             "detector_max": 1,
         }
         registry.syncDimensionData("instrument", record, update=update)
+
+
+class DimensionPackerTestConfig(Config):
+    packer = Instrument.make_dimension_packer_config_field()
 
 
 class InstrumentTestCase(unittest.TestCase):
@@ -177,6 +187,126 @@ class InstrumentTestCase(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             Instrument.formatCollectionTimestamp(0)
+
+    def test_dimension_packer_config_defaults(self):
+        """Test the ObservationDimensionPacker class and the Instrument-based
+        systems for constructing it, in the case where the Instrument-defined
+        default is used.
+        """
+        registry_config = RegistryConfig()
+        registry_config["db"] = "sqlite://"
+        registry = Registry.createFromConfig(registry_config)
+        self.instrument.register(registry)
+        config = DimensionPackerTestConfig()
+        instrument_data_id = registry.expandDataId(instrument=self.name)
+        record = instrument_data_id.records["instrument"]
+        self.check_dimension_packers(
+            registry.dimensions,
+            # Test just one packer-construction signature here as that saves us
+            # from having to insert dimension records for visits, exposures,
+            # and detectors for this test.
+            # Note that we don't need to pass any more than the instrument in
+            # the data ID yet, because we're just constructing packers, not
+            # calling their pack method.
+            visit_packers=[config.packer.apply(instrument_data_id, is_exposure=False)],
+            exposure_packers=[config.packer.apply(instrument_data_id, is_exposure=True)],
+            n_detectors=record.detector_max,
+            n_visits=record.visit_max,
+            n_exposures=record.exposure_max,
+        )
+
+    def test_dimension_packer_config_override(self):
+        """Test the ObservationDimensionPacker class and the Instrument-based
+        systems for constructing it, in the case where configuration overrides
+        the Instrument's default.
+        """
+        registry_config = RegistryConfig()
+        registry_config["db"] = "sqlite://"
+        registry = Registry.createFromConfig(registry_config)
+        # Intentionally do not register instrument or insert any other
+        # dimension records to ensure we don't need them in this mode.
+        config = DimensionPackerTestConfig()
+        config.packer["observation"].n_observations = 16
+        config.packer["observation"].n_detectors = 4
+        config.packer.name = "observation"
+        instrument_data_id = DataCoordinate.standardize(instrument=self.name, universe=registry.dimensions)
+        full_data_id = DataCoordinate.standardize(instrument_data_id, detector=1, visit=3, exposure=7)
+        visit_data_id = full_data_id.subset(full_data_id.universe.extract(["visit", "detector"]))
+        exposure_data_id = full_data_id.subset(full_data_id.universe.extract(["exposure", "detector"]))
+        self.check_dimension_packers(
+            registry.dimensions,
+            # Note that we don't need to pass any more than the instrument in
+            # the data ID yet, because we're just constructing packers, not
+            # calling their pack method.
+            visit_packers=[
+                config.packer.apply(visit_data_id),
+                config.packer.apply(full_data_id),
+                config.packer.apply(instrument_data_id, is_exposure=False),
+            ],
+            exposure_packers=[
+                config.packer.apply(instrument_data_id, is_exposure=True),
+                config.packer.apply(exposure_data_id),
+            ],
+            n_detectors=config.packer["observation"].n_detectors,
+            n_visits=config.packer["observation"].n_observations,
+            n_exposures=config.packer["observation"].n_observations,
+        )
+
+    def check_dimension_packers(
+        self,
+        universe: DimensionUniverse,
+        visit_packers: list[DimensionPacker],
+        exposure_packers: list[DimensionPacker],
+        n_detectors: int,
+        n_visits: int,
+        n_exposures: int,
+    ) -> None:
+        """Test the behavior of one or more dimension packers constructed by
+        an instrument.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Data model for butler data IDs.
+        visit_packers : `list` [ `DimensionPacker` ]
+            Packers with ``{visit, detector}`` dimensions to test.
+        exposure_packers : `list` [ `DimensionPacker` ]
+            Packers with ``{exposure, detector}`` dimensions to test.
+        n_detectors : `int`
+            Number of detectors all packers have been configured to reserve
+            space for.
+        n_visits : `int`
+            Number of visits all packers in ``visit_packers`` have been
+            configured to reserve space for.
+        n_exposures : `int`
+            Number of exposures all packers in ``exposure_packers`` have been
+            configured to reserve space for.
+        """
+        full_data_id = DataCoordinate.standardize(
+            instrument=self.name, detector=1, visit=3, exposure=7, universe=universe
+        )
+        visit_data_id = full_data_id.subset(full_data_id.universe.extract(["visit", "detector"]))
+        exposure_data_id = full_data_id.subset(full_data_id.universe.extract(["exposure", "detector"]))
+        for n, packer in enumerate(visit_packers):
+            with self.subTest(n=n):
+                packed_id, max_bits = packer.pack(full_data_id, returnMaxBits=True)
+                self.assertEqual(packed_id, full_data_id["detector"] + full_data_id["visit"] * n_detectors)
+                self.assertEqual(max_bits, math.ceil(math.log2(n_detectors * n_visits)))
+                self.assertEqual(visit_data_id, packer.unpack(packed_id))
+                with self.assertRaisesRegex(ValueError, f"Detector ID {n_detectors} is out of bounds"):
+                    packer.pack(instrument=self.name, detector=n_detectors, visit=3)
+                with self.assertRaisesRegex(ValueError, f"Visit ID {n_visits} is out of bounds"):
+                    packer.pack(instrument=self.name, detector=1, visit=n_visits)
+        for n, packer in enumerate(exposure_packers):
+            with self.subTest(n=n):
+                packed_id, max_bits = packer.pack(full_data_id, returnMaxBits=True)
+                self.assertEqual(packed_id, full_data_id["detector"] + full_data_id["exposure"] * n_detectors)
+                self.assertEqual(max_bits, math.ceil(math.log2(n_detectors * n_exposures)))
+                self.assertEqual(exposure_data_id, packer.unpack(packed_id))
+                with self.assertRaisesRegex(ValueError, f"Detector ID {n_detectors} is out of bounds"):
+                    packer.pack(instrument=self.name, detector=n_detectors, exposure=3)
+                with self.assertRaisesRegex(ValueError, f"Exposure ID {n_exposures} is out of bounds"):
+                    packer.pack(instrument=self.name, detector=1, exposure=n_exposures)
 
 
 if __name__ == "__main__":

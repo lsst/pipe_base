@@ -26,11 +26,14 @@ __all__ = ("Instrument",)
 import datetime
 import os.path
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Optional, Sequence, Type, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Type, Union, cast, final
 
-from lsst.daf.butler import DataCoordinate, DataId, DimensionRecord, Formatter
+from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
+from lsst.pex.config import RegistryField
 from lsst.utils import doImportType
+
+from ._observation_dimension_packer import observation_packer_registry
 
 if TYPE_CHECKING:
     from lsst.daf.butler import Registry
@@ -535,3 +538,149 @@ class Instrument(metaclass=ABCMeta):
             prefix.
         """
         return "/".join((self.collection_prefix,) + labels)
+
+    @staticmethod
+    def make_dimension_packer_config_field(
+        doc: str = (
+            "How to pack visit+detector or exposure+detector data IDs into integers. "
+            "The default (None) is to delegate to the Instrument class for which "
+            "registered implementation to use (but still use the nested configuration "
+            "for that implementation)."
+        ),
+    ) -> RegistryField:
+        """Make an `lsst.pex.config.Field` that can be used to configure how
+        data IDs for this instrument are packed.
+
+        Parameters
+        ----------
+        doc : `str`, optional
+            Documentation for the config field.
+
+        Returns
+        -------
+        field : `lsst.pex.config.RegistryField`
+            A config field for which calling ``apply`` on the instance
+            attribute constructs an `lsst.daf.butler.DimensionPacker` that
+            defaults to the appropriate one for this instrument.
+
+        Notes
+        -----
+        This method is expected to be used whenever code requires a single
+        integer that represents the combination of a detector and either a
+        visit or exposure, but in most cases the `lsst.meas.base.IdGenerator`
+        class and its helper configs provide a simpler high-level interface
+        that should be used instead of calling this method directly.
+
+        This system is designed to work best when the configuration for the ID
+        packer is not overridden at all, allowing the appropriate instrument
+        class to determine the behavior for each data ID encountered.  When the
+        configuration does need to be modified (most often when the scheme for
+        packing an instrument's data IDs is undergoing an upgrade), it is
+        important to ensure the overrides are only applied to data IDs with the
+        desired instrument value.
+
+        Unit tests of code that use a field produced by this method will often
+        want to explicitly set the packer to "observation" and manually set
+        its ``n_detectors`` and ``n_observations`` fields; this will make it
+        unnecessary for tests to provide expanded data IDs.
+        """
+        # The control flow here bounces around a bit when this RegistryField's
+        # apply() method is called, so it merits a thorough walkthrough
+        # somewhere, and that might as well be here:
+        #
+        # - If the config field's name is not `None`, that kind of packer is
+        #   constructed and returned with the arguments to `apply`, in just the
+        #   way it works with most RegistryFields or ConfigurableFields. But
+        #   this is expected to be rare.
+        #
+        # - If the config fields' name is `None`, the `apply` method (which
+        #   actually lives on the `pex.config.RegistryInstanceDict` class,
+        #   since `RegistryField` is a descriptor), calls
+        #   `_make_default_dimension_packer_dispatch` (which is final, and
+        #   hence the base class implementation just below is the only one).
+        #
+        # - `_make_default_dimension_packer_dispatch` instantiates an
+        #   `Instrument` instance of the type pointed at by the data ID (i.e.
+        #   calling `Instrument.from_data_id`), then calls
+        #   `_make_default_dimension_packer` on that.
+        #
+        # - The default implementation of `_make_default_dimension_packer` here
+        #    in the base class picks the "observation" dimension packer, so if
+        #   it's not overridden by a derived class everything proceeds as if
+        #   the config field's name was set to that.  Note that this sets which
+        #   item in the registry is used, but it still pays attention to the
+        #   configuration for that entry in the registry field.
+        #
+        # - A subclass implementation of `_make_default_dimension_packer` will
+        #   take precedence over the base class, but it's expected that these
+        #   will usually just delegate back to ``super()`` while changing the
+        #   ``default`` argument to something other than "observation". Once
+        #   again, this will control which packer entry in the registry is used
+        #   but the result will still reflect the configuration for that packer
+        #   in the registry field.
+        #
+        return observation_packer_registry.makeField(
+            doc, default=None, optional=True, on_none=Instrument._make_default_dimension_packer_dispatch
+        )
+
+    @staticmethod
+    @final
+    def _make_default_dimension_packer_dispatch(
+        config_dict: Any, data_id: DataCoordinate, is_exposure: bool | None = None
+    ) -> DimensionPacker:
+        """Dispatch method used to invoke `_make_dimension_packer`.
+
+        This method constructs the appropriate `Instrument` subclass from
+        config and then calls its `_make_default_dimension_packer`.
+        It is called when (as usual) the field returned by
+        `make_dimension_packer_config_field` is left to its default selection
+        of `None`.
+
+        All arguments and return values are the same as
+        `_make_default_dimension_packer.`
+        """
+        instrument = Instrument.from_data_id(data_id)
+        return instrument._make_default_dimension_packer(config_dict, data_id, is_exposure=is_exposure)
+
+    def _make_default_dimension_packer(
+        self,
+        config_dict: Any,
+        data_id: DataCoordinate,
+        is_exposure: bool | None = None,
+        default: str = "observation",
+    ) -> DimensionPacker:
+        """Construct return the default dimension packer for this instrument.
+
+        This method is a protected hook for subclasses to override the behavior
+        of `make_dimension_packer_config_field` when the packer is not selected
+        explicitly via configuration.
+
+        Parameters
+        ----------
+        config_dict
+            Mapping attribute of a `lsst.pex.config.Config` instance that
+            corresponds to a field created by `make_dimension_packer_config`
+            (the actual type of this object is a `lsst.pex.config`
+            implementation detail).
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID that identifies at least the ``instrument`` dimension.  For
+            most configurations this must have dimension records attached.
+        is_exposure : `bool`, optional
+            If `False`, construct a packer for visit+detector data IDs.  If
+            `True`, construct a packer for exposure+detector data IDs.  If
+            `None`, this is determined based on whether ``visit`` or
+            ``exposure`` is present in ``data_id``, with ``visit`` checked
+            first and hence used if both are present.
+        default : `str`, optional
+            Registered name of the dimension packer to select when the
+            configured packer is `None` (as is usually the case).  This is
+            intended primarily for derived classes delegating to `super` in
+            reimplementations of this method.
+
+        Returns
+        -------
+        packer : `lsst.daf.butler.DimensionPacker`
+            Object that packs {visit, detector} or {exposure, detector} data
+            IDs into integers.
+        """
+        return config_dict.apply_with(default, data_id, is_exposure=is_exposure)
