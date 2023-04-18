@@ -537,7 +537,9 @@ class _DatasetIdMaker:
 
         key = ref.datasetType, ref.dataId
         if (resolved := self.resolved.get(key)) is None:
-            resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
             self.resolved[key] = resolved
         return resolved
 
