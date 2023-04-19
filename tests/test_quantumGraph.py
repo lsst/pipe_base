@@ -25,12 +25,21 @@ import random
 import tempfile
 import unittest
 import uuid
+import warnings
 from itertools import chain
 from typing import Iterable
 
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
-from lsst.daf.butler import Config, DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Quantum
+from lsst.daf.butler import (
+    Config,
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    Quantum,
+    UnresolvedRefWarning,
+)
 from lsst.pex.config import Field
 from lsst.pipe.base import (
     DatasetTypeName,
@@ -176,14 +185,18 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections = taskDef.connections
             if connections.initInputs:
                 initInputDSType = _makeDatasetType(connections.initInput)
-                initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                    initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
                 initInputs[taskDef] = initRefs
                 dataset_types.add(initInputDSType)
             else:
                 initRefs = None
             if connections.initOutputs:
                 initOutputDSType = _makeDatasetType(connections.initOutput)
-                initRefs = [DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe))]
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                    initRefs = [DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe))]
                 initOutputs[taskDef] = initRefs
                 dataset_types.add(initOutputDSType)
             inputDSType = _makeDatasetType(connections.input)
@@ -191,12 +204,18 @@ class QuantumGraphTestCase(unittest.TestCase):
             outputDSType = _makeDatasetType(connections.output)
             dataset_types.add(outputDSType)
             for a, b in ((1, 2), (3, 4)):
-                inputRefs = [
-                    DatasetRef(inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
-                ]
-                outputRefs = [
-                    DatasetRef(outputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe))
-                ]
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                    inputRefs = [
+                        DatasetRef(
+                            inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe)
+                        )
+                    ]
+                    outputRefs = [
+                        DatasetRef(
+                            outputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe)
+                        )
+                    ]
                 quantumSet.add(
                     Quantum(
                         taskName=task.__qualname__,
@@ -212,7 +231,9 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.quantumMap = quantumMap
         self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
         dataset_types.add(self.packagesDSType)
-        globalInitOutputs = [DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe))]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+            globalInitOutputs = [DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe))]
         self.qGraph = QuantumGraph(
             quantumMap,
             metadata=METADATA,

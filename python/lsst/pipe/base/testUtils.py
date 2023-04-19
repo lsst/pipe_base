@@ -34,6 +34,7 @@ __all__ = [
 import collections.abc
 import itertools
 import unittest.mock
+import warnings
 from collections import defaultdict
 from typing import TYPE_CHECKING, AbstractSet, Any, Dict, Mapping, Optional, Sequence, Set, Union
 
@@ -48,6 +49,7 @@ from lsst.daf.butler import (
     Quantum,
     SkyPixDimension,
     StorageClassFactory,
+    UnresolvedRefWarning,
 )
 from lsst.pipe.base.connectionTypes import BaseConnection, DimensionedConnection
 
@@ -266,7 +268,9 @@ def _refFromConnection(
     except KeyError:
         raise ValueError(f"Invalid dataset type {connection.name}.")
     try:
-        ref = DatasetRef(datasetType=datasetType, dataId=dataId)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+            ref = DatasetRef(datasetType=datasetType, dataId=dataId)
         return ref
     except KeyError as e:
         raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") from e

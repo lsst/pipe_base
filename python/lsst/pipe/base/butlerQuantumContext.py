@@ -26,9 +26,17 @@ from __future__ import annotations
 
 __all__ = ("ButlerQuantumContext",)
 
+import warnings
 from typing import Any, List, Optional, Sequence, Union
 
-from lsst.daf.butler import Butler, DatasetRef, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import (
+    Butler,
+    DatasetRef,
+    DimensionUniverse,
+    LimitedButler,
+    Quantum,
+    UnresolvedRefWarning,
+)
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
@@ -145,7 +153,9 @@ class ButlerQuantumContext:
             # It is possible that we are putting a dataset into a different
             # run than what was originally expected.
             if ref.id is not None:
-                ref = ref.unresolved()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                    ref = ref.unresolved()
             self.__full_butler.put(value, ref)
         else:
             self.__butler.put(value, ref)

@@ -30,6 +30,7 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 import itertools
 import logging
+import warnings
 from collections import ChainMap, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ from lsst.daf.butler import (
     NamedValueSet,
     Quantum,
     Registry,
+    UnresolvedRefWarning,
 )
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
@@ -521,7 +523,9 @@ class _DatasetIdMaker:
 
         # For components we need their parent dataset ID.
         if ref.isComponent():
-            parent_ref = ref.makeCompositeRef()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                parent_ref = ref.makeCompositeRef()
             # Some basic check - parent should be resolved if this is an
             # existing input, or it should be in the cache already if it is
             # an intermediate.
@@ -531,11 +535,15 @@ class _DatasetIdMaker:
                     raise ValueError(f"Composite dataset is missing from cache: {parent_ref}")
                 parent_ref = self.resolved[key]
             assert parent_ref.id is not None and parent_ref.run is not None, "parent ref must be resolved"
-            return ref.resolved(parent_ref.id, parent_ref.run)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                return ref.resolved(parent_ref.id, parent_ref.run)
 
         key = ref.datasetType, ref.dataId
         if (resolved := self.resolved.get(key)) is None:
-            resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
             self.resolved[key] = resolved
         return resolved
 
@@ -742,7 +750,9 @@ class _PipelineScaffolding:
         for datasetType, refs in itertools.chain(
             self.initInputs.items(), self.initIntermediates.items(), self.initOutputs.items()
         ):
-            refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
         # Run one big query for the data IDs for task dimensions and regular
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
@@ -810,7 +820,9 @@ class _PipelineScaffolding:
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
                     ref = refs.get(datasetDataId)
                     if ref is None:
-                        ref = DatasetRef(datasetType, datasetDataId)
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                            ref = DatasetRef(datasetType, datasetDataId)
                         refs[datasetDataId] = ref
                     refsForRow[datasetType.name] = ref
                 # Create _QuantumScaffolding objects for all tasks from this

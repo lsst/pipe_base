@@ -23,6 +23,7 @@
 """
 
 import unittest
+import warnings
 from types import SimpleNamespace
 from typing import Any
 
@@ -32,11 +33,11 @@ import lsst.utils.logging
 import lsst.utils.tests
 from lsst.daf.butler import (
     DataCoordinate,
-    DatasetIdFactory,
     DatasetRef,
     DatasetType,
     DimensionUniverse,
     Quantum,
+    UnresolvedRefWarning,
 )
 
 
@@ -109,27 +110,24 @@ class AddTask2(pipeBase.PipelineTask):
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask"""
 
-    datasetIdFactory = DatasetIdFactory()
-
-    def _resolve_ref(self, ref: DatasetRef) -> DatasetRef:
-        return self.datasetIdFactory.resolveRef(ref, "test")
-
     def _makeDSRefVisit(
         self, dstype: DatasetType, visitId: int, universe: DimensionUniverse, resolve: bool = False
     ) -> DatasetRef:
-        ref = DatasetRef(
-            datasetType=dstype,
-            dataId=DataCoordinate.standardize(
-                detector="X",
-                visit=visitId,
-                physical_filter="a",
-                band="b",
-                instrument="TestInstrument",
-                universe=universe,
-            ),
+        dataId = DataCoordinate.standardize(
+            detector="X",
+            visit=visitId,
+            physical_filter="a",
+            band="b",
+            instrument="TestInstrument",
+            universe=universe,
         )
         if resolve:
-            ref = self._resolve_ref(ref)
+            run = "test"
+            ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                ref = DatasetRef(datasetType=dstype, dataId=dataId)
         return ref
 
     def _makeQuanta(

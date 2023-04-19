@@ -20,10 +20,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-import uuid
-
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
+import uuid
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, NewType, Optional, Tuple
 
@@ -34,6 +34,7 @@ from lsst.daf.butler import (
     DimensionUniverse,
     Quantum,
     SerializedQuantum,
+    UnresolvedRefWarning,
 )
 from pydantic import BaseModel
 
@@ -136,13 +137,15 @@ class QuantumNode:
         universe: DimensionUniverse,
         recontitutedDimensions: Optional[Dict[int, Tuple[str, DimensionRecord]]] = None,
     ) -> QuantumNode:
-        return QuantumNode(
-            quantum=Quantum.from_simple(
-                simple.quantum, universe, reconstitutedDimensions=recontitutedDimensions
-            ),
-            taskDef=taskDefMap[simple.taskLabel],
-            nodeId=simple.nodeId,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+            return QuantumNode(
+                quantum=Quantum.from_simple(
+                    simple.quantum, universe, reconstitutedDimensions=recontitutedDimensions
+                ),
+                taskDef=taskDefMap[simple.taskLabel],
+                nodeId=simple.nodeId,
+            )
 
 
 class SerializedQuantumNode(BaseModel):
