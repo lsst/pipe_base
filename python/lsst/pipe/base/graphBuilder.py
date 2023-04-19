@@ -523,7 +523,9 @@ class _DatasetIdMaker:
 
         # For components we need their parent dataset ID.
         if ref.isComponent():
-            parent_ref = ref.makeCompositeRef()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                parent_ref = ref.makeCompositeRef()
             # Some basic check - parent should be resolved if this is an
             # existing input, or it should be in the cache already if it is
             # an intermediate.
@@ -533,7 +535,9 @@ class _DatasetIdMaker:
                     raise ValueError(f"Composite dataset is missing from cache: {parent_ref}")
                 parent_ref = self.resolved[key]
             assert parent_ref.id is not None and parent_ref.run is not None, "parent ref must be resolved"
-            return ref.resolved(parent_ref.id, parent_ref.run)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
+                return ref.resolved(parent_ref.id, parent_ref.run)
 
         key = ref.datasetType, ref.dataId
         if (resolved := self.resolved.get(key)) is None:
