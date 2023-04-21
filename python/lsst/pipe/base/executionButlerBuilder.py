@@ -308,6 +308,9 @@ def _setupNewButler(
     # Remove any namespace that may be set in main registry.
     config.pop(("registry", "namespace"), None)
 
+    # Obscore manager cannot be used with execution butler.
+    config.pop(("registry", "managers", "obscore"), None)
+
     # record the current root of the datastore if it is specified relative
     # to the butler root
     if datastoreRoot is not None:

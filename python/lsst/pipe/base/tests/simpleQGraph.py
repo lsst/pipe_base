@@ -235,7 +235,9 @@ def makeSimplePipeline(nQuanta: int, instrument: Optional[str] = None) -> Pipeli
     return pipeline
 
 
-def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> Butler:
+def makeSimpleButler(
+    root: str, run: str = "test", inMemory: bool = True, config: Config | str | None = None
+) -> Butler:
     """Create new data butler instance.
 
     Parameters
@@ -246,6 +248,10 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
         Run collection name.
     inMemory : `bool`, optional
         If true make in-memory repository.
+    config : `~lsst.daf.butler.Config`, optional
+        Configuration to use for new Butler, if `None` then default
+        configuration is used. If ``inMemory`` is `True` then configuration
+        is updated to use SQLite registry and file datastore in ``root``.
 
     Returns
     -------
@@ -255,11 +261,13 @@ def makeSimpleButler(root: str, run: str = "test", inMemory: bool = True) -> But
     root_path = ResourcePath(root, forceDirectory=True)
     if not root_path.isLocal:
         raise ValueError(f"Only works with local root not {root_path}")
-    config = Config()
+    butler_config = Config()
+    if config:
+        butler_config.update(Config(config))
     if not inMemory:
-        config["registry", "db"] = f"sqlite:///{root_path.ospath}/gen3.sqlite"
-        config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
-    repo = butlerTests.makeTestRepo(str(root_path), {}, config=config)
+        butler_config["registry", "db"] = f"sqlite:///{root_path.ospath}/gen3.sqlite"
+        butler_config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
+    repo = butlerTests.makeTestRepo(str(root_path), {}, config=butler_config)
     butler = Butler(butler=repo, run=run)
     return butler
 
