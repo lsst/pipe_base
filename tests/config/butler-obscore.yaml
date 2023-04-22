@@ -1,0 +1,22 @@
+registry:
+  managers:
+    obscore:
+      cls: lsst.daf.butler.registry.obscore._manager.ObsCoreLiveTableManager
+      config:
+        namespace: "daf_butler_obscore"
+        version: 0
+        table_name: obscore
+        collection_type: RUN
+        facility_name: daf_butler_test
+        obs_collection: daf_butler_obs_collection
+        collections: []
+        use_butler_uri: false
+        dataset_types:
+          raw:
+            dataproduct_type: image
+            dataproduct_subtype: lsst.raw
+            calib_level: 1
+            obs_id_fmt: "{records[exposure].obs_id}-{records[detector].full_name}"
+            o_ucd: phot.count
+            access_format: image/fits
+            datalink_url_fmt: "https://data.lsst.cloud/api/datalink/links?ID=butler%3A//dp02/{id}"
