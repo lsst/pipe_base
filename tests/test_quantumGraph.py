@@ -25,21 +25,12 @@ import random
 import tempfile
 import unittest
 import uuid
-import warnings
 from itertools import chain
 from typing import Iterable
 
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
-from lsst.daf.butler import (
-    Config,
-    DataCoordinate,
-    DatasetRef,
-    DatasetType,
-    DimensionUniverse,
-    Quantum,
-    UnresolvedRefWarning,
-)
+from lsst.daf.butler import Config, DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Quantum
 from lsst.pex.config import Field
 from lsst.pipe.base import (
     DatasetTypeName,
@@ -49,7 +40,7 @@ from lsst.pipe.base import (
     QuantumGraph,
     TaskDef,
 )
-from lsst.pipe.base.graph.quantumNode import QuantumNode
+from lsst.pipe.base.graph.quantumNode import BuildId, QuantumNode
 from lsst.utils.introspection import get_full_type_name
 
 METADATA = {"a": [1, 2, 3]}
@@ -62,7 +53,7 @@ class Dummy1Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy1Config(PipelineTaskConfig, pipelineConnections=Dummy1Connections):
-    conf1 = Field(dtype=int, default=1, doc="dummy config")
+    conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy1PipelineTask(PipelineTask):
@@ -77,7 +68,7 @@ class Dummy2Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy2Config(PipelineTaskConfig, pipelineConnections=Dummy2Connections):
-    conf1 = Field(dtype=int, default=1, doc="dummy config")
+    conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy2PipelineTask(PipelineTask):
@@ -92,7 +83,7 @@ class Dummy3Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy3Config(PipelineTaskConfig, pipelineConnections=Dummy3Connections):
-    conf1 = Field(dtype=int, default=1, doc="dummy config")
+    conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy3PipelineTask(PipelineTask):
@@ -107,7 +98,7 @@ class Dummy4Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy4Config(PipelineTaskConfig, pipelineConnections=Dummy4Connections):
-    conf1 = Field(dtype=int, default=1, doc="dummy config")
+    conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy4PipelineTask(PipelineTask):
@@ -117,7 +108,10 @@ class Dummy4PipelineTask(PipelineTask):
 class QuantumGraphTestCase(unittest.TestCase):
     """Tests the various functions of a quantum graph"""
 
-    def setUp(self):
+    input_collection = "inputs"
+    output_run = "run"
+
+    def setUp(self) -> None:
         self.config = Config(
             {
                 "version": 1,
@@ -172,6 +166,8 @@ class QuantumGraphTestCase(unittest.TestCase):
         initInputs = {}
         initOutputs = {}
         dataset_types = set()
+        init_dataset_refs: dict[DatasetType, DatasetRef] = {}
+        dataset_refs: dict[tuple[DatasetType, DataCoordinate], DatasetRef] = {}
         for task, label in (
             (Dummy1PipelineTask, "R"),
             (Dummy2PipelineTask, "S"),
@@ -185,18 +181,26 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections = taskDef.connections
             if connections.initInputs:
                 initInputDSType = _makeDatasetType(connections.initInput)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                    initRefs = [DatasetRef(initInputDSType, DataCoordinate.makeEmpty(universe))]
+                if (ref := init_dataset_refs.get(initInputDSType)) is not None:
+                    initRefs = [ref]
+                else:
+                    initRefs = [
+                        DatasetRef(
+                            initInputDSType,
+                            DataCoordinate.makeEmpty(universe),
+                            run=self.input_collection,
+                        )
+                    ]
                 initInputs[taskDef] = initRefs
                 dataset_types.add(initInputDSType)
             else:
                 initRefs = None
             if connections.initOutputs:
                 initOutputDSType = _makeDatasetType(connections.initOutput)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                    initRefs = [DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe))]
+                initRefs = [
+                    DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe), run=self.output_run)
+                ]
+                init_dataset_refs[initOutputDSType] = initRefs[0]
                 initOutputs[taskDef] = initRefs
                 dataset_types.add(initOutputDSType)
             inputDSType = _makeDatasetType(connections.input)
@@ -204,18 +208,13 @@ class QuantumGraphTestCase(unittest.TestCase):
             outputDSType = _makeDatasetType(connections.output)
             dataset_types.add(outputDSType)
             for a, b in ((1, 2), (3, 4)):
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                    inputRefs = [
-                        DatasetRef(
-                            inputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe)
-                        )
-                    ]
-                    outputRefs = [
-                        DatasetRef(
-                            outputDSType, DataCoordinate.standardize({"A": a, "B": b}, universe=universe)
-                        )
-                    ]
+                dataId = DataCoordinate.standardize({"A": a, "B": b}, universe=universe)
+                if (ref := dataset_refs.get((inputDSType, dataId))) is None:
+                    inputRefs = [DatasetRef(inputDSType, dataId, run=self.input_collection)]
+                else:
+                    inputRefs = [ref]
+                outputRefs = [DatasetRef(outputDSType, dataId, run=self.output_run)]
+                dataset_refs[(outputDSType, dataId)] = outputRefs[0]
                 quantumSet.add(
                     Quantum(
                         taskName=task.__qualname__,
@@ -231,9 +230,9 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.quantumMap = quantumMap
         self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
         dataset_types.add(self.packagesDSType)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-            globalInitOutputs = [DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe))]
+        globalInitOutputs = [
+            DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe), run=self.output_run)
+        ]
         self.qGraph = QuantumGraph(
             quantumMap,
             metadata=METADATA,
@@ -246,16 +245,16 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.universe = universe
         self.num_dataset_types = len(dataset_types)
 
-    def testTaskGraph(self):
+    def testTaskGraph(self) -> None:
         for taskDef in self.quantumMap.keys():
             self.assertIn(taskDef, self.qGraph.taskGraph)
 
-    def testGraph(self):
+    def testGraph(self) -> None:
         graphSet = {q.quantum for q in self.qGraph.graph}
         for quantum in chain.from_iterable(self.quantumMap.values()):
             self.assertIn(quantum, graphSet)
 
-    def testGetQuantumNodeByNodeId(self):
+    def testGetQuantumNodeByNodeId(self) -> None:
         inputQuanta = tuple(self.qGraph.inputQuanta)
         node = self.qGraph.getQuantumNodeByNodeId(inputQuanta[0].nodeId)
         self.assertEqual(node, inputQuanta[0])
@@ -263,61 +262,61 @@ class QuantumGraphTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.qGraph.getQuantumNodeByNodeId(wrongNode)
 
-    def testPickle(self):
+    def testPickle(self) -> None:
         stringify = pickle.dumps(self.qGraph)
         restore: QuantumGraph = pickle.loads(stringify)
         self.assertEqual(self.qGraph, restore)
 
-    def testInputQuanta(self):
+    def testInputQuanta(self) -> None:
         inputs = {q.quantum for q in self.qGraph.inputQuanta}
         self.assertEqual(self.quantumMap[self.tasks[0]] | self.quantumMap[self.tasks[3]], inputs)
 
-    def testOutputQuanta(self):
+    def testOutputQuanta(self) -> None:
         outputs = {q.quantum for q in self.qGraph.outputQuanta}
         self.assertEqual(self.quantumMap[self.tasks[2]] | self.quantumMap[self.tasks[3]], outputs)
 
-    def testLength(self):
+    def testLength(self) -> None:
         self.assertEqual(len(self.qGraph), 2 * len(self.tasks))
 
-    def testGetQuantaForTask(self):
+    def testGetQuantaForTask(self) -> None:
         for task in self.tasks:
             self.assertEqual(self.qGraph.getQuantaForTask(task), self.quantumMap[task])
 
-    def testGetNumberOfQuantaForTask(self):
+    def testGetNumberOfQuantaForTask(self) -> None:
         for task in self.tasks:
             self.assertEqual(self.qGraph.getNumberOfQuantaForTask(task), len(self.quantumMap[task]))
 
-    def testGetNodesForTask(self):
+    def testGetNodesForTask(self) -> None:
         for task in self.tasks:
             nodes: Iterable[QuantumNode] = self.qGraph.getNodesForTask(task)
             quanta_in_node = set(n.quantum for n in nodes)
             self.assertEqual(quanta_in_node, self.quantumMap[task])
 
-    def testFindTasksWithInput(self):
+    def testFindTasksWithInput(self) -> None:
         self.assertEqual(
             tuple(self.qGraph.findTasksWithInput(DatasetTypeName("Dummy1Output")))[0], self.tasks[1]
         )
 
-    def testFindTasksWithOutput(self):
+    def testFindTasksWithOutput(self) -> None:
         self.assertEqual(self.qGraph.findTaskWithOutput(DatasetTypeName("Dummy1Output")), self.tasks[0])
 
-    def testTaskWithDSType(self):
+    def testTaskWithDSType(self) -> None:
         self.assertEqual(
             set(self.qGraph.tasksWithDSType(DatasetTypeName("Dummy1Output"))), set(self.tasks[:2])
         )
 
-    def testFindTaskDefByName(self):
+    def testFindTaskDefByName(self) -> None:
         self.assertEqual(self.qGraph.findTaskDefByName(Dummy1PipelineTask.__qualname__)[0], self.tasks[0])
 
-    def testFindTaskDefByLabel(self):
+    def testFindTaskDefByLabel(self) -> None:
         self.assertEqual(self.qGraph.findTaskDefByLabel("R"), self.tasks[0])
 
-    def testFindQuantaWIthDSType(self):
+    def testFindQuantaWIthDSType(self) -> None:
         self.assertEqual(
             self.qGraph.findQuantaWithDSType(DatasetTypeName("Dummy1Input")), self.quantumMap[self.tasks[0]]
         )
 
-    def testAllDatasetTypes(self):
+    def testAllDatasetTypes(self) -> None:
         allDatasetTypes = set(self.qGraph.allDatasetTypes)
         truth = set()
         for conClass in (Dummy1Connections, Dummy2Connections, Dummy3Connections, Dummy4Connections):
@@ -326,7 +325,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                     truth.add(connection.name)
         self.assertEqual(allDatasetTypes, truth)
 
-    def testSubset(self):
+    def testSubset(self) -> None:
         allNodes = list(self.qGraph)
         firstNode = allNodes[0]
         subset = self.qGraph.subset(firstNode)
@@ -340,7 +339,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         num_types = {"R": 4, "U": 3}
         self.assertEqual(len(subset.registryDatasetTypes()), num_types[firstNode.taskDef.label])
 
-    def testSubsetToConnected(self):
+    def testSubsetToConnected(self) -> None:
         # False because there are two quantum chains for two distinct sets of
         # dimensions
         self.assertFalse(self.qGraph.isConnected)
@@ -383,12 +382,12 @@ class QuantumGraphTestCase(unittest.TestCase):
             if len(cg.taskGraph) == 1:
                 continue
             allNodes = list(cg)
-            node = cg.determineInputsToQuantumNode(allNodes[1])
-            self.assertEqual(set([allNodes[0]]), node)
-            node = cg.determineInputsToQuantumNode(allNodes[1])
-            self.assertEqual(set([allNodes[0]]), node)
+            nodes = cg.determineInputsToQuantumNode(allNodes[1])
+            self.assertEqual(set([allNodes[0]]), nodes)
+            nodes = cg.determineInputsToQuantumNode(allNodes[1])
+            self.assertEqual(set([allNodes[0]]), nodes)
 
-    def testDetermineOutputsOfQuantumNode(self):
+    def testDetermineOutputsOfQuantumNode(self) -> None:
         testNodes = self.qGraph.getNodesForTask(self.tasks[0])
         matchNodes = self.qGraph.getNodesForTask(self.tasks[1])
         connections = set()
@@ -396,7 +395,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections |= set(self.qGraph.determineOutputsOfQuantumNode(node))
         self.assertEqual(matchNodes, connections)
 
-    def testDetermineConnectionsOfQuantum(self):
+    def testDetermineConnectionsOfQuantum(self) -> None:
         testNodes = self.qGraph.getNodesForTask(self.tasks[1])
         matchNodes = self.qGraph.getNodesForTask(self.tasks[0]) | self.qGraph.getNodesForTask(self.tasks[2])
         # outputs contain nodes tested for because it is a complete graph
@@ -406,7 +405,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections |= set(self.qGraph.determineConnectionsOfQuantumNode(node))
         self.assertEqual(matchNodes, connections)
 
-    def testDetermineAnsestorsOfQuantumNode(self):
+    def testDetermineAnsestorsOfQuantumNode(self) -> None:
         testNodes = self.qGraph.getNodesForTask(self.tasks[1])
         matchNodes = self.qGraph.getNodesForTask(self.tasks[0])
         matchNodes |= set(testNodes)
@@ -415,10 +414,10 @@ class QuantumGraphTestCase(unittest.TestCase):
             connections |= set(self.qGraph.determineAncestorsOfQuantumNode(node))
         self.assertEqual(matchNodes, connections)
 
-    def testFindCycle(self):
+    def testFindCycle(self) -> None:
         self.assertFalse(self.qGraph.findCycle())
 
-    def testSaveLoad(self):
+    def testSaveLoad(self) -> None:
         with tempfile.TemporaryFile(suffix=".qgraph") as tmpFile:
             self.qGraph.save(tmpFile)
             tmpFile.seek(0)
@@ -437,10 +436,12 @@ class QuantumGraphTestCase(unittest.TestCase):
                 if taskDef.label in ("S", "T"):
                     refs = restore.initInputRefs(taskDef)
                     self.assertIsNotNone(refs)
+                    assert refs is not None
                     self.assertGreater(len(refs), 0)
                 if taskDef.label in ("R", "S", "T"):
                     refs = restore.initOutputRefs(taskDef)
                     self.assertIsNotNone(refs)
+                    assert refs is not None
                     self.assertGreater(len(refs), 0)
 
             # Different universes.
@@ -459,7 +460,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 QuantumGraph.load(tmpFile, different_universe)
             self.assertIn("not compatible with", str(cm.exception))
 
-    def testSaveLoadUri(self):
+    def testSaveLoadUri(self) -> None:
         uri = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".qgraph") as tmpFile:
@@ -494,11 +495,11 @@ class QuantumGraphTestCase(unittest.TestCase):
                 )
                 # verify an error when requesting a non existant node number
                 with self.assertRaises(ValueError):
-                    QuantumGraph.loadUri(uri, self.universe, nodes=(99,))
+                    QuantumGraph.loadUri(uri, self.universe, nodes=(uuid.uuid4(),))
 
                 # verify a graphID that does not match will be an error
                 with self.assertRaises(ValueError):
-                    QuantumGraph.loadUri(uri, self.universe, graphID="NOTRIGHT")
+                    QuantumGraph.loadUri(uri, self.universe, graphID=BuildId("NOTRIGHT"))
 
         except Exception as e:
             raise e
@@ -509,7 +510,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.qGraph.saveUri("test.notgraph")
 
-    def testSaveLoadNoRegistryDatasetTypes(self):
+    def testSaveLoadNoRegistryDatasetTypes(self) -> None:
         """Test for reading quantum that is missing registry dataset types.
 
         This test depends on internals of QuantumGraph implementation, in
@@ -525,11 +526,11 @@ class QuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(self.qGraph, restore)
             self.assertEqual(restore.registryDatasetTypes(), [])
 
-    def testContains(self):
+    def testContains(self) -> None:
         firstNode = next(iter(self.qGraph))
         self.assertIn(firstNode, self.qGraph)
 
-    def testDimensionUniverseInSave(self):
+    def testDimensionUniverseInSave(self) -> None:
         _, header = self.qGraph._buildSaveObject(returnHeader=True)
         # type ignore because buildSaveObject does not have method overload
         self.assertEqual(header["universe"], self.universe.dimensionConfig.toDict())  # type: ignore
@@ -539,7 +540,7 @@ class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module) -> None:
     lsst.utils.tests.init()
 
 
