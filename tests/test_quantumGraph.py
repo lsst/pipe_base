@@ -41,6 +41,7 @@ from lsst.pipe.base import (
     TaskDef,
 )
 from lsst.pipe.base.graph.quantumNode import BuildId, QuantumNode
+from lsst.pipe.base.tests.util import check_output_run
 from lsst.utils.introspection import get_full_type_name
 
 METADATA = {"a": [1, 2, 3]}
@@ -534,6 +535,29 @@ class QuantumGraphTestCase(unittest.TestCase):
         _, header = self.qGraph._buildSaveObject(returnHeader=True)
         # type ignore because buildSaveObject does not have method overload
         self.assertEqual(header["universe"], self.universe.dimensionConfig.toDict())  # type: ignore
+
+    def testUpdateRun(self) -> None:
+        """Test for QuantumGraph.updateRun method."""
+
+        self.assertEqual(check_output_run(self.qGraph, self.output_run), [])
+        graph_id = self.qGraph.graphID
+
+        self.qGraph.updateRun("updated-run")
+        self.assertEqual(check_output_run(self.qGraph, "updated-run"), [])
+        self.assertEqual(self.qGraph.graphID, graph_id)
+
+        # Also update metadata.
+        self.qGraph.updateRun("updated-run2", metadata_key="ouput_run")
+        self.assertEqual(check_output_run(self.qGraph, "updated-run2"), [])
+        self.assertEqual(self.qGraph.graphID, graph_id)
+        assert self.qGraph.metadata is not None
+        self.assertIn("ouput_run", self.qGraph.metadata)
+        self.assertEqual(self.qGraph.metadata["ouput_run"], "updated-run2")
+
+        # Update graph ID.
+        self.qGraph.updateRun("updated-run3", metadata_key="ouput_run", update_graph_id=True)
+        self.assertEqual(check_output_run(self.qGraph, "updated-run3"), [])
+        self.assertNotEqual(self.qGraph.graphID, graph_id)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
