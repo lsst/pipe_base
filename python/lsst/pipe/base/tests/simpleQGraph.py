@@ -365,6 +365,7 @@ def makeSimpleQGraph(
     makeDatastoreRecords: bool = False,
     resolveRefs: bool = False,
     bind: Optional[Mapping[str, Any]] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
@@ -420,6 +421,8 @@ def makeSimpleQGraph(
     bind : `Mapping`, optional
         Mapping containing literal values that should be injected into the
         ``userQuery`` expression, keyed by the identifiers they replace.
+    metadata : `Mapping`, optional
+        Optional graph metadata.
 
     Returns
     -------
@@ -464,6 +467,7 @@ def makeSimpleQGraph(
         datasetQueryConstraint=datasetQueryConstraint,
         resolveRefs=resolveRefs,
         bind=bind,
+        metadata=metadata,
     )
 
     return butler, qgraph
