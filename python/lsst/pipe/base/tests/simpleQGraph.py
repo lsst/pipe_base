@@ -363,7 +363,6 @@ def makeSimpleQGraph(
     datasetTypes: Optional[Dict[Optional[str], List[str]]] = None,
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
     makeDatastoreRecords: bool = False,
-    resolveRefs: bool = False,
     bind: Optional[Mapping[str, Any]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Butler, QuantumGraph]:
@@ -415,9 +414,6 @@ def makeSimpleQGraph(
         `DatasetQueryConstraintVariant.ALL`.
     makeDatastoreRecords : `bool`, optional
         If `True` then add datstore records to generated quanta.
-    resolveRefs : `bool`, optional
-        If `True` then resolve all input references and generate random dataset
-        IDs for all output and intermediate datasets.
     bind : `Mapping`, optional
         Mapping containing literal values that should be injected into the
         ``userQuery`` expression, keyed by the identifiers they replace.
@@ -452,20 +448,22 @@ def makeSimpleQGraph(
         skipExistingIn=skipExistingIn,
         datastore=butler.datastore if makeDatastoreRecords else None,
     )
+    if not run:
+        assert butler.run is not None, "Butler must have run defined"
+        run = butler.run
     _LOG.debug(
         "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r bind=%s",
         butler.collections,
-        run or butler.run,
+        run,
         userQuery,
         bind,
     )
     qgraph = builder.makeGraph(
         pipeline,
         collections=butler.collections,
-        run=run or butler.run,
+        run=run,
         userQuery=userQuery,
         datasetQueryConstraint=datasetQueryConstraint,
-        resolveRefs=resolveRefs,
         bind=bind,
         metadata=metadata,
     )
