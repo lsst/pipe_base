@@ -147,6 +147,8 @@ def _accumulate(
     # the dataset IDs, so we process them there even though each Quantum for a
     # task has the same ones.
     for dataset_type in itertools.chain(dataset_types.initIntermediates, dataset_types.initOutputs):
+        if dataset_type.component() is not None:
+            dataset_type = dataset_type.makeCompositeDatasetType()
         dataset_type = _validate_dataset_type(dataset_type, datasetTypes, butler.registry)
         inserts[dataset_type].add(DataCoordinate.makeEmpty(dataset_type.dimensions.universe))
 
@@ -179,6 +181,9 @@ def _accumulate(
             for type, refs in attr.items():
                 if not isinstance(refs, list):
                     refs = [refs]
+                if type.component() is not None:
+                    type = type.makeCompositeDatasetType()
+                type = _validate_dataset_type(type, datasetTypes, butler.registry)
                 # iterate over all the references, if it exists and should be
                 # exported, if not it should be inserted into the new registry
                 for ref in refs:
@@ -193,7 +198,6 @@ def _accumulate(
                         # type, since transfer_from doesn't handle storage
                         # class differences (maybe it should, but it's not
                         # bad to be defensive here even if that changes).
-                        type = _validate_dataset_type(type, datasetTypes, butler.registry)
                         if type != ref.datasetType:
                             ref = ref.overrideStorageClass(type.storageClass)
                             assert ref.datasetType == type, "Dataset types should not differ in other ways."
@@ -204,7 +208,6 @@ def _accumulate(
                             # be part of some other upstream dataset, so it
                             # should be safe to skip them here
                             continue
-                        type = _validate_dataset_type(type, datasetTypes, butler.registry)
                         inserts[type].add(ref.dataId)
     return exports, inserts
 
