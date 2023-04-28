@@ -30,16 +30,15 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 import itertools
 import logging
-import warnings
 from collections import ChainMap, defaultdict
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Collection, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Optional
 
 from lsst.daf.butler import (
     CollectionType,
     DataCoordinate,
-    DatasetIdGenEnum,
     DatasetRef,
     DatasetType,
     Datastore,
@@ -50,7 +49,6 @@ from lsst.daf.butler import (
     NamedValueSet,
     Quantum,
     Registry,
-    UnresolvedRefWarning,
 )
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
@@ -74,7 +72,34 @@ from .pipeline import Pipeline, PipelineDatasetTypes, TaskDatasetTypes, TaskDef
 _LOG = logging.getLogger(__name__)
 
 
-class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
+@dataclass
+class _RefHolder:
+    """Placeholder for `DatasetRef` representing a future resolved reference.
+
+    As we eliminated unresolved DatasetRefs we now use `None` to represent
+    a reference that is yet to be resolved. Information about its corresponding
+    dataset type and coordinate is stored in `_DatasetDict` mapping.
+    """
+
+    dataset_type: DatasetType
+    """Dataset type of the dataset to be created later. I need to store it here
+    instead of inferring from `_DatasetDict` because `_RefHolder` can be shared
+    between different compatible dataset types."""
+
+    ref: DatasetRef | None = None
+    """Dataset reference, initially `None`, created when all datasets are
+    resolved.
+    """
+
+    @property
+    def resolved_ref(self) -> DatasetRef:
+        """Access resolved reference, should only be called after the
+        reference is set (`DatasetRef`)."""
+        assert self.ref is not None, "Dataset reference is not set."
+        return self.ref
+
+
+class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
     """A custom dictionary that maps `DatasetType` to a nested dictionary of
     the known `DatasetRef` instances of that type.
 
@@ -113,7 +138,10 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
 
     @classmethod
     def fromSubset(
-        cls, datasetTypes: Collection[DatasetType], first: _DatasetDict, *rest: _DatasetDict
+        cls,
+        datasetTypes: Collection[DatasetType],
+        first: _DatasetDict,
+        *rest: _DatasetDict,
     ) -> _DatasetDict:
         """Return a new dictionary by extracting items corresponding to the
         given keys from one or more existing dictionaries.
@@ -228,13 +256,13 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             `DatasetType` instances and string names usable as keys.
         """
 
-        def getOne(refs: Dict[DataCoordinate, DatasetRef]) -> DatasetRef:
-            (ref,) = refs.values()
-            return ref
+        def getOne(refs: dict[DataCoordinate, _RefHolder]) -> DatasetRef:
+            (holder,) = refs.values()
+            return holder.resolved_ref
 
         return NamedKeyDict({datasetType: getOne(refs) for datasetType, refs in self.items()})
 
-    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, List[DatasetRef]]:
+    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
         """Unpack nested multi-element `DatasetRef` dicts into a new
         mapping with `DatasetType` keys and `set` of `DatasetRef` values.
 
@@ -244,9 +272,16 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             Dictionary mapping `DatasetType` to `list` of `DatasetRef`, with
             both `DatasetType` instances and string names usable as keys.
         """
-        return NamedKeyDict({datasetType: list(refs.values()) for datasetType, refs in self.items()})
+        return NamedKeyDict(
+            {
+                datasetType: list(holder.resolved_ref for holder in refs.values())
+                for datasetType, refs in self.items()
+            }
+        )
 
-    def extract(self, datasetType: DatasetType, dataIds: Iterable[DataCoordinate]) -> Iterator[DatasetRef]:
+    def extract(
+        self, datasetType: DatasetType, dataIds: Iterable[DataCoordinate]
+    ) -> Iterator[tuple[DataCoordinate, DatasetRef | None]]:
         """Iterate over the contained `DatasetRef` instances that match the
         given `DatasetType` and data IDs.
 
@@ -264,7 +299,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, Dict[DataCoordinate, DatasetRef]]):
             and ``ref.dataId`` is in ``dataIds``.
         """
         refs = self[datasetType]
-        return (refs[dataId] for dataId in dataIds)
+        return ((dataId, refs[dataId].ref) for dataId in dataIds)
 
 
 class _QuantumScaffolding:
@@ -392,7 +427,12 @@ class _TaskScaffolding:
         Data structure that categorizes the dataset types used by this task.
     """
 
-    def __init__(self, taskDef: TaskDef, parent: _PipelineScaffolding, datasetTypes: TaskDatasetTypes):
+    def __init__(
+        self,
+        taskDef: TaskDef,
+        parent: _PipelineScaffolding,
+        datasetTypes: TaskDatasetTypes,
+    ):
         universe = parent.dimensions.universe
         self.taskDef = taskDef
         self.dimensions = DimensionGraph(universe, names=taskDef.connections.dimensions)
@@ -408,7 +448,7 @@ class _TaskScaffolding:
         self.inputs = _DatasetDict.fromSubset(datasetTypes.inputs, parent.inputs, parent.intermediates)
         self.outputs = _DatasetDict.fromSubset(datasetTypes.outputs, parent.intermediates, parent.outputs)
         self.prerequisites = _DatasetDict.fromSubset(datasetTypes.prerequisites, parent.prerequisites)
-        self.dataIds: Set[DataCoordinate] = set()
+        self.dataIds: set[DataCoordinate] = set()
         self.quanta = {}
 
     def __repr__(self) -> str:
@@ -451,16 +491,16 @@ class _TaskScaffolding:
     (`_DatasetDict`).
     """
 
-    quanta: Dict[DataCoordinate, _QuantumScaffolding]
+    quanta: dict[DataCoordinate, _QuantumScaffolding]
     """Dictionary mapping data ID to a scaffolding object for the Quantum of
     this task with that data ID.
     """
 
     def makeQuantumSet(
         self,
-        unresolvedRefs: Optional[Set[DatasetRef]] = None,
+        unresolvedRefs: Optional[set[DatasetRef]] = None,
         datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None,
-    ) -> Set[Quantum]:
+    ) -> set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
 
         Parameters
@@ -511,45 +551,35 @@ class _DatasetIdMaker:
     datasets.
     """
 
-    def __init__(self, registry: Registry, run: str):
-        self.datasetIdFactory = registry.datasetIdFactory
+    def __init__(self, run: str):
         self.run = run
-        # Dataset IDs generated so far
-        self.resolved: Dict[Tuple[DatasetType, DataCoordinate], DatasetRef] = {}
+        # Cache of dataset refs generated so far.
+        self.resolved: dict[tuple[DatasetType, DataCoordinate], DatasetRef] = {}
 
-    def resolveRef(self, ref: DatasetRef) -> DatasetRef:
-        if ref.id is not None:
-            return ref
-
+    def resolveRef(self, dataset_type: DatasetType, data_id: DataCoordinate) -> DatasetRef:
         # For components we need their parent dataset ID.
-        if ref.isComponent():
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                parent_ref = ref.makeCompositeRef()
-            # Some basic check - parent should be resolved if this is an
-            # existing input, or it should be in the cache already if it is
-            # an intermediate.
-            if parent_ref.id is None:
-                key = parent_ref.datasetType, parent_ref.dataId
-                if key not in self.resolved:
-                    raise ValueError(f"Composite dataset is missing from cache: {parent_ref}")
-                parent_ref = self.resolved[key]
+        if dataset_type.isComponent():
+            parent_type = dataset_type.makeCompositeDatasetType()
+            # Parent should be resolved if this is an existing input, or it
+            # should be in the cache already if it is an intermediate.
+            key = parent_type, data_id
+            if key not in self.resolved:
+                raise ValueError(f"Composite dataset is missing from cache: {parent_type} {data_id}")
+            parent_ref = self.resolved[key]
             assert parent_ref.id is not None and parent_ref.run is not None, "parent ref must be resolved"
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                return ref.resolved(parent_ref.id, parent_ref.run)
+            return DatasetRef(dataset_type, data_id, id=parent_ref.id, run=parent_ref.run, conform=False)
 
-        key = ref.datasetType, ref.dataId
+        key = dataset_type, data_id
         if (resolved := self.resolved.get(key)) is None:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                resolved = self.datasetIdFactory.resolveRef(ref, self.run, DatasetIdGenEnum.UNIQUE)
+            resolved = DatasetRef(dataset_type, data_id, run=self.run, conform=False)
             self.resolved[key] = resolved
         return resolved
 
-    def resolveDict(self, refs: Dict[DataCoordinate, DatasetRef]) -> Dict[DataCoordinate, DatasetRef]:
+    def resolveDict(self, dataset_type: DatasetType, refs: dict[DataCoordinate, _RefHolder]) -> None:
         """Resolve all unresolved references in the provided dictionary."""
-        return {dataId: self.resolveRef(ref) for dataId, ref in refs.items()}
+        for data_id, holder in refs.items():
+            if holder.ref is None:
+                holder.ref = self.resolveRef(holder.dataset_type, data_id)
 
 
 @dataclass
@@ -598,7 +628,7 @@ class _PipelineScaffolding:
        per-task `_QuantumScaffolding` objects.
     """
 
-    def __init__(self, pipeline: Union[Pipeline, Iterable[TaskDef]], *, registry: Registry):
+    def __init__(self, pipeline: Pipeline | Iterable[TaskDef], *, registry: Registry):
         _LOG.debug("Initializing data structures for QuantumGraph generation.")
         self.tasks = []
         # Aggregate and categorize the DatasetTypes in the Pipeline.
@@ -641,7 +671,7 @@ class _PipelineScaffolding:
         # because of back-references.
         return f"_PipelineScaffolding(tasks={self.tasks}, ...)"
 
-    tasks: List[_TaskScaffolding]
+    tasks: list[_TaskScaffolding]
     """Scaffolding data structures for each task in the pipeline
     (`list` of `_TaskScaffolding`).
     """
@@ -748,11 +778,11 @@ class _PipelineScaffolding:
         # Initialization datasets always have empty data IDs.
         emptyDataId = DataCoordinate.makeEmpty(registry.dimensions)
         for datasetType, refs in itertools.chain(
-            self.initInputs.items(), self.initIntermediates.items(), self.initOutputs.items()
+            self.initInputs.items(),
+            self.initIntermediates.items(),
+            self.initOutputs.items(),
         ):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                refs[emptyDataId] = DatasetRef(datasetType, emptyDataId)
+            refs[emptyDataId] = _RefHolder(datasetType)
         # Run one big query for the data IDs for task dimensions and regular
         # inputs and outputs.  We limit the query to only dimensions that are
         # associated with the input dataset types, but don't (yet) try to
@@ -761,7 +791,7 @@ class _PipelineScaffolding:
             "Submitting data ID query over dimensions %s and materializing results.",
             list(self.dimensions.names),
         )
-        queryArgs: Dict[str, Any] = {
+        queryArgs: dict[str, Any] = {
             "dimensions": self.dimensions,
             "where": userQuery,
             "dataId": externalDataId,
@@ -810,21 +840,21 @@ class _PipelineScaffolding:
                 # We remember both those that already existed and those that we
                 # create now.
                 refsForRow = {}
-                dataIdCacheForRow: Dict[DimensionGraph, DataCoordinate] = {}
+                dataIdCacheForRow: dict[DimensionGraph, DataCoordinate] = {}
                 for datasetType, refs in itertools.chain(
-                    self.inputs.items(), self.intermediates.items(), self.outputs.items()
+                    self.inputs.items(),
+                    self.intermediates.items(),
+                    self.outputs.items(),
                 ):
                     datasetDataId: Optional[DataCoordinate]
                     if (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)) is None:
                         datasetDataId = commonDataId.subset(datasetType.dimensions)
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
-                    ref = refs.get(datasetDataId)
-                    if ref is None:
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                            ref = DatasetRef(datasetType, datasetDataId)
-                        refs[datasetDataId] = ref
-                    refsForRow[datasetType.name] = ref
+                    ref_holder = refs.get(datasetDataId)
+                    if ref_holder is None:
+                        ref_holder = _RefHolder(datasetType)
+                        refs[datasetDataId] = ref_holder
+                    refsForRow[datasetType.name] = ref_holder
                 # Create _QuantumScaffolding objects for all tasks from this
                 # result row, noting that we might have created some already.
                 for task in self.tasks:
@@ -843,11 +873,13 @@ class _PipelineScaffolding:
                     # irrelevant dimensions already added them), and we use
                     # sets to skip.
                     for datasetType in task.inputs:
-                        ref = refsForRow[datasetType.name]
-                        quantum.inputs[datasetType.name][ref.dataId] = ref
+                        dataId = dataIdCacheForRow[datasetType.dimensions]
+                        ref_holder = refsForRow[datasetType.name]
+                        quantum.inputs[datasetType.name][dataId] = ref_holder
                     for datasetType in task.outputs:
-                        ref = refsForRow[datasetType.name]
-                        quantum.outputs[datasetType.name][ref.dataId] = ref
+                        dataId = dataIdCacheForRow[datasetType.dimensions]
+                        ref_holder = refsForRow[datasetType.name]
+                        quantum.outputs[datasetType.name][dataId] = ref_holder
             if n < 0:
                 _LOG.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
                 emptiness_explained = False
@@ -879,13 +911,12 @@ class _PipelineScaffolding:
         self,
         registry: Registry,
         collections: Any,
-        run: Optional[str],
+        run: str,
         commonDataIds: DataCoordinateQueryResults,
         *,
         skipExistingIn: Any = None,
         clobberOutputs: bool = True,
         constrainedByAllDatasets: bool = True,
-        resolveRefs: bool = False,
     ) -> None:
         """Perform follow up queries for each dataset data ID produced in
         `fillDataIds`.
@@ -900,7 +931,7 @@ class _PipelineScaffolding:
         collections
             Expressions representing the collections to search for input
             datasets.  See :ref:`daf_butler_ordered_collection_searches`.
-        run : `str`, optional
+        run : `str`
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets, if it already exists.
         commonDataIds : \
@@ -920,10 +951,6 @@ class _PipelineScaffolding:
         constrainedByAllDatasets : `bool`, optional
             Indicates if the commonDataIds were generated with a constraint on
             all dataset types.
-        resolveRefs : `bool`, optional
-            If `True` then resolve all input references and generate random
-            dataset IDs for all output and intermediate datasets. True value
-            requires ``run`` collection to be specified.
 
         Raises
         ------
@@ -956,10 +983,7 @@ class _PipelineScaffolding:
                         collectionTypes=CollectionType.RUN,
                     )
 
-        idMaker: Optional[_DatasetIdMaker] = None
-        if resolveRefs:
-            assert run is not None, "run cannot be None when resolveRefs is True"
-            idMaker = _DatasetIdMaker(registry, run)
+        idMaker = _DatasetIdMaker(run)
 
         resolvedRefQueryResults: Iterable[DatasetRef]
 
@@ -1024,28 +1048,26 @@ class _PipelineScaffolding:
                                 f"output RUN collection '{run}' with data ID"
                                 f" {resolvedRef.dataId}."
                             )
-                        # If we are going to resolve all outputs then we have
-                        # to remember existing ones to avoid generating new
-                        # dataset IDs for them.
-                        if resolveRefs:
-                            refs[resolvedRef.dataId] = (
-                                resolvedRef.makeComponentRef(component)
-                                if component is not None
-                                else resolvedRef
-                            )
+                        # To resolve all outputs we have to remember existing
+                        # ones to avoid generating new dataset IDs for them.
+                        refs[resolvedRef.dataId].ref = (
+                            resolvedRef.makeComponentRef(component) if component is not None else resolvedRef
+                        )
 
                 # And check skipExistingIn too, if RUN collection is in
                 # it is handled above
                 if skip_collections_wildcard is not None:
                     try:
                         resolvedRefQueryResults = subset.findDatasets(
-                            parent_dataset_type, collections=skip_collections_wildcard, findFirst=True
+                            parent_dataset_type,
+                            collections=skip_collections_wildcard,
+                            findFirst=True,
                         )
                     except MissingDatasetTypeError:
                         resolvedRefQueryResults = []
                     for resolvedRef in resolvedRefQueryResults:
                         assert resolvedRef.dataId in refs
-                        refs[resolvedRef.dataId] = (
+                        refs[resolvedRef.dataId].ref = (
                             resolvedRef.makeComponentRef(component) if component is not None else resolvedRef
                         )
 
@@ -1054,7 +1076,11 @@ class _PipelineScaffolding:
         # constrained on dataset type existence.
         self.unfoundRefs = set()
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
-            _LOG.debug("Resolving %d datasets for input dataset %s.", len(refs), datasetType.name)
+            _LOG.debug(
+                "Resolving %d datasets for input dataset %s.",
+                len(refs),
+                datasetType.name,
+            )
             if datasetType.isComponent():
                 parent_dataset_type = datasetType.makeCompositeDatasetType()
                 component = datasetType.component()
@@ -1070,7 +1096,7 @@ class _PipelineScaffolding:
             dataIdsNotFoundYet = set(refs.keys())
             for resolvedRef in resolvedRefQueryResults:
                 dataIdsNotFoundYet.discard(resolvedRef.dataId)
-                refs[resolvedRef.dataId] = (
+                refs[resolvedRef.dataId].ref = (
                     resolvedRef if component is None else resolvedRef.makeComponentRef(component)
                 )
             if dataIdsNotFoundYet:
@@ -1095,7 +1121,7 @@ class _PipelineScaffolding:
                     # will be un-resolved. Mark these for later pruning from
                     # the quantum graph.
                     for k in dataIdsNotFoundYet:
-                        self.unfoundRefs.add(refs[k])
+                        self.unfoundRefs.add(refs[k].resolved_ref)
 
         # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
         # replacing the unresolved refs there, and then look up prerequisites.
@@ -1119,22 +1145,22 @@ class _PipelineScaffolding:
                 # or there is a run to look for outputs in and clobberOutputs
                 # is True. Note that if skipExistingIn is None, any output
                 # datasets that already exist would have already caused an
-                # exception to be raised.  We never update the DatasetRefs in
-                # the quantum because those should never be resolved.
+                # exception to be raised.
                 if skip_collections_wildcard is not None or (run_exists and clobberOutputs):
                     resolvedRefs = []
-                    unresolvedRefs = []
+                    unresolvedDataIds = []
                     haveMetadata = False
                     for datasetType, originalRefs in quantum.outputs.items():
-                        for ref in task.outputs.extract(datasetType, originalRefs.keys()):
-                            if ref.id is not None:
+                        for dataId, ref in task.outputs.extract(datasetType, originalRefs.keys()):
+                            if ref is not None:
                                 resolvedRefs.append(ref)
+                                originalRefs[dataId].ref = ref
                                 if datasetType.name == task.taskDef.metadataDatasetName:
                                     haveMetadata = True
                             else:
-                                unresolvedRefs.append(ref)
+                                unresolvedDataIds.append((datasetType, dataId))
                     if resolvedRefs:
-                        if haveMetadata or not unresolvedRefs:
+                        if haveMetadata or not unresolvedDataIds:
                             dataIdsSucceeded.append(quantum.dataId)
                             if skip_collections_wildcard is not None:
                                 continue
@@ -1145,14 +1171,14 @@ class _PipelineScaffolding:
                                     f"Quantum {quantum.dataId} of task with label "
                                     f"'{quantum.task.taskDef.label}' has some outputs that exist "
                                     f"({resolvedRefs}) "
-                                    f"and others that don't ({unresolvedRefs}), with no metadata output, "
+                                    f"and others that don't ({unresolvedDataIds}), with no metadata output, "
                                     "and clobbering outputs was not enabled."
                                 )
                 # Update the input DatasetRefs to the resolved ones we already
                 # searched for.
                 for datasetType, input_refs in quantum.inputs.items():
-                    for ref in task.inputs.extract(datasetType, input_refs.keys()):
-                        input_refs[ref.dataId] = ref
+                    for data_id, ref in task.inputs.extract(datasetType, input_refs.keys()):
+                        input_refs[data_id].ref = ref
                 # Look up prerequisite datasets in the input collection(s).
                 # These may have dimensions that extend beyond those we queried
                 # for originally, because we want to permit those data ID
@@ -1206,21 +1232,21 @@ class _PipelineScaffolding:
                                 findFirst=True,
                             ).expanded()
                         ]
-                    prereq_refs_map = {ref.dataId: ref for ref in prereq_refs if ref is not None}
-                    quantum.prerequisites[datasetType].update(prereq_refs_map)
-                    task.prerequisites[datasetType].update(prereq_refs_map)
+
+                    for ref in prereq_refs:
+                        if ref is not None:
+                            quantum.prerequisites[datasetType][ref.dataId] = _RefHolder(datasetType, ref)
+                            task.prerequisites[datasetType][ref.dataId] = _RefHolder(datasetType, ref)
 
                 # Resolve all quantum inputs and outputs.
-                if idMaker:
-                    for datasetDict in (quantum.inputs, quantum.outputs):
-                        for refDict in datasetDict.values():
-                            refDict.update(idMaker.resolveDict(refDict))
+                for datasetDict in (quantum.inputs, quantum.outputs):
+                    for dataset_type, refDict in datasetDict.items():
+                        idMaker.resolveDict(dataset_type, refDict)
 
             # Resolve task initInputs and initOutputs.
-            if idMaker:
-                for datasetDict in (task.initInputs, task.initOutputs):
-                    for refDict in datasetDict.values():
-                        refDict.update(idMaker.resolveDict(refDict))
+            for datasetDict in (task.initInputs, task.initOutputs):
+                for dataset_type, refDict in datasetDict.items():
+                    idMaker.resolveDict(dataset_type, refDict)
 
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
@@ -1259,9 +1285,8 @@ class _PipelineScaffolding:
             global_dataset_types -= set(task.initOutputs)
         if global_dataset_types:
             self.globalInitOutputs = _DatasetDict.fromSubset(global_dataset_types, self.initOutputs)
-            if idMaker is not None:
-                for refDict in self.globalInitOutputs.values():
-                    refDict.update(idMaker.resolveDict(refDict))
+            for dataset_type, refDict in self.globalInitOutputs.items():
+                idMaker.resolveDict(dataset_type, refDict)
 
     def makeQuantumGraph(
         self,
@@ -1293,17 +1318,20 @@ class _PipelineScaffolding:
         def _make_refs(dataset_dict: _DatasetDict) -> Iterable[DatasetRef]:
             """Extract all DatasetRefs from the dictionaries"""
             for ref_dict in dataset_dict.values():
-                yield from ref_dict.values()
+                for holder in ref_dict.values():
+                    yield holder.resolved_ref
 
         datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None
         if datastore is not None:
             datastore_records = datastore.export_records(
                 itertools.chain(
-                    _make_refs(self.inputs), _make_refs(self.initInputs), _make_refs(self.prerequisites)
+                    _make_refs(self.inputs),
+                    _make_refs(self.initInputs),
+                    _make_refs(self.prerequisites),
                 )
             )
 
-        graphInput: Dict[TaskDef, Set[Quantum]] = {}
+        graphInput: dict[TaskDef, set[Quantum]] = {}
         for task in self.tasks:
             qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
@@ -1314,7 +1342,7 @@ class _PipelineScaffolding:
         globalInitOutputs: list[DatasetRef] = []
         if self.globalInitOutputs is not None:
             for refs_dict in self.globalInitOutputs.values():
-                globalInitOutputs.extend(refs_dict.values())
+                globalInitOutputs.extend(holder.resolved_ref for holder in refs_dict.values())
 
         graph = QuantumGraph(
             graphInput,
@@ -1440,13 +1468,12 @@ class GraphBuilder:
 
     def makeGraph(
         self,
-        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        pipeline: Pipeline | Iterable[TaskDef],
         collections: Any,
-        run: Optional[str],
+        run: str,
         userQuery: Optional[str],
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         metadata: Optional[Mapping[str, Any]] = None,
-        resolveRefs: bool = False,
         bind: Optional[Mapping[str, Any]] = None,
     ) -> QuantumGraph:
         """Create execution graph for a pipeline.
@@ -1458,7 +1485,7 @@ class GraphBuilder:
         collections
             Expressions representing the collections to search for input
             datasets.  See :ref:`daf_butler_ordered_collection_searches`.
-        run : `str`, optional
+        run : `str`
             Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
             output datasets. Collection does not have to exist and it will be
             created when graph is executed.
@@ -1473,10 +1500,6 @@ class GraphBuilder:
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
             JSON.
-        resolveRefs : `bool`, optional
-            If `True` then resolve all input references and generate random
-            dataset IDs for all output and intermediate datasets. True value
-            requires ``run`` collection to be specified.
         bind : `Mapping`, optional
             Mapping containing literal values that should be injected into the
             ``userQuery`` expression, keyed by the identifiers they replace.
@@ -1495,8 +1518,6 @@ class GraphBuilder:
             Other exceptions types may be raised by underlying registry
             classes.
         """
-        if resolveRefs and run is None:
-            raise ValueError("`resolveRefs` requires `run` parameter.")
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
         if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
             raise ValueError("Pipeline requires input datasets but no input collections provided.")
@@ -1524,7 +1545,6 @@ class GraphBuilder:
                 skipExistingIn=self.skipExistingIn,
                 clobberOutputs=self.clobberOutputs,
                 constrainedByAllDatasets=condition,
-                resolveRefs=resolveRefs,
             )
         return scaffolding.makeQuantumGraph(
             registry=self.registry, metadata=metadata, datastore=self.datastore

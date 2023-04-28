@@ -23,7 +23,6 @@
 """
 
 import unittest
-import warnings
 from types import SimpleNamespace
 from typing import Any
 
@@ -31,14 +30,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.logging
 import lsst.utils.tests
-from lsst.daf.butler import (
-    DataCoordinate,
-    DatasetRef,
-    DatasetType,
-    DimensionUniverse,
-    Quantum,
-    UnresolvedRefWarning,
-)
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Quantum
 
 
 class ButlerMock:
@@ -110,9 +102,7 @@ class AddTask2(pipeBase.PipelineTask):
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask"""
 
-    def _makeDSRefVisit(
-        self, dstype: DatasetType, visitId: int, universe: DimensionUniverse, resolve: bool = False
-    ) -> DatasetRef:
+    def _makeDSRefVisit(self, dstype: DatasetType, visitId: int, universe: DimensionUniverse) -> DatasetRef:
         dataId = DataCoordinate.standardize(
             detector="X",
             visit=visitId,
@@ -121,18 +111,11 @@ class PipelineTaskTestCase(unittest.TestCase):
             instrument="TestInstrument",
             universe=universe,
         )
-        if resolve:
-            run = "test"
-            ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
-        else:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-                ref = DatasetRef(datasetType=dstype, dataId=dataId)
+        run = "test"
+        ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
         return ref
 
-    def _makeQuanta(
-        self, config: pipeBase.PipelineTaskConfig, nquanta: int = 100, resolve_outputs: bool = False
-    ) -> list[Quantum]:
+    def _makeQuanta(self, config: pipeBase.PipelineTaskConfig, nquanta: int = 100) -> list[Quantum]:
         """Create set of Quanta"""
         universe = DimensionUniverse()
         connections = config.connections.ConnectionsClass(config=config)
@@ -142,8 +125,8 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         quanta = []
         for visit in range(nquanta):
-            inputRef = self._makeDSRefVisit(dstype0, visit, universe, resolve=True)
-            outputRef = self._makeDSRefVisit(dstype1, visit, universe, resolve=resolve_outputs)
+            inputRef = self._makeDSRefVisit(dstype0, visit, universe)
+            outputRef = self._makeDSRefVisit(dstype1, visit, universe)
             quantum = Quantum(
                 inputs={inputRef.datasetType: [inputRef]}, outputs={outputRef.datasetType: [outputRef]}
             )
@@ -167,7 +150,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         connections = task.config.connections.ConnectionsClass(config=task.config)
 
         # make all quanta
-        quanta = self._makeQuanta(task.config, resolve_outputs=not full_butler)
+        quanta = self._makeQuanta(task.config)
 
         # add input data to butler
         dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
@@ -232,7 +215,7 @@ class PipelineTaskTestCase(unittest.TestCase):
 
     def testChain2Limited(self) -> None:
         """Test for two-task chain with limited butler."""
-        self._testChain2(full_butler=True)
+        self._testChain2(full_butler=False)
 
     def _testChain2(self, full_butler: bool) -> None:
         """Test for two-task chain."""
@@ -248,8 +231,8 @@ class PipelineTaskTestCase(unittest.TestCase):
         connections2 = config2.connections.ConnectionsClass(config=config2)
 
         # make all quanta
-        quanta1 = self._makeQuanta(task1.config, resolve_outputs=not full_butler)
-        quanta2 = self._makeQuanta(task2.config, resolve_outputs=not full_butler)
+        quanta1 = self._makeQuanta(task1.config)
+        quanta2 = self._makeQuanta(task2.config)
 
         # add input data to butler
         task1Connections = task1.config.connections.ConnectionsClass(config=task1.config)

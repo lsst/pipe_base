@@ -62,13 +62,16 @@ class GraphBuilderTestCase(unittest.TestCase):
             _, qgraph2 = simpleQGraph.makeSimpleQGraph(
                 butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
             )
+            # When all outputs are random resolved refs, direct comparison
+            # of graphs does not work because IDs are different. Can only
+            # verify the number of quanta in the graph without doing something
+            # terribly complicated.
             self.assertEqual(len(qgraph2), 5)
-            self.assertEqual(qgraph, qgraph2)
             constraint = DatasetQueryConstraintVariant.fromExpression("add_dataset0")
             _, qgraph3 = simpleQGraph.makeSimpleQGraph(
                 butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
             )
-            self.assertEqual(qgraph2, qgraph3)
+            self.assertEqual(len(qgraph3), 5)
 
     def testAddInstrumentMismatch(self):
         """Verify that a RuntimeError is raised if the instrument in the user
@@ -132,43 +135,32 @@ class GraphBuilderTestCase(unittest.TestCase):
                         self.assertEqual(quantum.datastore_records, {})
 
     def testResolveRefs(self):
-        """Test for GraphBuilder with resolveRefs=True."""
+        """Test for GraphBuilder returning graph with all resolved refs."""
 
         def _assert_resolved(refs):
             self.assertTrue(all(ref.id is not None for ref in refs))
 
-        def _assert_unresolved(refs):
-            self.assertTrue(all(ref.id is None for ref in refs))
+        with temporaryDirectory() as root:
+            _, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
+            self.assertEqual(len(qgraph), 5)
 
-        for resolveRefs in (False, True):
-            with self.subTest(resolveRefs=resolveRefs):
-                assert_refs = _assert_resolved if resolveRefs else _assert_unresolved
+            # check per-quantum inputs/outputs
+            for node in qgraph:
+                quantum = node.quantum
+                for datasetType, refs in quantum.inputs.items():
+                    _assert_resolved(refs)
+                for datasetType, refs in quantum.outputs.items():
+                    _assert_resolved(refs)
 
-                with temporaryDirectory() as root:
-                    _, qgraph = simpleQGraph.makeSimpleQGraph(root=root, resolveRefs=resolveRefs)
-                    self.assertEqual(len(qgraph), 5)
+            # check per-task init-inputs/init-outputs
+            for taskDef in qgraph.iterTaskGraph():
+                if (refs := qgraph.initInputRefs(taskDef)) is not None:
+                    _assert_resolved(refs)
+                if (refs := qgraph.initOutputRefs(taskDef)) is not None:
+                    _assert_resolved(refs)
 
-                    # check per-quantum inputs/outputs
-                    for node in qgraph:
-                        quantum = node.quantum
-                        for datasetType, refs in quantum.inputs.items():
-                            if datasetType.name == "add_dataset0":
-                                # Existing refs are always resolved
-                                _assert_resolved(refs)
-                            else:
-                                assert_refs(refs)
-                        for datasetType, refs in quantum.outputs.items():
-                            assert_refs(refs)
-
-                    # check per-task init-inputs/init-outputs
-                    for taskDef in qgraph.iterTaskGraph():
-                        if (refs := qgraph.initInputRefs(taskDef)) is not None:
-                            assert_refs(refs)
-                        if (refs := qgraph.initOutputRefs(taskDef)) is not None:
-                            assert_refs(refs)
-
-                    # check global init-outputs
-                    assert_refs(qgraph.globalInitOutputRefs())
+            # check global init-outputs
+            _assert_resolved(qgraph.globalInitOutputRefs())
 
 
 if __name__ == "__main__":
