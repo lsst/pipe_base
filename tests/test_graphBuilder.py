@@ -62,9 +62,9 @@ class GraphBuilderTestCase(unittest.TestCase):
             _, qgraph2 = simpleQGraph.makeSimpleQGraph(
                 butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
             )
-            # When all outputs are refs resolved and random direct comparison
+            # When all outputs are random resolved refs, direct comparison
             # of graphs does not work because IDs are different. Can only
-            # verify the number of qunata in the graph without doing something
+            # verify the number of quanta in the graph without doing something
             # terribly complicated.
             self.assertEqual(len(qgraph2), 5)
             constraint = DatasetQueryConstraintVariant.fromExpression("add_dataset0")
