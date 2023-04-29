@@ -301,6 +301,28 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
         refs = self[datasetType]
         return ((dataId, refs[dataId].ref) for dataId in dataIds)
 
+    def isdisjoint(self, other: _DatasetDict) -> bool:
+        """Test whether ``self`` and ``other`` have any datasets in common.
+
+        Datasets are considered in common if they have the same *parent*
+        dataset type name and data ID; storage classes and components are not
+        considered.
+        """
+        by_parent_name = {k.nameAndComponent()[0]: v.keys() for k, v in self.items()}
+        for k, v in other.items():
+            parent_name, _ = k.nameAndComponent()
+            if not by_parent_name.get(parent_name, frozenset[DataCoordinate]()).isdisjoint(v.keys()):
+                return False
+        return True
+
+    def iter_resolved_refs(self) -> Iterator[DatasetRef]:
+        """Iterate over all DatasetRef instances held by this data structure,
+        assuming that each `_RefHolder` already carries are resolved ref.
+        """
+        for holders_by_data_id in self.values():
+            for holder in holders_by_data_id.values():
+                yield holder.resolved_ref
+
 
 class _QuantumScaffolding:
     """Helper class aggregating information about a `Quantum`, used when
@@ -498,38 +520,34 @@ class _TaskScaffolding:
 
     def makeQuantumSet(
         self,
-        unresolvedRefs: Optional[set[DatasetRef]] = None,
+        missing: _DatasetDict,
         datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None,
     ) -> set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
 
         Parameters
         ----------
-        unresolvedRefs : `set` [ `DatasetRef` ], optional
-            Input dataset refs that have not been found.
+        missing : `_DatasetDict`
+            Input datasets that have not been found.
         datastore_records : `dict`
-
+            Record from the datastore to export with quanta.
 
         Returns
         -------
         nodes : `set` of `Quantum`
             The `Quantum` elements corresponding to this task.
         """
-        if unresolvedRefs is None:
-            unresolvedRefs = set()
         outputs = set()
         for q in self.quanta.values():
             try:
                 tmpQuanta = q.makeQuantum(datastore_records)
                 outputs.add(tmpQuanta)
             except (NoWorkFound, FileNotFoundError) as exc:
-                refs = itertools.chain.from_iterable(self.inputs.unpackMultiRefs().values())
-                if unresolvedRefs.intersection(refs):
-                    # This means it is a node that is Known to be pruned
-                    # later and should be left in even though some follow up
-                    # queries fail. This allows the pruning to start from this
-                    # quantum with known issues, and prune other nodes it
-                    # touches
+                if not missing.isdisjoint(q.inputs):
+                    # This is a node that is known to be pruned later and
+                    # should be left in even though some follow up queries
+                    # fail. This allows the pruning to start from this quantum
+                    # with known issues, and prune other nodes it touches.
                     inputs = q.inputs.unpackMultiRefs()
                     inputs.update(q.prerequisites.unpackMultiRefs())
                     tmpQuantum = Quantum(
@@ -649,6 +667,7 @@ class _PipelineScaffolding:
                 attr,
                 _DatasetDict.fromDatasetTypes(getattr(datasetTypes, attr), universe=registry.dimensions),
             )
+        self.missing = _DatasetDict(universe=registry.dimensions)
         self.defaultDatasetQueryConstraints = datasetTypes.queryConstraints
         # Aggregate all dimensions for all non-init, non-prerequisite
         # DatasetTypes.  These are the ones we'll include in the big join
@@ -722,6 +741,18 @@ class _PipelineScaffolding:
     Query" (`DimensionGraph`).
 
     This is required to be a superset of all task quantum dimensions.
+    """
+
+    missing: _DatasetDict
+    """Datasets whose existence was originally predicted but were not
+    actually found.
+
+    Quanta that require these datasets as inputs will be pruned (recursively)
+    when actually constructing a `QuantumGraph` object.
+
+    These are currently populated only when the "initial dataset query
+    constraint" does not include all overall-input dataset types, and hence the
+    initial data ID query can include data IDs that it should not.
     """
 
     globalInitOutputs: _DatasetDict | None = None
@@ -1071,10 +1102,9 @@ class _PipelineScaffolding:
                             resolvedRef.makeComponentRef(component) if component is not None else resolvedRef
                         )
 
-        # Look up input and initInput datasets in the input collection(s).
-        # container to accumulate unfound refs, if the common dataIs were not
+        # Look up input and initInput datasets in the input collection(s). We
+        # accumulate datasets in self.missing, if the common data IDs were not
         # constrained on dataset type existence.
-        self.unfoundRefs = set()
         for datasetType, refs in itertools.chain(self.initInputs.items(), self.inputs.items()):
             _LOG.debug(
                 "Resolving %d datasets for input dataset %s.",
@@ -1087,6 +1117,7 @@ class _PipelineScaffolding:
             else:
                 parent_dataset_type = datasetType
                 component = None
+            missing_for_dataset_type: dict[DataCoordinate, _RefHolder] = {}
             try:
                 resolvedRefQueryResults = commonDataIds.subset(
                     datasetType.dimensions, unique=True
@@ -1115,13 +1146,19 @@ class _PipelineScaffolding:
                         f"collections {collections}."
                     )
                 else:
-                    # if the common dataIds were not constrained using all the
+                    # If the common dataIds were not constrained using all the
                     # input dataset types, it is possible that some data ids
-                    # found dont correspond to existing dataset types and they
-                    # will be un-resolved. Mark these for later pruning from
-                    # the quantum graph.
+                    # found don't correspond to existing datasets. Mark these
+                    # for later pruning from the quantum graph.
                     for k in dataIdsNotFoundYet:
-                        self.unfoundRefs.add(refs[k].resolved_ref)
+                        missing_for_dataset_type[k] = refs[k]
+            if missing_for_dataset_type:
+                self.missing[datasetType] = missing_for_dataset_type
+
+        # Resolve the missing refs, just so they look like all of the others;
+        # in the end other code will make sure they never appear in the QG.
+        for dataset_type, refDict in self.missing.items():
+            idMaker.resolveDict(dataset_type, refDict)
 
         # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
         # replacing the unresolved refs there, and then look up prerequisites.
@@ -1333,7 +1370,7 @@ class _PipelineScaffolding:
 
         graphInput: dict[TaskDef, set[Quantum]] = {}
         for task in self.tasks:
-            qset = task.makeQuantumSet(unresolvedRefs=self.unfoundRefs, datastore_records=datastore_records)
+            qset = task.makeQuantumSet(missing=self.missing, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
 
         taskInitInputs = {task.taskDef: task.initInputs.unpackSingleRefs().values() for task in self.tasks}
@@ -1347,7 +1384,7 @@ class _PipelineScaffolding:
         graph = QuantumGraph(
             graphInput,
             metadata=metadata,
-            pruneRefs=self.unfoundRefs,
+            pruneRefs=list(self.missing.iter_resolved_refs()),
             universe=self.dimensions.universe,
             initInputs=taskInitInputs,
             initOutputs=taskInitOutputs,
