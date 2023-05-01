@@ -1097,7 +1097,8 @@ class _PipelineScaffolding:
                     except MissingDatasetTypeError:
                         resolvedRefQueryResults = []
                     for resolvedRef in resolvedRefQueryResults:
-                        assert resolvedRef.dataId in refs
+                        if resolvedRef.dataId not in refs:
+                            continue
                         refs[resolvedRef.dataId].ref = (
                             resolvedRef.makeComponentRef(component) if component is not None else resolvedRef
                         )
@@ -1127,6 +1128,8 @@ class _PipelineScaffolding:
             dataIdsNotFoundYet = set(refs.keys())
             for resolvedRef in resolvedRefQueryResults:
                 dataIdsNotFoundYet.discard(resolvedRef.dataId)
+                if resolvedRef.dataId not in refs:
+                    continue
                 refs[resolvedRef.dataId].ref = (
                     resolvedRef if component is None else resolvedRef.makeComponentRef(component)
                 )
