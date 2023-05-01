@@ -306,7 +306,6 @@ def _setupNewButler(
     # file data stores continue to look at the old location.
     config = Config(butler._config)
     config["root"] = outputLocation.geturl()
-    config["allow_put_of_predefined_dataset"] = True
     config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
 
     # Remove any namespace that may be set in main registry.
