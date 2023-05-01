@@ -390,7 +390,7 @@ def buildExecutionButler(
 
     Parameters
     ----------
-    butler : `lsst.daf.butler.Bulter`
+    butler : `lsst.daf.butler.Butler`
         This is the existing `~lsst.daf.butler.Butler` instance from which
         existing datasets will be exported. This should be the
         `~lsst.daf.butler.Butler` which was used to create any `QuantumGraphs`
@@ -445,6 +445,10 @@ def buildExecutionButler(
     NotADirectoryError
         Raised if specified output URI does not correspond to a directory
     """
+    # Now require that if run is given it must match the graph run.
+    if run and graph.metadata and run != (graph_run := graph.metadata.get("output_run")):
+        raise ValueError(f"The given run, {run!r}, does not match that specified in the graph, {graph_run!r}")
+
     # We know this must refer to a directory.
     outputLocation = ResourcePath(outputLocation, forceDirectory=True)
     if datastoreRoot is not None:
