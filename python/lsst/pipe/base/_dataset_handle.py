@@ -26,7 +26,7 @@ import dataclasses
 from typing import Any, Optional
 
 from frozendict import frozendict
-from lsst.daf.butler import DataCoordinate, DimensionUniverse, StorageClass, StorageClassFactory
+from lsst.daf.butler import DataCoordinate, DataId, DimensionUniverse, StorageClass, StorageClassFactory
 
 
 # Use an empty dataID as a default.
@@ -49,7 +49,7 @@ class InMemoryDatasetHandle:
         *,
         storageClass: StorageClass | None = None,
         parameters: dict[str, Any] | None = None,
-        dataId: dict[str, Any] | DataCoordinate | None = None,
+        dataId: DataId | None = None,
         **kwargs: Any,
     ):
         object.__setattr__(self, "inMemoryDataset", inMemoryDataset)
@@ -59,7 +59,7 @@ class InMemoryDatasetHandle:
         # This will not be a full DataCoordinate.
         if dataId is None:
             if kwargs:
-                dataId = frozendict(kwargs)  # type: ignore
+                dataId = frozendict(kwargs)
             else:
                 dataId = DataCoordinate.makeEmpty(DimensionUniverse())
         elif kwargs:
@@ -68,7 +68,7 @@ class InMemoryDatasetHandle:
             else:
                 new = dict(dataId)
                 new.update(kwargs)
-                dataId = frozendict(new)  # type: ignore
+                dataId = frozendict(new)
         object.__setattr__(self, "dataId", dataId)
 
     def get(
