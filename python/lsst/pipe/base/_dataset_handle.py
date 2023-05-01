@@ -204,7 +204,7 @@ class InMemoryDatasetHandle:
     """The object to store in this dataset handle for later retrieval.
     """
 
-    dataId: DataCoordinate | frozendict  # type:ignore
+    dataId: DataCoordinate | frozendict
     """The `~lsst.daf.butler.DataCoordinate` associated with this dataset
     handle.
     """
