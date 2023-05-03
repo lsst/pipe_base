@@ -50,6 +50,8 @@ class InMemoryDatasetHandle:
     parameters will be converted into a dataId-like entity.
     """
 
+    _empty = DataCoordinate.makeEmpty(DimensionUniverse())
+
     def __init__(
         self,
         inMemoryDataset: Any,
@@ -70,7 +72,7 @@ class InMemoryDatasetHandle:
             if kwargs:
                 dataId = frozendict(kwargs)
             else:
-                dataId = DataCoordinate.makeEmpty(DimensionUniverse())
+                dataId = self._empty
         elif kwargs:
             if isinstance(dataId, DataCoordinate):
                 dataId = DataCoordinate.standardize(kwargs, defaults=dataId, universe=dataId.universe)
