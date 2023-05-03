@@ -1,0 +1,2 @@
+Modified the calling signature for the ``Task`` constructor such that only the ``config`` parameter can be positional.
+All other parameters must now be keyword parameters.
