@@ -1,0 +1,1 @@
+Modified ``InMemoryDatasetHandle`` to allow it to be configured to always deep copy the Python object on ``get()``.
