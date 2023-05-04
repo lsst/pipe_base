@@ -123,6 +123,9 @@ class Task:
 
     Notes
     -----
+    The constructor must use keyword parameters for everything other than
+    the ``config`` parameter which can be positional or use keyword form.
+
     Useful attributes include:
 
     - ``log``: an `logging.Logger` or subclass.
@@ -154,6 +157,7 @@ class Task:
     def __init__(
         self,
         config: Optional[Config] = None,
+        *,
         name: Optional[str] = None,
         parentTask: Optional[Task] = None,
         log: Optional[Union[logging.Logger, lsst.utils.logging.LsstLogAdapter]] = None,
