@@ -27,7 +27,7 @@ __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import itertools
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import lsst.daf.butler.tests as butlerTests
@@ -364,7 +364,7 @@ def makeSimpleQGraph(
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
     makeDatastoreRecords: bool = False,
     bind: Optional[Mapping[str, Any]] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
+    metadata: Optional[MutableMapping[str, Any]] = None,
 ) -> Tuple[Butler, QuantumGraph]:
     """Make simple QuantumGraph for tests.
 
@@ -458,6 +458,10 @@ def makeSimpleQGraph(
         userQuery,
         bind,
     )
+    if not metadata:
+        metadata = {}
+    metadata["output_run"] = run
+
     qgraph = builder.makeGraph(
         pipeline,
         collections=butler.collections,

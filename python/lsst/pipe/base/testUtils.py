@@ -34,7 +34,6 @@ __all__ = [
 import collections.abc
 import itertools
 import unittest.mock
-import warnings
 from collections import defaultdict
 from typing import TYPE_CHECKING, AbstractSet, Any, Dict, Mapping, Optional, Sequence, Set, Union
 
@@ -49,7 +48,6 @@ from lsst.daf.butler import (
     Quantum,
     SkyPixDimension,
     StorageClassFactory,
-    UnresolvedRefWarning,
 )
 from lsst.pipe.base.connectionTypes import BaseConnection, DimensionedConnection
 
@@ -267,10 +265,15 @@ def _refFromConnection(
         butler.registry.getDatasetType(datasetType.name)
     except KeyError:
         raise ValueError(f"Invalid dataset type {connection.name}.")
+    if not butler.run:
+        raise ValueError("Can not create a resolved DatasetRef since the butler has no default run defined.")
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UnresolvedRefWarning)
-            ref = DatasetRef(datasetType=datasetType, dataId=dataId)
+        registry_ref = butler.registry.findDataset(datasetType, dataId, collections=[butler.run])
+        if registry_ref:
+            ref = registry_ref
+        else:
+            ref = DatasetRef(datasetType=datasetType, dataId=dataId, run=butler.run)
+            butler.registry._importDatasets([ref])
         return ref
     except KeyError as e:
         raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") from e

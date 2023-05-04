@@ -23,11 +23,10 @@ from __future__ import annotations
 __all__ = ("buildExecutionButler",)
 
 import io
-import itertools
 from collections import defaultdict
-from typing import Callable, DefaultDict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
-from lsst.daf.butler import Butler, Config, DataCoordinate, DatasetRef, DatasetType, Registry
+from lsst.daf.butler import Butler, Config, DatasetRef, DatasetType, Registry
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 from lsst.daf.butler.registry import ConflictingDefinitionError, MissingDatasetTypeError
 from lsst.daf.butler.transfers import RepoExportContext
@@ -35,9 +34,8 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_class_of
 
 from .graph import QuantumGraph
-from .pipeline import PipelineDatasetTypes
 
-DataSetTypeMap = Mapping[DatasetType, Set[DataCoordinate]]
+DataSetTypeRefMap = Mapping[DatasetType, Set[DatasetRef]]
 
 
 def _validate_dataset_type(
@@ -120,8 +118,7 @@ def _validate_dataset_type(
 def _accumulate(
     butler: Butler,
     graph: QuantumGraph,
-    dataset_types: PipelineDatasetTypes,
-) -> Tuple[Set[DatasetRef], DataSetTypeMap]:
+) -> Tuple[Set[DatasetRef], DataSetTypeRefMap]:
     # accumulate the DatasetRefs that will be transferred to the execution
     # registry
 
@@ -132,7 +129,7 @@ def _accumulate(
     # inserts is the mapping of DatasetType to dataIds for what is to be
     # inserted into the registry. These are the products that are expected
     # to be produced during processing of the QuantumGraph
-    inserts: DefaultDict[DatasetType, Set[DataCoordinate]] = defaultdict(set)
+    inserts: DataSetTypeRefMap = defaultdict(set)
 
     # It is possible to end up with a graph that has different storage
     # classes attached to the same dataset type name. This is okay but
@@ -141,16 +138,19 @@ def _accumulate(
     # type encountered and stores the compatible alternative.
     datasetTypes: dict[Union[str, DatasetType], DatasetType] = {}
 
-    # Add inserts for initOutputs (including initIntermediates); these are
-    # defined fully by their DatasetType, because they have no dimensions.
-    # initInputs are part of Quantum and that's the only place the graph stores
-    # the dataset IDs, so we process them there even though each Quantum for a
-    # task has the same ones.
-    for dataset_type in itertools.chain(dataset_types.initIntermediates, dataset_types.initOutputs):
+    # Find the initOutput refs.
+    initOutputRefs = list(graph.globalInitOutputRefs())
+    for task_def in graph.iterTaskGraph():
+        task_refs = graph.initOutputRefs(task_def)
+        if task_refs:
+            initOutputRefs.extend(task_refs)
+
+    for ref in initOutputRefs:
+        dataset_type = ref.datasetType
         if dataset_type.component() is not None:
             dataset_type = dataset_type.makeCompositeDatasetType()
         dataset_type = _validate_dataset_type(dataset_type, datasetTypes, butler.registry)
-        inserts[dataset_type].add(DataCoordinate.makeEmpty(dataset_type.dimensions.universe))
+        inserts[dataset_type].add(ref)
 
     # Output references may be resolved even if they do not exist. Find all
     # actually existing refs.
@@ -208,7 +208,8 @@ def _accumulate(
                             # be part of some other upstream dataset, so it
                             # should be safe to skip them here
                             continue
-                        inserts[type].add(ref.dataId)
+                        inserts[type].add(ref)
+
     return exports, inserts
 
 
@@ -230,7 +231,7 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataSetTypeMap) -> io.StringIO:
+def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataSetTypeRefMap) -> io.StringIO:
     # This exports relevant dimension records and collections using daf butler
     # objects, however it reaches in deep and does not use the public methods
     # so that it can export it to a string buffer and skip disk access.  This
@@ -245,8 +246,8 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataS
 
     # Need to ensure that the dimension records for outputs are
     # transferred.
-    for _, dataIds in inserts.items():
-        exporter.saveDataIds(dataIds)
+    for _, refs in inserts.items():
+        exporter.saveDataIds([ref.dataId for ref in refs])
 
     # Look for any defined collection, if not get the defaults
     if collections is None:
@@ -305,7 +306,6 @@ def _setupNewButler(
     # file data stores continue to look at the old location.
     config = Config(butler._config)
     config["root"] = outputLocation.geturl()
-    config["allow_put_of_predefined_dataset"] = True
     config["registry", "db"] = "sqlite:///<butlerRoot>/gen3.sqlite3"
 
     # Remove any namespace that may be set in main registry.
@@ -339,7 +339,7 @@ def _setupNewButler(
 def _import(
     yamlBuffer: io.StringIO,
     newButler: Butler,
-    inserts: DataSetTypeMap,
+    inserts: DataSetTypeRefMap,
     run: Optional[str],
     butlerModifier: Optional[Callable[[Butler], Butler]],
 ) -> Butler:
@@ -359,12 +359,12 @@ def _import(
         newButler = butlerModifier(newButler)
 
     # Register datasets to be produced and insert them into the registry
-    for dsType, dataIds in inserts.items():
+    for dsType, refs in inserts.items():
         # Storage class differences should have already been resolved by calls
         # _validate_dataset_type in _export, resulting in the Registry dataset
         # type whenever that exists.
         newButler.registry.registerDatasetType(dsType)
-        newButler.registry.insertDatasets(dsType, dataIds, run)
+        newButler.registry._importDatasets(refs)
 
     return newButler
 
@@ -390,7 +390,7 @@ def buildExecutionButler(
 
     Parameters
     ----------
-    butler : `lsst.daf.butler.Bulter`
+    butler : `lsst.daf.butler.Butler`
         This is the existing `~lsst.daf.butler.Butler` instance from which
         existing datasets will be exported. This should be the
         `~lsst.daf.butler.Butler` which was used to create any `QuantumGraphs`
@@ -445,6 +445,10 @@ def buildExecutionButler(
     NotADirectoryError
         Raised if specified output URI does not correspond to a directory
     """
+    # Now require that if run is given it must match the graph run.
+    if run and graph.metadata and run != (graph_run := graph.metadata.get("output_run")):
+        raise ValueError(f"The given run, {run!r}, does not match that specified in the graph, {graph_run!r}")
+
     # We know this must refer to a directory.
     outputLocation = ResourcePath(outputLocation, forceDirectory=True)
     if datastoreRoot is not None:
@@ -456,14 +460,7 @@ def buildExecutionButler(
     if not outputLocation.isdir():
         raise NotADirectoryError("The specified output URI does not appear to correspond to a directory")
 
-    # Gather all DatasetTypes from the Python and check any that already exist
-    # in the registry for consistency.  This does not check that all dataset
-    # types here exist, because they might want to register dataset types
-    # later.  It would be nice to also check that, but to that we would need to
-    # be told whether they plan to register dataset types later (DM-30845).
-    dataset_types = PipelineDatasetTypes.fromPipeline(graph.iterTaskGraph(), registry=butler.registry)
-
-    exports, inserts = _accumulate(butler, graph, dataset_types)
+    exports, inserts = _accumulate(butler, graph)
     yamlBuffer = _export(butler, collections, inserts)
 
     newButler = _setupNewButler(butler, outputLocation, dirExists, datastoreRoot)
