@@ -23,7 +23,7 @@ from __future__ import annotations
 __all__ = ["InMemoryDatasetHandle"]
 
 import dataclasses
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from frozendict import frozendict
 from lsst.daf.butler import (
@@ -175,6 +175,9 @@ class InMemoryDatasetHandle:
             # Parameters for derived components are applied against the
             # composite.
             if component in thisStorageClass.derivedComponents:
+                # For some reason MyPy doesn't see the line above as narrowing
+                # 'component' from 'str | None' to 'str'.
+                component = cast(str, component)
                 thisStorageClass.validateParameters(parameters)
 
                 # Process the parameters (hoping this never modified the
