@@ -64,7 +64,7 @@ def get_original_name(mock: str) -> str:
     label that corresponds to the given mock name.
     """
     assert mock.startswith(_NAME_PREFIX)
-    return mock[len(_NAME_PREFIX) :]
+    return mock.removeprefix(_NAME_PREFIX)
 
 
 def is_mock_name(name: str) -> bool:
