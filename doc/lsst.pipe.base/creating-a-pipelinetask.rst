@@ -323,8 +323,8 @@ activator uses this shared name to know that variable should be persisted.
 
 The complete updated example can be found in :ref:`pipeline-appendix-b`.
 
-Optional Datasets
-==================
+Optional and Dynamic Connections
+================================
 Sometimes it is useful to have a task that optionally uses a dataset. In the
 case of the example task you have been building, this might be a background
 model that was previously removed. You may want your task to add back in the
@@ -344,8 +344,8 @@ datasets.
         ...
 
 Now your `PipelineTask` will load the background each time the task is run.
-How do you make this optional? First, add a configuration field in your
-config class to allow the user to specify if it is to be loaded like thus
+How do you make this optional?
+The simplest approach is to add a configuration field in your config class to allow the user to specify if it is to be loaded:
 
 .. code-block:: python
 
@@ -375,26 +375,29 @@ various configuration options.
         ...
 
         def __init__(self, *, config=None):
-            super().__init__(config=config)
+            if not config.doLocalBackground:
+                del self.background
 
-            if config.doLocalBackground is False:
+Your connection class now looks at the value of ``doLocalBackground`` on the ``config`` object and if it is ``False``, removes that attribute.
+Attributes can also be replaced entirely to change (e.g.) their dimensions, storage class, or other properties (connection objects are immutable, so they cannot be modified in place).
+New connection attributes can even be added programmatically in ``__init__``, but these cannot have configurations for their dataset type names added automatically, and are recommended only when it is not possible to define a placeholder in the connections class to be modified later, such as when even the number of connections is dynamic.
+The dimensions of the task itself can also be modified in ``__init__``, where ``self.dimensions`` is a mutable set that can be modified in place or replaced completely.
+
+.. note::
+    In previous versions, connection attributes could not be deleted or modified directly, and the preferred pattern was to instead remove the name of the connection from a special set, after first delegating to `super`:
+
+    .. code-block:: python
+
+        def __init__(self, *, config=None):
+            super().__init__(config=config)
+            if not config.doLocalBackground:
                 self.inputs.remove("background")
 
-Your connection class now looks at the value of ``doLocalBackground`` on the
-``config`` object and if it is ``False``, removes it from the connection
-instances list of input connections. Connection classes keep track of what
-connections are defined in sets. Each set contains the variable names of a
-connection, and the sets themselves are identified by the type of connection
-they contain. In the example you are modifying the set of input connections. The
-names for each of the sets are as follows:
+    This still works, but it is more verbose and less intuitive than the now-recommended attribute-manipulation approach.
+    It is now no longer to delegate to `super` in either case, since the base class `super` does nothing (the first steps of initialization are instead handled by a metaclass).
 
-* ``initInputs``
-* ``initOutputs``
-* ``inputs``
-* ``prerequisiteInputs``
-* ``outputs``
 
-The last step in modifying your task will be to update the ``run`` method to
+The last step in modifying this task will be to update the ``run`` method to
 take into account that a background may or may not be supplied.
 
 .. code-block:: python
@@ -661,6 +664,7 @@ This ensures the values passed will be inside of a list container.
 As a caveat, depending on the exact data that has been ingested/processed,
 there may only be one dataset that matches this combination of dimensions
 (i.e. only one raw was ingested for a visit) but the ``multiple`` flag will
+still ensure that the system passes this one dataset along inside contained
 inside a list. This ensures a uniform api to program against. Make note that
 the connection variable names change to add an `s` on connections marked with
 `multi` to reflect that they will potentially contain multiple values.
