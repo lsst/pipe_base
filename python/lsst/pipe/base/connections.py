@@ -85,24 +85,24 @@ class PipelineTaskConnectionDict(UserDict):
         # Initialize class level variables used to track any declared
         # class level variables that are instances of
         # connectionTypes.BaseConnection
-        self.data["inputs"] = []
-        self.data["prerequisiteInputs"] = []
-        self.data["outputs"] = []
-        self.data["initInputs"] = []
-        self.data["initOutputs"] = []
+        self.data["inputs"] = set()
+        self.data["prerequisiteInputs"] = set()
+        self.data["outputs"] = set()
+        self.data["initInputs"] = set()
+        self.data["initOutputs"] = set()
         self.data["allConnections"] = {}
 
     def __setitem__(self, name: str, value: Any) -> None:
         if isinstance(value, Input):
-            self.data["inputs"].append(name)
+            self.data["inputs"].add(name)
         elif isinstance(value, PrerequisiteInput):
-            self.data["prerequisiteInputs"].append(name)
+            self.data["prerequisiteInputs"].add(name)
         elif isinstance(value, Output):
-            self.data["outputs"].append(name)
+            self.data["outputs"].add(name)
         elif isinstance(value, InitInput):
-            self.data["initInputs"].append(name)
+            self.data["initInputs"].add(name)
         elif isinstance(value, InitOutput):
-            self.data["initOutputs"].append(name)
+            self.data["initOutputs"].add(name)
         # This should not be an elif, as it needs tested for
         # everything that inherits from BaseConnection
         if isinstance(value, BaseConnection):
