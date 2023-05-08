@@ -27,6 +27,7 @@ __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "B
 
 import dataclasses
 from collections.abc import Callable, Iterable, Sequence
+from typing import ClassVar
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
 
@@ -56,8 +57,10 @@ class BaseConnection:
     doc: str = ""
     multiple: bool = False
 
+    _connection_type_set: ClassVar[str]
+
     def __get__(self, inst, klass):
-        """Descriptor method
+        """Descriptor access method.
 
         This is a method used to turn a connection into a descriptor.
         When a connection is added to a connection class, it is a class level
@@ -65,29 +68,21 @@ class BaseConnection:
         instance of the connection class owning this connection, return a
         result specialized for that instance. In the case of connections
         this specifically means names specified in a config instance will
-        be visible instead of the default names for the connection.
+        be visible instead of the default names for the connection, and that
+        removed connections will not be accessible on the instance.
         """
         # If inst is None, this is being accessed by the class and not an
         # instance, return this connection itself
         if inst is None:
             return self
-        # If no object cache exists, create one to track the instances this
-        # connection has been accessed by
-        if not hasattr(inst, "_connectionCache"):
-            object.__setattr__(inst, "_connectionCache", {})
-        # Look up an existing cached instance
-        idSelf = id(self)
-        if idSelf in inst._connectionCache:
-            return inst._connectionCache[idSelf]
-        # Accumulate the parameters that define this connection
-        params = {}
-        for field in dataclasses.fields(self):
-            params[field.name] = getattr(self, field.name)
-        # Get the name override defined by the instance of the connection class
-        params["name"] = inst._nameOverrides[self.varName]
-        # Return a new instance of this connection specialized with the
-        # information provided by the connection class instance
-        return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
+        # Attempt to return the configured connection object from the
+        # connections instance allConnections mapping.
+        try:
+            return inst.allConnections[self.varName]
+        except KeyError:
+            raise AttributeError(
+                f"Connection {self.varName!r} of {klass.__name__} has been removed."
+            ) from None
 
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
@@ -291,6 +286,8 @@ class Input(BaseInput):
 
     deferGraphConstraint: bool = False
 
+    _connection_type_set: ClassVar[str] = "inputs"
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.minimum == 0:
@@ -369,17 +366,19 @@ class PrerequisiteInput(BaseInput):
         [DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]
     ] | None = None
 
+    _connection_type_set: ClassVar[str] = "prerequisiteInputs"
+
 
 @dataclasses.dataclass(frozen=True)
 class Output(DimensionedConnection):
-    pass
+    _connection_type_set: ClassVar[str] = "outputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitInput(BaseConnection):
-    pass
+    _connection_type_set: ClassVar[str] = "initInputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitOutput(BaseConnection):
-    pass
+    _connection_type_set: ClassVar[str] = "initOutputs"
