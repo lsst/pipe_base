@@ -224,11 +224,11 @@ class QuantizedConnection(SimpleNamespace):
     associated `lsst.daf.butler.DatasetRef` objects.
 
     This class maps the names used to define a connection on a
-    PipelineTaskConnectionsClass to the corresponding
+    `PipelineTaskConnections` class to the corresponding
     `lsst.daf.butler.DatasetRef`s provided by a `lsst.daf.butler.Quantum`
     instance.  This will be a quantum of execution based on the graph created
     by examining all the connections defined on the
-    `PipelineTaskConnectionsClass`.
+    `PipelineTaskConnections` class.
     """
 
     def __init__(self, **kwargs):
@@ -308,7 +308,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     ----------
     config : `PipelineTaskConfig`
         A `PipelineTaskConfig` class instance whose class has been configured
-        to use this `PipelineTaskConnectionsClass`
+        to use this `PipelineTaskConnections` class.
 
     See also
     --------
