@@ -37,11 +37,11 @@ __all__ = [
 
 import itertools
 import string
-import typing
 from collections import UserDict
+from collections.abc import Collection, Generator, Iterable, Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, ClassVar, Dict, Iterable, List, Set, Union
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
@@ -56,7 +56,7 @@ from .connectionTypes import (
     PrerequisiteInput,
 )
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from .config import PipelineTaskConfig
 
 
@@ -147,7 +147,7 @@ class PipelineTaskConnectionsMetaclass(type):
                     raise TypeError(
                         "Dimensions must be iterable of dimensions, got str,possibly omitted trailing comma"
                     )
-                if not isinstance(kwargs["dimensions"], typing.Iterable):
+                if not isinstance(kwargs["dimensions"], Iterable):
                     raise TypeError("Dimensions must be iterable of dimensions")
                 dct["dimensions"] = set(kwargs["dimensions"])
             except TypeError as exc:
@@ -236,7 +236,7 @@ class QuantizedConnection(SimpleNamespace):
         # later when iterating over this QuantizedConnection instance
         object.__setattr__(self, "_attributes", set())
 
-    def __setattr__(self, name: str, value: typing.Union[DatasetRef, typing.List[DatasetRef]]) -> None:
+    def __setattr__(self, name: str, value: DatasetRef | list[DatasetRef]) -> None:
         # Capture the attribute name as it is added to this object
         self._attributes.add(name)
         super().__setattr__(name, value)
@@ -250,7 +250,7 @@ class QuantizedConnection(SimpleNamespace):
 
     def __iter__(
         self,
-    ) -> typing.Generator[typing.Tuple[str, typing.Union[DatasetRef, typing.List[DatasetRef]]], None, None]:
+    ) -> Generator[tuple[str, DatasetRef | list[DatasetRef]], None, None]:
         """Make an Iterator for this QuantizedConnection
 
         Iterating over a QuantizedConnection will yield a tuple with the name
@@ -260,7 +260,7 @@ class QuantizedConnection(SimpleNamespace):
         """
         yield from ((name, getattr(self, name)) for name in self._attributes)
 
-    def keys(self) -> typing.Generator[str, None, None]:
+    def keys(self) -> Generator[str, None, None]:
         """Returns an iterator over all the attributes added to a
         QuantizedConnection class
         """
@@ -408,15 +408,15 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
-    dimensions: ClassVar[Set[str]]
+    dimensions: ClassVar[set[str]]
 
-    def __init__(self, *, config: "PipelineTaskConfig" | None = None):
-        self.inputs: Set[str] = set(self.inputs)
-        self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
-        self.outputs: Set[str] = set(self.outputs)
-        self.initInputs: Set[str] = set(self.initInputs)
-        self.initOutputs: Set[str] = set(self.initOutputs)
-        self.allConnections: Dict[str, BaseConnection] = dict(self.allConnections)
+    def __init__(self, *, config: PipelineTaskConfig | None = None):
+        self.inputs: set[str] = set(self.inputs)
+        self.prerequisiteInputs: set[str] = set(self.prerequisiteInputs)
+        self.outputs: set[str] = set(self.outputs)
+        self.initInputs: set[str] = set(self.initInputs)
+        self.initOutputs: set[str] = set(self.initOutputs)
+        self.allConnections: dict[str, BaseConnection] = dict(self.allConnections)
 
         from .config import PipelineTaskConfig  # local import to avoid cycle
 
@@ -446,7 +446,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     def buildDatasetRefs(
         self, quantum: Quantum
-    ) -> typing.Tuple[InputQuantizedConnection, OutputQuantizedConnection]:
+    ) -> tuple[InputQuantizedConnection, OutputQuantizedConnection]:
         """Builds QuantizedConnections corresponding to input Quantum
 
         Parameters
@@ -478,7 +478,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 if attribute.name in quantum.inputs:
                     # if the dataset is marked to load deferred, wrap it in a
                     # DeferredDatasetRef
-                    quantumInputRefs: Union[List[DatasetRef], List[DeferredDatasetRef]]
+                    quantumInputRefs: list[DatasetRef] | list[DeferredDatasetRef]
                     if attribute.deferLoad:
                         quantumInputRefs = [
                             DeferredDatasetRef(datasetRef=ref) for ref in quantum.inputs[attribute.name]
@@ -521,13 +521,13 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     def adjustQuantum(
         self,
-        inputs: typing.Dict[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
-        outputs: typing.Dict[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
+        inputs: dict[str, tuple[BaseInput, Collection[DatasetRef]]],
+        outputs: dict[str, tuple[Output, Collection[DatasetRef]]],
         label: str,
         data_id: DataCoordinate,
-    ) -> typing.Tuple[
-        typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
-        typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
+    ) -> tuple[
+        Mapping[str, tuple[BaseInput, Collection[DatasetRef]]],
+        Mapping[str, tuple[Output, Collection[DatasetRef]]],
     ]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
@@ -655,8 +655,8 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
 
 def iterConnections(
-    connections: PipelineTaskConnections, connectionType: Union[str, Iterable[str]]
-) -> typing.Generator[BaseConnection, None, None]:
+    connections: PipelineTaskConnections, connectionType: str | Iterable[str]
+) -> Generator[BaseConnection, None, None]:
     """Creates an iterator over the selected connections type which yields
     all the defined connections of that type.
 
@@ -692,12 +692,12 @@ class AdjustQuantumHelper:
     `PipelineTaskConnections`.
     """
 
-    inputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
+    inputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
     """Mapping of regular input and prerequisite input datasets, grouped by
     `DatasetType`.
     """
 
-    outputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
+    outputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
     """Mapping of output datasets, grouped by `DatasetType`.
     """
 
@@ -731,8 +731,8 @@ class AdjustQuantumHelper:
         """
         # Translate self's DatasetType-keyed, Quantum-oriented mappings into
         # connection-keyed, PipelineTask-oriented mappings.
-        inputs_by_connection: typing.Dict[str, typing.Tuple[BaseInput, typing.Tuple[DatasetRef, ...]]] = {}
-        outputs_by_connection: typing.Dict[str, typing.Tuple[Output, typing.Tuple[DatasetRef, ...]]] = {}
+        inputs_by_connection: dict[str, tuple[BaseInput, tuple[DatasetRef, ...]]] = {}
+        outputs_by_connection: dict[str, tuple[Output, tuple[DatasetRef, ...]]] = {}
         for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = getattr(connections, name)
             dataset_type_name = connection.name
@@ -755,7 +755,7 @@ class AdjustQuantumHelper:
         # Translate adjustments to DatasetType-keyed, Quantum-oriented form,
         # installing new mappings in self if necessary.
         if adjusted_inputs_by_connection:
-            adjusted_inputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.inputs)
+            adjusted_inputs = NamedKeyDict[DatasetType, list[DatasetRef]](self.inputs)
             for name, (connection, updated_refs) in adjusted_inputs_by_connection.items():
                 dataset_type_name = connection.name
                 if not set(updated_refs).issubset(self.inputs[dataset_type_name]):
@@ -770,7 +770,7 @@ class AdjustQuantumHelper:
         else:
             self.inputs_adjusted = False
         if adjusted_outputs_by_connection:
-            adjusted_outputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.outputs)
+            adjusted_outputs = NamedKeyDict[DatasetType, list[DatasetRef]](self.outputs)
             for name, (connection, updated_refs) in adjusted_outputs_by_connection.items():
                 if not set(updated_refs).issubset(self.outputs[dataset_type_name]):
                     raise RuntimeError(

@@ -26,9 +26,7 @@
 __all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "BaseConnection"]
 
 import dataclasses
-import typing
 from collections.abc import Callable, Iterable, Sequence
-from typing import Optional, Union
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
 
@@ -92,7 +90,7 @@ class BaseConnection:
         return inst._connectionCache.setdefault(idSelf, self.__class__(**params))
 
     def makeDatasetType(
-        self, universe: DimensionUniverse, parentStorageClass: Optional[Union[StorageClass, str]] = None
+        self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
         """Construct a true `DatasetType` instance with normalized dimensions.
 
@@ -142,7 +140,7 @@ class DimensionedConnection(BaseConnection):
         otherwise.
     """
 
-    dimensions: typing.Iterable[str] = ()
+    dimensions: Iterable[str] = ()
     isCalibration: bool = False
 
     def __post_init__(self):
@@ -150,11 +148,11 @@ class DimensionedConnection(BaseConnection):
             raise TypeError(
                 "Dimensions must be iterable of dimensions, got str, possibly omitted trailing comma"
             )
-        if not isinstance(self.dimensions, typing.Iterable):
+        if not isinstance(self.dimensions, Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
 
     def makeDatasetType(
-        self, universe: DimensionUniverse, parentStorageClass: Optional[Union[StorageClass, str]] = None
+        self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
         """Construct a true `DatasetType` instance with normalized dimensions.
 
@@ -367,9 +365,9 @@ class PrerequisiteInput(BaseInput):
 
     """
 
-    lookupFunction: Optional[
-        Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]]
-    ] = None
+    lookupFunction: Callable[
+        [DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]
+    ] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
