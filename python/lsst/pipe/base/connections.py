@@ -41,7 +41,7 @@ from collections import UserDict
 from collections.abc import Collection, Generator, Iterable, Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
@@ -358,7 +358,8 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     defines the unit of processing the run method of a corresponding
     `PipelineTask` will operate on. These dimensions must match dimensions that
     exist in the butler registry which will be used in executing the
-    corresponding `PipelineTask`.
+    corresponding `PipelineTask`.  The dimensions may be also modified in
+    subclass ``__init__`` methods if they need to depend on configuration.
 
     The second parameter is labeled ``defaultTemplates`` and is conditionally
     optional. The name attributes of connections can be specified as python
@@ -408,9 +409,8 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
-    dimensions: ClassVar[set[str]]
-
     def __init__(self, *, config: PipelineTaskConfig | None = None):
+        self.dimensions: set[str] = set(self.dimensions)
         self.inputs: set[str] = set(self.inputs)
         self.prerequisiteInputs: set[str] = set(self.prerequisiteInputs)
         self.outputs: set[str] = set(self.outputs)
