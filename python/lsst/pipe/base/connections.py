@@ -368,7 +368,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     ``defaultTemplates`` argument. This is done by passing a dictionary with
     keys corresponding to a template identifier, and values corresponding to
     the value to use as a default when formatting the string. For example if
-    ``ConnectionClass.calexp.name = '{input}Coadd_calexp'`` then
+    ``ConnectionsClass.calexp.name = '{input}Coadd_calexp'`` then
     ``defaultTemplates`` = {'input': 'deep'}.
 
     Once a `PipelineTaskConnections` class is created, it is used in the
