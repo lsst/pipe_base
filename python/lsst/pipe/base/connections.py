@@ -439,11 +439,6 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
             for name in self.allConnections.keys()
         }
 
-        # connections.name corresponds to a dataset type name, create a reverse
-        # mapping that goes from dataset type name to attribute identifier name
-        # (variable name) on the connection class
-        self._typeNameToVarName = {v: k for k, v in self._nameOverrides.items()}
-
     def buildDatasetRefs(
         self, quantum: Quantum
     ) -> tuple[InputQuantizedConnection, OutputQuantizedConnection]:
