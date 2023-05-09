@@ -744,7 +744,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 # to handle, throw
                 else:
                     raise ValueError(
-                        f"Attribute with name {attributeName} has no counterpoint in input quantum"
+                        f"Attribute with name {attributeName} has no counterpart in input quantum"
                     )
         return inputDatasetRefs, outputDatasetRefs
 
