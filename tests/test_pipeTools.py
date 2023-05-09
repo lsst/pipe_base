@@ -76,6 +76,7 @@ def _makeConfig(inputName, outputName, pipeline, label):
 
 class ExamplePipelineTask(PipelineTask):
     ConfigClass = ExamplePipelineTaskConfig
+    _DefaultName = "examplePipelineTask"
 
 
 def _makePipeline(tasks):

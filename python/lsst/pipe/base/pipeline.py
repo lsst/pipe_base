@@ -27,7 +27,6 @@ __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "L
 
 import copy
 import logging
-import os
 import re
 import urllib.parse
 
@@ -62,9 +61,9 @@ from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
 from . import pipelineIR, pipeTools
+from ._instrument import Instrument as PipeBaseInstrument
 from ._task_metadata import TaskMetadata
 from .config import PipelineTaskConfig
-from .configOverrides import ConfigOverrides
 from .connections import iterConnections
 from .connectionTypes import Input
 from .pipelineTask import PipelineTask
@@ -773,26 +772,17 @@ class Pipeline:
         taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
         taskName = get_full_type_name(taskClass)
         config = taskClass.ConfigClass()
-        overrides = ConfigOverrides()
-        if self._pipelineIR.instrument is not None:
-            overrides.addInstrumentOverride(self._pipelineIR.instrument, taskClass._DefaultName)
-        if taskIR.config is not None:
-            for configIR in (configIr.formatted(self._pipelineIR.parameters) for configIr in taskIR.config):
-                if configIR.dataId is not None:
-                    raise NotImplementedError(
-                        "Specializing a config on a partial data id is not yet "
-                        "supported in Pipeline definition"
-                    )
-                # only apply override if it applies to everything
-                if configIR.dataId is None:
-                    if configIR.file:
-                        for configFile in configIR.file:
-                            overrides.addFileOverride(os.path.expandvars(configFile))
-                    if configIR.python is not None:
-                        overrides.addPythonOverride(configIR.python)
-                    for key, value in configIR.rest.items():
-                        overrides.addValueOverride(key, value)
-        overrides.applyTo(config)
+        instrument: PipeBaseInstrument | None = None
+        if (instrumentName := self._pipelineIR.instrument) is not None:
+            instrument_cls: type = doImportType(instrumentName)
+            instrument = instrument_cls()
+        config.applyConfigOverrides(
+            instrument,
+            getattr(taskClass, "_DefaultName", ""),
+            taskIR.config,
+            self._pipelineIR.parameters,
+            label,
+        )
         return TaskDef(taskName=taskName, config=config, taskClass=taskClass, label=label)
 
     def __iter__(self) -> Generator[TaskDef, None, None]:
