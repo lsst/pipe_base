@@ -138,7 +138,7 @@ connection classes make use of connection types defined in
 a |PipelineTask| will expect to make use of. Each of these connections documents
 what the connection is, what dimensions represent this data product (in this
 case they are the same as the task itself, in the
-:ref:`PipelineTask-processing-multiple-data-sets` section we will cover when
+:ref:`PipelineTask-processing-multiple-datasets` section we will cover when
 they are different), what kind of storage class represents this data type on
 disk, and the name of the data type itself. In this connections class you have
 defined two inputs and an output. The inputs the Task will make use of are
@@ -276,9 +276,9 @@ catalog, and insert the new measurements right into the output catalog.
 
 One thing to note about `~lsst.pipe.base.connectionTypes.InitInput` connections
 is that they do not take any dimensions. This is because the sort of data loaded
-will correspond to a given data-set type produced by a task, and not by
-(possibly multiple) executions of a run method over data-sets that have
-dimensions. In other words, these data-sets are unique to the task itself and
+will correspond to a given dataset type produced by a task, and not by
+(possibly multiple) executions of a run method over datasets that have
+dimensions. In other words, these datasets are unique to the task itself and
 not tied to the unit of work that the task operates on.
 
 In the same way the input schema from some previous stage of processing was
@@ -323,14 +323,14 @@ activator uses this shared name to know that variable should be persisted.
 
 The complete updated example can be found in :ref:`pipeline-appendix-b`.
 
-Optional Datasets
-==================
-Sometimes it is useful to have a task that optionally uses a data-set. In the
+Optional and Dynamic Connections
+================================
+Sometimes it is useful to have a task that optionally uses a dataset. In the
 case of the example task you have been building, this might be a background
 model that was previously removed. You may want your task to add back in the
 background so that it can do a new local background estimate. To start add
-the background data-set to our connection class like you did for your other
-data-sets.
+the background dataset to our connection class like you did for your other
+datasets.
 
 .. code-block:: python
 
@@ -344,8 +344,8 @@ data-sets.
         ...
 
 Now your `PipelineTask` will load the background each time the task is run.
-How do you make this optional? First, add a configuration field in your
-config class to allow the user to specify if it is to be loaded like thus
+How do you make this optional?
+The simplest approach is to add a configuration field in your config class to allow the user to specify if it is to be loaded:
 
 .. code-block:: python
 
@@ -375,26 +375,29 @@ various configuration options.
         ...
 
         def __init__(self, *, config=None):
-            super().__init__(config=config)
+            if not config.doLocalBackground:
+                del self.background
 
-            if config.doLocalBackground is False:
+Your connection class now looks at the value of ``doLocalBackground`` on the ``config`` object and if it is ``False``, removes that attribute.
+Attributes can also be replaced entirely to change (e.g.) their dimensions, storage class, or other properties (connection objects are immutable, so they cannot be modified in place).
+New connection attributes can even be added programmatically in ``__init__``, but these cannot have configurations for their dataset type names added automatically, and are recommended only when it is not possible to define a placeholder in the connections class to be modified later, such as when even the number of connections is dynamic.
+The dimensions of the task itself can also be modified in ``__init__``, where ``self.dimensions`` is a mutable set that can be modified in place or replaced completely.
+
+.. note::
+    In previous versions, connection attributes could not be deleted or modified directly, and the preferred pattern was to instead remove the name of the connection from a special set, after first delegating to `super`:
+
+    .. code-block:: python
+
+        def __init__(self, *, config=None):
+            super().__init__(config=config)
+            if not config.doLocalBackground:
                 self.inputs.remove("background")
 
-Your connection class now looks at the value of ``doLocalBackground`` on the
-``config`` object and if it is ``False``, removes it from the connection
-instances list of input connections. Connection classes keep track of what
-connections are defined in sets. Each set contains the variable names of a
-connection, and the sets themselves are identified by the type of connection
-they contain. In the example you are modifying the set of input connections. The
-names for each of the sets are as follows:
+    This still works, but it is more verbose and less intuitive than the now-recommended attribute-manipulation approach.
+    It is now no longer to delegate to `super` in either case, since the base class `super` does nothing (the first steps of initialization are instead handled by a metaclass).
 
-* ``initInputs``
-* ``initOutputs``
-* ``inputs``
-* ``prerequisiteInputs``
-* ``outputs``
 
-The last step in modifying your task will be to update the ``run`` method to
+The last step in modifying this task will be to update the ``run`` method to
 take into account that a background may or may not be supplied.
 
 .. code-block:: python
@@ -459,7 +462,7 @@ Dataset name configuration and templates
 Now that you have the option to control results of processing with a
 configuration option (turning on and off local background subtraction) it may
 be useful for a user who turns on local background subtraction to change the
-name of the data-set produced so as to tell what the configuration was
+name of the dataset produced so as to tell what the configuration was
 without looking at the persisted configurations. The user may make a
 configuration override file that looks something like the following:
 
@@ -477,25 +480,25 @@ the variable names of the connections, with values of those fields corresponding
 to the name of a connection. So by default ``config.connections.outputCatalog``
 would be ``customAperture`` and ``config.connections.exposure`` would be
 ``calexp`` etc. Assigning to these `~lsst.pex.config.Field`\ s has the effect of
-changing the name of the data-set type defined in the connection.
+changing the name of the dataset type defined in the connection.
 
-In this config file you are changing the name of the data-set type that will
+In this config file you are changing the name of the dataset type that will
 be persisted to include the information that local background subtraction was
-done. It is interesting to note that there are no hard coded data-set type
+done. It is interesting to note that there are no hard coded dataset type
 names that must be adhered to, the user is free to pick any name. The only
 consequence of changing a dataset type name, is that any downstream code
-that is to use the output data-set must have its default name changed to
+that is to use the output dataset must have its default name changed to
 match. As an aside, ``pipetask`` requires that the first time a
-data-set name is used the activator command is run with the
+dataset name is used the activator command is run with the
 `--register-dataset-types` switch. This is to prevent accidental typos
-becoming new data-set types.
+becoming new dataset types.
 
 Looking at the config file, there are two different `~lsst.pex.config.Field`\
 s that are being set to the same value. In the case of other tasks this
 number may even be higher. This leads not only to the issue of config
 overrides needing to potentially be lengthy, but that there may be a typo,
 and the fields will be set inconsistently. |PipelineTask| tasks address this by
-providing a way to template data-set type names.
+providing a way to template dataset type names.
 
 .. code-block:: python
 
@@ -584,9 +587,9 @@ that should only be needed very rarely. As such, they are beyond the scope of
 this tutorial, and are only brought up for completeness sake.
 
 
-.. _PipelineTask-processing-multiple-data-sets:
+.. _PipelineTask-processing-multiple-datasets:
 
-Processing multiple data-sets of the same dataset type
+Processing multiple datasets of the same dataset type
 ------------------------------------------------------
 The dimensions you have used in your task up to this point have specified that
 the unit of processing is to be done on individual detectors on a per-visit
@@ -647,27 +650,27 @@ follows.
         ...
 
 The dimensions of your `ApertureTaskConnections` class are now ``visit`` and
-``band``. However, all of your input data-sets are themselves still defined
+``band``. However, all of your input datasets are themselves still defined
 over each of these dimensions, and also ``detector``. That is to say you get
 one ``calexp`` for ever unique combination of ``exposure``\ 's dimensions.
 Because the tasks's dimensions are a more inclusive set of dimensions (less
 specified) you should expect that for a given unit of processing, there will be
-multiple values for each of the input data-set types along the ``detector``
+multiple values for each of the input dataset types along the ``detector``
 dimension. For example, in LSST there will be 189 detectors in each visit. You
 indicate to the execution framework that you expect there to be a list of
 datasets for each connection by adding ``multiple=True`` to its declaration.
 This ensures the values passed will be inside of a list container.
 
 As a caveat, depending on the exact data that has been ingested/processed,
-there may only be one data-set that matches this combination of dimensions
+there may only be one dataset that matches this combination of dimensions
 (i.e. only one raw was ingested for a visit) but the ``multiple`` flag will
-still ensure that the system passes this one data-set along inside contained
+still ensure that the system passes this one dataset along inside contained
 inside a list. This ensures a uniform api to program against. Make note that
 the connection variable names change to add an `s` on connections marked with
 `multi` to reflect that they will potentially contain multiple values.
 
 With this in mind, go ahead and make the changes needed accommodate multiple
-data-sets in each inputs to the run method. Because this task is inherently
+datasets in each inputs to the run method. Because this task is inherently
 parallel over detectors, these modifications are not the most natural way to
 code this behavior, but are done to demonstrate how to make use of the
 ``multi`` flag for situations that are not so trivial.
@@ -926,7 +929,7 @@ Overriding Task execution
 Overriding the `PipelineTask` method ``runQuantum`` is another advanced tool.
 This method is used in task execution and is supplied identifiers for input
 dataset references to be used in processing, and output dataset references
-for data-sets the middleware frame work expects to be written at the end of
+for datasets the middleware frame work expects to be written at the end of
 processing. The ``runQuantum`` method is responsible for fetching inputs,
 calling the ``run`` method, and writing outputs using the supplied data ids.
 After an introduction to the default implementation of ``runQuantum``, this
@@ -962,7 +965,7 @@ about the unit of data your task will be processing, i.e. the quantum, as well
 as extra functionality attached to it.
 
 `~lsst.daf.butler.DatasetRef`\ s that can be used to interact with specific
-data-sets managed by the butler. See the description of the
+datasets managed by the butler. See the description of the
 `InputQuantizedConnection` type in the section
 :ref:`PipelineTask-processing-altering-what-is-processed` for more
 information on `QuantizedConnection`\ s, noting that
@@ -978,7 +981,7 @@ capabilities of the ``get`` method, put for putting outputs into the butler.
 
 For examples sake, add a `runQuantum` method to your photometry task that
 loads in all the input references one connection at a time. Your task only
-expects to write a single data-set out, so the `runQuantum` will also put
+expects to write a single dataset out, so the `runQuantum` will also put
 with that single `lsst.daf.butler.DatasetRef`.
 
 .. code-block:: python

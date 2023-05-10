@@ -152,7 +152,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
             configConnectionsNamespace["ConnectionsClass"] = connectionsClass
 
             # Create a new config class with the fields defined above
-            Connections = type("Connections", (pexConfig.Config,), configConnectionsNamespace)
+            Connections = type(f"{name}Connections", (pexConfig.Config,), configConnectionsNamespace)
             # add it to the Config class that is currently being declared
             dct["connections"] = pexConfig.ConfigField(
                 dtype=Connections,
@@ -172,6 +172,9 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
         # __init__ on the type metaclass. This is in accordance with python
         # documentation on metaclasses
         super().__init__(name, bases, dct)
+
+    ConnectionsClass: type[PipelineTaskConnections]
+    ConnectionsConfigClass: type[pexConfig.Config]
 
 
 class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
