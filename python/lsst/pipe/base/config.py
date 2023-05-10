@@ -30,8 +30,8 @@ __all__ = ["ResourceConfig", "PipelineTaskConfig"]
 #  Imports of standard modules --
 # -------------------------------
 import os
-from numbers import Number
 from collections.abc import Iterable
+from numbers import Number
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
 
 # -----------------------------
