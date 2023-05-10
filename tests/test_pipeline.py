@@ -129,10 +129,6 @@ class PipelineTestCase(unittest.TestCase):
         expandedPipeline = list(pipeline.toExpandedPipeline())
         self.assertEqual(expandedPipeline[0].config.addend, 14)
 
-        # verify that a non existing parameter cant be overridden
-        with self.assertRaises(ValueError):
-            pipeline.addConfigOverride("parameters", "missingValue", 17)
-
         # verify that parameters does not support files or python overrides
         with self.assertRaises(ValueError):
             pipeline.addConfigFile("parameters", "fakeFile")

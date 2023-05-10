@@ -706,8 +706,6 @@ class Pipeline:
 
     def _addConfigImpl(self, label: str, newConfig: pipelineIR.ConfigIR) -> None:
         if label == "parameters":
-            if newConfig.rest.keys() - self._pipelineIR.parameters.mapping.keys():
-                raise ValueError("Cannot override parameters that are not defined in pipeline")
             self._pipelineIR.parameters.mapping.update(newConfig.rest)
             if newConfig.file:
                 raise ValueError("Setting parameters section with config file is not supported")
