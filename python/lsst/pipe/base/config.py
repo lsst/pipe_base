@@ -29,6 +29,8 @@ __all__ = ["ResourceConfig", "PipelineTaskConfig"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+import os
+from collections.abc import Iterable
 from numbers import Number
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
 
@@ -37,7 +39,10 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
 # -----------------------------
 import lsst.pex.config as pexConfig
 
+from ._instrument import Instrument
+from .configOverrides import ConfigOverrides
 from .connections import PipelineTaskConnections
+from .pipelineIR import ConfigIR, ParametersIR
 
 if TYPE_CHECKING:
     from lsst.pex.config.callStack import StackFrame
@@ -198,6 +203,54 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         optional=False,
         doc="Flag to enable/disable saving of log output for a task, enabled by default.",
     )
+
+    def applyConfigOverrides(
+        self,
+        instrument: Instrument | None,
+        taskDefaultName: str,
+        pipelineConfigs: Iterable[ConfigIR] | None,
+        parameters: ParametersIR,
+        label: str,
+    ) -> None:
+        r"""Apply config overrides to this config instance.
+
+        Parameters
+        ---------
+        instrument : `Instrument` or `None`
+            An instance of the `Instrument` specified in a pipeline.
+            If `None` then the pipeline did not specify and instrument.
+        taskDefaultName : `str`
+            The default name associated with the `Task` class. This
+            may be used with instrumental overrides.
+        pipelineConfigs : `Iterable` of `ConfigIR`
+            An iterable of `ConfigIR` objects that contain overrides
+            to apply to this config instance.
+        parameters : `ParametersIR`
+            Parameters defined in a Pipeline which are used in formatting
+            of config values across multiple `Task`\ s in a pipeline.
+        label : `str`
+            The label associated with this class's Task in a pipeline.
+        """
+        overrides = ConfigOverrides()
+        if instrument is not None:
+            overrides.addInstrumentOverride(instrument, taskDefaultName)
+        if pipelineConfigs is not None:
+            for subConfig in (configIr.formatted(parameters) for configIr in pipelineConfigs):
+                if subConfig.dataId is not None:
+                    raise NotImplementedError(
+                        "Specializing a config on a partial data id is not yet "
+                        "supported in Pipeline definition"
+                    )
+                # only apply override if it applies to everything
+                if subConfig.dataId is None:
+                    if subConfig.file:
+                        for configFile in subConfig.file:
+                            overrides.addFileOverride(os.path.expandvars(configFile))
+                    if subConfig.python is not None:
+                        overrides.addPythonOverride(subConfig.python)
+                    for key, value in subConfig.rest.items():
+                        overrides.addValueOverride(key, value)
+        overrides.applyTo(self)
 
 
 class ResourceConfig(pexConfig.Config):
