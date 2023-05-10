@@ -222,8 +222,8 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
                 reasons = []
                 if missing:
                     reasons.append(
-                        f"DatasetTypes [{', '.join(d.name for d in missing)}] not present in list of known "
-                        f"types: [{', '.join(d.name for d in combined)}]."
+                        "DatasetTypes {'.'.join(missing)} not present in list of known types: "
+                        + ", ".join(d.name for d in combined)
                     )
                 if incompatible:
                     for x, y in incompatible.items():

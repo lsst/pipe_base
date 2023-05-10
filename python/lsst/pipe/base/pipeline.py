@@ -60,7 +60,6 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
-from . import automatic_connection_constants as acc
 from . import pipelineIR, pipeTools
 from ._instrument import Instrument as PipeBaseInstrument
 from ._task_metadata import TaskMetadata
@@ -172,7 +171,7 @@ class TaskDef:
     @property
     def configDatasetName(self) -> str:
         """Name of a dataset type for configuration of this task (`str`)"""
-        return acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=self.label)
+        return self.label + "_config"
 
     @property
     def metadataDatasetName(self) -> Optional[str]:
@@ -198,7 +197,7 @@ class TaskDef:
         name : `str`
             Name of the task's metadata dataset type.
         """
-        return acc.METADATA_OUTPUT_TEMPLATE.format(label=label)
+        return f"{label}_metadata"
 
     @property
     def logOutputDatasetName(self) -> Optional[str]:
@@ -206,7 +205,7 @@ class TaskDef:
         logs are not to be saved (`str`)
         """
         if cast(PipelineTaskConfig, self.config).saveLogOutput:
-            return acc.LOG_OUTPUT_TEMPLATE.format(label=self.label)
+            return self.label + "_log"
         else:
             return None
 
@@ -296,7 +295,7 @@ class Pipeline:
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
+        uri: convertible to `ResourcePath`
             If a string is supplied this should be a URI path that points to a
             pipeline defined in yaml format, either as a direct path to the
             yaml file, or as a directory containing a "pipeline.yaml" file (the
@@ -314,7 +313,7 @@ class Pipeline:
 
         Returns
         -------
-        pipeline : `Pipeline`
+        pipeline: `Pipeline`
             The pipeline loaded from specified location with appropriate (if
             any) subsetting
 

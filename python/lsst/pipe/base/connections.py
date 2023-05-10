@@ -35,21 +35,28 @@ __all__ = [
     "ScalarError",
 ]
 
-import dataclasses
 import itertools
 import string
+import typing
 from collections import UserDict
-from collections.abc import Collection, Generator, Iterable, Mapping, Set
 from dataclasses import dataclass
-from types import MappingProxyType, SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from types import SimpleNamespace
+from typing import Any, ClassVar, Dict, Iterable, List, Set, Union
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
 
 from ._status import NoWorkFound
-from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInput
+from .connectionTypes import (
+    BaseConnection,
+    BaseInput,
+    InitInput,
+    InitOutput,
+    Input,
+    Output,
+    PrerequisiteInput,
+)
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from .config import PipelineTaskConfig
 
 
@@ -78,93 +85,35 @@ class PipelineTaskConnectionDict(UserDict):
         # Initialize class level variables used to track any declared
         # class level variables that are instances of
         # connectionTypes.BaseConnection
-        self.data["inputs"] = set()
-        self.data["prerequisiteInputs"] = set()
-        self.data["outputs"] = set()
-        self.data["initInputs"] = set()
-        self.data["initOutputs"] = set()
+        self.data["inputs"] = []
+        self.data["prerequisiteInputs"] = []
+        self.data["outputs"] = []
+        self.data["initInputs"] = []
+        self.data["initOutputs"] = []
         self.data["allConnections"] = {}
 
     def __setitem__(self, name: str, value: Any) -> None:
+        if isinstance(value, Input):
+            self.data["inputs"].append(name)
+        elif isinstance(value, PrerequisiteInput):
+            self.data["prerequisiteInputs"].append(name)
+        elif isinstance(value, Output):
+            self.data["outputs"].append(name)
+        elif isinstance(value, InitInput):
+            self.data["initInputs"].append(name)
+        elif isinstance(value, InitOutput):
+            self.data["initOutputs"].append(name)
+        # This should not be an elif, as it needs tested for
+        # everything that inherits from BaseConnection
         if isinstance(value, BaseConnection):
-            if super().__contains__(name) or name == "dimensions":
-                # Guard against connections with names like "inputs", since
-                # that's a not implausible mistake for a user to make.  Also
-                # guard against duplicate connection names, which is harder to
-                # imagine but still not impossible. It might seem better to
-                # move this check outside the one for BaseConnection instances,
-                # to guard against other kinds of attributes clobbering things,
-                # but that also disrupts metaclass code that sets this dict,
-                # and I think that's a sufficiently unlikely scenario that
-                # it's not worth fixing.
-                raise AttributeError(f"An attribute with the name {name!r} already exists.")
             object.__setattr__(value, "varName", name)
             self.data["allConnections"][name] = value
-            self.data[value._connection_type_set].add(name)
         # defer to the default behavior
         super().__setitem__(name, value)
 
 
 class PipelineTaskConnectionsMetaclass(type):
     """Metaclass used in the declaration of PipelineTaskConnections classes"""
-
-    # We can annotate these attributes as `collections.abc.Set` to discourage
-    # undesirable modifications in type-checked code, since the internal code
-    # modifying them is in `PipelineTaskConnectionDict` and that doesn't see
-    # these annotations anyway.
-
-    dimensions: Set[str]
-    """Set of dimension names that define the unit of work for this task.
-
-    Required and implied dependencies will automatically be expanded later and
-    need not be provided.
-
-    This is shadowed by an instance-level attribute on
-    `PipelineTaskConnections` instances.
-    """
-
-    inputs: Set[str]
-    """Set with the names of all `~connectionTypes.Input` connection
-    attributes.
-
-    This is updated automatically as class attributes are added.  Note that
-    this attribute is shadowed by an instance-level attribute on
-    `PipelineTaskConnections` instances.
-    """
-
-    prerequisiteInputs: Set[str]
-    """Set with the names of all `~connectionTypes.PrerequisiteInput`
-    connection attributes.
-
-    See `inputs` for additional information.
-    """
-
-    outputs: Set[str]
-    """Set with the names of all `~connectionTypes.Output` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    initInputs: Set[str]
-    """Set with the names of all `~connectionTypes.InitInput` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    initOutputs: Set[str]
-    """Set with the names of all `~connectionTypes.InitOutput` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    allConnections: Mapping[str, BaseConnection]
-    """Mapping containing all connection attributes.
-
-    See `inputs` for additional information.
-    """
 
     def __prepare__(name, bases, **kwargs):  # noqa: 805
         # Create an instance of our special dict to catch and track all
@@ -198,7 +147,7 @@ class PipelineTaskConnectionsMetaclass(type):
                     raise TypeError(
                         "Dimensions must be iterable of dimensions, got str,possibly omitted trailing comma"
                     )
-                if not isinstance(kwargs["dimensions"], Iterable):
+                if not isinstance(kwargs["dimensions"], typing.Iterable):
                     raise TypeError("Dimensions must be iterable of dimensions")
                 dct["dimensions"] = set(kwargs["dimensions"])
             except TypeError as exc:
@@ -269,104 +218,17 @@ class PipelineTaskConnectionsMetaclass(type):
         # documentation on metaclasses
         super().__init__(name, bases, dct)
 
-    def __call__(cls, *, config: PipelineTaskConfig | None = None) -> PipelineTaskConnections:
-        # MyPy appears not to really understand metaclass.__call__ at all, so
-        # we need to tell it to ignore __new__ and __init__ calls here.
-        instance: PipelineTaskConnections = cls.__new__(cls)  # type: ignore
-
-        # Make mutable copies of all set-like class attributes so derived
-        # __init__ implementations can modify them in place.
-        instance.dimensions = set(cls.dimensions)
-        instance.inputs = set(cls.inputs)
-        instance.prerequisiteInputs = set(cls.prerequisiteInputs)
-        instance.outputs = set(cls.outputs)
-        instance.initInputs = set(cls.initInputs)
-        instance.initOutputs = set(cls.initOutputs)
-
-        # Set self.config.  It's a bit strange that we claim to accept None but
-        # really just raise here, but it's not worth changing now.
-        from .config import PipelineTaskConfig  # local import to avoid cycle
-
-        if config is None or not isinstance(config, PipelineTaskConfig):
-            raise ValueError(
-                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
-            )
-        instance.config = config
-
-        # Extract the template names that were defined in the config instance
-        # by looping over the keys of the defaultTemplates dict specified at
-        # class declaration time.
-        templateValues = {
-            name: getattr(config.connections, name) for name in getattr(cls, "defaultTemplates").keys()
-        }
-
-        # We now assemble a mapping of all connection instances keyed by
-        # internal name, applying the configuration and templates to make new
-        # configurations from the class-attribute defaults.  This will be
-        # private, but with a public read-only view.  This mapping is what the
-        # descriptor interface of the class-level attributes will return when
-        # they are accessed on an instance.  This is better than just assigning
-        # regular instance attributes as it makes it so removed connections
-        # cannot be accessed on instances, instead of having access to them
-        # silent fall through to the not-removed class connection instance.
-        instance._allConnections = {}
-        instance.allConnections = MappingProxyType(instance._allConnections)
-        for internal_name, connection in cls.allConnections.items():
-            dataset_type_name = getattr(config.connections, internal_name).format(**templateValues)
-            instance_connection = dataclasses.replace(connection, name=dataset_type_name)
-            instance._allConnections[internal_name] = instance_connection
-
-        # Finally call __init__.  The base class implementation does nothing;
-        # we could have left some of the above implementation there (where it
-        # originated), but putting it here instead makes it hard for derived
-        # class implementors to get things into a weird state by delegating to
-        # super().__init__ in the wrong place, or by forgetting to do that
-        # entirely.
-        instance.__init__(config=config)  # type: ignore
-
-        # Derived-class implementations may have changed the contents of the
-        # various kinds-of-connection sets; update allConnections to have keys
-        # that are a union of all those.  We get values for the new
-        # allConnections from the attributes, since any dynamically added new
-        # ones will not be present in the old allConnections.  Typically those
-        # getattrs will invoke the descriptors and get things from the old
-        # allConnections anyway.  After processing each set we replace it with
-        # a frozenset.
-        updated_all_connections = {}
-        for attrName in ("initInputs", "prerequisiteInputs", "inputs", "initOutputs", "outputs"):
-            updated_connection_names = getattr(instance, attrName)
-            updated_all_connections.update(
-                {name: getattr(instance, name) for name in updated_connection_names}
-            )
-            # Setting these to frozenset is at odds with the type annotation,
-            # but MyPy can't tell because we're using setattr, and we want to
-            # lie to it anyway to get runtime guards against post-__init__
-            # mutation.
-            setattr(instance, attrName, frozenset(updated_connection_names))
-        # Update the existing dict in place, since we already have a view of
-        # that.
-        instance._allConnections.clear()
-        instance._allConnections.update(updated_all_connections)
-
-        # Freeze the connection instance dimensions now.  This at odds with the
-        # type annotation, which says [mutable] `set`, just like the connection
-        # type attributes (e.g. `inputs`, `outputs`, etc.), though MyPy can't
-        # tell with those since we're using setattr for them.
-        instance.dimensions = frozenset(instance.dimensions)  # type: ignore
-
-        return instance
-
 
 class QuantizedConnection(SimpleNamespace):
     """A Namespace to map defined variable names of connections to the
     associated `lsst.daf.butler.DatasetRef` objects.
 
     This class maps the names used to define a connection on a
-    `PipelineTaskConnections` class to the corresponding
+    PipelineTaskConnectionsClass to the corresponding
     `lsst.daf.butler.DatasetRef`s provided by a `lsst.daf.butler.Quantum`
     instance.  This will be a quantum of execution based on the graph created
     by examining all the connections defined on the
-    `PipelineTaskConnections` class.
+    `PipelineTaskConnectionsClass`.
     """
 
     def __init__(self, **kwargs):
@@ -374,7 +236,7 @@ class QuantizedConnection(SimpleNamespace):
         # later when iterating over this QuantizedConnection instance
         object.__setattr__(self, "_attributes", set())
 
-    def __setattr__(self, name: str, value: DatasetRef | list[DatasetRef]) -> None:
+    def __setattr__(self, name: str, value: typing.Union[DatasetRef, typing.List[DatasetRef]]) -> None:
         # Capture the attribute name as it is added to this object
         self._attributes.add(name)
         super().__setattr__(name, value)
@@ -388,7 +250,7 @@ class QuantizedConnection(SimpleNamespace):
 
     def __iter__(
         self,
-    ) -> Generator[tuple[str, DatasetRef | list[DatasetRef]], None, None]:
+    ) -> typing.Generator[typing.Tuple[str, typing.Union[DatasetRef, typing.List[DatasetRef]]], None, None]:
         """Make an Iterator for this QuantizedConnection
 
         Iterating over a QuantizedConnection will yield a tuple with the name
@@ -398,7 +260,7 @@ class QuantizedConnection(SimpleNamespace):
         """
         yield from ((name, getattr(self, name)) for name in self._attributes)
 
-    def keys(self) -> Generator[str, None, None]:
+    def keys(self) -> typing.Generator[str, None, None]:
         """Returns an iterator over all the attributes added to a
         QuantizedConnection class
         """
@@ -446,7 +308,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     ----------
     config : `PipelineTaskConfig`
         A `PipelineTaskConfig` class instance whose class has been configured
-        to use this `PipelineTaskConnections` class.
+        to use this `PipelineTaskConnectionsClass`
 
     See also
     --------
@@ -489,12 +351,6 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
       ``PipelineTask.run`` method must return ``Struct(measCat=X,..)`` where
       X matches the ``storageClass`` type defined on the output connection.
 
-    Attributes of these types can also be created, replaced, or deleted on the
-    `PipelineTaskConnections` instance in the ``__init__`` method, if more than
-    just the name depends on the configuration.  It is preferred to define them
-    in the class when possible (even if configuration may cause the connection
-    to be removed from the instance).
-
     The process of declaring a ``PipelineTaskConnection`` class involves
     parameters passed in the declaration statement.
 
@@ -502,8 +358,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     defines the unit of processing the run method of a corresponding
     `PipelineTask` will operate on. These dimensions must match dimensions that
     exist in the butler registry which will be used in executing the
-    corresponding `PipelineTask`.  The dimensions may be also modified in
-    subclass ``__init__`` methods if they need to depend on configuration.
+    corresponding `PipelineTask`.
 
     The second parameter is labeled ``defaultTemplates`` and is conditionally
     optional. The name attributes of connections can be specified as python
@@ -513,7 +368,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     ``defaultTemplates`` argument. This is done by passing a dictionary with
     keys corresponding to a template identifier, and values corresponding to
     the value to use as a default when formatting the string. For example if
-    ``ConnectionsClass.calexp.name = '{input}Coadd_calexp'`` then
+    ``ConnectionClass.calexp.name = '{input}Coadd_calexp'`` then
     ``defaultTemplates`` = {'input': 'deep'}.
 
     Once a `PipelineTaskConnections` class is created, it is used in the
@@ -553,129 +408,45 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> assert(connections.outputConnection.name == "TotallyDifferent")
     """
 
-    # We annotate these attributes as mutable sets because that's what they are
-    # inside derived ``__init__`` implementations and that's what matters most
-    # After that's done, the metaclass __call__ makes them into frozensets, but
-    # relatively little code interacts with them then, and that code knows not
-    # to try to modify them without having to be told that by mypy.
+    dimensions: ClassVar[Set[str]]
 
-    dimensions: set[str]
-    """Set of dimension names that define the unit of work for this task.
+    def __init__(self, *, config: "PipelineTaskConfig" | None = None):
+        self.inputs: Set[str] = set(self.inputs)
+        self.prerequisiteInputs: Set[str] = set(self.prerequisiteInputs)
+        self.outputs: Set[str] = set(self.outputs)
+        self.initInputs: Set[str] = set(self.initInputs)
+        self.initOutputs: Set[str] = set(self.initOutputs)
+        self.allConnections: Dict[str, BaseConnection] = dict(self.allConnections)
 
-    Required and implied dependencies will automatically be expanded later and
-    need not be provided.
+        from .config import PipelineTaskConfig  # local import to avoid cycle
 
-    This may be replaced or modified in ``__init__`` to change the dimensions
-    of the task.  After ``__init__`` it will be a `frozenset` and may not be
-    replaced.
-    """
+        if config is None or not isinstance(config, PipelineTaskConfig):
+            raise ValueError(
+                "PipelineTaskConnections must be instantiated with a PipelineTaskConfig instance"
+            )
+        self.config = config
+        # Extract the template names that were defined in the config instance
+        # by looping over the keys of the defaultTemplates dict specified at
+        # class declaration time
+        templateValues = {
+            name: getattr(config.connections, name) for name in getattr(self, "defaultTemplates").keys()
+        }
+        # Extract the configured value corresponding to each connection
+        # variable. I.e. for each connection identifier, populate a override
+        # for the connection.name attribute
+        self._nameOverrides = {
+            name: getattr(config.connections, name).format(**templateValues)
+            for name in self.allConnections.keys()
+        }
 
-    inputs: set[str]
-    """Set with the names of all `connectionTypes.Input` connection attributes.
-
-    This is updated automatically as class attributes are added, removed, or
-    replaced in ``__init__``.  Removing entries from this set will cause those
-    connections to be removed after ``__init__`` completes, but this is
-    supported only for backwards compatibility; new code should instead just
-    delete the collection attributed directly.  After ``__init__`` this will be
-    a `frozenset` and may not be replaced.
-    """
-
-    prerequisiteInputs: set[str]
-    """Set with the names of all `~connectionTypes.PrerequisiteInput`
-    connection attributes.
-
-    See `inputs` for additional information.
-    """
-
-    outputs: set[str]
-    """Set with the names of all `~connectionTypes.Output` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    initInputs: set[str]
-    """Set with the names of all `~connectionTypes.InitInput` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    initOutputs: set[str]
-    """Set with the names of all `~connectionTypes.InitOutput` connection
-    attributes.
-
-    See `inputs` for additional information.
-    """
-
-    allConnections: Mapping[str, BaseConnection]
-    """Mapping holding all connection attributes.
-
-    This is a read-only view that is automatically updated when connection
-    attributes are added, removed, or replaced in ``__init__``.  It is also
-    updated after ``__init__`` completes to reflect changes in `inputs`,
-    `prerequisiteInputs`, `outputs`, `initInputs`, and `initOutputs`.
-    """
-
-    _allConnections: dict[str, BaseConnection]
-
-    def __init__(self, *, config: PipelineTaskConfig | None = None):
-        pass
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if isinstance(value, BaseConnection):
-            previous = self._allConnections.get(name)
-            try:
-                getattr(self, value._connection_type_set).add(name)
-            except AttributeError:
-                # Attempt to call add on a frozenset, which is what these sets
-                # are after __init__ is done.
-                raise TypeError("Connections objects are frozen after construction.") from None
-            if previous is not None and value._connection_type_set != previous._connection_type_set:
-                # Connection has changed type, e.g. Input to PrerequisiteInput;
-                # update the sets accordingly. To be extra defensive about
-                # multiple assignments we use the type of the previous instance
-                # instead of assuming that's the same as the type of the self,
-                # which is just the default.  Use discard instead of remove so
-                # manually removing from these sets first is never an error.
-                getattr(self, previous._connection_type_set).discard(name)
-            self._allConnections[name] = value
-            if hasattr(self.__class__, name):
-                # Don't actually set the attribute if this was a connection
-                # declared in the class; in that case we let the descriptor
-                # return the value we just added to allConnections.
-                return
-        # Actually add the attribute.
-        super().__setattr__(name, value)
-
-    def __delattr__(self, name):
-        """Descriptor delete method."""
-        previous = self._allConnections.get(name)
-        if previous is not None:
-            # Delete this connection's name from the appropriate set, which we
-            # have to get from the previous instance instead of assuming it's
-            # the same set that was appropriate for the class-level default.
-            # Use discard instead of remove so manually removing from these
-            # sets first is never an error.
-            try:
-                getattr(self, previous._connection_type_set).discard(name)
-            except AttributeError:
-                # Attempt to call discard on a frozenset, which is what these
-                # sets are after __init__ is done.
-                raise TypeError("Connections objects are frozen after construction.") from None
-            del self._allConnections[name]
-            if hasattr(self.__class__, name):
-                # Don't actually delete the attribute if this was a connection
-                # declared in the class; in that case we let the descriptor
-                # see that it's no longer present in allConnections.
-                return
-        # Actually delete the attribute.
-        super().__delattr__(name)
+        # connections.name corresponds to a dataset type name, create a reverse
+        # mapping that goes from dataset type name to attribute identifier name
+        # (variable name) on the connection class
+        self._typeNameToVarName = {v: k for k, v in self._nameOverrides.items()}
 
     def buildDatasetRefs(
         self, quantum: Quantum
-    ) -> tuple[InputQuantizedConnection, OutputQuantizedConnection]:
+    ) -> typing.Tuple[InputQuantizedConnection, OutputQuantizedConnection]:
         """Builds QuantizedConnections corresponding to input Quantum
 
         Parameters
@@ -707,7 +478,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 if attribute.name in quantum.inputs:
                     # if the dataset is marked to load deferred, wrap it in a
                     # DeferredDatasetRef
-                    quantumInputRefs: list[DatasetRef] | list[DeferredDatasetRef]
+                    quantumInputRefs: Union[List[DatasetRef], List[DeferredDatasetRef]]
                     if attribute.deferLoad:
                         quantumInputRefs = [
                             DeferredDatasetRef(datasetRef=ref) for ref in quantum.inputs[attribute.name]
@@ -744,19 +515,19 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 # to handle, throw
                 else:
                     raise ValueError(
-                        f"Attribute with name {attributeName} has no counterpart in input quantum"
+                        f"Attribute with name {attributeName} has no counterpoint in input quantum"
                     )
         return inputDatasetRefs, outputDatasetRefs
 
     def adjustQuantum(
         self,
-        inputs: dict[str, tuple[BaseInput, Collection[DatasetRef]]],
-        outputs: dict[str, tuple[Output, Collection[DatasetRef]]],
+        inputs: typing.Dict[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
+        outputs: typing.Dict[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
         label: str,
         data_id: DataCoordinate,
-    ) -> tuple[
-        Mapping[str, tuple[BaseInput, Collection[DatasetRef]]],
-        Mapping[str, tuple[Output, Collection[DatasetRef]]],
+    ) -> typing.Tuple[
+        typing.Mapping[str, typing.Tuple[BaseInput, typing.Collection[DatasetRef]]],
+        typing.Mapping[str, typing.Tuple[Output, typing.Collection[DatasetRef]]],
     ]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
         in the `lsst.daf.butler.core.Quantum` during the graph generation stage
@@ -884,8 +655,8 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
 
 def iterConnections(
-    connections: PipelineTaskConnections, connectionType: str | Iterable[str]
-) -> Generator[BaseConnection, None, None]:
+    connections: PipelineTaskConnections, connectionType: Union[str, Iterable[str]]
+) -> typing.Generator[BaseConnection, None, None]:
     """Creates an iterator over the selected connections type which yields
     all the defined connections of that type.
 
@@ -921,12 +692,12 @@ class AdjustQuantumHelper:
     `PipelineTaskConnections`.
     """
 
-    inputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
+    inputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
     """Mapping of regular input and prerequisite input datasets, grouped by
     `DatasetType`.
     """
 
-    outputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
+    outputs: NamedKeyMapping[DatasetType, typing.List[DatasetRef]]
     """Mapping of output datasets, grouped by `DatasetType`.
     """
 
@@ -960,8 +731,8 @@ class AdjustQuantumHelper:
         """
         # Translate self's DatasetType-keyed, Quantum-oriented mappings into
         # connection-keyed, PipelineTask-oriented mappings.
-        inputs_by_connection: dict[str, tuple[BaseInput, tuple[DatasetRef, ...]]] = {}
-        outputs_by_connection: dict[str, tuple[Output, tuple[DatasetRef, ...]]] = {}
+        inputs_by_connection: typing.Dict[str, typing.Tuple[BaseInput, typing.Tuple[DatasetRef, ...]]] = {}
+        outputs_by_connection: typing.Dict[str, typing.Tuple[Output, typing.Tuple[DatasetRef, ...]]] = {}
         for name in itertools.chain(connections.inputs, connections.prerequisiteInputs):
             connection = getattr(connections, name)
             dataset_type_name = connection.name
@@ -984,7 +755,7 @@ class AdjustQuantumHelper:
         # Translate adjustments to DatasetType-keyed, Quantum-oriented form,
         # installing new mappings in self if necessary.
         if adjusted_inputs_by_connection:
-            adjusted_inputs = NamedKeyDict[DatasetType, list[DatasetRef]](self.inputs)
+            adjusted_inputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.inputs)
             for name, (connection, updated_refs) in adjusted_inputs_by_connection.items():
                 dataset_type_name = connection.name
                 if not set(updated_refs).issubset(self.inputs[dataset_type_name]):
@@ -999,7 +770,7 @@ class AdjustQuantumHelper:
         else:
             self.inputs_adjusted = False
         if adjusted_outputs_by_connection:
-            adjusted_outputs = NamedKeyDict[DatasetType, list[DatasetRef]](self.outputs)
+            adjusted_outputs = NamedKeyDict[DatasetType, typing.List[DatasetRef]](self.outputs)
             for name, (connection, updated_refs) in adjusted_outputs_by_connection.items():
                 if not set(updated_refs).issubset(self.outputs[dataset_type_name]):
                     raise RuntimeError(
