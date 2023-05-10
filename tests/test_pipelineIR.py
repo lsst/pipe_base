@@ -633,6 +633,71 @@ class PipelineIRTestCase(unittest.TestCase):
             loaded_pipeline = PipelineIR.from_uri(tf.name)
         self.assertEqual(pipeline, loaded_pipeline)
 
+    def testSorting(self):
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        tasks:
+            modA: test.modA
+            modB:
+              class: test.modB
+        """
+        )
+
+        pipeline = PipelineIR.from_string(pipeline_str)
+        newKeyOrder = ["modB", "modA"]
+        pipeline.reorder_tasks(newKeyOrder)
+        self.assertEqual(list(pipeline.tasks.keys()), newKeyOrder)
+        with self.assertRaises(KeyError):
+            pipeline.reorder_tasks(["modB"])
+        with self.assertRaises(KeyError):
+            pipeline.reorder_tasks(["modD"])
+
+    def testSortingPrimitives(self):
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        parameters:
+          value2: A
+          value1: B
+        tasks:
+          modB: ModuleB
+          modA: ModuleA
+        contracts:
+            - contract: modB.foo == modA.Bar
+              msg: "Test message"
+            - contract: modA.foo == modB.Bar
+              msg: "Test message"
+        subsets:
+            subset2:
+              - modA
+              - modB
+            subset1:
+              subset:
+                - modA
+                - modB
+              description: "A test named subset"
+        """
+        )
+        pipeline = PipelineIR.from_string(pipeline_str)
+        primitives = pipeline.to_primitives()
+
+        # verify subsets
+        self.assertEqual(list(pipeline.labeled_subsets.keys()), ["subset2", "subset1"])
+        self.assertEqual(list(primitives["subsets"].keys()), ["subset1", "subset2"])
+
+        # verify parameters
+        self.assertEqual(list(pipeline.parameters.mapping.keys()), ["value2", "value1"])
+        self.assertEqual(list(primitives["parameters"].keys()), ["value1", "value2"])
+
+        # verify contracts
+        self.assertEqual(
+            [c.contract for c in pipeline.contracts], ["modB.foo == modA.Bar", "modA.foo == modB.Bar"]
+        )
+        self.assertEqual(
+            [c["contract"] for c in primitives["contracts"]], ["modA.foo == modB.Bar", "modB.foo == modA.Bar"]
+        )
+
     def testPipelineYamlLoader(self):
         # Tests that an exception is thrown in the case a key is used multiple
         # times in a given scope within a pipeline file

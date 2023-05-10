@@ -140,8 +140,6 @@ class TestConnectionsClass(unittest.TestCase):
         connections = self.buildTestConnections()
         self.assertEqual(connections.field.name, "fromConfigtest")
         self.assertEqual(connections.field2.name, "field2FromConfig")
-        self.assertEqual(connections.allConnections["field"].name, "fromConfigtest")
-        self.assertEqual(connections.allConnections["field2"].name, "field2FromConfig")
 
     def testBuildDatasetRefs(self):
         connections = self.buildTestConnections()
