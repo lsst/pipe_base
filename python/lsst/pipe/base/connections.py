@@ -87,17 +87,21 @@ class PipelineTaskConnectionDict(UserDict):
 
     def __setitem__(self, name: str, value: Any) -> None:
         if isinstance(value, BaseConnection):
-            if super().__contains__(name) or name == "dimensions":
-                # Guard against connections with names like "inputs", since
-                # that's a not implausible mistake for a user to make.  Also
-                # guard against duplicate connection names, which is harder to
-                # imagine but still not impossible. It might seem better to
-                # move this check outside the one for BaseConnection instances,
-                # to guard against other kinds of attributes clobbering things,
-                # but that also disrupts metaclass code that sets this dict,
-                # and I think that's a sufficiently unlikely scenario that
-                # it's not worth fixing.
-                raise AttributeError(f"An attribute with the name {name!r} already exists.")
+            if name in {
+                "dimensions",
+                "inputs",
+                "prerequisiteInputs",
+                "outputs",
+                "initInputs",
+                "initOutputs",
+                "allConnections",
+            }:
+                # Guard against connections whose names are reserved.
+                raise AttributeError(f"Connection name {name!r} is reserved for internal use.")
+            if (previous := self.data.get(name)) is not None:
+                # Guard against changing the type of an in inherited connection
+                # by first removing it from the set it's current in.
+                self.data[previous._connection_type_set].discard(name)
             object.__setattr__(value, "varName", name)
             self.data["allConnections"][name] = value
             self.data[value._connection_type_set].add(name)
