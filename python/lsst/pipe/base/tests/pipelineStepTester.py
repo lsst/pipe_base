@@ -103,7 +103,13 @@ class PipelineStepTester:
             all_outputs.update(dataset_types.intermediates.asMapping())
 
             for name in dataset_types.inputs.names & all_outputs.keys():
-                test_case.assertTrue(all_outputs[name].is_compatible_with(dataset_types.inputs[name]))
+                test_case.assertTrue(
+                    all_outputs[name].is_compatible_with(dataset_types.inputs[name]),
+                    msg=(
+                        f"dataset type {name} is defined as {dataset_types.inputs[name]} as an "
+                        f"input, but {all_outputs[name]} as an output, and these are not compatible."
+                    ),
+                )
 
             for dataset_type in dataset_types.outputs | dataset_types.intermediates:
                 if not dataset_type.isComponent():
