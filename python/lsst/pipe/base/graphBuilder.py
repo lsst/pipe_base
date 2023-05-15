@@ -269,7 +269,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
     def unpackMultiRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
         """Unpack nested multi-element `DatasetRef` dicts into a new
-        mapping with `DatasetType` keys and `set` of `DatasetRef` values.
+        mapping with `DatasetType` keys and `list` of `DatasetRef` values.
 
         Parameters
         ----------
