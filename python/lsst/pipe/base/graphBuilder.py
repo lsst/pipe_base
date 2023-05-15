@@ -55,12 +55,12 @@ from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
 from lsst.utils import doImportType
 
-from ._datasetQueryConstraints import DatasetQueryConstraintVariant
-from ._status import NoWorkFound
-
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
+from . import automatic_connection_constants as acc
+from ._datasetQueryConstraints import DatasetQueryConstraintVariant
+from ._status import NoWorkFound
 from .connections import AdjustQuantumHelper, iterConnections
 from .graph import QuantumGraph
 from .pipeline import Pipeline, PipelineDatasetTypes, TaskDatasetTypes, TaskDef
@@ -242,12 +242,20 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
             return base
         return base.union(*[datasetType.dimensions for datasetType in self.keys()])
 
-    def unpackSingleRefs(self) -> NamedKeyDict[DatasetType, DatasetRef]:
+    def unpackSingleRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, DatasetRef]:
         """Unpack nested single-element `DatasetRef` dicts into a new
         mapping with `DatasetType` keys and `DatasetRef` values.
 
         This method assumes that each nest contains exactly one item, as is the
         case for all "init" datasets.
+
+        Parameters
+        ----------
+        storage_classes : `dict` [ `str`, `str` ]
+            Mapping from dataset type name to the storage class to use for that
+            dataset type.  These are typically the storage classes declared
+            for a particular task, which may differ rom the data repository
+            definitions.
 
         Returns
         -------
@@ -255,16 +263,21 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
             Dictionary mapping `DatasetType` to `DatasetRef`, with both
             `DatasetType` instances and string names usable as keys.
         """
+        return NamedKeyDict(
+            {datasetType: refs[0] for datasetType, refs in self.unpackMultiRefs(storage_classes).items()}
+        )
 
-        def getOne(refs: dict[DataCoordinate, _RefHolder]) -> DatasetRef:
-            (holder,) = refs.values()
-            return holder.resolved_ref
-
-        return NamedKeyDict({datasetType: getOne(refs) for datasetType, refs in self.items()})
-
-    def unpackMultiRefs(self) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
+    def unpackMultiRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
         """Unpack nested multi-element `DatasetRef` dicts into a new
         mapping with `DatasetType` keys and `set` of `DatasetRef` values.
+
+        Parameters
+        ----------
+        storage_classes : `dict` [ `str`, `str` ]
+            Mapping from dataset type name to the storage class to use for that
+            dataset type.  These are typically the storage classes declared
+            for a particular task, which may differ rom the data repository
+            definitions.
 
         Returns
         -------
@@ -272,12 +285,17 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
             Dictionary mapping `DatasetType` to `list` of `DatasetRef`, with
             both `DatasetType` instances and string names usable as keys.
         """
-        return NamedKeyDict(
-            {
-                datasetType: list(holder.resolved_ref for holder in refs.values())
-                for datasetType, refs in self.items()
-            }
-        )
+        result = {}
+        for dataset_type, holders in self.items():
+            if (
+                override := storage_classes.get(dataset_type.name, dataset_type.storageClass_name)
+            ) != dataset_type.storageClass_name:
+                dataset_type = dataset_type.overrideStorageClass(override)
+                refs = [holder.resolved_ref.overrideStorageClass(override) for holder in holders.values()]
+            else:
+                refs = [holder.resolved_ref for holder in holders.values()]
+            result[dataset_type] = refs
+        return NamedKeyDict(result)
 
     def extract(
         self, datasetType: DatasetType, dataIds: Iterable[DataCoordinate]
@@ -395,8 +413,8 @@ class _QuantumScaffolding:
         quantum : `Quantum`
             An actual `Quantum` instance.
         """
-        allInputs = self.inputs.unpackMultiRefs()
-        allInputs.update(self.prerequisites.unpackMultiRefs())
+        allInputs = self.inputs.unpackMultiRefs(self.task.storage_classes)
+        allInputs.update(self.prerequisites.unpackMultiRefs(self.task.storage_classes))
         # Give the task's Connections class an opportunity to remove some
         # inputs, or complain if they are unacceptable.
         # This will raise if one of the check conditions is not met, which is
@@ -406,9 +424,11 @@ class _QuantumScaffolding:
         # input behave like a regular input; adjustQuantum should only raise
         # NoWorkFound if a regular input is missing, and it shouldn't be
         # possible for us to have generated ``self`` if that's true.
-        helper = AdjustQuantumHelper(inputs=allInputs, outputs=self.outputs.unpackMultiRefs())
+        helper = AdjustQuantumHelper(
+            inputs=allInputs, outputs=self.outputs.unpackMultiRefs(self.task.storage_classes)
+        )
         helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
-        initInputs = self.task.initInputs.unpackSingleRefs()
+        initInputs = self.task.initInputs.unpackSingleRefs(self.task.storage_classes)
         quantum_records: Optional[Mapping[str, DatastoreRecordData]] = None
         if datastore_records is not None:
             quantum_records = {}
@@ -472,6 +492,19 @@ class _TaskScaffolding:
         self.prerequisites = _DatasetDict.fromSubset(datasetTypes.prerequisites, parent.prerequisites)
         self.dataIds: set[DataCoordinate] = set()
         self.quanta = {}
+        self.storage_classes = {
+            connection.name: connection.storageClass
+            for connection in self.taskDef.connections.allConnections.values()
+        }
+        self.storage_classes[
+            acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=self.taskDef.label)
+        ] = acc.CONFIG_INIT_OUTPUT_STORAGE_CLASS
+        self.storage_classes[
+            acc.LOG_OUTPUT_TEMPLATE.format(label=self.taskDef.label)
+        ] = acc.LOG_OUTPUT_STORAGE_CLASS
+        self.storage_classes[
+            acc.METADATA_OUTPUT_TEMPLATE.format(label=self.taskDef.label)
+        ] = acc.METADATA_OUTPUT_STORAGE_CLASS
 
     def __repr__(self) -> str:
         # Default dataclass-injected __repr__ gets caught in an infinite loop
@@ -518,6 +551,10 @@ class _TaskScaffolding:
     this task with that data ID.
     """
 
+    storage_classes: dict[str, str]
+    """Mapping from dataset type name to storage class declared by this task.
+    """
+
     def makeQuantumSet(
         self,
         missing: _DatasetDict,
@@ -548,15 +585,15 @@ class _TaskScaffolding:
                     # should be left in even though some follow up queries
                     # fail. This allows the pruning to start from this quantum
                     # with known issues, and prune other nodes it touches.
-                    inputs = q.inputs.unpackMultiRefs()
-                    inputs.update(q.prerequisites.unpackMultiRefs())
+                    inputs = q.inputs.unpackMultiRefs(self.storage_classes)
+                    inputs.update(q.prerequisites.unpackMultiRefs(self.storage_classes))
                     tmpQuantum = Quantum(
                         taskName=q.task.taskDef.taskName,
                         taskClass=q.task.taskDef.taskClass,
                         dataId=q.dataId,
-                        initInputs=q.task.initInputs.unpackSingleRefs(),
+                        initInputs=q.task.initInputs.unpackSingleRefs(self.storage_classes),
                         inputs=inputs,
-                        outputs=q.outputs.unpackMultiRefs(),
+                        outputs=q.outputs.unpackMultiRefs(self.storage_classes),
                     )
                     outputs.add(tmpQuantum)
                 else:
@@ -1376,8 +1413,14 @@ class _PipelineScaffolding:
             qset = task.makeQuantumSet(missing=self.missing, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
 
-        taskInitInputs = {task.taskDef: task.initInputs.unpackSingleRefs().values() for task in self.tasks}
-        taskInitOutputs = {task.taskDef: task.initOutputs.unpackSingleRefs().values() for task in self.tasks}
+        taskInitInputs = {
+            task.taskDef: task.initInputs.unpackSingleRefs(task.storage_classes).values()
+            for task in self.tasks
+        }
+        taskInitOutputs = {
+            task.taskDef: task.initOutputs.unpackSingleRefs(task.storage_classes).values()
+            for task in self.tasks
+        }
 
         globalInitOutputs: list[DatasetRef] = []
         if self.globalInitOutputs is not None:
