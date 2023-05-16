@@ -62,13 +62,26 @@ def transfer_from_graph(
     qgraph = QuantumGraph.loadUri(graph)
 
     # Collect output refs that could be created by this graph.
-    output_refs: set[DatasetRef] = set(qgraph.globalInitOutputRefs())
+    original_output_refs: set[DatasetRef] = set(qgraph.globalInitOutputRefs())
     for task_def in qgraph.iterTaskGraph():
         if refs := qgraph.initOutputRefs(task_def):
-            output_refs.update(refs)
+            original_output_refs.update(refs)
     for qnode in qgraph:
         for refs in qnode.quantum.outputs.values():
-            output_refs.update(refs)
+            original_output_refs.update(refs)
+
+    # Get data repository definitions from the QuantumGraph; these can have
+    # different storage classes than those in the quanta.
+    dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
+
+    # Convert output_refs to the data repository storage classes, too.
+    output_refs = set()
+    for ref in original_output_refs:
+        internal_dataset_type = dataset_types.get(ref.datasetType.name, ref.datasetType)
+        if internal_dataset_type.storageClass_name != ref.datasetType.storageClass_name:
+            output_refs.add(ref.overrideStorageClass(internal_dataset_type.storageClass_name))
+        else:
+            output_refs.add(ref)
 
     # Make QBB, its config is the same as output Butler.
     qbb = QuantumBackedButler.from_predicted(
@@ -77,6 +90,7 @@ def transfer_from_graph(
         predicted_outputs=[],
         dimensions=qgraph.universe,
         datastore_records={},
+        dataset_types=dataset_types,
     )
 
     dest_butler = Butler(dest, writeable=True)
