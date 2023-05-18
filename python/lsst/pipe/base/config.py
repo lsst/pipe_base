@@ -218,7 +218,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         r"""Apply config overrides to this config instance.
 
         Parameters
-        ---------
+        ----------
         instrument : `Instrument` or `None`
             An instance of the `Instrument` specified in a pipeline.
             If `None` then the pipeline did not specify and instrument.
