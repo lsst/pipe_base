@@ -36,8 +36,10 @@ from typing import Any, cast
 
 import pydantic
 from lsst.daf.butler import (
-    Config,
     DatasetComponent,
+    Formatter,
+    FormatterFactory,
+    LookupKey,
     SerializedDataCoordinate,
     SerializedDatasetRef,
     SerializedDatasetType,
@@ -45,9 +47,8 @@ from lsst.daf.butler import (
     StorageClassDelegate,
     StorageClassFactory,
 )
-from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.daf.butler.formatters.json import JsonFormatter
 from lsst.utils.introspection import get_full_type_name
-
 
 _NAME_PREFIX: str = "_mock_"
 
@@ -274,76 +275,6 @@ class MockStorageClass(StorageClass):
             factory.registerStorageClass(result)
             return result
 
-    @staticmethod
-    def make_formatter_config_dir(
-        root: ResourcePathExpression, factory: StorageClassFactory | None = None
-    ) -> None:
-        """Make a directory suitable for inclusion in the butler config
-        search path.
-
-        Parameters
-        ----------
-        root : convertible to `lsst.resources.ResourcePath`
-            Root directory that will be passed as any element of the
-            ``searchPaths`` list at `~lsst.daf.butler.Butler` construction.
-        factory : `StorageClassFactory`, optional
-            Storage class factory singleton instance.
-
-        Notes
-        -----
-        This adds formatter entries to `~lsst.daf.butler.FileDatastore`
-        configuration for all mock storage classes that have been registered so
-        far.  It does not add the storage class configuration entries
-        themselves, because `MockStorageClass` can't be written out as
-        configuration in the same way that regular storage classes can. So the
-        usual pattern for creating a butler client with storage class mocking
-        is:
-
-        - Register all needed mock storage classes with the singleton
-          `lsst.daf.butler.StorageClassFactory`, which is constructed on first
-          use even when there are no active butler clients.
-
-        - Call this method to create a directory with formatter configuration
-          for those storage classes (within the same process, so singleton
-          state is preserved).
-
-        - Create a butler client while passing ``searchPaths=[root]``, again
-          within the same process.
-
-        There is currently no automatic way to share mock storage class
-        definitions across processes, other than to re-run the code that
-        registers those mock storage classes.
-
-        Note that the data repository may be created any time before the butler
-        client is - the formatter configuration written by this method is
-        expected to be used per-client, not at data repository construction,
-        and nothing about the mocks is persistent within the data repository
-        other than dataset types that use those storage classes (and dataset
-        types with unrecognized storage classes are already carefully handled
-        by the butler).
-        """
-        if factory is None:
-            factory = StorageClassFactory()
-        formatters_config = Config()
-        for storage_class_name in factory.keys():
-            if is_mock_name(storage_class_name):
-                # Have to escape mock storage class names, because
-                # config["_mock_X"] gets reinterpreted as a nested config key,
-                # i.e. config["mock"]["X"].
-                formatters_config["\\" + storage_class_name] = "lsst.daf.butler.formatters.json.JsonFormatter"
-        root = ResourcePath(root, forceDirectory=True)
-        dir_path = root.join("datastores", forceDirectory=True)
-        dir_path.mkdir()
-        formatters_config.dumpToUri(dir_path.join("formatters.yaml"))
-        with dir_path.join("fileDatastore.yaml").open("w") as stream:
-            stream.write(
-                "datastore:\n"
-                "  cls: lsst.daf.butler.datastores.fileDatastore.FileDatastore\n"
-                "  formatters: !include formatters.yaml\n"
-            )
-        with root.join("datastore.yaml").open("w") as stream:
-            stream.write("datastore:\n  cls: lsst.daf.butler.datastores.fileDatastore.FileDatastore\n")
-
     def allComponents(self) -> Mapping[str, MockStorageClass]:
         # Docstring inherited.
         return cast(Mapping[str, MockStorageClass], super().allComponents())
@@ -382,3 +313,70 @@ class MockStorageClass(StorageClass):
                 f"{other_storage_class.original.name!r}."
             )
         return incorrect.make_derived(storageClass=self.name, converted_from=incorrect)
+
+
+def _monkeypatch_daf_butler() -> None:
+    """Replace methods in daf_butler's StorageClassFactory and FormatterFactory
+    classes to automatically recognize mock storage classes.
+
+    This monkey-patching is executed when the `lsst.pipe.base.tests.mocks`
+    package is imported, and it affects all butler instances created before or
+    after that imported.
+    """
+    original_get_storage_class = StorageClassFactory.getStorageClass
+
+    def new_get_storage_class(self: StorageClassFactory, storageClassName: str) -> StorageClass:
+        try:
+            return original_get_storage_class(self, storageClassName)
+        except KeyError:
+            if is_mock_name(storageClassName):
+                return MockStorageClass.get_or_register_mock(get_original_name(storageClassName))
+            raise
+
+    StorageClassFactory.getStorageClass = new_get_storage_class  # type: ignore
+
+    del new_get_storage_class
+
+    original_get_formatter_class_with_match = FormatterFactory.getFormatterClassWithMatch
+
+    def new_get_formatter_class_with_match(
+        self: FormatterFactory, entity: Any
+    ) -> tuple[LookupKey, type[Formatter], dict[str, Any]]:
+        try:
+            return original_get_formatter_class_with_match(self, entity)
+        except KeyError:
+            lookup_keys = (LookupKey(name=entity),) if isinstance(entity, str) else entity._lookupNames()
+            for key in lookup_keys:
+                # This matches mock dataset type names before mock storage
+                # classes, and it would even match some regular dataset types
+                # that are automatic connections (logs, configs, metadata) of
+                # mocked tasks.  The latter would be a problem, except that
+                # those should have already matched in the try block above.
+                if is_mock_name(key.name):
+                    return (key, JsonFormatter, {})
+            raise
+
+    FormatterFactory.getFormatterClassWithMatch = new_get_formatter_class_with_match  # type: ignore
+
+    del new_get_formatter_class_with_match
+
+    original_get_formatter_with_match = FormatterFactory.getFormatterWithMatch
+
+    def new_get_formatter_with_match(
+        self: FormatterFactory, entity: Any, *args: Any, **kwargs: Any
+    ) -> tuple[LookupKey, Formatter]:
+        try:
+            return original_get_formatter_with_match(self, entity, *args, **kwargs)
+        except KeyError:
+            lookup_keys = (LookupKey(name=entity),) if isinstance(entity, str) else entity._lookupNames()
+            for key in lookup_keys:
+                if is_mock_name(key.name):
+                    return (key, JsonFormatter(*args, **kwargs))
+            raise
+
+    FormatterFactory.getFormatterWithMatch = new_get_formatter_with_match  # type: ignore
+
+    del new_get_formatter_with_match
+
+
+_monkeypatch_daf_butler()
