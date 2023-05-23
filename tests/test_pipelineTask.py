@@ -41,8 +41,6 @@ class ButlerMock:
         self.registry = SimpleNamespace(dimensions=DimensionUniverse())
 
     def get(self, ref: DatasetRef) -> Any:
-        # Requires resolved ref.
-        assert ref.id is not None
         dsdata = self.datasets.get(ref.datasetType.name)
         if dsdata:
             return dsdata.get(ref.dataId)
