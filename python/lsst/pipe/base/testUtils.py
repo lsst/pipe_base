@@ -303,7 +303,7 @@ def runTestQuantum(
         If ``mockRun`` is set, the mock that replaced ``run``. This object can
         be queried for the arguments ``runQuantum`` passed to ``run``.
     """
-    butlerQc = ButlerQuantumContext.from_full(butler, quantum)
+    butlerQc = ButlerQuantumContext(butler, quantum)
     # This is a type ignore, because `connections` is a dynamic class, but
     # it for sure will have this property
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore

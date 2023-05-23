@@ -159,10 +159,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         # run task on each quanta
         checked_get = False
         for quantum in quanta:
-            if full_butler:
-                butlerQC = pipeBase.ButlerQuantumContext.from_full(butler, quantum)
-            else:
-                butlerQC = pipeBase.ButlerQuantumContext.from_limited(butler, quantum)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
             inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
             task.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -239,19 +236,13 @@ class PipelineTaskTestCase(unittest.TestCase):
             ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, ref)
 
-        butler_qc_factory = (
-            pipeBase.ButlerQuantumContext.from_full
-            if full_butler
-            else pipeBase.ButlerQuantumContext.from_limited
-        )
-
         # run task on each quanta
         for quantum in quanta1:
-            butlerQC = butler_qc_factory(butler, quantum)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
             inputRefs, outputRefs = connections1.buildDatasetRefs(quantum)
             task1.runQuantum(butlerQC, inputRefs, outputRefs)
         for quantum in quanta2:
-            butlerQC = butler_qc_factory(butler, quantum)
+            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
             inputRefs, outputRefs = connections2.buildDatasetRefs(quantum)
             task2.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -287,7 +278,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         ref = quantum.inputs[dstype0.name][0]
         butler.put(100, ref)
 
-        butlerQC = pipeBase.ButlerQuantumContext.from_full(butler, quantum)
+        butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
 
         # Pass ref as single argument or a list.
         obj = butlerQC.get(ref)
