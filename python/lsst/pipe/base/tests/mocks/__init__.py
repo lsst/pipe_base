@@ -19,6 +19,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""A system for replacing the tasks in a pipeline with mocks that just read and
+write trivial datasets.
+
+See :ref:`testing-pipelines-with-mocks` for details.
+"""
+
 from ._data_id_match import *
 from ._pipeline_task import *
 from ._storage_class import *
