@@ -434,7 +434,7 @@ class _QuantumScaffolding:
             quantum_records = {}
             input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
             input_refs += list(initInputs.values())
-            input_ids = set(ref.id for ref in input_refs if ref.id is not None)
+            input_ids = set(ref.id for ref in input_refs)
             for datastore_name, records in datastore_records.items():
                 matching_records = records.subset(input_ids)
                 if matching_records is not None:
@@ -621,7 +621,6 @@ class _DatasetIdMaker:
             if key not in self.resolved:
                 raise ValueError(f"Composite dataset is missing from cache: {parent_type} {data_id}")
             parent_ref = self.resolved[key]
-            assert parent_ref.id is not None and parent_ref.run is not None, "parent ref must be resolved"
             return DatasetRef(dataset_type, data_id, id=parent_ref.id, run=parent_ref.run, conform=False)
 
         key = dataset_type, data_id

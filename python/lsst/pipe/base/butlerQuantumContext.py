@@ -28,7 +28,7 @@ __all__ = ("ButlerQuantumContext",)
 
 from typing import Any, List, Optional, Sequence, Union
 
-from lsst.daf.butler import Butler, DatasetRef, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
@@ -41,6 +41,16 @@ _LOG = getLogger(__name__)
 class ButlerQuantumContext:
     """A Butler-like class specialized for a single quantum.
 
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.LimitedButler`
+        Butler object from/to which datasets will be get/put.
+    quantum : `lsst.daf.butler.core.Quantum`
+        Quantum object that describes the datasets which will be get/put by a
+        single execution of this node in the pipeline graph.
+
+    Notes
+    -----
     A ButlerQuantumContext class wraps a standard butler interface and
     specializes it to the context of a given quantum. What this means
     in practice is that the only gets and puts that this class allows
@@ -50,28 +60,9 @@ class ButlerQuantumContext:
     what was actually get and put. This is in contrast to what the
     preflight expects to be get and put by looking at the graph before
     execution.
-
-    Do not use constructor directly, instead use `from_full` or `from_limited`
-    factory methods.
-
-    Notes
-    -----
-    `ButlerQuantumContext` instances are backed by either
-    `lsst.daf.butler.Butler` or `lsst.daf.butler.LimitedButler`. When a
-    limited butler is used then quantum has to contain dataset references
-    that are completely resolved (usually when graph is constructed by
-    GraphBuilder).
-
-    When instances are backed by full butler, the quantum graph does not have
-    to resolve output or intermediate references, but input references of each
-    quantum have to be resolved before they can be used by this class. When
-    executing such graphs, intermediate references used as input to some
-    Quantum are resolved by ``lsst.ctrl.mpexec.SingleQuantumExecutor``. If
-    output references of a quanta are resolved, they will be unresolved when
-    full butler is used.
     """
 
-    def __init__(self, *, limited: LimitedButler, quantum: Quantum, butler: Butler | None = None):
+    def __init__(self, butler: LimitedButler, quantum: Quantum):
         self.quantum = quantum
         self.allInputs = set()
         self.allOutputs = set()
@@ -81,49 +72,7 @@ class ButlerQuantumContext:
         for refs in quantum.outputs.values():
             for ref in refs:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
-        self.__full_butler = butler
-        self.__butler = limited
-
-    @classmethod
-    def from_full(cls, butler: Butler, quantum: Quantum) -> ButlerQuantumContext:
-        """Make ButlerQuantumContext backed by `lsst.daf.butler.Butler`.
-
-        Parameters
-        ----------
-        butler : `lsst.daf.butler.Butler`
-            Butler object from/to which datasets will be get/put.
-        quantum : `lsst.daf.butler.core.Quantum`
-            Quantum object that describes the datasets which will be get/put by
-            a single execution of this node in the pipeline graph. All input
-            dataset references must be resolved in this Quantum. Output
-            references can be resolved, but they will be unresolved.
-
-        Returns
-        -------
-        butlerQC : `ButlerQuantumContext`
-            Instance of butler wrapper.
-        """
-        return ButlerQuantumContext(limited=butler, butler=butler, quantum=quantum)
-
-    @classmethod
-    def from_limited(cls, butler: LimitedButler, quantum: Quantum) -> ButlerQuantumContext:
-        """Make ButlerQuantumContext backed by `lsst.daf.butler.LimitedButler`.
-
-        Parameters
-        ----------
-        butler : `lsst.daf.butler.LimitedButler`
-            Butler object from/to which datasets will be get/put.
-        quantum : `lsst.daf.butler.core.Quantum`
-            Quantum object that describes the datasets which will be get/put by
-            a single execution of this node in the pipeline graph. Both input
-            and output dataset references must be resolved in this Quantum.
-
-        Returns
-        -------
-        butlerQC : `ButlerQuantumContext`
-            Instance of butler wrapper.
-        """
-        return ButlerQuantumContext(limited=butler, quantum=quantum)
+        self.__butler = butler
 
     def _get(self, ref: Optional[Union[DeferredDatasetRef, DatasetRef]]) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
@@ -140,10 +89,7 @@ class ButlerQuantumContext:
     def _put(self, value: Any, ref: DatasetRef) -> None:
         """Store data in butler"""
         self._checkMembership(ref, self.allOutputs)
-        if self.__full_butler is not None:
-            self.__full_butler.put(value, ref)
-        else:
-            self.__butler.put(value, ref)
+        self.__butler.put(value, ref)
 
     def get(
         self,

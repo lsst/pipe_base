@@ -164,12 +164,9 @@ def _accumulate(
                 if not isinstance(refs, list):
                     refs = [refs]
                 for ref in refs:
-                    if ref.id is not None:
-                        # We could check existence of individual components,
-                        # but it should be less work to check their parent.
-                        if ref.isComponent():
-                            ref = ref.makeCompositeRef()
-                        check_refs.add(ref)
+                    if ref.isComponent():
+                        ref = ref.makeCompositeRef()
+                    check_refs.add(ref)
     exist_map = butler.datastore.knows_these(check_refs)
     existing_ids = set(ref.id for ref, exists in exist_map.items() if exists)
     del exist_map
@@ -189,7 +186,7 @@ def _accumulate(
                 for ref in refs:
                     # Component dataset ID is the same as its parent ID, so
                     # checking component in existing_ids works OK.
-                    if ref.id is not None and ref.id in existing_ids:
+                    if ref.id in existing_ids:
                         # If this is a component we want the composite to be
                         # exported.
                         if ref.isComponent():
@@ -351,7 +348,7 @@ def _import(
     # because execution butler is assumed to be able to see all the file
     # locations that the main datastore can see. "split" supports some
     # absolute URIs in the datastore.
-    newButler.import_(filename=yamlBuffer, format="yaml", reuseIds=True, transfer="split")
+    newButler.import_(filename=yamlBuffer, format="yaml", transfer="split")
 
     # If there is modifier callable, run it to make necessary updates
     # to the new butler.

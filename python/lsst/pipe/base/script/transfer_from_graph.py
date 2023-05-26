@@ -86,7 +86,7 @@ def transfer_from_graph(
     # Make QBB, its config is the same as output Butler.
     qbb = QuantumBackedButler.from_predicted(
         config=dest,
-        predicted_inputs=[ref.getCheckedId() for ref in output_refs],
+        predicted_inputs=[ref.id for ref in output_refs],
         predicted_outputs=[],
         dimensions=qgraph.universe,
         datastore_records={},
