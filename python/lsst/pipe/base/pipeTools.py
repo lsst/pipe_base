@@ -31,7 +31,7 @@ __all__ = ["isPipelineOrdered", "orderPipeline"]
 #  Imports of standard modules --
 # -------------------------------
 import itertools
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 # -----------------------------
@@ -80,15 +80,15 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
 
     Parameters
     ----------
-    pipeline : `pipe.base.Pipeline`
+    pipeline : `pipe.base.Pipeline` or `collections.abc.Iterable` [ `TaskDef` ]
         Pipeline description.
     taskFactory: `pipe.base.TaskFactory`, optional
-        Instance of an object which knows how to import task classes. It is
-        only used if pipeline task definitions do not define task classes.
+        Ignored; present only for backwards compatibility.
 
     Returns
     -------
-    True for correctly ordered pipeline, False otherwise.
+    is_ordered : `bool`
+        True for correctly ordered pipeline, False otherwise.
 
     Raises
     ------
@@ -96,8 +96,6 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
         Raised when task class cannot be imported.
     DuplicateOutputError
         Raised when there is more than one producer for a dataset type.
-    MissingTaskFactoryError
-        Raised when TaskFactory is needed but not provided.
     """
     # Build a map of DatasetType name to producer's index in a pipeline
     producerIndex = {}
@@ -123,27 +121,27 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
     return True
 
 
-def orderPipeline(pipeline: list[TaskDef]) -> list[TaskDef]:
+def orderPipeline(pipeline: Sequence[TaskDef]) -> list[TaskDef]:
     """Re-order tasks in pipeline to satisfy data dependencies.
 
     When possible new ordering keeps original relative order of the tasks.
 
     Parameters
     ----------
-    pipeline : `list` of `pipe.base.TaskDef`
+    pipeline : `pipe.base.Pipeline` or `collections.abc.Iterable` [ `TaskDef` ]
         Pipeline description.
 
     Returns
     -------
-    Correctly ordered pipeline (`list` of `pipe.base.TaskDef` objects).
+    ordered : `list` [ `TaskDef` ]
+        Correctly ordered pipeline.
 
     Raises
     ------
-    `DuplicateOutputError` is raised when there is more than one producer for a
-    dataset type.
-    `PipelineDataCycleError` is also raised when pipeline has dependency
-    cycles.  `MissingTaskFactoryError` is raised when `TaskFactory` is needed
-    but not provided.
+    DuplicateOutputError
+        Raised when there is more than one producer for a dataset type.
+    PipelineDataCycleError
+        Raised when the pipeline has dependency cycles.
     """
     # This is a modified version of Kahn's algorithm that preserves order
 
