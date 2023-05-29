@@ -58,7 +58,7 @@ from . import pipelineIR, pipeTools
 from ._instrument import Instrument as PipeBaseInstrument
 from ._task_metadata import TaskMetadata
 from .config import PipelineTaskConfig
-from .connections import iterConnections
+from .connections import PipelineTaskConnections, iterConnections
 from .connectionTypes import Input
 from .pipelineTask import PipelineTask
 from .task import _TASK_METADATA_TYPE
@@ -127,6 +127,11 @@ class TaskDef:
         Task label, usually a short string unique in a pipeline.  If not
         provided, ``taskClass`` must be, and ``taskClass._DefaultName`` will
         be used.
+    connections : `PipelineTaskConnections`, optional
+        Object that describes the dataset types used by the task.  If not
+        provided, one will be constructed from the given configuration.  If
+        provided, it is assumed that ``config`` has already been validated
+        and frozen.
     """
 
     def __init__(
@@ -135,6 +140,7 @@ class TaskDef:
         config: PipelineTaskConfig | None = None,
         taskClass: type[PipelineTask] | None = None,
         label: str | None = None,
+        connections: PipelineTaskConnections | None = None,
     ):
         if taskName is None:
             if taskClass is None:
@@ -151,16 +157,20 @@ class TaskDef:
                 raise ValueError("`taskClass` must be provided if `label` is not.")
             label = taskClass._DefaultName
         self.taskName = taskName
-        try:
-            config.validate()
-        except Exception:
-            _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
-            raise
-        config.freeze()
+        if connections is None:
+            # If we don't have connections yet, assume the config hasn't been
+            # validated yet.
+            try:
+                config.validate()
+            except Exception:
+                _LOG.error("Configuration validation failed for task %s (%s)", label, taskName)
+                raise
+            config.freeze()
+            connections = config.connections.ConnectionsClass(config=config)
         self.config = config
         self.taskClass = taskClass
         self.label = label
-        self.connections = config.connections.ConnectionsClass(config=config)
+        self.connections = connections
 
     @property
     def configDatasetName(self) -> str:
