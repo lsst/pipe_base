@@ -431,12 +431,12 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
         # Can we use runTestQuantum to verify that task.run got called with
         # correct inputs/outputs?
-        self.assertTrue(self.butler.datasetExists("VisitOutA", dataId))
+        self.assertTrue(self.butler.exists("VisitOutA", dataId))
         self.assertEqual(
             self.butler.get("VisitOutA", dataId),
             butlerTests.MetricsExample(data=(data["VisitA"] + data["VisitB"])),
         )
-        self.assertTrue(self.butler.datasetExists("VisitOutB", dataId))
+        self.assertTrue(self.butler.exists("VisitOutB", dataId))
         self.assertEqual(
             self.butler.get("VisitOutB", dataId),
             butlerTests.MetricsExample(data=(data["VisitA"] * max(data["VisitB"]))),
@@ -465,7 +465,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
         inB = data["PatchB"][0][1]
         for dataset in data["PatchA"]:
             patchId = dataset[0]
-            self.assertTrue(self.butler.datasetExists("PatchOut", patchId))
+            self.assertTrue(self.butler.exists("PatchOut", patchId))
             self.assertEqual(
                 self.butler.get("PatchOut", patchId), butlerTests.MetricsExample(data=(dataset[1] + inB))
             )
