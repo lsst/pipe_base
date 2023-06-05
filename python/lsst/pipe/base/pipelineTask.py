@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from lsst.utils.logging import LsstLogAdapter
 
     from .butlerQuantumContext import ButlerQuantumContext
-    from .config import PipelineTaskConfig, ResourceConfig
+    from .config import PipelineTaskConfig
     from .struct import Struct
 
 
@@ -179,13 +179,3 @@ class PipelineTask(Task):
         inputs = butlerQC.get(inputRefs)
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
-
-    def getResourceConfig(self) -> Optional[ResourceConfig]:
-        """Return resource configuration for this task.
-
-        Returns
-        -------
-        Object of type `~config.ResourceConfig` or ``None`` if resource
-        configuration is not defined for this task.
-        """
-        return getattr(self.config, "resources", None)
