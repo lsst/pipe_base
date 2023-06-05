@@ -175,14 +175,9 @@ class TaskDef:
         return acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=self.label)
 
     @property
-    def metadataDatasetName(self) -> Optional[str]:
-        """Name of a dataset type for metadata of this task, `None` if
-        metadata is not to be saved (`str`)
-        """
-        if self.config.saveMetadata:
-            return self.makeMetadataDatasetName(self.label)
-        else:
-            return None
+    def metadataDatasetName(self) -> str:
+        """Name of a dataset type for metadata of this task (`str`)"""
+        return self.makeMetadataDatasetName(self.label)
 
     @classmethod
     def makeMetadataDatasetName(cls, label: str) -> str:
@@ -1067,22 +1062,22 @@ class TaskDatasetTypes:
 
         # optionally add output dataset for metadata
         outputs = makeDatasetTypesSet("outputs", is_input=False, freeze=False)
-        if taskDef.metadataDatasetName is not None:
-            # Metadata is supposed to be of the TaskMetadata type, its
-            # dimensions correspond to a task quantum.
-            dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
 
-            # Allow the storage class definition to be read from the existing
-            # dataset type definition if present.
-            try:
-                current = registry.getDatasetType(taskDef.metadataDatasetName)
-            except KeyError:
-                # No previous definition so use the default.
-                storageClass = "TaskMetadata" if _TASK_METADATA_TYPE is TaskMetadata else "PropertySet"
-            else:
-                storageClass = current.storageClass.name
+        # Metadata is supposed to be of the TaskMetadata type, its dimensions
+        # correspond to a task quantum.
+        dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
 
-            outputs.update({DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)})
+        # Allow the storage class definition to be read from the existing
+        # dataset type definition if present.
+        try:
+            current = registry.getDatasetType(taskDef.metadataDatasetName)
+        except KeyError:
+            # No previous definition so use the default.
+            storageClass = "TaskMetadata" if _TASK_METADATA_TYPE is TaskMetadata else "PropertySet"
+        else:
+            storageClass = current.storageClass.name
+        outputs.update({DatasetType(taskDef.metadataDatasetName, dimensions, storageClass)})
+
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.
             dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
