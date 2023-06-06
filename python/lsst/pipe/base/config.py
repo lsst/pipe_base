@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-__all__ = ["ResourceConfig", "PipelineTaskConfig"]
+__all__ = ["PipelineTaskConfig"]
 
 # -------------------------------
 #  Imports of standard modules --
@@ -200,6 +200,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         default=True,
         optional=False,
         doc="Flag to enable/disable metadata saving for a task, enabled by default.",
+        deprecated="This field is deprecated and will be removed after v26.",
     )
     saveLogOutput = pexConfig.Field[bool](
         default=True,
@@ -254,26 +255,3 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
                     for key, value in subConfig.rest.items():
                         overrides.addValueOverride(key, value)
         overrides.applyTo(self)
-
-
-class ResourceConfig(pexConfig.Config):
-    """Configuration for resource requirements.
-
-    This configuration class will be used by some activators to estimate
-    resource use by pipeline. Additionally some tasks could use it to adjust
-    their resource use (e.g. reduce the number of threads).
-
-    For some resources their limit can be estimated by corresponding task,
-    in that case task could set the field value. For many fields defined in
-    this class their associated resource used by a task will depend on the
-    size of the data and is not known in advance. For these resources their
-    value will be configured through overrides based on some external
-    estimates.
-    """
-
-    minMemoryMB = pexConfig.Field[int](
-        default=None,
-        optional=True,
-        doc="Minimal memory needed by task, can be None if estimate is unknown.",
-    )
-    minNumCores = pexConfig.Field[int](default=1, doc="Minimal number of cores needed by task.")
