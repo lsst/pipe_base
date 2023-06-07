@@ -31,14 +31,13 @@ from typing import TYPE_CHECKING, Any, cast, final
 
 from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
-from lsst.pex.config import RegistryField
+from lsst.pex.config import Config, RegistryField
 from lsst.utils import doImportType
 
 from ._observation_dimension_packer import observation_packer_registry
 
 if TYPE_CHECKING:
     from lsst.daf.butler import Registry
-    from lsst.pex.config import Config
 
 
 class Instrument(metaclass=ABCMeta):
@@ -623,6 +622,53 @@ class Instrument(metaclass=ABCMeta):
         return observation_packer_registry.makeField(
             doc, default=None, optional=True, on_none=Instrument._make_default_dimension_packer_dispatch
         )
+
+    @staticmethod
+    @final
+    def make_default_dimension_packer(
+        data_id: DataCoordinate, is_exposure: bool | None = None
+    ) -> DimensionPacker:
+        """Return the default dimension packer for the given data ID.
+
+        Parameters
+        ----------
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID that identifies at least the ``instrument`` dimension. Must
+            have dimension records attached.
+        is_exposure : `bool`, optional
+            If `False`, construct a packer for visit+detector data IDs.  If
+            `True`, construct a packer for exposure+detector data IDs.  If
+            `None`, this is determined based on whether ``visit`` or
+            ``exposure`` is present in ``data_id``, with ``visit`` checked
+            first and hence used if both are present.
+
+        Returns
+        -------
+        packer : `lsst.daf.butler.DimensionPacker`
+            Object that packs {visit, detector} or {exposure, detector} data
+            IDs into integers.
+
+        Notes
+        -----
+        When using a dimension packer in task code, using
+        `make_dimension_packer_config_field` to make the packing algorithm
+        configurable is preferred over this method.
+
+        When obtaining a dimension packer to unpack IDs that were packed by
+        task code, it is similarly preferable to load the configuration for
+        that task and the existing packer configuration field there, to ensure
+        any config overrides are respected.  That is sometimes quite difficult,
+        however, and since config overrides for dimension packers are expected
+        to be exceedingly rare, using this simpler method will almost always
+        work.
+        """
+
+        class _DummyConfig(Config):
+            packer = Instrument.make_dimension_packer_config_field()
+
+        config = _DummyConfig()
+
+        return config.packer.apply(data_id, is_exposure=is_exposure)
 
     @staticmethod
     @final

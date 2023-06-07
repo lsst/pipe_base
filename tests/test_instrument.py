@@ -208,8 +208,14 @@ class InstrumentTestCase(unittest.TestCase):
             # Note that we don't need to pass any more than the instrument in
             # the data ID yet, because we're just constructing packers, not
             # calling their pack method.
-            visit_packers=[config.packer.apply(instrument_data_id, is_exposure=False)],
-            exposure_packers=[config.packer.apply(instrument_data_id, is_exposure=True)],
+            visit_packers=[
+                config.packer.apply(instrument_data_id, is_exposure=False),
+                Instrument.make_default_dimension_packer(instrument_data_id, is_exposure=False),
+            ],
+            exposure_packers=[
+                config.packer.apply(instrument_data_id, is_exposure=True),
+                Instrument.make_default_dimension_packer(instrument_data_id, is_exposure=True),
+            ],
             n_detectors=record.detector_max,
             n_visits=record.visit_max,
             n_exposures=record.exposure_max,
