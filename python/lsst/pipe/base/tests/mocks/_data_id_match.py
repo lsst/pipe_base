@@ -19,10 +19,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 __all__ = ["DataIdMatch"]
 
 import operator
-from typing import Any, Callable, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import astropy.time
 from lsst.daf.butler import DataId
@@ -52,7 +55,7 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         # docstring is inherited from base class
         return value
 
-    def visitRangeLiteral(self, start: int, stop: int, stride: Optional[int], node: Node) -> Any:
+    def visitRangeLiteral(self, start: int, stop: int, stride: int | None, node: Node) -> Any:
         # docstring is inherited from base class
         if stride is None:
             return range(start, stop + 1)
@@ -91,7 +94,7 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         }
         return operators[operator_name](lhs, rhs)
 
-    def visitIsIn(self, lhs: Any, values: List[Any], not_in: bool, node: Node) -> Any:
+    def visitIsIn(self, lhs: Any, values: list[Any], not_in: bool, node: Node) -> Any:
         # docstring is inherited from base class
         is_in = True
         for value in values:
@@ -109,11 +112,11 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         # docstring is inherited from base class
         return expression
 
-    def visitTupleNode(self, items: Tuple[Any, ...], node: Node) -> Any:
+    def visitTupleNode(self, items: tuple[Any, ...], node: Node) -> Any:
         # docstring is inherited from base class
         raise NotImplementedError()
 
-    def visitFunctionCall(self, name: str, args: List[Any], node: Node) -> Any:
+    def visitFunctionCall(self, name: str, args: list[Any], node: Node) -> Any:
         # docstring is inherited from base class
         raise NotImplementedError()
 
