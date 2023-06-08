@@ -1557,6 +1557,7 @@ class GraphBuilder:
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         metadata: Optional[Mapping[str, Any]] = None,
         bind: Optional[Mapping[str, Any]] = None,
+        dataId: DataCoordinate | None = None,
     ) -> QuantumGraph:
         """Create execution graph for a pipeline.
 
@@ -1585,6 +1586,8 @@ class GraphBuilder:
         bind : `Mapping`, optional
             Mapping containing literal values that should be injected into the
             ``userQuery`` expression, keyed by the identifiers they replace.
+        dataId : `lsst.daf.butler.DataCoordinate`, optional
+            Data ID that should also be included in the query constraint.
 
         Returns
         -------
@@ -1611,9 +1614,9 @@ class GraphBuilder:
             pipeline = list(pipeline.toExpandedPipeline())
         if instrument_class is not None:
             dataId = DataCoordinate.standardize(
-                instrument=instrument_class.getName(), universe=self.registry.dimensions
+                dataId, instrument=instrument_class.getName(), universe=self.registry.dimensions
             )
-        else:
+        elif dataId is None:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
         with scaffolding.connectDataIds(
             self.registry, collections, userQuery, dataId, datasetQueryConstraint, bind
