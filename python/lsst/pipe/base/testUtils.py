@@ -91,7 +91,7 @@ def makeQuantum(
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
 
     try:
-        _checkDimensionsMatch(butler.registry.dimensions, connections.dimensions, dataId.keys())
+        _checkDimensionsMatch(butler.dimensions, connections.dimensions, dataId.keys())
     except ValueError as e:
         raise ValueError("Error in quantum dimensions.") from e
 
@@ -119,7 +119,7 @@ def makeQuantum(
             raise ValueError(f"Error in connection {name}.") from e
     quantum = Quantum(
         taskClass=type(task),
-        dataId=DataCoordinate.standardize(dataId, universe=butler.registry.dimensions),
+        dataId=DataCoordinate.standardize(dataId, universe=butler.dimensions),
         inputs=inputs,
         outputs=outputs,
     )
@@ -254,7 +254,7 @@ def _refFromConnection(
         A reference to a dataset compatible with ``connection``, with ID
         ``dataId``, in the collection pointed to by ``butler``.
     """
-    universe = butler.registry.dimensions
+    universe = butler.dimensions
     # DatasetRef only tests if required dimension is missing, but not extras
     _checkDimensionsMatch(universe, set(connection.dimensions), dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
@@ -431,9 +431,7 @@ def getInitInputs(butler: Butler, config: PipelineTaskConfig) -> Dict[str, Any]:
     for name in connections.initInputs:
         attribute = getattr(connections, name)
         # Get full dataset type to check for consistency problems
-        dsType = DatasetType(
-            attribute.name, butler.registry.dimensions.extract(set()), attribute.storageClass
-        )
+        dsType = DatasetType(attribute.name, butler.dimensions.extract(set()), attribute.storageClass)
         # All initInputs have empty data IDs
         initInputs[name] = butler.get(dsType)
 

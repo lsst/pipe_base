@@ -77,7 +77,7 @@ class PipelineStepTester:
                     dimensions,
                     storageClass=storageClass,
                     isCalibration=isCalibration,
-                    universe=butler.registry.dimensions,
+                    universe=butler.dimensions,
                 )
             )
 

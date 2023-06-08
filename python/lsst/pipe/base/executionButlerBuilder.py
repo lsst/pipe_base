@@ -238,7 +238,7 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataS
     # Yaml is hard coded, since the class controls both ends of the
     # export/import
     BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
-    backend = BackendClass(yamlBuffer, universe=butler.registry.dimensions)
+    backend = BackendClass(yamlBuffer, universe=butler.dimensions)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
 
     # Need to ensure that the dimension records for outputs are
@@ -324,7 +324,7 @@ def _setupNewButler(
     config = Butler.makeRepo(
         root=outputLocation,
         config=config,
-        dimensionConfig=butler.registry.dimensions.dimensionConfig,
+        dimensionConfig=butler.dimensions.dimensionConfig,
         overwrite=True,
         forceConfigRoot=False,
     )
