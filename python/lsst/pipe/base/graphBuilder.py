@@ -53,7 +53,6 @@ from lsst.daf.butler import (
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
-from lsst.utils import doImportType
 
 # -----------------------------
 #  Imports for other modules --
@@ -1606,18 +1605,10 @@ class GraphBuilder:
         scaffolding = _PipelineScaffolding(pipeline, registry=self.registry)
         if not collections and (scaffolding.initInputs or scaffolding.inputs or scaffolding.prerequisites):
             raise ValueError("Pipeline requires input datasets but no input collections provided.")
-        instrument_class: Optional[Any] = None
-        if isinstance(pipeline, Pipeline):
-            instrument_class_name = pipeline.getInstrument()
-            if instrument_class_name is not None:
-                instrument_class = doImportType(instrument_class_name)
-            pipeline = list(pipeline.toExpandedPipeline())
-        if instrument_class is not None:
-            dataId = DataCoordinate.standardize(
-                dataId, instrument=instrument_class.getName(), universe=self.registry.dimensions
-            )
-        elif dataId is None:
+        if dataId is None:
             dataId = DataCoordinate.makeEmpty(self.registry.dimensions)
+        if isinstance(pipeline, Pipeline):
+            dataId = pipeline.get_data_id(self.registry.dimensions).union(dataId)
         with scaffolding.connectDataIds(
             self.registry, collections, userQuery, dataId, datasetQueryConstraint, bind
         ) as commonDataIds:
