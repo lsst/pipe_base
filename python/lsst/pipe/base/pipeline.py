@@ -232,7 +232,7 @@ class TaskDef:
 
     @classmethod
     def _unreduce(cls, taskName: str, config: PipelineTaskConfig, label: str) -> TaskDef:
-        """Custom callable for unpickling.
+        """Unpickle pickle. Custom callable for unpickling.
 
         All arguments are forwarded directly to the constructor; this
         trampoline is only needed because ``__reduce__`` callables can't be
@@ -268,7 +268,7 @@ class Pipeline:
            A path that points to a pipeline defined in yaml format. This
            filename may also supply additional labels to be used in
            subsetting the loaded Pipeline. These labels are separated from
-           the path by a \\#, and may be specified as a comma separated
+           the path by a ``#``, and may be specified as a comma separated
            list, or a range denoted as beginning..end. Beginning or end may
            be empty, in which case the range will be a half open interval.
            Unlike python iteration bounds, end bounds are *INCLUDED*. Note
@@ -280,7 +280,7 @@ class Pipeline:
         -------
         pipeline: `Pipeline`
             The pipeline loaded from specified location with appropriate (if
-            any) subsetting
+            any) subsetting.
 
         Notes
         -----
@@ -298,27 +298,28 @@ class Pipeline:
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             If a string is supplied this should be a URI path that points to a
             pipeline defined in yaml format, either as a direct path to the
-            yaml file, or as a directory containing a "pipeline.yaml" file (the
-            form used by `write_to_uri` with ``expand=True``). This uri may
+            yaml file, or as a directory containing a ``pipeline.yaml`` file
+            the form used by `write_to_uri` with ``expand=True``). This uri may
             also supply additional labels to be used in subsetting the loaded
-            Pipeline.  These labels are separated from the path by a \\#, and
-            may be specified as a comma separated list, or a range denoted as
-            beginning..end. Beginning or end may be empty, in which case the
+            `Pipeline`. These labels are separated from the path by a ``#``,
+            and may be specified as a comma separated list, or a range denoted
+            as beginning..end. Beginning or end may be empty, in which case the
             range will be a half open interval. Unlike python iteration bounds,
             end bounds are *INCLUDED*. Note that range based selection is not
             well defined for pipelines that are not linear in nature, and
             correct behavior is not guaranteed, or may vary from run to run.
-            The same specifiers can be used with a `ResourcePath` object, by
-            being the sole contents in the fragments attribute.
+            The same specifiers can be used with a
+            `~lsst.resources.ResourcePath` object, by being the sole contents
+            in the fragments attribute.
 
         Returns
         -------
         pipeline : `Pipeline`
             The pipeline loaded from specified location with appropriate (if
-            any) subsetting
+            any) subsetting.
 
         Notes
         -----
@@ -746,16 +747,16 @@ class Pipeline:
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
-            URI to write to; may have any scheme with `ResourcePath` write
-            support or no scheme for a local file/directory.  Should have a
-            ``.yaml``.
+        uri : convertible to `~lsst.resources.ResourcePath`
+            URI to write to; may have any scheme with
+            `~lsst.resources.ResourcePath` write support or no scheme for a
+            local file/directory.  Should have a ``.yaml``.
         """
         self._pipelineIR.write_to_uri(uri)
 
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
-        """Returns a generator of TaskDefs which can be used to create quantum
-        graphs.
+        r"""Return a generator of `TaskDef`\s which can be used to create
+        quantum graphs.
 
         Returns
         -------
@@ -944,7 +945,7 @@ class TaskDatasetTypes:
             is_input: bool,
             freeze: bool = True,
         ) -> NamedValueSet[DatasetType]:
-            """Constructs a set of true `DatasetType` objects
+            """Construct a set of true `DatasetType` objects
 
             Parameters
             ----------

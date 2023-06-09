@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class LoadHelper(ContextManager["LoadHelper"]):
-    """This is a helper class to assist with selecting the appropriate loader
+    """Helper class to assist with selecting the appropriate loader
     and managing any contexts that may be needed.
 
     This helper will raise a `ValueError` if the specified file does not appear
@@ -100,15 +100,15 @@ class LoadHelper(ContextManager["LoadHelper"]):
         ---------
         magic : `bytes`
             The first few bytes of the file, used to verify it is a
-            QuantumGraph save file
+            `QuantumGraph` save file.
         versionBytes : `bytes`
             The next few bytes from the beginning of the file, used to parse
-            which version of the QuantumGraph file the save corresponds to
+            which version of the `QuantumGraph` file the save corresponds to.
 
         Returns
         -------
         save_version : `int`
-            The save version parsed from the supplied bytes
+            The save version parsed from the supplied bytes.
 
         Raises
         ------
@@ -154,7 +154,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
         nodes: Optional[Iterable[Union[UUID, str]]] = None,
         graphID: Optional[str] = None,
     ) -> QuantumGraph:
-        """Loads in the specified nodes from the graph
+        """Load in the specified nodes from the graph.
 
         Load in the `QuantumGraph` containing only the nodes specified in the
         ``nodes`` parameter from the graph specified at object creation. If
@@ -179,7 +179,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
         Returns
         -------
         graph : `QuantumGraph`
-            The loaded `QuantumGraph` object
+            The loaded `QuantumGraph` object.
 
         Raises
         ------
@@ -188,9 +188,10 @@ class LoadHelper(ContextManager["LoadHelper"]):
             `QuantumGraph` or if graphID parameter does not match the graph
             being loaded.
         RuntimeError
-            Raised if Supplied DimensionUniverse is not compatible with the
-            DimensionUniverse saved in the graph
-            Raised if the method was not called from within a context block
+            Raised if supplied `~lsst.daf.butler.DimensionUniverse` is not
+            compatible with the `~lsst.daf.butler.DimensionUniverse` saved in
+            the graph. Raised if the method was not called from within a
+            context block.
         """
         if self._resourceHandle is None:
             raise RuntimeError("Load can only be used within a context manager")
@@ -232,12 +233,13 @@ class LoadHelper(ContextManager["LoadHelper"]):
         Returns
         -------
         result : `bytes`
-            The byte range specified from the `ResourceHandle`
+            The byte range specified from the
+            `~lsst.resources.ResourceHandleProtocol`.
 
         Raises
         ------
         RuntimeError
-            Raise if the method was not called from within a context block
+            Raise if the method was not called from within a context block.
         """
         if self._resourceHandle is None:
             raise RuntimeError("_readBytes must be called from within a context block")

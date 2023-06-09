@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""This module defines PipelineTask class and related methods.
+"""Define `PipelineTask` class and related methods.
 """
 
 from __future__ import annotations
@@ -155,8 +155,8 @@ class PipelineTask(Task):
         inputRefs: InputQuantizedConnection,
         outputRefs: OutputQuantizedConnection,
     ) -> None:
-        """Method to do butler IO and or transforms to provide in memory
-        objects for tasks run method
+        """Do butler IO and transform to provide in memory
+        objects for tasks `~Task.run` method.
 
         Parameters
         ----------

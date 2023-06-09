@@ -73,11 +73,13 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass
 class _RefHolder:
-    """Placeholder for `DatasetRef` representing a future resolved reference.
+    r"""Placeholder for `~lsst.daf.butler.DatasetRef` representing a future
+    resolved reference.
 
-    As we eliminated unresolved DatasetRefs we now use `None` to represent
-    a reference that is yet to be resolved. Information about its corresponding
-    dataset type and coordinate is stored in `_DatasetDict` mapping.
+    As we eliminated unresolved `~lsst.daf.butler.DatasetRef`\s we now use
+    `None` to represent a reference that is yet to be resolved. Information
+    about its corresponding dataset type and coordinate is stored in
+    `_DatasetDict` mapping.
     """
 
     dataset_type: DatasetType
@@ -93,7 +95,8 @@ class _RefHolder:
     @property
     def resolved_ref(self) -> DatasetRef:
         """Access resolved reference, should only be called after the
-        reference is set (`DatasetRef`)."""
+        reference is set (`~lsst.daf.butler.DatasetRef`).
+        """
         assert self.ref is not None, "Dataset reference is not set."
         return self.ref
 
@@ -1373,7 +1376,7 @@ class _PipelineScaffolding:
         the scaffolding data structure.
 
         Parameters
-        ---------
+        ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
         metadata : Optional Mapping of `str` to primitives

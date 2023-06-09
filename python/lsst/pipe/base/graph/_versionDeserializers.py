@@ -68,8 +68,8 @@ if TYPE_CHECKING:
 
 
 class StructSizeDescriptor:
-    """This is basically a class level property. It exists to report the size
-    (number of bytes) of whatever the formatter string is for a deserializer
+    """Class level property. It exists to report the size
+    (number of bytes) of whatever the formatter string is for a deserializer.
     """
 
     def __get__(self, inst: Optional[DeserializerBase], owner: Type[DeserializerBase]) -> int:
@@ -94,17 +94,22 @@ class DeserializerBase(ABC):
         super().__init_subclass__()
 
     def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
-        """Transforms the raw bytes corresponding to the header of a save into
-        a string of the header information. Returns none if the save format has
-        no header string implementation (such as save format 1 that is all
-        pickle)
+        """Transform the raw bytes corresponding to the header of a save into
+        a string of the header information.
 
         Parameters
         ----------
         rawheader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
-            and before the headerSize bytes
+            and before the headerSize bytes.
+
+        Returns
+        -------
+        header : `str` or `None`
+            Header information as a string. Returns `None` if the save format
+            has no header string implementation (such as save format 1 that is
+            all pickle).
         """
         raise NotImplementedError("Base class does not implement this method")
 
@@ -134,7 +139,7 @@ class DeserializerBase(ABC):
         _readBytes: Callable[[int, int], bytes],
         universe: Optional[DimensionUniverse] = None,
     ) -> QuantumGraph:
-        """Constructs a graph from the deserialized information.
+        """Construct a graph from the deserialized information.
 
         Parameters
         ----------
@@ -563,8 +568,8 @@ class DeserializerV3(DeserializerBase):
 
             # Turn the json back into the pydandtic model
             nodeDeserialized = SerializedQuantumNode.direct(**dump)
-            # attach the dictionary of dimension records to the pydandtic model
-            # these are stored seperately because the are stored over and over
+            # attach the dictionary of dimension records to the pydantic model
+            # these are stored separately because the are stored over and over
             # and this saves a lot of space and time.
             nodeDeserialized.quantum.dimensionRecords = self.infoMappings.dimensionRecords
             # get the label for the current task

@@ -277,7 +277,7 @@ class Task:
         taskName : `str`
             Name of the task.
 
-        See also
+        See Also
         --------
         getFullName
         """
@@ -302,12 +302,12 @@ class Task:
         ----------
         name : `str`
             Brief name of the subtask.
-        keyArgs
+        **keyArgs
             Extra keyword arguments used to construct the task. The following
             arguments are automatically provided and cannot be overridden:
 
-            - "config".
-            - "parentTask".
+            - ``config``.
+            - ``parentTask``.
 
         Notes
         -----
@@ -343,9 +343,9 @@ class Task:
             with self.timer("someCodeToTime"):
                 pass  # code to time
 
-        See also
+        See Also
         --------
-        timer.logInfo
+        lsst.utils.timer.logInfo
         """
         logInfo(obj=self, prefix=name + "Start", logLevel=logLevel)
         try:
@@ -365,7 +365,7 @@ class Task:
         Returns
         -------
         configurableField : `lsst.pex.config.ConfigurableField`
-            A `~ConfigurableField` for this task.
+            A `~lsst.pex.config.ConfigurableField` for this task.
 
         Examples
         --------
@@ -416,7 +416,7 @@ class Task:
         return factory(*args, **kwargs)
 
     def _reduce_kwargs(self) -> Dict[str, Any]:
-        """Returns a dict of the keyword arguments that should be used
+        """Return a dict of the keyword arguments that should be used
         by `__reduce__`.
 
         Subclasses with additional arguments should always call the parent

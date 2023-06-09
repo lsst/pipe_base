@@ -60,7 +60,7 @@ class ScalarError(TypeError):
 
 
 class PipelineTaskConnectionDict(UserDict):
-    """This is a special dict class used by PipelineTaskConnectionMetaclass
+    """A special dict class used by PipelineTaskConnectionMetaclass
 
     This dict is used in PipelineTaskConnection class creation, as the
     dictionary that is initially used as __dict__. It exists to
@@ -393,9 +393,9 @@ class QuantizedConnection(SimpleNamespace):
     def __iter__(
         self,
     ) -> Generator[tuple[str, DatasetRef | list[DatasetRef]], None, None]:
-        """Make an Iterator for this QuantizedConnection
+        """Make an iterator for this `QuantizedConnection`.
 
-        Iterating over a QuantizedConnection will yield a tuple with the name
+        Iterating over a `QuantizedConnection` will yield a tuple with the name
         of an attribute and the value associated with that name. This is
         similar to dict.items() but is on the namespace attributes rather than
         dict keys.
@@ -403,24 +403,29 @@ class QuantizedConnection(SimpleNamespace):
         yield from ((name, getattr(self, name)) for name in self._attributes)
 
     def keys(self) -> Generator[str, None, None]:
-        """Returns an iterator over all the attributes added to a
-        QuantizedConnection class
+        """Return an iterator over all the attributes added to a
+        `QuantizedConnection` class
         """
         yield from self._attributes
 
 
 class InputQuantizedConnection(QuantizedConnection):
+    """Input variant of a `QuantizedConnection`."""
+
     pass
 
 
 class OutputQuantizedConnection(QuantizedConnection):
+    """Output variant of a `QuantizedConnection`."""
+
     pass
 
 
 @dataclass(frozen=True)
 class DeferredDatasetRef:
-    """A wrapper class for `DatasetRef` that indicates that a `PipelineTask`
-    should receive a `DeferredDatasetHandle` instead of an in-memory dataset.
+    """A wrapper class for `~lsst.daf.butler.DatasetRef` that indicates that a
+    `PipelineTask` should receive a `~lsst.daf.butler.DeferredDatasetHandle`
+    instead of an in-memory dataset.
 
     Parameters
     ----------
@@ -452,7 +457,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         A `PipelineTaskConfig` class instance whose class has been configured
         to use this `PipelineTaskConnections` class.
 
-    See also
+    See Also
     --------
     iterConnections
 
@@ -680,20 +685,21 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     def buildDatasetRefs(
         self, quantum: Quantum
     ) -> tuple[InputQuantizedConnection, OutputQuantizedConnection]:
-        """Builds QuantizedConnections corresponding to input Quantum
+        """Build `QuantizedConnection` corresponding to input
+        `~lsst.daf.butler.Quantum`.
 
         Parameters
         ----------
         quantum : `lsst.daf.butler.Quantum`
             Quantum object which defines the inputs and outputs for a given
-            unit of processing
+            unit of processing.
 
         Returns
         -------
         retVal : `tuple` of (`InputQuantizedConnection`,
             `OutputQuantizedConnection`) Namespaces mapping attribute names
             (identifiers of connections) to butler references defined in the
-            input `lsst.daf.butler.Quantum`
+            input `lsst.daf.butler.Quantum`.
         """
         inputDatasetRefs = InputQuantizedConnection()
         outputDatasetRefs = OutputQuantizedConnection()
@@ -771,14 +777,15 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         inputs : `dict`
             Dictionary whose keys are an input (regular or prerequisite)
             connection name and whose values are a tuple of the connection
-            instance and a collection of associated `DatasetRef` objects.
+            instance and a collection of associated
+            `~lsst.daf.butler.DatasetRef` objects.
             The exact type of the nested collections is unspecified; it can be
             assumed to be multi-pass iterable and support `len` and ``in``, but
             it should not be mutated in place.  In contrast, the outer
             dictionaries are guaranteed to be temporary copies that are true
             `dict` instances, and hence may be modified and even returned; this
             is especially useful for delegating to `super` (see notes below).
-        outputs : `Mapping`
+        outputs : `~collections.abc.Mapping`
             Mapping of output datasets, with the same structure as ``inputs``.
         label : `str`
             Label for this task in the pipeline (should be used in all
@@ -789,14 +796,14 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
         Returns
         -------
-        adjusted_inputs : `Mapping`
+        adjusted_inputs : `~collections.abc.Mapping`
             Mapping of the same form as ``inputs`` with updated containers of
-            input `DatasetRef` objects.  Connections that are not changed
-            should not be returned at all.  Datasets may only be removed, not
-            added.  Nested collections may be of any multi-pass iterable type,
-            and the order of iteration will set the order of iteration within
-            `PipelineTask.runQuantum`.
-        adjusted_outputs : `Mapping`
+            input `~lsst.daf.butler.DatasetRef` objects.  Connections that are
+            not changed should not be returned at all. Datasets may only be
+            removed, not added.  Nested collections may be of any multi-pass
+            iterable type, and the order of iteration will set the order of
+            iteration within `PipelineTask.runQuantum`.
+        adjusted_outputs : `~collections.abc.Mapping`
             Mapping of updated output datasets, with the same structure and
             interpretation as ``adjusted_inputs``.
 
@@ -820,7 +827,9 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         returns an empty mapping (i.e. makes no adjustments).  It should
         always called be via `super` by custom implementations, ideally at the
         end of the custom implementation with already-adjusted mappings when
-        any datasets are actually dropped, e.g.::
+        any datasets are actually dropped, e.g.:
+
+        .. code-block:: python
 
             def adjustQuantum(self, inputs, outputs, label, data_id):
                 # Filter out some dataset refs for one connection.
@@ -890,24 +899,24 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 def iterConnections(
     connections: PipelineTaskConnections, connectionType: str | Iterable[str]
 ) -> Generator[BaseConnection, None, None]:
-    """Creates an iterator over the selected connections type which yields
+    """Create an iterator over the selected connections type which yields
     all the defined connections of that type.
 
     Parameters
     ----------
-    connections: `PipelineTaskConnections`
+    connections : `PipelineTaskConnections`
         An instance of a `PipelineTaskConnections` object that will be iterated
         over.
-    connectionType: `str`
+    connectionType : `str`
         The type of connections to iterate over, valid values are inputs,
         outputs, prerequisiteInputs, initInputs, initOutputs.
 
     Yields
     ------
-    connection: `BaseConnection`
+    connection: `~.connectionTypes.BaseConnection`
         A connection defined on the input connections object of the type
         supplied.  The yielded value Will be an derived type of
-        `BaseConnection`.
+        `~.connectionTypes.BaseConnection`.
     """
     if isinstance(connectionType, str):
         connectionType = (connectionType,)
@@ -920,18 +929,18 @@ class AdjustQuantumHelper:
     """Helper class for calling `PipelineTaskConnections.adjustQuantum`.
 
     This class holds `input` and `output` mappings in the form used by
-    `Quantum` and execution harness code, i.e. with `DatasetType` keys,
-    translating them to and from the connection-oriented mappings used inside
-    `PipelineTaskConnections`.
+    `Quantum` and execution harness code, i.e. with
+    `~lsst.daf.butler.DatasetType` keys, translating them to and from the
+    connection-oriented mappings used inside `PipelineTaskConnections`.
     """
 
     inputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
     """Mapping of regular input and prerequisite input datasets, grouped by
-    `DatasetType`.
+    `~lsst.daf.butler.DatasetType`.
     """
 
     outputs: NamedKeyMapping[DatasetType, list[DatasetRef]]
-    """Mapping of output datasets, grouped by `DatasetType`.
+    """Mapping of output datasets, grouped by `~lsst.daf.butler.DatasetType`.
     """
 
     inputs_adjusted: bool = False

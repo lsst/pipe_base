@@ -102,7 +102,7 @@ class ButlerQuantumContext:
             None,
         ],
     ) -> Any:
-        """Fetches data from the butler
+        """Fetch data from the butler
 
         Parameters
         ----------
@@ -200,7 +200,7 @@ class ButlerQuantumContext:
         values: Union[Struct, List[Any], Any],
         dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef],
     ) -> None:
-        """Puts data into the butler
+        """Put data into the butler.
 
         Parameters
         ----------
@@ -226,9 +226,9 @@ class ButlerQuantumContext:
         Raises
         ------
         ValueError
-            Raised if a `DatasetRef` is passed to put that is not defined in
-            the quantum object, or the type of values does not match what is
-            expected from the type of dataset.
+            Raised if a `~lsst.daf.butler.DatasetRef` is passed to put that is
+            not defined in the `~lsst.daf.butler.Quantum` object, or the type
+            of values does not match what is expected from the type of dataset.
         """
         if isinstance(dataset, OutputQuantizedConnection):
             if not isinstance(values, Struct):
@@ -258,20 +258,23 @@ class ButlerQuantumContext:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
     def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set) -> None:
-        """Internal function used to check if a DatasetRef is part of the input
-        quantum
+        """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
+        `~lsst.daf.butler.Quantum`.
 
-        This function will raise an exception if the ButlerQuantumContext is
-        used to get/put a DatasetRef which is not defined in the quantum.
+        This function will raise an exception if the `ButlerQuantumContext` is
+        used to get/put a `~lsst.daf.butler.DatasetRef` which is not defined
+        in the quantum.
 
         Parameters
         ----------
-        ref : `list` of `DatasetRef` or `DatasetRef`
-            Either a list or a single `DatasetRef` to check
+        ref : `list` [ `~lsst.daf.butler.DatasetRef` ] or \
+                `~lsst.daf.butler.DatasetRef`
+            Either a `list` or a single `DatasetRef` to check
         inout : `set`
             The connection type to check, e.g. either an input or an output.
             This prevents both types needing to be checked for every operation,
-            which may be important for Quanta with lots of `DatasetRef`.
+            which may be important for Quanta with lots of
+            `~lsst.daf.butler.DatasetRef`.
         """
         if not isinstance(ref, list):
             ref = [ref]
@@ -282,6 +285,6 @@ class ButlerQuantumContext:
     @property
     def dimensions(self) -> DimensionUniverse:
         """Structure managing all dimensions recognized by this data
-        repository (`DimensionUniverse`).
+        repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions

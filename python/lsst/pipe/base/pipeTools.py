@@ -74,7 +74,7 @@ class PipelineDataCycleError(Exception):
 def isPipelineOrdered(
     pipeline: Union[Pipeline, Iterable[TaskDef]], taskFactory: Optional[TaskFactory] = None
 ) -> bool:
-    """Checks whether tasks in pipeline are correctly ordered.
+    """Check whether tasks in pipeline are correctly ordered.
 
     Pipeline is correctly ordered if for any DatasetType produced by a task
     in a pipeline all its consumer tasks are located after producer.
@@ -142,10 +142,9 @@ def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
     `DuplicateOutputError` is raised when there is more than one producer for a
     dataset type.
     `PipelineDataCycleError` is also raised when pipeline has dependency
-    cycles.  `MissingTaskFactoryError` is raised when TaskFactory is needed but
-    not provided.
+    cycles.  `MissingTaskFactoryError` is raised when `TaskFactory` is needed
+    but not provided.
     """
-
     # This is a modified version of Kahn's algorithm that preserves order
 
     # build mapping of the tasks to their inputs and outputs

@@ -204,7 +204,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[
 def makeSimplePipeline(nQuanta: int, instrument: Optional[str] = None) -> Pipeline:
     """Make a simple Pipeline for tests.
 
-    This is called by ``makeSimpleQGraph`` if no pipeline is passed to that
+    This is called by `makeSimpleQGraph()` if no pipeline is passed to that
     function. It can also be used to customize the pipeline used by
     ``makeSimpleQGraph`` function by calling this first and passing the result
     to it.
@@ -300,7 +300,6 @@ def populateButler(
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
     """
-
     # Add dataset types to registry
     taskDefs = list(pipeline.toExpandedPipeline())
     registerDatasetTypes(butler.registry, taskDefs)
@@ -366,7 +365,7 @@ def makeSimpleQGraph(
     bind: Optional[Mapping[str, Any]] = None,
     metadata: Optional[MutableMapping[str, Any]] = None,
 ) -> Tuple[Butler, QuantumGraph]:
-    """Make simple QuantumGraph for tests.
+    """Make simple `QuantumGraph` for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory registry
     and butler, fills them with minimal data, and generates QuantumGraph with
@@ -414,10 +413,10 @@ def makeSimpleQGraph(
         `DatasetQueryConstraintVariant.ALL`.
     makeDatastoreRecords : `bool`, optional
         If `True` then add datstore records to generated quanta.
-    bind : `Mapping`, optional
+    bind : `~collections.abc.Mapping`, optional
         Mapping containing literal values that should be injected into the
         ``userQuery`` expression, keyed by the identifiers they replace.
-    metadata : `Mapping`, optional
+    metadata : `~collections.abc.Mapping`, optional
         Optional graph metadata.
 
     Returns
@@ -427,7 +426,6 @@ def makeSimpleQGraph(
     qgraph : `~lsst.pipe.base.QuantumGraph`
         Quantum graph instance
     """
-
     if pipeline is None:
         pipeline = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument)
 

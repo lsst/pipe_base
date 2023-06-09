@@ -274,11 +274,11 @@ def _setupNewButler(
     ----------
     butler : `Butler`
         The original butler, upon which the execution butler is based.
-    outputLocation : `ResourcePath`
+    outputLocation : `~lsst.resources.ResourcePath`
         Location of the execution butler.
     dirExists : `bool`
         Does the ``outputLocation`` exist, and if so, should it be clobbered?
-    datastoreRoot : `ResourcePath`, optional
+    datastoreRoot : `~lsst.resources.ResourcePath`, optional
         Path for the execution butler datastore. If not specified, then the
         original butler's datastore will be used.
 
@@ -378,12 +378,15 @@ def buildExecutionButler(
     datastoreRoot: Optional[ResourcePathExpression] = None,
     transfer: str = "auto",
 ) -> Butler:
-    r"""buildExecutionButler is a function that is responsible for exporting
-    input `QuantumGraphs` into a new minimal `~lsst.daf.butler.Butler` which
-    only contains datasets specified by the `QuantumGraph`. These datasets are
-    both those that already exist in the input `~lsst.daf.butler.Butler`, and
-    those that are expected to be produced during the execution of the
-    `QuantumGraph`.
+    r"""Create an execution butler.
+
+    Responsible for exporting
+    input `QuantumGraph`\s into a new minimal `~lsst.daf.butler.Butler` which
+    only contains datasets specified by the `QuantumGraph`.
+
+    These datasets are both those that already exist in the input
+    `~lsst.daf.butler.Butler`, and those that are expected to be produced
+    during the execution of the `QuantumGraph`.
 
     Parameters
     ----------
@@ -395,9 +398,9 @@ def buildExecutionButler(
     graph : `QuantumGraph`
         Graph containing nodes that are to be exported into an execution
         butler
-    outputLocation : convertible to `ResourcePath`
+    outputLocation : convertible to `~lsst.resources.ResourcePath`
         URI Location at which the execution butler is to be exported. May be
-        specified as a string or a `ResourcePath` instance.
+        specified as a string or a `~lsst.resources.ResourcePath` instance.
     run : `str`, optional
         The run collection that the exported datasets are to be placed in. If
         None, the default value in registry.defaults will be used.
@@ -420,7 +423,7 @@ def buildExecutionButler(
         `~lsst.daf.butler.Butler` when creating the execution butler. If not
         supplied the `~lsst.daf.butler.Butler`\ 's `~lsst.daf.butler.Registry`
         default collections will be used.
-    datastoreRoot : convertible to `ResourcePath`, Optional
+    datastoreRoot : convertible to `~lsst.resources.ResourcePath`, Optional
         Root directory for datastore of execution butler. If `None`, then the
         original butler's datastore will be used.
     transfer : `str`
@@ -432,15 +435,15 @@ def buildExecutionButler(
     Returns
     -------
     executionButler : `lsst.daf.butler.Butler`
-        An instance of the newly created execution butler
+        An instance of the newly created execution butler.
 
     Raises
     ------
     FileExistsError
         Raised if something exists in the filesystem at the specified output
-        location and clobber is `False`
+        location and clobber is `False`.
     NotADirectoryError
-        Raised if specified output URI does not correspond to a directory
+        Raised if specified output URI does not correspond to a directory.
     """
     # Now require that if run is given it must match the graph run.
     if run and graph.metadata and run != (graph_run := graph.metadata.get("output_run")):

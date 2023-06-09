@@ -59,7 +59,8 @@ _S = TypeVar("_S", bound="PipelineTaskConfigMeta")
 
 
 class TemplateField(pexConfig.Field):
-    """This Field is specialized for use with connection templates.
+    """Field specialized for use with connection templates.
+
     Specifically it treats strings or numbers as valid input, as occasionally
     numbers are used as a cycle counter in templates.
 

@@ -42,6 +42,8 @@ from lsst.utils.introspection import get_full_type_name
 
 
 class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
+    """Connections class for `NoDimensionsTestTask`."""
+
     input = connectionTypes.Input(
         name="input", doc="some dict-y input data for testing", storageClass="StructuredDataDict"
     )
@@ -51,6 +53,8 @@ class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
 
 
 class NoDimensionsTestConfig(PipelineTaskConfig, pipelineConnections=NoDimensionsTestConnections):
+    """Configuration for `NoDimensionTestTask`."""
+
     key = Field[str](doc="String key for the dict entry the task sets.", default="one")
     value = Field[int](doc="Integer value for the dict entry the task sets.", default=1)
     outputSC = Field[str](doc="Output storage class requested", default="dict")

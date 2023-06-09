@@ -79,10 +79,10 @@ class NodeId:
 
 @dataclass(frozen=True)
 class QuantumNode:
-    """This class represents a node in the quantum graph.
+    """Class representing a node in the quantum graph.
 
-    The quantum attribute represents the data that is to be processed at this
-    node.
+    The ``quantum`` attribute represents the data that is to be processed at
+    this node.
     """
 
     quantum: Quantum

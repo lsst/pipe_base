@@ -180,7 +180,7 @@ class QuantumGraph:
         globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
         registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
     ) -> None:
-        """Builds the graph that is used to store the relation between tasks,
+        """Build the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
         self._metadata = metadata
@@ -1024,7 +1024,7 @@ class QuantumGraph:
             raise ValueError("Only know how to handle files saved as `qgraph`")
 
     def buildAndPrintHeader(self) -> None:
-        """Creates a header that would be used in a save of this object and
+        """Create a header that would be used in a save of this object and
         prints it out to standard out.
         """
         _, header = self._buildSaveObject(returnHeader=True)
@@ -1295,7 +1295,9 @@ class QuantumGraph:
         dataset_id_map = {}
 
         def _update_output_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Updated list of DatasetRef with new run and dataset IDs."""
+            """Update list of `~lsst.daf.butler.DatasetRef` with new run and
+            dataset IDs.
+            """
             new_refs = []
             for ref in refs:
                 new_ref = DatasetRef(ref.datasetType, ref.dataId, run=run, conform=False)
@@ -1304,7 +1306,9 @@ class QuantumGraph:
             refs[:] = new_refs
 
         def _update_input_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Updated list of DatasetRef with IDs from dataset_id_map."""
+            """Update list of `~lsst.daf.butler.DatasetRef` with IDs from
+            dataset_id_map.
+            """
             new_refs = []
             for ref in refs:
                 if (new_id := dataset_id_map.get(ref.id)) is not None:
@@ -1363,7 +1367,7 @@ class QuantumGraph:
         return self._connectedQuanta.has_node(node)
 
     def __getstate__(self) -> dict:
-        """Stores a compact form of the graph as a list of graph nodes, and a
+        """Store a compact form of the graph as a list of graph nodes, and a
         tuple of task labels and task configs. The full graph can be
         reconstructed with this information, and it preserves the ordering of
         the graph nodes.

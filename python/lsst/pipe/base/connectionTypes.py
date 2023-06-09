@@ -47,9 +47,9 @@ class BaseConnection:
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
         `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
-        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
-        the execution system as early as possible of outputs that will not be
-        produced because the corresponding input is missing.
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum()` and
+        notify the execution system as early as possible of outputs that will
+         not be produced because the corresponding input is missing.
     """
 
     name: str
@@ -296,7 +296,7 @@ class Input(BaseInput):
 
 @dataclasses.dataclass(frozen=True)
 class PrerequisiteInput(BaseInput):
-    """Class used for declaring PipelineTask prerequisite connections
+    """Class used for declaring PipelineTask prerequisite connections.
 
     Parameters
     ----------
@@ -359,7 +359,6 @@ class PrerequisiteInput(BaseInput):
       in each visit for which the visit overlaps a tract, not just those where
       that detector+visit combination overlaps the tract).
     - Prerequisite inputs may be optional (regular inputs are never optional).
-
     """
 
     lookupFunction: Callable[
@@ -371,14 +370,20 @@ class PrerequisiteInput(BaseInput):
 
 @dataclasses.dataclass(frozen=True)
 class Output(DimensionedConnection):
+    """Connection for output dataset."""
+
     _connection_type_set: ClassVar[str] = "outputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitInput(BaseConnection):
+    """Connection for initInput dataset."""
+
     _connection_type_set: ClassVar[str] = "initInputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitOutput(BaseConnection):
+    """Connection for initOutput dataset."""
+
     _connection_type_set: ClassVar[str] = "initOutputs"

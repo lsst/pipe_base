@@ -32,7 +32,8 @@ from lsst.pex.config import Config
 
 class PexConfigFormatter(FileFormatter):
     """Formatter implementation for reading and writing
-    `lsst.pex.config.Config` instances."""
+    `lsst.pex.config.Config` instances.
+    """
 
     extension = ".py"
 

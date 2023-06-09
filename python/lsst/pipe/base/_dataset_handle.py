@@ -89,7 +89,7 @@ class InMemoryDatasetHandle:
         parameters: Optional[dict] = None,
         storageClass: str | StorageClass | None = None,
     ) -> Any:
-        """Retrieves the dataset pointed to by this handle
+        """Retrieve the dataset pointed to by this handle.
 
         This handle may be used multiple times, possibly with different
         parameters.
@@ -101,14 +101,14 @@ class InMemoryDatasetHandle:
             may specify the name of the component to use in the get operation.
         parameters : `dict` or None
             The parameters argument will be passed to the butler get method.
-            It defaults to None. If the value is not None, this dict will
+            It defaults to `None`. If the value is not `None`, this `dict` will
             be merged with the parameters dict used to construct the
-            `DeferredDatasetHandle` class.
-        storageClass : `StorageClass` or `str`, optional
+            `~lsst.daf.butler.DeferredDatasetHandle` class.
+        storageClass : `~lsst.daf.butler.StorageClass` or `str`, optional
             The storage class to be used to override the Python type
             returned by this method. By default the returned type matches
-            the type stored. Specifying a read `StorageClass` can force a
-            different type to be returned.
+            the type stored. Specifying a read `~lsst.daf.butler.StorageClass`
+            can force a different type to be returned.
             This type must be compatible with the original type.
 
         Returns
@@ -218,7 +218,7 @@ class InMemoryDatasetHandle:
 
         Returns
         -------
-        storageClass : `StorageClass`
+        storageClass : `~lsst.daf.butler.StorageClass`
             The storage class associated with this handle, or one derived
             from the python type of the stored object.
 
@@ -258,4 +258,4 @@ class InMemoryDatasetHandle:
 
     copy: bool = False
     """Control whether a copy of the in-memory dataset is returned for every
-    call to get()."""
+    call to `get()`."""
