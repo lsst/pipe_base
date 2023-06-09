@@ -133,8 +133,8 @@ class ButlerQuantumContext:
         Raises
         ------
         ValueError
-            Raised if a `DatasetRef` is passed to get that is not defined in
-            the quantum object
+            Raised if a `~lsst.daf.butler.DatasetRef` is passed to get that is
+            not defined in the quantum object
         """
         # Set up a periodic logger so log messages can be issued if things
         # are taking too long.
@@ -214,8 +214,8 @@ class ButlerQuantumContext:
             ``[datasetRef1, datasetRef2]`` then ``values.calexp`` should be
             ``[calexp1, calexp2]``. Like wise if there is a single ref, then
             only a single object need be passed. The same restriction applies
-            if dataset is directly a `list` of `DatasetRef` or a single
-            `DatasetRef`.
+            if dataset is directly a `list` of `~lsst.daf.butler.DatasetRef`
+            or a single `~lsst.daf.butler.DatasetRef`.
         dataset
             This argument may either be an `InputQuantizedConnection` which
             describes all the inputs of a quantum, a list of
@@ -269,7 +269,7 @@ class ButlerQuantumContext:
         ----------
         ref : `list` [ `~lsst.daf.butler.DatasetRef` ] or \
                 `~lsst.daf.butler.DatasetRef`
-            Either a `list` or a single `DatasetRef` to check
+            Either a `list` or a single `~lsst.daf.butler.DatasetRef` to check
         inout : `set`
             The connection type to check, e.g. either an input or an output.
             This prevents both types needing to be checked for every operation,

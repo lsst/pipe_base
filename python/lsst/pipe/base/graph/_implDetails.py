@@ -253,7 +253,7 @@ def _pruner(
         `QuantumNode`\s that produce/consume that
         `~lsst.daf.butler.DatasetRef`.
         This function modifies ``datasetRefDict`` in-place.
-    refsToRemove : `Iterable` of `~lsst.daf.butler.DatasetRef`
+    refsToRemove : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
         The `~lsst.daf.butler.DatasetRef`\ s which should be pruned from the
         input dataset tracker.
     alreadyPruned : `set` of `QuantumNode`

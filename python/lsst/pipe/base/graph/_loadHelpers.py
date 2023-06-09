@@ -168,7 +168,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
             The universe saved with the graph is used, but if one is passed
             it will be used to validate the compatibility with the loaded
             graph universe.
-        nodes : `Iterable` of `UUID` or `str`; or `None`
+        nodes : `~collections.abc.Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
             (the default)
         graphID : `str` or `None`

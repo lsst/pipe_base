@@ -912,17 +912,19 @@ class TaskDatasetTypes:
         taskDef: `TaskDef`
             An instance of a `TaskDef` class for a particular `PipelineTask`.
         registry: `Registry`
-            Registry used to construct normalized `DatasetType` objects and
-            retrieve those that are incomplete.
+            Registry used to construct normalized
+            `~lsst.daf.butler.DatasetType` objects and retrieve those that are
+            incomplete.
         include_configs : `bool`, optional
             If `True` (default) include config dataset types as
             ``initOutputs``.
-        storage_class_mapping : `Mapping` of `str` to `StorageClass`, optional
+        storage_class_mapping : `~collections.abc.Mapping` of `str` to \
+                `StorageClass`, optional
             If a taskdef contains a component dataset type that is unknown
-            to the registry, its parent StorageClass will be looked up in this
-            mapping if it is supplied. If the mapping does not contain the
-            composite dataset type, or the mapping is not supplied an exception
-            will be raised.
+            to the registry, its parent `~lsst.daf.butler.StorageClass` will
+            be looked up in this mapping if it is supplied. If the mapping does
+            not contain the composite dataset type, or the mapping is not
+            supplied an exception will be raised.
 
         Returns
         -------
@@ -945,7 +947,7 @@ class TaskDatasetTypes:
             is_input: bool,
             freeze: bool = True,
         ) -> NamedValueSet[DatasetType]:
-            """Construct a set of true `DatasetType` objects
+            """Construct a set of true `~lsst.daf.butler.DatasetType` objects
 
             Parameters
             ----------
@@ -1222,11 +1224,12 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
+        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A collection of tasks that can be run together.
         registry: `Registry`
-            Registry used to construct normalized `DatasetType` objects and
-            retrieve those that are incomplete.
+            Registry used to construct normalized
+            `~lsst.daf.butler.DatasetType` objects and retrieve those that are
+            incomplete.
         include_configs : `bool`, optional
             If `True` (default) include config dataset types as
             ``initOutputs``.
@@ -1366,7 +1369,7 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `Iterable` [ `TaskDef` ]
+        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A `Pipeline` instance or collection of `TaskDef` instances.
         include_configs : `bool`, optional
             If `True` (default) include config dataset types.

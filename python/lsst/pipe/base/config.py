@@ -227,7 +227,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         taskDefaultName : `str`
             The default name associated with the `Task` class. This
             may be used with instrumental overrides.
-        pipelineConfigs : `Iterable` of `ConfigIR`
+        pipelineConfigs : `~collections.abc.Iterable` of `ConfigIR`
             An iterable of `ConfigIR` objects that contain overrides
             to apply to this config instance.
         parameters : `ParametersIR`

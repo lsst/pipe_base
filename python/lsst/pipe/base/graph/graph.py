@@ -390,7 +390,7 @@ class QuantumGraph:
 
         Parameters
         ----------
-        refs : `Iterable` of `~lsst.daf.butler.DatasetRef`
+        refs : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
             Refs which should be removed from resulting graph
 
         Returns

@@ -46,10 +46,10 @@ class Instrument(metaclass=ABCMeta):
     Parameters
     ----------
     collection_prefix : `str`, optional
-        Prefix for collection names to use instead of the intrument's own name.
-        This is primarily for use in simulated-data repositories, where the
-        instrument name may not be necessary and/or sufficient to distinguish
-        between collections.
+        Prefix for collection names to use instead of the instrument's own
+        name. This is primarily for use in simulated-data repositories, where
+        the instrument name may not be necessary and/or sufficient to
+        distinguish between collections.
 
     Notes
     -----
@@ -142,7 +142,7 @@ class Instrument(metaclass=ABCMeta):
         registry : `lsst.daf.butler.Registry`
             Butler registry to query to find the information.
         collection_prefix : `str`, optional
-            Prefix for collection names to use instead of the intrument's own
+            Prefix for collection names to use instead of the instrument's own
             name.  This is primarily for use in simulated-data repositories,
             where the instrument name may not be necessary and/or sufficient to
             distinguish between collections.
@@ -199,7 +199,7 @@ class Instrument(metaclass=ABCMeta):
             Butler registry to query to find information about the instrument,
             by default `None`.
         collection_prefix : `str`, optional
-            Prefix for collection names to use instead of the intrument's own
+            Prefix for collection names to use instead of the instrument's own
             name. This is primarily for use in simulated-data repositories,
             where the instrument name may not be necessary and/or sufficient
             to distinguish between collections.
@@ -247,10 +247,10 @@ class Instrument(metaclass=ABCMeta):
 
         Parameters
         ----------
-        data_id : `DataCoordinate`
+        data_id : `~lsst.daf.butler.DataCoordinate`
             Expanded data ID that includes the instrument dimension.
         collection_prefix : `str`, optional
-            Prefix for collection names to use instead of the intrument's own
+            Prefix for collection names to use instead of the instrument's own
             name.  This is primarily for use in simulated-data repositories,
             where the instrument name may not be necessary and/or sufficient to
             distinguish between collections.
@@ -282,7 +282,7 @@ class Instrument(metaclass=ABCMeta):
         cls_name : `str`
             Fully-qualified name of the type.
         collection_prefix : `str`, optional
-            Prefix for collection names to use instead of the intrument's own
+            Prefix for collection names to use instead of the instrument's own
             name.  This is primarily for use in simulated-data repositories,
             where the instrument name may not be necessary and/or sufficient to
             distinguish between collections.

@@ -80,7 +80,7 @@ class TaskMetadata(BaseModel):
 
         Parameters
         ----------
-        d : `Mapping`
+        d : `~collections.abc.Mapping`
             Mapping to convert. Can be hierarchical. Any dictionaries
             in the hierarchy are converted to `TaskMetadata`.
 

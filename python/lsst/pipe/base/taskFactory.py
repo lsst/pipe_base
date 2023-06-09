@@ -56,7 +56,8 @@ class TaskFactory(metaclass=ABCMeta):
             Task definition structure.
         butler : `lsst.daf.butler.LimitedButler`
             Butler instance used to obtain initialization inputs for task.
-        initInputRefs : `Iterable` of `~lsst.daf.butler.DatasetRef` or `None`
+        initInputRefs : `~collections.abc.Iterable` of \
+                `~lsst.daf.butler.DatasetRef` or `None`
             List of resolved dataset references for init inputs for this task.
 
         Returns
