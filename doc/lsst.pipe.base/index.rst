@@ -58,6 +58,7 @@ Developing Pipelines
    :maxdepth: 1
 
    creating-a-pipeline.rst
+   testing-pipelines-with-mocks.rst
 
 .. _lsst.pipe.base-contributing:
 
@@ -85,3 +86,5 @@ Python API reference
 
 .. automodapi:: lsst.pipe.base.pipelineIR
   :no-main-docstr:
+
+.. automodapi:: lsst.pipe.base.tests.mocks

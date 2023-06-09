@@ -25,6 +25,7 @@ dependencies = [
     "lsst-utils",
     "lsst-daf-butler",
     "lsst-pex-config",
+    "astropy",
     "pydantic",
     "networkx",
     "pyyaml >= 5.1",
@@ -114,3 +115,13 @@ addopts = "--flake8"
 flake8-ignore = ["E203", "W503", "N802", "N803", "N806", "N812", "N815", "N816"]
 # Some unit tests open registry database and don't close it.
 open_files_ignore = ["gen3.sqlite3"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

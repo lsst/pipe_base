@@ -55,7 +55,14 @@ from typing import (
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import DatasetType, NamedValueSet, Registry, SkyPixDimension
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetType,
+    DimensionUniverse,
+    NamedValueSet,
+    Registry,
+    SkyPixDimension,
+)
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -612,6 +619,28 @@ class Pipeline:
             name, or None if the pipeline does not have an instrument.
         """
         return self._pipelineIR.instrument
+
+    def get_data_id(self, universe: DimensionUniverse) -> DataCoordinate:
+        """Return a data ID with all dimension constraints embedded in the
+        pipeline.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Object that defines all dimensions.
+
+        Returns
+        -------
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID with all dimension constraints embedded in the
+            pipeline.
+        """
+        instrument_class_name = self._pipelineIR.instrument
+        if instrument_class_name is not None:
+            instrument_class = doImportType(instrument_class_name)
+            if instrument_class is not None:
+                return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
+        return DataCoordinate.makeEmpty(universe)
 
     def addTask(self, task: Union[Type[PipelineTask], str], label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
