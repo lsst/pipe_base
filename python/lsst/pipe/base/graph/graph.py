@@ -912,8 +912,8 @@ class QuantumGraph:
             If None it is loaded from the QuantumGraph saved structure. If
             supplied, the DimensionUniverse from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes: iterable of `int` or None
-            Numbers that correspond to nodes in the graph. If specified, only
+        nodes: iterable of `uuid.UUID` or None
+            UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
         graphID : `str` or `None`
@@ -1203,8 +1203,8 @@ class QuantumGraph:
             If None it is loaded from the QuantumGraph saved structure. If
             supplied, the DimensionUniverse from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes: iterable of `int` or None
-            Numbers that correspond to nodes in the graph. If specified, only
+        nodes: iterable of `uuid.UUID` or None
+            UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
         graphID : `str` or `None`
