@@ -33,19 +33,19 @@ TEST_CHOICE_VALUE = 1  # noqa: F841
 
 
 class ConfigTest(pexConfig.Config):
-    fStr = pexConfig.Field(dtype=str, default="default", doc="")
-    fBool = pexConfig.Field(dtype=bool, default=False, doc="")
-    fInt = pexConfig.Field(dtype=int, default=-1, doc="")
-    fFloat = pexConfig.Field(dtype=float, default=-1.0, doc="")
+    fStr = pexConfig.Field(dtype=str, default="default", doc="test")
+    fBool = pexConfig.Field(dtype=bool, default=False, doc="test")
+    fInt = pexConfig.Field(dtype=int, default=-1, doc="test")
+    fFloat = pexConfig.Field(dtype=float, default=-1.0, doc="test")
 
-    fListStr = pexConfig.ListField(dtype=str, default=[], doc="")
-    fListBool = pexConfig.ListField(dtype=bool, default=[], doc="")
-    fListInt = pexConfig.ListField(dtype=int, default=[], doc="")
+    fListStr = pexConfig.ListField(dtype=str, default=[], doc="test")
+    fListBool = pexConfig.ListField(dtype=bool, default=[], doc="test")
+    fListInt = pexConfig.ListField(dtype=int, default=[], doc="test")
 
-    fChoiceStr = pexConfig.ChoiceField(dtype=str, allowed=dict(A="a", B="b", C="c"), doc="")
-    fChoiceInt = pexConfig.ChoiceField(dtype=int, allowed={1: "a", 2: "b", 3: "c"}, doc="")
+    fChoiceStr = pexConfig.ChoiceField(dtype=str, allowed=dict(A="a", B="b", C="c"), doc="test")
+    fChoiceInt = pexConfig.ChoiceField(dtype=int, allowed={1: "a", 2: "b", 3: "c"}, doc="test")
 
-    fDictStrInt = pexConfig.DictField(keytype=str, itemtype=int, doc="")
+    fDictStrInt = pexConfig.DictField(keytype=str, itemtype=int, doc="test")
 
 
 class ConfigOverridesTestCase(unittest.TestCase):

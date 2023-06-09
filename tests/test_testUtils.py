@@ -136,11 +136,11 @@ class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
-    doUseInitIn = lsst.pex.config.Field(default=False, dtype=bool, doc="")
+    doUseInitIn = lsst.pex.config.Field(default=False, dtype=bool, doc="test")
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
-    doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="")
+    doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="test")
 
 
 class SkyPixConfig(PipelineTaskConfig, pipelineConnections=SkyPixConnections):
