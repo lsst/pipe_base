@@ -26,7 +26,8 @@ __all__ = ("Instrument",)
 import datetime
 import os.path
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Type, Union, cast, final
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, cast, final
 
 from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
@@ -64,7 +65,7 @@ class Instrument(metaclass=ABCMeta):
     each of the Tasks that requires special configuration.
     """
 
-    policyName: Optional[str] = None
+    policyName: str | None = None
     """Instrument specific name to use when locating a policy or configuration
     file in the file system."""
 
@@ -73,7 +74,7 @@ class Instrument(metaclass=ABCMeta):
     of the dataset type name, a tuple of dimension names, and the storage class
     name. If `None` the ingest system will use its default definition."""
 
-    def __init__(self, collection_prefix: Optional[str] = None):
+    def __init__(self, collection_prefix: str | None = None):
         if collection_prefix is None:
             collection_prefix = self.getName()
         self.collection_prefix = collection_prefix
@@ -131,7 +132,7 @@ class Instrument(metaclass=ABCMeta):
         raise NotImplementedError()
 
     @staticmethod
-    def fromName(name: str, registry: Registry, collection_prefix: Optional[str] = None) -> Instrument:
+    def fromName(name: str, registry: Registry, collection_prefix: str | None = None) -> Instrument:
         """Given an instrument name and a butler registry, retrieve a
         corresponding instantiated instrument object.
 
@@ -182,7 +183,7 @@ class Instrument(metaclass=ABCMeta):
 
     @staticmethod
     def from_string(
-        name: str, registry: Optional[Registry] = None, collection_prefix: Optional[str] = None
+        name: str, registry: Registry | None = None, collection_prefix: str | None = None
     ) -> Instrument:
         """Return an instance from the short name or class name.
 
@@ -242,7 +243,7 @@ class Instrument(metaclass=ABCMeta):
         return instr
 
     @staticmethod
-    def from_data_id(data_id: DataCoordinate, collection_prefix: Optional[str] = None) -> Instrument:
+    def from_data_id(data_id: DataCoordinate, collection_prefix: str | None = None) -> Instrument:
         """Instantiate an `Instrument` object from a fully-expanded data ID.
 
         Parameters
@@ -331,7 +332,7 @@ class Instrument(metaclass=ABCMeta):
                 pass
 
     @abstractmethod
-    def getRawFormatter(self, dataId: DataId) -> Type[Formatter]:
+    def getRawFormatter(self, dataId: DataId) -> type[Formatter]:
         """Return the Formatter class that should be used to read a particular
         raw file.
 
@@ -365,7 +366,7 @@ class Instrument(metaclass=ABCMeta):
                 config.load(path)
 
     @staticmethod
-    def formatCollectionTimestamp(timestamp: Union[str, datetime.datetime]) -> str:
+    def formatCollectionTimestamp(timestamp: str | datetime.datetime) -> str:
         """Format a timestamp for use in a collection name.
 
         Parameters

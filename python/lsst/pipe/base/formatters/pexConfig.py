@@ -24,7 +24,7 @@ from __future__ import annotations
 __all__ = ("PexConfigFormatter",)
 
 import os.path
-from typing import Any, Optional, Type
+from typing import Any
 
 from lsst.daf.butler.formatters.file import FileFormatter
 from lsst.pex.config import Config
@@ -37,7 +37,7 @@ class PexConfigFormatter(FileFormatter):
 
     extension = ".py"
 
-    def _readFile(self, path: str, pytype: Optional[Type[Any]] = None) -> Any:
+    def _readFile(self, path: str, pytype: type[Any] | None = None) -> Any:
         """Read a pex.config.Config instance from the given file.
 
         Parameters

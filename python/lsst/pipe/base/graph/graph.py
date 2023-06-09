@@ -32,26 +32,10 @@ import time
 import uuid
 import warnings
 from collections import defaultdict, deque
+from collections.abc import Generator, Iterable, Mapping, MutableMapping
 from itertools import chain
 from types import MappingProxyType
-from typing import (
-    Any,
-    BinaryIO,
-    DefaultDict,
-    Deque,
-    Dict,
-    FrozenSet,
-    Generator,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Any, BinaryIO, TypeVar
 
 import networkx as nx
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
@@ -146,14 +130,14 @@ class QuantumGraph:
 
     def __init__(
         self,
-        quanta: Mapping[TaskDef, Set[Quantum]],
-        metadata: Optional[Mapping[str, Any]] = None,
-        pruneRefs: Optional[Iterable[DatasetRef]] = None,
-        universe: Optional[DimensionUniverse] = None,
-        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
-        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
+        quanta: Mapping[TaskDef, set[Quantum]],
+        metadata: Mapping[str, Any] | None = None,
+        pruneRefs: Iterable[DatasetRef] | None = None,
+        universe: DimensionUniverse | None = None,
+        initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        globalInitOutputs: Iterable[DatasetRef] | None = None,
+        registryDatasetTypes: Iterable[DatasetType] | None = None,
     ):
         self._buildGraphs(
             quanta,
@@ -168,17 +152,17 @@ class QuantumGraph:
 
     def _buildGraphs(
         self,
-        quanta: Mapping[TaskDef, Set[Quantum]],
+        quanta: Mapping[TaskDef, set[Quantum]],
         *,
-        _quantumToNodeId: Optional[Mapping[Quantum, uuid.UUID]] = None,
-        _buildId: Optional[BuildId] = None,
-        metadata: Optional[Mapping[str, Any]] = None,
-        pruneRefs: Optional[Iterable[DatasetRef]] = None,
-        universe: Optional[DimensionUniverse] = None,
-        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
-        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
+        _quantumToNodeId: Mapping[Quantum, uuid.UUID] | None = None,
+        _buildId: BuildId | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        pruneRefs: Iterable[DatasetRef] | None = None,
+        universe: DimensionUniverse | None = None,
+        initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        globalInitOutputs: Iterable[DatasetRef] | None = None,
+        registryDatasetTypes: Iterable[DatasetType] | None = None,
     ) -> None:
         """Build the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
@@ -191,8 +175,8 @@ class QuantumGraph:
         self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         self._datasetRefDict = _DatasetTracker[DatasetRef, QuantumNode]()
 
-        self._nodeIdMap: Dict[uuid.UUID, QuantumNode] = {}
-        self._taskToQuantumNode: MutableMapping[TaskDef, Set[QuantumNode]] = defaultdict(set)
+        self._nodeIdMap: dict[uuid.UUID, QuantumNode] = {}
+        self._taskToQuantumNode: MutableMapping[TaskDef, set[QuantumNode]] = defaultdict(set)
         for taskDef, quantumSet in quanta.items():
             connections = taskDef.connections
 
@@ -258,13 +242,13 @@ class QuantumGraph:
 
         if pruneRefs is not None:
             # track what refs were pruned and prune the graph
-            prunes: Set[QuantumNode] = set()
+            prunes: set[QuantumNode] = set()
             _pruner(self._datasetRefDict, pruneRefs, alreadyPruned=prunes)
 
             # recreate the taskToQuantumNode dict removing nodes that have been
             # pruned. Keep track of task defs that now have no QuantumNodes
-            emptyTasks: Set[str] = set()
-            newTaskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
+            emptyTasks: set[str] = set()
+            newTaskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
             # accumulate all types
             types_ = set()
             # tracker for any pruneRefs that have caused tasks to have no nodes
@@ -319,10 +303,10 @@ class QuantumGraph:
         # insertion
         self._taskToQuantumNode = dict(self._taskToQuantumNode.items())
 
-        self._initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        self._initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        self._globalInitOutputRefs: List[DatasetRef] = []
-        self._registryDatasetTypes: List[DatasetType] = []
+        self._initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        self._initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        self._globalInitOutputRefs: list[DatasetRef] = []
+        self._registryDatasetTypes: list[DatasetType] = []
         if initInputs is not None:
             self._initInputRefs = {taskDef: list(refs) for taskDef, refs in initInputs.items()}
         if initOutputs is not None:
@@ -369,7 +353,7 @@ class QuantumGraph:
         return [q for q, n in self._connectedQuanta.out_degree if n == 0]
 
     @property
-    def allDatasetTypes(self) -> Tuple[DatasetTypeName, ...]:
+    def allDatasetTypes(self) -> tuple[DatasetTypeName, ...]:
         """All the data set type names that are present in the graph
         (`tuple` [`str`]).
 
@@ -405,7 +389,7 @@ class QuantumGraph:
             quantumMap[node.taskDef].add(node.quantum)
 
         # convert to standard dict to prevent accidental key insertion
-        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
+        quantumDict: dict[TaskDef, set[Quantum]] = dict(quantumMap.items())
 
         # This should not change set of tasks in a graph, so we can keep the
         # same registryDatasetTypes as in the original graph.
@@ -441,7 +425,7 @@ class QuantumGraph:
         """
         return self._nodeIdMap[nodeId]
 
-    def getQuantaForTask(self, taskDef: TaskDef) -> FrozenSet[Quantum]:
+    def getQuantaForTask(self, taskDef: TaskDef) -> frozenset[Quantum]:
         """Return all the `~lsst.daf.butler.Quantum` associated with a
         `TaskDef`.
 
@@ -477,7 +461,7 @@ class QuantumGraph:
         """
         return len(self._taskToQuantumNode.get(taskDef, ()))
 
-    def getNodesForTask(self, taskDef: TaskDef) -> FrozenSet[QuantumNode]:
+    def getNodesForTask(self, taskDef: TaskDef) -> frozenset[QuantumNode]:
         r"""Return all the `QuantumNode`\s associated with a `TaskDef`.
 
         Parameters
@@ -519,7 +503,7 @@ class QuantumGraph:
         """
         return (c for c in self._datasetDict.getConsumers(datasetTypeName))
 
-    def findTaskWithOutput(self, datasetTypeName: DatasetTypeName) -> Optional[TaskDef]:
+    def findTaskWithOutput(self, datasetTypeName: DatasetTypeName) -> TaskDef | None:
         """Find all tasks that have the specified dataset type name as an
         output.
 
@@ -567,7 +551,7 @@ class QuantumGraph:
         """
         return self._datasetDict.getAll(datasetTypeName)
 
-    def findTaskDefByName(self, taskName: str) -> List[TaskDef]:
+    def findTaskDefByName(self, taskName: str) -> list[TaskDef]:
         """Determine which `TaskDef` objects in this graph are associated
         with a `str` representing a task name (looks at the ``taskName``
         property of `TaskDef` objects).
@@ -594,7 +578,7 @@ class QuantumGraph:
                 results.append(task)
         return results
 
-    def findTaskDefByLabel(self, label: str) -> Optional[TaskDef]:
+    def findTaskDefByLabel(self, label: str) -> TaskDef | None:
         """Determine which `TaskDef` objects in this graph are associated
         with a `str` representing a tasks label.
 
@@ -613,7 +597,7 @@ class QuantumGraph:
                 return task
         return None
 
-    def findQuantaWithDSType(self, datasetTypeName: DatasetTypeName) -> Set[Quantum]:
+    def findQuantaWithDSType(self, datasetTypeName: DatasetTypeName) -> set[Quantum]:
         r"""Return all the `~lsst.daf.butler.Quantum` that contain a specified
         `DatasetTypeName`.
 
@@ -637,7 +621,7 @@ class QuantumGraph:
 
         """
         tasks = self._datasetDict.getAll(datasetTypeName)
-        result: Set[Quantum] = set()
+        result: set[Quantum] = set()
         result = result.union(quantum for task in tasks for quantum in self.getQuantaForTask(task))
         return result
 
@@ -659,7 +643,7 @@ class QuantumGraph:
                 return True
         return False
 
-    def writeDotGraph(self, output: Union[str, io.BufferedIOBase]) -> None:
+    def writeDotGraph(self, output: str | io.BufferedIOBase) -> None:
         """Write out the graph as a dot graph.
 
         Parameters
@@ -669,7 +653,7 @@ class QuantumGraph:
         """
         write_dot(self._connectedQuanta, output)
 
-    def subset(self: _T, nodes: Union[QuantumNode, Iterable[QuantumNode]]) -> _T:
+    def subset(self: _T, nodes: QuantumNode | Iterable[QuantumNode]) -> _T:
         """Create a new graph object that contains the subset of the nodes
         specified as input. Node number is preserved.
 
@@ -709,7 +693,7 @@ class QuantumGraph:
         ]
 
         # convert to standard dict to prevent accidental key insertion
-        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
+        quantumDict: dict[TaskDef, set[Quantum]] = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({}, universe=self._universe)
         # TODO: Do we need to copy initInputs/initOutputs?
@@ -724,7 +708,7 @@ class QuantumGraph:
         )
         return newInst
 
-    def subsetToConnected(self: _T) -> Tuple[_T, ...]:
+    def subsetToConnected(self: _T) -> tuple[_T, ...]:
         """Generate a list of subgraphs where each is connected.
 
         Returns
@@ -737,7 +721,7 @@ class QuantumGraph:
             for connectedSet in nx.weakly_connected_components(self._connectedQuanta)
         )
 
-    def determineInputsToQuantumNode(self, node: QuantumNode) -> Set[QuantumNode]:
+    def determineInputsToQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct inputs to a specified
         node.
 
@@ -753,7 +737,7 @@ class QuantumGraph:
         """
         return set(pred for pred in self._connectedQuanta.predecessors(node))
 
-    def determineOutputsOfQuantumNode(self, node: QuantumNode) -> Set[QuantumNode]:
+    def determineOutputsOfQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct outputs of a specified
         node.
 
@@ -806,7 +790,7 @@ class QuantumGraph:
         predecessorNodes.add(node)
         return self.subset(predecessorNodes)
 
-    def findCycle(self) -> List[Tuple[QuantumNode, QuantumNode]]:
+    def findCycle(self) -> list[tuple[QuantumNode, QuantumNode]]:
         """Check a graph for the presense of cycles and returns the edges of
         any cycles found, or an empty list if there is no cycle.
 
@@ -837,7 +821,7 @@ class QuantumGraph:
         path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
     @property
-    def metadata(self) -> Optional[MappingProxyType[str, Any]]:
+    def metadata(self) -> MappingProxyType[str, Any] | None:
         """Extra data carried with the graph (mapping [`str`] or `None`).
 
         The mapping is a dynamic view of this object's metadata. Values should
@@ -847,7 +831,7 @@ class QuantumGraph:
             return None
         return MappingProxyType(self._metadata)
 
-    def initInputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+    def initInputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitInputs.
 
         Parameters
@@ -863,7 +847,7 @@ class QuantumGraph:
         """
         return self._initInputRefs.get(taskDef)
 
-    def initOutputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+    def initOutputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitOutputs.
 
         Parameters
@@ -880,7 +864,7 @@ class QuantumGraph:
         """
         return self._initOutputRefs.get(taskDef)
 
-    def globalInitOutputRefs(self) -> List[DatasetRef]:
+    def globalInitOutputRefs(self) -> list[DatasetRef]:
         """Return DatasetRefs for global InitOutputs.
 
         Returns
@@ -890,7 +874,7 @@ class QuantumGraph:
         """
         return self._globalInitOutputRefs
 
-    def registryDatasetTypes(self) -> List[DatasetType]:
+    def registryDatasetTypes(self) -> list[DatasetType]:
         """Return dataset types used by this graph, their definitions match
         dataset types from registry.
 
@@ -905,9 +889,9 @@ class QuantumGraph:
     def loadUri(
         cls,
         uri: ResourcePathExpression,
-        universe: Optional[DimensionUniverse] = None,
-        nodes: Optional[Iterable[uuid.UUID]] = None,
-        graphID: Optional[BuildId] = None,
+        universe: DimensionUniverse | None = None,
+        nodes: Iterable[uuid.UUID] | None = None,
+        graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
         """Read `QuantumGraph` from a URI.
@@ -986,7 +970,7 @@ class QuantumGraph:
         return qgraph
 
     @classmethod
-    def readHeader(cls, uri: ResourcePathExpression, minimumVersion: int = 3) -> Optional[str]:
+    def readHeader(cls, uri: ResourcePathExpression, minimumVersion: int = 3) -> str | None:
         """Read the header of a `QuantumGraph` pointed to by the uri parameter
         and return it as a string.
 
@@ -1041,15 +1025,15 @@ class QuantumGraph:
         buffer = self._buildSaveObject()
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
 
-    def _buildSaveObject(self, returnHeader: bool = False) -> Union[bytearray, Tuple[bytearray, Dict]]:
+    def _buildSaveObject(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
         # make some containers
-        jsonData: Deque[bytes] = deque()
+        jsonData: deque[bytes] = deque()
         # node map is a list because json does not accept mapping keys that
         # are not strings, so we store a list of key, value pairs that will
         # be converted to a mapping on load
         nodeMap = []
         taskDefMap = {}
-        headerData: Dict[str, Any] = {}
+        headerData: dict[str, Any] = {}
 
         # Store the QauntumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
@@ -1071,7 +1055,7 @@ class QuantumGraph:
         for taskDef in self.taskGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
-            taskDescription: Dict[str, Any] = {}
+            taskDescription: dict[str, Any] = {}
             # save the fully qualified name.
             taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
@@ -1199,9 +1183,9 @@ class QuantumGraph:
     def load(
         cls,
         file: BinaryIO,
-        universe: Optional[DimensionUniverse] = None,
-        nodes: Optional[Iterable[uuid.UUID]] = None,
-        graphID: Optional[BuildId] = None,
+        universe: DimensionUniverse | None = None,
+        nodes: Iterable[uuid.UUID] | None = None,
+        graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
         """Read `QuantumGraph` from a file that was made by `save`.
@@ -1372,7 +1356,7 @@ class QuantumGraph:
         reconstructed with this information, and it preserves the ordering of
         the graph nodes.
         """
-        universe: Optional[DimensionUniverse] = None
+        universe: DimensionUniverse | None = None
         for node in self:
             dId = node.quantum.dataId
             if dId is None:

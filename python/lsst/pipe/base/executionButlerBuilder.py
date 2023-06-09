@@ -24,7 +24,7 @@ __all__ = ("buildExecutionButler",)
 
 import io
 from collections import defaultdict
-from typing import Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from collections.abc import Callable, Iterable, Mapping
 
 from lsst.daf.butler import Butler, Config, DatasetRef, DatasetType, Registry
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
@@ -35,11 +35,11 @@ from lsst.utils.introspection import get_class_of
 
 from .graph import QuantumGraph
 
-DataSetTypeRefMap = Mapping[DatasetType, Set[DatasetRef]]
+DataSetTypeRefMap = Mapping[DatasetType, set[DatasetRef]]
 
 
 def _validate_dataset_type(
-    candidate: DatasetType, previous: dict[Union[str, DatasetType], DatasetType], registry: Registry
+    candidate: DatasetType, previous: dict[str | DatasetType, DatasetType], registry: Registry
 ) -> DatasetType:
     """Check the dataset types and return a consistent variant if there are
     different compatible options.
@@ -119,13 +119,13 @@ def _validate_dataset_type(
 def _accumulate(
     butler: Butler,
     graph: QuantumGraph,
-) -> Tuple[Set[DatasetRef], DataSetTypeRefMap]:
+) -> tuple[set[DatasetRef], DataSetTypeRefMap]:
     # accumulate the DatasetRefs that will be transferred to the execution
     # registry
 
     # exports holds all the existing data that will be migrated to the
     # execution butler
-    exports: Set[DatasetRef] = set()
+    exports: set[DatasetRef] = set()
 
     # inserts is the mapping of DatasetType to dataIds for what is to be
     # inserted into the registry. These are the products that are expected
@@ -137,7 +137,7 @@ def _accumulate(
     # must we must ensure that only a single dataset type definition is
     # accumulated in the loop below.  This data structure caches every dataset
     # type encountered and stores the compatible alternative.
-    datasetTypes: dict[Union[str, DatasetType], DatasetType] = {}
+    datasetTypes: dict[str | DatasetType, DatasetType] = {}
 
     # Find the initOutput refs.
     initOutputRefs = list(graph.globalInitOutputRefs())
@@ -155,10 +155,10 @@ def _accumulate(
 
     # Output references may be resolved even if they do not exist. Find all
     # actually existing refs.
-    check_refs: Set[DatasetRef] = set()
+    check_refs: set[DatasetRef] = set()
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
-            attr: Mapping[DatasetType, Union[DatasetRef, List[DatasetRef]]] = getattr(quantum, attrName)
+            attr: Mapping[DatasetType, DatasetRef | list[DatasetRef]] = getattr(quantum, attrName)
             for type, refs in attr.items():
                 # This if block is because init inputs has a different
                 # signature for its items
@@ -229,7 +229,7 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataSetTypeRefMap) -> io.StringIO:
+def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetTypeRefMap) -> io.StringIO:
     # This exports relevant dimension records and collections using daf butler
     # objects, however it reaches in deep and does not use the public methods
     # so that it can export it to a string buffer and skip disk access.  This
@@ -267,7 +267,7 @@ def _setupNewButler(
     butler: Butler,
     outputLocation: ResourcePath,
     dirExists: bool,
-    datastoreRoot: Optional[ResourcePath] = None,
+    datastoreRoot: ResourcePath | None = None,
 ) -> Butler:
     """Set up the execution butler
 
@@ -338,8 +338,8 @@ def _import(
     yamlBuffer: io.StringIO,
     newButler: Butler,
     inserts: DataSetTypeRefMap,
-    run: Optional[str],
-    butlerModifier: Optional[Callable[[Butler], Butler]],
+    run: str | None,
+    butlerModifier: Callable[[Butler], Butler] | None,
 ) -> Butler:
     # This method takes the exports from the existing butler, imports
     # them into the newly created butler, and then inserts the datasets
@@ -371,12 +371,12 @@ def buildExecutionButler(
     butler: Butler,
     graph: QuantumGraph,
     outputLocation: ResourcePathExpression,
-    run: Optional[str],
+    run: str | None,
     *,
     clobber: bool = False,
-    butlerModifier: Optional[Callable[[Butler], Butler]] = None,
-    collections: Optional[Iterable[str]] = None,
-    datastoreRoot: Optional[ResourcePathExpression] = None,
+    butlerModifier: Callable[[Butler], Butler] | None = None,
+    collections: Iterable[str] | None = None,
+    datastoreRoot: ResourcePathExpression | None = None,
     transfer: str = "auto",
 ) -> Butler:
     r"""Create an execution butler.

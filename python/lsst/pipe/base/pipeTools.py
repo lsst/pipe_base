@@ -31,7 +31,8 @@ __all__ = ["isPipelineOrdered", "orderPipeline"]
 #  Imports of standard modules --
 # -------------------------------
 import itertools
-from typing import TYPE_CHECKING, Iterable, List, Optional, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 # -----------------------------
 #  Imports for other modules --
@@ -71,9 +72,7 @@ class PipelineDataCycleError(Exception):
     pass
 
 
-def isPipelineOrdered(
-    pipeline: Union[Pipeline, Iterable[TaskDef]], taskFactory: Optional[TaskFactory] = None
-) -> bool:
+def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskFactory | None = None) -> bool:
     """Check whether tasks in pipeline are correctly ordered.
 
     Pipeline is correctly ordered if for any DatasetType produced by a task
@@ -123,7 +122,7 @@ def isPipelineOrdered(
     return True
 
 
-def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
+def orderPipeline(pipeline: list[TaskDef]) -> list[TaskDef]:
     """Re-order tasks in pipeline to satisfy data dependencies.
 
     When possible new ordering keeps original relative order of the tasks.

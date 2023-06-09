@@ -23,11 +23,12 @@ from __future__ import annotations
 __all__ = ("LoadHelper",)
 
 import struct
-from contextlib import ExitStack
+from collections.abc import Iterable
+from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass
 from io import BufferedRandom, BytesIO
 from types import TracebackType
-from typing import TYPE_CHECKING, BinaryIO, ContextManager, Iterable, Optional, Set, Type, Union
+from typing import TYPE_CHECKING, BinaryIO
 from uuid import UUID
 
 from lsst.daf.butler import DimensionUniverse
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class LoadHelper(ContextManager["LoadHelper"]):
+class LoadHelper(AbstractContextManager["LoadHelper"]):
     """Helper class to assist with selecting the appropriate loader
     and managing any contexts that may be needed.
 
@@ -47,7 +48,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
     to be a valid `QuantumGraph` save file.
     """
 
-    uri: Union[ResourcePath, BinaryIO]
+    uri: ResourcePath | BinaryIO
     """ResourcePath object from which the `QuantumGraph` is to be loaded
     """
     minimumVersion: int
@@ -59,7 +60,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
     """
 
     def __post_init__(self) -> None:
-        self._resourceHandle: Optional[ResourceHandleProtocol] = None
+        self._resourceHandle: ResourceHandleProtocol | None = None
         self._exitStack = ExitStack()
 
     def _initialize(self) -> None:
@@ -150,9 +151,9 @@ class LoadHelper(ContextManager["LoadHelper"]):
 
     def load(
         self,
-        universe: Optional[DimensionUniverse] = None,
-        nodes: Optional[Iterable[Union[UUID, str]]] = None,
-        graphID: Optional[str] = None,
+        universe: DimensionUniverse | None = None,
+        nodes: Iterable[UUID | str] | None = None,
+        graphID: str | None = None,
     ) -> QuantumGraph:
         """Load in the specified nodes from the graph.
 
@@ -201,7 +202,7 @@ class LoadHelper(ContextManager["LoadHelper"]):
         if graphID is not None and headerInfo._buildId != graphID:
             raise ValueError("graphID does not match that of the graph being loaded")
         # Read in specified nodes, or all the nodes
-        nodeSet: Set[UUID]
+        nodeSet: set[UUID]
         if nodes is None:
             nodeSet = set(headerInfo.map.keys())
         else:
@@ -256,15 +257,15 @@ class LoadHelper(ContextManager["LoadHelper"]):
 
     def __exit__(
         self,
-        type: Optional[Type[BaseException]],
-        value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        type: type[BaseException] | None,
+        value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         assert self._resourceHandle is not None
         self._exitStack.close()
         self._resourceHandle = None
 
-    def readHeader(self) -> Optional[str]:
+    def readHeader(self) -> str | None:
         with self as handle:
             result = handle.deserializer.unpackHeader(self._readBytes(*self.headerBytesRange))
         return result

@@ -32,7 +32,7 @@ __all__ = ["PipelineTaskConfig"]
 import os
 from collections.abc import Iterable
 from numbers import Number
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 # -----------------------------
 #  Imports for other modules --
@@ -86,7 +86,7 @@ class TemplateField(pexConfig.Field):
         self,
         instance: pexConfig.Config,
         value: Any,
-        at: Optional[StackFrame] = None,
+        at: StackFrame | None = None,
         label: str = "assignment",
     ) -> None:
         # validate first, even though validate will be called in super
@@ -113,10 +113,10 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     """
 
     def __new__(
-        cls: Type[_S],
+        cls: type[_S],
         name: str,
-        bases: Tuple[type[PipelineTaskConfig], ...],
-        dct: Dict[str, Any],
+        bases: tuple[type[PipelineTaskConfig], ...],
+        dct: dict[str, Any],
         **kwargs: Any,
     ) -> _S:
         if name != "PipelineTaskConfig":
@@ -165,7 +165,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
         return inst
 
     def __init__(
-        self, name: str, bases: Tuple[Type[PipelineTaskConfig], ...], dct: Dict[str, Any], **kwargs: Any
+        self, name: str, bases: tuple[type[PipelineTaskConfig], ...], dct: dict[str, Any], **kwargs: Any
     ):
         # This overrides the default init to drop the kwargs argument. Python
         # metaclasses will have this argument set if any kwargs are passes at

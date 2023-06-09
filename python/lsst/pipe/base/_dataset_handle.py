@@ -23,7 +23,7 @@ from __future__ import annotations
 __all__ = ["InMemoryDatasetHandle"]
 
 import dataclasses
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from frozendict import frozendict
 from lsst.daf.butler import (
@@ -85,8 +85,8 @@ class InMemoryDatasetHandle:
     def get(
         self,
         *,
-        component: Optional[str] = None,
-        parameters: Optional[dict] = None,
+        component: str | None = None,
+        parameters: dict | None = None,
         storageClass: str | StorageClass | None = None,
     ) -> Any:
         """Retrieve the dataset pointed to by this handle.
@@ -244,14 +244,14 @@ class InMemoryDatasetHandle:
     handle.
     """
 
-    storageClass: Optional[str] = None
+    storageClass: str | None = None
     """The name of the `~lsst.daf.butler.StorageClass` associated with this
     dataset.
 
     If `None`, the storage class will be looked up from the factory.
     """
 
-    parameters: Optional[dict] = None
+    parameters: dict | None = None
     """Optional parameters that may be used to specify a subset of the dataset
     to be loaded (`dict` or `None`).
     """

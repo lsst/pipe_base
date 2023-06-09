@@ -34,7 +34,7 @@ from collections import ChainMap, defaultdict
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from lsst.daf.butler import (
     CollectionType,
@@ -414,7 +414,7 @@ class _QuantumScaffolding:
     inputs to this quantum.
     """
 
-    def makeQuantum(self, datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None) -> Quantum:
+    def makeQuantum(self, datastore_records: Mapping[str, DatastoreRecordData] | None = None) -> Quantum:
         """Transform the scaffolding object into a true `Quantum` instance.
 
         Parameters
@@ -445,7 +445,7 @@ class _QuantumScaffolding:
         )
         helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
         initInputs = self.task.initInputs.unpackSingleRefs(self.task.storage_classes)
-        quantum_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        quantum_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore_records is not None:
             quantum_records = {}
             input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
@@ -574,7 +574,7 @@ class _TaskScaffolding:
     def makeQuantumSet(
         self,
         missing: _DatasetDict,
-        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None,
+        datastore_records: Mapping[str, DatastoreRecordData] | None = None,
     ) -> set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
 
@@ -816,10 +816,10 @@ class _PipelineScaffolding:
         self,
         registry: Registry,
         collections: Any,
-        userQuery: Optional[str],
+        userQuery: str | None,
         externalDataId: DataCoordinate,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
-        bind: Optional[Mapping[str, Any]] = None,
+        bind: Mapping[str, Any] | None = None,
     ) -> Iterator[DataCoordinateQueryResults]:
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
@@ -929,7 +929,7 @@ class _PipelineScaffolding:
                     self.intermediates.items(),
                     self.outputs.items(),
                 ):
-                    datasetDataId: Optional[DataCoordinate]
+                    datasetDataId: DataCoordinate | None
                     if (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)) is None:
                         datasetDataId = commonDataId.subset(datasetType.dimensions)
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
@@ -1383,8 +1383,8 @@ class _PipelineScaffolding:
     def makeQuantumGraph(
         self,
         registry: Registry,
-        metadata: Optional[Mapping[str, Any]] = None,
-        datastore: Optional[Datastore] = None,
+        metadata: Mapping[str, Any] | None = None,
+        datastore: Datastore | None = None,
     ) -> QuantumGraph:
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
@@ -1413,7 +1413,7 @@ class _PipelineScaffolding:
                 for holder in ref_dict.values():
                     yield holder.resolved_ref
 
-        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        datastore_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore is not None:
             datastore_records = datastore.export_records(
                 itertools.chain(
@@ -1556,7 +1556,7 @@ class GraphBuilder:
         registry: Registry,
         skipExistingIn: Any = None,
         clobberOutputs: bool = True,
-        datastore: Optional[Datastore] = None,
+        datastore: Datastore | None = None,
     ):
         self.registry = registry
         self.dimensions = registry.dimensions
@@ -1569,10 +1569,10 @@ class GraphBuilder:
         pipeline: Pipeline | Iterable[TaskDef],
         collections: Any,
         run: str,
-        userQuery: Optional[str],
+        userQuery: str | None,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
-        metadata: Optional[Mapping[str, Any]] = None,
-        bind: Optional[Mapping[str, Any]] = None,
+        metadata: Mapping[str, Any] | None = None,
+        bind: Mapping[str, Any] | None = None,
         dataId: DataCoordinate | None = None,
     ) -> QuantumGraph:
         """Create execution graph for a pipeline.

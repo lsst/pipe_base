@@ -33,25 +33,10 @@ import urllib.parse
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Set
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import (
-    TYPE_CHECKING,
-    AbstractSet,
-    Callable,
-    ClassVar,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, ClassVar, cast
 
 # -----------------------------
 #  Imports for other modules --
@@ -104,9 +89,9 @@ class LabelSpecifier:
     and correct behavior is not guaranteed, or may vary from run to run.
     """
 
-    labels: Optional[Set[str]] = None
-    begin: Optional[str] = None
-    end: Optional[str] = None
+    labels: set[str] | None = None
+    begin: str | None = None
+    end: str | None = None
 
     def __post_init__(self) -> None:
         if self.labels is not None and (self.begin or self.end):
@@ -145,10 +130,10 @@ class TaskDef:
 
     def __init__(
         self,
-        taskName: Optional[str] = None,
-        config: Optional[PipelineTaskConfig] = None,
-        taskClass: Optional[Type[PipelineTask]] = None,
-        label: Optional[str] = None,
+        taskName: str | None = None,
+        config: PipelineTaskConfig | None = None,
+        taskClass: type[PipelineTask] | None = None,
+        label: str | None = None,
     ):
         if taskName is None:
             if taskClass is None:
@@ -203,7 +188,7 @@ class TaskDef:
         return acc.METADATA_OUTPUT_TEMPLATE.format(label=label)
 
     @property
-    def logOutputDatasetName(self) -> Optional[str]:
+    def logOutputDatasetName(self) -> str | None:
         """Name of a dataset type for log output from this task, `None` if
         logs are not to be saved (`str`)
         """
@@ -240,7 +225,7 @@ class TaskDef:
         """
         return cls(taskName=taskName, config=config, label=label)
 
-    def __reduce__(self) -> Tuple[Callable[[str, PipelineTaskConfig, str], TaskDef], Tuple[str, Config, str]]:
+    def __reduce__(self) -> tuple[Callable[[str, PipelineTaskConfig, str], TaskDef], tuple[str, Config, str]]:
         return (self._unreduce, (self.taskName, self.config, self.label))
 
 
@@ -404,7 +389,7 @@ class Pipeline:
         return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
-    def _parse_file_specifier(uri: ResourcePathExpression) -> Tuple[ResourcePath, Optional[LabelSpecifier]]:
+    def _parse_file_specifier(uri: ResourcePathExpression) -> tuple[ResourcePath, LabelSpecifier | None]:
         """Split appart a uri and any possible label subsets"""
         if isinstance(uri, str):
             # This is to support legacy pipelines during transition
@@ -420,10 +405,10 @@ class Pipeline:
         uri = ResourcePath(uri)
         label_subset = uri.fragment or None
 
-        specifier: Optional[LabelSpecifier]
+        specifier: LabelSpecifier | None
         if label_subset is not None:
             label_subset = urllib.parse.unquote(label_subset)
-            args: Dict[str, Union[Set[str], str, None]]
+            args: dict[str, set[str] | str | None]
             # labels supplied as a list
             if "," in label_subset:
                 if ".." in label_subset:
@@ -591,7 +576,7 @@ class Pipeline:
                 results.add(subset.label)
         return results
 
-    def addInstrument(self, instrument: Union[Instrument, str]) -> None:
+    def addInstrument(self, instrument: Instrument | str) -> None:
         """Add an instrument to the pipeline, or replace an instrument that is
         already defined.
 
@@ -610,7 +595,7 @@ class Pipeline:
             instrument = get_full_type_name(instrument)
         self._pipelineIR.instrument = instrument
 
-    def getInstrument(self) -> Optional[str]:
+    def getInstrument(self) -> str | None:
         """Get the instrument from the pipeline.
 
         Returns
@@ -643,7 +628,7 @@ class Pipeline:
                 return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
         return DataCoordinate.makeEmpty(universe)
 
-    def addTask(self, task: Union[Type[PipelineTask], str], label: str) -> None:
+    def addTask(self, task: type[PipelineTask] | str, label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
         associated with the supplied label.
 
@@ -793,7 +778,7 @@ class Pipeline:
     def _buildTaskDef(self, label: str) -> TaskDef:
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
-        taskClass: Type[PipelineTask] = doImportType(taskIR.klass)
+        taskClass: type[PipelineTask] = doImportType(taskIR.klass)
         taskName = get_full_type_name(taskClass)
         config = taskClass.ConfigClass()
         instrument: PipeBaseInstrument | None = None
@@ -903,7 +888,7 @@ class TaskDatasetTypes:
         *,
         registry: Registry,
         include_configs: bool = True,
-        storage_class_mapping: Optional[Mapping[str, str]] = None,
+        storage_class_mapping: Mapping[str, str] | None = None,
     ) -> TaskDatasetTypes:
         """Extract and classify the dataset types from a single `PipelineTask`.
 
@@ -1213,7 +1198,7 @@ class PipelineDatasetTypes:
     @classmethod
     def fromPipeline(
         cls,
-        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        pipeline: Pipeline | Iterable[TaskDef],
         *,
         registry: Registry,
         include_configs: bool = True,
@@ -1268,7 +1253,7 @@ class PipelineDatasetTypes:
         pipeline = list(pipeline)
 
         # collect all the output dataset types
-        typeStorageclassMap: Dict[str, str] = {}
+        typeStorageclassMap: dict[str, str] = {}
         for taskDef in pipeline:
             for outConnection in iterConnections(taskDef.connections, "outputs"):
                 typeStorageclassMap[outConnection.name] = outConnection.storageClass
@@ -1333,7 +1318,7 @@ class PipelineDatasetTypes:
         checkConsistency(allInputs, intermediateComposites)
         checkConsistency(allOutputs, intermediateComposites)
 
-        def frozen(s: AbstractSet[DatasetType]) -> NamedValueSet[DatasetType]:
+        def frozen(s: Set[DatasetType]) -> NamedValueSet[DatasetType]:
             assert isinstance(s, NamedValueSet)
             s.freeze()
             return s
@@ -1359,7 +1344,7 @@ class PipelineDatasetTypes:
     @classmethod
     def initOutputNames(
         cls,
-        pipeline: Union[Pipeline, Iterable[TaskDef]],
+        pipeline: Pipeline | Iterable[TaskDef],
         *,
         include_configs: bool = True,
         include_packages: bool = True,

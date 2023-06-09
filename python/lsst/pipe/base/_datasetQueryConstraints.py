@@ -27,7 +27,8 @@ graph building query.
 __all__ = ("DatasetQueryConstraintVariant",)
 
 import warnings
-from typing import Iterable, Iterator, Protocol, Type
+from collections.abc import Iterable, Iterator
+from typing import Protocol
 
 
 class DatasetQueryConstraintVariant(Iterable, Protocol):
@@ -54,9 +55,9 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
     `fromExpression` class method given a valid string.
     """
 
-    ALL: "Type[_ALL]"
-    OFF: "Type[_OFF]"
-    LIST: "Type[_LIST]"
+    ALL: "type[_ALL]"
+    OFF: "type[_OFF]"
+    LIST: "type[_LIST]"
 
     @classmethod
     def __subclasshook__(cls, subclass):

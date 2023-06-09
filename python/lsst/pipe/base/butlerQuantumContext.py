@@ -26,7 +26,8 @@ from __future__ import annotations
 
 __all__ = ("ButlerQuantumContext",)
 
-from typing import Any, List, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
@@ -74,7 +75,7 @@ class ButlerQuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.__butler = butler
 
-    def _get(self, ref: Optional[Union[DeferredDatasetRef, DatasetRef]]) -> Any:
+    def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
@@ -93,14 +94,12 @@ class ButlerQuantumContext:
 
     def get(
         self,
-        dataset: Union[
-            InputQuantizedConnection,
-            List[Optional[DatasetRef]],
-            List[Optional[DeferredDatasetRef]],
-            DatasetRef,
-            DeferredDatasetRef,
-            None,
-        ],
+        dataset: InputQuantizedConnection
+        | list[DatasetRef | None]
+        | list[DeferredDatasetRef | None]
+        | DatasetRef
+        | DeferredDatasetRef
+        | None,
     ) -> Any:
         """Fetch data from the butler
 
@@ -197,8 +196,8 @@ class ButlerQuantumContext:
 
     def put(
         self,
-        values: Union[Struct, List[Any], Any],
-        dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef],
+        values: Struct | list[Any] | Any,
+        dataset: OutputQuantizedConnection | list[DatasetRef] | DatasetRef,
     ) -> None:
         """Put data into the butler.
 
@@ -257,7 +256,7 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
-    def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set) -> None:
+    def _checkMembership(self, ref: list[DatasetRef] | DatasetRef, inout: set) -> None:
         """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
         `~lsst.daf.butler.Quantum`.
 

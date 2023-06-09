@@ -35,7 +35,8 @@ import collections.abc
 import itertools
 import unittest.mock
 from collections import defaultdict
-from typing import TYPE_CHECKING, AbstractSet, Any, Dict, Mapping, Optional, Sequence, Set, Union
+from collections.abc import Mapping, Sequence, Set
+from typing import TYPE_CHECKING, Any
 
 from lsst.daf.butler import (
     Butler,
@@ -64,7 +65,7 @@ def makeQuantum(
     task: PipelineTask,
     butler: Butler,
     dataId: DataId,
-    ioDataIds: Mapping[str, Union[DataId, Sequence[DataId]]],
+    ioDataIds: Mapping[str, DataId | Sequence[DataId]],
 ) -> Quantum:
     """Create a Quantum for a particular data ID(s).
 
@@ -128,8 +129,8 @@ def makeQuantum(
 
 def _checkDimensionsMatch(
     universe: DimensionUniverse,
-    expected: Union[AbstractSet[str], AbstractSet[Dimension]],
-    actual: Union[AbstractSet[str], AbstractSet[Dimension]],
+    expected: Set[str] | Set[Dimension],
+    actual: Set[str] | Set[Dimension],
 ) -> None:
     """Test whether two sets of dimensions agree after conversions.
 
@@ -151,9 +152,7 @@ def _checkDimensionsMatch(
         raise ValueError(f"Mismatch in dimensions; expected {expected} but got {actual}.")
 
 
-def _simplify(
-    universe: DimensionUniverse, dimensions: Union[AbstractSet[str], AbstractSet[Dimension]]
-) -> Set[str]:
+def _simplify(universe: DimensionUniverse, dimensions: Set[str] | Set[Dimension]) -> set[str]:
     """Reduce a set of dimensions to a string-only form.
 
     Parameters
@@ -169,7 +168,7 @@ def _simplify(
         A copy of ``dimensions`` reduced to string form, with all spatial
         dimensions simplified to ``skypix``.
     """
-    simplified: Set[str] = set()
+    simplified: set[str] = set()
     for dimension in dimensions:
         # skypix not a real Dimension, handle it first
         if dimension == "skypix":
@@ -184,7 +183,7 @@ def _simplify(
     return simplified
 
 
-def _checkDataIdMultiplicity(name: str, dataIds: Union[DataId, Sequence[DataId]], multiple: bool) -> None:
+def _checkDataIdMultiplicity(name: str, dataIds: DataId | Sequence[DataId], multiple: bool) -> None:
     """Test whether data IDs are scalars for scalar connections and sequences
     for multiple connections.
 
@@ -211,7 +210,7 @@ def _checkDataIdMultiplicity(name: str, dataIds: Union[DataId, Sequence[DataId]]
             raise ValueError(f"Expected single data ID for {name}, got {dataIds}.")
 
 
-def _normalizeDataIds(dataIds: Union[DataId, Sequence[DataId]]) -> Sequence[DataId]:
+def _normalizeDataIds(dataIds: DataId | Sequence[DataId]) -> Sequence[DataId]:
     """Represent both single and multiple data IDs as a list.
 
     Parameters
@@ -281,7 +280,7 @@ def _refFromConnection(
 
 def runTestQuantum(
     task: PipelineTask, butler: Butler, quantum: Quantum, mockRun: bool = True
-) -> Optional[unittest.mock.Mock]:
+) -> unittest.mock.Mock | None:
     """Run a PipelineTask on a Quantum.
 
     Parameters
@@ -408,7 +407,7 @@ def assertValidInitOutput(task: PipelineTask) -> None:
         _assertAttributeMatchesConnection(task, name, connection)
 
 
-def getInitInputs(butler: Butler, config: PipelineTaskConfig) -> Dict[str, Any]:
+def getInitInputs(butler: Butler, config: PipelineTaskConfig) -> dict[str, Any]:
     """Return the initInputs object that would have been passed to a
     `~lsst.pipe.base.PipelineTask` constructor.
 

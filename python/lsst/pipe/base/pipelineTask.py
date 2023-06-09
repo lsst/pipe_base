@@ -26,7 +26,7 @@ from __future__ import annotations
 
 __all__ = ["PipelineTask"]  # Classes in this module
 
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .connections import InputQuantizedConnection, OutputQuantizedConnection
 from .task import Task
@@ -93,15 +93,15 @@ class PipelineTask(Task):
         permitted to require this argument.
     """
 
-    ConfigClass: ClassVar[Type[PipelineTaskConfig]]
+    ConfigClass: ClassVar[type[PipelineTaskConfig]]
     canMultiprocess: ClassVar[bool] = True
 
     def __init__(
         self,
         *,
-        config: Optional[PipelineTaskConfig] = None,
-        log: Optional[Union[logging.Logger, LsstLogAdapter]] = None,
-        initInputs: Optional[Dict[str, Any]] = None,
+        config: PipelineTaskConfig | None = None,
+        log: logging.Logger | LsstLogAdapter | None = None,
+        initInputs: dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         super().__init__(config=config, log=log, **kwargs)

@@ -29,21 +29,10 @@ import struct
 import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    ClassVar,
-    DefaultDict,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    cast,
-)
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import networkx as nx
 from lsst.daf.butler import (
@@ -72,7 +61,7 @@ class StructSizeDescriptor:
     (number of bytes) of whatever the formatter string is for a deserializer.
     """
 
-    def __get__(self, inst: Optional[DeserializerBase], owner: Type[DeserializerBase]) -> int:
+    def __get__(self, inst: DeserializerBase | None, owner: type[DeserializerBase]) -> int:
         return struct.calcsize(owner.FMT_STRING())
 
 
@@ -93,7 +82,7 @@ class DeserializerBase(ABC):
         cls.structSize = StructSizeDescriptor()
         super().__init_subclass__()
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         """Transform the raw bytes corresponding to the header of a save into
         a string of the header information.
 
@@ -137,7 +126,7 @@ class DeserializerBase(ABC):
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         """Construct a graph from the deserialized information.
 
@@ -213,20 +202,20 @@ class DeserializerV1(DeserializerBase):
         self.returnValue = returnValue
         return returnValue
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return None
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
-        quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
-        quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
+        quanta: defaultdict[TaskDef, set[Quantum]] = defaultdict(set)
+        quantumToNodeId: dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
         # loop over the nodes specified above
         for node in nodes:
@@ -347,20 +336,20 @@ class DeserializerV2(DeserializerBase):
         self.returnValue = returnValue
         return returnValue
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
-        quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
-        quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
+        quanta: defaultdict[TaskDef, set[Quantum]] = defaultdict(set)
+        quantumToNodeId: dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
         # loop over the nodes specified above
         for node in nodes:
@@ -528,26 +517,26 @@ class DeserializerV3(DeserializerBase):
         self.infoMappings = infoMappings
         return infoMappings
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
         graph = nx.DiGraph()
-        loadedTaskDef: Dict[str, TaskDef] = {}
+        loadedTaskDef: dict[str, TaskDef] = {}
         container = {}
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
-        taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
-        recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
-        initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
+        taskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
+        recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] = {}
+        initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
 
         if universe is not None:
             if not universe.isCompatibleWith(self.infoMappings.universe):
@@ -582,7 +571,7 @@ class DeserializerV3(DeserializerBase):
 
                 # bytes are compressed, so decompress them
                 taskDefDump = json.loads(lzma.decompress(_readBytes(start, stop)))
-                taskClass: Type[PipelineTask] = doImportType(taskDefDump["taskName"])
+                taskClass: type[PipelineTask] = doImportType(taskDefDump["taskName"])
                 config: PipelineTaskConfig = taskClass.ConfigClass()
                 config.loadFromStream(taskDefDump["config"])
                 # Rebuild TaskDef
@@ -659,7 +648,7 @@ class DeserializerV3(DeserializerBase):
         return newGraph
 
 
-DESERIALIZER_MAP: dict[int, Type[DeserializerBase]] = {
+DESERIALIZER_MAP: dict[int, type[DeserializerBase]] = {
     1: DeserializerV1,
     2: DeserializerV2,
     3: DeserializerV3,
