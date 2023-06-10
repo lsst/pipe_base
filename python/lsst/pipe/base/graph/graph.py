@@ -437,14 +437,14 @@ class QuantumGraph:
 
         Returns
         -------
-        frozenset of `~lsst.daf.butler.Quantum`
+        quanta : `frozenset` of `~lsst.daf.butler.Quantum`
             The `set` of `~lsst.daf.butler.Quantum` that is associated with the
             specified `TaskDef`.
         """
         return frozenset(node.quantum for node in self._taskToQuantumNode.get(taskDef, ()))
 
     def getNumberOfQuantaForTask(self, taskDef: TaskDef) -> int:
-        """Return all the number of `~lsst.daf.butler.Quantum` associated with
+        """Return the number of `~lsst.daf.butler.Quantum` associated with
         a `TaskDef`.
 
         Parameters
@@ -517,7 +517,7 @@ class QuantumGraph:
         Returns
         -------
         result : `TaskDef` or `None`
-            `TaskDef` that outputs `DatasetTypeName` as an output or None if
+            `TaskDef` that outputs `DatasetTypeName` as an output or `None` if
             none of the tasks produce this `DatasetTypeName`.
 
         Raises
@@ -841,7 +841,7 @@ class QuantumGraph:
 
         Returns
         -------
-        refs : `list` [ `lsst.daf.butler.DatasetRef` ] or None
+        refs : `list` [ `~lsst.daf.butler.DatasetRef` ] or `None`
             DatasetRef for the task InitInput, can be `None`. This can return
             either resolved or non-resolved reference.
         """
@@ -857,7 +857,7 @@ class QuantumGraph:
 
         Returns
         -------
-        refs : `list` [ `~lsst.daf.butler.DatasetRef` ] or None
+        refs : `list` [ `~lsst.daf.butler.DatasetRef` ] or `None`
             DatasetRefs for the task InitOutput, can be `None`. This can return
             either resolved or non-resolved reference. Resolved reference will
             match Quantum's initInputs if this is an intermediate dataset type.
@@ -900,14 +900,14 @@ class QuantumGraph:
         ----------
         uri : convertible to `~lsst.resources.ResourcePath`
             URI from where to load the graph.
-        universe : `~lsst.daf.butler.DimensionUniverse` optional
+        universe : `~lsst.daf.butler.DimensionUniverse`, optional
             `~lsst.daf.butler.DimensionUniverse` instance, not used by the
             method itself but needed to ensure that registry data structures
             are initialized. If `None` it is loaded from the `QuantumGraph`
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of `uuid.UUID` or None
+        nodes : iterable of `uuid.UUID` or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
@@ -1201,7 +1201,7 @@ class QuantumGraph:
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of `uuid.UUID` or None
+        nodes : iterable of `uuid.UUID` or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.

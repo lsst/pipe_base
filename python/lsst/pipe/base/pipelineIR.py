@@ -188,7 +188,7 @@ class LabeledSubset:
 class ParametersIR:
     """Intermediate representation of parameters that are global to a pipeline
 
-    These parameters are specified under a top level key named `parameters`
+    These parameters are specified under a top level key named ``parameters``
     and are declared as a yaml mapping. These entries can then be used inside
     task configuration blocks to specify configuration values. They may not be
     used in the special ``file`` or ``python`` blocks.
@@ -196,17 +196,18 @@ class ParametersIR:
     Examples
     --------
     .. code-block:: yaml
+
         parameters:
-        shared_value: 14
-        tasks:
-        taskA:
-            class: modA
-            config:
-            field1: parameters.shared_value
-        taskB:
-            class: modB
-            config:
-            field2: parameters.shared_value
+            shared_value: 14
+            tasks:
+                taskA:
+                    class: modA
+                    config:
+                        field1: parameters.shared_value
+                taskB:
+                    class: modB
+                    config:
+                        field2: parameters.shared_value
     """
 
     mapping: MutableMapping[str, str]

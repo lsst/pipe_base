@@ -92,11 +92,12 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
 
     Raises
     ------
-    `ImportError` is raised when task class cannot be imported.
-    `DuplicateOutputError` is raised when there is more than one producer for a
-    dataset type.
-    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
-    provided.
+    ImportError
+        Raised when task class cannot be imported.
+    DuplicateOutputError
+        Raised when there is more than one producer for a dataset type.
+    MissingTaskFactoryError
+        Raised when TaskFactory is needed but not provided.
     """
     # Build a map of DatasetType name to producer's index in a pipeline
     producerIndex = {}

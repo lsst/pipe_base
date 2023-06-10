@@ -48,8 +48,8 @@ def _validate_dataset_type(
     ----------
     candidate : `lsst.daf.butler.DatasetType`
         The candidate dataset type.
-    previous : `dict` [Union[`str`, `~lsst.daf.butler.DatasetType``], \
-            `~lsst.daf.butler.DatasetType``]
+    previous : `dict` [ `str` | `~lsst.daf.butler.DatasetType`, \
+            `~lsst.daf.butler.DatasetType`]
         Previous dataset types found, indexed by name and also by
         dataset type. The latter provides a quick way of returning a
         previously checked dataset type.

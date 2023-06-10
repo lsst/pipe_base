@@ -60,16 +60,16 @@ class ScalarError(TypeError):
 
 
 class PipelineTaskConnectionDict(UserDict):
-    """A special dict class used by PipelineTaskConnectionMetaclass
+    """A special dict class used by `PipelineTaskConnectionMetaclass`.
 
-    This dict is used in PipelineTaskConnection class creation, as the
-    dictionary that is initially used as __dict__. It exists to
-    intercept connection fields declared in a PipelineTaskConnection, and
+    This dict is used in `PipelineTaskConnection` class creation, as the
+    dictionary that is initially used as ``__dict__``. It exists to
+    intercept connection fields declared in a `PipelineTaskConnection`, and
     what name is used to identify them. The names are then added to class
     level list according to the connection type of the class attribute. The
     names are also used as keys in a class level dictionary associated with
     the corresponding class attribute. This information is a duplicate of
-    what exists in __dict__, but provides a simple place to lookup and
+    what exists in ``__dict__``, but provides a simple place to lookup and
     iterate on only these variables.
     """
 

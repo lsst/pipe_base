@@ -735,7 +735,7 @@ class Pipeline:
         uri : convertible to `~lsst.resources.ResourcePath`
             URI to write to; may have any scheme with
             `~lsst.resources.ResourcePath` write support or no scheme for a
-            local file/directory.  Should have a ``.yaml``.
+            local file/directory.  Should have a ``.yaml`` extension.
         """
         self._pipelineIR.write_to_uri(uri)
 
@@ -932,7 +932,7 @@ class TaskDatasetTypes:
             is_input: bool,
             freeze: bool = True,
         ) -> NamedValueSet[DatasetType]:
-            """Construct a set of true `~lsst.daf.butler.DatasetType` objects
+            """Construct a set of true `~lsst.daf.butler.DatasetType` objects.
 
             Parameters
             ----------

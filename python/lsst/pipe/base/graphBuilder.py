@@ -266,7 +266,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
         Returns
         -------
-        dictionary : `NamedKeyDict`
+        dictionary : `~lsst.daf.butler.NamedKeyDict`
             Dictionary mapping `~lsst.daf.butler.DatasetType` to
             `~lsst.daf.butler.DatasetRef`, with both
             `~lsst.daf.butler.DatasetType` instances and string names usable
@@ -291,7 +291,7 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
         Returns
         -------
-        dictionary : `NamedKeyDict`
+        dictionary : `~lsst.daf.butler.NamedKeyDict`
             Dictionary mapping `~lsst.daf.butler.DatasetType` to `list` of
             `~lsst.daf.butler.DatasetRef`, with both
             `~lsst.daf.butler.DatasetType` instances and string names usable
@@ -419,7 +419,7 @@ class _QuantumScaffolding:
 
         Parameters
         ----------
-        datastore_records : `dict` [ `str`, \
+        datastore_records : `~collections.abc.Mapping` [ `str`, \
                 `~lsst.daf.butler.DatastoreRecordData` ], optional
             If not `None` then fill datastore records in each generated Quantum
             using the records from this structure.
@@ -784,13 +784,13 @@ class _PipelineScaffolding:
 
     defaultDatasetQueryConstraints: NamedValueSet[DatasetType]
     """Datasets that should be used as constraints in the initial query,
-    according to tasks (`NamedValueSet`).
+    according to tasks (`~lsst.daf.butler.NamedValueSet`).
     """
 
     dimensions: DimensionGraph
     """All dimensions used by any regular input, intermediate, or output
     (not prerequisite) dataset; the set of dimension used in the "Big Join
-    Query" (`DimensionGraph`).
+    Query" (`~lsst.daf.butler.DimensionGraph`).
 
     This is required to be a superset of all task quantum dimensions.
     """
@@ -1393,7 +1393,7 @@ class _PipelineScaffolding:
         ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        metadata : Optional Mapping of `str` to primitives
+        metadata : `~collections.abc.Mapping` of `str` to primitives, optional
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
             JSON.
