@@ -23,7 +23,7 @@ from __future__ import annotations
 __all__ = ["InMemoryDatasetHandle"]
 
 import dataclasses
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from frozendict import frozendict
 from lsst.daf.butler import (
@@ -85,11 +85,11 @@ class InMemoryDatasetHandle:
     def get(
         self,
         *,
-        component: Optional[str] = None,
-        parameters: Optional[dict] = None,
+        component: str | None = None,
+        parameters: dict | None = None,
         storageClass: str | StorageClass | None = None,
     ) -> Any:
-        """Retrieves the dataset pointed to by this handle
+        """Retrieve the dataset pointed to by this handle.
 
         This handle may be used multiple times, possibly with different
         parameters.
@@ -101,14 +101,14 @@ class InMemoryDatasetHandle:
             may specify the name of the component to use in the get operation.
         parameters : `dict` or None
             The parameters argument will be passed to the butler get method.
-            It defaults to None. If the value is not None, this dict will
+            It defaults to `None`. If the value is not `None`, this `dict` will
             be merged with the parameters dict used to construct the
-            `DeferredDatasetHandle` class.
-        storageClass : `StorageClass` or `str`, optional
+            `~lsst.daf.butler.DeferredDatasetHandle` class.
+        storageClass : `~lsst.daf.butler.StorageClass` or `str`, optional
             The storage class to be used to override the Python type
             returned by this method. By default the returned type matches
-            the type stored. Specifying a read `StorageClass` can force a
-            different type to be returned.
+            the type stored. Specifying a read `~lsst.daf.butler.StorageClass`
+            can force a different type to be returned.
             This type must be compatible with the original type.
 
         Returns
@@ -218,7 +218,7 @@ class InMemoryDatasetHandle:
 
         Returns
         -------
-        storageClass : `StorageClass`
+        storageClass : `~lsst.daf.butler.StorageClass`
             The storage class associated with this handle, or one derived
             from the python type of the stored object.
 
@@ -244,18 +244,18 @@ class InMemoryDatasetHandle:
     handle.
     """
 
-    storageClass: Optional[str] = None
+    storageClass: str | None = None
     """The name of the `~lsst.daf.butler.StorageClass` associated with this
     dataset.
 
     If `None`, the storage class will be looked up from the factory.
     """
 
-    parameters: Optional[dict] = None
+    parameters: dict | None = None
     """Optional parameters that may be used to specify a subset of the dataset
     to be loaded (`dict` or `None`).
     """
 
     copy: bool = False
     """Control whether a copy of the in-memory dataset is returned for every
-    call to get()."""
+    call to `get()`."""

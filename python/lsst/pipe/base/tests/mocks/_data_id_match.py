@@ -34,7 +34,7 @@ from lsst.daf.butler.registry.queries.expressions.parser import Node, ParserYacc
 
 class _DataIdMatchTreeVisitor(TreeVisitor):
     """Expression tree visitor which evaluates expression using values from
-    DataId.
+    `~lsst.daf.butler.DataId`.
     """
 
     def __init__(self, dataId: DataId):
@@ -142,11 +142,11 @@ class DataIdMatch:
         self.tree = parser.parse(expression)
 
     def match(self, dataId: DataId) -> bool:
-        """Matches DataId contents against the expression.
+        """Match DataId contents against the expression.
 
         Parameters
         ----------
-        dataId : `DataId`
+        dataId : `~lsst.daf.butler.DataId`
             DataId that is matched against an expression.
 
         Returns
@@ -158,7 +158,7 @@ class DataIdMatch:
         ------
         KeyError
             Raised when identifier in expression is not defined for given
-            `DataId`.
+            `~lsst.daf.butler.DataId`.
         TypeError
             Raised when expression evaluates to a non-boolean type or when
             operation in expression cannot be performed on operand types.

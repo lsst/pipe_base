@@ -29,21 +29,10 @@ import struct
 import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    ClassVar,
-    DefaultDict,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    cast,
-)
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import networkx as nx
 from lsst.daf.butler import (
@@ -68,11 +57,11 @@ if TYPE_CHECKING:
 
 
 class StructSizeDescriptor:
-    """This is basically a class level property. It exists to report the size
-    (number of bytes) of whatever the formatter string is for a deserializer
+    """Class level property. It exists to report the size
+    (number of bytes) of whatever the formatter string is for a deserializer.
     """
 
-    def __get__(self, inst: Optional[DeserializerBase], owner: Type[DeserializerBase]) -> int:
+    def __get__(self, inst: DeserializerBase | None, owner: type[DeserializerBase]) -> int:
         return struct.calcsize(owner.FMT_STRING())
 
 
@@ -93,18 +82,23 @@ class DeserializerBase(ABC):
         cls.structSize = StructSizeDescriptor()
         super().__init_subclass__()
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
-        """Transforms the raw bytes corresponding to the header of a save into
-        a string of the header information. Returns none if the save format has
-        no header string implementation (such as save format 1 that is all
-        pickle)
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
+        """Transform the raw bytes corresponding to the header of a save into
+        a string of the header information.
 
         Parameters
         ----------
         rawheader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
-            and before the headerSize bytes
+            and before the headerSize bytes.
+
+        Returns
+        -------
+        header : `str` or `None`
+            Header information as a string. Returns `None` if the save format
+            has no header string implementation (such as save format 1 that is
+            all pickle).
         """
         raise NotImplementedError("Base class does not implement this method")
 
@@ -132,9 +126,9 @@ class DeserializerBase(ABC):
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
-        """Constructs a graph from the deserialized information.
+        """Construct a graph from the deserialized information.
 
         Parameters
         ----------
@@ -208,20 +202,20 @@ class DeserializerV1(DeserializerBase):
         self.returnValue = returnValue
         return returnValue
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return None
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
-        quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
-        quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
+        quanta: defaultdict[TaskDef, set[Quantum]] = defaultdict(set)
+        quantumToNodeId: dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
         # loop over the nodes specified above
         for node in nodes:
@@ -342,20 +336,20 @@ class DeserializerV2(DeserializerBase):
         self.returnValue = returnValue
         return returnValue
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
-        quanta: DefaultDict[TaskDef, Set[Quantum]] = defaultdict(set)
-        quantumToNodeId: Dict[Quantum, uuid.UUID] = {}
+        quanta: defaultdict[TaskDef, set[Quantum]] = defaultdict(set)
+        quantumToNodeId: dict[Quantum, uuid.UUID] = {}
         loadedTaskDef = {}
         # loop over the nodes specified above
         for node in nodes:
@@ -523,26 +517,26 @@ class DeserializerV3(DeserializerBase):
         self.infoMappings = infoMappings
         return infoMappings
 
-    def unpackHeader(self, rawHeader: bytes) -> Optional[str]:
+    def unpackHeader(self, rawHeader: bytes) -> str | None:
         return lzma.decompress(rawHeader).decode()
 
     def constructGraph(
         self,
         nodes: set[uuid.UUID],
         _readBytes: Callable[[int, int], bytes],
-        universe: Optional[DimensionUniverse] = None,
+        universe: DimensionUniverse | None = None,
     ) -> QuantumGraph:
         # need to import here to avoid cyclic imports
         from . import QuantumGraph
 
         graph = nx.DiGraph()
-        loadedTaskDef: Dict[str, TaskDef] = {}
+        loadedTaskDef: dict[str, TaskDef] = {}
         container = {}
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
-        taskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
-        recontitutedDimensions: Dict[int, Tuple[str, DimensionRecord]] = {}
-        initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
+        taskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
+        recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] = {}
+        initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
 
         if universe is not None:
             if not universe.isCompatibleWith(self.infoMappings.universe):
@@ -563,8 +557,8 @@ class DeserializerV3(DeserializerBase):
 
             # Turn the json back into the pydandtic model
             nodeDeserialized = SerializedQuantumNode.direct(**dump)
-            # attach the dictionary of dimension records to the pydandtic model
-            # these are stored seperately because the are stored over and over
+            # attach the dictionary of dimension records to the pydantic model
+            # these are stored separately because the are stored over and over
             # and this saves a lot of space and time.
             nodeDeserialized.quantum.dimensionRecords = self.infoMappings.dimensionRecords
             # get the label for the current task
@@ -577,7 +571,7 @@ class DeserializerV3(DeserializerBase):
 
                 # bytes are compressed, so decompress them
                 taskDefDump = json.loads(lzma.decompress(_readBytes(start, stop)))
-                taskClass: Type[PipelineTask] = doImportType(taskDefDump["taskName"])
+                taskClass: type[PipelineTask] = doImportType(taskDefDump["taskName"])
                 config: PipelineTaskConfig = taskClass.ConfigClass()
                 config.loadFromStream(taskDefDump["config"])
                 # Rebuild TaskDef
@@ -654,7 +648,7 @@ class DeserializerV3(DeserializerBase):
         return newGraph
 
 
-DESERIALIZER_MAP: dict[int, Type[DeserializerBase]] = {
+DESERIALIZER_MAP: dict[int, type[DeserializerBase]] = {
     1: DeserializerV1,
     2: DeserializerV2,
     3: DeserializerV3,

@@ -21,13 +21,11 @@
 
 __all__ = ["register_instrument"]
 
-from typing import List
-
 from lsst.daf.butler import Butler
 from lsst.pipe.base import Instrument
 
 
-def register_instrument(repo: str, instrument: List[str], update: bool = False) -> None:
+def register_instrument(repo: str, instrument: list[str], update: bool = False) -> None:
     """Add an instrument to the data repository.
 
     Parameters

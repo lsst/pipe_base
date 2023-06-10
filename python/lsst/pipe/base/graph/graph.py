@@ -32,26 +32,10 @@ import time
 import uuid
 import warnings
 from collections import defaultdict, deque
+from collections.abc import Generator, Iterable, Mapping, MutableMapping
 from itertools import chain
 from types import MappingProxyType
-from typing import (
-    Any,
-    BinaryIO,
-    DefaultDict,
-    Deque,
-    Dict,
-    FrozenSet,
-    Generator,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Any, BinaryIO, TypeVar
 
 import networkx as nx
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
@@ -106,31 +90,33 @@ class QuantumGraph:
 
     Parameters
     ----------
-    quanta : Mapping of `TaskDef` to sets of `Quantum`
+    quanta : `~collections.abc.Mapping` [ `TaskDef`, \
+            `set` [ `~lsst.daf.butler.Quantum` ] ]
         This maps tasks (and their configs) to the sets of data they are to
         process.
-    metadata : Optional Mapping of `str` to primitives
+    metadata : Optional `~collections.abc.Mapping` of `str` to primitives
         This is an optional parameter of extra data to carry with the graph.
         Entries in this mapping should be able to be serialized in JSON.
-    pruneRefs : iterable [ `DatasetRef` ], optional
+    pruneRefs : iterable [ `~lsst.daf.butler.DatasetRef` ], optional
         Set of dataset refs to exclude from a graph.
-    universe : `lsst.daf.butler.DimensionUniverse`, optional
+    universe : `~lsst.daf.butler.DimensionUniverse`, optional
         The dimensions in which quanta can be defined. Need only be provided if
         no quanta have data IDs.
-    initInputs : `Mapping`, optional
+    initInputs : `~collections.abc.Mapping`, optional
         Maps tasks to their InitInput dataset refs. Dataset refs can be either
         resolved or non-resolved. Presently the same dataset refs are included
-        in each `Quantum` for the same task.
-    initOutputs : `Mapping`, optional
+        in each `~lsst.daf.butler.Quantum` for the same task.
+    initOutputs : `~collections.abc.Mapping`, optional
         Maps tasks to their InitOutput dataset refs. Dataset refs can be either
         resolved or non-resolved. For intermediate resolved refs their dataset
         ID must match ``initInputs`` and Quantum ``initInputs``.
-    globalInitOutputs : iterable [ `DatasetRef` ], optional
+    globalInitOutputs : iterable [ `~lsst.daf.butler.DatasetRef` ], optional
         Dataset refs for some global objects produced by pipeline. These
         objects include task configurations and package versions. Typically
         they have an empty DataId, but there is no real restriction on what
         can appear here.
-    registryDatasetTypes : iterable [ `DatasetType` ], optional
+    registryDatasetTypes : iterable [ `~lsst.daf.butler.DatasetType` ], \
+            optional
         Dataset types which are used by this graph, their definitions must
         match registry. If registry does not define dataset type yet, then
         it should match one that will be created later.
@@ -144,14 +130,14 @@ class QuantumGraph:
 
     def __init__(
         self,
-        quanta: Mapping[TaskDef, Set[Quantum]],
-        metadata: Optional[Mapping[str, Any]] = None,
-        pruneRefs: Optional[Iterable[DatasetRef]] = None,
-        universe: Optional[DimensionUniverse] = None,
-        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
-        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
+        quanta: Mapping[TaskDef, set[Quantum]],
+        metadata: Mapping[str, Any] | None = None,
+        pruneRefs: Iterable[DatasetRef] | None = None,
+        universe: DimensionUniverse | None = None,
+        initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        globalInitOutputs: Iterable[DatasetRef] | None = None,
+        registryDatasetTypes: Iterable[DatasetType] | None = None,
     ):
         self._buildGraphs(
             quanta,
@@ -166,19 +152,19 @@ class QuantumGraph:
 
     def _buildGraphs(
         self,
-        quanta: Mapping[TaskDef, Set[Quantum]],
+        quanta: Mapping[TaskDef, set[Quantum]],
         *,
-        _quantumToNodeId: Optional[Mapping[Quantum, uuid.UUID]] = None,
-        _buildId: Optional[BuildId] = None,
-        metadata: Optional[Mapping[str, Any]] = None,
-        pruneRefs: Optional[Iterable[DatasetRef]] = None,
-        universe: Optional[DimensionUniverse] = None,
-        initInputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        initOutputs: Optional[Mapping[TaskDef, Iterable[DatasetRef]]] = None,
-        globalInitOutputs: Optional[Iterable[DatasetRef]] = None,
-        registryDatasetTypes: Optional[Iterable[DatasetType]] = None,
+        _quantumToNodeId: Mapping[Quantum, uuid.UUID] | None = None,
+        _buildId: BuildId | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        pruneRefs: Iterable[DatasetRef] | None = None,
+        universe: DimensionUniverse | None = None,
+        initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
+        globalInitOutputs: Iterable[DatasetRef] | None = None,
+        registryDatasetTypes: Iterable[DatasetType] | None = None,
     ) -> None:
-        """Builds the graph that is used to store the relation between tasks,
+        """Build the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
         self._metadata = metadata
@@ -189,8 +175,8 @@ class QuantumGraph:
         self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         self._datasetRefDict = _DatasetTracker[DatasetRef, QuantumNode]()
 
-        self._nodeIdMap: Dict[uuid.UUID, QuantumNode] = {}
-        self._taskToQuantumNode: MutableMapping[TaskDef, Set[QuantumNode]] = defaultdict(set)
+        self._nodeIdMap: dict[uuid.UUID, QuantumNode] = {}
+        self._taskToQuantumNode: MutableMapping[TaskDef, set[QuantumNode]] = defaultdict(set)
         for taskDef, quantumSet in quanta.items():
             connections = taskDef.connections
 
@@ -256,13 +242,13 @@ class QuantumGraph:
 
         if pruneRefs is not None:
             # track what refs were pruned and prune the graph
-            prunes: Set[QuantumNode] = set()
+            prunes: set[QuantumNode] = set()
             _pruner(self._datasetRefDict, pruneRefs, alreadyPruned=prunes)
 
             # recreate the taskToQuantumNode dict removing nodes that have been
             # pruned. Keep track of task defs that now have no QuantumNodes
-            emptyTasks: Set[str] = set()
-            newTaskToQuantumNode: DefaultDict[TaskDef, Set[QuantumNode]] = defaultdict(set)
+            emptyTasks: set[str] = set()
+            newTaskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
             # accumulate all types
             types_ = set()
             # tracker for any pruneRefs that have caused tasks to have no nodes
@@ -317,10 +303,10 @@ class QuantumGraph:
         # insertion
         self._taskToQuantumNode = dict(self._taskToQuantumNode.items())
 
-        self._initInputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        self._initOutputRefs: Dict[TaskDef, List[DatasetRef]] = {}
-        self._globalInitOutputRefs: List[DatasetRef] = []
-        self._registryDatasetTypes: List[DatasetType] = []
+        self._initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        self._initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        self._globalInitOutputRefs: list[DatasetRef] = []
+        self._registryDatasetTypes: list[DatasetType] = []
         if initInputs is not None:
             self._initInputRefs = {taskDef: list(refs) for taskDef, refs in initInputs.items()}
         if initOutputs is not None:
@@ -367,7 +353,7 @@ class QuantumGraph:
         return [q for q, n in self._connectedQuanta.out_degree if n == 0]
 
     @property
-    def allDatasetTypes(self) -> Tuple[DatasetTypeName, ...]:
+    def allDatasetTypes(self) -> tuple[DatasetTypeName, ...]:
         """All the data set type names that are present in the graph
         (`tuple` [`str`]).
 
@@ -388,7 +374,7 @@ class QuantumGraph:
 
         Parameters
         ----------
-        refs : `Iterable` of `DatasetRef`
+        refs : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
             Refs which should be removed from resulting graph
 
         Returns
@@ -403,7 +389,7 @@ class QuantumGraph:
             quantumMap[node.taskDef].add(node.quantum)
 
         # convert to standard dict to prevent accidental key insertion
-        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
+        quantumDict: dict[TaskDef, set[Quantum]] = dict(quantumMap.items())
 
         # This should not change set of tasks in a graph, so we can keep the
         # same registryDatasetTypes as in the original graph.
@@ -439,50 +425,55 @@ class QuantumGraph:
         """
         return self._nodeIdMap[nodeId]
 
-    def getQuantaForTask(self, taskDef: TaskDef) -> FrozenSet[Quantum]:
-        """Return all the `Quantum` associated with a `TaskDef`.
+    def getQuantaForTask(self, taskDef: TaskDef) -> frozenset[Quantum]:
+        """Return all the `~lsst.daf.butler.Quantum` associated with a
+        `TaskDef`.
 
         Parameters
         ----------
         taskDef : `TaskDef`
-            The `TaskDef` for which `Quantum` are to be queried
+            The `TaskDef` for which `~lsst.daf.butler.Quantum` are to be
+            queried.
 
         Returns
         -------
-        frozenset of `Quantum`
-            The `set` of `Quantum` that is associated with the specified
-            `TaskDef`.
+        quanta : `frozenset` of `~lsst.daf.butler.Quantum`
+            The `set` of `~lsst.daf.butler.Quantum` that is associated with the
+            specified `TaskDef`.
         """
         return frozenset(node.quantum for node in self._taskToQuantumNode.get(taskDef, ()))
 
     def getNumberOfQuantaForTask(self, taskDef: TaskDef) -> int:
-        """Return all the number of `Quantum` associated with a `TaskDef`.
+        """Return the number of `~lsst.daf.butler.Quantum` associated with
+        a `TaskDef`.
 
         Parameters
         ----------
         taskDef : `TaskDef`
-            The `TaskDef` for which `Quantum` are to be queried
+            The `TaskDef` for which `~lsst.daf.butler.Quantum` are to be
+            queried.
 
         Returns
         -------
-        count : int
-            The number of `Quantum` that are associated with the specified
-            `TaskDef`.
+        count : `int`
+            The number of `~lsst.daf.butler.Quantum` that are associated with
+            the specified `TaskDef`.
         """
         return len(self._taskToQuantumNode.get(taskDef, ()))
 
-    def getNodesForTask(self, taskDef: TaskDef) -> FrozenSet[QuantumNode]:
-        """Return all the `QuantumNodes` associated with a `TaskDef`.
+    def getNodesForTask(self, taskDef: TaskDef) -> frozenset[QuantumNode]:
+        r"""Return all the `QuantumNode`\s associated with a `TaskDef`.
 
         Parameters
         ----------
         taskDef : `TaskDef`
-            The `TaskDef` for which `Quantum` are to be queried
+            The `TaskDef` for which `~lsst.daf.butler.Quantum` are to be
+            queried.
 
         Returns
         -------
-        frozenset of `QuantumNodes`
-            The `frozenset` of `QuantumNodes` that is associated with the
+        nodes : `frozenset` [ `QuantumNode` ]
+            A `frozenset` of `QuantumNode` that is associated with the
             specified `TaskDef`.
         """
         return frozenset(self._taskToQuantumNode[taskDef])
@@ -495,8 +486,8 @@ class QuantumGraph:
         ----------
         datasetTypeName : `str`
             A string representing the name of a dataset type to be queried,
-            can also accept a `DatasetTypeName` which is a `NewType` of str for
-            type safety in static type checking.
+            can also accept a `DatasetTypeName` which is a `~typing.NewType` of
+            `str` for type safety in static type checking.
 
         Returns
         -------
@@ -508,11 +499,11 @@ class QuantumGraph:
         Raises
         ------
         KeyError
-            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
+            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`.
         """
         return (c for c in self._datasetDict.getConsumers(datasetTypeName))
 
-    def findTaskWithOutput(self, datasetTypeName: DatasetTypeName) -> Optional[TaskDef]:
+    def findTaskWithOutput(self, datasetTypeName: DatasetTypeName) -> TaskDef | None:
         """Find all tasks that have the specified dataset type name as an
         output.
 
@@ -520,19 +511,19 @@ class QuantumGraph:
         ----------
         datasetTypeName : `str`
             A string representing the name of a dataset type to be queried,
-            can also accept a `DatasetTypeName` which is a `NewType` of str for
-            type safety in static type checking.
+            can also accept a `DatasetTypeName` which is a `~typing.NewType` of
+            `str` for type safety in static type checking.
 
         Returns
         -------
-        `TaskDef` or `None`
-            `TaskDef` that outputs `DatasetTypeName` as an output or None if
+        result : `TaskDef` or `None`
+            `TaskDef` that outputs `DatasetTypeName` as an output or `None` if
             none of the tasks produce this `DatasetTypeName`.
 
         Raises
         ------
         KeyError
-            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
+            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`.
         """
         return self._datasetDict.getProducer(datasetTypeName)
 
@@ -544,38 +535,38 @@ class QuantumGraph:
         ----------
         datasetTypeName : `str`
             A string representing the name of a dataset type to be queried,
-            can also accept a `DatasetTypeName` which is a `NewType` of str for
-            type safety in static type checking.
+            can also accept a `DatasetTypeName` which is a `~typing.NewType` of
+            `str` for type safety in static type checking.
 
         Returns
         -------
         result : iterable of `TaskDef`
             `TaskDef` objects that are associated with the specified
-            `DatasetTypeName`
+            `DatasetTypeName`.
 
         Raises
         ------
         KeyError
-            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
+            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`.
         """
         return self._datasetDict.getAll(datasetTypeName)
 
-    def findTaskDefByName(self, taskName: str) -> List[TaskDef]:
+    def findTaskDefByName(self, taskName: str) -> list[TaskDef]:
         """Determine which `TaskDef` objects in this graph are associated
-        with a `str` representing a task name (looks at the taskName property
-        of `TaskDef` objects).
+        with a `str` representing a task name (looks at the ``taskName``
+        property of `TaskDef` objects).
 
         Returns a list of `TaskDef` objects as a `PipelineTask` may appear
         multiple times in a graph with different labels.
 
         Parameters
         ----------
-        taskName : str
-            Name of a task to search for
+        taskName : `str`
+            Name of a task to search for.
 
         Returns
         -------
-        result : list of `TaskDef`
+        result : `list` of `TaskDef`
             List of the `TaskDef` objects that have the name specified.
             Multiple values are returned in the case that a task is used
             multiple times with different labels.
@@ -587,13 +578,13 @@ class QuantumGraph:
                 results.append(task)
         return results
 
-    def findTaskDefByLabel(self, label: str) -> Optional[TaskDef]:
+    def findTaskDefByLabel(self, label: str) -> TaskDef | None:
         """Determine which `TaskDef` objects in this graph are associated
         with a `str` representing a tasks label.
 
         Parameters
         ----------
-        taskName : str
+        taskName : `str`
             Name of a task to search for
 
         Returns
@@ -606,20 +597,22 @@ class QuantumGraph:
                 return task
         return None
 
-    def findQuantaWithDSType(self, datasetTypeName: DatasetTypeName) -> Set[Quantum]:
-        """Return all the `Quantum` that contain a specified `DatasetTypeName`.
+    def findQuantaWithDSType(self, datasetTypeName: DatasetTypeName) -> set[Quantum]:
+        r"""Return all the `~lsst.daf.butler.Quantum` that contain a specified
+        `DatasetTypeName`.
 
         Parameters
         ----------
         datasetTypeName : `str`
             The name of the dataset type to search for as a string,
-            can also accept a `DatasetTypeName` which is a `NewType` of str for
-            type safety in static type checking.
+            can also accept a `DatasetTypeName` which is a `~typing.NewType` of
+            `str` for type safety in static type checking.
 
         Returns
         -------
         result : `set` of `QuantumNode` objects
-            A `set` of `QuantumNode`s that contain specified `DatasetTypeName`
+            A `set` of `QuantumNode`\s that contain specified
+            `DatasetTypeName`.
 
         Raises
         ------
@@ -628,7 +621,7 @@ class QuantumGraph:
 
         """
         tasks = self._datasetDict.getAll(datasetTypeName)
-        result: Set[Quantum] = set()
+        result: set[Quantum] = set()
         result = result.union(quantum for task in tasks for quantum in self.getQuantaForTask(task))
         return result
 
@@ -637,41 +630,42 @@ class QuantumGraph:
 
         Parameters
         ----------
-        quantum : `Quantum`
-            The quantum to search for
+        quantum : `lsst.daf.butler.Quantum`
+            The quantum to search for.
 
         Returns
         -------
-        `bool`
-            The result of searching for the quantum
+        in_graph : `bool`
+            The result of searching for the quantum.
         """
         for node in self:
             if quantum == node.quantum:
                 return True
         return False
 
-    def writeDotGraph(self, output: Union[str, io.BufferedIOBase]) -> None:
+    def writeDotGraph(self, output: str | io.BufferedIOBase) -> None:
         """Write out the graph as a dot graph.
 
         Parameters
         ----------
-        output : str or `io.BufferedIOBase`
-            Either a filesystem path to write to, or a file handle object
+        output : `str` or `io.BufferedIOBase`
+            Either a filesystem path to write to, or a file handle object.
         """
         write_dot(self._connectedQuanta, output)
 
-    def subset(self: _T, nodes: Union[QuantumNode, Iterable[QuantumNode]]) -> _T:
+    def subset(self: _T, nodes: QuantumNode | Iterable[QuantumNode]) -> _T:
         """Create a new graph object that contains the subset of the nodes
         specified as input. Node number is preserved.
 
         Parameters
         ----------
         nodes : `QuantumNode` or iterable of `QuantumNode`
+            Nodes from which to create subset.
 
         Returns
         -------
         graph : instance of graph type
-            An instance of the type from which the subset was created
+            An instance of the type from which the subset was created.
         """
         if not isinstance(nodes, Iterable):
             nodes = (nodes,)
@@ -699,7 +693,7 @@ class QuantumGraph:
         ]
 
         # convert to standard dict to prevent accidental key insertion
-        quantumDict: Dict[TaskDef, Set[Quantum]] = dict(quantumMap.items())
+        quantumDict: dict[TaskDef, set[Quantum]] = dict(quantumMap.items())
         # Create an empty graph, and then populate it with custom mapping
         newInst = type(self)({}, universe=self._universe)
         # TODO: Do we need to copy initInputs/initOutputs?
@@ -714,48 +708,48 @@ class QuantumGraph:
         )
         return newInst
 
-    def subsetToConnected(self: _T) -> Tuple[_T, ...]:
+    def subsetToConnected(self: _T) -> tuple[_T, ...]:
         """Generate a list of subgraphs where each is connected.
 
         Returns
         -------
-        result : list of `QuantumGraph`
-            A list of graphs that are each connected
+        result : `list` of `QuantumGraph`
+            A list of graphs that are each connected.
         """
         return tuple(
             self.subset(connectedSet)
             for connectedSet in nx.weakly_connected_components(self._connectedQuanta)
         )
 
-    def determineInputsToQuantumNode(self, node: QuantumNode) -> Set[QuantumNode]:
+    def determineInputsToQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct inputs to a specified
         node.
 
         Parameters
         ----------
         node : `QuantumNode`
-            The node of the graph for which inputs are to be determined
+            The node of the graph for which inputs are to be determined.
 
         Returns
         -------
-        set of `QuantumNode`
-            All the nodes that are direct inputs to specified node
+        inputs : `set` of `QuantumNode`
+            All the nodes that are direct inputs to specified node.
         """
         return set(pred for pred in self._connectedQuanta.predecessors(node))
 
-    def determineOutputsOfQuantumNode(self, node: QuantumNode) -> Set[QuantumNode]:
+    def determineOutputsOfQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct outputs of a specified
         node.
 
         Parameters
         ----------
         node : `QuantumNode`
-            The node of the graph for which outputs are to be determined
+            The node of the graph for which outputs are to be determined.
 
         Returns
         -------
-        set of `QuantumNode`
-            All the nodes that are direct outputs to specified node
+        outputs : `set` of `QuantumNode`
+            All the nodes that are direct outputs to specified node.
         """
         return set(succ for succ in self._connectedQuanta.successors(node))
 
@@ -772,7 +766,7 @@ class QuantumGraph:
         Returns
         -------
         graph : graph of `QuantumNode`
-            All the nodes that are directly connected to specified node
+            All the nodes that are directly connected to specified node.
         """
         nodes = self.determineInputsToQuantumNode(node).union(self.determineOutputsOfQuantumNode(node))
         nodes.add(node)
@@ -785,24 +779,24 @@ class QuantumGraph:
         Parameters
         ----------
         node : `QuantumNode`
-            The node for which all ansestors are to be determined
+            The node for which all ancestors are to be determined
 
         Returns
         -------
-        graph of `QuantumNode`
-            Graph of node and all of its ansestors
+        ancestors : graph of `QuantumNode`
+            Graph of node and all of its ancestors.
         """
         predecessorNodes = nx.ancestors(self._connectedQuanta, node)
         predecessorNodes.add(node)
         return self.subset(predecessorNodes)
 
-    def findCycle(self) -> List[Tuple[QuantumNode, QuantumNode]]:
+    def findCycle(self) -> list[tuple[QuantumNode, QuantumNode]]:
         """Check a graph for the presense of cycles and returns the edges of
         any cycles found, or an empty list if there is no cycle.
 
         Returns
         -------
-        result : list of tuple of `QuantumNode`, `QuantumNode`
+        result : `list` of `tuple` of  [ `QuantumNode`, `QuantumNode` ]
             A list of any graph edges that form a cycle, or an empty list if
             there is no cycle. Empty list to so support if graph.find_cycle()
             syntax as an empty list is falsy.
@@ -817,7 +811,7 @@ class QuantumGraph:
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             URI to where the graph should be saved.
         """
         buffer = self._buildSaveObject()
@@ -827,7 +821,7 @@ class QuantumGraph:
         path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
     @property
-    def metadata(self) -> Optional[MappingProxyType[str, Any]]:
+    def metadata(self) -> MappingProxyType[str, Any] | None:
         """Extra data carried with the graph (mapping [`str`] or `None`).
 
         The mapping is a dynamic view of this object's metadata. Values should
@@ -837,7 +831,7 @@ class QuantumGraph:
             return None
         return MappingProxyType(self._metadata)
 
-    def initInputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+    def initInputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitInputs.
 
         Parameters
@@ -847,13 +841,13 @@ class QuantumGraph:
 
         Returns
         -------
-        refs : `list` [ `DatasetRef` ] or None
+        refs : `list` [ `~lsst.daf.butler.DatasetRef` ] or `None`
             DatasetRef for the task InitInput, can be `None`. This can return
             either resolved or non-resolved reference.
         """
         return self._initInputRefs.get(taskDef)
 
-    def initOutputRefs(self, taskDef: TaskDef) -> Optional[List[DatasetRef]]:
+    def initOutputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitOutputs.
 
         Parameters
@@ -863,30 +857,30 @@ class QuantumGraph:
 
         Returns
         -------
-        refs : `list` [ `DatasetRef` ] or None
+        refs : `list` [ `~lsst.daf.butler.DatasetRef` ] or `None`
             DatasetRefs for the task InitOutput, can be `None`. This can return
             either resolved or non-resolved reference. Resolved reference will
             match Quantum's initInputs if this is an intermediate dataset type.
         """
         return self._initOutputRefs.get(taskDef)
 
-    def globalInitOutputRefs(self) -> List[DatasetRef]:
+    def globalInitOutputRefs(self) -> list[DatasetRef]:
         """Return DatasetRefs for global InitOutputs.
 
         Returns
         -------
-        refs : `list` [ `DatasetRef` ]
+        refs : `list` [ `~lsst.daf.butler.DatasetRef` ]
             DatasetRefs for global InitOutputs.
         """
         return self._globalInitOutputRefs
 
-    def registryDatasetTypes(self) -> List[DatasetType]:
+    def registryDatasetTypes(self) -> list[DatasetType]:
         """Return dataset types used by this graph, their definitions match
         dataset types from registry.
 
         Returns
         -------
-        refs : `list` [ `DatasetType` ]
+        refs : `list` [ `~lsst.daf.butler.DatasetType` ]
             Dataset types for this graph.
         """
         return self._registryDatasetTypes
@@ -895,32 +889,33 @@ class QuantumGraph:
     def loadUri(
         cls,
         uri: ResourcePathExpression,
-        universe: Optional[DimensionUniverse] = None,
-        nodes: Optional[Iterable[uuid.UUID]] = None,
-        graphID: Optional[BuildId] = None,
+        universe: DimensionUniverse | None = None,
+        nodes: Iterable[uuid.UUID] | None = None,
+        graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
         """Read `QuantumGraph` from a URI.
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             URI from where to load the graph.
-        universe: `~lsst.daf.butler.DimensionUniverse` optional
-            DimensionUniverse instance, not used by the method itself but
-            needed to ensure that registry data structures are initialized.
-            If None it is loaded from the QuantumGraph saved structure. If
-            supplied, the DimensionUniverse from the loaded `QuantumGraph`
+        universe : `~lsst.daf.butler.DimensionUniverse`, optional
+            `~lsst.daf.butler.DimensionUniverse` instance, not used by the
+            method itself but needed to ensure that registry data structures
+            are initialized. If `None` it is loaded from the `QuantumGraph`
+            saved structure. If supplied, the
+            `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes: iterable of `int` or None
-            Numbers that correspond to nodes in the graph. If specified, only
+        nodes : iterable of `uuid.UUID` or `None`
+            UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
         graphID : `str` or `None`
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no
             validation is done.
-        minimumVersion : int
+        minimumVersion : `int`
             Minimum version of a save file to load. Set to -1 to load all
             versions. Older versions may need to be loaded, and re-saved
             to upgrade them to the latest format before they can be used in
@@ -935,23 +930,24 @@ class QuantumGraph:
         ------
         TypeError
             Raised if pickle contains instance of a type other than
-            QuantumGraph.
+            `QuantumGraph`.
         ValueError
             Raised if one or more of the nodes requested is not in the
             `QuantumGraph` or if graphID parameter does not match the graph
             being loaded or if the supplied uri does not point at a valid
             `QuantumGraph` save file.
         RuntimeError
-            Raise if Supplied DimensionUniverse is not compatible with the
-            DimensionUniverse saved in the graph
-
+            Raise if Supplied `~lsst.daf.butler.DimensionUniverse` is not
+            compatible with the `~lsst.daf.butler.DimensionUniverse` saved in
+            the graph.
 
         Notes
         -----
         Reading Quanta from pickle requires existence of singleton
-        DimensionUniverse which is usually instantiated during Registry
-        initialization. To make sure that DimensionUniverse exists this method
-        accepts dummy DimensionUniverse argument.
+        `~lsst.daf.butler.DimensionUniverse` which is usually instantiated
+        during `~lsst.daf.butler.Registry` initialization. To make sure
+        that `~lsst.daf.butler.DimensionUniverse` exists this method
+        accepts dummy `~lsst.daf.butler.DimensionUniverse` argument.
         """
         uri = ResourcePath(uri)
         # With ResourcePath we have the choice of always using a local file
@@ -974,16 +970,17 @@ class QuantumGraph:
         return qgraph
 
     @classmethod
-    def readHeader(cls, uri: ResourcePathExpression, minimumVersion: int = 3) -> Optional[str]:
+    def readHeader(cls, uri: ResourcePathExpression, minimumVersion: int = 3) -> str | None:
         """Read the header of a `QuantumGraph` pointed to by the uri parameter
         and return it as a string.
 
         Parameters
         ----------
-        uri : convertible to `ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             The location of the `QuantumGraph` to load. If the argument is a
-            string, it must correspond to a valid `ResourcePath` path.
-        minimumVersion : int
+            string, it must correspond to a valid
+            `~lsst.resources.ResourcePath` path.
+        minimumVersion : `int`
             Minimum version of a save file to load. Set to -1 to load all
             versions. Older versions may need to be loaded, and re-saved
             to upgrade them to the latest format before they can be used in
@@ -998,9 +995,9 @@ class QuantumGraph:
         Raises
         ------
         ValueError
-            Raised if `QuantuGraph` was saved as a pickle.
-            Raised if the extention of the file specified by uri is not a
-            `QuantumGraph` extention.
+            Raised if `QuantumGraph` was saved as a pickle.
+            Raised if the extension of the file specified by uri is not a
+            `QuantumGraph` extension.
         """
         uri = ResourcePath(uri)
         if uri.getExtension() in (".pickle", ".pkl"):
@@ -1011,7 +1008,7 @@ class QuantumGraph:
             raise ValueError("Only know how to handle files saved as `qgraph`")
 
     def buildAndPrintHeader(self) -> None:
-        """Creates a header that would be used in a save of this object and
+        """Create a header that would be used in a save of this object and
         prints it out to standard out.
         """
         _, header = self._buildSaveObject(returnHeader=True)
@@ -1028,15 +1025,15 @@ class QuantumGraph:
         buffer = self._buildSaveObject()
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
 
-    def _buildSaveObject(self, returnHeader: bool = False) -> Union[bytearray, Tuple[bytearray, Dict]]:
+    def _buildSaveObject(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
         # make some containers
-        jsonData: Deque[bytes] = deque()
+        jsonData: deque[bytes] = deque()
         # node map is a list because json does not accept mapping keys that
         # are not strings, so we store a list of key, value pairs that will
         # be converted to a mapping on load
         nodeMap = []
         taskDefMap = {}
-        headerData: Dict[str, Any] = {}
+        headerData: dict[str, Any] = {}
 
         # Store the QauntumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
@@ -1058,7 +1055,7 @@ class QuantumGraph:
         for taskDef in self.taskGraph:
             # compressing has very little impact on saving or load time, but
             # a large impact on on disk size, so it is worth doing
-            taskDescription: Dict[str, Any] = {}
+            taskDescription: dict[str, Any] = {}
             # save the fully qualified name.
             taskDescription["taskName"] = get_full_type_name(taskDef.taskClass)
             # save the config as a text stream that will be un-persisted on the
@@ -1186,32 +1183,33 @@ class QuantumGraph:
     def load(
         cls,
         file: BinaryIO,
-        universe: Optional[DimensionUniverse] = None,
-        nodes: Optional[Iterable[uuid.UUID]] = None,
-        graphID: Optional[BuildId] = None,
+        universe: DimensionUniverse | None = None,
+        nodes: Iterable[uuid.UUID] | None = None,
+        graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
-        """Read QuantumGraph from a file that was made by `save`.
+        """Read `QuantumGraph` from a file that was made by `save`.
 
         Parameters
         ----------
         file : `io.IO` of bytes
             File with pickle data open in binary mode.
-        universe: `~lsst.daf.butler.DimensionUniverse`, optional
-            DimensionUniverse instance, not used by the method itself but
-            needed to ensure that registry data structures are initialized.
-            If None it is loaded from the QuantumGraph saved structure. If
-            supplied, the DimensionUniverse from the loaded `QuantumGraph`
+        universe : `~lsst.daf.butler.DimensionUniverse`, optional
+            `~lsst.daf.butler.DimensionUniverse` instance, not used by the
+            method itself but needed to ensure that registry data structures
+            are initialized. If `None` it is loaded from the `QuantumGraph`
+            saved structure. If supplied, the
+            `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes: iterable of `int` or None
-            Numbers that correspond to nodes in the graph. If specified, only
+        nodes : iterable of `uuid.UUID` or `None`
+            UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
         graphID : `str` or `None`
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no
             validation is done.
-        minimumVersion : int
+        minimumVersion : `int`
             Minimum version of a save file to load. Set to -1 to load all
             versions. Older versions may need to be loaded, and re-saved
             to upgrade them to the latest format before they can be used in
@@ -1226,7 +1224,7 @@ class QuantumGraph:
         ------
         TypeError
             Raised if pickle contains instance of a type other than
-            QuantumGraph.
+            `QuantumGraph`.
         ValueError
             Raised if one or more of the nodes requested is not in the
             `QuantumGraph` or if graphID parameter does not match the graph
@@ -1236,9 +1234,10 @@ class QuantumGraph:
         Notes
         -----
         Reading Quanta from pickle requires existence of singleton
-        DimensionUniverse which is usually instantiated during Registry
-        initialization. To make sure that DimensionUniverse exists this method
-        accepts dummy DimensionUniverse argument.
+        `~lsst.daf.butler.DimensionUniverse` which is usually instantiated
+        during `~lsst.daf.butler.Registry` initialization. To make sure that
+        `~lsst.daf.butler.DimensionUniverse` exists this method accepts dummy
+        `~lsst.daf.butler.DimensionUniverse` argument.
         """
         # Try to see if the file handle contains pickle data, this will be
         # removed in the future
@@ -1280,7 +1279,9 @@ class QuantumGraph:
         dataset_id_map = {}
 
         def _update_output_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Updated list of DatasetRef with new run and dataset IDs."""
+            """Update list of `~lsst.daf.butler.DatasetRef` with new run and
+            dataset IDs.
+            """
             new_refs = []
             for ref in refs:
                 new_ref = DatasetRef(ref.datasetType, ref.dataId, run=run, conform=False)
@@ -1289,7 +1290,9 @@ class QuantumGraph:
             refs[:] = new_refs
 
         def _update_input_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Updated list of DatasetRef with IDs from dataset_id_map."""
+            """Update list of `~lsst.daf.butler.DatasetRef` with IDs from
+            dataset_id_map.
+            """
             new_refs = []
             for ref in refs:
                 if (new_id := dataset_id_map.get(ref.id)) is not None:
@@ -1348,12 +1351,12 @@ class QuantumGraph:
         return self._connectedQuanta.has_node(node)
 
     def __getstate__(self) -> dict:
-        """Stores a compact form of the graph as a list of graph nodes, and a
+        """Store a compact form of the graph as a list of graph nodes, and a
         tuple of task labels and task configs. The full graph can be
         reconstructed with this information, and it preserves the ordering of
         the graph nodes.
         """
-        universe: Optional[DimensionUniverse] = None
+        universe: DimensionUniverse | None = None
         for node in self:
             dId = node.quantum.dataId
             if dId is None:

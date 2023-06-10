@@ -23,7 +23,6 @@
 """
 
 import unittest
-from types import SimpleNamespace
 from typing import Any
 
 import lsst.pex.config as pexConfig
@@ -38,7 +37,7 @@ class ButlerMock:
 
     def __init__(self) -> None:
         self.datasets: dict[str, dict[DataCoordinate, Any]] = {}
-        self.registry = SimpleNamespace(dimensions=DimensionUniverse())
+        self.dimensions = DimensionUniverse()
 
     def get(self, ref: DatasetRef) -> Any:
         dsdata = self.datasets.get(ref.datasetType.name)
@@ -151,7 +150,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         quanta = self._makeQuanta(task.config)
 
         # add input data to butler
-        dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
+        dstype0 = connections.input.makeDatasetType(butler.dimensions)
         for i, quantum in enumerate(quanta):
             ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, ref)
@@ -231,7 +230,7 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         # add input data to butler
         task1Connections = task1.config.connections.ConnectionsClass(config=task1.config)
-        dstype0 = task1Connections.input.makeDatasetType(butler.registry.dimensions)
+        dstype0 = task1Connections.input.makeDatasetType(butler.dimensions)
         for i, quantum in enumerate(quanta1):
             ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, ref)
@@ -274,7 +273,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         (quantum,) = self._makeQuanta(task.config, 1)
 
         # add input data to butler
-        dstype0 = connections.input.makeDatasetType(butler.registry.dimensions)
+        dstype0 = connections.input.makeDatasetType(butler.dimensions)
         ref = quantum.inputs[dstype0.name][0]
         butler.put(100, ref)
 

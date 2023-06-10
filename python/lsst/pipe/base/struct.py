@@ -25,7 +25,7 @@ from __future__ import annotations
 __all__ = ["Struct"]
 
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any
 
 
 class Struct(SimpleNamespace):
@@ -95,7 +95,7 @@ class Struct(SimpleNamespace):
             raise RuntimeError(f"Item name {name!r} invalid; must not begin with __")
         setattr(self, name, val)
 
-    def getDict(self) -> Dict[str, Any]:
+    def getDict(self) -> dict[str, Any]:
         """Get a dictionary of fields in this struct.
 
         Returns

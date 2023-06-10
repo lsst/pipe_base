@@ -27,17 +27,18 @@ graph building query.
 __all__ = ("DatasetQueryConstraintVariant",)
 
 import warnings
-from typing import Iterable, Iterator, Protocol, Type
+from collections.abc import Iterable, Iterator
+from typing import Protocol
 
 
 class DatasetQueryConstraintVariant(Iterable, Protocol):
-    """This class is the base for all the valid variants for controling
+    """Base for all the valid variants for controlling
     constraining graph building queries based on dataset type existence.
 
     ALL variant corresponds to using all input dataset types to constrain
     a query.
 
-    OFF variant corrresponds to not using any dataset types to constrain a
+    OFF variant corresponds to not using any dataset types to constrain a
     graph building query.
 
     LIST variant should be used when one or more specific names should be used
@@ -54,9 +55,9 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
     `fromExpression` class method given a valid string.
     """
 
-    ALL: "Type[_ALL]"
-    OFF: "Type[_OFF]"
-    LIST: "Type[_LIST]"
+    ALL: "type[_ALL]"
+    OFF: "type[_OFF]"
+    LIST: "type[_LIST]"
 
     @classmethod
     def __subclasshook__(cls, subclass):
@@ -69,9 +70,9 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
         """Select and return the correct Variant that corresponds to the input
         expression.
 
-        Valid values are `all` for all inputs dataset types in pipeline, `off`
-        to not consider dataset type existence as a constraint, single or comma
-        seperated list of dataset type names.
+        Valid values are ``all`` for all inputs dataset types in pipeline,
+        ``off`` to not consider dataset type existence as a constraint, single
+        or comma-separated list of dataset type names.
         """
         if not isinstance(expression, str):
             raise ValueError("Expression must be a string")

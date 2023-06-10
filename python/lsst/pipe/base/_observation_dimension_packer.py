@@ -34,6 +34,8 @@ observation_packer_registry = makeRegistry(
 
 
 class ObservationDimensionPackerConfig(Config):
+    """Config associated with a `ObservationDimensionPacker`."""
+
     # Config fields are annotated as Any because support for better
     # annotations is broken on Fields with optional=True.
     n_detectors: Any = Field(

@@ -61,9 +61,7 @@ class ConfigExpressionParser(ast.NodeVisitor):
         self.variables = namespace
 
     def visit_Name(self, node):
-        """This method gets called when the parser has determined a node
-        corresponds to a variable name.
-        """
+        """Handle a node corresponding to a variable name."""
         # If the id (name) of the variable is in the dictionary of valid names,
         # load and return the corresponding variable.
         if node.id in self.variables:
@@ -73,35 +71,33 @@ class ConfigExpressionParser(ast.NodeVisitor):
         return f"{node.id}"
 
     def visit_List(self, node):
-        """This method is visited if the node is a list. Constructs a list out
-        of the sub nodes.
+        """Build a list out of the sub nodes when a list node is
+        encountered.
         """
         return [self.visit(elm) for elm in node.elts]
 
     def visit_Tuple(self, node):
-        """This method is visited if the node is a tuple. Constructs a list out
-        of the sub nodes, and then turns it into a tuple.
+        """Build a list out of the sub nodes and then turn it into a
+        tuple.
         """
         return tuple(self.visit_List(node))
 
     def visit_Constant(self, node):
-        """This method is visited if the node is a constant"""
+        """Return constant from node."""
         return node.value
 
     def visit_Dict(self, node):
-        """This method is visited if the node is a dict. It builds a dict out
-        of the component nodes.
-        """
+        """Build dict out of component nodes if dict node encountered."""
         return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values)}
 
     def visit_Set(self, node):
-        """This method is visited if the node is a set. It builds a set out
-        of the component nodes.
-        """
+        """Build set out of node is set encountered."""
         return {self.visit(el) for el in node.elts}
 
     def visit_UnaryOp(self, node):
-        """This method is visited if the node is a unary operator. Currently
+        """Handle unary operators.
+
+        This method is visited if the node is a unary operator. Currently
         The only operator we support is the negative (-) operator, all others
         are passed to generic_visit method.
         """
@@ -111,7 +107,9 @@ class ConfigExpressionParser(ast.NodeVisitor):
         self.generic_visit(node)
 
     def generic_visit(self, node):
-        """This method is called for all other node types. It will just raise
+        """Handle other node types.
+
+        This method is called for all other node types. It will just raise
         a value error, because this is a type of expression that we do not
         support.
         """
@@ -127,7 +125,7 @@ class ConfigOverrides:
     or some other configuration).
 
     Methods
-    ----------
+    -------
     addFileOverride(filename)
         Add overrides from a specified file.
     addValueOverride(field, value)
@@ -149,9 +147,9 @@ class ConfigOverrides:
 
         Parameters
         ----------
-        filename : convertible to `ResourcePath`
+        filename : convertible to `~lsst.resources.ResourcePath`
             Path or URI to the override file.  All URI schemes supported by
-            `ResourcePath` are supported.
+            `~lsst.resources.ResourcePath` are supported.
         """
         self._overrides.append((OverrideTypes.File, ResourcePath(filename)))
 

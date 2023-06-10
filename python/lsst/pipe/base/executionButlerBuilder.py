@@ -24,7 +24,7 @@ __all__ = ("buildExecutionButler",)
 
 import io
 from collections import defaultdict
-from typing import Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from collections.abc import Callable, Iterable, Mapping
 
 from lsst.daf.butler import Butler, Config, DatasetRef, DatasetType, Registry
 from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
@@ -35,11 +35,11 @@ from lsst.utils.introspection import get_class_of
 
 from .graph import QuantumGraph
 
-DataSetTypeRefMap = Mapping[DatasetType, Set[DatasetRef]]
+DataSetTypeRefMap = Mapping[DatasetType, set[DatasetRef]]
 
 
 def _validate_dataset_type(
-    candidate: DatasetType, previous: dict[Union[str, DatasetType], DatasetType], registry: Registry
+    candidate: DatasetType, previous: dict[str | DatasetType, DatasetType], registry: Registry
 ) -> DatasetType:
     """Check the dataset types and return a consistent variant if there are
     different compatible options.
@@ -48,7 +48,8 @@ def _validate_dataset_type(
     ----------
     candidate : `lsst.daf.butler.DatasetType`
         The candidate dataset type.
-    previous : `dict` [Union[`str`, `DatasetType`], `DatasetType`]
+    previous : `dict` [ `str` | `~lsst.daf.butler.DatasetType`, \
+            `~lsst.daf.butler.DatasetType`]
         Previous dataset types found, indexed by name and also by
         dataset type. The latter provides a quick way of returning a
         previously checked dataset type.
@@ -118,13 +119,13 @@ def _validate_dataset_type(
 def _accumulate(
     butler: Butler,
     graph: QuantumGraph,
-) -> Tuple[Set[DatasetRef], DataSetTypeRefMap]:
+) -> tuple[set[DatasetRef], DataSetTypeRefMap]:
     # accumulate the DatasetRefs that will be transferred to the execution
     # registry
 
     # exports holds all the existing data that will be migrated to the
     # execution butler
-    exports: Set[DatasetRef] = set()
+    exports: set[DatasetRef] = set()
 
     # inserts is the mapping of DatasetType to dataIds for what is to be
     # inserted into the registry. These are the products that are expected
@@ -136,7 +137,7 @@ def _accumulate(
     # must we must ensure that only a single dataset type definition is
     # accumulated in the loop below.  This data structure caches every dataset
     # type encountered and stores the compatible alternative.
-    datasetTypes: dict[Union[str, DatasetType], DatasetType] = {}
+    datasetTypes: dict[str | DatasetType, DatasetType] = {}
 
     # Find the initOutput refs.
     initOutputRefs = list(graph.globalInitOutputRefs())
@@ -154,10 +155,10 @@ def _accumulate(
 
     # Output references may be resolved even if they do not exist. Find all
     # actually existing refs.
-    check_refs: Set[DatasetRef] = set()
+    check_refs: set[DatasetRef] = set()
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
-            attr: Mapping[DatasetType, Union[DatasetRef, List[DatasetRef]]] = getattr(quantum, attrName)
+            attr: Mapping[DatasetType, DatasetRef | list[DatasetRef]] = getattr(quantum, attrName)
             for type, refs in attr.items():
                 # This if block is because init inputs has a different
                 # signature for its items
@@ -228,7 +229,7 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataSetTypeRefMap) -> io.StringIO:
+def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetTypeRefMap) -> io.StringIO:
     # This exports relevant dimension records and collections using daf butler
     # objects, however it reaches in deep and does not use the public methods
     # so that it can export it to a string buffer and skip disk access.  This
@@ -238,7 +239,7 @@ def _export(butler: Butler, collections: Optional[Iterable[str]], inserts: DataS
     # Yaml is hard coded, since the class controls both ends of the
     # export/import
     BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
-    backend = BackendClass(yamlBuffer, universe=butler.registry.dimensions)
+    backend = BackendClass(yamlBuffer, universe=butler.dimensions)
     exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
 
     # Need to ensure that the dimension records for outputs are
@@ -266,7 +267,7 @@ def _setupNewButler(
     butler: Butler,
     outputLocation: ResourcePath,
     dirExists: bool,
-    datastoreRoot: Optional[ResourcePath] = None,
+    datastoreRoot: ResourcePath | None = None,
 ) -> Butler:
     """Set up the execution butler
 
@@ -274,11 +275,11 @@ def _setupNewButler(
     ----------
     butler : `Butler`
         The original butler, upon which the execution butler is based.
-    outputLocation : `ResourcePath`
+    outputLocation : `~lsst.resources.ResourcePath`
         Location of the execution butler.
     dirExists : `bool`
         Does the ``outputLocation`` exist, and if so, should it be clobbered?
-    datastoreRoot : `ResourcePath`, optional
+    datastoreRoot : `~lsst.resources.ResourcePath`, optional
         Path for the execution butler datastore. If not specified, then the
         original butler's datastore will be used.
 
@@ -324,7 +325,7 @@ def _setupNewButler(
     config = Butler.makeRepo(
         root=outputLocation,
         config=config,
-        dimensionConfig=butler.registry.dimensions.dimensionConfig,
+        dimensionConfig=butler.dimensions.dimensionConfig,
         overwrite=True,
         forceConfigRoot=False,
     )
@@ -337,8 +338,8 @@ def _import(
     yamlBuffer: io.StringIO,
     newButler: Butler,
     inserts: DataSetTypeRefMap,
-    run: Optional[str],
-    butlerModifier: Optional[Callable[[Butler], Butler]],
+    run: str | None,
+    butlerModifier: Callable[[Butler], Butler] | None,
 ) -> Butler:
     # This method takes the exports from the existing butler, imports
     # them into the newly created butler, and then inserts the datasets
@@ -370,20 +371,23 @@ def buildExecutionButler(
     butler: Butler,
     graph: QuantumGraph,
     outputLocation: ResourcePathExpression,
-    run: Optional[str],
+    run: str | None,
     *,
     clobber: bool = False,
-    butlerModifier: Optional[Callable[[Butler], Butler]] = None,
-    collections: Optional[Iterable[str]] = None,
-    datastoreRoot: Optional[ResourcePathExpression] = None,
+    butlerModifier: Callable[[Butler], Butler] | None = None,
+    collections: Iterable[str] | None = None,
+    datastoreRoot: ResourcePathExpression | None = None,
     transfer: str = "auto",
 ) -> Butler:
-    r"""buildExecutionButler is a function that is responsible for exporting
-    input `QuantumGraphs` into a new minimal `~lsst.daf.butler.Butler` which
-    only contains datasets specified by the `QuantumGraph`. These datasets are
-    both those that already exist in the input `~lsst.daf.butler.Butler`, and
-    those that are expected to be produced during the execution of the
-    `QuantumGraph`.
+    r"""Create an execution butler.
+
+    Responsible for exporting
+    input `QuantumGraph`\s into a new minimal `~lsst.daf.butler.Butler` which
+    only contains datasets specified by the `QuantumGraph`.
+
+    These datasets are both those that already exist in the input
+    `~lsst.daf.butler.Butler`, and those that are expected to be produced
+    during the execution of the `QuantumGraph`.
 
     Parameters
     ----------
@@ -395,9 +399,9 @@ def buildExecutionButler(
     graph : `QuantumGraph`
         Graph containing nodes that are to be exported into an execution
         butler
-    outputLocation : convertible to `ResourcePath`
+    outputLocation : convertible to `~lsst.resources.ResourcePath`
         URI Location at which the execution butler is to be exported. May be
-        specified as a string or a `ResourcePath` instance.
+        specified as a string or a `~lsst.resources.ResourcePath` instance.
     run : `str`, optional
         The run collection that the exported datasets are to be placed in. If
         None, the default value in registry.defaults will be used.
@@ -420,7 +424,7 @@ def buildExecutionButler(
         `~lsst.daf.butler.Butler` when creating the execution butler. If not
         supplied the `~lsst.daf.butler.Butler`\ 's `~lsst.daf.butler.Registry`
         default collections will be used.
-    datastoreRoot : convertible to `ResourcePath`, Optional
+    datastoreRoot : convertible to `~lsst.resources.ResourcePath`, Optional
         Root directory for datastore of execution butler. If `None`, then the
         original butler's datastore will be used.
     transfer : `str`
@@ -432,15 +436,15 @@ def buildExecutionButler(
     Returns
     -------
     executionButler : `lsst.daf.butler.Butler`
-        An instance of the newly created execution butler
+        An instance of the newly created execution butler.
 
     Raises
     ------
     FileExistsError
         Raised if something exists in the filesystem at the specified output
-        location and clobber is `False`
+        location and clobber is `False`.
     NotADirectoryError
-        Raised if specified output URI does not correspond to a directory
+        Raised if specified output URI does not correspond to a directory.
     """
     # Now require that if run is given it must match the graph run.
     if run and graph.metadata and run != (graph_run := graph.metadata.get("output_run")):

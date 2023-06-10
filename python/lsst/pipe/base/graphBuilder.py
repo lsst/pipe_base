@@ -34,7 +34,7 @@ from collections import ChainMap, defaultdict
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from lsst.daf.butler import (
     CollectionType,
@@ -73,11 +73,13 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass
 class _RefHolder:
-    """Placeholder for `DatasetRef` representing a future resolved reference.
+    r"""Placeholder for `~lsst.daf.butler.DatasetRef` representing a future
+    resolved reference.
 
-    As we eliminated unresolved DatasetRefs we now use `None` to represent
-    a reference that is yet to be resolved. Information about its corresponding
-    dataset type and coordinate is stored in `_DatasetDict` mapping.
+    As we eliminated unresolved `~lsst.daf.butler.DatasetRef`\s we now use
+    `None` to represent a reference that is yet to be resolved. Information
+    about its corresponding dataset type and coordinate is stored in
+    `_DatasetDict` mapping.
     """
 
     dataset_type: DatasetType
@@ -93,20 +95,22 @@ class _RefHolder:
     @property
     def resolved_ref(self) -> DatasetRef:
         """Access resolved reference, should only be called after the
-        reference is set (`DatasetRef`)."""
+        reference is set (`~lsst.daf.butler.DatasetRef`).
+        """
         assert self.ref is not None, "Dataset reference is not set."
         return self.ref
 
 
 class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
-    """A custom dictionary that maps `DatasetType` to a nested dictionary of
-    the known `DatasetRef` instances of that type.
+    """A custom dictionary that maps `~lsst.daf.butler.DatasetType` to a nested
+    dictionary of the known `~lsst.daf.butler.DatasetRef` instances of that
+    type.
 
     Parameters
     ----------
     args
         Positional arguments are forwarded to the `dict` constructor.
-    universe : `DimensionUniverse`
+    universe : `~lsst.daf.butler.DimensionUniverse`
         Universe of all possible dimensions.
     """
 
@@ -118,14 +122,16 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
     def fromDatasetTypes(
         cls, datasetTypes: Iterable[DatasetType], *, universe: DimensionUniverse
     ) -> _DatasetDict:
-        """Construct a dictionary from a flat iterable of `DatasetType` keys.
+        """Construct a dictionary from a flat iterable of
+        `~lsst.daf.butler.DatasetType` keys.
 
         Parameters
         ----------
-        datasetTypes : `iterable` of `DatasetType`
+        datasetTypes : `~collections.abc.Iterable` of \
+                `~lsst.daf.butler.DatasetType`
             DatasetTypes to use as keys for the dict.  Values will be empty
             dictionaries.
-        universe : `DimensionUniverse`
+        universe : `~lsst.daf.butler.DimensionUniverse`
             Universe of all possible dimensions.
 
         Returns
@@ -147,7 +153,8 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
         Parameters
         ----------
-        datasetTypes : `iterable` of `DatasetType`
+        datasetTypes : `~collections.abc.Iterable` of \
+                `~lsst.daf.butler.DatasetType`
             DatasetTypes to use as keys for the dict.  Values will be obtained
             by lookups against ``first`` and ``rest``.
         first : `_DatasetDict`
@@ -242,8 +249,9 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
         return base.union(*[datasetType.dimensions for datasetType in self.keys()])
 
     def unpackSingleRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, DatasetRef]:
-        """Unpack nested single-element `DatasetRef` dicts into a new
-        mapping with `DatasetType` keys and `DatasetRef` values.
+        """Unpack nested single-element `~lsst.daf.butler.DatasetRef` dicts
+        into a new mapping with `~lsst.daf.butler.DatasetType` keys and
+        `~lsst.daf.butler.DatasetRef` values.
 
         This method assumes that each nest contains exactly one item, as is the
         case for all "init" datasets.
@@ -258,17 +266,20 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
         Returns
         -------
-        dictionary : `NamedKeyDict`
-            Dictionary mapping `DatasetType` to `DatasetRef`, with both
-            `DatasetType` instances and string names usable as keys.
+        dictionary : `~lsst.daf.butler.NamedKeyDict`
+            Dictionary mapping `~lsst.daf.butler.DatasetType` to
+            `~lsst.daf.butler.DatasetRef`, with both
+            `~lsst.daf.butler.DatasetType` instances and string names usable
+            as keys.
         """
         return NamedKeyDict(
             {datasetType: refs[0] for datasetType, refs in self.unpackMultiRefs(storage_classes).items()}
         )
 
     def unpackMultiRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
-        """Unpack nested multi-element `DatasetRef` dicts into a new
-        mapping with `DatasetType` keys and `list` of `DatasetRef` values.
+        """Unpack nested multi-element `~lsst.daf.butler.DatasetRef` dicts into
+        a new mapping with `~lsst.daf.butler.DatasetType` keys and `list` of
+        `~lsst.daf.butler.DatasetRef` values.
 
         Parameters
         ----------
@@ -280,9 +291,11 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
 
         Returns
         -------
-        dictionary : `NamedKeyDict`
-            Dictionary mapping `DatasetType` to `list` of `DatasetRef`, with
-            both `DatasetType` instances and string names usable as keys.
+        dictionary : `~lsst.daf.butler.NamedKeyDict`
+            Dictionary mapping `~lsst.daf.butler.DatasetType` to `list` of
+            `~lsst.daf.butler.DatasetRef`, with both
+            `~lsst.daf.butler.DatasetType` instances and string names usable
+            as keys.
         """
         result = {}
         for dataset_type, holders in self.items():
@@ -299,19 +312,20 @@ class _DatasetDict(NamedKeyDict[DatasetType, dict[DataCoordinate, _RefHolder]]):
     def extract(
         self, datasetType: DatasetType, dataIds: Iterable[DataCoordinate]
     ) -> Iterator[tuple[DataCoordinate, DatasetRef | None]]:
-        """Iterate over the contained `DatasetRef` instances that match the
-        given `DatasetType` and data IDs.
+        """Iterate over the contained `~lsst.daf.butler.DatasetRef` instances
+        that match the given `~lsst.daf.butler.DatasetType` and data IDs.
 
         Parameters
         ----------
-        datasetType : `DatasetType`
+        datasetType : `~lsst.daf.butler.DatasetType`
             Dataset type to match.
-        dataIds : `Iterable` [ `DataCoordinate` ]
+        dataIds : `~collections.abc.Iterable` \
+                [ `~lsst.daf.butler.DataCoordinate` ]
             Data IDs to match.
 
         Returns
         -------
-        refs : `Iterator` [ `DatasetRef` ]
+        refs : `~collections.abc.Iterator` [ `~lsst.daf.butler.DatasetRef` ]
             DatasetRef instances for which ``ref.datasetType == datasetType``
             and ``ref.dataId`` is in ``dataIds``.
         """
@@ -353,7 +367,7 @@ class _QuantumScaffolding:
     task : _TaskScaffolding
         Back-reference to the helper object for the `PipelineTask` this quantum
         represents an execution of.
-    dataId : `DataCoordinate`
+    dataId : `~lsst.daf.butler.DataCoordinate`
         Data ID for this quantum.
     """
 
@@ -381,29 +395,32 @@ class _QuantumScaffolding:
     """
 
     inputs: _DatasetDict
-    """Nested dictionary containing `DatasetRef` inputs to this quantum.
+    """Nested dictionary containing `~lsst.daf.butler.DatasetRef` inputs to
+    this quantum.
 
-    This is initialized to map each `DatasetType` to an empty dictionary at
-    construction.  Those nested dictionaries are populated (with data IDs as
-    keys) with unresolved `DatasetRef` instances in
-    `_PipelineScaffolding.connectDataIds`.
+    This is initialized to map each `~lsst.daf.butler.DatasetType` to an empty
+    dictionary at construction.  Those nested dictionaries are populated
+    (with data IDs as keys) with unresolved `~lsst.daf.butler.DatasetRef`
+    instances in `_PipelineScaffolding.connectDataIds`.
     """
 
     outputs: _DatasetDict
-    """Nested dictionary containing `DatasetRef` outputs this quantum.
-    """
-
-    prerequisites: _DatasetDict
-    """Nested dictionary containing `DatasetRef` prerequisite inputs to this
+    """Nested dictionary containing `~lsst.daf.butler.DatasetRef` outputs this
     quantum.
     """
 
-    def makeQuantum(self, datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None) -> Quantum:
+    prerequisites: _DatasetDict
+    """Nested dictionary containing `~lsst.daf.butler.DatasetRef` prerequisite
+    inputs to this quantum.
+    """
+
+    def makeQuantum(self, datastore_records: Mapping[str, DatastoreRecordData] | None = None) -> Quantum:
         """Transform the scaffolding object into a true `Quantum` instance.
 
         Parameters
         ----------
-        datastore_records : `dict` [ `str`, `DatastoreRecordData` ], optional
+        datastore_records : `~collections.abc.Mapping` [ `str`, \
+                `~lsst.daf.butler.DatastoreRecordData` ], optional
             If not `None` then fill datastore records in each generated Quantum
             using the records from this structure.
 
@@ -428,7 +445,7 @@ class _QuantumScaffolding:
         )
         helper.adjust_in_place(self.task.taskDef.connections, self.task.taskDef.label, self.dataId)
         initInputs = self.task.initInputs.unpackSingleRefs(self.task.storage_classes)
-        quantum_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        quantum_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore_records is not None:
             quantum_records = {}
             input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
@@ -557,7 +574,7 @@ class _TaskScaffolding:
     def makeQuantumSet(
         self,
         missing: _DatasetDict,
-        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None,
+        datastore_records: Mapping[str, DatastoreRecordData] | None = None,
     ) -> set[Quantum]:
         """Create a `set` of `Quantum` from the information in ``self``.
 
@@ -642,10 +659,10 @@ class _PipelineScaffolding:
 
     Parameters
     ----------
-    pipeline : `Pipeline` or `Iterable` [ `TaskDef` ]
+    pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
         Sequence of tasks from which a graph is to be constructed.  Must
         have nested task classes already imported.
-    universe : `DimensionUniverse`
+    universe : `~lsst.daf.butler.DimensionUniverse`
         Universe of all possible dimensions.
 
     Notes
@@ -767,13 +784,13 @@ class _PipelineScaffolding:
 
     defaultDatasetQueryConstraints: NamedValueSet[DatasetType]
     """Datasets that should be used as constraints in the initial query,
-    according to tasks (`NamedValueSet`).
+    according to tasks (`~lsst.daf.butler.NamedValueSet`).
     """
 
     dimensions: DimensionGraph
     """All dimensions used by any regular input, intermediate, or output
     (not prerequisite) dataset; the set of dimension used in the "Big Join
-    Query" (`DimensionGraph`).
+    Query" (`~lsst.daf.butler.DimensionGraph`).
 
     This is required to be a superset of all task quantum dimensions.
     """
@@ -799,10 +816,10 @@ class _PipelineScaffolding:
         self,
         registry: Registry,
         collections: Any,
-        userQuery: Optional[str],
+        userQuery: str | None,
         externalDataId: DataCoordinate,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
-        bind: Optional[Mapping[str, Any]] = None,
+        bind: Mapping[str, Any] | None = None,
     ) -> Iterator[DataCoordinateQueryResults]:
         """Query for the data IDs that connect nodes in the `QuantumGraph`.
 
@@ -818,7 +835,7 @@ class _PipelineScaffolding:
             datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         userQuery : `str` or `None`
             User-provided expression to limit the data IDs processed.
-        externalDataId : `DataCoordinate`
+        externalDataId : `~lsst.daf.butler.DataCoordinate`
             Externally-provided data ID that should be used to restrict the
             results, just as if these constraints had been included via ``AND``
             in ``userQuery``.  This includes (at least) any instrument named
@@ -827,7 +844,7 @@ class _PipelineScaffolding:
             The query constraint variant that should be used to constraint the
             query based on dataset existance, defaults to
             `DatasetQueryConstraintVariant.ALL`.
-        bind : `Mapping`, optional
+        bind : `~collections.abc.Mapping`, optional
             Mapping containing literal values that should be injected into the
             ``userQuery`` expression, keyed by the identifiers they replace.
 
@@ -912,7 +929,7 @@ class _PipelineScaffolding:
                     self.intermediates.items(),
                     self.outputs.items(),
                 ):
-                    datasetDataId: Optional[DataCoordinate]
+                    datasetDataId: DataCoordinate | None
                     if (datasetDataId := dataIdCacheForRow.get(datasetType.dimensions)) is None:
                         datasetDataId = commonDataId.subset(datasetType.dimensions)
                         dataIdCacheForRow[datasetType.dimensions] = datasetDataId
@@ -1366,21 +1383,21 @@ class _PipelineScaffolding:
     def makeQuantumGraph(
         self,
         registry: Registry,
-        metadata: Optional[Mapping[str, Any]] = None,
-        datastore: Optional[Datastore] = None,
+        metadata: Mapping[str, Any] | None = None,
+        datastore: Datastore | None = None,
     ) -> QuantumGraph:
         """Create a `QuantumGraph` from the quanta already present in
         the scaffolding data structure.
 
         Parameters
-        ---------
+        ----------
         registry : `lsst.daf.butler.Registry`
             Registry for the data repository; used for all data ID queries.
-        metadata : Optional Mapping of `str` to primitives
+        metadata : `~collections.abc.Mapping` of `str` to primitives, optional
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
             JSON.
-        datastore : `Datastore`, optional
+        datastore : `~lsst.daf.butler.Datastore`, optional
             If not `None` then fill datastore records in each generated
             Quantum.
 
@@ -1396,7 +1413,7 @@ class _PipelineScaffolding:
                 for holder in ref_dict.values():
                     yield holder.resolved_ref
 
-        datastore_records: Optional[Mapping[str, DatastoreRecordData]] = None
+        datastore_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore is not None:
             datastore_records = datastore.export_records(
                 itertools.chain(
@@ -1530,7 +1547,7 @@ class GraphBuilder:
         If `True` (default), allow quanta to created even if partial outputs
         exist; this requires the same behavior behavior to be enabled when
         executing.
-    datastore : `Datastore`, optional
+    datastore : `~lsst.daf.butler.Datastore`, optional
         If not `None` then fill datastore records in each generated Quantum.
     """
 
@@ -1539,7 +1556,7 @@ class GraphBuilder:
         registry: Registry,
         skipExistingIn: Any = None,
         clobberOutputs: bool = True,
-        datastore: Optional[Datastore] = None,
+        datastore: Datastore | None = None,
     ):
         self.registry = registry
         self.dimensions = registry.dimensions
@@ -1552,17 +1569,17 @@ class GraphBuilder:
         pipeline: Pipeline | Iterable[TaskDef],
         collections: Any,
         run: str,
-        userQuery: Optional[str],
+        userQuery: str | None,
         datasetQueryConstraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
-        metadata: Optional[Mapping[str, Any]] = None,
-        bind: Optional[Mapping[str, Any]] = None,
+        metadata: Mapping[str, Any] | None = None,
+        bind: Mapping[str, Any] | None = None,
         dataId: DataCoordinate | None = None,
     ) -> QuantumGraph:
         """Create execution graph for a pipeline.
 
         Parameters
         ----------
-        pipeline : `Pipeline` or `Iterable` [ `TaskDef` ]
+        pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             Pipeline definition, task names/classes and their configs.
         collections
             Expressions representing the collections to search for input
@@ -1582,7 +1599,7 @@ class GraphBuilder:
             This is an optional parameter of extra data to carry with the
             graph.  Entries in this mapping should be able to be serialized in
             JSON.
-        bind : `Mapping`, optional
+        bind : `~collections.abc.Mapping`, optional
             Mapping containing literal values that should be injected into the
             ``userQuery`` expression, keyed by the identifiers they replace.
         dataId : `lsst.daf.butler.DataCoordinate`, optional

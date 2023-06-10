@@ -57,7 +57,6 @@ def transfer_from_graph(
     count : `int`
         Actual count of transferred datasets.
     """
-
     # Read whole graph into memory
     qgraph = QuantumGraph.loadUri(graph)
 

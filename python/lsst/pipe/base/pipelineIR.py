@@ -41,9 +41,10 @@ class _Tags(enum.Enum):
 
 
 class PipelineYamlLoader(yaml.SafeLoader):
-    """This is a specialized version of yaml's SafeLoader. It checks and raises
-    an exception if it finds that there are multiple instances of the same key
-    found inside a pipeline file at a given scope.
+    """Specialized version of yaml's SafeLoader.
+
+    It checks and raises an exception if it finds that there are multiple
+    instances of the same key found inside a pipeline file at a given scope.
     """
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
@@ -89,7 +90,8 @@ class ContractError(Exception):
 @dataclass
 class ContractIR:
     """Intermediate representation of configuration contracts read from a
-    pipeline yaml file."""
+    pipeline yaml file.
+    """
 
     contract: str
     """A string of python code representing one or more conditions on configs
@@ -186,23 +188,26 @@ class LabeledSubset:
 class ParametersIR:
     """Intermediate representation of parameters that are global to a pipeline
 
-    These parameters are specified under a top level key named `parameters`
+    These parameters are specified under a top level key named ``parameters``
     and are declared as a yaml mapping. These entries can then be used inside
     task configuration blocks to specify configuration values. They may not be
     used in the special ``file`` or ``python`` blocks.
 
-    Example:
-    paramters:
-      shared_value: 14
-    tasks:
-      taskA:
-        class: modA
-        config:
-          field1: parameters.shared_value
-      taskB:
-        class: modB
-        config:
-          field2: parameters.shared_value
+    Examples
+    --------
+    .. code-block:: yaml
+
+        parameters:
+            shared_value: 14
+            tasks:
+                taskA:
+                    class: modA
+                    config:
+                        field1: parameters.shared_value
+                taskB:
+                    class: modB
+                    config:
+                        field2: parameters.shared_value
     """
 
     mapping: MutableMapping[str, str]
@@ -269,7 +274,7 @@ class ConfigIR:
         return accumulate
 
     def formatted(self, parameters: ParametersIR) -> ConfigIR:
-        """Returns a new ConfigIR object that is formatted according to the
+        """Return a new ConfigIR object that is formatted according to the
         specified parameters
 
         Parameters
@@ -298,7 +303,7 @@ class ConfigIR:
         return new_config
 
     def maybe_merge(self, other_config: "ConfigIR") -> Generator["ConfigIR", None, None]:
-        """Merges another instance of a `ConfigIR` into this instance if
+        """Merge another instance of a `ConfigIR` into this instance if
         possible. This function returns a generator that is either self
         if the configs were merged, or self, and other_config if that could
         not be merged.
@@ -376,7 +381,7 @@ class TaskIR:
         return accumulate
 
     def add_or_update_config(self, other_config: ConfigIR) -> None:
-        """Adds a `ConfigIR` to this task if one is not present. Merges configs
+        """Add a `ConfigIR` to this task if one is not present. Merges configs
         if there is a `ConfigIR` present and the dataId keys of both configs
         match, otherwise adds a new entry to the config list. The exception to
         the above is that if either the last config or other_config has a
@@ -551,7 +556,7 @@ class PipelineIR:
         """Process the contracts portion of the loaded yaml document
 
         Parameters
-        ---------
+        ----------
         loaded_yaml : `dict`
             A dictionary which matches the structure that would be produced by
             a yaml reader which parses a pipeline definition document
@@ -570,7 +575,7 @@ class PipelineIR:
         """Process the parameters portion of the loaded yaml document
 
         Parameters
-        ---------
+        ----------
         loaded_yaml : `dict`
             A dictionary which matches the structure that would be produced by
             a yaml reader which parses a pipeline definition document
@@ -597,7 +602,7 @@ class PipelineIR:
             self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
 
     def _verify_labeled_subsets(self) -> None:
-        """Verifies that all the labels in each named subset exist within the
+        """Verify that all the labels in each named subset exist within the
         pipeline.
         """
         # Verify that all labels defined in a labeled subset are in the
@@ -617,7 +622,7 @@ class PipelineIR:
         """Process the inherits portion of the loaded yaml document
 
         Parameters
-        ---------
+        ----------
         loaded_yaml : `dict`
             A dictionary which matches the structure that would be produced by
             a yaml reader which parses a pipeline definition document
@@ -656,9 +661,9 @@ class PipelineIR:
 
         Parameters
         ----------
-        pipelines : `Iterable` of `PipelineIR` objects
-            An `Iterable` that contains one or more `PipelineIR` objects to
-            merge into this object.
+        pipelines : `~collections.abc.Iterable` of `PipelineIR` objects
+            An `~collections.abc.Iterable` that contains one or more
+            `PipelineIR` objects to merge into this object.
 
         Raises
         ------
@@ -737,7 +742,7 @@ class PipelineIR:
         """Process the tasks portion of the loaded yaml document
 
         Parameters
-        ---------
+        ----------
         loaded_yaml : `dict`
             A dictionary which matches the structure that would be produced by
             a yaml reader which parses a pipeline definition document
@@ -817,7 +822,6 @@ class PipelineIR:
         members of the subset present in the pipeline will be removed from the
         resulting pipeline.
         """
-
         pipeline = copy.deepcopy(self)
 
         # update the label specifier to expand any named subsets
@@ -875,7 +879,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        uri: convertible to `ResourcePath`
+        uri: convertible to `~lsst.resources.ResourcePath`
             Location of document to use in creating a `PipelineIR` object.
 
         Returns
@@ -894,7 +898,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        uri: convertible to `ResourcePath`
+        uri: convertible to `~lsst.resources.ResourcePath`
             Location of document to write a `PipelineIR` object.
         """
         with ResourcePath(uri).open("w") as buffer:

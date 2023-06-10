@@ -28,7 +28,7 @@ __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 import itertools
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
@@ -66,7 +66,7 @@ class SimpleInstrument(Instrument):
     def getName() -> str:
         return "INSTRU"
 
-    def getRawFormatter(self, dataId: DataId) -> Type[Formatter]:
+    def getRawFormatter(self, dataId: DataId) -> type[Formatter]:
         return Formatter
 
     def register(self, registry: Registry, *, update: bool = False) -> None:
@@ -124,7 +124,7 @@ class AddTask(PipelineTask):
     initout = numpy.array([999])
     """InitOutputs for this task"""
 
-    taskFactory: Optional[AddTaskFactoryMock] = None
+    taskFactory: AddTaskFactoryMock | None = None
     """Factory that makes instances"""
 
     def run(self, input: int) -> Struct:  # type: ignore
@@ -163,7 +163,7 @@ class AddTaskFactoryMock(TaskFactory):
         return task
 
 
-def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[TaskDef]]) -> None:
+def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskDef]) -> None:
     """Register all dataset types used by tasks in a registry.
 
     Copied and modified from `PreExecInit.initializeDatasetTypes`.
@@ -174,7 +174,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[
         Registry instance.
     pipeline : `typing.Iterable` of `TaskDef`
         Iterable of TaskDef instances, likely the output of the method
-        toExpandedPipeline on a `~lsst.pipe.base.Pipeline` object
+        `Pipelines.toExpandedPipeline` on a `~lsst.pipe.base.Pipeline` object.
     """
     for taskDef in pipeline:
         configDatasetType = DatasetType(
@@ -201,12 +201,12 @@ def registerDatasetTypes(registry: Registry, pipeline: Union[Pipeline, Iterable[
                 registry.registerDatasetType(datasetType)
 
 
-def makeSimplePipeline(nQuanta: int, instrument: Optional[str] = None) -> Pipeline:
+def makeSimplePipeline(nQuanta: int, instrument: str | None = None) -> Pipeline:
     """Make a simple Pipeline for tests.
 
-    This is called by ``makeSimpleQGraph`` if no pipeline is passed to that
+    This is called by `makeSimpleQGraph()` if no pipeline is passed to that
     function. It can also be used to customize the pipeline used by
-    ``makeSimpleQGraph`` function by calling this first and passing the result
+    `makeSimpleQGraph()` function by calling this first and passing the result
     to it.
 
     Parameters
@@ -273,7 +273,7 @@ def makeSimpleButler(
 
 
 def populateButler(
-    pipeline: Pipeline, butler: Butler, datasetTypes: Dict[Optional[str], List[str]] | None = None
+    pipeline: Pipeline, butler: Butler, datasetTypes: dict[str | None, list[str]] | None = None
 ) -> None:
     """Populate data butler with data needed for test.
 
@@ -300,7 +300,6 @@ def populateButler(
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
     """
-
     # Add dataset types to registry
     taskDefs = list(pipeline.toExpandedPipeline())
     registerDatasetTypes(butler.registry, taskDefs)
@@ -351,22 +350,22 @@ def populateButler(
 
 def makeSimpleQGraph(
     nQuanta: int = 5,
-    pipeline: Optional[Pipeline] = None,
-    butler: Optional[Butler] = None,
-    root: Optional[str] = None,
+    pipeline: Pipeline | None = None,
+    butler: Butler | None = None,
+    root: str | None = None,
     callPopulateButler: bool = True,
     run: str = "test",
-    instrument: Optional[str] = None,
+    instrument: str | None = None,
     skipExistingIn: Any = None,
     inMemory: bool = True,
     userQuery: str = "",
-    datasetTypes: Optional[Dict[Optional[str], List[str]]] = None,
+    datasetTypes: dict[str | None, list[str]] | None = None,
     datasetQueryConstraint: DSQVariant = DSQVariant.ALL,
     makeDatastoreRecords: bool = False,
-    bind: Optional[Mapping[str, Any]] = None,
-    metadata: Optional[MutableMapping[str, Any]] = None,
-) -> Tuple[Butler, QuantumGraph]:
-    """Make simple QuantumGraph for tests.
+    bind: Mapping[str, Any] | None = None,
+    metadata: MutableMapping[str, Any] | None = None,
+) -> tuple[Butler, QuantumGraph]:
+    """Make simple `QuantumGraph` for tests.
 
     Makes simple one-task pipeline with AddTask, sets up in-memory registry
     and butler, fills them with minimal data, and generates QuantumGraph with
@@ -414,10 +413,10 @@ def makeSimpleQGraph(
         `DatasetQueryConstraintVariant.ALL`.
     makeDatastoreRecords : `bool`, optional
         If `True` then add datstore records to generated quanta.
-    bind : `Mapping`, optional
+    bind : `~collections.abc.Mapping`, optional
         Mapping containing literal values that should be injected into the
         ``userQuery`` expression, keyed by the identifiers they replace.
-    metadata : `Mapping`, optional
+    metadata : `~collections.abc.Mapping`, optional
         Optional graph metadata.
 
     Returns
@@ -427,7 +426,6 @@ def makeSimpleQGraph(
     qgraph : `~lsst.pipe.base.QuantumGraph`
         Quantum graph instance
     """
-
     if pipeline is None:
         pipeline = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument)
 

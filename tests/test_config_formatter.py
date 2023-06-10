@@ -50,7 +50,7 @@ class PexConfigFormatterTestCase(unittest.TestCase):
         # No dimensions in dataset type so we don't have to worry about
         # inserting dimension data or defining data IDs.
         self.datasetType = DatasetType(
-            "config", dimensions=(), storageClass="Config", universe=self.butler.registry.dimensions
+            "config", dimensions=(), storageClass="Config", universe=self.butler.dimensions
         )
         self.butler.registry.registerDatasetType(self.datasetType)
 

@@ -27,7 +27,7 @@ __all__ = (
     "NoDimensionsTestTask",
 )
 
-from typing import Dict, Union, cast
+from typing import cast
 
 from lsst.pex.config import Field
 from lsst.pipe.base import (
@@ -42,6 +42,8 @@ from lsst.utils.introspection import get_full_type_name
 
 
 class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
+    """Connections class for `NoDimensionsTestTask`."""
+
     input = connectionTypes.Input(
         name="input", doc="some dict-y input data for testing", storageClass="StructuredDataDict"
     )
@@ -51,6 +53,8 @@ class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
 
 
 class NoDimensionsTestConfig(PipelineTaskConfig, pipelineConnections=NoDimensionsTestConnections):
+    """Configuration for `NoDimensionTestTask`."""
+
     key = Field[str](doc="String key for the dict entry the task sets.", default="one")
     value = Field[int](doc="Integer value for the dict entry the task sets.", default=1)
     outputSC = Field[str](doc="Output storage class requested", default="dict")
@@ -71,7 +75,7 @@ class NoDimensionsTestTask(PipelineTask):
     # The completely flexible arguments to run aren't really valid inheritance;
     # the base class method exists just as a place to put a docstring, so we
     # tell mypy to ignore it.
-    def run(self, input: Union[TaskMetadata, Dict[str, int]]) -> Struct:  # type: ignore
+    def run(self, input: TaskMetadata | dict[str, int]) -> Struct:  # type: ignore
         """Run the task, adding the configured key-value pair to the input
         argument and returning it as the output.
 

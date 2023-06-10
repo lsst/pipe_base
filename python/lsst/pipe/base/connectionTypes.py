@@ -34,22 +34,22 @@ from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUn
 
 @dataclasses.dataclass(frozen=True)
 class BaseConnection:
-    """Base class used for declaring PipelineTask connections
+    """Base class used for declaring `PipelineTask` connections.
 
     Parameters
     ----------
     name : `str`
-        The name used to identify the dataset type
+        The name used to identify the dataset type.
     storageClass : `str`
-        The storage class used when (un)/persisting the dataset type
+        The storage class used when (un)/persisting the dataset type.
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
         `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
-        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
-        the execution system as early as possible of outputs that will not be
-        produced because the corresponding input is missing.
+        consistent (i.e. zip-iterable) in `PipelineTask.runQuantum()` and
+        notify the execution system as early as possible of outputs that will
+        not be produced because the corresponding input is missing.
     """
 
     name: str
@@ -87,7 +87,8 @@ class BaseConnection:
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
-        """Construct a true `DatasetType` instance with normalized dimensions.
+        """Construct a true `~lsst.daf.butler.DatasetType` instance with
+        normalized dimensions.
 
         Parameters
         ----------
@@ -99,8 +100,8 @@ class BaseConnection:
 
         Returns
         -------
-        datasetType : `DatasetType`
-            The `DatasetType` defined by this connection.
+        datasetType : `~lsst.daf.butler.DatasetType`
+            The `~lsst.daf.butler.DatasetType` defined by this connection.
         """
         return DatasetType(
             self.name, universe.empty, self.storageClass, parentStorageClass=parentStorageClass
@@ -149,7 +150,8 @@ class DimensionedConnection(BaseConnection):
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
-        """Construct a true `DatasetType` instance with normalized dimensions.
+        """Construct a true `~lsst.daf.butler.DatasetType` instance with
+        normalized dimensions.
 
         Parameters
         ----------
@@ -161,8 +163,8 @@ class DimensionedConnection(BaseConnection):
 
         Returns
         -------
-        datasetType : `DatasetType`
-            The `DatasetType` defined by this connection.
+        datasetType : `~lsst.daf.butler.DatasetType`
+            The `~lsst.daf.butler.DatasetType` defined by this connection.
         """
         return DatasetType(
             self.name,
@@ -296,7 +298,7 @@ class Input(BaseInput):
 
 @dataclasses.dataclass(frozen=True)
 class PrerequisiteInput(BaseInput):
-    """Class used for declaring PipelineTask prerequisite connections
+    """Class used for declaring PipelineTask prerequisite connections.
 
     Parameters
     ----------
@@ -359,7 +361,6 @@ class PrerequisiteInput(BaseInput):
       in each visit for which the visit overlaps a tract, not just those where
       that detector+visit combination overlaps the tract).
     - Prerequisite inputs may be optional (regular inputs are never optional).
-
     """
 
     lookupFunction: Callable[
@@ -371,14 +372,20 @@ class PrerequisiteInput(BaseInput):
 
 @dataclasses.dataclass(frozen=True)
 class Output(DimensionedConnection):
+    """Connection for output dataset."""
+
     _connection_type_set: ClassVar[str] = "outputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitInput(BaseConnection):
+    """Connection for initInput dataset."""
+
     _connection_type_set: ClassVar[str] = "initInputs"
 
 
 @dataclasses.dataclass(frozen=True)
 class InitOutput(BaseConnection):
+    """Connection for initOutput dataset."""
+
     _connection_type_set: ClassVar[str] = "initOutputs"

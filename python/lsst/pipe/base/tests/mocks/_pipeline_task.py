@@ -160,6 +160,8 @@ class MockPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
 
 
 class MockPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=MockPipelineTaskConnections):
+    """Configuration class for `MockPipelineTask`."""
+
     fail_condition = Field[str](
         dtype=str,
         default="",

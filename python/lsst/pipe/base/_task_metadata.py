@@ -24,8 +24,8 @@ __all__ = ["TaskMetadata"]
 import itertools
 import numbers
 import warnings
-from collections.abc import Sequence
-from typing import Any, Collection, Dict, Iterator, List, Mapping, Optional, Protocol, Set, Tuple, Union
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
@@ -68,11 +68,11 @@ class TaskMetadata(BaseModel):
     the value into sub-dictionary. Arbitrary hierarchies are supported.
     """
 
-    scalars: Dict[str, Union[StrictFloat, StrictInt, StrictBool, StrictStr]] = Field(default_factory=dict)
-    arrays: Dict[str, Union[List[StrictFloat], List[StrictInt], List[StrictBool], List[StrictStr]]] = Field(
+    scalars: dict[str, StrictFloat | StrictInt | StrictBool | StrictStr] = Field(default_factory=dict)
+    arrays: dict[str, list[StrictFloat] | list[StrictInt] | list[StrictBool] | list[StrictStr]] = Field(
         default_factory=dict
     )
-    metadata: Dict[str, "TaskMetadata"] = Field(default_factory=dict)
+    metadata: dict[str, "TaskMetadata"] = Field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "TaskMetadata":
@@ -80,7 +80,7 @@ class TaskMetadata(BaseModel):
 
         Parameters
         ----------
-        d : `Mapping`
+        d : `~collections.abc.Mapping`
             Mapping to convert. Can be hierarchical. Any dictionaries
             in the hierarchy are converted to `TaskMetadata`.
 
@@ -129,7 +129,7 @@ class TaskMetadata(BaseModel):
             metadata[key] = value
         return metadata
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert the class to a simple dictionary.
 
         Returns
@@ -145,7 +145,7 @@ class TaskMetadata(BaseModel):
         used when a simple dictionary is needed.  Use
         `TaskMetadata.from_dict()` to convert it back.
         """
-        d: Dict[str, Any] = {}
+        d: dict[str, Any] = {}
         d.update(self.scalars)
         d.update(self.arrays)
         for k, v in self.metadata.items():
@@ -197,7 +197,7 @@ class TaskMetadata(BaseModel):
 
         self.metadata[key0].add(".".join(keys), value)
 
-    def getScalar(self, key: str) -> Union[str, int, float, bool]:
+    def getScalar(self, key: str) -> str | int | float | bool:
         """Retrieve a scalar item even if the item is a list.
 
         Parameters
@@ -220,7 +220,7 @@ class TaskMetadata(BaseModel):
         # getScalar() is the default behavior for __getitem__.
         return self[key]
 
-    def getArray(self, key: str) -> List[Any]:
+    def getArray(self, key: str) -> list[Any]:
         """Retrieve an item as a list even if it is a scalar.
 
         Parameters
@@ -255,7 +255,7 @@ class TaskMetadata(BaseModel):
             # Report the correct key.
             raise KeyError(f"'{key}' not found") from None
 
-    def names(self, topLevelOnly: bool = True) -> Set[str]:
+    def names(self, topLevelOnly: bool = True) -> set[str]:
         """Return the hierarchical keys from the metadata.
 
         Parameters
@@ -291,7 +291,7 @@ class TaskMetadata(BaseModel):
                     names.update({k + "." + item for item in v.names(topLevelOnly=topLevelOnly)})
             return names
 
-    def paramNames(self, topLevelOnly: bool) -> Set[str]:
+    def paramNames(self, topLevelOnly: bool) -> set[str]:
         """Return hierarchical names.
 
         Parameters
@@ -319,7 +319,7 @@ class TaskMetadata(BaseModel):
         return paramNames
 
     @staticmethod
-    def _getKeys(key: str) -> List[str]:
+    def _getKeys(key: str) -> list[str]:
         """Return the key hierarchy.
 
         Parameters
@@ -343,11 +343,11 @@ class TaskMetadata(BaseModel):
             raise KeyError(f"Invalid key '{key}': only string keys are allowed") from None
         return keys
 
-    def keys(self) -> Tuple[str, ...]:
+    def keys(self) -> tuple[str, ...]:
         """Return the top-level keys."""
         return tuple(k for k in self)
 
-    def items(self) -> Iterator[Tuple[str, Any]]:
+    def items(self) -> Iterator[tuple[str, Any]]:
         """Yield the top-level keys and values."""
         for k, v in itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items()):
             yield (k, v)
@@ -432,12 +432,12 @@ class TaskMetadata(BaseModel):
         keys = self._getKeys(key)
         key0 = keys.pop(0)
         if len(keys) == 0:
-            slots: Dict[str, Dict[str, Any]] = {
+            slots: dict[str, dict[str, Any]] = {
                 "array": self.arrays,
                 "scalar": self.scalars,
                 "metadata": self.metadata,
             }
-            primary: Optional[Dict[str, Any]] = None
+            primary: dict[str, Any] | None = None
             slot_type, item = self._validate_value(item)
             primary = slots.pop(slot_type, None)
             if primary is None:
@@ -484,7 +484,7 @@ class TaskMetadata(BaseModel):
             # MyPy can't figure out that this way to combine the types in the
             # tuple is the one that matters, and annotating a local variable
             # helps it out.
-            properties: Tuple[Dict[str, Any], ...] = (self.scalars, self.arrays, self.metadata)
+            properties: tuple[dict[str, Any], ...] = (self.scalars, self.arrays, self.metadata)
             for property in properties:
                 if key0 in property:
                     del property[key0]
@@ -497,7 +497,7 @@ class TaskMetadata(BaseModel):
             # Report the correct key.
             raise KeyError(f"'{key}' not found'") from None
 
-    def _validate_value(self, value: Any) -> Tuple[str, Any]:
+    def _validate_value(self, value: Any) -> tuple[str, Any]:
         """Validate the given value.
 
         Parameters

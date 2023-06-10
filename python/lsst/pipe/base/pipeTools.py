@@ -31,7 +31,8 @@ __all__ = ["isPipelineOrdered", "orderPipeline"]
 #  Imports of standard modules --
 # -------------------------------
 import itertools
-from typing import TYPE_CHECKING, Iterable, List, Optional, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 # -----------------------------
 #  Imports for other modules --
@@ -71,10 +72,8 @@ class PipelineDataCycleError(Exception):
     pass
 
 
-def isPipelineOrdered(
-    pipeline: Union[Pipeline, Iterable[TaskDef]], taskFactory: Optional[TaskFactory] = None
-) -> bool:
-    """Checks whether tasks in pipeline are correctly ordered.
+def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskFactory | None = None) -> bool:
+    """Check whether tasks in pipeline are correctly ordered.
 
     Pipeline is correctly ordered if for any DatasetType produced by a task
     in a pipeline all its consumer tasks are located after producer.
@@ -93,11 +92,12 @@ def isPipelineOrdered(
 
     Raises
     ------
-    `ImportError` is raised when task class cannot be imported.
-    `DuplicateOutputError` is raised when there is more than one producer for a
-    dataset type.
-    `MissingTaskFactoryError` is raised when TaskFactory is needed but not
-    provided.
+    ImportError
+        Raised when task class cannot be imported.
+    DuplicateOutputError
+        Raised when there is more than one producer for a dataset type.
+    MissingTaskFactoryError
+        Raised when TaskFactory is needed but not provided.
     """
     # Build a map of DatasetType name to producer's index in a pipeline
     producerIndex = {}
@@ -123,7 +123,7 @@ def isPipelineOrdered(
     return True
 
 
-def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
+def orderPipeline(pipeline: list[TaskDef]) -> list[TaskDef]:
     """Re-order tasks in pipeline to satisfy data dependencies.
 
     When possible new ordering keeps original relative order of the tasks.
@@ -142,10 +142,9 @@ def orderPipeline(pipeline: List[TaskDef]) -> List[TaskDef]:
     `DuplicateOutputError` is raised when there is more than one producer for a
     dataset type.
     `PipelineDataCycleError` is also raised when pipeline has dependency
-    cycles.  `MissingTaskFactoryError` is raised when TaskFactory is needed but
-    not provided.
+    cycles.  `MissingTaskFactoryError` is raised when `TaskFactory` is needed
+    but not provided.
     """
-
     # This is a modified version of Kahn's algorithm that preserves order
 
     # build mapping of the tasks to their inputs and outputs

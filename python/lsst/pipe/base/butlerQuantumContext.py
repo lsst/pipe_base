@@ -26,7 +26,8 @@ from __future__ import annotations
 
 __all__ = ("ButlerQuantumContext",)
 
-from typing import Any, List, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
@@ -74,7 +75,7 @@ class ButlerQuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.__butler = butler
 
-    def _get(self, ref: Optional[Union[DeferredDatasetRef, DatasetRef]]) -> Any:
+    def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
@@ -93,16 +94,14 @@ class ButlerQuantumContext:
 
     def get(
         self,
-        dataset: Union[
-            InputQuantizedConnection,
-            List[Optional[DatasetRef]],
-            List[Optional[DeferredDatasetRef]],
-            DatasetRef,
-            DeferredDatasetRef,
-            None,
-        ],
+        dataset: InputQuantizedConnection
+        | list[DatasetRef | None]
+        | list[DeferredDatasetRef | None]
+        | DatasetRef
+        | DeferredDatasetRef
+        | None,
     ) -> Any:
-        """Fetches data from the butler
+        """Fetch data from the butler
 
         Parameters
         ----------
@@ -133,8 +132,8 @@ class ButlerQuantumContext:
         Raises
         ------
         ValueError
-            Raised if a `DatasetRef` is passed to get that is not defined in
-            the quantum object
+            Raised if a `~lsst.daf.butler.DatasetRef` is passed to get that is
+            not defined in the quantum object
         """
         # Set up a periodic logger so log messages can be issued if things
         # are taking too long.
@@ -197,10 +196,10 @@ class ButlerQuantumContext:
 
     def put(
         self,
-        values: Union[Struct, List[Any], Any],
-        dataset: Union[OutputQuantizedConnection, List[DatasetRef], DatasetRef],
+        values: Struct | list[Any] | Any,
+        dataset: OutputQuantizedConnection | list[DatasetRef] | DatasetRef,
     ) -> None:
-        """Puts data into the butler
+        """Put data into the butler.
 
         Parameters
         ----------
@@ -214,8 +213,8 @@ class ButlerQuantumContext:
             ``[datasetRef1, datasetRef2]`` then ``values.calexp`` should be
             ``[calexp1, calexp2]``. Like wise if there is a single ref, then
             only a single object need be passed. The same restriction applies
-            if dataset is directly a `list` of `DatasetRef` or a single
-            `DatasetRef`.
+            if dataset is directly a `list` of `~lsst.daf.butler.DatasetRef`
+            or a single `~lsst.daf.butler.DatasetRef`.
         dataset
             This argument may either be an `InputQuantizedConnection` which
             describes all the inputs of a quantum, a list of
@@ -226,9 +225,9 @@ class ButlerQuantumContext:
         Raises
         ------
         ValueError
-            Raised if a `DatasetRef` is passed to put that is not defined in
-            the quantum object, or the type of values does not match what is
-            expected from the type of dataset.
+            Raised if a `~lsst.daf.butler.DatasetRef` is passed to put that is
+            not defined in the `~lsst.daf.butler.Quantum` object, or the type
+            of values does not match what is expected from the type of dataset.
         """
         if isinstance(dataset, OutputQuantizedConnection):
             if not isinstance(values, Struct):
@@ -257,21 +256,24 @@ class ButlerQuantumContext:
         else:
             raise TypeError("Dataset argument is not a type that can be used to put")
 
-    def _checkMembership(self, ref: Union[List[DatasetRef], DatasetRef], inout: set) -> None:
-        """Internal function used to check if a DatasetRef is part of the input
-        quantum
+    def _checkMembership(self, ref: list[DatasetRef] | DatasetRef, inout: set) -> None:
+        """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
+        `~lsst.daf.butler.Quantum`.
 
-        This function will raise an exception if the ButlerQuantumContext is
-        used to get/put a DatasetRef which is not defined in the quantum.
+        This function will raise an exception if the `ButlerQuantumContext` is
+        used to get/put a `~lsst.daf.butler.DatasetRef` which is not defined
+        in the quantum.
 
         Parameters
         ----------
-        ref : `list` of `DatasetRef` or `DatasetRef`
-            Either a list or a single `DatasetRef` to check
+        ref : `list` [ `~lsst.daf.butler.DatasetRef` ] or \
+                `~lsst.daf.butler.DatasetRef`
+            Either a `list` or a single `~lsst.daf.butler.DatasetRef` to check
         inout : `set`
             The connection type to check, e.g. either an input or an output.
             This prevents both types needing to be checked for every operation,
-            which may be important for Quanta with lots of `DatasetRef`.
+            which may be important for Quanta with lots of
+            `~lsst.daf.butler.DatasetRef`.
         """
         if not isinstance(ref, list):
             ref = [ref]
@@ -282,6 +284,6 @@ class ButlerQuantumContext:
     @property
     def dimensions(self) -> DimensionUniverse:
         """Structure managing all dimensions recognized by this data
-        repository (`DimensionUniverse`).
+        repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions

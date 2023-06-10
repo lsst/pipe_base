@@ -34,17 +34,17 @@ def check_output_run(graph: QuantumGraph, run: str) -> list[DatasetRef]:
 
     Parameters
     ----------
-    graph : `Quantumgraph`
+    graph : `QuantumGraph`
         Quantum graph.
     run : `str`
         Output run name.
 
     Returns
-    refs : `list` [ `DatasetRef` ]
+    -------
+    refs : `list` [ `~lsst.daf.butler.DatasetRef` ]
         List of output/intermediate dataset references that do NOT belong to
         the specified run.
     """
-
     # Collect all inputs/outputs, so that we can build intermediate refs.
     output_refs = []
     input_refs = []

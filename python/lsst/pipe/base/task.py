@@ -27,19 +27,8 @@ __all__ = ["Task", "TaskError"]
 import contextlib
 import logging
 import weakref
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    ClassVar,
-    Dict,
-    Iterator,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-)
+from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import lsst.utils
 import lsst.utils.logging
@@ -147,7 +136,7 @@ class Task:
     because it simplifies construction (e.g. for unit tests).
     """
 
-    ConfigClass: ClassVar[Type[Config]]
+    ConfigClass: ClassVar[type[Config]]
     _DefaultName: ClassVar[str]
 
     _add_module_logger_prefix: bool = True
@@ -156,14 +145,14 @@ class Task:
 
     def __init__(
         self,
-        config: Optional[Config] = None,
+        config: Config | None = None,
         *,
-        name: Optional[str] = None,
-        parentTask: Optional[Task] = None,
-        log: Optional[Union[logging.Logger, lsst.utils.logging.LsstLogAdapter]] = None,
+        name: str | None = None,
+        parentTask: Task | None = None,
+        log: logging.Logger | lsst.utils.logging.LsstLogAdapter | None = None,
     ):
         self.metadata = _TASK_METADATA_TYPE()
-        self.__parentTask: Optional[weakref.ReferenceType]
+        self.__parentTask: weakref.ReferenceType | None
         self.__parentTask = parentTask if parentTask is None else weakref.ref(parentTask)
 
         if parentTask is not None:
@@ -173,7 +162,7 @@ class Task:
             self._fullName = parentTask._computeFullName(name)
             if config is None:
                 config = getattr(parentTask.config, name)
-            self._taskDict: Dict[str, weakref.ReferenceType[Task]] = parentTask._taskDict
+            self._taskDict: dict[str, weakref.ReferenceType[Task]] = parentTask._taskDict
             loggerName = parentTask.log.getChild(name).name
         else:
             if name is None:
@@ -212,7 +201,7 @@ class Task:
         self._taskDict[self._fullName] = weakref.ref(self)
 
     @property
-    def _parentTask(self) -> Optional[Task]:
+    def _parentTask(self) -> Task | None:
         return self.__parentTask if self.__parentTask is None else self.__parentTask()
 
     def emptyMetadata(self) -> None:
@@ -277,13 +266,13 @@ class Task:
         taskName : `str`
             Name of the task.
 
-        See also
+        See Also
         --------
         getFullName
         """
         return self._name
 
-    def getTaskDict(self) -> Dict[str, weakref.ReferenceType[Task]]:
+    def getTaskDict(self) -> dict[str, weakref.ReferenceType[Task]]:
         """Get a dictionary of all tasks as a shallow copy.
 
         Returns
@@ -302,12 +291,12 @@ class Task:
         ----------
         name : `str`
             Brief name of the subtask.
-        keyArgs
+        **keyArgs
             Extra keyword arguments used to construct the task. The following
             arguments are automatically provided and cannot be overridden:
 
-            - "config".
-            - "parentTask".
+            - ``config``.
+            - ``parentTask``.
 
         Notes
         -----
@@ -343,9 +332,9 @@ class Task:
             with self.timer("someCodeToTime"):
                 pass  # code to time
 
-        See also
+        See Also
         --------
-        timer.logInfo
+        lsst.utils.timer.logInfo
         """
         logInfo(obj=self, prefix=name + "Start", logLevel=logLevel)
         try:
@@ -365,7 +354,7 @@ class Task:
         Returns
         -------
         configurableField : `lsst.pex.config.ConfigurableField`
-            A `~ConfigurableField` for this task.
+            A `~lsst.pex.config.ConfigurableField` for this task.
 
         Examples
         --------
@@ -406,7 +395,7 @@ class Task:
 
     @staticmethod
     def _unpickle_via_factory(
-        factory: Callable[..., Task], args: Sequence[Any], kwargs: Dict[str, Any]
+        factory: Callable[..., Task], args: Sequence[Any], kwargs: dict[str, Any]
     ) -> Task:
         """Unpickle something by calling a factory
 
@@ -415,8 +404,8 @@ class Task:
         """
         return factory(*args, **kwargs)
 
-    def _reduce_kwargs(self) -> Dict[str, Any]:
-        """Returns a dict of the keyword arguments that should be used
+    def _reduce_kwargs(self) -> dict[str, Any]:
+        """Return a dict of the keyword arguments that should be used
         by `__reduce__`.
 
         Subclasses with additional arguments should always call the parent
@@ -435,9 +424,9 @@ class Task:
 
     def __reduce__(
         self,
-    ) -> Tuple[
-        Callable[[Callable[..., Task], Sequence[Any], Dict[str, Any]], Task],
-        Tuple[Type[Task], Sequence[Any], Dict[str, Any]],
+    ) -> tuple[
+        Callable[[Callable[..., Task], Sequence[Any], dict[str, Any]], Task],
+        tuple[type[Task], Sequence[Any], dict[str, Any]],
     ]:
         """Pickler."""
         return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())

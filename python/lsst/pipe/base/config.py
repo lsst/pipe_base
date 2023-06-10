@@ -32,7 +32,7 @@ __all__ = ["PipelineTaskConfig"]
 import os
 from collections.abc import Iterable
 from numbers import Number
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 # -----------------------------
 #  Imports for other modules --
@@ -59,7 +59,8 @@ _S = TypeVar("_S", bound="PipelineTaskConfigMeta")
 
 
 class TemplateField(pexConfig.Field):
-    """This Field is specialized for use with connection templates.
+    """Field specialized for use with connection templates.
+
     Specifically it treats strings or numbers as valid input, as occasionally
     numbers are used as a cycle counter in templates.
 
@@ -85,7 +86,7 @@ class TemplateField(pexConfig.Field):
         self,
         instance: pexConfig.Config,
         value: Any,
-        at: Optional[StackFrame] = None,
+        at: StackFrame | None = None,
         label: str = "assignment",
     ) -> None:
         # validate first, even though validate will be called in super
@@ -112,10 +113,10 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     """
 
     def __new__(
-        cls: Type[_S],
+        cls: type[_S],
         name: str,
-        bases: Tuple[type[PipelineTaskConfig], ...],
-        dct: Dict[str, Any],
+        bases: tuple[type[PipelineTaskConfig], ...],
+        dct: dict[str, Any],
         **kwargs: Any,
     ) -> _S:
         if name != "PipelineTaskConfig":
@@ -164,7 +165,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
         return inst
 
     def __init__(
-        self, name: str, bases: Tuple[Type[PipelineTaskConfig], ...], dct: Dict[str, Any], **kwargs: Any
+        self, name: str, bases: tuple[type[PipelineTaskConfig], ...], dct: dict[str, Any], **kwargs: Any
     ):
         # This overrides the default init to drop the kwargs argument. Python
         # metaclasses will have this argument set if any kwargs are passes at
@@ -226,7 +227,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         taskDefaultName : `str`
             The default name associated with the `Task` class. This
             may be used with instrumental overrides.
-        pipelineConfigs : `Iterable` of `ConfigIR`
+        pipelineConfigs : `~collections.abc.Iterable` of `ConfigIR`
             An iterable of `ConfigIR` objects that contain overrides
             to apply to this config instance.
         parameters : `ParametersIR`

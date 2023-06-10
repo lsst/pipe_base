@@ -24,7 +24,7 @@ __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, NewType, Optional, Tuple
+from typing import Any, NewType
 
 from lsst.daf.butler import (
     DatasetRef,
@@ -79,10 +79,10 @@ class NodeId:
 
 @dataclass(frozen=True)
 class QuantumNode:
-    """This class represents a node in the quantum graph.
+    """Class representing a node in the quantum graph.
 
-    The quantum attribute represents the data that is to be processed at this
-    node.
+    The ``quantum`` attribute represents the data that is to be processed at
+    this node.
     """
 
     quantum: Quantum
@@ -120,7 +120,7 @@ class QuantumNode:
             f"{self.__class__.__name__}(quantum={self.quantum}, taskDef={self.taskDef}, nodeId={self.nodeId})"
         )
 
-    def to_simple(self, accumulator: Optional[DimensionRecordsAccumulator] = None) -> SerializedQuantumNode:
+    def to_simple(self, accumulator: DimensionRecordsAccumulator | None = None) -> SerializedQuantumNode:
         return SerializedQuantumNode(
             quantum=self.quantum.to_simple(accumulator=accumulator),
             taskLabel=self.taskDef.label,
@@ -131,9 +131,9 @@ class QuantumNode:
     def from_simple(
         cls,
         simple: SerializedQuantumNode,
-        taskDefMap: Dict[str, TaskDef],
+        taskDefMap: dict[str, TaskDef],
         universe: DimensionUniverse,
-        recontitutedDimensions: Optional[Dict[int, Tuple[str, DimensionRecord]]] = None,
+        recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] | None = None,
     ) -> QuantumNode:
         return QuantumNode(
             quantum=Quantum.from_simple(
@@ -150,7 +150,7 @@ class SerializedQuantumNode(BaseModel):
     nodeId: uuid.UUID
 
     @classmethod
-    def direct(cls, *, quantum: Dict[str, Any], taskLabel: str, nodeId: str) -> SerializedQuantumNode:
+    def direct(cls, *, quantum: dict[str, Any], taskLabel: str, nodeId: str) -> SerializedQuantumNode:
         node = SerializedQuantumNode.__new__(cls)
         setter = object.__setattr__
         setter(node, "quantum", SerializedQuantum.direct(**quantum))

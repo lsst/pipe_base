@@ -23,8 +23,9 @@ from __future__ import annotations
 __all__ = ("_DatasetTracker", "DatasetTypeName", "_pruner")
 
 from collections import defaultdict
+from collections.abc import Iterable
 from itertools import chain
-from typing import DefaultDict, Dict, Generic, Iterable, List, NewType, Optional, Set, TypeVar
+from typing import Generic, NewType, TypeVar
 
 import networkx as nx
 from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
@@ -43,7 +44,7 @@ _U = TypeVar("_U", TaskDef, QuantumNode)
 
 
 class _DatasetTracker(Generic[_T, _U]):
-    r"""This is a generic container for tracking keys which are produced or
+    r"""A generic container for tracking keys which are produced or
     consumed by some value. In the context of a QuantumGraph, keys may be
     `~lsst.daf.butler.DatasetRef`\ s and the values would be Quanta that either
     produce or consume those `~lsst.daf.butler.DatasetRef`\ s.
@@ -57,26 +58,26 @@ class _DatasetTracker(Generic[_T, _U]):
     """
 
     def __init__(self, createInverse: bool = False):
-        self._producers: Dict[_T, _U] = {}
-        self._consumers: DefaultDict[_T, Set[_U]] = defaultdict(set)
+        self._producers: dict[_T, _U] = {}
+        self._consumers: defaultdict[_T, set[_U]] = defaultdict(set)
         self._createInverse = createInverse
         if self._createInverse:
-            self._itemsDict: DefaultDict[_U, Set[_T]] = defaultdict(set)
+            self._itemsDict: defaultdict[_U, set[_T]] = defaultdict(set)
 
     def addProducer(self, key: _T, value: _U) -> None:
         """Add a key which is produced by some value.
 
         Parameters
         ----------
-        key : TypeVar
-            The type to track
-        value : TypeVar
-            The type associated with the production of the key
+        key : `~typing.TypeVar`
+            The type to track.
+        value : `~typing.TypeVar`
+            The type associated with the production of the key.
 
         Raises
         ------
         ValueError
-            Raised if key is already declared to be produced by another value
+            Raised if key is already declared to be produced by another value.
         """
         if (existing := self._producers.get(key)) is not None and existing != value:
             raise ValueError(f"Only one node is allowed to produce {key}, the current producer is {existing}")
@@ -85,16 +86,17 @@ class _DatasetTracker(Generic[_T, _U]):
             self._itemsDict[value].add(key)
 
     def removeProducer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. QuantumNode or TaskDef) from being considered
-        a producer of the corresponding key. It is not an error to remove a
-        key that is not in the tracker.
+        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
+        considered a producer of the corresponding key.
+
+        It is not an error to remove a key that is not in the tracker.
 
         Parameters
         ----------
-        key : TypeVar
-            The type to track
-        value : TypeVar
-            The type associated with the production of the key
+        key : `~typing.TypeVar`
+            The type to track.
+        value : `~typing.TypeVar`
+            The type associated with the production of the key.
         """
         self._producers.pop(key, None)
         if self._createInverse:
@@ -106,26 +108,27 @@ class _DatasetTracker(Generic[_T, _U]):
 
         Parameters
         ----------
-        key : TypeVar
-            The type to track
-        value : TypeVar
-            The type associated with the consumption of the key
+        key : `~typing.TypeVar`
+            The type to track.
+        value : `~typing.TypeVar`
+            The type associated with the consumption of the key.
         """
         self._consumers[key].add(value)
         if self._createInverse:
             self._itemsDict[value].add(key)
 
     def removeConsumer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. QuantumNode or TaskDef) from being considered
-        a consumer of the corresponding key. It is not an error to remove a
-        key that is not in the tracker.
+        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
+        considered a consumer of the corresponding key.
+
+        It is not an error to remove a key that is not in the tracker.
 
         Parameters
         ----------
-        key : TypeVar
-            The type to track
-        value : TypeVar
-            The type associated with the consumption of the key
+        key : `~typing.TypeVar`
+            The type to track.
+        value : `~typing.TypeVar`
+            The type associated with the consumption of the key.
         """
         if (result := self._consumers.get(key)) is not None:
             result.discard(value)
@@ -133,25 +136,25 @@ class _DatasetTracker(Generic[_T, _U]):
             if result_inverse := self._itemsDict.get(value):
                 result_inverse.discard(key)
 
-    def getConsumers(self, key: _T) -> Set[_U]:
+    def getConsumers(self, key: _T) -> set[_U]:
         """Return all values associated with the consumption of the supplied
         key.
 
         Parameters
         ----------
-        key : TypeVar
-            The type which has been tracked in the _DatasetTracker
+        key : `~typing.TypeVar`
+            The type which has been tracked in the `_DatasetTracker`.
         """
         return self._consumers.get(key, set())
 
-    def getProducer(self, key: _T) -> Optional[_U]:
+    def getProducer(self, key: _T) -> _U | None:
         """Return the value associated with the consumption of the supplied
         key.
 
         Parameters
         ----------
-        key : TypeVar
-            The type which has been tracked in the _DatasetTracker
+        key : `~typing.TypeVar`
+            The type which has been tracked in the `_DatasetTracker`.
         """
         # This tracker may have had all nodes associated with a key removed
         # and if there are no refs (empty set) should return None
@@ -163,14 +166,13 @@ class _DatasetTracker(Generic[_T, _U]):
 
         Parameters
         ----------
-        key : TypeVar
-            The type which has been tracked in the _DatasetTracker
+        key : `~typing.TypeVar`
+            The type which has been tracked in the `_DatasetTracker`.
         """
-
         return self.getConsumers(key).union(x for x in (self.getProducer(key),) if x is not None)
 
     @property
-    def inverse(self) -> Optional[DefaultDict[_U, Set[_T]]]:
+    def inverse(self) -> defaultdict[_U, set[_T]] | None:
         """Return the inverse mapping if class was instantiated to create an
         inverse, else return None.
         """
@@ -180,9 +182,10 @@ class _DatasetTracker(Generic[_T, _U]):
         """Create a NetworkX graph out of all the contained keys, using the
         relations of producer and consumers to create the edges.
 
-        Returns:
-        graph : networkx.DiGraph
-            The graph created out of the supplied keys and their relations
+        Returns
+        -------
+        graph : `networkx.DiGraph`
+            The graph created out of the supplied keys and their relations.
         """
         graph = nx.DiGraph()
         for entry in self._producers.keys() | self._consumers.keys():
@@ -202,7 +205,7 @@ class _DatasetTracker(Generic[_T, _U]):
                     graph.add_edge(producer, consumer)
         return graph
 
-    def keys(self) -> Set[_T]:
+    def keys(self) -> set[_T]:
         """Return all tracked keys."""
         return self._producers.keys() | self._consumers.keys()
 
@@ -212,24 +215,24 @@ class _DatasetTracker(Generic[_T, _U]):
 
         Parameters
         ----------
-        key : TypeVar
-            A key tracked by the DatasetTracker
+        key : `~typing.TypeVar`
+            A key tracked by the `_DatasetTracker`.
         """
         self._producers.pop(key, None)
         self._consumers.pop(key, None)
 
     def __contains__(self, key: _T) -> bool:
-        """Check if a key is in the _DatasetTracker
+        """Check if a key is in the `_DatasetTracker`.
 
         Parameters
         ----------
-        key : TypeVar
-            The key to check
+        key : `~typing.TypeVar`
+            The key to check.
 
         Returns
         -------
-        contains : bool
-            Boolean of the presence of the supplied key
+        contains : `bool`
+            Boolean of the presence of the supplied key.
         """
         return key in self._producers or key in self._consumers
 
@@ -238,22 +241,24 @@ def _pruner(
     datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode],
     refsToRemove: Iterable[DatasetRef],
     *,
-    alreadyPruned: Optional[Set[QuantumNode]] = None,
+    alreadyPruned: set[QuantumNode] | None = None,
 ) -> None:
-    r"""Prune supplied dataset refs out of datasetRefDict container, recursing
-    to additional nodes dependant on pruned refs. This function modifies
-    datasetRefDict in-place.
+    r"""Prune supplied dataset refs out of ``datasetRefDict`` container,
+    recursing to additional nodes dependant on pruned refs.
 
     Parameters
     ----------
-    datasetRefDict : `_DatasetTracker[DatasetRef, QuantumNode]`
-        The dataset tracker that maps `DatasetRef`\ s to the Quantum Nodes
-        that produce/consume that `DatasetRef`
-    refsToRemove : `Iterable` of `DatasetRef`
-        The `DatasetRef`\ s which should be pruned from the input dataset
-        tracker
+    datasetRefDict : `_DatasetTracker` [ `~lsst.daf.butler.DatasetRef`, \
+            `QuantumNode`]
+        The dataset tracker that maps `~lsst.daf.butler.DatasetRef`\ s to the
+        `QuantumNode`\s that produce/consume that
+        `~lsst.daf.butler.DatasetRef`.
+        This function modifies ``datasetRefDict`` in-place.
+    refsToRemove : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
+        The `~lsst.daf.butler.DatasetRef`\ s which should be pruned from the
+        input dataset tracker.
     alreadyPruned : `set` of `QuantumNode`
-        A set of nodes which have been pruned from the dataset tracker
+        A set of nodes which have been pruned from the dataset tracker.
     """
     if alreadyPruned is None:
         alreadyPruned = set()
@@ -291,7 +296,7 @@ def _pruner(
                 toRemove = ref
 
             tmpRefs = set(connectionRefs).difference((toRemove,))
-            tmpConnections = NamedKeyDict[DatasetType, List[DatasetRef]](node.quantum.inputs.items())
+            tmpConnections = NamedKeyDict[DatasetType, list[DatasetRef]](node.quantum.inputs.items())
             tmpConnections[toRemove.datasetType] = list(tmpRefs)
             helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
             assert node.quantum.dataId is not None, (
