@@ -77,7 +77,9 @@ class QuantumGraphExecutionReport:
             report = cls(graph_uri)
             if pipeline_dataset_types is None:
                 task_defs = list(qg.iterTaskGraph())
-                pipeline_dataset_types = PipelineDatasetTypes.fromPipeline(task_defs, butler.registry)
+                pipeline_dataset_types = PipelineDatasetTypes.fromPipeline(
+                    task_defs, registry=butler.registry
+                )
                 for dataset_type in itertools.chain(
                     pipeline_dataset_types.initIntermediates,
                     pipeline_dataset_types.initOutputs,
@@ -92,7 +94,7 @@ class QuantumGraphExecutionReport:
                     }
             for taskDef in qg.iterTaskGraph():
                 task_report = TaskExecutionReport()
-                for node in qg.getQuantaForTask(taskDef):
+                for node in qg.getNodesForTask(taskDef):
                     task_report.inspect_quantum(node.quantum, refs, metadata_name=taskDef.metadataDatasetName)
                 report.tasks[taskDef.label] = task_report
             yield report
