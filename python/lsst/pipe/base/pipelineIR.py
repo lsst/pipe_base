@@ -20,7 +20,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", "TaskIR", "LabeledSubset")
+__all__ = (
+    "ConfigIR",
+    "ContractError",
+    "ContractIR",
+    "ImportIR",
+    "LabeledSubset",
+    "ParametersIR",
+    "PipelineIR",
+    "TaskIR",
+)
 
 import copy
 import enum
