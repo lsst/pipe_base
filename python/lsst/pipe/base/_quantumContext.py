@@ -29,6 +29,7 @@ __all__ = ("ButlerQuantumContext", "QuantumContext")
 from collections.abc import Sequence
 from typing import Any
 
+import astropy.units as u
 from deprecated.sphinx import deprecated
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
@@ -41,7 +42,8 @@ _LOG = getLogger(__name__)
 
 
 class QuantumContext:
-    """A Butler-like class specialized for a single quantum.
+    """A Butler-like class specialized for a single quantum along with
+    context information that can influence how the task is executed.
 
     Parameters
     ----------
@@ -50,6 +52,11 @@ class QuantumContext:
     quantum : `lsst.daf.butler.core.Quantum`
         Quantum object that describes the datasets which will be get/put by a
         single execution of this node in the pipeline graph.
+    num_cores : `int`, optional
+        The maximum number of cores that the task can use.
+    max_mem : `astropy.units.Quantity`, `int`, or `None`, optional
+        If defined, the amount of memory allocated to the task. If a plain
+        integer is given it is assumed to be the number of bytes.
 
     Notes
     -----
@@ -64,8 +71,21 @@ class QuantumContext:
     execution.
     """
 
-    def __init__(self, butler: LimitedButler, quantum: Quantum):
+    def __init__(
+        self, butler: LimitedButler, quantum: Quantum, num_cores: int = 1, max_mem: u.Quantity | None = None
+    ):
         self.quantum = quantum
+        self.num_cores = num_cores
+
+        # Internally store as bytes. This will also ensure that the quantity
+        # given is convertible to bytes.
+        if max_mem is not None:
+            if isinstance(max_mem, int):
+                max_mem *= u.B
+            else:
+                max_mem = max_mem.to(u.B)
+        self.max_mem = max_mem
+
         self.allInputs = set()
         self.allOutputs = set()
         for refs in quantum.inputs.values():

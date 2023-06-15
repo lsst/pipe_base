@@ -25,6 +25,7 @@
 import unittest
 from typing import Any
 
+import astropy.units as u
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.logging
@@ -278,6 +279,8 @@ class PipelineTaskTestCase(unittest.TestCase):
         butler.put(100, ref)
 
         butlerQC = pipeBase.QuantumContext(butler, quantum)
+        self.assertEqual(butlerQC.num_cores, 1)
+        self.assertIsNone(butlerQC.max_mem)
 
         # Pass ref as single argument or a list.
         obj = butlerQC.get(ref)
@@ -305,6 +308,18 @@ class PipelineTaskTestCase(unittest.TestCase):
         inputRefs.input2 = None
         obj = butlerQC.get(inputRefs)
         self.assertEqual(obj, {"input": [None, 100], "input2": None})
+
+        # Set additional context.
+        butlerQC = pipeBase.QuantumContext(butler, quantum, num_cores=4, max_mem=5 * u.MB)
+        self.assertEqual(butlerQC.num_cores, 4)
+        self.assertEqual(butlerQC.max_mem, 5_000_000 * u.B)
+
+        butlerQC = pipeBase.QuantumContext(butler, quantum, max_mem=5)
+        self.assertEqual(butlerQC.num_cores, 1)
+        self.assertEqual(butlerQC.max_mem, 5 * u.B)
+
+        with self.assertRaises(u.UnitConversionError):
+            pipeBase.QuantumContext(butler, quantum, max_mem=1 * u.m)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
