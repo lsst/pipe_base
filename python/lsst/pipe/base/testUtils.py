@@ -52,7 +52,7 @@ from lsst.daf.butler import (
 )
 from lsst.pipe.base.connectionTypes import BaseConnection, DimensionedConnection
 
-from ._quantumContext import ButlerQuantumContext
+from ._quantumContext import QuantumContext
 
 if TYPE_CHECKING:
     from .config import PipelineTaskConfig
@@ -302,14 +302,14 @@ def runTestQuantum(
         If ``mockRun`` is set, the mock that replaced ``run``. This object can
         be queried for the arguments ``runQuantum`` passed to ``run``.
     """
-    butlerQc = ButlerQuantumContext(butler, quantum)
+    butlerQc = QuantumContext(butler, quantum)
     # This is a type ignore, because `connections` is a dynamic class, but
     # it for sure will have this property
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
     if mockRun:
         with unittest.mock.patch.object(task, "run") as mock, unittest.mock.patch(
-            "lsst.pipe.base.ButlerQuantumContext.put"
+            "lsst.pipe.base.QuantumContext.put"
         ):
             task.runQuantum(butlerQc, inputRefs, outputRefs)
             return mock

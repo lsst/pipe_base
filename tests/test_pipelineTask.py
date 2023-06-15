@@ -88,7 +88,7 @@ class AddTask2(pipeBase.PipelineTask):
     _DefaultName = "add_task"
 
     def runQuantum(
-        self, butlerQC: pipeBase.ButlerQuantumContext, inputRefs: DatasetRef, outputRefs: DatasetRef
+        self, butlerQC: pipeBase.QuantumContext, inputRefs: DatasetRef, outputRefs: DatasetRef
     ) -> None:
         self.metadata.add("add", self.config.addend)
         inputs = butlerQC.get(inputRefs)
@@ -158,7 +158,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         # run task on each quanta
         checked_get = False
         for quantum in quanta:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
             task.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -237,11 +237,11 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         # run task on each quanta
         for quantum in quanta1:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections1.buildDatasetRefs(quantum)
             task1.runQuantum(butlerQC, inputRefs, outputRefs)
         for quantum in quanta2:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections2.buildDatasetRefs(quantum)
             task2.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -261,7 +261,7 @@ class PipelineTaskTestCase(unittest.TestCase):
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3 + 200)
 
     def testButlerQC(self):
-        """Test for ButlerQuantumContext. Full and limited share get
+        """Test for QuantumContext. Full and limited share get
         implementation so only full is tested.
         """
 
@@ -277,7 +277,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         ref = quantum.inputs[dstype0.name][0]
         butler.put(100, ref)
 
-        butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+        butlerQC = pipeBase.QuantumContext(butler, quantum)
 
         # Pass ref as single argument or a list.
         obj = butlerQC.get(ref)

@@ -24,11 +24,12 @@ from __future__ import annotations
 """Module defining a butler like object specialized to a specific quantum.
 """
 
-__all__ = ("ButlerQuantumContext",)
+__all__ = ("ButlerQuantumContext", "QuantumContext")
 
 from collections.abc import Sequence
 from typing import Any
 
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
@@ -39,7 +40,7 @@ from .struct import Struct
 _LOG = getLogger(__name__)
 
 
-class ButlerQuantumContext:
+class QuantumContext:
     """A Butler-like class specialized for a single quantum.
 
     Parameters
@@ -52,7 +53,7 @@ class ButlerQuantumContext:
 
     Notes
     -----
-    A ButlerQuantumContext class wraps a standard butler interface and
+    A `QuantumContext` class wraps a standard butler interface and
     specializes it to the context of a given quantum. What this means
     in practice is that the only gets and puts that this class allows
     are DatasetRefs that are contained in the quantum.
@@ -260,7 +261,7 @@ class ButlerQuantumContext:
         """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
         `~lsst.daf.butler.Quantum`.
 
-        This function will raise an exception if the `ButlerQuantumContext` is
+        This function will raise an exception if the `QuantumContext` is
         used to get/put a `~lsst.daf.butler.DatasetRef` which is not defined
         in the quantum.
 
@@ -287,3 +288,15 @@ class ButlerQuantumContext:
         repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions
+
+
+@deprecated(
+    reason="ButlerQuantumContext has been renamed to QuantumContext and been given extra functionality. "
+    "Please use the new name. Will be removed after v27.",
+    version="v26",
+    category=FutureWarning,
+)
+class ButlerQuantumContext(QuantumContext):
+    """Deprecated version of `QuantumContext`."""
+
+    pass
