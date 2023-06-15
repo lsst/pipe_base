@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
     from lsst.utils.logging import LsstLogAdapter
 
-    from .butlerQuantumContext import ButlerQuantumContext
+    from ._quantumContext import ButlerQuantumContext
     from .config import PipelineTaskConfig
     from .struct import Struct
 

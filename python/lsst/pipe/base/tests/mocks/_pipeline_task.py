@@ -43,7 +43,7 @@ from ._storage_class import MockDataset, MockDatasetQuantum, MockStorageClass, g
 _LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ...butlerQuantumContext import ButlerQuantumContext
+    from ..._quantumContext import ButlerQuantumContext
 
 
 def mock_task_defs(

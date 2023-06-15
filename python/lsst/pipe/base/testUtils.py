@@ -52,7 +52,7 @@ from lsst.daf.butler import (
 )
 from lsst.pipe.base.connectionTypes import BaseConnection, DimensionedConnection
 
-from .butlerQuantumContext import ButlerQuantumContext
+from ._quantumContext import ButlerQuantumContext
 
 if TYPE_CHECKING:
     from .config import PipelineTaskConfig
