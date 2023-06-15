@@ -645,10 +645,12 @@ class _DatasetIdMaker:
             self.resolved[key] = resolved
         return resolved
 
-    def resolveDict(self, dataset_type: DatasetType, refs: dict[DataCoordinate, _RefHolder]) -> None:
+    def resolveDict(
+        self, dataset_type: DatasetType, refs: dict[DataCoordinate, _RefHolder], is_output: bool
+    ) -> None:
         """Resolve all unresolved references in the provided dictionary."""
         for data_id, holder in refs.items():
-            if holder.ref is None:
+            if holder.ref is None or (is_output and holder.ref.run != self.run):
                 holder.ref = self.resolveRef(holder.dataset_type, data_id)
 
 
@@ -1213,7 +1215,7 @@ class _PipelineScaffolding:
         # Resolve the missing refs, just so they look like all of the others;
         # in the end other code will make sure they never appear in the QG.
         for dataset_type, refDict in self.missing.items():
-            idMaker.resolveDict(dataset_type, refDict)
+            idMaker.resolveDict(dataset_type, refDict, is_output=False)
 
         # Copy the resolved DatasetRefs to the _QuantumScaffolding objects,
         # replacing the unresolved refs there, and then look up prerequisites.
@@ -1331,14 +1333,16 @@ class _PipelineScaffolding:
                             task.prerequisites[datasetType][ref.dataId] = _RefHolder(datasetType, ref)
 
                 # Resolve all quantum inputs and outputs.
-                for datasetDict in (quantum.inputs, quantum.outputs):
-                    for dataset_type, refDict in datasetDict.items():
-                        idMaker.resolveDict(dataset_type, refDict)
+                for dataset_type, refDict in quantum.inputs.items():
+                    idMaker.resolveDict(dataset_type, refDict, is_output=False)
+                for dataset_type, refDict in quantum.outputs.items():
+                    idMaker.resolveDict(dataset_type, refDict, is_output=True)
 
             # Resolve task initInputs and initOutputs.
-            for datasetDict in (task.initInputs, task.initOutputs):
-                for dataset_type, refDict in datasetDict.items():
-                    idMaker.resolveDict(dataset_type, refDict)
+            for dataset_type, refDict in task.initInputs.items():
+                idMaker.resolveDict(dataset_type, refDict, is_output=False)
+            for dataset_type, refDict in task.initOutputs.items():
+                idMaker.resolveDict(dataset_type, refDict, is_output=True)
 
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
@@ -1378,7 +1382,7 @@ class _PipelineScaffolding:
         if global_dataset_types:
             self.globalInitOutputs = _DatasetDict.fromSubset(global_dataset_types, self.initOutputs)
             for dataset_type, refDict in self.globalInitOutputs.items():
-                idMaker.resolveDict(dataset_type, refDict)
+                idMaker.resolveDict(dataset_type, refDict, is_output=True)
 
     def makeQuantumGraph(
         self,
