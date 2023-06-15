@@ -24,9 +24,11 @@ from __future__ import annotations
 """Module defining a butler like object specialized to a specific quantum.
 """
 
-__all__ = ("ButlerQuantumContext", "QuantumContext")
+__all__ = ("ButlerQuantumContext", "ExecutionResources", "QuantumContext")
 
+import numbers
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
@@ -41,6 +43,30 @@ from .struct import Struct
 _LOG = getLogger(__name__)
 
 
+@dataclass(frozen=True, kw_only=True)
+class ExecutionResources:
+    """A description of the resources available to a running quantum."""
+
+    num_cores: int = 1
+    """The maximum number of cores that the task can use."""
+
+    max_mem: u.Quantity | numbers.Real | None = None
+    """If defined, the amount of memory allocated to the task. If a plain
+    integer is given it is assumed to be the number of bytes and converted
+    to a `~astropy.units.Quantity`.
+    """
+
+    def __post_init__(self) -> None:
+        # Normalize max_mem to bytes.
+        max_mem = self.max_mem
+        if max_mem is not None:
+            if isinstance(max_mem, numbers.Real):
+                max_mem *= u.B
+            else:
+                max_mem = max_mem.to(u.B)
+            object.__setattr__(self, "max_mem", max_mem)
+
+
 class QuantumContext:
     """A Butler-like class specialized for a single quantum along with
     context information that can influence how the task is executed.
@@ -52,11 +78,8 @@ class QuantumContext:
     quantum : `lsst.daf.butler.core.Quantum`
         Quantum object that describes the datasets which will be get/put by a
         single execution of this node in the pipeline graph.
-    num_cores : `int`, optional
-        The maximum number of cores that the task can use.
-    max_mem : `astropy.units.Quantity`, `int`, or `None`, optional
-        If defined, the amount of memory allocated to the task. If a plain
-        integer is given it is assumed to be the number of bytes.
+    resources : `ExecutionResources`, optional
+        The resources allocated for executing quanta.
 
     Notes
     -----
@@ -71,20 +94,15 @@ class QuantumContext:
     execution.
     """
 
+    resources: ExecutionResources
+
     def __init__(
-        self, butler: LimitedButler, quantum: Quantum, num_cores: int = 1, max_mem: u.Quantity | None = None
+        self, butler: LimitedButler, quantum: Quantum, *, resources: ExecutionResources | None = None
     ):
         self.quantum = quantum
-        self.num_cores = num_cores
-
-        # Internally store as bytes. This will also ensure that the quantity
-        # given is convertible to bytes.
-        if max_mem is not None:
-            if isinstance(max_mem, int):
-                max_mem *= u.B
-            else:
-                max_mem = max_mem.to(u.B)
-        self.max_mem = max_mem
+        if resources is None:
+            resources = ExecutionResources()
+        self.resources = resources
 
         self.allInputs = set()
         self.allOutputs = set()
