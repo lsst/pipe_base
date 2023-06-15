@@ -230,7 +230,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         pipelineConfigs : `~collections.abc.Iterable` of `ConfigIR`
             An iterable of `ConfigIR` objects that contain overrides
             to apply to this config instance.
-        parameters : `ParametersIR`
+        parameters : `~.pipelineIR.ParametersIR`
             Parameters defined in a Pipeline which are used in formatting
             of config values across multiple `Task`\ s in a pipeline.
         label : `str`

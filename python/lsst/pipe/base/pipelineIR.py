@@ -281,12 +281,12 @@ class ConfigIR:
 
         Parameters
         ----------
-        parameters : ParametersIR
+        parameters : `ParametersIR`
             Object that contains variable mappings used in substitution.
 
         Returns
         -------
-        config : ConfigIR
+        config : `ConfigIR`
             A new ConfigIR object formatted with the input parameters
         """
         new_config = copy.deepcopy(self)
