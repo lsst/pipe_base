@@ -22,6 +22,7 @@
 """Simple unit test for PipelineTask.
 """
 
+import pickle
 import unittest
 from typing import Any
 
@@ -319,6 +320,22 @@ class PipelineTaskTestCase(unittest.TestCase):
         butlerQC = pipeBase.QuantumContext(butler, quantum, resources=resources)
         self.assertEqual(butlerQC.resources.num_cores, 1)
         self.assertEqual(butlerQC.resources.max_mem, 5 * u.B)
+
+    def test_ExecutionResources(self):
+        res = pipeBase.ExecutionResources()
+        self.assertEqual(res.num_cores, 1)
+        self.assertIsNone(res.max_mem)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        res = pipeBase.ExecutionResources(num_cores=4, max_mem=1 * u.MiB)
+        self.assertEqual(res.num_cores, 4)
+        self.assertEqual(res.max_mem.value, 1024 * 1024)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        res = pipeBase.ExecutionResources(max_mem=512)
+        self.assertEqual(res.num_cores, 1)
+        self.assertEqual(res.max_mem.value, 512)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
 
         with self.assertRaises(u.UnitConversionError):
             pipeBase.ExecutionResources(max_mem=1 * u.m)

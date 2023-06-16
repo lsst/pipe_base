@@ -27,7 +27,7 @@ from __future__ import annotations
 __all__ = ("ButlerQuantumContext", "ExecutionResources", "QuantumContext")
 
 import numbers
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,6 +65,48 @@ class ExecutionResources:
             else:
                 max_mem = max_mem.to(u.B)
             object.__setattr__(self, "max_mem", max_mem)
+
+    def _reduce_kwargs(self) -> dict[str, Any]:
+        """Return a dict of the keyword arguments that should be used
+        by `__reduce__`.
+
+        This is necessary because the dataclass is defined to be keyword
+        only and we wish the default pickling to only store a plain number
+        for the memory allocation and not a large Quantity.
+
+        Returns
+        -------
+        kwargs : `dict`
+            Keyword arguments to be used when pickling.
+        """
+        kwargs: dict[str, Any] = {"num_cores": self.num_cores}
+        if self.max_mem is not None:
+            # .value is a numpy float. Cast it to a python int since we
+            # do not want fractional bytes.
+            # __post_init__ ensures that this is a Quantity but mypy cannot
+            # work that out.
+            kwargs["max_mem"] = int(self.max_mem.value)  # type: ignore[union-attr]
+        return kwargs
+
+    @staticmethod
+    def _unpickle_via_factory(
+        factory: Callable[..., ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
+    ) -> ExecutionResources:
+        """Unpickle something by calling a factory.
+
+        Allows unpickle using `__reduce__` with keyword
+        arguments as well as positional arguments.
+        """
+        return factory(**kwargs)
+
+    def __reduce__(
+        self,
+    ) -> tuple[
+        Callable[[Callable[..., ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
+        tuple[type[ExecutionResources], Sequence[Any], dict[str, Any]],
+    ]:
+        """Pickler."""
+        return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())
 
 
 class QuantumContext:
