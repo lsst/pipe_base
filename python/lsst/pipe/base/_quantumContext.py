@@ -66,6 +66,10 @@ class ExecutionResources:
                 max_mem = max_mem.to(u.B)
             object.__setattr__(self, "max_mem", max_mem)
 
+    def __deepcopy__(self, memo: Any) -> ExecutionResources:
+        """Deep copy returns itself because the class is frozen."""
+        return self
+
     def _reduce_kwargs(self) -> dict[str, Any]:
         """Return a dict of the keyword arguments that should be used
         by `__reduce__`.

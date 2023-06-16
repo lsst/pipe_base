@@ -22,6 +22,7 @@
 """Simple unit test for PipelineTask.
 """
 
+import copy
 import pickle
 import unittest
 from typing import Any
@@ -336,6 +337,8 @@ class PipelineTaskTestCase(unittest.TestCase):
         self.assertEqual(res.num_cores, 1)
         self.assertEqual(res.max_mem.value, 512)
         self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        self.assertIs(res, copy.deepcopy(res))
 
         with self.assertRaises(u.UnitConversionError):
             pipeBase.ExecutionResources(max_mem=1 * u.m)
