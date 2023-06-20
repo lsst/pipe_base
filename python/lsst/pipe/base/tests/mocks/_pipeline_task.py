@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 def mock_task_defs(
     originals: Iterable[TaskDef],
     unmocked_dataset_types: Iterable[str] = (),
-    force_failures: Mapping[str, tuple[str, type[Exception]]] | None = None,
+    force_failures: Mapping[str, tuple[str, type[Exception] | None]] | None = None,
 ) -> list[TaskDef]:
     """Create mocks for an iterable of TaskDefs.
 
@@ -61,7 +61,7 @@ def mock_task_defs(
         Names of overall-input dataset types that should not be replaced with
         mocks.
     force_failures : `~collections.abc.Mapping` [ `str`, `tuple` [ `str`, \
-            `type` [ `Exception` ] ] ]
+            `type` [ `Exception` ] or `None` ] ]
         Mapping from original task label to a 2-tuple indicating that some
         quanta should raise an exception when executed.  The first entry is a
         data ID match using the butler expression language (i.e. a string of
@@ -87,7 +87,8 @@ def mock_task_defs(
         if original_task_def.label in force_failures:
             condition, exception_type = force_failures[original_task_def.label]
             config.fail_condition = condition
-            config.fail_exception = get_full_type_name(exception_type)
+            if exception_type is not None:
+                config.fail_exception = get_full_type_name(exception_type)
         mock_task_def = TaskDef(
             config=config, taskClass=MockPipelineTask, label=get_mock_name(original_task_def.label)
         )
