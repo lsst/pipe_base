@@ -1260,7 +1260,7 @@ class _PipelineScaffolding:
                                 continue
                         else:
                             dataIdsFailed.append(quantum.dataId)
-                            if not clobberOutputs:
+                            if not clobberOutputs and run_exists:
                                 raise OutputExistsError(
                                     f"Quantum {quantum.dataId} of task with label "
                                     f"'{quantum.task.taskDef.label}' has some outputs that exist "
@@ -1355,25 +1355,21 @@ class _PipelineScaffolding:
                     )
                     for dataId in dataIdsSucceeded:
                         del task.quanta[dataId]
-                elif clobberOutputs:
+                elif clobberOutputs and run_exists:
                     _LOG.info(
                         "Found %d successful quanta for task with label '%s' "
                         "that will need to be clobbered during execution.",
                         len(dataIdsSucceeded),
                         task.taskDef.label,
                     )
-                else:
-                    raise AssertionError("OutputExistsError should have already been raised.")
             if dataIdsFailed:
-                if clobberOutputs:
+                if clobberOutputs and run_exists:
                     _LOG.info(
                         "Found %d failed/incomplete quanta for task with label '%s' "
                         "that will need to be clobbered during execution.",
                         len(dataIdsFailed),
                         task.taskDef.label,
                     )
-                else:
-                    raise AssertionError("OutputExistsError should have already been raised.")
 
         # Collect initOutputs that do not belong to any task.
         global_dataset_types: set[DatasetType] = set(self.initOutputs)
