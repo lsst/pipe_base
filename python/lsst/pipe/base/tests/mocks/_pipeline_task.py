@@ -20,19 +20,27 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("MockPipelineTask", "MockPipelineTaskConfig", "mock_task_defs")
+__all__ = (
+    "DynamicConnectionConfig",
+    "DynamicTestPipelineTask",
+    "DynamicTestPipelineTaskConfig",
+    "MockPipelineTask",
+    "MockPipelineTaskConfig",
+    "mock_task_defs",
+)
 
 import dataclasses
 import logging
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from lsst.daf.butler import DeferredDatasetHandle
-from lsst.pex.config import ConfigurableField, Field, ListField
+from lsst.daf.butler import DatasetRef, DeferredDatasetHandle
+from lsst.pex.config import Config, ConfigDictField, ConfigurableField, Field, ListField
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.iteration import ensure_iterable
 
+from ... import connectionTypes as cT
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
 from ...pipeline import TaskDef
@@ -44,6 +52,9 @@ _LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..._quantumContext import QuantumContext
+
+
+_T = TypeVar("_T", bound=cT.BaseConnection)
 
 
 def mock_task_defs(
@@ -96,6 +107,131 @@ def mock_task_defs(
     return results
 
 
+class BaseTestPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
+    pass
+
+
+class BaseTestPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=BaseTestPipelineTaskConnections):
+    fail_condition = Field[str](
+        dtype=str,
+        default="",
+        doc=(
+            "Condition on Data ID to raise an exception. String expression which includes attributes of "
+            "quantum data ID using a syntax of daf_butler user expressions (e.g. 'visit = 123')."
+        ),
+    )
+
+    fail_exception = Field[str](
+        dtype=str,
+        default="builtins.ValueError",
+        doc=(
+            "Class name of the exception to raise when fail condition is triggered. Can be "
+            "'lsst.pipe.base.NoWorkFound' to specify non-failure exception."
+        ),
+    )
+
+    def data_id_match(self) -> DataIdMatch | None:
+        if not self.fail_condition:
+            return None
+        return DataIdMatch(self.fail_condition)
+
+
+class BaseTestPipelineTask(PipelineTask):
+    """A base class for test-utility `PipelineTask` classes that read and write
+    mock datasets `runQuantum`.
+
+    Notes
+    -----
+    This class overrides `runQuantum` to read inputs and write a bit of
+    provenance into all of its outputs (always `MockDataset` instances).  It
+    can also be configured to raise exceptions on certain data IDs.  It reads
+    `MockDataset` inputs and simulates reading inputs of other types by
+    creating `MockDataset` inputs from their DatasetRefs.
+
+    Subclasses are responsible for defining connections, but init-input and
+    init-output connections are not supported at runtime (they may be present
+    as long as the task is never constructed).  All output connections must
+    use mock storage classes.  `..Input` and `..PrerequisiteInput` connections
+    that do not use mock storage classes will be handled by constructing a
+    `MockDataset` from the `~lsst.daf.butler.DatasetRef` rather than actually
+    reading them.
+    """
+
+    ConfigClass: ClassVar[type[PipelineTaskConfig]] = BaseTestPipelineTaskConfig
+
+    def __init__(
+        self,
+        *,
+        config: BaseTestPipelineTaskConfig,
+        **kwargs: Any,
+    ):
+        super().__init__(config=config, **kwargs)
+        self.fail_exception: type | None = None
+        self.data_id_match = self.config.data_id_match()
+        if self.data_id_match:
+            self.fail_exception = doImportType(self.config.fail_exception)
+
+    config: BaseTestPipelineTaskConfig
+
+    def runQuantum(
+        self,
+        butlerQC: QuantumContext,
+        inputRefs: InputQuantizedConnection,
+        outputRefs: OutputQuantizedConnection,
+    ) -> None:
+        # docstring is inherited from the base class
+        quantum = butlerQC.quantum
+
+        _LOG.info("Mocking execution of task '%s' on quantum %s", self.getName(), quantum.dataId)
+
+        assert quantum.dataId is not None, "Quantum DataId cannot be None"
+
+        # Possibly raise an exception.
+        if self.data_id_match is not None and self.data_id_match.match(quantum.dataId):
+            _LOG.info("Simulating failure of task '%s' on quantum %s", self.getName(), quantum.dataId)
+            message = f"Simulated failure: task={self.getName()} dataId={quantum.dataId}"
+            assert self.fail_exception is not None, "Exception type must be defined"
+            raise self.fail_exception(message)
+
+        # Populate the bit of provenance we store in all outputs.
+        _LOG.info("Reading input data for task '%s' on quantum %s", self.getName(), quantum.dataId)
+        mock_dataset_quantum = MockDatasetQuantum(
+            task_label=self.getName(), data_id=quantum.dataId.to_simple(), inputs={}
+        )
+        for name, refs in inputRefs:
+            inputs_list = []
+            ref: DatasetRef
+            for ref in ensure_iterable(refs):
+                if isinstance(ref.datasetType.storageClass, MockStorageClass):
+                    input_dataset = butlerQC.get(ref)
+                    if isinstance(input_dataset, DeferredDatasetHandle):
+                        input_dataset = input_dataset.get()
+                    if not isinstance(input_dataset, MockDataset):
+                        raise TypeError(
+                            f"Expected MockDataset instance for {ref}; "
+                            f"got {input_dataset!r} of type {type(input_dataset)!r}."
+                        )
+                    # To avoid very deep provenance we trim inputs to a single
+                    # level.
+                    input_dataset.quantum = None
+                else:
+                    input_dataset = MockDataset(ref=ref.to_simple())
+                inputs_list.append(input_dataset)
+            mock_dataset_quantum.inputs[name] = inputs_list
+
+        # store mock outputs
+        for name, refs in outputRefs:
+            if not isinstance(refs, list):
+                refs = [refs]
+            for ref in refs:
+                output = MockDataset(
+                    ref=ref.to_simple(), quantum=mock_dataset_quantum, output_connection_name=name
+                )
+                butlerQC.put(output, ref)
+
+        _LOG.info("Finished mocking task '%s' on quantum %s", self.getName(), quantum.dataId)
+
+
 class MockPipelineDefaultTargetConnections(PipelineTaskConnections, dimensions=()):
     pass
 
@@ -119,7 +255,11 @@ class MockPipelineDefaultTargetTask(PipelineTask):
     ConfigClass = MockPipelineDefaultTargetConfig
 
 
-class MockPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
+class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()):
+    """A connections class that creates mock connections from the connections
+    of a real PipelineTask.
+    """
+
     def __init__(self, *, config: MockPipelineTaskConfig):
         original: PipelineTaskConnections = config.original.connections.ConnectionsClass(
             config=config.original.value
@@ -160,26 +300,8 @@ class MockPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
             setattr(self, name, connection)
 
 
-class MockPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=MockPipelineTaskConnections):
+class MockPipelineTaskConfig(BaseTestPipelineTaskConfig, pipelineConnections=MockPipelineTaskConnections):
     """Configuration class for `MockPipelineTask`."""
-
-    fail_condition = Field[str](
-        dtype=str,
-        default="",
-        doc=(
-            "Condition on Data ID to raise an exception. String expression which includes attributes of "
-            "quantum data ID using a syntax of daf_butler user expressions (e.g. 'visit = 123')."
-        ),
-    )
-
-    fail_exception = Field[str](
-        dtype=str,
-        default="builtins.ValueError",
-        doc=(
-            "Class name of the exception to raise when fail condition is triggered. Can be "
-            "'lsst.pipe.base.NoWorkFound' to specify non-failure exception."
-        ),
-    )
 
     original: ConfigurableField = ConfigurableField(
         doc="The original task being mocked by this one.", target=MockPipelineDefaultTargetTask
@@ -195,23 +317,13 @@ class MockPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=MockPipelin
         optional=False,
     )
 
-    def data_id_match(self) -> DataIdMatch | None:
-        if not self.fail_condition:
-            return None
-        return DataIdMatch(self.fail_condition)
 
-
-class MockPipelineTask(PipelineTask):
-    """Implementation of `PipelineTask` used for running a mock pipeline.
+class MockPipelineTask(BaseTestPipelineTask):
+    """A test-utility implementation of `PipelineTask` with connections
+    generated by mocking those of a real task.
 
     Notes
     -----
-    This class overrides `runQuantum` to read inputs and write a bit of
-    provenance into all of its outputs (always `MockDataset` instances).  It
-    can also be configured to raise exceptions on certain data IDs.  It reads
-    `MockDataset` inputs and simulates reading inputs of other types by
-    creating `MockDataset` inputs from their DatasetRefs.
-
     At present `MockPipelineTask` simply drops any ``initInput`` and
     ``initOutput`` connections present on the original, since `MockDataset`
     creation for those would have to happen in the code that executes the task,
@@ -222,73 +334,114 @@ class MockPipelineTask(PipelineTask):
 
     ConfigClass: ClassVar[type[PipelineTaskConfig]] = MockPipelineTaskConfig
 
-    def __init__(
-        self,
-        *,
-        config: MockPipelineTaskConfig,
-        **kwargs: Any,
-    ):
-        super().__init__(config=config, **kwargs)
-        self.fail_exception: type | None = None
-        self.data_id_match = self.config.data_id_match()
-        if self.data_id_match:
-            self.fail_exception = doImportType(self.config.fail_exception)
 
-    config: MockPipelineTaskConfig
+class DynamicConnectionConfig(Config):
+    """A config class that defines a completely dynamic connection."""
 
-    def runQuantum(
-        self,
-        butlerQC: QuantumContext,
-        inputRefs: InputQuantizedConnection,
-        outputRefs: OutputQuantizedConnection,
-    ) -> None:
-        # docstring is inherited from the base class
-        quantum = butlerQC.quantum
+    dataset_type_name = Field[str](doc="Name for the dataset type as seen by the butler.", dtype=str)
+    dimensions = ListField[str](doc="Dimensions for the dataset type.", dtype=str, default=[])
+    storage_class = Field[str](
+        doc="Name of the butler storage class for the dataset type.", dtype=str, default="StructuredDataDict"
+    )
+    is_calibration = Field[bool](doc="Whether this dataset type is a calibration.", dtype=bool, default=False)
+    multiple = Field[bool](
+        doc="Whether this connection gets or puts multiple datasets for each quantum.",
+        dtype=bool,
+        default=False,
+    )
+    mock_storage_class = Field[bool](
+        doc="Whether the storage class should actually be a mock of the storage class given.",
+        dtype=bool,
+        default=True,
+    )
 
-        _LOG.info("Mocking execution of task '%s' on quantum %s", self.getName(), quantum.dataId)
+    def make_connection(self, cls: type[_T]) -> _T:
+        storage_class = self.storage_class
+        if self.mock_storage_class:
+            storage_class = MockStorageClass.get_or_register_mock(storage_class).name
+        if issubclass(cls, cT.DimensionedConnection):
+            return cls(  # type: ignore
+                name=self.dataset_type_name,
+                storageClass=storage_class,
+                isCalibration=self.is_calibration,
+                multiple=self.multiple,
+                dimensions=frozenset(self.dimensions),
+            )
+        else:
+            return cls(
+                name=self.dataset_type_name,
+                storageClass=storage_class,
+                multiple=self.multiple,
+            )
 
-        assert quantum.dataId is not None, "Quantum DataId cannot be None"
 
-        # Possibly raise an exception.
-        if self.data_id_match is not None and self.data_id_match.match(quantum.dataId):
-            _LOG.info("Simulating failure of task '%s' on quantum %s", self.getName(), quantum.dataId)
-            message = f"Simulated failure: task={self.getName()} dataId={quantum.dataId}"
-            assert self.fail_exception is not None, "Exception type must be defined"
-            raise self.fail_exception(message)
+class DynamicTestPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
+    """A connections class whose dimensions and connections are wholly
+    determined via configuration.
+    """
 
-        # Populate the bit of provenance we store in all outputs.
-        _LOG.info("Reading input data for task '%s' on quantum %s", self.getName(), quantum.dataId)
-        mock_dataset_quantum = MockDatasetQuantum(
-            task_label=self.getName(), data_id=quantum.dataId.to_simple(), inputs={}
-        )
-        for name, refs in inputRefs:
-            inputs_list = []
-            for ref in ensure_iterable(refs):
-                if isinstance(ref.datasetType.storageClass, MockStorageClass):
-                    input_dataset = butlerQC.get(ref)
-                    if isinstance(input_dataset, DeferredDatasetHandle):
-                        input_dataset = input_dataset.get()
-                    if not isinstance(input_dataset, MockDataset):
-                        raise TypeError(
-                            f"Expected MockDataset instance for {ref}; "
-                            f"got {input_dataset!r} of type {type(input_dataset)!r}."
-                        )
-                    # To avoid very deep provenance we trim inputs to a single
-                    # level.
-                    input_dataset.quantum = None
-                else:
-                    input_dataset = MockDataset(ref=ref.to_simple())
-                inputs_list.append(input_dataset)
-            mock_dataset_quantum.inputs[name] = inputs_list
+    def __init__(self, *, config: DynamicTestPipelineTaskConfig):
+        self.dimensions.update(config.dimensions)
+        connection_config: DynamicConnectionConfig
+        for connection_name, connection_config in config.init_inputs.items():
+            setattr(self, connection_name, connection_config.make_connection(cT.InitInput))
+        for connection_name, connection_config in config.init_outputs.items():
+            setattr(self, connection_name, connection_config.make_connection(cT.InitOutput))
+        for connection_name, connection_config in config.prerequisite_inputs.items():
+            setattr(self, connection_name, connection_config.make_connection(cT.PrerequisiteInput))
+        for connection_name, connection_config in config.inputs.items():
+            setattr(self, connection_name, connection_config.make_connection(cT.Input))
+        for connection_name, connection_config in config.outputs.items():
+            setattr(self, connection_name, connection_config.make_connection(cT.Output))
 
-        # store mock outputs
-        for name, refs in outputRefs:
-            if not isinstance(refs, list):
-                refs = [refs]
-            for ref in refs:
-                output = MockDataset(
-                    ref=ref.to_simple(), quantum=mock_dataset_quantum, output_connection_name=name
-                )
-                butlerQC.put(output, ref)
 
-        _LOG.info("Finished mocking task '%s' on quantum %s", self.getName(), quantum.dataId)
+class DynamicTestPipelineTaskConfig(
+    PipelineTaskConfig, pipelineConnections=DynamicTestPipelineTaskConnections
+):
+    """Configuration for DynamicTestPipelineTask."""
+
+    dimensions = ListField[str](doc="Dimensions for the task's quanta.", dtype=str, default=[])
+    init_inputs = ConfigDictField(
+        doc=(
+            "Init-input connections, keyed by the connection name as seen by the task. "
+            "Must be empty if the task will be constructed."
+        ),
+        keytype=str,
+        itemtype=DynamicConnectionConfig,
+        default={},
+    )
+    init_outputs = ConfigDictField(
+        doc=(
+            "Init-output connections, keyed by the connection name as seen by the task. "
+            "Must be empty if the task will be constructed."
+        ),
+        keytype=str,
+        itemtype=DynamicConnectionConfig,
+        default={},
+    )
+    prerequisite_inputs = ConfigDictField(
+        doc="Prerequisite input connections, keyed by the connection name as seen by the task.",
+        keytype=str,
+        itemtype=DynamicConnectionConfig,
+        default={},
+    )
+    inputs = ConfigDictField(
+        doc="Regular input connections, keyed by the connection name as seen by the task.",
+        keytype=str,
+        itemtype=DynamicConnectionConfig,
+        default={},
+    )
+    outputs = ConfigDictField(
+        doc="Regular output connections, keyed by the connection name as seen by the task.",
+        keytype=str,
+        itemtype=DynamicConnectionConfig,
+        default={},
+    )
+
+
+class DynamicTestPipelineTask(BaseTestPipelineTask):
+    """A test-utility implementation of `PipelineTask` with dimensions and
+    connections determined wholly from configuration.
+    """
+
+    ConfigClass: ClassVar[type[PipelineTaskConfig]] = DynamicTestPipelineTaskConfig
