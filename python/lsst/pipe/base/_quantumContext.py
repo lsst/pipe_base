@@ -87,6 +87,9 @@ class ExecutionResources:
 
         if max_mem is None or isinstance(max_mem, u.Quantity):
             mem = max_mem
+        elif max_mem == "":
+            # Some command line tooling can treat no value as empty string.
+            pass
         else:
             parsed_mem = None
             try:

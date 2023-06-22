@@ -338,6 +338,9 @@ class PipelineTaskTestCase(unittest.TestCase):
         self.assertEqual(res.max_mem.value, 512)
         self.assertEqual(pickle.loads(pickle.dumps(res)), res)
 
+        res = pipeBase.ExecutionResources(max_mem="")
+        self.assertIsNone(res.max_mem)
+
         res = pipeBase.ExecutionResources(max_mem="32 KiB")
         self.assertEqual(res.num_cores, 1)
         self.assertEqual(res.max_mem.value, 32 * 1024)
