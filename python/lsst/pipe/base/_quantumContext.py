@@ -43,9 +43,24 @@ from .struct import Struct
 _LOG = getLogger(__name__)
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(init=False, frozen=True)
 class ExecutionResources:
-    """A description of the resources available to a running quantum."""
+    """A description of the resources available to a running quantum.
+
+    Parameters
+    ----------
+    num_cores : `int`, optional
+        The number of cores allocated to the task.
+    max_mem : `~astropy.units.Quantity`, `numbers.Real`, `str`, or `None`,\
+            optional
+        The amount of memory allocated to the task. Can be specified
+        as byte-compatible `~astropy.units.Quantity`, a plain number,
+        a string with a plain number, or a string representing a quantity.
+        If `None` no limit is specified.
+    default_mem_units : `astropy.units.Unit`, optional
+        The default unit to apply when the ``max_mem`` value is given
+        as a plain number.
+    """
 
     num_cores: int = 1
     """The maximum number of cores that the task can use."""
@@ -54,45 +69,20 @@ class ExecutionResources:
     """If defined, the amount of memory allocated to the task.
     """
 
-    def __post_init__(self) -> None:
-        """Validate the parameters."""
-        if self.num_cores < 1:
-            raise ValueError("The number of cores must be a positive integer")
-        if self.max_mem is not None:
-            if not isinstance(self.max_mem, u.Quantity):
-                raise ValueError(f"The maximum memory must be given as a Quantity. Got {self.max_mem!r}.")
-            # Will raise if incompatible unit.
-            object.__setattr__(self, "max_mem", self.max_mem.to(u.B))
-
-    @classmethod
-    def factory(
-        cls,
+    def __init__(
+        self,
         *,
         num_cores: int = 1,
         max_mem: u.Quantity | numbers.Real | str | None = None,
         default_mem_units: u.Unit = u.B,
-    ) -> ExecutionResources:
-        """Construct an `ExecutionResources` with flexible input types.
+    ):
+        # Create our own __init__ to allow more flexible input parameters
+        # but with a constrained dataclass definition.
+        if num_cores < 1:
+            raise ValueError("The number of cores must be a positive integer")
 
-        Parameters
-        ----------
-        num_cores : `int`, optional
-            The number of cores allocated to the task.
-        max_mem : `~astropy.units.Quantity`, `numbers.Real`, `str`, or `None`,\
-                optional
-            The amount of memory allocated to the task. Can be specified
-            as byte-compatible `~astropy.units.Quantity`, a plain number,
-            a string with a plain number, or a string representing a quantity.
-            If `None` no limit is specified.
-        default_mem_units : `astropy.units.Unit`, optional
-            The default unit to apply when the ``max_mem`` value is given
-            as a plain number.
+        object.__setattr__(self, "num_cores", num_cores)
 
-        Returns
-        -------
-        resources : `ExecutionResources`
-            The resource object constructed with standardized parameters.
-        """
         mem: u.Quantity | None = None
 
         if max_mem is None or isinstance(max_mem, u.Quantity):
@@ -113,7 +103,7 @@ class ExecutionResources:
             # Force to bytes. This also checks that we can convert to bytes.
             mem = mem.to(u.B)
 
-        return cls(num_cores=num_cores, max_mem=mem)
+        object.__setattr__(self, "max_mem", mem)
 
     def __deepcopy__(self, memo: Any) -> ExecutionResources:
         """Deep copy returns itself because the class is frozen."""
@@ -135,7 +125,7 @@ class ExecutionResources:
         kwargs: dict[str, Any] = {"num_cores": self.num_cores}
         if self.max_mem is not None:
             # .value is a numpy float. Cast it to a python int since we
-            # do not want fractional bytes. __post_init__ ensures that this
+            # do not want fractional bytes. The constructor ensures that this
             # uses units of byte so we do not have to convert.
             kwargs["max_mem"] = int(self.max_mem.value)
         return kwargs
@@ -149,7 +139,7 @@ class ExecutionResources:
         Allows unpickle using `__reduce__` with keyword
         arguments as well as positional arguments.
         """
-        return cls.factory(**kwargs)
+        return cls(**kwargs)
 
     def __reduce__(
         self,

@@ -317,7 +317,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         self.assertEqual(butlerQC.resources.num_cores, 4)
         self.assertEqual(butlerQC.resources.max_mem, 5_000_000 * u.B)
 
-        resources = pipeBase.ExecutionResources.factory(max_mem=5)
+        resources = pipeBase.ExecutionResources(max_mem=5)
         butlerQC = pipeBase.QuantumContext(butler, quantum, resources=resources)
         self.assertEqual(butlerQC.resources.num_cores, 1)
         self.assertEqual(butlerQC.resources.max_mem, 5 * u.B)
@@ -333,30 +333,31 @@ class PipelineTaskTestCase(unittest.TestCase):
         self.assertEqual(res.max_mem.value, 1024 * 1024)
         self.assertEqual(pickle.loads(pickle.dumps(res)), res)
 
-        res = pipeBase.ExecutionResources.factory(max_mem=512)
+        res = pipeBase.ExecutionResources(max_mem=512)
         self.assertEqual(res.num_cores, 1)
         self.assertEqual(res.max_mem.value, 512)
         self.assertEqual(pickle.loads(pickle.dumps(res)), res)
 
-        res = pipeBase.ExecutionResources.factory(max_mem="32 KiB")
+        res = pipeBase.ExecutionResources(max_mem="32 KiB")
         self.assertEqual(res.num_cores, 1)
         self.assertEqual(res.max_mem.value, 32 * 1024)
         self.assertEqual(pickle.loads(pickle.dumps(res)), res)
 
         self.assertIs(res, copy.deepcopy(res))
 
+        with self.assertRaises(AttributeError):
+            res.num_cores = 4
+
         with self.assertRaises(u.UnitConversionError):
             pipeBase.ExecutionResources(max_mem=1 * u.m)
         with self.assertRaises(ValueError):
-            pipeBase.ExecutionResources(max_mem=1)
-        with self.assertRaises(ValueError):
             pipeBase.ExecutionResources(num_cores=-32)
         with self.assertRaises(u.UnitConversionError):
-            pipeBase.ExecutionResources.factory(max_mem=1 * u.m)
+            pipeBase.ExecutionResources(max_mem=1 * u.m)
         with self.assertRaises(u.UnitConversionError):
-            pipeBase.ExecutionResources.factory(max_mem=1, default_mem_units=u.m)
+            pipeBase.ExecutionResources(max_mem=1, default_mem_units=u.m)
         with self.assertRaises(u.UnitConversionError):
-            pipeBase.ExecutionResources.factory(max_mem="32 Pa")
+            pipeBase.ExecutionResources(max_mem="32 Pa")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
