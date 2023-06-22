@@ -50,21 +50,70 @@ class ExecutionResources:
     num_cores: int = 1
     """The maximum number of cores that the task can use."""
 
-    max_mem: u.Quantity | numbers.Real | None = None
-    """If defined, the amount of memory allocated to the task. If a plain
-    integer is given it is assumed to be the number of bytes and converted
-    to a `~astropy.units.Quantity`.
+    max_mem: u.Quantity | None = None
+    """If defined, the amount of memory allocated to the task.
     """
 
     def __post_init__(self) -> None:
-        # Normalize max_mem to bytes.
-        max_mem = self.max_mem
-        if max_mem is not None:
-            if isinstance(max_mem, numbers.Real):
-                max_mem *= u.B
+        """Validate the parameters."""
+        if self.num_cores < 1:
+            raise ValueError("The number of cores must be a positive integer")
+        if self.max_mem is not None:
+            if not isinstance(self.max_mem, u.Quantity):
+                raise ValueError(f"The maximum memory must be given as a Quantity. Got {self.max_mem!r}.")
+            # Will raise if incompatible unit.
+            object.__setattr__(self, "max_mem", self.max_mem.to(u.B))
+
+    @classmethod
+    def factory(
+        cls,
+        *,
+        num_cores: int = 1,
+        max_mem: u.Quantity | numbers.Real | str | None = None,
+        default_mem_units: u.Unit = u.B,
+    ) -> ExecutionResources:
+        """Construct an `ExecutionResources` with flexible input types.
+
+        Parameters
+        ----------
+        num_cores : `int`, optional
+            The number of cores allocated to the task.
+        max_mem : `~astropy.units.Quantity`, `numbers.Real`, `str`, or `None`,\
+                optional
+            The amount of memory allocated to the task. Can be specified
+            as byte-compatible `~astropy.units.Quantity`, a plain number,
+            a string with a plain number, or a string representing a quantity.
+            If `None` no limit is specified.
+        default_mem_units : `astropy.units.Unit`, optional
+            The default unit to apply when the ``max_mem`` value is given
+            as a plain number.
+
+        Returns
+        -------
+        resources : `ExecutionResources`
+            The resource object constructed with standardized parameters.
+        """
+        mem: u.Quantity | None = None
+
+        if max_mem is None or isinstance(max_mem, u.Quantity):
+            mem = max_mem
+        else:
+            parsed_mem = None
+            try:
+                parsed_mem = float(max_mem)
+            except ValueError:
+                pass
             else:
-                max_mem = max_mem.to(u.B)
-            object.__setattr__(self, "max_mem", max_mem)
+                mem = parsed_mem * default_mem_units
+
+            if mem is None:
+                mem = u.Quantity(max_mem)
+
+        if mem is not None:
+            # Force to bytes. This also checks that we can convert to bytes.
+            mem = mem.to(u.B)
+
+        return cls(num_cores=num_cores, max_mem=mem)
 
     def __deepcopy__(self, memo: Any) -> ExecutionResources:
         """Deep copy returns itself because the class is frozen."""
@@ -86,27 +135,26 @@ class ExecutionResources:
         kwargs: dict[str, Any] = {"num_cores": self.num_cores}
         if self.max_mem is not None:
             # .value is a numpy float. Cast it to a python int since we
-            # do not want fractional bytes.
-            # __post_init__ ensures that this is a Quantity but mypy cannot
-            # work that out.
-            kwargs["max_mem"] = int(self.max_mem.value)  # type: ignore[union-attr]
+            # do not want fractional bytes. __post_init__ ensures that this
+            # uses units of byte so we do not have to convert.
+            kwargs["max_mem"] = int(self.max_mem.value)
         return kwargs
 
     @staticmethod
     def _unpickle_via_factory(
-        factory: Callable[..., ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
+        cls: type[ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
     ) -> ExecutionResources:
         """Unpickle something by calling a factory.
 
         Allows unpickle using `__reduce__` with keyword
         arguments as well as positional arguments.
         """
-        return factory(**kwargs)
+        return cls.factory(**kwargs)
 
     def __reduce__(
         self,
     ) -> tuple[
-        Callable[[Callable[..., ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
+        Callable[[type[ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
         tuple[type[ExecutionResources], Sequence[Any], dict[str, Any]],
     ]:
         """Pickler."""
