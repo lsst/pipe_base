@@ -1,0 +1,3 @@
+* New class ``ExecutionResources`` has been created to record the number of cores and memory that has been allocated for the execution of a quantum.
+* ``QuantumContext`` (newly renamed from ``ButlerQuantumContext``) now has a ``resources`` property that can be queried by a task in ``runQuantum``.
+  This can be used to tell the task that it can use multiple cores or possibly should make a more efficient use of the available memory resources.
