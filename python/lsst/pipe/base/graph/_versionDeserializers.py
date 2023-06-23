@@ -557,6 +557,8 @@ class DeserializerV3(DeserializerBase):
 
             # Turn the json back into the pydandtic model
             nodeDeserialized = SerializedQuantumNode.direct(**dump)
+            del dump
+
             # attach the dictionary of dimension records to the pydantic model
             # these are stored separately because the are stored over and over
             # and this saves a lot of space and time.

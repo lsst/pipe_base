@@ -96,6 +96,8 @@ class QuantumNode:
     creation.
     """
 
+    __slots__ = ("quantum", "taskDef", "nodeId", "_precomputedHash")
+
     def __post_init__(self) -> None:
         # use setattr here to preserve the frozenness of the QuantumNode
         self._precomputedHash: int
@@ -144,6 +146,9 @@ class QuantumNode:
         )
 
 
+_fields_set = {"quantum", "taskLabel", "nodeId"}
+
+
 class SerializedQuantumNode(BaseModel):
     quantum: SerializedQuantum
     taskLabel: str
@@ -156,5 +161,5 @@ class SerializedQuantumNode(BaseModel):
         setter(node, "quantum", SerializedQuantum.direct(**quantum))
         setter(node, "taskLabel", taskLabel)
         setter(node, "nodeId", uuid.UUID(nodeId))
-        setter(node, "__fields_set__", {"quantum", "taskLabel", "nodeId"})
+        setter(node, "__fields_set__", _fields_set)
         return node
