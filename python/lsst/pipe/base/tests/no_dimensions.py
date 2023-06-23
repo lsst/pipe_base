@@ -27,6 +27,7 @@ __all__ = (
     "NoDimensionsTestTask",
 )
 
+import dataclasses
 from typing import cast
 
 from lsst.pex.config import Field
@@ -51,13 +52,19 @@ class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
         name="output", doc="some dict-y output data for testing", storageClass="StructuredDataDict"
     )
 
+    config: NoDimensionsTestConfig
+
+    def __init__(self, *, config: PipelineTaskConfig | None = None):
+        if self.config.outputSC != "StructuredDataDict":
+            self.output = dataclasses.replace(self.output, storageClass=self.config.outputSC)
+
 
 class NoDimensionsTestConfig(PipelineTaskConfig, pipelineConnections=NoDimensionsTestConnections):
     """Configuration for `NoDimensionTestTask`."""
 
     key = Field[str](doc="String key for the dict entry the task sets.", default="one")
     value = Field[int](doc="Integer value for the dict entry the task sets.", default=1)
-    outputSC = Field[str](doc="Output storage class requested", default="dict")
+    outputSC = Field[str](doc="Output storage class requested", default="StructuredDataDict")
 
 
 class NoDimensionsTestTask(PipelineTask):
