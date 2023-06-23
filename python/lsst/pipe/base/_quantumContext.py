@@ -24,11 +24,15 @@ from __future__ import annotations
 """Module defining a butler like object specialized to a specific quantum.
 """
 
-__all__ = ("ButlerQuantumContext",)
+__all__ = ("ButlerQuantumContext", "ExecutionResources", "QuantumContext")
 
-from collections.abc import Sequence
+import numbers
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
+import astropy.units as u
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
@@ -39,8 +43,120 @@ from .struct import Struct
 _LOG = getLogger(__name__)
 
 
-class ButlerQuantumContext:
-    """A Butler-like class specialized for a single quantum.
+@dataclass(init=False, frozen=True)
+class ExecutionResources:
+    """A description of the resources available to a running quantum.
+
+    Parameters
+    ----------
+    num_cores : `int`, optional
+        The number of cores allocated to the task.
+    max_mem : `~astropy.units.Quantity`, `numbers.Real`, `str`, or `None`,\
+            optional
+        The amount of memory allocated to the task. Can be specified
+        as byte-compatible `~astropy.units.Quantity`, a plain number,
+        a string with a plain number, or a string representing a quantity.
+        If `None` no limit is specified.
+    default_mem_units : `astropy.units.Unit`, optional
+        The default unit to apply when the ``max_mem`` value is given
+        as a plain number.
+    """
+
+    num_cores: int = 1
+    """The maximum number of cores that the task can use."""
+
+    max_mem: u.Quantity | None = None
+    """If defined, the amount of memory allocated to the task.
+    """
+
+    def __init__(
+        self,
+        *,
+        num_cores: int = 1,
+        max_mem: u.Quantity | numbers.Real | str | None = None,
+        default_mem_units: u.Unit = u.B,
+    ):
+        # Create our own __init__ to allow more flexible input parameters
+        # but with a constrained dataclass definition.
+        if num_cores < 1:
+            raise ValueError("The number of cores must be a positive integer")
+
+        object.__setattr__(self, "num_cores", num_cores)
+
+        mem: u.Quantity | None = None
+
+        if max_mem is None or isinstance(max_mem, u.Quantity):
+            mem = max_mem
+        elif max_mem == "":
+            # Some command line tooling can treat no value as empty string.
+            pass
+        else:
+            parsed_mem = None
+            try:
+                parsed_mem = float(max_mem)
+            except ValueError:
+                pass
+            else:
+                mem = parsed_mem * default_mem_units
+
+            if mem is None:
+                mem = u.Quantity(max_mem)
+
+        if mem is not None:
+            # Force to bytes. This also checks that we can convert to bytes.
+            mem = mem.to(u.B)
+
+        object.__setattr__(self, "max_mem", mem)
+
+    def __deepcopy__(self, memo: Any) -> ExecutionResources:
+        """Deep copy returns itself because the class is frozen."""
+        return self
+
+    def _reduce_kwargs(self) -> dict[str, Any]:
+        """Return a dict of the keyword arguments that should be used
+        by `__reduce__`.
+
+        This is necessary because the dataclass is defined to be keyword
+        only and we wish the default pickling to only store a plain number
+        for the memory allocation and not a large Quantity.
+
+        Returns
+        -------
+        kwargs : `dict`
+            Keyword arguments to be used when pickling.
+        """
+        kwargs: dict[str, Any] = {"num_cores": self.num_cores}
+        if self.max_mem is not None:
+            # .value is a numpy float. Cast it to a python int since we
+            # do not want fractional bytes. The constructor ensures that this
+            # uses units of byte so we do not have to convert.
+            kwargs["max_mem"] = int(self.max_mem.value)
+        return kwargs
+
+    @staticmethod
+    def _unpickle_via_factory(
+        cls: type[ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
+    ) -> ExecutionResources:
+        """Unpickle something by calling a factory.
+
+        Allows unpickle using `__reduce__` with keyword
+        arguments as well as positional arguments.
+        """
+        return cls(**kwargs)
+
+    def __reduce__(
+        self,
+    ) -> tuple[
+        Callable[[type[ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
+        tuple[type[ExecutionResources], Sequence[Any], dict[str, Any]],
+    ]:
+        """Pickler."""
+        return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())
+
+
+class QuantumContext:
+    """A Butler-like class specialized for a single quantum along with
+    context information that can influence how the task is executed.
 
     Parameters
     ----------
@@ -49,10 +165,12 @@ class ButlerQuantumContext:
     quantum : `lsst.daf.butler.core.Quantum`
         Quantum object that describes the datasets which will be get/put by a
         single execution of this node in the pipeline graph.
+    resources : `ExecutionResources`, optional
+        The resources allocated for executing quanta.
 
     Notes
     -----
-    A ButlerQuantumContext class wraps a standard butler interface and
+    A `QuantumContext` class wraps a standard butler interface and
     specializes it to the context of a given quantum. What this means
     in practice is that the only gets and puts that this class allows
     are DatasetRefs that are contained in the quantum.
@@ -63,8 +181,16 @@ class ButlerQuantumContext:
     execution.
     """
 
-    def __init__(self, butler: LimitedButler, quantum: Quantum):
+    resources: ExecutionResources
+
+    def __init__(
+        self, butler: LimitedButler, quantum: Quantum, *, resources: ExecutionResources | None = None
+    ):
         self.quantum = quantum
+        if resources is None:
+            resources = ExecutionResources()
+        self.resources = resources
+
         self.allInputs = set()
         self.allOutputs = set()
         for refs in quantum.inputs.values():
@@ -260,7 +386,7 @@ class ButlerQuantumContext:
         """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
         `~lsst.daf.butler.Quantum`.
 
-        This function will raise an exception if the `ButlerQuantumContext` is
+        This function will raise an exception if the `QuantumContext` is
         used to get/put a `~lsst.daf.butler.DatasetRef` which is not defined
         in the quantum.
 
@@ -287,3 +413,15 @@ class ButlerQuantumContext:
         repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions
+
+
+@deprecated(
+    reason="ButlerQuantumContext has been renamed to QuantumContext and been given extra functionality. "
+    "Please use the new name. Will be removed after v27.",
+    version="v26",
+    category=FutureWarning,
+)
+class ButlerQuantumContext(QuantumContext):
+    """Deprecated version of `QuantumContext`."""
+
+    pass

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
     from lsst.utils.logging import LsstLogAdapter
 
-    from .butlerQuantumContext import ButlerQuantumContext
+    from ._quantumContext import QuantumContext
     from .config import PipelineTaskConfig
     from .struct import Struct
 
@@ -59,7 +59,7 @@ class PipelineTask(Task):
     sub-class) where all necessary I/O is performed, it reads all input data
     from data butler into memory, calls `run()` method with that data, examines
     returned `Struct` object and saves some or all of that data back to data
-    butler. `runQuantum()` method receives a `ButlerQuantumContext` instance to
+    butler. `runQuantum()` method receives a `QuantumContext` instance to
     facilitate I/O, a `InputQuantizedConnection` instance which defines all
     input `lsst.daf.butler.DatasetRef`, and a `OutputQuantizedConnection`
     instance which defines all the output `lsst.daf.butler.DatasetRef` for a
@@ -151,7 +151,7 @@ class PipelineTask(Task):
 
     def runQuantum(
         self,
-        butlerQC: ButlerQuantumContext,
+        butlerQC: QuantumContext,
         inputRefs: InputQuantizedConnection,
         outputRefs: OutputQuantizedConnection,
     ) -> None:
@@ -160,7 +160,7 @@ class PipelineTask(Task):
 
         Parameters
         ----------
-        butlerQC : `ButlerQuantumContext`
+        butlerQC : `QuantumContext`
             A butler which is specialized to operate in the context of a
             `lsst.daf.butler.Quantum`.
         inputRefs : `InputQuantizedConnection`

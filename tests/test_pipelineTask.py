@@ -22,9 +22,12 @@
 """Simple unit test for PipelineTask.
 """
 
+import copy
+import pickle
 import unittest
 from typing import Any
 
+import astropy.units as u
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.logging
@@ -88,7 +91,7 @@ class AddTask2(pipeBase.PipelineTask):
     _DefaultName = "add_task"
 
     def runQuantum(
-        self, butlerQC: pipeBase.ButlerQuantumContext, inputRefs: DatasetRef, outputRefs: DatasetRef
+        self, butlerQC: pipeBase.QuantumContext, inputRefs: DatasetRef, outputRefs: DatasetRef
     ) -> None:
         self.metadata.add("add", self.config.addend)
         inputs = butlerQC.get(inputRefs)
@@ -158,7 +161,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         # run task on each quanta
         checked_get = False
         for quantum in quanta:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
             task.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -237,11 +240,11 @@ class PipelineTaskTestCase(unittest.TestCase):
 
         # run task on each quanta
         for quantum in quanta1:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections1.buildDatasetRefs(quantum)
             task1.runQuantum(butlerQC, inputRefs, outputRefs)
         for quantum in quanta2:
-            butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+            butlerQC = pipeBase.QuantumContext(butler, quantum)
             inputRefs, outputRefs = connections2.buildDatasetRefs(quantum)
             task2.runQuantum(butlerQC, inputRefs, outputRefs)
 
@@ -261,7 +264,7 @@ class PipelineTaskTestCase(unittest.TestCase):
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3 + 200)
 
     def testButlerQC(self):
-        """Test for ButlerQuantumContext. Full and limited share get
+        """Test for QuantumContext. Full and limited share get
         implementation so only full is tested.
         """
 
@@ -277,7 +280,9 @@ class PipelineTaskTestCase(unittest.TestCase):
         ref = quantum.inputs[dstype0.name][0]
         butler.put(100, ref)
 
-        butlerQC = pipeBase.ButlerQuantumContext(butler, quantum)
+        butlerQC = pipeBase.QuantumContext(butler, quantum)
+        self.assertEqual(butlerQC.resources.num_cores, 1)
+        self.assertIsNone(butlerQC.resources.max_mem)
 
         # Pass ref as single argument or a list.
         obj = butlerQC.get(ref)
@@ -305,6 +310,57 @@ class PipelineTaskTestCase(unittest.TestCase):
         inputRefs.input2 = None
         obj = butlerQC.get(inputRefs)
         self.assertEqual(obj, {"input": [None, 100], "input2": None})
+
+        # Set additional context.
+        resources = pipeBase.ExecutionResources(num_cores=4, max_mem=5 * u.MB)
+        butlerQC = pipeBase.QuantumContext(butler, quantum, resources=resources)
+        self.assertEqual(butlerQC.resources.num_cores, 4)
+        self.assertEqual(butlerQC.resources.max_mem, 5_000_000 * u.B)
+
+        resources = pipeBase.ExecutionResources(max_mem=5)
+        butlerQC = pipeBase.QuantumContext(butler, quantum, resources=resources)
+        self.assertEqual(butlerQC.resources.num_cores, 1)
+        self.assertEqual(butlerQC.resources.max_mem, 5 * u.B)
+
+    def test_ExecutionResources(self):
+        res = pipeBase.ExecutionResources()
+        self.assertEqual(res.num_cores, 1)
+        self.assertIsNone(res.max_mem)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        res = pipeBase.ExecutionResources(num_cores=4, max_mem=1 * u.MiB)
+        self.assertEqual(res.num_cores, 4)
+        self.assertEqual(res.max_mem.value, 1024 * 1024)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        res = pipeBase.ExecutionResources(max_mem=512)
+        self.assertEqual(res.num_cores, 1)
+        self.assertEqual(res.max_mem.value, 512)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        res = pipeBase.ExecutionResources(max_mem="")
+        self.assertIsNone(res.max_mem)
+
+        res = pipeBase.ExecutionResources(max_mem="32 KiB")
+        self.assertEqual(res.num_cores, 1)
+        self.assertEqual(res.max_mem.value, 32 * 1024)
+        self.assertEqual(pickle.loads(pickle.dumps(res)), res)
+
+        self.assertIs(res, copy.deepcopy(res))
+
+        with self.assertRaises(AttributeError):
+            res.num_cores = 4
+
+        with self.assertRaises(u.UnitConversionError):
+            pipeBase.ExecutionResources(max_mem=1 * u.m)
+        with self.assertRaises(ValueError):
+            pipeBase.ExecutionResources(num_cores=-32)
+        with self.assertRaises(u.UnitConversionError):
+            pipeBase.ExecutionResources(max_mem=1 * u.m)
+        with self.assertRaises(u.UnitConversionError):
+            pipeBase.ExecutionResources(max_mem=1, default_mem_units=u.m)
+        with self.assertRaises(u.UnitConversionError):
+            pipeBase.ExecutionResources(max_mem="32 Pa")
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

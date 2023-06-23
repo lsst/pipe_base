@@ -20,7 +20,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("ConfigIR", "ContractError", "ContractIR", "ImportIR", "PipelineIR", "TaskIR", "LabeledSubset")
+__all__ = (
+    "ConfigIR",
+    "ContractError",
+    "ContractIR",
+    "ImportIR",
+    "LabeledSubset",
+    "ParametersIR",
+    "PipelineIR",
+    "TaskIR",
+)
 
 import copy
 import enum
@@ -185,9 +194,11 @@ class LabeledSubset:
 
 
 @dataclass
-class ParametersIR:
-    """Intermediate representation of parameters that are global to a pipeline
+class ParametersIR:  # noqa: D405,D406,D407,D214 ("parameters" in code block)
+    """Intermediate representation of parameters that are global to a pipeline.
 
+    Notes
+    -----
     These parameters are specified under a top level key named ``parameters``
     and are declared as a yaml mapping. These entries can then be used inside
     task configuration blocks to specify configuration values. They may not be
@@ -279,12 +290,12 @@ class ConfigIR:
 
         Parameters
         ----------
-        parameters : ParametersIR
+        parameters : `ParametersIR`
             Object that contains variable mappings used in substitution.
 
         Returns
         -------
-        config : ConfigIR
+        config : `ConfigIR`
             A new ConfigIR object formatted with the input parameters
         """
         new_config = copy.deepcopy(self)

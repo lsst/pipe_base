@@ -43,7 +43,7 @@ from ._storage_class import MockDataset, MockDatasetQuantum, MockStorageClass, g
 _LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ...butlerQuantumContext import ButlerQuantumContext
+    from ..._quantumContext import QuantumContext
 
 
 def mock_task_defs(
@@ -238,7 +238,7 @@ class MockPipelineTask(PipelineTask):
 
     def runQuantum(
         self,
-        butlerQC: ButlerQuantumContext,
+        butlerQC: QuantumContext,
         inputRefs: InputQuantizedConnection,
         outputRefs: OutputQuantizedConnection,
     ) -> None:
