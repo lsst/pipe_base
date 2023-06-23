@@ -29,7 +29,7 @@ from typing import Any
 
 import lsst.pipe.base.automatic_connection_constants as acc
 import lsst.utils.tests
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, StorageClassFactory
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.pipe.base.pipeline_graph import (
     ConnectionTypeConsistencyError,
@@ -872,6 +872,25 @@ class PipelineGraphTestCase(unittest.TestCase):
         )
 
 
+def _have_example_storage_classes() -> bool:
+    """Check whether some storage classes work as expected.
+
+    Given that these have registered converters, it shouldn't actually be
+    necessary to import be able to those types in order to determine that
+    they're convertible, but the storage class machinery is implemented such
+    that types that can't be imported can't be converted, and while that's
+    inconvenient here it's totally fine in non-testing scenarios where you only
+    care about a storage class if you can actually use it.
+    """
+    getter = StorageClassFactory().getStorageClass
+    return (
+        getter("ArrowTable").can_convert(getter("ArrowAstropy"))
+        and getter("ArrowAstropy").can_convert(getter("ArrowTable"))
+        and getter("ArrowTable").can_convert(getter("DataFrame"))
+        and getter("DataFrame").can_convert(getter("ArrowTable"))
+    )
+
+
 class PipelineGraphResolveTestCase(unittest.TestCase):
     """More extensive tests for PipelineGraph.resolve and its primate helper
     methods.
@@ -952,7 +971,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
                     self.dimensions,
                     {
                         "d": DatasetType(
-                            "d", dimensions=self.dimensions.extract(["htm7"]), storageClass="ArrowTable"
+                            "d",
+                            dimensions=self.dimensions.extract(["htm7"]),
+                            storageClass="StructuredDataDict",
                         )
                     },
                 )
@@ -965,7 +986,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
                         "d": DatasetType(
                             "d",
                             dimensions=self.dimensions.extract(["htm7", "visit", "skymap"]),
-                            storageClass="ArrowTable",
+                            storageClass="StructuredDataDict",
                         )
                     },
                 )
@@ -1005,6 +1026,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
                 )
             )
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_bad_component_storage_class(self) -> None:
         """Test that we raise an exception when a component dataset type's
         parent is registered, but does not have that component.
@@ -1033,7 +1057,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             graph.resolve(
                 MockRegistry(
                     self.dimensions,
-                    {"d": DatasetType("d", self.dimensions.empty, get_mock_name("ArrowTable"))},
+                    {"d": DatasetType("d", self.dimensions.empty, get_mock_name("StructuredDataDict"))},
                 )
             )
 
@@ -1049,7 +1073,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             graph.resolve(
                 MockRegistry(
                     self.dimensions,
-                    {"d": DatasetType("d", self.dimensions.empty, get_mock_name("ArrowTable"))},
+                    {"d": DatasetType("d", self.dimensions.empty, get_mock_name("StructuredDataDict"))},
                 )
             )
 
@@ -1058,7 +1082,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         class is incompatible with the storage class of the output connection.
         """
         self.a_config.outputs["o"] = DynamicConnectionConfig(
-            dataset_type_name="d", storage_class="ArrowTable"
+            dataset_type_name="d", storage_class="StructuredDataDict"
         )
         self.b_config.inputs["i"] = DynamicConnectionConfig(
             dataset_type_name="d", storage_class="StructuredDataList"
@@ -1073,14 +1097,19 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         and there is no output connection or registry definition to take
         precedence.
         """
-        self.a_config.inputs["i"] = DynamicConnectionConfig(dataset_type_name="d", storage_class="ArrowTable")
+        self.a_config.inputs["i"] = DynamicConnectionConfig(
+            dataset_type_name="d", storage_class="StructuredDataDict"
+        )
         self.b_config.inputs["i"] = DynamicConnectionConfig(
-            dataset_type_name="d", storage_class="ArrowAstropy"
+            dataset_type_name="d", storage_class="StructuredDataList"
         )
         graph = self.make_graph()
         with self.assertRaises(MissingDatasetTypeError):
             graph.resolve(MockRegistry(self.dimensions, {}))
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_inputs_compatible_with_registry(self) -> None:
         """Test successful resolution of a dataset type where input edges have
         different but compatible storage classes and the dataset type is
@@ -1113,6 +1142,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_output_compatible_with_registry(self) -> None:
         """Test successful resolution of a dataset type where an output edge
         has a different but compatible storage class from the dataset type
@@ -1136,6 +1168,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(a_ref, ref.overrideStorageClass(get_mock_name("ArrowTable")))
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_inputs_compatible_with_output(self) -> None:
         """Test successful resolution of a dataset type where an input edge has
         a different but compatible storage class from the output edge, and
@@ -1169,6 +1204,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_component_resolved_by_input(self) -> None:
         """Test successful resolution of a component dataset type due to
         another input referencing the parent dataset type.
@@ -1198,6 +1236,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_component_resolved_by_output(self) -> None:
         """Test successful resolution of a component dataset type due to
         an output connection referencing the parent dataset type.
@@ -1229,6 +1270,9 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
     def test_component_resolved_by_registry(self) -> None:
         """Test successful resolution of a component dataset type due to
         the parent dataset type already being registered.
