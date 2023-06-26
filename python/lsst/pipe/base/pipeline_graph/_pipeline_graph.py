@@ -1550,6 +1550,9 @@ class PipelineGraph:
             node_value: TaskInitNode | TaskNode | DatasetTypeNode | None = state.pop("instance")
             if node_value is not None:
                 state.update(node_value._to_xgraph_state())
+            else:
+                # This is a dataset type node that is not resolved.
+                state["bipartite"] = NodeType.DATASET_TYPE.bipartite
         if not skip_edges:
             for _, _, state in xgraph.edges(data=True):
                 edge: Edge | None = state.pop("instance", None)
