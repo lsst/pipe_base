@@ -162,7 +162,7 @@ def _accumulate(
             for type, refs in attr.items():
                 # This if block is because init inputs has a different
                 # signature for its items
-                if not isinstance(refs, list):
+                if not isinstance(refs, (list, tuple)):
                     refs = [refs]
                 for ref in refs:
                     if ref.isComponent():
@@ -177,7 +177,7 @@ def _accumulate(
             attr = getattr(quantum, attrName)
 
             for type, refs in attr.items():
-                if not isinstance(refs, list):
+                if not isinstance(refs, (list, tuple)):
                     refs = [refs]
                 if type.component() is not None:
                     type = type.makeCompositeDatasetType()
