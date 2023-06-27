@@ -25,6 +25,7 @@ __all__ = ("QuantumNode", "NodeId", "BuildId")
 import uuid
 from dataclasses import dataclass
 from typing import Any, NewType
+import warnings
 
 from lsst.daf.butler import (
     DatasetRef,
@@ -137,10 +138,13 @@ class QuantumNode:
         universe: DimensionUniverse,
         recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] | None = None,
     ) -> QuantumNode:
+        if recontitutedDimensions is not None:
+            warnings.warn(
+                "The recontitutedDimensions argument is now ignored and may be removed after v 27",
+                category=DeprecationWarning,
+            )
         return QuantumNode(
-            quantum=Quantum.from_simple(
-                simple.quantum, universe, reconstitutedDimensions=recontitutedDimensions
-            ),
+            quantum=Quantum.from_simple(simple.quantum, universe),
             taskDef=taskDefMap[simple.taskLabel],
             nodeId=simple.nodeId,
         )
