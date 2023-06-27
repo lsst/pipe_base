@@ -1188,7 +1188,7 @@ class PipelineDatasetTypes:
     `Pipeline`.
     """
 
-    packagesDatasetName: ClassVar[str] = "packages"
+    packagesDatasetName: ClassVar[str] = acc.PACKAGES_INIT_OUTPUT_NAME
     """Name of a dataset type used to save package versions.
     """
 
@@ -1309,7 +1309,7 @@ class PipelineDatasetTypes:
                 DatasetType(
                     cls.packagesDatasetName,
                     registry.dimensions.empty,
-                    storageClass="Packages",
+                    storageClass=acc.PACKAGES_INIT_OUTPUT_STORAGE_CLASS,
                 )
             )
         # create a list of TaskDefs in case the input is a generator
