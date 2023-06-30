@@ -146,7 +146,10 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
                 docString = "Template parameter used to format corresponding field template parameter"
                 for templateName, default in connectionsClass.defaultTemplates.items():
                     configConnectionsNamespace[templateName] = TemplateField(
-                        dtype=str, doc=docString, default=default
+                        dtype=str,
+                        doc=docString,
+                        default=default,
+                        deprecated=connectionsClass.deprecatedTemplates.get(templateName),
                     )
             # add a reference to the connection class used to create this sub
             # config

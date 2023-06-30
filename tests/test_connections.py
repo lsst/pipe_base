@@ -187,10 +187,15 @@ class TestConnectionsClass(unittest.TestCase):
     def test_deprecation(self) -> None:
         """Test support for deprecating connections."""
 
-        class TestConnections(pipeBase.PipelineTaskConnections, dimensions=self.test_dims):
+        class TestConnections(
+            pipeBase.PipelineTaskConnections,
+            dimensions=self.test_dims,
+            defaultTemplates={"t1": "dataset_type_1"},
+            deprecatedTemplates={"t1": "Deprecated in v600, will be removed after v601."},
+        ):
             input1 = pipeBase.connectionTypes.Input(
                 doc="Docs for input1",
-                name="input1_dataset_type",
+                name="input1_{t1}",
                 storageClass="StructuredDataDict",
                 deprecated="Deprecated in v50000, will be removed after v50001.",
             )
@@ -204,7 +209,9 @@ class TestConnectionsClass(unittest.TestCase):
 
         config = TestConfig()
         with self.assertWarns(FutureWarning):
-            config.connections.input1 = "some_other_dataset_type"
+            config.connections.input1 = "dataset_type_2"
+        with self.assertWarns(FutureWarning):
+            config.connections.t1 = "dataset_type_3"
 
         with self.assertWarns(FutureWarning):
             TestConnections(config=config)
