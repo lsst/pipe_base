@@ -50,12 +50,19 @@ class BaseConnection:
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum()` and
         notify the execution system as early as possible of outputs that will
         not be produced because the corresponding input is missing.
+    deprecated : `str`, optional
+        A description of why this connection is deprecated, including the
+        version after which it may be removed.
+
+        If not `None`, the string is appended to the docstring for this
+        connection and the corresponding config Field.
     """
 
     name: str
     storageClass: str
     doc: str = ""
     multiple: bool = False
+    deprecated: str | None = dataclasses.field(default=None, kw_only=True)
 
     _connection_type_set: ClassVar[str]
 

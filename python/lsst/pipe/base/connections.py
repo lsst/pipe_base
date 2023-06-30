@@ -45,6 +45,7 @@ from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
+from lsst.utils.introspection import find_outside_stacklevel
 
 from ._status import NoWorkFound
 from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInput
@@ -317,7 +318,15 @@ class PipelineTaskConnectionsMetaclass(type):
         instance.allConnections = MappingProxyType(instance._allConnections)
         for internal_name, connection in cls.allConnections.items():
             dataset_type_name = getattr(config.connections, internal_name).format(**templateValues)
-            instance_connection = dataclasses.replace(connection, name=dataset_type_name)
+            instance_connection = dataclasses.replace(
+                connection,
+                name=dataset_type_name,
+                doc=(
+                    connection.doc
+                    if connection.deprecated is None
+                    else f"{connection.doc}\n{connection.deprecated}"
+                ),
+            )
             instance._allConnections[internal_name] = instance_connection
 
         # Finally call __init__.  The base class implementation does nothing;
