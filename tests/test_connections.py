@@ -23,6 +23,7 @@
 """
 
 import unittest
+import warnings
 
 import lsst.pipe.base as pipeBase
 import lsst.utils.tests
@@ -194,12 +195,25 @@ class TestConnectionsClass(unittest.TestCase):
                 deprecated="Deprecated in v50000, will be removed after v50001.",
             )
 
+            def __init__(self, config):
+                if config.drop_input1:
+                    del self.input1
+
         class TestConfig(pipeBase.PipelineTaskConfig, pipelineConnections=TestConnections):
-            pass
+            drop_input1 = Field("Remove the 'input1' connection if True", dtype=bool, default=False)
 
         config = TestConfig()
         with self.assertWarns(FutureWarning):
             config.connections.input1 = "some_other_dataset_type"
+
+        with self.assertWarns(FutureWarning):
+            TestConnections(config=config)
+
+        config.drop_input1 = True
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            TestConnections(config=config)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

@@ -38,6 +38,7 @@ __all__ = [
 import dataclasses
 import itertools
 import string
+import warnings
 from collections import UserDict
 from collections.abc import Collection, Generator, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
@@ -360,6 +361,12 @@ class PipelineTaskConnectionsMetaclass(type):
         # that.
         instance._allConnections.clear()
         instance._allConnections.update(updated_all_connections)
+
+        for obj in instance._allConnections.values():
+            if obj.deprecated is not None:
+                warnings.warn(
+                    obj.deprecated, FutureWarning, stacklevel=find_outside_stacklevel("lsst.pipe.base")
+                )
 
         # Freeze the connection instance dimensions now.  This at odds with the
         # type annotation, which says [mutable] `set`, just like the connection
