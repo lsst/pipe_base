@@ -224,14 +224,20 @@ class PipelineTaskConnectionsMetaclass(type):
             # look up any template from base classes and merge them all
             # together
             mergeDict = {}
+            mergeDeprecationsDict = {}
             for base in bases[::-1]:
                 if hasattr(base, "defaultTemplates"):
                     mergeDict.update(base.defaultTemplates)
+                if hasattr(base, "deprecatedTemplates"):
+                    mergeDeprecationsDict.update(base.deprecatedTemplates)
             if "defaultTemplates" in kwargs:
                 mergeDict.update(kwargs["defaultTemplates"])
-
+            if "deprecatedTemplates" in kwargs:
+                mergeDeprecationsDict.update(kwargs["deprecatedTemplates"])
             if len(mergeDict) > 0:
                 kwargs["defaultTemplates"] = mergeDict
+            if len(mergeDeprecationsDict) > 0:
+                kwargs["deprecatedTemplates"] = mergeDeprecationsDict
 
             # Verify that if templated strings were used, defaults were
             # supplied as an argument in the declaration of the connection
@@ -258,6 +264,7 @@ class PipelineTaskConnectionsMetaclass(type):
                         f" (conflicts are {nameTemplateIntersection})."
                     )
             dct["defaultTemplates"] = kwargs.get("defaultTemplates", {})
+            dct["deprecatedTemplates"] = kwargs.get("deprecatedTemplates", {})
 
         # Convert all the connection containers into frozensets so they cannot
         # be modified at the class scope
