@@ -27,7 +27,11 @@ import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+try:
+    from pydantic.v1 import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+except ModuleNotFoundError:
+    from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+
 
 _DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"

@@ -36,7 +36,11 @@ from lsst.daf.butler import (
     SerializedQuantum,
 )
 from lsst.utils.introspection import find_outside_stacklevel
-from pydantic import BaseModel
+
+try:
+    from pydantic.v1 import BaseModel
+except ModuleNotFoundError:
+    from pydantic import BaseModel
 
 from ..pipeline import TaskDef
 

@@ -34,7 +34,10 @@ __all__ = (
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
-import pydantic
+try:
+    import pydantic.v1 as pydantic
+except ModuleNotFoundError:
+    import pydantic
 from lsst.daf.butler import (
     DatasetComponent,
     Formatter,
