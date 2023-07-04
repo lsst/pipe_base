@@ -66,8 +66,8 @@ def transfer_from_graph(
         if refs := qgraph.initOutputRefs(task_def):
             original_output_refs.update(refs)
     for qnode in qgraph:
-        for refs in qnode.quantum.outputs.values():
-            original_output_refs.update(refs)
+        for otherRefs in qnode.quantum.outputs.values():
+            original_output_refs.update(otherRefs)
 
     # Get data repository definitions from the QuantumGraph; these can have
     # different storage classes than those in the quanta.
