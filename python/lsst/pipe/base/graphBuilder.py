@@ -455,13 +455,14 @@ class _QuantumScaffolding:
                 matching_records = records.subset(input_ids)
                 if matching_records is not None:
                     quantum_records[datastore_name] = matching_records
+        # ignore the types because quantum really can take a sequence of inputs
         return Quantum(
             taskName=self.task.taskDef.taskName,
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
             initInputs=initInputs,
-            inputs=helper.inputs,
-            outputs=helper.outputs,
+            inputs=helper.inputs,  # type: ignore
+            outputs=helper.outputs,  # type: ignore
             datastore_records=quantum_records,
         )
 

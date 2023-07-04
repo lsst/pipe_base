@@ -313,13 +313,15 @@ def _pruner(
             # from the graph.
             try:
                 helper.adjust_in_place(node.taskDef.connections, node.taskDef.label, node.quantum.dataId)
+                # ignore the types because quantum really can take a sequence
+                # of inputs
                 newQuantum = Quantum(
                     taskName=node.quantum.taskName,
                     taskClass=node.quantum.taskClass,
                     dataId=node.quantum.dataId,
                     initInputs=node.quantum.initInputs,
-                    inputs=helper.inputs,
-                    outputs=helper.outputs,
+                    inputs=helper.inputs,  # type: ignore
+                    outputs=helper.outputs,  # type: ignore
                 )
                 # If the inputs or outputs were adjusted to something different
                 # than what was supplied by the graph builder, dissassociate

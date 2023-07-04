@@ -39,7 +39,7 @@ import dataclasses
 import itertools
 import string
 from collections import UserDict
-from collections.abc import Collection, Generator, Iterable, Mapping, Set
+from collections.abc import Collection, Generator, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -934,12 +934,12 @@ class AdjustQuantumHelper:
     connection-oriented mappings used inside `PipelineTaskConnections`.
     """
 
-    inputs: NamedKeyMapping[DatasetType, tuple[DatasetRef]]
+    inputs: NamedKeyMapping[DatasetType, Sequence[DatasetRef]]
     """Mapping of regular input and prerequisite input datasets, grouped by
     `~lsst.daf.butler.DatasetType`.
     """
 
-    outputs: NamedKeyMapping[DatasetType, tuple[DatasetRef]]
+    outputs: NamedKeyMapping[DatasetType, Sequence[DatasetRef]]
     """Mapping of output datasets, grouped by `~lsst.daf.butler.DatasetType`.
     """
 
@@ -997,7 +997,7 @@ class AdjustQuantumHelper:
         # Translate adjustments to DatasetType-keyed, Quantum-oriented form,
         # installing new mappings in self if necessary.
         if adjusted_inputs_by_connection:
-            adjusted_inputs = NamedKeyDict[DatasetType, tuple[DatasetRef]](self.inputs)
+            adjusted_inputs = NamedKeyDict[DatasetType, tuple[DatasetRef, ...]](self.inputs)
             for name, (connection, updated_refs) in adjusted_inputs_by_connection.items():
                 dataset_type_name = connection.name
                 if not set(updated_refs).issubset(self.inputs[dataset_type_name]):
@@ -1012,7 +1012,7 @@ class AdjustQuantumHelper:
         else:
             self.inputs_adjusted = False
         if adjusted_outputs_by_connection:
-            adjusted_outputs = NamedKeyDict[DatasetType, tuple[DatasetRef]](self.outputs)
+            adjusted_outputs = NamedKeyDict[DatasetType, tuple[DatasetRef, ...]](self.outputs)
             for name, (connection, updated_refs) in adjusted_outputs_by_connection.items():
                 dataset_type_name = connection.name
                 if not set(updated_refs).issubset(self.outputs[dataset_type_name]):
