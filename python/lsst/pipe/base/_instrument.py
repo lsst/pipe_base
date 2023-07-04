@@ -668,7 +668,7 @@ class Instrument(metaclass=ABCMeta):
 
         config = _DummyConfig()
 
-        return config.packer.apply(data_id, is_exposure=is_exposure)
+        return config.packer.apply(data_id, is_exposure=is_exposure)  # type: ignore
 
     @staticmethod
     @final

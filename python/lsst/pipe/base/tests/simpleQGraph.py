@@ -307,7 +307,7 @@ def populateButler(
     instrument = pipeline.getInstrument()
     if instrument is not None:
         instrument_class = doImportType(instrument)
-        instrumentName = instrument_class.getName()
+        instrumentName = cast(Instrument, instrument_class).getName()
         instrumentClass = get_full_type_name(instrument_class)
     else:
         instrumentName = "INSTR"

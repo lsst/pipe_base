@@ -34,7 +34,6 @@ from uuid import UUID
 from lsst.daf.butler import DimensionUniverse, PersistenceContextVars
 from lsst.resources import ResourceHandleProtocol, ResourcePath
 
-
 if TYPE_CHECKING:
     from ._versionDeserializers import DeserializerBase
     from .graph import QuantumGraph
@@ -224,7 +223,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
         # object instantiation.
         runner = PersistenceContextVars()
         graph = runner.run(self.deserializer.constructGraph, nodeSet, _readBytes, universe)
-        return graph  # type: ignore
+        return graph
 
     def _readBytes(self, start: int, stop: int) -> bytes:
         """Load the specified byte range from the ResourcePath object
