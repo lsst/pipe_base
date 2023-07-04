@@ -31,7 +31,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO
 from uuid import UUID
 
-from lsst.daf.butler import DimensionUniverse
+from lsst.daf.butler import DimensionUniverse, PersistenceContextVars
 from lsst.resources import ResourceHandleProtocol, ResourcePath
 
 if TYPE_CHECKING:
@@ -219,7 +219,11 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
         _readBytes = self._readBytes
         if universe is None:
             universe = headerInfo.universe
-        return self.deserializer.constructGraph(nodeSet, _readBytes, universe)
+        # use the daf butler context vars to aid in ensuring deduplication in
+        # object instantiation.
+        runner = PersistenceContextVars()
+        graph = runner.run(self.deserializer.constructGraph, nodeSet, _readBytes, universe)
+        return graph
 
     def _readBytes(self, start: int, stop: int) -> bytes:
         """Load the specified byte range from the ResourcePath object

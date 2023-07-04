@@ -1276,49 +1276,32 @@ class QuantumGraph:
         update_graph_id : `bool`, optional
             If `True` then also update graph ID with a new unique value.
         """
-        dataset_id_map = {}
 
-        def _update_output_refs_in_place(refs: list[DatasetRef], run: str) -> None:
+        def _update_refs_in_place(refs: list[DatasetRef], run: str) -> None:
             """Update list of `~lsst.daf.butler.DatasetRef` with new run and
             dataset IDs.
             """
-            new_refs = []
             for ref in refs:
-                new_ref = DatasetRef(ref.datasetType, ref.dataId, run=run, conform=False)
-                dataset_id_map[ref.id] = new_ref.id
-                new_refs.append(new_ref)
-            refs[:] = new_refs
-
-        def _update_input_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Update list of `~lsst.daf.butler.DatasetRef` with IDs from
-            dataset_id_map.
-            """
-            new_refs = []
-            for ref in refs:
-                if (new_id := dataset_id_map.get(ref.id)) is not None:
-                    new_ref = DatasetRef(ref.datasetType, ref.dataId, id=new_id, run=run, conform=False)
-                    new_refs.append(new_ref)
-                else:
-                    new_refs.append(ref)
-            refs[:] = new_refs
+                # hack the run to be replaced explicitly
+                object.__setattr__(ref, "run", run)
 
         # Loop through all outputs and update their datasets.
         for node in self._connectedQuanta:
             for refs in node.quantum.outputs.values():
-                _update_output_refs_in_place(refs, run)
+                _update_refs_in_place(refs, run)
 
         for refs in self._initOutputRefs.values():
-            _update_output_refs_in_place(refs, run)
+            _update_refs_in_place(refs, run)
 
-        _update_output_refs_in_place(self._globalInitOutputRefs, run)
+        _update_refs_in_place(self._globalInitOutputRefs, run)
 
         # Update all intermediates from their matching outputs.
         for node in self._connectedQuanta:
             for refs in node.quantum.inputs.values():
-                _update_input_refs_in_place(refs, run)
+                _update_refs_in_place(refs, run)
 
         for refs in self._initInputRefs.values():
-            _update_input_refs_in_place(refs, run)
+            _update_refs_in_place(refs, run)
 
         if update_graph_id:
             self._buildId = BuildId(f"{time.time()}-{os.getpid()}")

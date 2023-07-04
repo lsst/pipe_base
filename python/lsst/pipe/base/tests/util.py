@@ -46,8 +46,8 @@ def check_output_run(graph: QuantumGraph, run: str) -> list[DatasetRef]:
         the specified run.
     """
     # Collect all inputs/outputs, so that we can build intermediate refs.
-    output_refs = []
-    input_refs = []
+    output_refs: list[DatasetRef] = []
+    input_refs: list[DatasetRef] = []
     for node in graph:
         for refs in node.quantum.outputs.values():
             output_refs += refs
@@ -61,10 +61,10 @@ def check_output_run(graph: QuantumGraph, run: str) -> list[DatasetRef]:
         if init_refs:
             input_refs += init_refs
     output_refs += graph.globalInitOutputRefs()
-    refs = [ref for ref in output_refs if ref.run != run]
+    newRefs = [ref for ref in output_refs if ref.run != run]
 
     output_ids = {ref.id for ref in output_refs}
     intermediates = [ref for ref in input_refs if ref.id in output_ids]
-    refs += [ref for ref in intermediates if ref.run != run]
+    newRefs += [ref for ref in intermediates if ref.run != run]
 
-    return refs
+    return newRefs

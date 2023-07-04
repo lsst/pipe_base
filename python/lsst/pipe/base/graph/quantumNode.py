@@ -23,6 +23,7 @@ from __future__ import annotations
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 import uuid
+import warnings
 from dataclasses import dataclass
 from typing import Any, NewType
 
@@ -34,6 +35,7 @@ from lsst.daf.butler import (
     Quantum,
     SerializedQuantum,
 )
+from lsst.utils.introspection import find_outside_stacklevel
 from pydantic import BaseModel
 
 from ..pipeline import TaskDef
@@ -96,6 +98,8 @@ class QuantumNode:
     creation.
     """
 
+    __slots__ = ("quantum", "taskDef", "nodeId", "_precomputedHash")
+
     def __post_init__(self) -> None:
         # use setattr here to preserve the frozenness of the QuantumNode
         self._precomputedHash: int
@@ -135,13 +139,20 @@ class QuantumNode:
         universe: DimensionUniverse,
         recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] | None = None,
     ) -> QuantumNode:
+        if recontitutedDimensions is not None:
+            warnings.warn(
+                "The recontitutedDimensions argument is now ignored and may be removed after v 27",
+                category=FutureWarning,
+                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+            )
         return QuantumNode(
-            quantum=Quantum.from_simple(
-                simple.quantum, universe, reconstitutedDimensions=recontitutedDimensions
-            ),
+            quantum=Quantum.from_simple(simple.quantum, universe),
             taskDef=taskDefMap[simple.taskLabel],
             nodeId=simple.nodeId,
         )
+
+
+_fields_set = {"quantum", "taskLabel", "nodeId"}
 
 
 class SerializedQuantumNode(BaseModel):
@@ -156,5 +167,5 @@ class SerializedQuantumNode(BaseModel):
         setter(node, "quantum", SerializedQuantum.direct(**quantum))
         setter(node, "taskLabel", taskLabel)
         setter(node, "nodeId", uuid.UUID(nodeId))
-        setter(node, "__fields_set__", {"quantum", "taskLabel", "nodeId"})
+        setter(node, "__fields_set__", _fields_set)
         return node

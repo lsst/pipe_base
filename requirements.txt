@@ -1,5 +1,5 @@
 pyyaml >= 5.1
-pydantic
+pydantic < 2
 numpy >= 1.17
 networkx
 frozendict

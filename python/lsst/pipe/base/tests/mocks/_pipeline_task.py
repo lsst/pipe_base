@@ -283,9 +283,7 @@ class MockPipelineTask(PipelineTask):
 
         # store mock outputs
         for name, refs in outputRefs:
-            if not isinstance(refs, list):
-                refs = [refs]
-            for ref in refs:
+            for ref in ensure_iterable(refs):
                 output = MockDataset(
                     ref=ref.to_simple(), quantum=mock_dataset_quantum, output_connection_name=name
                 )

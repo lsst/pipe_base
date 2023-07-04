@@ -192,7 +192,7 @@ class TaskDef:
         """Name of a dataset type for log output from this task, `None` if
         logs are not to be saved (`str`)
         """
-        if cast(PipelineTaskConfig, self.config).saveLogOutput:
+        if self.config.saveLogOutput:
             return acc.LOG_OUTPUT_TEMPLATE.format(label=self.label)
         else:
             return None
@@ -623,7 +623,7 @@ class Pipeline:
         """
         instrument_class_name = self._pipelineIR.instrument
         if instrument_class_name is not None:
-            instrument_class = doImportType(instrument_class_name)
+            instrument_class = cast(PipeBaseInstrument, doImportType(instrument_class_name))
             if instrument_class is not None:
                 return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
         return DataCoordinate.makeEmpty(universe)
@@ -654,8 +654,8 @@ class Pipeline:
             # be defined without label which is not acceptable, use task
             # _DefaultName in that case
             if isinstance(task, str):
-                task_class = doImportType(task)
-            label = task_class._DefaultName
+                task_class = cast(PipelineTask, doImportType(task))
+                label = task_class._DefaultName
         self._pipelineIR.tasks[label] = pipelineIR.TaskIR(label, taskName)
 
     def removeTask(self, label: str) -> None:
