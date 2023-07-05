@@ -37,7 +37,7 @@ from typing import Any, cast
 try:
     import pydantic.v1 as pydantic
 except ModuleNotFoundError:
-    import pydantic
+    import pydantic  # type: ignore
 from lsst.daf.butler import (
     DatasetComponent,
     Formatter,

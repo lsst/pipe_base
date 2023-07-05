@@ -30,7 +30,7 @@ from typing import Any, Protocol
 try:
     from pydantic.v1 import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 except ModuleNotFoundError:
-    from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+    from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr  # type: ignore
 
 
 _DEPRECATION_REASON = "Will be removed after v25."

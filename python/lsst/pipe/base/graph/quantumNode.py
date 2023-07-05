@@ -40,7 +40,7 @@ from lsst.utils.introspection import find_outside_stacklevel
 try:
     from pydantic.v1 import BaseModel
 except ModuleNotFoundError:
-    from pydantic import BaseModel
+    from pydantic import BaseModel  # type: ignore
 
 from ..pipeline import TaskDef
 
