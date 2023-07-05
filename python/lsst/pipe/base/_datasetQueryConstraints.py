@@ -90,7 +90,7 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
 
 
 class _ALLMETA(DatasetQueryConstraintVariant, type(Protocol)):
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Iterator:  # noqa: N804
         raise NotImplementedError("This variant cannot be iterated")
 
 
@@ -100,7 +100,7 @@ class _ALL(metaclass=_ALLMETA):
 
 
 class _OFFMETA(DatasetQueryConstraintVariant, type(Protocol)):
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Iterator:  # noqa: N804
         raise NotImplementedError("This variant cannot be iterated")
 
 
@@ -110,13 +110,13 @@ class _OFF(metaclass=_OFFMETA):
 
 
 class _LISTMETA(type(Protocol)):
-    def __iter__(self):
+    def __iter__(self):  # noqa: N804
         return iter(tuple())
 
-    def __len__(self):
+    def __len__(self):  # noqa: N804
         return 0
 
-    def __eq__(self, o: object) -> bool:
+    def __eq__(self, o: object) -> bool:  # noqa: N804
         if isinstance(o, self):
             return True
         return super().__eq__(o)
