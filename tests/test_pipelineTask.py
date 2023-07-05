@@ -91,7 +91,7 @@ class AddTask(pipeBase.PipelineTask):
 
 
 class AddTask2(pipeBase.PipelineTask):
-    """Example task which overrides adaptArgsAndRun() method."""
+    """Example task which overrides runQuantum() method."""
 
     ConfigClass = AddConfig
     _DefaultName = "add_task"
