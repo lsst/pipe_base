@@ -41,8 +41,6 @@ dynamic = ["version"]
 [project.optional-dependencies]
 test = [
     "pytest >= 3.2",
-    "flake8 >= 3.7.5",
-    "pytest-flake8 >= 1.0.4",
     "pytest-openfiles >= 0.5.0",
 ]
 
@@ -111,8 +109,6 @@ line_length = 110
 write_to = "python/lsst/pipe/base/version.py"
 
 [tool.pytest.ini_options]
-addopts = "--flake8"
-flake8-ignore = ["E203", "W503", "N802", "N803", "N806", "N812", "N815", "N816"]
 # Some unit tests open registry database and don't close it.
 open_files_ignore = ["gen3.sqlite3"]
 
