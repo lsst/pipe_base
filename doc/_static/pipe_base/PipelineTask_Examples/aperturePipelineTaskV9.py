@@ -1,7 +1,7 @@
 import functools
 import math
 import operator
-from typing import List, Mapping, Optional
+from collections.abc import Mapping
 
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -175,10 +175,10 @@ class ApertureTask(pipeBase.PipelineTask):
 
     def run(
         self,
-        exposures: List[afwImage.Exposure],
-        lengths: List[int],
-        areaMasks: List[afwImage.Mask],
-        backgrounds: Optional[List[afwMath.BackgroundList]] = None,
+        exposures: list[afwImage.Exposure],
+        lengths: list[int],
+        areaMasks: list[afwImage.Mask],
+        backgrounds: list[afwMath.BackgroundList] | None = None,
     ) -> pipeBase.Struct:
         # set dimension cutouts to 3 times the apRad times 2 (for diameter)
         dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
