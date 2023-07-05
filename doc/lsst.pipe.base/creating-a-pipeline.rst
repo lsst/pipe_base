@@ -1,3 +1,5 @@
+.. py:currentmodule:: lsst.pipe.base
+
 .. _pipe_base_creating_pipeline:
 
 ###################
@@ -21,7 +23,7 @@ This how-to guide guide will introduce you to the basic syntax of a
 `Pipeline` document, and progressively take you through; configuring tasks,
 verifying configuration, specifying subsets of tasks, creating `Pipeline`\ s
 using composition, a basic introduction to options when running `Pipeline`\
-s, and discussing common conventions when creating `Pipelines`.
+s, and discussing common conventions when creating `Pipeline`\s.
 
 .. _pipeline_creating_intro:
 
@@ -66,7 +68,7 @@ entry. The label used for this entry, ``characterizeImage``, happens to match
 the module of the task it points to. It could have been anything, but the
 name was suitably descriptive, so it was a good choice.
 
-If run, this `Pipeline` would execute `CharacterizeImageTask` processing the
+If run, this `Pipeline` would execute `~lsst.pipe.tasks.characterizeImage.CharacterizeImageTask` processing the
 datasets declared in that task, and write the declared outputs.
 
 Having a pipeline to run a single `PipelineTask` does not seem very useful.
@@ -148,12 +150,12 @@ associated with ``class`` keyword instead of the label directly. The
 the configuration appropriate for this `Pipeline` specified as an additional
 yaml mapping.
 
-The complete complexity of `lsst.pex.config` can't be represented with simple
+The complete complexity of :ref:`lsst.pex.config` can't be represented with simple
 yaml mapping syntax. To account for this, ``config`` blocks in `Pipeline`\ s
 support two special fields: ``file`` and ``python``.
 
 The ``file`` key may be associated with either a single value pointing to a
-filesystem path where a `lsst.pex.config` file can be found, or a yaml list
+filesystem path where a :ref:`lsst.pex.config` file can be found, or a yaml list
 of such paths. The file paths can contain environment variables that will be
 expanded prior to loading the file(s). These files will then be applied to
 the task during configuration time to override any default values.
@@ -236,15 +238,15 @@ invocation time.
 Verifying Configuration: Contracts
 ----------------------------------
 
-The `~lsst.pipe.base.config.Config` classes associated with
+The `~lsst.pex.config.Config` classes associated with
 `~lsst.pipe.base.task.Task`\ s provide a method named ``verify`` which can be
 used to verify that all supplied configuration is valid. These verify methods
 however, are shared by every instance of the config class. This means they
 can not be specialized for the context in which the task is being used.
 
-When writing `Pipelines` it is sometimes important to verify that
+When writing `Pipeline`\s it is sometimes important to verify that
 configuration values are either set in such a way to ensure expected
-behavior, and/or consistently set between one or more tasks.  `Pipelines`
+behavior, and/or consistently set between one or more tasks.  `Pipeline`\s
 support this sort of verification with a concept called ``contracts``.  These
 ``contracts`` are useful for ensuring two separate config fields are set to
 the same value, or ensuring a config parameter is set to a required value in
@@ -301,7 +303,7 @@ always be written without regards to how ``parameters`` are used.
 Subsets
 -------
 
-`Pipelines` are the definition of a processing workflow from some input data
+`Pipeline`\s are the definition of a processing workflow from some input data
 products to some output data products. Frequently, however, there are sub
 units within a `Pipeline` that define a useful unit of the `Pipeline` to run
 on their own. This may be something like processing single frames only.
@@ -347,7 +349,7 @@ Importing
 
 Similar to ``subsets``, which allow defining useful units within a
 `Pipeline`, it's sometimes useful to construct a `Pipeline` out of other
-`Pipelines`. This is known as importing a `Pipeline`.
+`Pipeline`\s. This is known as importing a `Pipeline`.
 
 Importing other pipelines begins with a top level key named ``imports``.
 The value associated with this key is a yaml list. The values of this list
@@ -375,16 +377,16 @@ labels that are not imported (either because they are excluded, or they are
 not part of the include list). If any omitted label appears as part of a
 subset, then the subset definition is not imported.
 
-The order that `Pipelines` are listed in the ``imports`` section is not
+The order that `Pipeline`\s are listed in the ``imports`` section is not
 important. Another thing to note is that declared labels must be unique
-amongst all inherited `Pipelines`.
+amongst all inherited `Pipeline`\s.
 
 Once one or more pipelines is imported, the ``tasks`` section is processed.
 If any new ``labels`` (and thus `PipelineTask`\ s) are declared they simply
 extend the total `Pipeline`.
 
 If a ``label`` declared in the the ``tasks`` section was declared in one of
-the imported ``Pipelines``, one of two things happen. If the label is
+the imported `Pipeline`\s, one of two things happen. If the label is
 associated with the same `PipelineTask` that was declared in the imported
 pipeline, this definition will be extended. This means that any configs
 declared in the imported `Pipeline` will be merged with configs declared in
@@ -406,7 +408,7 @@ obs\_* package overrides for Pipelines
 
 `Pipeline`\ s support automatically loading `~lsst.pipe.base.Task`
 configuration files defined in obs packages.  A top level key named
-`instrument` is associated with a string representing the fully qualified
+``instrument`` is associated with a string representing the fully qualified
 class name of the python camera object.  For instance, for an ``obs_subaru``
 `Pipeline` this would look like:
 
@@ -414,11 +416,11 @@ class name of the python camera object.  For instance, for an ``obs_subaru``
 
   instrument: lsst.obs.subaru.HyperSuprimeCam
 
-The ``instrument`` key is available to all `Pipelines`, but by convention
-obs\_* packages typically will contain `Pipelines` that are customized for
+The ``instrument`` key is available to all `Pipeline`\s, but by convention
+obs\_* packages typically will contain `Pipeline`\s that are customized for
 the instrument they represent, inside a directory named ''pipelines''.  This
 includes relevant configs, `PipelineTask` (re)declarations, instrument label,
-etc.  These pipelines can be found inside a directory named `pipelines` that
+etc.  These pipelines can be found inside a directory named `Pipeline`\s that
 lives at the root of each obs\_ package.
 
 These `Pipeline`\ s enable you to run a `Pipeline` that is configured for the
@@ -430,7 +432,7 @@ desired camera, or can serve as a base for further `Pipeline`\ s to import.
 Command line options for running Pipelines
 ------------------------------------------
 This section is not intended to serve as a tutorial for processing data from
-the command line, for that refer to `lsst.ctrl.mpexec` or `lsst.ctrl.bps`.
+the command line, for that refer to :ref:`lsst.ctrl.mpexec` or :ref:`lsst.ctrl.bps`.
 However, both of these tools accept URI pointers to a `Pipeline`.  These URIs
 can be altered with a specific syntax which will control how the `Pipeline`
 is loaded.
@@ -453,7 +455,7 @@ As an example of an alternative URI, here is one based on s3 storage:
 
 ``s3://some_bucket/pipelines/DRP.yaml``
 
-For any type of URI, `Pipelines` may be specified with additional parameters
+For any type of URI, `Pipeline`\s may be specified with additional parameters
 specified after a # symbol. The most basic parameter is simply a label.
 Loading a `Pipeline` with this label specified will cause only this label to
 be loaded. It will be as if the `Pipeline` only contained that label. This is
@@ -495,7 +497,7 @@ Pipeline conventions
 --------------------
 
 Below is a list of conventions that are commonly used when writing
-`Pipelines`\ s. These are not hard requirements, but their use helps maintain
+`Pipeline`\s. These are not hard requirements, but their use helps maintain
 consistency throughout the software stack.
 
 * The name of a Pipeline file should follow class naming conventions (camel
@@ -507,7 +509,7 @@ consistency throughout the software stack.
   named as above.
 * `Pipeline`\ s should contain a useful description of what the `Pipeline` is
   intended to do.
-* `Pipeline`\ s should be placed in a directory called ``pipelines`` at the top
+* `Pipeline`\ s should be placed in a directory called ``Pipelines`` at the top
   level of a package.
 * Instrument packages should provide `Pipeline`\ s that override standard
   `Pipeline`\ s and are specifically configured for that instrument (if

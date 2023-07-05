@@ -269,7 +269,7 @@ class TaskMetadata(BaseModel):
 
         Returns
         -------
-        names : `collection.abc.Set`
+        names : `collections.abc.Set`
             A set of top-level keys or full metadata item keys, including
             the top-level keys.
 

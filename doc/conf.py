@@ -8,4 +8,4 @@ doxylink = {}
 exclude_patterns = ["changes/*"]
 
 intersphinx_mapping["networkx"] = ("https://networkx.org/documentation/stable/", None)  # noqa: F405
-intersphinx_mapping["lsst"] = ("https://pipelines.lsst.io/v/daily/", None)  # noqa
+intersphinx_mapping["lsst"] = ("https://pipelines.lsst.io/v/daily/", None)  # noqa: F405

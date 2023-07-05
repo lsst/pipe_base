@@ -905,7 +905,7 @@ class TaskDatasetTypes:
             If `True` (default) include config dataset types as
             ``initOutputs``.
         storage_class_mapping : `~collections.abc.Mapping` of `str` to \
-                `StorageClass`, optional
+                `~lsst.daf.butler.StorageClass`, optional
             If a taskdef contains a component dataset type that is unknown
             to the registry, its parent `~lsst.daf.butler.StorageClass` will
             be looked up in this mapping if it is supplied. If the mapping does

@@ -120,8 +120,8 @@ New Features
 API Changes
 -----------
 
-- `GraphBuilder` constructor boolean argument `skipExisting` is replaced with
-  `skipExistingIn` which accepts collections to check for existing quantum
+- ``GraphBuilder`` constructor boolean argument ``skipExisting`` is replaced with
+  ``skipExistingIn`` which accepts collections to check for existing quantum
   outputs. (`DM-27492 <https://jira.lsstcorp.org/browse/DM-27492>`_)
 
 

@@ -106,10 +106,10 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     configure the connections class. This config is added to the config class
     under declaration with the name "connections" used as an identifier. The
     connections config also has a reference to the connections class used in
-    its construction associated with an atttribute named `ConnectionsClass`.
+    its construction associated with an atttribute named ``ConnectionsClass``.
     Finally the newly constructed config class (not an instance of it) is
     assigned to the Config class under construction with the attribute name
-    `ConnectionsConfigClass`.
+    ``ConnectionsConfigClass``.
     """
 
     def __new__(
@@ -192,7 +192,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     a config class is created with information from the supplied connections
     class to allow configuration of the connections class. This dynamically
     created config class is then attached to the `PipelineTaskConfig` via a
-    `~lsst.pex.config.ConfigField` with the attribute name `connections`.
+    `~lsst.pex.config.ConfigField` with the attribute name ``connections``.
     """
 
     connections: pexConfig.ConfigField
@@ -220,7 +220,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         parameters: ParametersIR,
         label: str,
     ) -> None:
-        r"""Apply config overrides to this config instance.
+        """Apply config overrides to this config instance.
 
         Parameters
         ----------
@@ -230,12 +230,13 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
         taskDefaultName : `str`
             The default name associated with the `Task` class. This
             may be used with instrumental overrides.
-        pipelineConfigs : `~collections.abc.Iterable` of `ConfigIR`
-            An iterable of `ConfigIR` objects that contain overrides
-            to apply to this config instance.
+        pipelineConfigs : `~collections.abc.Iterable` \
+                of `~.pipelineIR.ConfigIR`
+            An iterable of `~.pipelineIR.ConfigIR` objects that contain
+            overrides to apply to this config instance.
         parameters : `~.pipelineIR.ParametersIR`
             Parameters defined in a Pipeline which are used in formatting
-            of config values across multiple `Task`\ s in a pipeline.
+            of config values across multiple `Task` in a pipeline.
         label : `str`
             The label associated with this class's Task in a pipeline.
         """
