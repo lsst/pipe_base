@@ -172,3 +172,7 @@ max-doc-length = 79
 
 [tool.ruff.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.per-file-ignores]
+# Do not need to add class docs to the example classes.
+"doc/_static/pipe_base/PipelineTask_Examples/*.py" = ["D101"]

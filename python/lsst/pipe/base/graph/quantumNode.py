@@ -160,6 +160,8 @@ _fields_set = {"quantum", "taskLabel", "nodeId"}
 
 
 class SerializedQuantumNode(BaseModel):
+    """Model representing a `QuantumNonde` in serializable form."""
+
     quantum: SerializedQuantum
     taskLabel: str
     nodeId: uuid.UUID

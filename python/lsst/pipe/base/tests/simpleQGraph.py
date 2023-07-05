@@ -59,6 +59,8 @@ _LOG = logging.getLogger(__name__)
 
 
 class SimpleInstrument(Instrument):
+    """Simple instrument class suitable for testing."""
+
     def __init__(self, *args: Any, **kwargs: Any):
         pass
 

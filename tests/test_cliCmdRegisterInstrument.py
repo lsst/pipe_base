@@ -29,6 +29,8 @@ from lsst.pipe.base.cli.cmd import register_instrument
 
 
 class RegisterInstrumentTest(CliCmdTestBase, unittest.TestCase):
+    """Test instrument registration command."""
+
     mockFuncName = "lsst.pipe.base.cli.cmd.commands.script.register_instrument"
 
     @staticmethod

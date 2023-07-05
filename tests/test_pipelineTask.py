@@ -56,6 +56,8 @@ class ButlerMock:
 
 
 class AddConnections(pipeBase.PipelineTaskConnections, dimensions=["instrument", "visit"]):
+    """Connections for the AddTask."""
+
     input = pipeBase.connectionTypes.Input(
         name="add_input",
         dimensions=["instrument", "visit", "detector", "physical_filter", "band"],
@@ -71,11 +73,14 @@ class AddConnections(pipeBase.PipelineTaskConnections, dimensions=["instrument",
 
 
 class AddConfig(pipeBase.PipelineTaskConfig, pipelineConnections=AddConnections):
+    """Config for the AddTask."""
+
     addend = pexConfig.Field[int](doc="amount to add", default=3)
 
 
-# example task which overrides run() method
 class AddTask(pipeBase.PipelineTask):
+    """Example task which overrides run() method."""
+
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
@@ -85,8 +90,9 @@ class AddTask(pipeBase.PipelineTask):
         return pipeBase.Struct(output=output)
 
 
-# example task which overrides adaptArgsAndRun() method
 class AddTask2(pipeBase.PipelineTask):
+    """Example task which overrides adaptArgsAndRun() method."""
+
     ConfigClass = AddConfig
     _DefaultName = "add_task"
 
@@ -362,10 +368,11 @@ class PipelineTaskTestCase(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

@@ -97,10 +97,11 @@ class StructTestCase(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

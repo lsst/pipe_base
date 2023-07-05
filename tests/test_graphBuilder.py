@@ -36,6 +36,8 @@ _LOG = logging.getLogger(__name__)
 
 
 class GraphBuilderTestCase(unittest.TestCase):
+    """Test graph building."""
+
     def _assertGraph(self, graph: QuantumGraph) -> None:
         """Check basic structure of the graph."""
         for taskDef in graph.iterTaskGraph():

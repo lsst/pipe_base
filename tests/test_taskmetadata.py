@@ -31,6 +31,8 @@ from lsst.pipe.base import TaskMetadata
 
 
 class TaskMetadataTestCase(unittest.TestCase):
+    """Test task metadata."""
+
     def testTaskMetadata(self):
         """Full test of TaskMetadata API."""
         meta = TaskMetadata()
