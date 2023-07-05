@@ -83,7 +83,7 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
             return cls.OFF
         else:
             if " " in expression:
-                warnings.warn("Witespace found in expression will be trimmed", RuntimeWarning)
+                warnings.warn("Whitespace found in expression will be trimmed", RuntimeWarning)
                 expression = expression.replace(" ", "")
             members = expression.split(",")
             return cls.LIST(members)
@@ -91,7 +91,7 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
 
 class _ALLMETA(DatasetQueryConstraintVariant, type(Protocol)):
     def __iter__(self) -> Iterator:
-        raise NotImplementedError("This variant cannot be iteratted")
+        raise NotImplementedError("This variant cannot be iterated")
 
 
 class _ALL(metaclass=_ALLMETA):
@@ -101,7 +101,7 @@ class _ALL(metaclass=_ALLMETA):
 
 class _OFFMETA(DatasetQueryConstraintVariant, type(Protocol)):
     def __iter__(self) -> Iterator:
-        raise NotImplementedError("This variant cannot be iteratted")
+        raise NotImplementedError("This variant cannot be iterated")
 
 
 class _OFF(metaclass=_OFFMETA):
