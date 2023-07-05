@@ -461,8 +461,8 @@ class _QuantumScaffolding:
             taskClass=self.task.taskDef.taskClass,
             dataId=self.dataId,
             initInputs=initInputs,
-            inputs=helper.inputs,  # type: ignore
-            outputs=helper.outputs,  # type: ignore
+            inputs=helper.inputs,
+            outputs=helper.outputs,
             datastore_records=quantum_records,
         )
 

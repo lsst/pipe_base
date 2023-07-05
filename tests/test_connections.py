@@ -23,10 +23,12 @@
 """
 
 import unittest
+import warnings
 
 import lsst.pipe.base as pipeBase
 import lsst.utils.tests
 import pytest
+from lsst.pex.config import Field
 
 
 class TestConnectionsClass(unittest.TestCase):
@@ -181,6 +183,44 @@ class TestConnectionsClass(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             pipeBase.connectionTypes.Output(Doc="mock doc", dimensions=1, name="output", storageClass="mock")
+
+    def test_deprecation(self) -> None:
+        """Test support for deprecating connections."""
+
+        class TestConnections(
+            pipeBase.PipelineTaskConnections,
+            dimensions=self.test_dims,
+            defaultTemplates={"t1": "dataset_type_1"},
+            deprecatedTemplates={"t1": "Deprecated in v600, will be removed after v601."},
+        ):
+            input1 = pipeBase.connectionTypes.Input(
+                doc="Docs for input1",
+                name="input1_{t1}",
+                storageClass="StructuredDataDict",
+                deprecated="Deprecated in v50000, will be removed after v50001.",
+            )
+
+            def __init__(self, config):
+                if config.drop_input1:
+                    del self.input1
+
+        class TestConfig(pipeBase.PipelineTaskConfig, pipelineConnections=TestConnections):
+            drop_input1 = Field("Remove the 'input1' connection if True", dtype=bool, default=False)
+
+        config = TestConfig()
+        with self.assertWarns(FutureWarning):
+            config.connections.input1 = "dataset_type_2"
+        with self.assertWarns(FutureWarning):
+            config.connections.t1 = "dataset_type_3"
+
+        with self.assertWarns(FutureWarning):
+            TestConnections(config=config)
+
+        config.drop_input1 = True
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            TestConnections(config=config)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

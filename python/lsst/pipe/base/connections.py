@@ -38,6 +38,7 @@ __all__ = [
 import dataclasses
 import itertools
 import string
+import warnings
 from collections import UserDict
 from collections.abc import Collection, Generator, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
+from lsst.utils.introspection import find_outside_stacklevel
 
 from ._status import NoWorkFound
 from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInput
@@ -222,14 +224,20 @@ class PipelineTaskConnectionsMetaclass(type):
             # look up any template from base classes and merge them all
             # together
             mergeDict = {}
+            mergeDeprecationsDict = {}
             for base in bases[::-1]:
                 if hasattr(base, "defaultTemplates"):
                     mergeDict.update(base.defaultTemplates)
+                if hasattr(base, "deprecatedTemplates"):
+                    mergeDeprecationsDict.update(base.deprecatedTemplates)
             if "defaultTemplates" in kwargs:
                 mergeDict.update(kwargs["defaultTemplates"])
-
+            if "deprecatedTemplates" in kwargs:
+                mergeDeprecationsDict.update(kwargs["deprecatedTemplates"])
             if len(mergeDict) > 0:
                 kwargs["defaultTemplates"] = mergeDict
+            if len(mergeDeprecationsDict) > 0:
+                kwargs["deprecatedTemplates"] = mergeDeprecationsDict
 
             # Verify that if templated strings were used, defaults were
             # supplied as an argument in the declaration of the connection
@@ -256,6 +264,7 @@ class PipelineTaskConnectionsMetaclass(type):
                         f" (conflicts are {nameTemplateIntersection})."
                     )
             dct["defaultTemplates"] = kwargs.get("defaultTemplates", {})
+            dct["deprecatedTemplates"] = kwargs.get("deprecatedTemplates", {})
 
         # Convert all the connection containers into frozensets so they cannot
         # be modified at the class scope
@@ -317,7 +326,15 @@ class PipelineTaskConnectionsMetaclass(type):
         instance.allConnections = MappingProxyType(instance._allConnections)
         for internal_name, connection in cls.allConnections.items():
             dataset_type_name = getattr(config.connections, internal_name).format(**templateValues)
-            instance_connection = dataclasses.replace(connection, name=dataset_type_name)
+            instance_connection = dataclasses.replace(
+                connection,
+                name=dataset_type_name,
+                doc=(
+                    connection.doc
+                    if connection.deprecated is None
+                    else f"{connection.doc}\n{connection.deprecated}"
+                ),
+            )
             instance._allConnections[internal_name] = instance_connection
 
         # Finally call __init__.  The base class implementation does nothing;
@@ -351,6 +368,12 @@ class PipelineTaskConnectionsMetaclass(type):
         # that.
         instance._allConnections.clear()
         instance._allConnections.update(updated_all_connections)
+
+        for obj in instance._allConnections.values():
+            if obj.deprecated is not None:
+                warnings.warn(
+                    obj.deprecated, FutureWarning, stacklevel=find_outside_stacklevel("lsst.pipe.base")
+                )
 
         # Freeze the connection instance dimensions now.  This at odds with the
         # type annotation, which says [mutable] `set`, just like the connection
