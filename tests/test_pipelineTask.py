@@ -144,7 +144,6 @@ class PipelineTaskTestCase(unittest.TestCase):
 
     def _testRunQuantum(self, full_butler: bool) -> None:
         """Test for AddTask.runQuantum() implementation."""
-
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
         connections = task.config.connections.ConnectionsClass(config=task.config)
@@ -267,7 +266,6 @@ class PipelineTaskTestCase(unittest.TestCase):
         """Test for QuantumContext. Full and limited share get
         implementation so only full is tested.
         """
-
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
         connections = task.config.connections.ConnectionsClass(config=task.config)

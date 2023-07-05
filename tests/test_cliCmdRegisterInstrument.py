@@ -47,7 +47,7 @@ class RegisterInstrumentTest(CliCmdTestBase, unittest.TestCase):
         )
 
     def test_missing(self):
-        """test a missing argument"""
+        """Test a missing argument"""
         self.run_missing(["register-instrument"], "Missing argument ['\"]REPO['\"]")
         self.run_missing(["register-instrument", "here"], "Missing argument ['\"]INSTRUMENT ...['\"]")
 

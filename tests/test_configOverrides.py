@@ -29,7 +29,7 @@ import lsst.utils.tests
 from lsst.pipe.base.configOverrides import ConfigOverrides
 
 # This is used in testSettingVar unit test
-TEST_CHOICE_VALUE = 1  # noqa: F841
+TEST_CHOICE_VALUE = 1
 
 
 class ConfigTest(pexConfig.Config):

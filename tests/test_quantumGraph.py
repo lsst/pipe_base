@@ -538,7 +538,6 @@ class QuantumGraphTestCase(unittest.TestCase):
 
     def testUpdateRun(self) -> None:
         """Test for QuantumGraph.updateRun method."""
-
         self.assertEqual(check_output_run(self.qGraph, self.output_run), [])
         graph_id = self.qGraph.graphID
 
