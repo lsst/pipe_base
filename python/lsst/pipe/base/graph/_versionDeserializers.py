@@ -39,7 +39,6 @@ from lsst.daf.butler import (
     DatasetRef,
     DatasetType,
     DimensionConfig,
-    DimensionRecord,
     DimensionUniverse,
     Quantum,
     SerializedDimensionRecord,
@@ -534,7 +533,6 @@ class DeserializerV3(DeserializerBase):
         container = {}
         datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
         taskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
-        recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] = {}
         initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
         initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
 
@@ -610,7 +608,7 @@ class DeserializerV3(DeserializerBase):
             # reconstitute the node, passing in the dictionaries for the
             # loaded TaskDefs and dimension records. These are used to ensure
             # that each unique record is only loaded once
-            qnode = QuantumNode.from_simple(nodeDeserialized, loadedTaskDef, universe, recontitutedDimensions)
+            qnode = QuantumNode.from_simple(nodeDeserialized, loadedTaskDef, universe)
             container[qnode.nodeId] = qnode
             taskToQuantumNode[loadedTaskDef[nodeTaskLabel]].add(qnode)
 
