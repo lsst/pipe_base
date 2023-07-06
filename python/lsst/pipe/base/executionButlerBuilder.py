@@ -168,7 +168,7 @@ def _accumulate(
                     if ref.isComponent():
                         ref = ref.makeCompositeRef()
                     check_refs.add(ref)
-    exist_map = butler.datastore.knows_these(check_refs)
+    exist_map = butler._exists_many(check_refs, full_check=False)
     existing_ids = set(ref.id for ref, exists in exist_map.items() if exists)
     del exist_map
 
@@ -240,7 +240,7 @@ def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetT
     # export/import
     BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
     backend = BackendClass(yamlBuffer, universe=butler.dimensions)
-    exporter = RepoExportContext(butler.registry, butler.datastore, backend, directory=None, transfer=None)
+    exporter = RepoExportContext(butler.registry, butler._datastore, backend, directory=None, transfer=None)
 
     # Need to ensure that the dimension records for outputs are
     # transferred.
