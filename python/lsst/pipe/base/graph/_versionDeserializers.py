@@ -69,7 +69,7 @@ class StructSizeDescriptor:
 class DeserializerBase(ABC):
     @classmethod
     @abstractmethod
-    def FMT_STRING(cls) -> str:  # noqa: N805 # flake8 wants self
+    def FMT_STRING(cls) -> str:
         raise NotImplementedError("Base class does not implement this method")
 
     structSize: ClassVar[StructSizeDescriptor]

@@ -34,6 +34,8 @@ from lsst.utils.introspection import get_full_type_name
 
 
 class DummyInstrument(Instrument):
+    """Test instrument."""
+
     @classmethod
     def getName(cls):
         return "DummyInstrument"
@@ -93,6 +95,8 @@ class UnimportableInstrument(DummyInstrument):
 
 
 class DimensionPackerTestConfig(Config):
+    """Configuration for the dimension packer."""
+
     packer = Instrument.make_dimension_packer_config_field()
 
 

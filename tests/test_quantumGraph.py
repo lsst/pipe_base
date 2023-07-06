@@ -48,20 +48,28 @@ METADATA = {"a": [1, 2, 3]}
 
 
 class Dummy1Connections(PipelineTaskConnections, dimensions=("A", "B")):
+    """Dummy connections class #1."""
+
     initOutput = cT.InitOutput(name="Dummy1InitOutput", storageClass="ExposureF", doc="n/a")
     input = cT.Input(name="Dummy1Input", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
     output = cT.Output(name="Dummy1Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy1Config(PipelineTaskConfig, pipelineConnections=Dummy1Connections):
+    """Dummy config #1."""
+
     conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy1PipelineTask(PipelineTask):
+    """Dummy pipeline task #1."""
+
     ConfigClass = Dummy1Config
 
 
 class Dummy2Connections(PipelineTaskConnections, dimensions=("A", "B")):
+    """Dummy connections class #2."""
+
     initInput = cT.InitInput(name="Dummy1InitOutput", storageClass="ExposureF", doc="n/a")
     initOutput = cT.InitOutput(name="Dummy2InitOutput", storageClass="ExposureF", doc="n/a")
     input = cT.Input(name="Dummy1Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
@@ -69,14 +77,20 @@ class Dummy2Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy2Config(PipelineTaskConfig, pipelineConnections=Dummy2Connections):
+    """Dummy config #2."""
+
     conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy2PipelineTask(PipelineTask):
+    """Dummy pipeline task #3."""
+
     ConfigClass = Dummy2Config
 
 
 class Dummy3Connections(PipelineTaskConnections, dimensions=("A", "B")):
+    """Dummy connections class #3."""
+
     initInput = cT.InitInput(name="Dummy2InitOutput", storageClass="ExposureF", doc="n/a")
     initOutput = cT.InitOutput(name="Dummy3InitOutput", storageClass="ExposureF", doc="n/a")
     input = cT.Input(name="Dummy2Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
@@ -84,25 +98,35 @@ class Dummy3Connections(PipelineTaskConnections, dimensions=("A", "B")):
 
 
 class Dummy3Config(PipelineTaskConfig, pipelineConnections=Dummy3Connections):
+    """Dummy config #3."""
+
     conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy3PipelineTask(PipelineTask):
+    """Dummy pipeline task #3."""
+
     ConfigClass = Dummy3Config
 
 
 # Test if a Task that does not interact with the other Tasks works fine in
 # the graph.
 class Dummy4Connections(PipelineTaskConnections, dimensions=("A", "B")):
+    """Dummy connections class #4."""
+
     input = cT.Input(name="Dummy4Input", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
     output = cT.Output(name="Dummy4Output", storageClass="ExposureF", doc="n/a", dimensions=("A", "B"))
 
 
 class Dummy4Config(PipelineTaskConfig, pipelineConnections=Dummy4Connections):
+    """Dummy config #4."""
+
     conf1 = Field[int](default=1, doc="dummy config")
 
 
 class Dummy4PipelineTask(PipelineTask):
+    """Dummy pipeline task #4."""
+
     ConfigClass = Dummy4Config
 
 
@@ -538,7 +562,6 @@ class QuantumGraphTestCase(unittest.TestCase):
 
     def testUpdateRun(self) -> None:
         """Test for QuantumGraph.updateRun method."""
-
         self.assertEqual(check_output_run(self.qGraph, self.output_run), [])
         graph_id = self.qGraph.graphID
 
@@ -561,10 +584,11 @@ class QuantumGraphTestCase(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module) -> None:
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

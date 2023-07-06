@@ -1,7 +1,7 @@
 import functools
 import math
 import operator
-from typing import List, Mapping, Optional
+from collections.abc import Mapping
 
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -146,10 +146,10 @@ class ApertureTask(pipeBase.PipelineTask):
 
     def run(
         self,
-        exposures: List[afwImage.Exposure],
-        inputCatalogs: List[afwTable.SourceCatalog],
-        areaMasks: List[afwImage.Mask],
-        backgrounds: Optional[List[afwMath.BackgroundList]] = None,
+        exposures: list[afwImage.Exposure],
+        inputCatalogs: list[afwTable.SourceCatalog],
+        areaMasks: list[afwImage.Mask],
+        backgrounds: list[afwMath.BackgroundList] | None = None,
     ) -> pipeBase.Struct:
         # Track the length of each catalog as to know which exposure to use
         # in later processing

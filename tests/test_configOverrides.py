@@ -29,10 +29,12 @@ import lsst.utils.tests
 from lsst.pipe.base.configOverrides import ConfigOverrides
 
 # This is used in testSettingVar unit test
-TEST_CHOICE_VALUE = 1  # noqa: F841
+TEST_CHOICE_VALUE = 1
 
 
 class ConfigTest(pexConfig.Config):
+    """Configuration used for testing."""
+
     fStr = pexConfig.Field(dtype=str, default="default", doc="test")
     fBool = pexConfig.Field(dtype=bool, default=False, doc="test")
     fInt = pexConfig.Field(dtype=int, default=-1, doc="test")
@@ -52,7 +54,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
     """A test case for Task"""
 
     def checkSingleFieldOverride(self, field, value, result=None):
-        """Convenience method for override of single field
+        """Apply overrides of a single field.
 
         Parameters
         ----------
@@ -266,10 +268,11 @@ class ConfigOverridesTestCase(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Check for memory leaks."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

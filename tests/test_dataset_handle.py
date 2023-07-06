@@ -76,6 +76,8 @@ class NotCopyable(MetricsExample):
 
 
 class TestDatasetHandle(unittest.TestCase):
+    """Test in-memory dataset handle."""
+
     @classmethod
     def setUpClass(cls):
         config = StorageClassConfig.fromYaml(storageClasses)

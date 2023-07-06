@@ -1,5 +1,5 @@
 import math
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -109,7 +109,7 @@ class ApertureTask(pipeBase.PipelineTask):
         exposure: afwImage.Exposure,
         inputCatalog: afwTable.SourceCatalog,
         areaMask: afwImage.Mask,
-        background: Optional[afwMath.BackgroundList] = None,
+        background: afwMath.BackgroundList | None = None,
     ) -> pipeBase.Struct:
         # If a background is supplied, add it back to the image so local
         # background subtraction can be done.

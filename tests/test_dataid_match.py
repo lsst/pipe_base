@@ -36,7 +36,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_strings(self):
         """Tests for string comparisons method"""
-
         tests = (
             ("instrument = 'INSTR'", [True, True, False, False]),
             ("instrument = 'LSST'", [False, False, True, True]),
@@ -50,7 +49,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_comparisons(self):
         """Test all supported comparison operators"""
-
         tests = (
             ("detector = 1", [True, False, False, False]),
             ("detector != 1", [False, True, True, True]),
@@ -66,7 +64,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_arith(self):
         """Test all supported arithmetical operators"""
-
         tests = (
             ("detector + number = 5", [True, True, True, True]),
             ("detector - number = 1", [False, False, True, False]),
@@ -83,7 +80,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_logical(self):
         """Test all supported logical operators"""
-
         tests = (
             ("detector = 1 OR instrument = 'LSST'", [True, False, True, True]),
             ("detector = 1 AND instrument = 'INSTR'", [True, False, False, False]),
@@ -96,7 +92,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_parens(self):
         """Test parentheses"""
-
         tests = (("(detector = 1 OR number = 1) AND instrument = 'LSST'", [False, False, False, True]),)
 
         for expr, result in tests:
@@ -105,7 +100,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_in(self):
         """Test IN expression"""
-
         tests = (
             ("detector in (1, 3, 2)", [True, True, True, False]),
             ("detector not in (1, 3, 2)", [False, False, False, True]),
@@ -119,7 +113,6 @@ class DataIdMatchTestCase(unittest.TestCase):
 
     def test_errors(self):
         """Test for errors in expressions"""
-
         dataId = {"instrument": "INSTR", "detector": 1}
 
         # Unknown identifier

@@ -88,7 +88,8 @@ class MockDataset(pydantic.BaseModel):
     ref: SerializedDatasetRef
     """Reference used to read and write this dataset.
 
-    This is a `SerializedDatasetRef` instead of a "real" one for two reasons:
+    This is a `~lsst.daf.butler.SerializedDatasetRef` instead of a "real" one
+    for two reasons:
 
     - the mock dataset may need to be read from disk in a context in which a
       `~lsst.daf.butler.DimensionUniverse` is unavailable;
@@ -136,7 +137,7 @@ class MockDataset(pydantic.BaseModel):
         operation to this one.
 
         Keyword arguments are fields of `MockDataset` or
-        `SerializedDatasetType` to override in the result.
+        `~lsst.daf.butler.SerializedDatasetType` to override in the result.
         """
         dataset_type_updates = {
             k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.__fields__
@@ -260,7 +261,7 @@ class MockStorageClass(StorageClass):
         ----------
         original : `str`
             Name of the original storage class to be mocked.
-        factory : `StorageClassFactory`, optional
+        factory : `~lsst.daf.butler.StorageClassFactory`, optional
             Storage class factory singleton instance.
 
         Returns

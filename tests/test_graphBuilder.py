@@ -36,6 +36,8 @@ _LOG = logging.getLogger(__name__)
 
 
 class GraphBuilderTestCase(unittest.TestCase):
+    """Test graph building."""
+
     def _assertGraph(self, graph: QuantumGraph) -> None:
         """Check basic structure of the graph."""
         for taskDef in graph.iterTaskGraph():
@@ -51,7 +53,8 @@ class GraphBuilderTestCase(unittest.TestCase):
 
     def testDefault(self):
         """Simple test to verify makeSimpleQGraph can be used to make a Quantum
-        Graph."""
+        Graph.
+        """
         with temporaryDirectory() as root:
             # makeSimpleQGraph calls GraphBuilder.
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
@@ -75,7 +78,8 @@ class GraphBuilderTestCase(unittest.TestCase):
 
     def testAddInstrumentMismatch(self):
         """Verify that a RuntimeError is raised if the instrument in the user
-        query does not match the instrument in the pipeline."""
+        query does not match the instrument in the pipeline.
+        """
         with temporaryDirectory() as root:
             pipeline = simpleQGraph.makeSimplePipeline(
                 nQuanta=5, instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"

@@ -194,8 +194,14 @@ class LabeledSubset:
 
 
 @dataclass
-class ParametersIR:  # noqa: D405,D406,D407,D214 ("parameters" in code block)
+class ParametersIR:
     """Intermediate representation of parameters that are global to a pipeline.
+
+    Parameters
+    ----------
+    mapping : `dict` [`str`, `str`]
+        A mutable mapping of identifiers as keys, and shared configuration
+        as values.
 
     Notes
     -----
@@ -208,7 +214,7 @@ class ParametersIR:  # noqa: D405,D406,D407,D214 ("parameters" in code block)
     --------
     .. code-block:: yaml
 
-        parameters:
+        \u200bparameters:
             shared_value: 14
             tasks:
                 taskA:

@@ -385,12 +385,12 @@ class PipelineTaskConnectionsMetaclass(type):
 
 
 class QuantizedConnection(SimpleNamespace):
-    """A Namespace to map defined variable names of connections to the
+    r"""A Namespace to map defined variable names of connections to the
     associated `lsst.daf.butler.DatasetRef` objects.
 
     This class maps the names used to define a connection on a
     `PipelineTaskConnections` class to the corresponding
-    `lsst.daf.butler.DatasetRef`s provided by a `lsst.daf.butler.Quantum`
+    `~lsst.daf.butler.DatasetRef`\s provided by a `~lsst.daf.butler.Quantum`
     instance.  This will be a quantum of execution based on the graph created
     by examining all the connections defined on the
     `PipelineTaskConnections` class.

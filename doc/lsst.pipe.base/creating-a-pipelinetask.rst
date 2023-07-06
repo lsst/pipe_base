@@ -1,3 +1,5 @@
+.. py:currentmodule:: lsst.pipe.base
+
 .. _pipe-base-creating-a-pipelinetask:
 
 #######################
@@ -28,7 +30,7 @@ Config class.
     class ApertureTaskConfig(pexConfig.Config):
         apRad = pexConfig.Field(doc="Radius of aperture", dtype=int, default=4)
 
-Next, create a |Task| calss that performs the measurements:
+Next, create a |Task| class that performs the measurements:
 
 .. code-block:: python
 
@@ -132,9 +134,9 @@ not tied to the exact band passes of an individual telescope filter).
 
 Next, take a look at the fields defined on your new connection class. These
 are defined in a similar way as defining a configuration class, but instead
-of using `~lsst.pex.config.Field` types from `lsst.pex.config`,
+of using `~lsst.pex.config.Field` types from :ref:`lsst.pex.config`,
 connection classes make use of connection types defined in
-`lsst.pipe.base.connectionTypes`. These connections define the inputs and outputs that
+:py:mod:`lsst.pipe.base.connectionTypes`. These connections define the inputs and outputs that
 a |PipelineTask| will expect to make use of. Each of these connections documents
 what the connection is, what dimensions represent this data product (in this
 case they are the same as the task itself, in the
@@ -143,7 +145,7 @@ they are different), what kind of storage class represents this data type on
 disk, and the name of the data type itself. In this connections class you have
 defined two inputs and an output. The inputs the Task will make use of are
 ``calexp`` calibrated exposures and ``src`` catalogs, both of which are produced
-by the `CalibratePipelineTask` during single frame processing. Our Task will
+by the `~lsst.pipe.tasks.calibrate.CalibrateTask` during single frame processing. Our Task will
 produce a new SourceCatalog of aperture measurements and save it out with a
 dataset type we have named ``customAperture``.
 
@@ -490,7 +492,7 @@ consequence of changing a dataset type name, is that any downstream code
 that is to use the output dataset must have its default name changed to
 match. As an aside, ``pipetask`` requires that the first time a
 dataset name is used the activator command is run with the
-`--register-dataset-types` switch. This is to prevent accidental typos
+``--register-dataset-types`` switch. This is to prevent accidental typos
 becoming new dataset types.
 
 Looking at the config file, there are two different `~lsst.pex.config.Field`\
@@ -541,7 +543,7 @@ With these changes, have a look at how your configuration override file changes.
 
 The ``connections`` sub-config now contains a `~lsst.pex.config.Field` called
 ``outputName``, the same as your template identifier. Each template identifier
-will have a corresponding field on the `connections` sub-config. Setting the
+will have a corresponding field on the ``connections`` sub-config. Setting the
 value on these configs has the effect of setting the templates wherever
 they are used.
 
@@ -649,7 +651,7 @@ follows.
         )
         ...
 
-The dimensions of your `ApertureTaskConnections` class are now ``visit`` and
+The dimensions of your ``ApertureTaskConnections`` class are now ``visit`` and
 ``band``. However, all of your input datasets are themselves still defined
 over each of these dimensions, and also ``detector``. That is to say you get
 one ``calexp`` for ever unique combination of ``exposure``\ 's dimensions.
@@ -666,8 +668,8 @@ there may only be one dataset that matches this combination of dimensions
 (i.e. only one raw was ingested for a visit) but the ``multiple`` flag will
 still ensure that the system passes this one dataset along inside contained
 inside a list. This ensures a uniform api to program against. Make note that
-the connection variable names change to add an `s` on connections marked with
-`multi` to reflect that they will potentially contain multiple values.
+the connection variable names change to add an ``s`` on connections marked with
+``multi`` to reflect that they will potentially contain multiple values.
 
 With this in mind, go ahead and make the changes needed accommodate multiple
 datasets in each inputs to the run method. Because this task is inherently
@@ -809,7 +811,7 @@ this in place.
         )
         ...
 
-Take a look at how the `run` method changes to make use of this.
+Take a look at how the ``run`` method changes to make use of this.
 
 
 .. code-block:: python
@@ -843,11 +845,11 @@ Take a look at how the `run` method changes to make use of this.
 
             return pipeBase.Struct(outputCatalog=self.outputCatalog)
 
-In this modified `run` method the only code addition is the use of the `get`
-method on input arguments. When a connection is marked with `deferLoad`, the
+In this modified ``run`` method the only code addition is the use of the ``get``
+method on input arguments. When a connection is marked with ``deferLoad``, the
 middleware will supply an `~lsst.daf.butler.DeferredDatasetHandle`. This handle
-has a `get` method which loads and returns the object specified by the
-handle. The ``get``` method also optionally supports a `parameters` argument
+has a ``get`` method which loads and returns the object specified by the
+handle. The ``get``` method also optionally supports a ``parameters`` argument
 that can be used in the same manor as a normal `~lsst.daf.butler.Butler`
 ``get`` call. This allows things like fetching only part of an image, loading
 only the wcs from an exposure, etc. See `~lsst.daf.butler.Butler`
@@ -866,7 +868,7 @@ This method is also called just before each quantum is executed, since predecess
 
 For the vast majority of `PipelineTask` subclasses, the default implementation provided by the base class should be adequate, and even classes that wish to override it should always delegate to `super`, as the base class implementation performs the checks implied by the ``multiple`` and ``minumum`` arguments to connection fields.
 Overriding `~PipelineTaskConnections.adjustQuantum` is most useful for tasks that have more than one connection with ``multiple=True``, and the data IDs of these connections are closely related, such as when the presence of one input dataset implies the production of a corresponding output dataset.
-That's exactly what should happens with `ApertureTask` now; it should produce an ``outputCatalog`` dataset for a data ID only when all input datasets for that data ID are present:
+That's exactly what should happens with ``ApertureTask`` now; it should produce an ``outputCatalog`` dataset for a data ID only when all input datasets for that data ID are present:
 
 .. code-block:: python
 
@@ -935,7 +937,7 @@ calling the ``run`` method, and writing outputs using the supplied data ids.
 After an introduction to the default implementation of ``runQuantum``, this
 guide will talk about variations that will all accomplish the same thing, but
 in different ways. This will hopefully give some introduction to what is
-possible with `runQuantum` and some ideas as to why you many need to override
+possible with `~PipelineTask.runQuantum` and some ideas as to why you many need to override
 it. Take a look at how ``runQuantum`` is defined in ``PipelineTask``.
 
 .. code-block:: python
@@ -943,7 +945,7 @@ it. Take a look at how ``runQuantum`` is defined in ``PipelineTask``.
     class PipelineTask(Task):
         ...
 
-        def runQuantum(self, butlerQC: ButlerQuantumContext,
+        def runQuantum(self, butlerQC: QuantumContext,
                        inputRefs: InputQuantizedConnection,
                        outputRefs: OutputQuantizedConnection):
             inputs = butlerQC.get(inputRefs)
@@ -959,7 +961,7 @@ possible.
 The first argument is named ``butlerQC`` which may cause you to
 wonder how it relates to a butler. If you are paying attention, you
 might know from the type annotation that the QC stands for QuantumContext,
-but that does not really give many clues does it? A `ButlerQuantumContext`
+but that does not really give many clues does it? A `QuantumContext`
 object is simply a `~lsst.daf.butler.Butler` that has special information
 about the unit of data your task will be processing, i.e. the quantum, as well
 as extra functionality attached to it.
@@ -968,7 +970,7 @@ as extra functionality attached to it.
 datasets managed by the butler. See the description of the
 `InputQuantizedConnection` type in the section
 :ref:`PipelineTask-processing-altering-what-is-processed` for more
-information on `QuantizedConnection`\ s, noting that
+information on `~lsst.pipe.base.connections.QuantizedConnection`\ s, noting that
 `OutputQuantizedConnection` functions in the same manner but with output
 `lsst.daf.butler.DatasetRef`\ s.
 
@@ -979,9 +981,9 @@ supplied in the inputRefs. However, the ``get`` method also understand
 the ``butlerQC`` object also has a ``put`` method that mirrors all the
 capabilities of the ``get`` method, put for putting outputs into the butler.
 
-For examples sake, add a `runQuantum` method to your photometry task that
+For examples sake, add a ``runQuantum`` method to your photometry task that
 loads in all the input references one connection at a time. Your task only
-expects to write a single dataset out, so the `runQuantum` will also put
+expects to write a single dataset out, so the ``runQuantum`` will also put
 with that single `lsst.daf.butler.DatasetRef`.
 
 .. code-block:: python
@@ -989,7 +991,7 @@ with that single `lsst.daf.butler.DatasetRef`.
     class ApertureTask(pipeBase.PipelineTask):
         ...
 
-        def runQuantum(self, butlerQC: pipeBase.ButlerQuantumContext,
+        def runQuantum(self, butlerQC: pipeBase.QuantumContext,
                     inputRefs: pipeBase.InputQuantizedConnection,
                     outputRefs: pipeBase.OutputQuantizedConnection):
             inputs = {}
@@ -1050,9 +1052,9 @@ demoing the concepts here.
 
 Adding additional logic to a `PipelineTask` in this way is very powerful, but
 should be using sparingly and with great thought. Putting logic in
-`runQuantum` not only makes it more difficult to follow the flow of the
+`~PipelineTask.runQuantum` not only makes it more difficult to follow the flow of the
 algorithm, but creates the need for duplication of that logic in contexts
-where the `run` method is called outside of `PipelineTask` execution.
+where the `~PipelineTask.run` method is called outside of `PipelineTask` execution.
 
 See :ref:`pipeline-appendix-i` for the complete example.
 
@@ -1131,4 +1133,4 @@ Appendix I
 
 .. |PipelineTask| replace:: `~lsst.pipe.base.PipelineTask`
 .. |Task| replace:: `~lsst.pipe.base.Task`
-.. |Config| replace:: `~lsst.pipe.base.Config`
+.. |Config| replace:: `~lsst.pex.config.Config`

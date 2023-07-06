@@ -19,10 +19,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import annotations
-
-"""Module defining a butler like object specialized to a specific quantum.
+"""Module defining variants for valid values used to constrain datasets in a
+graph building query.
 """
+
+from __future__ import annotations
 
 __all__ = ("ButlerQuantumContext", "ExecutionResources", "QuantumContext")
 

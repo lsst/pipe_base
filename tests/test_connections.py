@@ -32,6 +32,8 @@ from lsst.pex.config import Field
 
 
 class TestConnectionsClass(unittest.TestCase):
+    """Test connection classes."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -224,10 +226,11 @@ class TestConnectionsClass(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

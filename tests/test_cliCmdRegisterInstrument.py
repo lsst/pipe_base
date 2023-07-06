@@ -29,6 +29,8 @@ from lsst.pipe.base.cli.cmd import register_instrument
 
 
 class RegisterInstrumentTest(CliCmdTestBase, unittest.TestCase):
+    """Test instrument registration command."""
+
     mockFuncName = "lsst.pipe.base.cli.cmd.commands.script.register_instrument"
 
     @staticmethod
@@ -47,7 +49,7 @@ class RegisterInstrumentTest(CliCmdTestBase, unittest.TestCase):
         )
 
     def test_missing(self):
-        """test a missing argument"""
+        """Test a missing argument."""
         self.run_missing(["register-instrument"], "Missing argument ['\"]REPO['\"]")
         self.run_missing(["register-instrument", "here"], "Missing argument ['\"]INSTRUMENT ...['\"]")
 

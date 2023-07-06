@@ -43,6 +43,8 @@ from lsst.pipe.base.testUtils import (
 
 
 class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit"}):
+    """Test connections class involving a visit."""
+
     initIn = connectionTypes.InitInput(
         name="VisitInitIn",
         storageClass="StructuredData",
@@ -86,6 +88,8 @@ class VisitConnections(PipelineTaskConnections, dimensions={"instrument", "visit
 
 
 class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
+    """Test Connections class for patch."""
+
     a = connectionTypes.Input(
         name="PatchA",
         storageClass="StructuredData",
@@ -123,6 +127,8 @@ class PatchConnections(PipelineTaskConnections, dimensions={"skymap", "tract"}):
 
 
 class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
+    """Test connections class for a SkyPix."""
+
     a = connectionTypes.Input(
         name="PixA",
         storageClass="StructuredData",
@@ -136,18 +142,24 @@ class SkyPixConnections(PipelineTaskConnections, dimensions={"skypix"}):
 
 
 class VisitConfig(PipelineTaskConfig, pipelineConnections=VisitConnections):
+    """Config for Visit."""
+
     doUseInitIn = lsst.pex.config.Field(default=False, dtype=bool, doc="test")
 
 
 class PatchConfig(PipelineTaskConfig, pipelineConnections=PatchConnections):
+    """Config for Patch."""
+
     doUseB = lsst.pex.config.Field(default=True, dtype=bool, doc="test")
 
 
 class SkyPixConfig(PipelineTaskConfig, pipelineConnections=SkyPixConnections):
-    pass
+    """Config for SkyPix."""
 
 
 class VisitTask(PipelineTask):
+    """Visit-based Task."""
+
     ConfigClass = VisitConfig
     _DefaultName = "visit"
 
@@ -165,6 +177,8 @@ class VisitTask(PipelineTask):
 
 
 class PatchTask(PipelineTask):
+    """Patch-based Task."""
+
     ConfigClass = PatchConfig
     _DefaultName = "patch"
 
@@ -182,6 +196,8 @@ class PatchTask(PipelineTask):
 
 
 class SkyPixTask(PipelineTask):
+    """Skypix-based Task."""
+
     ConfigClass = SkyPixConfig
     _DefaultName = "skypix"
 
@@ -190,6 +206,8 @@ class SkyPixTask(PipelineTask):
 
 
 class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
+    """Test pipeline task."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -702,10 +720,11 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 

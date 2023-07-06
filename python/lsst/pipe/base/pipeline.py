@@ -18,10 +18,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-from __future__ import annotations
 
 """Module defining Pipeline class and related methods.
 """
+
+from __future__ import annotations
 
 __all__ = ["Pipeline", "TaskDef", "TaskDatasetTypes", "PipelineDatasetTypes", "LabelSpecifier"]
 
@@ -904,7 +905,7 @@ class TaskDatasetTypes:
             If `True` (default) include config dataset types as
             ``initOutputs``.
         storage_class_mapping : `~collections.abc.Mapping` of `str` to \
-                `StorageClass`, optional
+                `~lsst.daf.butler.StorageClass`, optional
             If a taskdef contains a component dataset type that is unknown
             to the registry, its parent `~lsst.daf.butler.StorageClass` will
             be looked up in this mapping if it is supplied. If the mapping does

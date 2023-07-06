@@ -107,7 +107,7 @@ class MockPipelineDefaultTargetConfig(
 
 
 class MockPipelineDefaultTargetTask(PipelineTask):
-    """A `PipelineTask` class used as the default target for
+    """A `~lsst.pipe.base.PipelineTask` class used as the default target for
     ``MockPipelineTaskConfig.original``.
 
     This is effectively a workaround for `lsst.pex.config.ConfigurableField`
@@ -202,7 +202,8 @@ class MockPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=MockPipelin
 
 
 class MockPipelineTask(PipelineTask):
-    """Implementation of `PipelineTask` used for running a mock pipeline.
+    """Implementation of `~lsst.pipe.base.PipelineTask` used for running a
+    mock pipeline.
 
     Notes
     -----

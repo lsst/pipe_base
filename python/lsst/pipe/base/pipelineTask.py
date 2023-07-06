@@ -48,22 +48,22 @@ class PipelineTask(Task):
     algorithm executed by framework(s) on data which comes from data butler,
     resulting data is also stored in a data butler.
 
-    PipelineTask inherits from a `pipe.base.Task` and uses the same
-    configuration mechanism based on `pex.config`. `PipelineTask` classes also
-    have a `PipelineTaskConnections` class associated with their config which
-    defines all of the IO a `PipelineTask` will need to do. PipelineTask
-    sub-class typically implements `run()` method which receives Python-domain
-    data objects and returns `pipe.base.Struct` object with resulting data.
-    `run()` method is not supposed to perform any I/O, it operates entirely on
-    in-memory objects. `runQuantum()` is the method (can be re-implemented in
-    sub-class) where all necessary I/O is performed, it reads all input data
-    from data butler into memory, calls `run()` method with that data, examines
-    returned `Struct` object and saves some or all of that data back to data
-    butler. `runQuantum()` method receives a `QuantumContext` instance to
-    facilitate I/O, a `InputQuantizedConnection` instance which defines all
-    input `lsst.daf.butler.DatasetRef`, and a `OutputQuantizedConnection`
-    instance which defines all the output `lsst.daf.butler.DatasetRef` for a
-    single invocation of PipelineTask.
+    PipelineTask inherits from a `~lsst.pipe.base.Task` and uses the same
+    configuration mechanism based on :ref:`lsst.pex.config`. `PipelineTask`
+    classes also have a `PipelineTaskConnections` class associated with their
+    config which defines all of the IO a `PipelineTask` will need to do.
+    PipelineTask sub-class typically implements `run()` method which receives
+    Python-domain data objects and returns `lsst.pipe.base.Struct` object with
+    resulting data. `run()` method is not supposed to perform any I/O, it
+    operates entirely on in-memory objects. `runQuantum()` is the method (can
+    be re-implemented in sub-class) where all necessary I/O is performed, it
+    reads all input data from data butler into memory, calls `run()` method
+    with that data, examines returned `Struct` object and saves some or all of
+    that data back to data butler. `runQuantum()` method receives a
+    `QuantumContext` instance to facilitate I/O, a `InputQuantizedConnection`
+    instance which defines all input `lsst.daf.butler.DatasetRef`, and a
+    `OutputQuantizedConnection` instance which defines all the output
+    `lsst.daf.butler.DatasetRef` for a single invocation of PipelineTask.
 
     Subclasses must be constructable with exactly the arguments taken by the
     PipelineTask base class constructor, but may support other signatures as
@@ -77,10 +77,10 @@ class PipelineTask(Task):
 
     Parameters
     ----------
-    config : `pex.config.Config`, optional
+    config : `~lsst.pex.config.Config`, optional
         Configuration for this task (an instance of ``self.ConfigClass``,
         which is a task-specific subclass of `PipelineTaskConfig`).
-        If not specified then it defaults to `self.ConfigClass()`.
+        If not specified then it defaults to ``self.ConfigClass()``.
     log : `logging.Logger`, optional
         Logger instance whose name is used as a log name prefix, or ``None``
         for no prefix.
@@ -88,9 +88,9 @@ class PipelineTask(Task):
         A dictionary of objects needed to construct this PipelineTask, with
         keys matching the keys of the dictionary returned by
         `getInitInputDatasetTypes` and values equivalent to what would be
-        obtained by calling `Butler.get` with those DatasetTypes and no data
-        IDs.  While it is optional for the base class, subclasses are
-        permitted to require this argument.
+        obtained by calling `~lsst.daf.butler.Butler.get` with those
+        DatasetTypes and no data IDs.  While it is optional for the base class,
+        subclasses are permitted to require this argument.
     """
 
     ConfigClass: ClassVar[type[PipelineTaskConfig]]

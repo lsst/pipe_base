@@ -1,6 +1,8 @@
 .. TODO DM-11673 This topic should be edited into the modernized topic-based documentation style.
 .. See comments: https://github.com/lsst/pipe_base/pull/37/files#diff-292ab354e767bb472ec66e422ca6e375
 
+.. py:currentmodule:: lsst.pipe.base
+
 .. _creating-a-task:
 
 ###############
@@ -37,7 +39,7 @@ The configuration is read-only; once you construct a task, the same configuratio
 This makes the data processing more predictable: it does not depend on the order in which items of data are processed.
 
 The task's configuration is specified using a task-specific subclass of `lsst.pex.config.Config`.
-The task class specifies its configuration class using class variable `ConfigClass`.
+The task class specifies its configuration class using class variable ``ConfigClass``.
 If the task has no configuration parameters then it may use `lsst.pex.config.Config` as its configuration class.
 
 Some important details of configurations:
@@ -108,7 +110,7 @@ Tasks require several class variables to function:
 - ``ConfigClass``: the :ref:`configuration class <creating-a-task-configuration>` used by the task.
 
 - ``_DefaultName``: a string used as the default name for the task.
-  This is required for a pipeline task (`~pipe.base.PipelineTask`), and strongly recommended for other tasks because it makes them easier to construct for unit tests.
+  This is required for a pipeline task (`PipelineTask`), and strongly recommended for other tasks because it makes them easier to construct for unit tests.
   Note that when a task creates a subtask, it ignores the subtask's ``_DefaultName`` and assigns the name of the config parameter as the subtask's name.
   For example ``exampleTask.ExampleConfig`` creates the statistics subtask with name ``stats`` because the config field for that subtask is ``stats = lsst.pex.config.ConfigurableField(...)``.
 
@@ -143,7 +145,7 @@ Use the ``__init__`` method (task constructor) to do the following:
 
 - Call the parent task's ``__init__`` method
 - Make subtasks by calling ``self.makeSubtask(name)``, where ``name`` is the name of a field of type `lsst.pex.config.ConfigurableField` in your :ref:`task's configuration <creating-a-task-configuration>`.
-- Make a schema if your task uses an `lsst.afw.table`.
+- Make a schema if your task uses an :ref:`lsst.afw.table`.
   For an example of such a task `lsst.pipe.tasks.calibrate.CalibrateTask`.
 - Initialize any other instance variables your task needs.
 
@@ -262,7 +264,7 @@ There are advantages to each:
 
        config.registrySubtask[nameOfSelectedSubtask].subtaskParam1 = ...
 
-    Or use the `active` attribute to modify the configuration of the currently selected (active) subtask:
+    Or use the ``active`` attribute to modify the configuration of the currently selected (active) subtask:
 
     .. code-block:: python
 

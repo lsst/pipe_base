@@ -18,11 +18,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-from __future__ import annotations
 
 """Module Defining variants for valid values used to constrain datasets in a
 graph building query.
 """
+
+from __future__ import annotations
 
 __all__ = ("DatasetQueryConstraintVariant",)
 
@@ -82,15 +83,15 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
             return cls.OFF
         else:
             if " " in expression:
-                warnings.warn("Witespace found in expression will be trimmed", RuntimeWarning)
+                warnings.warn("Whitespace found in expression will be trimmed", RuntimeWarning)
                 expression = expression.replace(" ", "")
             members = expression.split(",")
             return cls.LIST(members)
 
 
 class _ALLMETA(DatasetQueryConstraintVariant, type(Protocol)):
-    def __iter__(self) -> Iterator:
-        raise NotImplementedError("This variant cannot be iteratted")
+    def __iter__(self) -> Iterator:  # noqa: N804
+        raise NotImplementedError("This variant cannot be iterated")
 
 
 class _ALL(metaclass=_ALLMETA):
@@ -99,8 +100,8 @@ class _ALL(metaclass=_ALLMETA):
 
 
 class _OFFMETA(DatasetQueryConstraintVariant, type(Protocol)):
-    def __iter__(self) -> Iterator:
-        raise NotImplementedError("This variant cannot be iteratted")
+    def __iter__(self) -> Iterator:  # noqa: N804
+        raise NotImplementedError("This variant cannot be iterated")
 
 
 class _OFF(metaclass=_OFFMETA):
@@ -109,13 +110,13 @@ class _OFF(metaclass=_OFFMETA):
 
 
 class _LISTMETA(type(Protocol)):
-    def __iter__(self):
+    def __iter__(self):  # noqa: N804
         return iter(tuple())
 
-    def __len__(self):
+    def __len__(self):  # noqa: N804
         return 0
 
-    def __eq__(self, o: object) -> bool:
+    def __eq__(self, o: object) -> bool:  # noqa: N804
         if isinstance(o, self):
             return True
         return super().__eq__(o)

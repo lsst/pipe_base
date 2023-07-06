@@ -37,10 +37,14 @@ from lsst.utils.timer import timeMethod
 
 
 class AddConfig(pexConfig.Config):
+    """Config for AddTask."""
+
     addend = pexConfig.Field(doc="amount to add", dtype=float, default=3.1)
 
 
 class AddTask(pipeBase.Task):
+    """Example task to add two values."""
+
     ConfigClass = AddConfig
 
     @timeMethod
@@ -52,10 +56,14 @@ class AddTask(pipeBase.Task):
 
 
 class MultConfig(pexConfig.Config):
+    """Config for MultTask."""
+
     multiplicand = pexConfig.Field(doc="amount by which to multiply", dtype=float, default=2.5)
 
 
 class MultTask(pipeBase.Task):
+    """Task to multiply."""
+
     ConfigClass = MultConfig
 
     @timeMethod
@@ -73,11 +81,15 @@ multRegistry.register("stdMult", MultTask)
 
 
 class AddMultConfig(pexConfig.Config):
+    """Config for AddMult."""
+
     add = AddTask.makeField("add task")
     mult = multRegistry.makeField("mult task", default="stdMult")
 
 
 class AddMultTask(pipeBase.Task):
+    """Test Task with subtasks."""
+
     ConfigClass = AddMultConfig
     _DefaultName = "addMult"
     _add_module_logger_prefix = False
@@ -101,11 +113,11 @@ class AddMultTask(pipeBase.Task):
 
     @timeMethod
     def failDec(self):
-        """A method that fails with a decorator"""
+        """Fail with a decorator."""
         raise RuntimeError("failDec intentional error")
 
     def failCtx(self):
-        """A method that fails inside a context manager"""
+        """Fail inside a context manager."""
         with self.timer("failCtx"):
             raise RuntimeError("failCtx intentional error")
 
@@ -117,7 +129,7 @@ class AddMultTask2(AddMultTask):
 
 
 class AddTwiceTask(AddTask):
-    """Variant of AddTask that adds twice the addend"""
+    """Variant of AddTask that adds twice the addend."""
 
     def run(self, val):
         addend = self.config.addend
@@ -125,7 +137,7 @@ class AddTwiceTask(AddTask):
 
 
 class TaskTestCase(unittest.TestCase):
-    """A test case for Task"""
+    """A test case for Task."""
 
     def setUp(self):
         self.valDict = dict()
@@ -315,10 +327,11 @@ class TaskTestCase(unittest.TestCase):
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
-    pass
+    """Run file leak tests."""
 
 
 def setup_module(module):
+    """Configure pytest."""
     lsst.utils.tests.init()
 
 
