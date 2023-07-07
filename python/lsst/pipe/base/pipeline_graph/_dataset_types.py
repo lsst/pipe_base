@@ -193,6 +193,13 @@ class DatasetTypeNode:
         """Storage class for this dataset type."""
         return self.dataset_type.storageClass
 
+    @property
+    def is_calibration(self) -> bool:
+        """Whether this dataset type can be included in
+        `~lsst.daf.butler.CollectionType.CALIBRATION` collections.
+        """
+        return self.dataset_type.isCalibration()
+
     def __repr__(self) -> str:
         return f"{self.name} ({self.storage_class_name}, {self.dimensions})"
 
