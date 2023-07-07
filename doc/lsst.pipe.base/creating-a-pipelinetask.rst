@@ -35,7 +35,6 @@ Next, create a |Task| class that performs the measurements:
 .. code-block:: python
 
     class ApertureTask(pipeBase.Task):
-
         ConfigClass = ApertureTaskConfig
         _DefaultName = "apertureDemoTask"
 
@@ -44,15 +43,17 @@ Next, create a |Task| class that performs the measurements:
             self.apRad = self.config.apRad
 
             self.outputSchema = afwTable.SourceTable.makeMinimalSchema()
-            self.apKey = self.outputSchema.addField("apFlux", type=np.float64,
-                                                    doc="Ap flux measured")
+            self.apKey = self.outputSchema.addField(
+                "apFlux", type=np.float64, doc="Ap flux measured"
+            )
 
             self.outputCatalog = afwTable.SourceCatalog(self.outputSchema)
 
-        def run(self, exposure: afwImage.Exposure,
-                inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
+        def run(
+            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
+        ) -> pipeBase.Struct:
             # set dimension cutouts to 3 times the apRad times 2 (for diameter)
-            dimensions = (3*self.apRad*2, 3*self.apRad*2)
+            dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 
             # Get indexes for each pixel
             indy, indx = np.indices(dimensions)
@@ -63,11 +64,14 @@ Next, create a |Task| class that performs the measurements:
                 center = Point2I(source.getCentroid())
                 center = (center.getY(), center.getX())
 
-                stamp = exposure.image.array[center[0]-3*self.apRad: center[0]+3*self.apRad,
-                                            center[1]-3*self.apRad: center[1]+3*self.apRad]
-                mask = ((indy - center[0])**2
-                        + (indx - center[0])**2)**0.5 < self.apRad
-                flux = np.sum(stamp*mask)
+                stamp = exposure.image.array[
+                    center[0] - 3 * self.apRad : center[0] + 3 * self.apRad,
+                    center[1] - 3 * self.apRad : center[1] + 3 * self.apRad,
+                ]
+                mask = (
+                    (indy - center[0]) ** 2 + (indx - center[0]) ** 2
+                ) ** 0.5 < self.apRad
+                flux = np.sum(stamp * mask)
 
                 # Add a record to the output catalog
                 tmpRecord = self.outputCatalog.addNew()
@@ -103,24 +107,31 @@ task).
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                dimensions=("visit", "detector", "band")):,
-        exposure = connectionTypes.Input(doc="Input exposure to make measurements "
-                                              "on",
-                                         dimensions=("visit", "detector"),
-                                         storageClass="ExposureF",
-                                         name="calexp")
-        inputCatalog = connectionTypes.Input(doc="Input catalog with existing "
-                                                  "measurements",
-                                             dimensions=("visit", "detector",
-                                                         "band",),
-                                             storageClass="SourceCatalog",
-                                             name="src")
-        outputCatalog = connectionTypes.Output(doc="Aperture measurements",
-                                               dimensions=("visit", "detector",
-                                                           "band"),
-                                               storageClass="SourceCatalog",
-                                               name="customAperture")
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections, dimensions=("visit", "detector", "band")
+    ):
+        exposure = connectionTypes.Input(
+            doc="Input exposure to make measurements on",
+            dimensions=("visit", "detector"),
+            storageClass="ExposureF",
+            name="calexp",
+        )
+        inputCatalog = connectionTypes.Input(
+            doc="Input catalog with existing measurements",
+            dimensions=(
+                "visit",
+                "detector",
+                "band",
+            ),
+            storageClass="SourceCatalog",
+            name="src",
+        )
+        outputCatalog = connectionTypes.Output(
+            doc="Aperture measurements",
+            dimensions=("visit", "detector", "band"),
+            storageClass="SourceCatalog",
+            name="customAperture",
+        )
 
 So what is going on here? The first thing that happens is that
 ApertureTaskConnections inherits from PipelineTaskConnections, that is fairly
@@ -155,8 +166,9 @@ the connections class in as a parameter to the configuration class declaration.
 
 .. code-block:: python
 
-    class ApertureTaskConfig(pipeBase.PipelineTaskConfig,
-                             pipelineConnections=ApertureTaskConnections):
+    class ApertureTaskConfig(
+        pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections
+    ):
         ...
 
 That's it. All the rest of the Config class stays the same. Below, examples
@@ -166,12 +178,12 @@ look at what changes when you turn a Task into a PipelineTask.
 .. code-block:: python
 
     class ApertureTask(pipeBase.PipelineTask):
-
         ...
 
-        def run(self, exposure: afwImage.Exposure,
-                inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
-                ...
+        def run(
+            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
+        ) -> pipeBase.Struct:
+            ...
             return pipeBase.Struct(outputCatalog=self.outputCatalog)
 
 In a simple PipelineTask like this, these are all the changes that need to be
@@ -208,31 +220,32 @@ is executed. Take a look what the connection class looks like.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  dimensions=("visit", "detector", "band")):
-        inputSchema = connectionTypes.InitInput(doc="Schema associated with a src catalog",
-                                                storageClass="SourceCatalog",
-                                                name="src_schema")
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections, dimensions=("visit", "detector", "band")
+    ):
+        inputSchema = connectionTypes.InitInput(
+            doc="Schema associated with a src catalog",
+            storageClass="SourceCatalog",
+            name="src_schema",
+        )
         ...
+
 
     class ApertureTask(pipeBase.PipelineTask):
-
         ...
 
-        def __init__(self, config: pexConfig.Config, initInput: Mapping,
-                     *args, **kwargs):
+        def __init__(self, config: pexConfig.Config, initInput: Mapping, *args, **kwargs):
             ...
-            inputSchema = initInput['inputSchema'].schema
+            inputSchema = initInput["inputSchema"].schema
 
             # Create a camera mapper to create a copy of the input schema
             self.mapper = afwTable.SchemaMapper(inputSchema)
             self.mapper.addMinimalSchema(inputSchema, True)
 
             # Add the new field
-            self.apKey = self.mapper.editOutputSchema().addField("apFlux",
-                                                                 type=np.float64,
-                                                                 doc="Ap flux
-                                                                     "measured")
+            self.apKey = self.mapper.editOutputSchema().addField(
+                "apFlux", type=np.float64, doc="Ap flux measured"
+            )
 
             # Get the output schema
             self.schema = self.mapper.getOutputSchema()
@@ -240,15 +253,15 @@ is executed. Take a look what the connection class looks like.
             # create the catalog in which new measurements will be stored
             self.outputCatalog = afwTable.SourceCatalog(self.schema)
 
-        def run(self, exposure: afwImage.Exposure,
-                inputCatalog: afwTable.SourceCatalog
-                ) -> pipeBase.Struct:
+        def run(
+            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
+        ) -> pipeBase.Struct:
             # Add in all the records from the input catalog into what will be the
             # output catalog
             self.outputCatalog.extend(inputCatalog, mapper=self.mapper)
 
             # set dimension cutouts to 3 times the apRad times 2 (for diameter)
-            dimensions = (3*self.apRad*2, 3*self.apRad*2)
+            dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 
             # Get indexes for each pixel
             indy, indx = np.indices(dimensions)
@@ -259,11 +272,14 @@ is executed. Take a look what the connection class looks like.
                 center = Point2I(source.getCentroid())
                 center = (center.getY(), center.getX())
                 # Create a cutout
-                stamp = exposure.image.array[center[0]-3*self.apRad: center[0]+3*self.apRad,
-                                            center[1]-3*self.apRad: center[1]+3*self.apRad]
-                mask = ((indy - center[0])**2
-                        + (indx - center[0])**2)**0.5 < self.apRad
-                flux = np.sum(stamp*mask)
+                stamp = exposure.image.array[
+                    center[0] - 3 * self.apRad : center[0] + 3 * self.apRad,
+                    center[1] - 3 * self.apRad : center[1] + 3 * self.apRad,
+                ]
+                mask = (
+                    (indy - center[0]) ** 2 + (indx - center[0]) ** 2
+                ) ** 0.5 < self.apRad
+                flux = np.sum(stamp * mask)
 
                 # Set the flux field of this source
                 source.set(self.apKey, flux)
@@ -291,23 +307,23 @@ class.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  dimensions=("visit", "detector",
-                                              "band", "skymap")):
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections, dimensions=("visit", "detector", "band", "skymap")
+    ):
         ...
-        outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
-                                                  storageClass="SourceCatalog",
-                                                  name="customAperture_schema")
+        outputSchema = connectionTypes.InitOutput(
+            doc="Schema created in Aperture PipelineTask",
+            storageClass="SourceCatalog",
+            name="customAperture_schema",
+        )
 
         ...
 
 
     class ApertureTask(pipeBase.PipelineTask):
-
         ...
 
-        def __init__(self, config: pexConfig.Config, initInput:Mapping,
-                     *args, **kwargs):
+        def __init__(self, config: pexConfig.Config, initInput: Mapping, *args, **kwargs):
             ...
             # Get the output schema
             self.schema = mapper.getOutputSchema()
@@ -336,13 +352,16 @@ datasets.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  dimensions=("visit", "detector", "band")):
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections, dimensions=("visit", "detector", "band")
+    ):
         ...
-        background = connectionTypes.Input(doc="Background model for the exposure",
-                                           storageClass="Background",
-                                           name="calexpBackground",
-                                           dimensions=("visit", "detector", "band"))
+        background = connectionTypes.Input(
+            doc="Background model for the exposure",
+            storageClass="Background",
+            name="calexpBackground",
+            dimensions=("visit", "detector", "band"),
+        )
         ...
 
 Now your `PipelineTask` will load the background each time the task is run.
@@ -351,12 +370,15 @@ The simplest approach is to add a configuration field in your config class to al
 
 .. code-block:: python
 
-    class ApertureTaskConfig(pipeBase.PipelineTaskConfig,
-                             pipelineConnections=ApertureTaskConnections):
+    class ApertureTaskConfig(
+        pipeBase.PipelineTaskConfig, pipelineConnections=ApertureTaskConnections
+    ):
         ...
-        doLocalBackground = pexConfig.Field(doc="Should the background be added "
-                                                "before doing photometry",
-                                            dtype=bool, default=False)
+        doLocalBackground = pexConfig.Field(
+            doc="Should the background be added before doing photometry",
+            dtype=bool,
+            default=False,
+        )
 
 The ``__init__`` method of the connection class is given an instance of the
 task's configuration class after all overrides have been applied. This provides
@@ -365,15 +387,16 @@ various configuration options.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  dimensions=("visit", "detector",
-                                              "band", "skymap")):
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections, dimensions=("visit", "detector", "band", "skymap")
+    ):
         ...
-        background = ct.Input(doc="Background model for the exposure",
-                              storageClass="Background",
-                              name="calexpBackground",
-                              dimensions=("visit", "detector", "band",
-                                          "skymap"))
+        background = ct.Input(
+            doc="Background model for the exposure",
+            storageClass="Background",
+            name="calexpBackground",
+            dimensions=("visit", "detector", "band", "skymap"),
+        )
         ...
 
         def __init__(self, *, config=None):
@@ -411,14 +434,16 @@ take into account that a background may or may not be supplied.
 
     ...
 
-    class ApertureTask(pipeBase.PipelineTask):
 
+    class ApertureTask(pipeBase.PipelineTask):
         ...
 
-        def run(self, exposure: afwImage.Exposure,
-                inputCatalog: afwTable.SourceCatalog,
-                background: typing.Optional[afwMath.BackgroundList] = None
-                ) -> pipeBase.Struct:
+        def run(
+            self,
+            exposure: afwImage.Exposure,
+            inputCatalog: afwTable.SourceCatalog,
+            background: typing.Optional[afwMath.BackgroundList] = None,
+        ) -> pipeBase.Struct:
             # If a background is supplied, add it back to the image so local
             # background subtraction can be done.
             if background is not None:
@@ -428,20 +453,18 @@ take into account that a background may or may not be supplied.
 
             # Loop over each record in the catalog
             for source in outputCatalog:
-
                 ...
-                distance = ((indy - center[0])**2
-                            + (indx - center[0])**2)**0.5
+                distance = ((indy - center[0]) ** 2 + (indx - center[0]) ** 2) ** 0.5
                 mask = distance < self.apRad
-                flux = np.sum(stamp*mask)
+                flux = np.sum(stamp * mask)
 
                 # Do local background subtraction
                 if background is not None:
-                    outerAn = distance < 2.5*self.apRad
-                    innerAn = distance < 1.5*self.apRad
+                    outerAn = distance < 2.5 * self.apRad
+                    innerAn = distance < 1.5 * self.apRad
                     annulus = outerAn - innerAn
-                    localBackground = np.mean(exposure.image.array*annulus)
-                    flux -= np.sum(mask)*localBackground
+                    localBackground = np.mean(exposure.image.array * annulus)
+                    flux -= np.sum(mask) * localBackground
 
                 ...
 
@@ -504,20 +527,25 @@ providing a way to template dataset type names.
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                  defaultTemplates={"outputName": "customAperture"},
-                                  dimensions=("visit", "detector", "band")):
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections,
+        defaultTemplates={"outputName": "customAperture"},
+        dimensions=("visit", "detector", "band"),
+    ):
         ...
 
-
-        outputCatalog = connectionTypes.Output(doc="Aperture measurements",
-                                               dimensions=("visit", "detector", "band"),
-                                               storageClass="SourceCatalog",
-                                               name="{outputName}")
+        outputCatalog = connectionTypes.Output(
+            doc="Aperture measurements",
+            dimensions=("visit", "detector", "band"),
+            storageClass="SourceCatalog",
+            name="{outputName}",
+        )
         ...
-        outputSchema = connectionTypes.InitOutput(doc="Schema created in Aperture PipelineTask",
-                                                  storageClass="SourceCatalog",
-                                                  name="{outputName}_schema")
+        outputSchema = connectionTypes.InitOutput(
+            doc="Schema created in Aperture PipelineTask",
+            storageClass="SourceCatalog",
+            name="{outputName}_schema",
+        )
 
 
 In the modified connection class, the ``outputSchema`` and ``outputCatalog``
@@ -680,14 +708,15 @@ code this behavior, but are done to demonstrate how to make use of the
 .. code-block:: python
 
     class ApertureTask(pipeBase.PipelineTask):
-
         ...
 
-        def run(self, exposures: List[afwImage.Exposure],
-                inputCatalogs: List[afwTable.SourceCatalog],
-                areaMasks: List[afwImage.Mask],
-                backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None
-                ) -> pipeBase.Struct:
+        def run(
+            self,
+            exposures: List[afwImage.Exposure],
+            inputCatalogs: List[afwTable.SourceCatalog],
+            areaMasks: List[afwImage.Mask],
+            backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None,
+        ) -> pipeBase.Struct:
             # Track the length of each catalog as to know which exposure to use
             # in later processing
             cumulativeLength = 0
@@ -696,7 +725,7 @@ code this behavior, but are done to demonstrate how to make use of the
             # Add in all the input catalogs into the output catalog
             for inCat in inputCatalogs:
                 self.outputCatalog.extend(inCat, mapper=self.mapper)
-                lengths.append(len(inCat)+cumulativeLength)
+                lengths.append(len(inCat) + cumulativeLength)
                 cumulativeLength += len(inCat)
 
             ...
@@ -818,11 +847,14 @@ Take a look at how the ``run`` method changes to make use of this.
 
     class ApertureTask(pipeBase.PipelineTask):
         ...
-        def run(self, exposures: List[afwImage.Exposure],
-                inputCatalogs: List[afwTable.SourceCatalog],
-                areaMasks: List[afwImage.Mask],
-                backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None
-                ) -> pipeBase.Struct:
+
+        def run(
+            self,
+            exposures: List[afwImage.Exposure],
+            inputCatalogs: List[afwTable.SourceCatalog],
+            areaMasks: List[afwImage.Mask],
+            backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None,
+        ) -> pipeBase.Struct:
             ...
 
             # track which image is being used
@@ -872,9 +904,11 @@ That's exactly what should happens with ``ApertureTask`` now; it should produce 
 
 .. code-block:: python
 
-    class ApertureTaskConnections(pipeBase.PipelineTaskConnections,
-                                defaultTemplates={"outputName":"customAperture"},
-                                dimensions=("visit", "detector", "band")):
+    class ApertureTaskConnections(
+        pipeBase.PipelineTaskConnections,
+        defaultTemplates={"outputName": "customAperture"},
+        dimensions=("visit", "detector", "band"),
+    ):
         ...
 
         def adjustQuantum(self, inputs, outputs, label, data_id):
@@ -882,14 +916,11 @@ That's exactly what should happens with ``ApertureTask`` now; it should produce 
             input_names = ("exposures", "inputCatalogs", "backgrounds")
             inputs_by_data_id = []
             for name in input_names:
-                inputs_by_data_id.append(
-                    {ref.dataId: ref for ref in inputs[name][1]}
-                )
+                inputs_by_data_id.append({ref.dataId: ref for ref in inputs[name][1]})
             # Intersection looks messy because dict_keys only supports |.
             # not an "intersection" method.
             data_ids_to_keep = functools.reduce(
-                operator.__and__,
-                (d.keys() for d in inputs_by_data_id)
+                operator.__and__, (d.keys() for d in inputs_by_data_id)
             )
             # Pull out just the DatasetRefs that are in common in the inputs
             # and order them consistently (note that consistent ordering is not
@@ -904,14 +935,11 @@ That's exactly what should happens with ``ApertureTask`` now; it should produce 
                 # super() later.
                 inputs[name] = adjusted_inputs[name]
             # Do the same for the outputs.
-            outputs_by_data_id = {
-                ref.dataId: ref for ref in outputs["outputCatalogs"][1]
-            }
+            outputs_by_data_id = {ref.dataId: ref for ref in outputs["outputCatalogs"][1]}
             adjusted_outputs = {
                 "outputCatalogs": (
                     outputs["outputCatalogs"][0],
-                    [outputs_by_data_id[data_id]
-                     for data_id in data_ids_to_keep]
+                    [outputs_by_data_id[data_id] for data_id in data_ids_to_keep],
                 )
             }
             outputs["outputCatalogs"] = adjusted_outputs["outputCatalogs"]
@@ -945,9 +973,12 @@ it. Take a look at how ``runQuantum`` is defined in ``PipelineTask``.
     class PipelineTask(Task):
         ...
 
-        def runQuantum(self, butlerQC: QuantumContext,
-                       inputRefs: InputQuantizedConnection,
-                       outputRefs: OutputQuantizedConnection):
+        def runQuantum(
+            self,
+            butlerQC: QuantumContext,
+            inputRefs: InputQuantizedConnection,
+            outputRefs: OutputQuantizedConnection,
+        ):
             inputs = butlerQC.get(inputRefs)
             outputs = self.run(**inputs)
             butlerQC.put(outputs, outputRefs)
@@ -991,9 +1022,12 @@ with that single `lsst.daf.butler.DatasetRef`.
     class ApertureTask(pipeBase.PipelineTask):
         ...
 
-        def runQuantum(self, butlerQC: pipeBase.QuantumContext,
-                    inputRefs: pipeBase.InputQuantizedConnection,
-                    outputRefs: pipeBase.OutputQuantizedConnection):
+        def runQuantum(
+            self,
+            butlerQC: pipeBase.QuantumContext,
+            inputRefs: pipeBase.InputQuantizedConnection,
+            outputRefs: pipeBase.OutputQuantizedConnection,
+        ):
             inputs = {}
             for name, refs in inputRefs:
                 inputs[name] = butlerQC.get(refs)
@@ -1017,9 +1051,13 @@ demoing the concepts here.
 
         ...
 
-        def runQuantum(self, butlerQC: pipeBase.ButlerQuantumContext,
-                    inputRefs: pipeBase.InputQuantizedConnection,
-                    outputRefs: pipeBase.OutputQuantizedConnection):
+
+        def runQuantum(
+            self,
+            butlerQC: pipeBase.ButlerQuantumContext,
+            inputRefs: pipeBase.InputQuantizedConnection,
+            outputRefs: pipeBase.OutputQuantizedConnection,
+        ):
             inputs = {}
             for name, refs in inputRefs:
                 inputs[name] = butlerQC.get(refs)
@@ -1028,26 +1066,29 @@ demoing the concepts here.
             lengths = []
 
             # Remove the input catalogs from the list of inputs to the run method
-            inputCatalogs = inputs.pop('inputCatalogs')
+            inputCatalogs = inputs.pop("inputCatalogs")
 
             # Add in all the input catalogs into the output catalog
             cumulativeLength = 0
             for inCatHandle in inputCatalogs:
                 inCat = inCatHandle.get()
-                lengths.append(len(inCat)+cumulativeLength)
+                lengths.append(len(inCat) + cumulativeLength)
                 cumulativeLength += len(inCat)
                 self.outputCatalog.extend(inCat, mapper=self.mapper)
 
             # Add the catalog lengths to the inputs to the run method
-            inputs['lengths'] = lengths
+            inputs["lengths"] = lengths
             output = self.run(**inputs)
             butlerQC.put(output, outputRefs.OutputCatalog)
 
-        def run(self, exposures: List[afwImage.Exposure],
-                lengths: List[int],
-                areaMasks: List[afwImage.Mask],
-                backgrounds: Union[None, typing.List[afwMath.BackgroundList]] = None
-                ) -> pipeBase.Struct:
+
+        def run(
+            self,
+            exposures: List[afwImage.Exposure],
+            lengths: List[int],
+            areaMasks: List[afwImage.Mask],
+            backgrounds: Union[None, typing.List[afwMath.BackgroundList]] = None,
+        ) -> pipeBase.Struct:
             ...
 
 Adding additional logic to a `PipelineTask` in this way is very powerful, but
