@@ -118,11 +118,7 @@ task).
         )
         inputCatalog = connectionTypes.Input(
             doc="Input catalog with existing measurements",
-            dimensions=(
-                "visit",
-                "detector",
-                "band",
-            ),
+            dimensions=("visit", "detector", "band"),
             storageClass="SourceCatalog",
             name="src",
         )
