@@ -428,8 +428,6 @@ take into account that a background may or may not be supplied.
 .. code-block:: python
 
     ...
-    import typing
-
     import lsst.afw.math as afwMath
 
     ...
@@ -442,7 +440,7 @@ take into account that a background may or may not be supplied.
             self,
             exposure: afwImage.Exposure,
             inputCatalog: afwTable.SourceCatalog,
-            background: typing.Optional[afwMath.BackgroundList] = None,
+            background: afwMath.BackgroundList | None = None,
         ) -> pipeBase.Struct:
             # If a background is supplied, add it back to the image so local
             # background subtraction can be done.
@@ -715,7 +713,7 @@ code this behavior, but are done to demonstrate how to make use of the
             exposures: List[afwImage.Exposure],
             inputCatalogs: List[afwTable.SourceCatalog],
             areaMasks: List[afwImage.Mask],
-            backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None,
+            backgrounds: list[afwMath.BackgroundList] | None = None,
         ) -> pipeBase.Struct:
             # Track the length of each catalog as to know which exposure to use
             # in later processing
@@ -853,7 +851,7 @@ Take a look at how the ``run`` method changes to make use of this.
             exposures: List[afwImage.Exposure],
             inputCatalogs: List[afwTable.SourceCatalog],
             areaMasks: List[afwImage.Mask],
-            backgrounds: Optional[typing.List[afwMath.BackgroundList]] = None,
+            backgrounds: list[afwMath.BackgroundList] | None = None,
         ) -> pipeBase.Struct:
             ...
 
@@ -1087,7 +1085,7 @@ demoing the concepts here.
             exposures: List[afwImage.Exposure],
             lengths: List[int],
             areaMasks: List[afwImage.Mask],
-            backgrounds: Union[None, typing.List[afwMath.BackgroundList]] = None,
+            backgrounds: list[afwMath.BackgroundList] | None = None,
         ) -> pipeBase.Struct:
             ...
 
