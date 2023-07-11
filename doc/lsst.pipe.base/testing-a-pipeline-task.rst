@@ -60,11 +60,11 @@ If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.bas
    butlerTests.addDataIdValue(repo, "visit", 102)
    butlerTests.addDataIdValue(repo, "detector", 42)
    butlerTests.addDatasetType(
-       repo, "InputType", {"instrument", "visit", "detector"},
-       "ExposureF")
+       repo, "InputType", {"instrument", "visit", "detector"}, "ExposureF"
+   )
    butlerTests.addDatasetType(
-       repo, "OutputType", {"instrument", "visit", "detector"},
-       "ExposureF")
+       repo, "OutputType", {"instrument", "visit", "detector"}, "ExposureF"
+   )
 
    ...
 
@@ -73,8 +73,8 @@ If you do need `~lsst.pipe.base.PipelineTask.runQuantum` to call `~lsst.pipe.bas
    butler = butlerTests.makeTestCollection(repo)
    task = AwesomeTask()
    quantum = testUtils.makeQuantum(
-       task, butler, dataId,
-       {key: dataId for key in {"input", "output"}})
+       task, butler, dataId, {key: dataId for key in {"input", "output"}}
+   )
    run = testUtils.runTestQuantum(task, butler, quantum)
    # Actual input dataset omitted for simplicity
    run.assert_called_once()
@@ -90,25 +90,26 @@ The `lsst.pipe.base.testUtils.assertValidOutput` function takes a task object an
 Currently, it tests for missing fields and mixing up vector and scalar values; more tests may be added in the future.
 
 .. code-block:: py
-   :emphasize-lines: 29-31
+   :emphasize-lines: 30-32
 
    import lsst.daf.butler.tests as butlerTests
-   from lsst.pipe.base import connectionTypes, PipelineTask, \
-       PipelineTaskConnections
+   from lsst.pipe.base import connectionTypes, PipelineTask, PipelineTaskConnections
    from lsst.pipe.base import testUtils
 
 
    class MyConnections(
-           PipelineTaskConnections,
-           dimensions=("instrument", "visit", "detector")):
+       PipelineTaskConnections, dimensions=("instrument", "visit", "detector")
+   ):
        image = connectionTypes.Output(
            name="calexp",
            storageClass="ExposureF",
-           dimensions=("instrument", "visit", "detector"))
+           dimensions=("instrument", "visit", "detector"),
+       )
        catalog = connectionTypes.Output(
            name="src",
            storageClass="SourceCatalog",
-           dimensions=("instrument", "visit", "detector"))
+           dimensions=("instrument", "visit", "detector"),
+       )
 
 
    class MyTask(PipelineTask):
@@ -135,25 +136,23 @@ The `lsst.pipe.base.testUtils.assertValidInitOutput` function takes a task objec
 The tests are analogous to :ref:`those for assertValidOutput <testing-a-pipeline-task-run-output>`.
 
 .. code-block:: py
-   :emphasize-lines: 28-29
+   :emphasize-lines: 26-27
 
    import lsst.afw.table as afwTable
    import lsst.daf.butler.tests as butlerTests
-   from lsst.pipe.base import connectionTypes, PipelineTask, \
-       PipelineTaskConnections
+   from lsst.pipe.base import connectionTypes, PipelineTask, PipelineTaskConnections
    from lsst.pipe.base import testUtils
 
 
    class MyConnections(
-           PipelineTaskConnections,
-           dimensions=("instrument", "visit", "detector")):
-       schema = connectionTypes.InitOutput(
-           name="srcSchema",
-           storageClass="SourceCatalog")
+       PipelineTaskConnections, dimensions=("instrument", "visit", "detector")
+   ):
+       schema = connectionTypes.InitOutput(name="srcSchema", storageClass="SourceCatalog")
        catalog = connectionTypes.Output(
            name="src",
            storageClass="SourceCatalog",
-           dimensions=("instrument", "visit", "detector"))
+           dimensions=("instrument", "visit", "detector"),
+       )
 
 
    class MyTask(PipelineTask):
@@ -182,26 +181,34 @@ Optional init-inputs can be tested by calling `lsst.pipe.base.testUtils.getInitI
 There is currently no test framework for the use of init-inputs in task constructors.
 
 .. code-block:: py
-   :emphasize-lines: 42-43, 49-50
+   :emphasize-lines: 49-50, 56-57
 
    import lsst.daf.butler.tests as butlerTests
-   from lsst.pipe.base import connectionTypes, PipelineTask, \
-       PipelineTaskConnections, PipelineTaskConfig
+   from lsst.pipe.base import (
+       connectionTypes,
+       PipelineTask,
+       PipelineTaskConnections,
+       PipelineTaskConfig,
+   )
    from lsst.pipe.base import testUtils
 
    # A task that can take an Exposure xor a Catalog
    # Don't try this at home!
 
-   class OrConnections(PipelineTaskConnections,
-                       dimensions=("instrument", "visit", "detector")):
+
+   class OrConnections(
+       PipelineTaskConnections, dimensions=("instrument", "visit", "detector")
+   ):
        exp = connectionTypes.Input(
            name="calexp",
            storageClass="ExposureF",
-           dimensions=("instrument", "visit", "detector"))
+           dimensions=("instrument", "visit", "detector"),
+       )
        cat = connectionTypes.Input(
            name="src",
            storageClass="SourceCatalog",
-           dimensions=("instrument", "visit", "detector"))
+           dimensions=("instrument", "visit", "detector"),
+       )
 
        def __init__(self, *, config=None):
            super().__init__(config=config)
@@ -211,8 +218,7 @@ There is currently no test framework for the use of init-inputs in task construc
                self.inputs.remove("cat")
 
 
-   class OrConfig(PipelineTaskConfig,
-                  pipelineConnections=OrConnections):
+   class OrConfig(PipelineTaskConfig, pipelineConnections=OrConnections):
        doCatalog = Field(dtype=bool, default=False)
 
 
@@ -248,15 +254,18 @@ All tests done by `lintConnections` are heuristic, looking for common patterns o
 Advanced users who are *deliberately* bending the usual rules can use keywords to turn off specific tests.
 
 .. code-block:: py
-   :emphasize-lines: 9-10
+   :emphasize-lines: 12-13
 
-   class ListConnections(PipelineTaskConnections,
-                         dimensions=("instrument", "visit", "detector")):
+   class ListConnections(
+       PipelineTaskConnections, dimensions=("instrument", "visit", "detector")
+   ):
        cat = connectionTypes.Input(
            name="src",
            storageClass="SourceCatalog",
            dimensions=("instrument", "visit", "detector"),
-           multiple=True)  # force a list of one catalog
+           multiple=True,  # force a list of one catalog
+       )
+
 
    lintConnections(ListConnections)  # warns that cat always has one input
    lintConnections(ListConnections, checkUnnecessaryMultiple=False)  # passes

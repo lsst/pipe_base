@@ -35,6 +35,7 @@ For example, to retarget the subtask named ``configurableSubtask`` with a class 
 .. code-block:: python
 
    from ... import FooTask
+
    config.configurableSubtask.retarget(FooTask)
 
 .. TODO make this a realistic example.
@@ -62,6 +63,7 @@ Here is an example that assumes a task ``FooTask`` is defined in module :file:`.
 .. code-block:: python
 
    import .../foo.py
+
    config.registrySubtask.name = "foo"
 
 Besides retargeting the registry subtask, there are two ways to configure parameters for tasks in a registry:

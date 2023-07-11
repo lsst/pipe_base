@@ -61,8 +61,8 @@ Some important details of configurations:
   .. code-block:: python
 
      class ExampleSigmaClippedStatsConfig(pexConfig.Config):
-         """Configuration for ExampleSigmaClippedStatsTask.
-         """
+         """Configuration for ExampleSigmaClippedStatsTask."""
+
          badMaskPlanes = pexConfig.ListField(
              dtype=str,
              doc="Mask planes that, if set, indicate the associated pixel should "
@@ -87,8 +87,8 @@ Here is the config for ``ExampleTask``, a task that calls one subtask named ``st
 .. code-block:: python
 
    class ExampleConfig(pexConfig.Config):
-       """Configuration for ExampleTask.
-       """
+       """Configuration for ExampleTask."""
+
        stats = pexConfig.ConfigurableField(
            doc="Subtask to compute statistics of an image",
            target=ExampleSigmaClippedStatsTask,
@@ -227,10 +227,11 @@ For example, to look for a debug variable named "display":
 .. code-block:: python
 
    import lsstDebug
+
    display = lsstDebug.Info(__name__).display
    if display:
-      # ...
-      pass
+       # ...
+       pass
 
 .. FIXME lsstDebug comes from ``base`` but that is not a dependency of
 .. this package. Linking to the base documentation is therefore problematic.
@@ -288,6 +289,7 @@ There are advantages to each:
     .. code-block:: python
 
        from ... import FooTask
+
        config.configurableSubtask.retarget(FooTask)
 
   - Variants subtasks are kept together in one registry, making it easier to find them.
