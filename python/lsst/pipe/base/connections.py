@@ -172,7 +172,7 @@ class PipelineTaskConnectionsMetaclass(type):
     See `inputs` for additional information.
     """
 
-    def __prepare__(name, bases, **kwargs):  # noqa: 805
+    def __prepare__(name, bases, **kwargs):  # noqa: N804
         # Create an instance of our special dict to catch and track all
         # variables that are instances of connectionTypes.BaseConnection
         # Copy any existing connections from a parent class
