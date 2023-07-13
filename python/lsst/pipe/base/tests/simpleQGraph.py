@@ -414,7 +414,7 @@ def makeSimpleQGraph(
         query based on dataset existence, defaults to
         `DatasetQueryConstraintVariant.ALL`.
     makeDatastoreRecords : `bool`, optional
-        If `True` then add datstore records to generated quanta.
+        If `True` then add datastore records to generated quanta.
     bind : `~collections.abc.Mapping`, optional
         Mapping containing literal values that should be injected into the
         ``userQuery`` expression, keyed by the identifiers they replace.
@@ -446,7 +446,7 @@ def makeSimpleQGraph(
     builder = GraphBuilder(
         registry=butler.registry,
         skipExistingIn=skipExistingIn,
-        datastore=butler.datastore if makeDatastoreRecords else None,
+        datastore=butler._datastore if makeDatastoreRecords else None,
     )
     if not run:
         assert butler.run is not None, "Butler must have run defined"
