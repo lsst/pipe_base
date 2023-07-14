@@ -596,7 +596,7 @@ class PipelineGraph:
         self.add_task_nodes([task_node])
         return task_node
 
-    def add_task_nodes(self, nodes: Iterable[TaskNode]) -> None:
+    def add_task_nodes(self, nodes: Iterable[TaskNode], parent: PipelineGraph | None = None) -> None:
         """Add one or more existing task nodes to the graph.
 
         Parameters
@@ -605,6 +605,16 @@ class PipelineGraph:
             Iterable of task nodes to add.  If any tasks have resolved
             dimensions, they must have the same dimension universe as the rest
             of the graph.
+        parent : `PipelineGraph`, optional
+            If provided, another `PipelineGraph` from which these nodes were
+            obtained.  Any dataset type nodes already present in ``parent``
+            that are referenced by the given tasks will be used in this graph
+            if they are not already present, preserving any dataset type
+            resolutions present in the parent graph.  Adding nodes from a
+            parent graph after the graph has its own nodes (e.g. from
+            `add_task`) or nodes from a third graph may result in invalid
+            dataset type resolutions.  It is safest to only use this argument
+            when populating an empty graph for the first time.
 
         Raises
         ------
@@ -618,8 +628,9 @@ class PipelineGraph:
         state of the data repository and all contributing tasks.
 
         Adding new tasks removes any existing resolutions of all dataset types
-        it references and marks the graph as unsorted.  It is most effiecient
-        to add all tasks up front and only then resolve and/or sort the graph.
+        it references (unless ``parent is not None`` and marks the graph as
+        unsorted.  It is most efficient to add all tasks up front and only then
+        resolve and/or sort the graph.
         """
         node_data: list[tuple[NodeKey, dict[str, Any]]] = []
         edge_data: list[tuple[NodeKey, NodeKey, str, dict[str, Any]]] = []
@@ -636,13 +647,13 @@ class PipelineGraph:
             )
             # Convert the edge objects attached to the task node to networkx.
             for read_edge in task_node.init.iter_all_inputs():
-                self._append_graph_data_from_edge(node_data, edge_data, read_edge)
+                self._append_graph_data_from_edge(node_data, edge_data, read_edge, parent=parent)
             for write_edge in task_node.init.iter_all_outputs():
-                self._append_graph_data_from_edge(node_data, edge_data, write_edge)
+                self._append_graph_data_from_edge(node_data, edge_data, write_edge, parent=parent)
             for read_edge in task_node.iter_all_inputs():
-                self._append_graph_data_from_edge(node_data, edge_data, read_edge)
+                self._append_graph_data_from_edge(node_data, edge_data, read_edge, parent=parent)
             for write_edge in task_node.iter_all_outputs():
-                self._append_graph_data_from_edge(node_data, edge_data, write_edge)
+                self._append_graph_data_from_edge(node_data, edge_data, write_edge, parent=parent)
             # Add a special edge (with no Edge instance) that connects the
             # TaskInitNode to the runtime TaskNode.
             edge_data.append((task_node.init.key, task_node.key, Edge.INIT_TO_TASK_NAME, {"instance": None}))
@@ -1350,6 +1361,53 @@ class PipelineGraph:
                 group[1][dataset_type_node.name] = dataset_type_node
         return result
 
+    def split_independent(self) -> Iterable[PipelineGraph]:
+        """Iterate over independent subgraphs that together comprise this
+        pipeline graph.
+
+        Returns
+        -------
+        subgraphs : `Iterable` [ `PipelineGraph` ]
+            An iterable over component subgraphs that could be run
+            independently (they have only overall inputs in common).  May be a
+            lazy iterator.
+
+        Notes
+        -----
+        All resolved dataset type nodes will be preserved.
+
+        If there is only one component, ``self`` may be returned as the only
+        element in the iterable.
+
+        If `has_been_sorted`, all subgraphs will be sorted as well.
+        """
+        # Having an overall input in common isn't enough to make subgraphs
+        # dependent on each other, so we want to look for connected component
+        # subgraphs of the task-only projected graph.
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init=False)
+        task_keys = {
+            key
+            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
+            if bipartite == NodeType.TASK.bipartite
+        }
+        task_xgraph = networkx.algorithms.bipartite.projected_graph(
+            networkx.DiGraph(bipartite_xgraph), task_keys
+        )
+        # "Weakly" connected means connected in only one direction, which is
+        # the only kind of "connected" a DAG can ever be.
+        for component_task_keys in networkx.algorithms.weakly_connected_components(task_xgraph):
+            if component_task_keys == task_keys:
+                yield self
+                return
+            else:
+                component_subgraph = PipelineGraph(universe=self._universe)
+                component_subgraph.add_task_nodes(
+                    [self._xgraph.nodes[key]["instance"] for key in component_task_keys], parent=self
+                )
+                if self.has_been_sorted:
+                    component_subgraph.sort()
+                yield component_subgraph
+
     ###########################################################################
     #
     # Class- and Package-Private Methods.
@@ -1575,6 +1633,7 @@ class PipelineGraph:
         node_data: list[tuple[NodeKey, dict[str, Any]]],
         edge_data: list[tuple[NodeKey, NodeKey, str, dict[str, Any]]],
         edge: Edge,
+        parent: PipelineGraph | None,
     ) -> None:
         """Append networkx state dictionaries for an edge and the corresponding
         dataset type node.
@@ -1589,15 +1648,21 @@ class PipelineGraph:
             for edges.
         edge : `Edge`
             New edge being processed.
+        parent : `PipelineGraph` or `None`
+            Another pipeline graph whose dataset type nodes should be used
+            when present.
         """
+        new_dataset_type_node = None
+        if parent is not None:
+            new_dataset_type_node = parent._xgraph.nodes[edge.dataset_type_key].get("instance")
         if (existing_dataset_type_state := self._xgraph.nodes.get(edge.dataset_type_key)) is not None:
-            existing_dataset_type_state["instance"] = None
+            existing_dataset_type_state["instance"] = new_dataset_type_node
         else:
             node_data.append(
                 (
                     edge.dataset_type_key,
                     {
-                        "instance": None,
+                        "instance": new_dataset_type_node,
                         "bipartite": NodeType.DATASET_TYPE.bipartite,
                     },
                 )
