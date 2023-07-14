@@ -240,7 +240,7 @@ def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetT
     # export/import
     BackendClass = get_class_of(butler._config["repo_transfer_formats", "yaml", "export"])
     backend = BackendClass(yamlBuffer, universe=butler.dimensions)
-    exporter = RepoExportContext(butler.registry, butler._datastore, backend, directory=None, transfer=None)
+    exporter = RepoExportContext(butler._registry, butler._datastore, backend, directory=None, transfer=None)
 
     # Need to ensure that the dimension records for outputs are
     # transferred.
