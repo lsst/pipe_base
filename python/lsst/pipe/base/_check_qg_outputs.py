@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import uuid
 from collections.abc import Iterable, Iterator
 
 from lsst.daf.butler import Butler, DataCoordinate, DatasetRef
@@ -98,3 +99,8 @@ class QuantumGraphExecutionReport:
                     task_report.inspect_quantum(node.quantum, refs, metadata_name=taskDef.metadataDatasetName)
                 report.tasks[taskDef.label] = task_report
             yield report
+
+
+def lookup_quantum_dataId(graph_uri: ResourcePathExpression, nodes: Iterable[uuid.UUID]):
+    qg = QuantumGraph.loadUri(graph_uri, nodes=nodes)
+    return [qg.getQuantumNodeByNodeId(node).quantum.dataId for node in nodes]
