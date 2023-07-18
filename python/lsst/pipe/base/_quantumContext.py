@@ -416,6 +416,7 @@ class QuantumContext:
         return self.__butler.dimensions
 
 
+# TODO: remove on DM-40063.
 @deprecated(
     reason="ButlerQuantumContext has been renamed to QuantumContext and been given extra functionality. "
     "Please use the new name. Will be removed after v26.",
