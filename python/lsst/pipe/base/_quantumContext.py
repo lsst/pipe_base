@@ -418,7 +418,7 @@ class QuantumContext:
 
 @deprecated(
     reason="ButlerQuantumContext has been renamed to QuantumContext and been given extra functionality. "
-    "Please use the new name. Will be removed after v27.",
+    "Please use the new name. Will be removed after v26.",
     version="v26",
     category=FutureWarning,
 )
