@@ -145,7 +145,7 @@ class QuantumNode:
     ) -> QuantumNode:
         if recontitutedDimensions is not None:
             warnings.warn(
-                "The recontitutedDimensions argument is now ignored and may be removed after v 27",
+                "The recontitutedDimensions argument is now ignored and may be removed after v26",
                 category=FutureWarning,
                 stacklevel=find_outside_stacklevel("lsst.pipe.base"),
             )
