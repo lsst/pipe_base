@@ -27,7 +27,7 @@ import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-from lsst.daf.butler._compat import PYDANTIC_V2, _BaseModelCompat
+from lsst.daf.butler._compat import _BaseModelCompat
 from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 _DEPRECATION_REASON = "Will be removed after v25."
@@ -571,7 +571,4 @@ class TaskMetadata(_BaseModelCompat):
 
 
 # Needed because a TaskMetadata can contain a TaskMetadata.
-if PYDANTIC_V2:
-    TaskMetadata.model_rebuild()
-else:
-    TaskMetadata.update_forward_refs()
+TaskMetadata.model_rebuild()

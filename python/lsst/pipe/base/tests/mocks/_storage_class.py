@@ -137,7 +137,7 @@ class MockDataset(_BaseModelCompat):
         `~lsst.daf.butler.SerializedDatasetType` to override in the result.
         """
         dataset_type_updates = {
-            k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.__fields__
+            k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields  # type: ignore
         }
         derived_dataset_type = self.dataset_type.copy(update=dataset_type_updates)
         derived_ref = self.ref.copy(update=dict(datasetType=derived_dataset_type))
