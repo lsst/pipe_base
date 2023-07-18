@@ -34,10 +34,6 @@ __all__ = (
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
-try:
-    import pydantic.v1 as pydantic
-except ModuleNotFoundError:
-    import pydantic  # type: ignore
 from lsst.daf.butler import (
     DatasetComponent,
     Formatter,
@@ -50,6 +46,7 @@ from lsst.daf.butler import (
     StorageClassDelegate,
     StorageClassFactory,
 )
+from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.daf.butler.formatters.json import JsonFormatter
 from lsst.utils.introspection import get_full_type_name
 
@@ -82,7 +79,7 @@ def is_mock_name(name: str) -> bool:
 # access to complex real storage classes (and their pytypes) to test against.
 
 
-class MockDataset(pydantic.BaseModel):
+class MockDataset(_BaseModelCompat):
     """The in-memory dataset type used by `MockStorageClass`."""
 
     ref: SerializedDatasetRef
@@ -156,7 +153,7 @@ class MockDataset(pydantic.BaseModel):
         return self.copy(update=kwargs)
 
 
-class MockDatasetQuantum(pydantic.BaseModel):
+class MockDatasetQuantum(_BaseModelCompat):
     """Description of the quantum that produced a mock dataset."""
 
     task_label: str

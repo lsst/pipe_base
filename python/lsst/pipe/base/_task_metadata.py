@@ -27,11 +27,8 @@ import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-try:
-    from pydantic.v1 import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
-except ModuleNotFoundError:
-    from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr  # type: ignore
-
+from lsst.daf.butler._compat import PYDANTIC_V2, _BaseModelCompat
+from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 _DEPRECATION_REASON = "Will be removed after v25."
 _DEPRECATION_VERSION = "v24"
@@ -59,7 +56,7 @@ def _isListLike(v: Any) -> bool:
     return isinstance(v, Sequence) and not isinstance(v, str)
 
 
-class TaskMetadata(BaseModel):
+class TaskMetadata(_BaseModelCompat):
     """Dict-like object for storing task metadata.
 
     Metadata can be stored at two levels: single task or task plus subtasks.
@@ -417,7 +414,7 @@ class TaskMetadata(BaseModel):
         key : `str`
             The key to retrieve. Can be dot-separated hierarchical.
         default
-            The value to return if the key doesnot exist.
+            The value to return if the key does not exist.
 
         Returns
         -------
@@ -574,4 +571,7 @@ class TaskMetadata(BaseModel):
 
 
 # Needed because a TaskMetadata can contain a TaskMetadata.
-TaskMetadata.update_forward_refs()
+if PYDANTIC_V2:
+    TaskMetadata.model_rebuild()
+else:
+    TaskMetadata.update_forward_refs()

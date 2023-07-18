@@ -35,12 +35,8 @@ from lsst.daf.butler import (
     Quantum,
     SerializedQuantum,
 )
+from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
-
-try:
-    from pydantic.v1 import BaseModel
-except ModuleNotFoundError:
-    from pydantic import BaseModel  # type: ignore
 
 from ..pipeline import TaskDef
 
@@ -159,7 +155,7 @@ class QuantumNode:
 _fields_set = {"quantum", "taskLabel", "nodeId"}
 
 
-class SerializedQuantumNode(BaseModel):
+class SerializedQuantumNode(_BaseModelCompat):
     """Model representing a `QuantumNode` in serializable form."""
 
     quantum: SerializedQuantum
