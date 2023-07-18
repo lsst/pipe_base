@@ -35,7 +35,7 @@ from lsst.daf.butler import (
     Quantum,
     SerializedQuantum,
 )
-from lsst.daf.butler._compat import _BaseModelCompat
+from lsst.daf.butler._compat import PYDANTIC_V2, _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
 
 from ..pipeline import TaskDef
@@ -164,10 +164,18 @@ class SerializedQuantumNode(_BaseModelCompat):
 
     @classmethod
     def direct(cls, *, quantum: dict[str, Any], taskLabel: str, nodeId: str) -> SerializedQuantumNode:
-        node = SerializedQuantumNode.__new__(cls)
-        setter = object.__setattr__
-        setter(node, "quantum", SerializedQuantum.direct(**quantum))
-        setter(node, "taskLabel", taskLabel)
-        setter(node, "nodeId", uuid.UUID(nodeId))
-        setter(node, "__fields_set__", _fields_set)
+        if PYDANTIC_V2:
+            node = cls.model_construct(
+                __fields_set=_fields_set,
+                quantum=SerializedQuantum.direct(**quantum),
+                taskLabel=taskLabel,
+                nodeId=uuid.UUID(nodeId),
+            )
+        else:
+            node = SerializedQuantumNode.__new__(cls)
+            setter = object.__setattr__
+            setter(node, "quantum", SerializedQuantum.direct(**quantum))
+            setter(node, "taskLabel", taskLabel)
+            setter(node, "nodeId", uuid.UUID(nodeId))
+            setter(node, "__fields_set__", _fields_set)
         return node
