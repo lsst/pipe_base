@@ -35,12 +35,8 @@ from lsst.daf.butler import (
     Quantum,
     SerializedQuantum,
 )
+from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
-
-try:
-    from pydantic.v1 import BaseModel
-except ModuleNotFoundError:
-    from pydantic import BaseModel  # type: ignore
 
 from ..pipeline import TaskDef
 
@@ -145,7 +141,7 @@ class QuantumNode:
     ) -> QuantumNode:
         if recontitutedDimensions is not None:
             warnings.warn(
-                "The recontitutedDimensions argument is now ignored and may be removed after v 27",
+                "The recontitutedDimensions argument is now ignored and may be removed after v26",
                 category=FutureWarning,
                 stacklevel=find_outside_stacklevel("lsst.pipe.base"),
             )
@@ -159,7 +155,7 @@ class QuantumNode:
 _fields_set = {"quantum", "taskLabel", "nodeId"}
 
 
-class SerializedQuantumNode(BaseModel):
+class SerializedQuantumNode(_BaseModelCompat):
     """Model representing a `QuantumNode` in serializable form."""
 
     quantum: SerializedQuantum
@@ -168,10 +164,11 @@ class SerializedQuantumNode(BaseModel):
 
     @classmethod
     def direct(cls, *, quantum: dict[str, Any], taskLabel: str, nodeId: str) -> SerializedQuantumNode:
-        node = SerializedQuantumNode.__new__(cls)
-        setter = object.__setattr__
-        setter(node, "quantum", SerializedQuantum.direct(**quantum))
-        setter(node, "taskLabel", taskLabel)
-        setter(node, "nodeId", uuid.UUID(nodeId))
-        setter(node, "__fields_set__", _fields_set)
+        node = cls.model_construct(
+            __fields_set=_fields_set,
+            quantum=SerializedQuantum.direct(**quantum),
+            taskLabel=taskLabel,
+            nodeId=uuid.UUID(nodeId),
+        )
+
         return node
