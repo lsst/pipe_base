@@ -59,6 +59,7 @@ Developing Pipelines
 
    creating-a-pipeline.rst
    testing-pipelines-with-mocks.rst
+   working-with-pipeline-graphs.rst
 
 .. _lsst.pipe.base-contributing:
 

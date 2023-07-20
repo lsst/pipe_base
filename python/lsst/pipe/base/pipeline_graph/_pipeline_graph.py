@@ -63,8 +63,8 @@ class PipelineGraph:
     """A graph representation of fully-configured pipeline.
 
     `PipelineGraph` instances are typically constructed by calling
-    `.Pipeline.to_graph`, but in rare cases constructing and then populating
-    an empty one may be preferable.
+    `.Pipeline.to_graph`, but in rare cases constructing and then populating an
+    empty one may be preferable.
 
     Parameters
     ----------
@@ -78,6 +78,20 @@ class PipelineGraph:
         pipeline.  This typically just holds the instrument constraint included
         in the pipeline definition, if there was one.
     """
+
+    ###########################################################################
+    #
+    # Simple Pipeline Graph Inspection Interface:
+    #
+    # - for inspecting graph structure, not modifying it (except to sort and]
+    #   resolve);
+    #
+    # - no NodeKey objects, just string dataset type name and task label keys;
+    #
+    # - graph structure is represented as a pair of mappings, with methods to
+    #   find neighbors and edges of nodes.
+    #
+    ###########################################################################
 
     def __init__(
         self,
@@ -94,70 +108,6 @@ class PipelineGraph:
             universe=universe,
             data_id=data_id,
         )
-
-    def _init_from_args(
-        self,
-        xgraph: networkx.MultiDiGraph | None,
-        sorted_keys: Sequence[NodeKey] | None,
-        task_subsets: dict[str, TaskSubset] | None,
-        description: str,
-        universe: DimensionUniverse | None,
-        data_id: DataId | None,
-    ) -> None:
-        """Initialize the graph with possibly-nontrivial arguments.
-
-        Parameters
-        ----------
-        xgraph : `networkx.MultiDiGraph` or `None`
-            The backing networkx graph, or `None` to create an empty one.
-            This graph has `NodeKey` instances for nodes and the same structure
-            as the graph exported by `make_xgraph`, but its nodes and edges
-            have a single ``instance`` attribute that holds a `TaskNode`,
-            `TaskInitNode`, `DatasetTypeNode` (or `None`), `ReadEdge`, or
-            `WriteEdge` instance.
-        sorted_keys : `Sequence` [ `NodeKey` ] or `None`
-            Topologically sorted sequence of node keys, or `None` if the graph
-            is not sorted.
-        task_subsets : `dict` [ `str`, `TaskSubset` ]
-            Labeled subsets of tasks.  Values must be constructed with
-            ``xgraph`` as their parent graph.
-        description : `str`
-            String description for this pipeline.
-        universe : `lsst.daf.butler.DimensionUniverse` or `None`
-            Definitions of all dimensions.
-        data_id : `lsst.daf.butler.DataCoordinate` or other data ID mapping.
-            Data ID that represents a constraint on all quanta generated from
-            this pipeline.
-
-        Notes
-        -----
-        Only empty `PipelineGraph` instances should be constructed directly by
-        users, which sets the signature of ``__init__`` itself, but methods on
-        `PipelineGraph` and its helper classes need to be able to create them
-        with state.  Those methods can call this after calling ``__new__``
-        manually, skipping ``__init__``.
-
-        `PipelineGraph` mutator methods provide strong exception safety (the
-        graph is left unchanged when an exception is raised and caught) unless
-        the exception raised is `PipelineGraphExceptionSafetyError`.
-        """
-        self._xgraph = xgraph if xgraph is not None else networkx.MultiDiGraph()
-        self._sorted_keys: Sequence[NodeKey] | None = None
-        self._task_subsets = task_subsets if task_subsets is not None else {}
-        self._description = description
-        self._tasks = TaskMappingView(self._xgraph)
-        self._dataset_types = DatasetTypeMappingView(self._xgraph)
-        self._raw_data_id: dict[str, Any]
-        if isinstance(data_id, DataCoordinate):
-            universe = data_id.universe
-            self._raw_data_id = data_id.byName()
-        elif data_id is None:
-            self._raw_data_id = {}
-        else:
-            self._raw_data_id = dict(data_id)
-        self._universe = universe
-        if sorted_keys is not None:
-            self._reorder(sorted_keys)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.description!r}, tasks={self.tasks!s})"
@@ -219,316 +169,6 @@ class PipelineGraph:
         """
         return self._task_subsets
 
-    def iter_edges(self, init: bool = False) -> Iterator[Edge]:
-        """Iterate over edges in the graph.
-
-        Parameters
-        ----------
-        init : `bool`, optional
-            If `True` (`False` is default) iterate over the edges between task
-            initialization node and init input/output dataset types, instead of
-            the runtime task nodes and regular input/output/prerequisite
-            dataset types.
-
-        Returns
-        -------
-        edges : `~collections.abc.Iterator` [ `Edge` ]
-            A lazy iterator over `Edge` (`WriteEdge` or `ReadEdge`) instances.
-
-        Notes
-        -----
-        This method always returns _either_ init edges or runtime edges, never
-        both.  The full (internal) graph that contains both also includes a
-        special edge that connects each task init node to its runtime node;
-        that is also never returned by this method, since it is never a part of
-        the init-only or runtime-only subgraphs.
-        """
-        edge: Edge
-        for _, _, edge in self._xgraph.edges(data="instance"):
-            if edge is not None and edge.is_init == init:
-                yield edge
-
-    def iter_nodes(
-        self,
-    ) -> Iterator[
-        tuple[Literal[NodeType.TASK_INIT], str, TaskInitNode]
-        | tuple[Literal[NodeType.TASK], str, TaskInitNode]
-        | tuple[Literal[NodeType.DATASET_TYPE], str, DatasetTypeNode | None]
-    ]:
-        """Iterate over nodes in the graph.
-
-        Returns
-        -------
-        nodes : `~collections.abc.Iterator` [ `tuple` ]
-            A lazy iterator over all of the nodes in the graph.  Each yielded
-            element is a tuple of:
-
-            - the node type enum value (`NodeType`);
-            - the string name for the node (task label or parent dataset type
-              name);
-            - the node value (`TaskNode`, `TaskInitNode`, `DatasetTypeNode`,
-              or `None` for dataset type nodes that have not been resolved).
-        """
-        key: NodeKey
-        if self._sorted_keys is not None:
-            for key in self._sorted_keys:
-                yield key.node_type, key.name, self._xgraph.nodes[key]["instance"]  # type: ignore
-        else:
-            for key, node in self._xgraph.nodes(data="instance"):
-                yield key.node_type, key.name, node  # type: ignore
-
-    def iter_overall_inputs(self) -> Iterator[tuple[str, DatasetTypeNode | None]]:
-        """Iterate over all of the dataset types that are consumed but not
-        produced by the graph.
-
-        Returns
-        -------
-        dataset_types : `~collections.abc.Iterator` [ `tuple` ]
-            A lazy iterator over the overall-input dataset types (including
-            overall init inputs and prerequisites).  Each yielded element is a
-            tuple of:
-
-            - the parent dataset type name;
-            - the resolved `DatasetTypeNode`, or `None` if the dataset type has
-            - not been resolved.
-        """
-        for generation in networkx.algorithms.dag.topological_generations(self._xgraph):
-            key: NodeKey
-            for key in generation:
-                # While we expect all tasks to have at least one input and
-                # hence never appear in the first topological generation, that
-                # is not true of task init nodes.
-                if key.node_type is NodeType.DATASET_TYPE:
-                    yield key.name, self._xgraph.nodes[key]["instance"]
-            return
-
-    def make_xgraph(self) -> networkx.MultiDiGraph:
-        """Export a networkx representation of the full pipeline graph,
-        including both init and runtime edges.
-
-        Returns
-        -------
-        xgraph : `networkx.MultiDiGraph`
-            Directed acyclic graph with parallel edges.
-
-        Notes
-        -----
-        The returned graph uses `NodeKey` instances for nodes.  Parallel edges
-        represent the same dataset type appearing in multiple connections for
-        the same task, and are hence rare.  The connection name is used as the
-        edge key to disambiguate those parallel edges.
-
-        Almost all edges connect dataset type nodes to task or task init nodes
-        or vice versa, but there is also a special edge that connects each task
-        init node to its runtime node.  The existence of these nodes makes the
-        graph not quite bipartite, unless its init-only and runtime-only
-        subgraphs.
-
-        See `TaskNode`, `TaskInitNode`, `DatasetTypeNode`, `ReadEdge`, and
-        `WriteEdge` for the descriptive node and edge attributes added.
-        """
-        return self._transform_xgraph_state(self._xgraph.copy(), skip_edges=False)
-
-    def make_bipartite_xgraph(self, init: bool = False) -> networkx.MultiDiGraph:
-        """Return a bipartite networkx representation of just the runtime or
-        init-time pipeline graph.
-
-        Parameters
-        ----------
-        init : `bool`, optional
-            If `True` (`False` is default) return the graph of task
-            initialization nodes and init input/output dataset types, instead
-            of the graph of runtime task nodes and regular
-            input/output/prerequisite dataset types.
-
-        Returns
-        -------
-        xgraph : `networkx.MultiDiGraph`
-            Directed acyclic graph with parallel edges.
-
-        Notes
-        -----
-        The returned graph uses `NodeKey` instances for nodes.  Parallel edges
-        represent the same dataset type appearing in multiple connections for
-        the same task, and are hence rare.  The connection name is used as the
-        edge key to disambiguate those parallel edges.
-
-        This graph is bipartite because each dataset type node only has edges
-        that connect it to a task [init] node, and vice versa.
-
-        See `TaskNode`, `TaskInitNode`, `DatasetTypeNode`, `ReadEdge`, and
-        `WriteEdge` for the descriptive node and edge attributes added.
-        """
-        return self._transform_xgraph_state(
-            self._make_bipartite_xgraph_internal(init).copy(), skip_edges=False
-        )
-
-    def make_task_xgraph(self, init: bool = False) -> networkx.DiGraph:
-        """Return a networkx representation of just the tasks in the pipeline.
-
-        Parameters
-        ----------
-        init : `bool`, optional
-            If `True` (`False` is default) return the graph of task
-            initialization nodes, instead of the graph of runtime task nodes.
-
-        Returns
-        -------
-        xgraph : `networkx.DiGraph`
-            Directed acyclic graph with no parallel edges.
-
-        Notes
-        -----
-        The returned graph uses `NodeKey` instances for nodes.  The dataset
-        types that link these tasks are not represented at all; edges have no
-        attributes, and there are no parallel edges.
-
-        See `TaskNode` and `TaskInitNode` for the descriptive node and
-        attributes added.
-        """
-        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
-        task_keys = [
-            key
-            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
-            if bipartite == NodeType.TASK.bipartite
-        ]
-        return self._transform_xgraph_state(
-            networkx.algorithms.bipartite.projected_graph(networkx.DiGraph(bipartite_xgraph), task_keys),
-            skip_edges=True,
-        )
-
-    def make_dataset_type_xgraph(self, init: bool = False) -> networkx.DiGraph:
-        """Return a networkx representation of just the dataset types in the
-        pipeline.
-
-        Parameters
-        ----------
-        init : `bool`, optional
-            If `True` (`False` is default) return the graph of init input and
-            output dataset types, instead of the graph of runtime (input,
-            output, prerequisite input) dataset types.
-
-        Returns
-        -------
-        xgraph : `networkx.DiGraph`
-            Directed acyclic graph with no parallel edges.
-
-        Notes
-        -----
-        The returned graph uses `NodeKey` instances for nodes.  The tasks that
-        link these tasks are not represented at all; edges have no attributes,
-        and there are no parallel edges.
-
-        See `DatasetTypeNode` for the descriptive node and attributes added.
-        """
-        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
-        dataset_type_keys = [
-            key
-            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
-            if bipartite == NodeType.DATASET_TYPE.bipartite
-        ]
-        return self._transform_xgraph_state(
-            networkx.algorithms.bipartite.projected_graph(
-                networkx.DiGraph(bipartite_xgraph), dataset_type_keys
-            ),
-            skip_edges=True,
-        )
-
-    def _make_bipartite_xgraph_internal(self, init: bool) -> networkx.MultiDiGraph:
-        """Make a bipartite init-only or runtime-only internal subgraph.
-
-        See `make_bipartite_xgraph` for parameters and return values.
-
-        Notes
-        -----
-        This method returns a view of the `PipelineGraph` object's internal
-        backing graph, and hence should only be called in methods that copy the
-        result either explicitly or by running a copying algorithm before
-        returning it to the user.
-        """
-        return self._xgraph.edge_subgraph([edge.key for edge in self.iter_edges(init)])
-
-    def _transform_xgraph_state(self, xgraph: _G, skip_edges: bool) -> _G:
-        """Transform networkx graph attributes in-place from the internal
-        "instance" attributes to the documented exported attributes.
-
-        Parameters
-        ----------
-        xgraph : `networkx.DiGraph` or `networkx.MultiDiGraph`
-            Graph whose state should be transformed.
-        skip_edges : `bool`
-            If `True`, do not transform edge state.
-
-        Returns
-        -------
-        xgraph : `networkx.DiGraph` or `networkx.MultiDiGraph`
-            The same object passed in, after modification.
-
-        Notes
-        -----
-        This should be called after making a copy of the internal graph but
-        before any projection down to just task or dataset type nodes, since
-        it assumes stateful edges.
-        """
-        state: dict[str, Any]
-        for state in xgraph.nodes.values():
-            node_value: TaskInitNode | TaskNode | DatasetTypeNode | None = state.pop("instance")
-            if node_value is not None:
-                state.update(node_value._to_xgraph_state())
-        if not skip_edges:
-            for _, _, state in xgraph.edges(data=True):
-                edge: Edge | None = state.pop("instance", None)
-                if edge is not None:
-                    state.update(edge._to_xgraph_state())
-        return xgraph
-
-    def group_by_dimensions(
-        self, prerequisites: bool = False
-    ) -> dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]]:
-        """Group this graph's tasks and dataset types by their dimensions.
-
-        Parameters
-        ----------
-        prerequisites : `bool`, optional
-            If `True`, include prerequisite dataset types as well as regular
-            input and output datasets (including intermediates).
-
-        Returns
-        -------
-        groups : `dict` [ `DimensionGraph`, `tuple` ]
-            A dictionary of groups keyed by `DimensionGraph`, in which each
-            value is a tuple of:
-
-            - a `dict` of `TaskNode` instances, keyed by task label
-            - a `dict` of `DatasetTypeNode` instances, keyed by
-              dataset type name.
-
-            that have those dimensions.
-
-        Notes
-        -----
-        Init inputs and outputs are always included, but always have empty
-        dimensions and are hence are all grouped together.
-        """
-        result: dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = {}
-        next_new_value: tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]] = ({}, {})
-        for task_label, task_node in self.tasks.items():
-            if task_node.dimensions is None:
-                raise UnresolvedGraphError(f"Task with label {task_label!r} has not been resolved.")
-            if (group := result.setdefault(task_node.dimensions, next_new_value)) is next_new_value:
-                next_new_value = ({}, {})  # make new lists for next time
-            group[0][task_node.label] = task_node
-        for dataset_type_name, dataset_type_node in self.dataset_types.items():
-            if dataset_type_node is None:
-                raise UnresolvedGraphError(f"Dataset type {dataset_type_name!r} has not been resolved.")
-            if not dataset_type_node.is_prerequisite or prerequisites:
-                if (
-                    group := result.setdefault(dataset_type_node.dataset_type.dimensions, next_new_value)
-                ) is next_new_value:
-                    next_new_value = ({}, {})  # make new lists for next time
-                group[1][dataset_type_node.name] = dataset_type_node
-        return result
-
     @property
     def is_sorted(self) -> bool:
         """Whether this graph's tasks and dataset types are topologically
@@ -577,6 +217,33 @@ class PipelineGraph:
                     f"Cycle detected while attempting to sort graph: {cycle}."
                 ) from err
             self._reorder(sorted_keys)
+
+    def copy(self) -> PipelineGraph:
+        """Return a copy of this graph that copies all mutable state."""
+        xgraph = self._xgraph.copy()
+        result = PipelineGraph.__new__(PipelineGraph)
+        result._init_from_args(
+            xgraph,
+            self._sorted_keys,
+            task_subsets={
+                k: TaskSubset(xgraph, v.label, set(v._members), v.description)
+                for k, v in self._task_subsets.items()
+            },
+            description=self._description,
+            universe=self.universe,
+            data_id=self._raw_data_id,
+        )
+        return result
+
+    def __copy__(self) -> PipelineGraph:
+        # Fully shallow copies are dangerous; we don't want shared mutable
+        # state to lead to broken class invariants.
+        return self.copy()
+
+    def __deepcopy__(self, memo: dict) -> PipelineGraph:
+        # Genuine deep copies are unnecessary, since we should only ever care
+        # that mutable state is copied.
+        return self.copy()
 
     def producing_edge_of(self, dataset_type_name: str) -> WriteEdge | None:
         """Return the `WriteEdge` that links the producing task to the named
@@ -782,6 +449,88 @@ class PipelineGraph:
             edge.parent_dataset_type_name: self._xgraph.nodes[edge.dataset_type_key]["instance"]
             for edge in iterable
         }
+
+    def resolve(self, registry: Registry) -> None:
+        """Resolve all dimensions and dataset types and check them for
+        consistency.
+
+        Resolving a graph also causes it to be sorted.
+
+        Parameters
+        ----------
+        registry : `lsst.daf.butler.Registry`
+            Client for the data repository to resolve against.
+
+        Notes
+        -----
+        The `universe` attribute are set to ``registry.dimensions`` and used to
+        set all `TaskNode.dimensions` attributes.  Dataset type nodes are
+        resolved by first looking for a registry definition, then using the
+        producing task's definition, then looking for consistency between all
+        consuming task definitions.
+
+        Raises
+        ------
+        ConnectionTypeConsistencyError
+            Raised if a prerequisite input for one task appears as a different
+            kind of connection in any other task.
+        DuplicateOutputError
+            Raised if multiple tasks have the same dataset type as an output.
+        IncompatibleDatasetTypeError
+            Raised if different tasks have different definitions of a dataset
+            type.  Different but compatible storage classes are permitted.
+        MissingDatasetTypeError
+            Raised if a dataset type definition is required to exist in the
+            data repository but none was found.  This should only occur for
+            dataset types that are not produced by a task in the pipeline and
+            are consumed with different storage classes or as components by
+            tasks in the pipeline.
+        EdgesChangedError
+            Raised if ``check_edges_unchanged=True`` and the edges of a task do
+            change after import and reconfiguration.
+        """
+        node_key: NodeKey
+        updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
+        for node_key, node_state in self._xgraph.nodes.items():
+            match node_key.node_type:
+                case NodeType.TASK:
+                    task_node: TaskNode = node_state["instance"]
+                    new_task_node = task_node._resolved(registry.dimensions)
+                    if new_task_node is not task_node:
+                        updates[node_key] = new_task_node
+                case NodeType.DATASET_TYPE:
+                    dataset_type_node: DatasetTypeNode | None = node_state["instance"]
+                    new_dataset_type_node = DatasetTypeNode._from_edges(
+                        node_key, self._xgraph, registry, previous=dataset_type_node
+                    )
+                    if new_dataset_type_node is not dataset_type_node:
+                        updates[node_key] = new_dataset_type_node
+        try:
+            for node_key, node_value in updates.items():
+                self._xgraph.nodes[node_key]["instance"] = node_value
+        except Exception as err:  # pragma: no cover
+            # There's no known way to get here, but we want to make it
+            # clear it's a big problem if we do.
+            raise PipelineGraphExceptionSafetyError(
+                "Error during dataset type resolution has left the graph in an inconsistent state."
+            ) from err
+        self.sort()
+        self._universe = registry.dimensions
+
+    ###########################################################################
+    #
+    # Graph Modification Interface:
+    #
+    # - methods to add, remove, and replace tasks;
+    #
+    # - methods to add and remove task subsets.
+    #
+    # These are all things that are usually done in a Pipeline before making a
+    # graph at all, but there may be cases where we want to modify the graph
+    # instead.  (These are also the methods used to make a graph from a
+    # Pipeline, or make a graph from another graph.)
+    #
+    ###########################################################################
 
     def add_task(
         self,
@@ -1093,163 +842,157 @@ class PipelineGraph:
         """Remove a labeled set of tasks."""
         del self._task_subsets[subset_label]
 
-    def copy(self) -> PipelineGraph:
-        """Return a copy of this graph that copies all mutable state."""
-        xgraph = self._xgraph.copy()
-        result = PipelineGraph.__new__(PipelineGraph)
-        result._init_from_args(
-            xgraph,
-            self._sorted_keys,
-            task_subsets={
-                k: TaskSubset(xgraph, v.label, set(v._members), v.description)
-                for k, v in self._task_subsets.items()
-            },
-            description=self._description,
-            universe=self.universe,
-            data_id=self._raw_data_id,
-        )
-        return result
+    ###########################################################################
+    #
+    # NetworkX Export Interface:
+    #
+    # - methods to export the PipelineGraph's content (or various subsets
+    #   thereof) as NetworkX objects.
+    #
+    # These are particularly useful when writing tools to visualize the graph,
+    # while providing options for which aspects of the graph (tasks, dataset
+    # types, or both) to include, since all exported graphs have similar
+    # attributes regardless of their structure.
+    #
+    ###########################################################################
 
-    def __copy__(self) -> PipelineGraph:
-        # Fully shallow copies are dangerous; we don't want shared mutable
-        # state to lead to broken class invariants.
-        return self.copy()
+    def make_xgraph(self) -> networkx.MultiDiGraph:
+        """Export a networkx representation of the full pipeline graph,
+        including both init and runtime edges.
 
-    def __deepcopy__(self, memo: dict) -> PipelineGraph:
-        # Genuine deep copies are unnecessary, since we should only ever care
-        # that mutable state is copied.
-        return self.copy()
-
-    def import_and_configure(
-        self, check_edges_unchanged: bool = False, assume_edges_unchanged: bool = False
-    ) -> None:
-        """Import the `PipelineTask` classes referenced by all task nodes and
-        update those nodes accordingly.
-
-        Parameters
-        ----------
-        check_edges_unchanged : `bool`, optional
-            If `True`, require the edges (connections) of the modified tasks to
-            remain unchanged after importing and configuring each task, and
-            verify that this is the case.
-        assume_edges_unchanged : `bool`, optional
-            If `True`, the caller declares that the edges (connections) of the
-            modified tasks will remain unchanged importing and configuring each
-            task, and that it is unnecessary to check this.
-
-        Raises
-        ------
-        ValueError
-            Raised if ``assume_edges_unchanged`` and ``check_edges_unchanged``
-            are both `True`, or if a full config is provided for a task after
-            another full config or an override has already been provided.
-        EdgesChangedError
-            Raised if ``check_edges_unchanged=True`` and the edges of a task do
-            change.
+        Returns
+        -------
+        xgraph : `networkx.MultiDiGraph`
+            Directed acyclic graph with parallel edges.
 
         Notes
         -----
-        This method shouldn't need to be called unless the graph was
-        deserialized without importing and configuring immediately, which is
-        not the default behavior (but it can greatly speed up deserialization).
-        If all tasks have already been imported this does nothing.
+        The returned graph uses `NodeKey` instances for nodes.  Parallel edges
+        represent the same dataset type appearing in multiple connections for
+        the same task, and are hence rare.  The connection name is used as the
+        edge key to disambiguate those parallel edges.
 
-        Importing and configuring a task can change its
-        `~TaskNode.task_class_name` or `~TaskClass.get_config_str` output,
-        usually because the software used to read a serialized graph is newer
-        than the software used to write it (e.g. a new config option has been
-        added, or the task was moved to a new module with a forwarding alias
-        left behind).  These changes are allowed by ``check=True``.
+        Almost all edges connect dataset type nodes to task or task init nodes
+        or vice versa, but there is also a special edge that connects each task
+        init node to its runtime node.  The existence of these edges makes the
+        graph not quite bipartite, though its init-only and runtime-only
+        subgraphs are bipartite.
 
-        If importing and configuring a task causes its edges to change, any
-        dataset type nodes linked to those edges will be reset to the
-        unresolved state.
+        See `TaskNode`, `TaskInitNode`, `DatasetTypeNode`, `ReadEdge`, and
+        `WriteEdge` for the descriptive node and edge attributes added.
         """
-        rebuild = check_edges_unchanged or not assume_edges_unchanged
-        updates: dict[str, TaskNode] = {}
-        node_key: NodeKey
-        for node_key, node_state in self._xgraph.nodes.items():
-            if node_key.node_type is NodeType.TASK:
-                task_node: TaskNode = node_state["instance"]
-                new_task_node = task_node._imported_and_configured(rebuild)
-                if new_task_node is not task_node:
-                    updates[task_node.label] = new_task_node
-        self._replace_task_nodes(
-            updates,
-            check_edges_unchanged=check_edges_unchanged,
-            assume_edges_unchanged=assume_edges_unchanged,
-            message_header=(
-                "In task with label {task_label!r}, persisted edges (A)"
-                "differ from imported and configured edges (B):"
+        return self._transform_xgraph_state(self._xgraph.copy(), skip_edges=False)
+
+    def make_bipartite_xgraph(self, init: bool = False) -> networkx.MultiDiGraph:
+        """Return a bipartite networkx representation of just the runtime or
+        init-time pipeline graph.
+
+        Parameters
+        ----------
+        init : `bool`, optional
+            If `True` (`False` is default) return the graph of task
+            initialization nodes and init input/output dataset types, instead
+            of the graph of runtime task nodes and regular
+            input/output/prerequisite dataset types.
+
+        Returns
+        -------
+        xgraph : `networkx.MultiDiGraph`
+            Directed acyclic graph with parallel edges.
+
+        Notes
+        -----
+        The returned graph uses `NodeKey` instances for nodes.  Parallel edges
+        represent the same dataset type appearing in multiple connections for
+        the same task, and are hence rare.  The connection name is used as the
+        edge key to disambiguate those parallel edges.
+
+        This graph is bipartite because each dataset type node only has edges
+        that connect it to a task [init] node, and vice versa.
+
+        See `TaskNode`, `TaskInitNode`, `DatasetTypeNode`, `ReadEdge`, and
+        `WriteEdge` for the descriptive node and edge attributes added.
+        """
+        return self._transform_xgraph_state(
+            self._make_bipartite_xgraph_internal(init).copy(), skip_edges=False
+        )
+
+    def make_task_xgraph(self, init: bool = False) -> networkx.DiGraph:
+        """Return a networkx representation of just the tasks in the pipeline.
+
+        Parameters
+        ----------
+        init : `bool`, optional
+            If `True` (`False` is default) return the graph of task
+            initialization nodes, instead of the graph of runtime task nodes.
+
+        Returns
+        -------
+        xgraph : `networkx.DiGraph`
+            Directed acyclic graph with no parallel edges.
+
+        Notes
+        -----
+        The returned graph uses `NodeKey` instances for nodes.  The dataset
+        types that link these tasks are not represented at all; edges have no
+        attributes, and there are no parallel edges.
+
+        See `TaskNode` and `TaskInitNode` for the descriptive node and
+        attributes added.
+        """
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
+        task_keys = [
+            key
+            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
+            if bipartite == NodeType.TASK.bipartite
+        ]
+        return self._transform_xgraph_state(
+            networkx.algorithms.bipartite.projected_graph(networkx.DiGraph(bipartite_xgraph), task_keys),
+            skip_edges=True,
+        )
+
+    def make_dataset_type_xgraph(self, init: bool = False) -> networkx.DiGraph:
+        """Return a networkx representation of just the dataset types in the
+        pipeline.
+
+        Parameters
+        ----------
+        init : `bool`, optional
+            If `True` (`False` is default) return the graph of init input and
+            output dataset types, instead of the graph of runtime (input,
+            output, prerequisite input) dataset types.
+
+        Returns
+        -------
+        xgraph : `networkx.DiGraph`
+            Directed acyclic graph with no parallel edges.
+
+        Notes
+        -----
+        The returned graph uses `NodeKey` instances for nodes.  The tasks that
+        link these tasks are not represented at all; edges have no attributes,
+        and there are no parallel edges.
+
+        See `DatasetTypeNode` for the descriptive node and attributes added.
+        """
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
+        dataset_type_keys = [
+            key
+            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
+            if bipartite == NodeType.DATASET_TYPE.bipartite
+        ]
+        return self._transform_xgraph_state(
+            networkx.algorithms.bipartite.projected_graph(
+                networkx.DiGraph(bipartite_xgraph), dataset_type_keys
             ),
+            skip_edges=True,
         )
 
-    def resolve(self, registry: Registry) -> None:
-        """Resolve all dimensions and dataset types and check them for
-        consistency.
-
-        Resolving a graph also causes it to be sorted.
-
-        Parameters
-        ----------
-        registry : `lsst.daf.butler.Registry`
-            Client for the data repository to resolve against.
-
-        Notes
-        -----
-        The `universe` attribute are set to ``registry.dimensions`` and used to
-        set all `TaskNode.dimensions` attributes.  Dataset type nodes are
-        resolved by first looking for a registry definition, then using the
-        producing task's definition, then looking for consistency between all
-        consuming task definitions.
-
-        Raises
-        ------
-        ConnectionTypeConsistencyError
-            Raised if a prerequisite input for one task appears as a different
-            kind of connection in any other task.
-        DuplicateOutputError
-            Raised if multiple tasks have the same dataset type as an output.
-        IncompatibleDatasetTypeError
-            Raised if different tasks have different definitions of a dataset
-            type.  Different but compatible storage classes are permitted.
-        MissingDatasetTypeError
-            Raised if a dataset type definition is required to exist in the
-            data repository but none was found.  This should only occur for
-            dataset types that are not produced by a task in the pipeline and
-            are consumed with different storage classes or as components by
-            tasks in the pipeline.
-        EdgesChangedError
-            Raised if ``check_edges_unchanged=True`` and the edges of a task do
-            change after import and reconfiguration.
-        """
-        node_key: NodeKey
-        updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
-        for node_key, node_state in self._xgraph.nodes.items():
-            match node_key.node_type:
-                case NodeType.TASK:
-                    task_node: TaskNode = node_state["instance"]
-                    new_task_node = task_node._resolved(registry.dimensions)
-                    if new_task_node is not task_node:
-                        updates[node_key] = new_task_node
-                case NodeType.DATASET_TYPE:
-                    dataset_type_node: DatasetTypeNode | None = node_state["instance"]
-                    new_dataset_type_node = DatasetTypeNode._from_edges(
-                        node_key, self._xgraph, registry, previous=dataset_type_node
-                    )
-                    if new_dataset_type_node is not dataset_type_node:
-                        updates[node_key] = new_dataset_type_node
-        try:
-            for node_key, node_value in updates.items():
-                self._xgraph.nodes[node_key]["instance"] = node_value
-        except Exception as err:  # pragma: no cover
-            # There's no known way to get here, but we want to make it
-            # clear it's a big problem if we do.
-            raise PipelineGraphExceptionSafetyError(
-                "Error during dataset type resolution has left the graph in an inconsistent state."
-            ) from err
-        self.sort()
-        self._universe = registry.dimensions
+    ###########################################################################
+    #
+    # Serialization Interface.
+    #
+    ###########################################################################
 
     @classmethod
     def read_stream(
@@ -1394,6 +1137,217 @@ class PipelineGraph:
         with uri.open(mode="wb") as stream:
             self.write_stream(cast(BinaryIO, stream))
 
+    def import_and_configure(
+        self, check_edges_unchanged: bool = False, assume_edges_unchanged: bool = False
+    ) -> None:
+        """Import the `PipelineTask` classes referenced by all task nodes and
+        update those nodes accordingly.
+
+        Parameters
+        ----------
+        check_edges_unchanged : `bool`, optional
+            If `True`, require the edges (connections) of the modified tasks to
+            remain unchanged after importing and configuring each task, and
+            verify that this is the case.
+        assume_edges_unchanged : `bool`, optional
+            If `True`, the caller declares that the edges (connections) of the
+            modified tasks will remain unchanged importing and configuring each
+            task, and that it is unnecessary to check this.
+
+        Raises
+        ------
+        ValueError
+            Raised if ``assume_edges_unchanged`` and ``check_edges_unchanged``
+            are both `True`, or if a full config is provided for a task after
+            another full config or an override has already been provided.
+        EdgesChangedError
+            Raised if ``check_edges_unchanged=True`` and the edges of a task do
+            change.
+
+        Notes
+        -----
+        This method shouldn't need to be called unless the graph was
+        deserialized without importing and configuring immediately, which is
+        not the default behavior (but it can greatly speed up deserialization).
+        If all tasks have already been imported this does nothing.
+
+        Importing and configuring a task can change its
+        `~TaskNode.task_class_name` or `~TaskClass.get_config_str` output,
+        usually because the software used to read a serialized graph is newer
+        than the software used to write it (e.g. a new config option has been
+        added, or the task was moved to a new module with a forwarding alias
+        left behind).  These changes are allowed by ``check=True``.
+
+        If importing and configuring a task causes its edges to change, any
+        dataset type nodes linked to those edges will be reset to the
+        unresolved state.
+        """
+        rebuild = check_edges_unchanged or not assume_edges_unchanged
+        updates: dict[str, TaskNode] = {}
+        node_key: NodeKey
+        for node_key, node_state in self._xgraph.nodes.items():
+            if node_key.node_type is NodeType.TASK:
+                task_node: TaskNode = node_state["instance"]
+                new_task_node = task_node._imported_and_configured(rebuild)
+                if new_task_node is not task_node:
+                    updates[task_node.label] = new_task_node
+        self._replace_task_nodes(
+            updates,
+            check_edges_unchanged=check_edges_unchanged,
+            assume_edges_unchanged=assume_edges_unchanged,
+            message_header=(
+                "In task with label {task_label!r}, persisted edges (A)"
+                "differ from imported and configured edges (B):"
+            ),
+        )
+
+    ###########################################################################
+    #
+    # Advanced PipelineGraph Inspection Interface:
+    #
+    # - methods to iterate over all nodes and edges, utilizing NodeKeys;
+    #
+    # - methods to find overall inputs and group nodes by their dimensions,
+    #   which are important operations for QuantumGraph generation.
+    #
+    ###########################################################################
+
+    def iter_edges(self, init: bool = False) -> Iterator[Edge]:
+        """Iterate over edges in the graph.
+
+        Parameters
+        ----------
+        init : `bool`, optional
+            If `True` (`False` is default) iterate over the edges between task
+            initialization node and init input/output dataset types, instead of
+            the runtime task nodes and regular input/output/prerequisite
+            dataset types.
+
+        Returns
+        -------
+        edges : `~collections.abc.Iterator` [ `Edge` ]
+            A lazy iterator over `Edge` (`WriteEdge` or `ReadEdge`) instances.
+
+        Notes
+        -----
+        This method always returns _either_ init edges or runtime edges, never
+        both.  The full (internal) graph that contains both also includes a
+        special edge that connects each task init node to its runtime node;
+        that is also never returned by this method, since it is never a part of
+        the init-only or runtime-only subgraphs.
+        """
+        edge: Edge
+        for _, _, edge in self._xgraph.edges(data="instance"):
+            if edge is not None and edge.is_init == init:
+                yield edge
+
+    def iter_nodes(
+        self,
+    ) -> Iterator[
+        tuple[Literal[NodeType.TASK_INIT], str, TaskInitNode]
+        | tuple[Literal[NodeType.TASK], str, TaskInitNode]
+        | tuple[Literal[NodeType.DATASET_TYPE], str, DatasetTypeNode | None]
+    ]:
+        """Iterate over nodes in the graph.
+
+        Returns
+        -------
+        nodes : `~collections.abc.Iterator` [ `tuple` ]
+            A lazy iterator over all of the nodes in the graph.  Each yielded
+            element is a tuple of:
+
+            - the node type enum value (`NodeType`);
+            - the string name for the node (task label or parent dataset type
+              name);
+            - the node value (`TaskNode`, `TaskInitNode`, `DatasetTypeNode`,
+              or `None` for dataset type nodes that have not been resolved).
+        """
+        key: NodeKey
+        if self._sorted_keys is not None:
+            for key in self._sorted_keys:
+                yield key.node_type, key.name, self._xgraph.nodes[key]["instance"]  # type: ignore
+        else:
+            for key, node in self._xgraph.nodes(data="instance"):
+                yield key.node_type, key.name, node  # type: ignore
+
+    def iter_overall_inputs(self) -> Iterator[tuple[str, DatasetTypeNode | None]]:
+        """Iterate over all of the dataset types that are consumed but not
+        produced by the graph.
+
+        Returns
+        -------
+        dataset_types : `~collections.abc.Iterator` [ `tuple` ]
+            A lazy iterator over the overall-input dataset types (including
+            overall init inputs and prerequisites).  Each yielded element is a
+            tuple of:
+
+            - the parent dataset type name;
+            - the resolved `DatasetTypeNode`, or `None` if the dataset type has
+            - not been resolved.
+        """
+        for generation in networkx.algorithms.dag.topological_generations(self._xgraph):
+            key: NodeKey
+            for key in generation:
+                # While we expect all tasks to have at least one input and
+                # hence never appear in the first topological generation, that
+                # is not true of task init nodes.
+                if key.node_type is NodeType.DATASET_TYPE:
+                    yield key.name, self._xgraph.nodes[key]["instance"]
+            return
+
+    def group_by_dimensions(
+        self, prerequisites: bool = False
+    ) -> dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]]:
+        """Group this graph's tasks and dataset types by their dimensions.
+
+        Parameters
+        ----------
+        prerequisites : `bool`, optional
+            If `True`, include prerequisite dataset types as well as regular
+            input and output datasets (including intermediates).
+
+        Returns
+        -------
+        groups : `dict` [ `DimensionGraph`, `tuple` ]
+            A dictionary of groups keyed by `DimensionGraph`, in which each
+            value is a tuple of:
+
+            - a `dict` of `TaskNode` instances, keyed by task label
+            - a `dict` of `DatasetTypeNode` instances, keyed by
+              dataset type name.
+
+            that have those dimensions.
+
+        Notes
+        -----
+        Init inputs and outputs are always included, but always have empty
+        dimensions and are hence are all grouped together.
+        """
+        result: dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = {}
+        next_new_value: tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]] = ({}, {})
+        for task_label, task_node in self.tasks.items():
+            if task_node.dimensions is None:
+                raise UnresolvedGraphError(f"Task with label {task_label!r} has not been resolved.")
+            if (group := result.setdefault(task_node.dimensions, next_new_value)) is next_new_value:
+                next_new_value = ({}, {})  # make new lists for next time
+            group[0][task_node.label] = task_node
+        for dataset_type_name, dataset_type_node in self.dataset_types.items():
+            if dataset_type_node is None:
+                raise UnresolvedGraphError(f"Dataset type {dataset_type_name!r} has not been resolved.")
+            if not dataset_type_node.is_prerequisite or prerequisites:
+                if (
+                    group := result.setdefault(dataset_type_node.dataset_type.dimensions, next_new_value)
+                ) is next_new_value:
+                    next_new_value = ({}, {})  # make new lists for next time
+                group[1][dataset_type_node.name] = dataset_type_node
+        return result
+
+    ###########################################################################
+    #
+    # Class- and Package-Private Methods.
+    #
+    ###########################################################################
+
     def _iter_task_defs(self) -> Iterator[TaskDef]:
         """Iterate over this pipeline as a sequence of `TaskDef` instances.
 
@@ -1419,6 +1373,114 @@ class PipelineGraph:
                 label=node.label,
                 connections=node._get_imported_data().connections,
             )
+
+    def _init_from_args(
+        self,
+        xgraph: networkx.MultiDiGraph | None,
+        sorted_keys: Sequence[NodeKey] | None,
+        task_subsets: dict[str, TaskSubset] | None,
+        description: str,
+        universe: DimensionUniverse | None,
+        data_id: DataId | None,
+    ) -> None:
+        """Initialize the graph with possibly-nontrivial arguments.
+
+        Parameters
+        ----------
+        xgraph : `networkx.MultiDiGraph` or `None`
+            The backing networkx graph, or `None` to create an empty one.
+            This graph has `NodeKey` instances for nodes and the same structure
+            as the graph exported by `make_xgraph`, but its nodes and edges
+            have a single ``instance`` attribute that holds a `TaskNode`,
+            `TaskInitNode`, `DatasetTypeNode` (or `None`), `ReadEdge`, or
+            `WriteEdge` instance.
+        sorted_keys : `Sequence` [ `NodeKey` ] or `None`
+            Topologically sorted sequence of node keys, or `None` if the graph
+            is not sorted.
+        task_subsets : `dict` [ `str`, `TaskSubset` ]
+            Labeled subsets of tasks.  Values must be constructed with
+            ``xgraph`` as their parent graph.
+        description : `str`
+            String description for this pipeline.
+        universe : `lsst.daf.butler.DimensionUniverse` or `None`
+            Definitions of all dimensions.
+        data_id : `lsst.daf.butler.DataCoordinate` or other data ID mapping.
+            Data ID that represents a constraint on all quanta generated from
+            this pipeline.
+
+        Notes
+        -----
+        Only empty `PipelineGraph` instances should be constructed directly by
+        users, which sets the signature of ``__init__`` itself, but methods on
+        `PipelineGraph` and its helper classes need to be able to create them
+        with state.  Those methods can call this after calling ``__new__``
+        manually, skipping ``__init__``.
+        """
+        self._xgraph = xgraph if xgraph is not None else networkx.MultiDiGraph()
+        self._sorted_keys: Sequence[NodeKey] | None = None
+        self._task_subsets = task_subsets if task_subsets is not None else {}
+        self._description = description
+        self._tasks = TaskMappingView(self._xgraph)
+        self._dataset_types = DatasetTypeMappingView(self._xgraph)
+        self._raw_data_id: dict[str, Any]
+        if isinstance(data_id, DataCoordinate):
+            universe = data_id.universe
+            self._raw_data_id = data_id.byName()
+        elif data_id is None:
+            self._raw_data_id = {}
+        else:
+            self._raw_data_id = dict(data_id)
+        self._universe = universe
+        if sorted_keys is not None:
+            self._reorder(sorted_keys)
+
+    def _make_bipartite_xgraph_internal(self, init: bool) -> networkx.MultiDiGraph:
+        """Make a bipartite init-only or runtime-only internal subgraph.
+
+        See `make_bipartite_xgraph` for parameters and return values.
+
+        Notes
+        -----
+        This method returns a view of the `PipelineGraph` object's internal
+        backing graph, and hence should only be called in methods that copy the
+        result either explicitly or by running a copying algorithm before
+        returning it to the user.
+        """
+        return self._xgraph.edge_subgraph([edge.key for edge in self.iter_edges(init)])
+
+    def _transform_xgraph_state(self, xgraph: _G, skip_edges: bool) -> _G:
+        """Transform networkx graph attributes in-place from the internal
+        "instance" attributes to the documented exported attributes.
+
+        Parameters
+        ----------
+        xgraph : `networkx.DiGraph` or `networkx.MultiDiGraph`
+            Graph whose state should be transformed.
+        skip_edges : `bool`
+            If `True`, do not transform edge state.
+
+        Returns
+        -------
+        xgraph : `networkx.DiGraph` or `networkx.MultiDiGraph`
+            The same object passed in, after modification.
+
+        Notes
+        -----
+        This should be called after making a copy of the internal graph but
+        before any projection down to just task or dataset type nodes, since
+        it assumes stateful edges.
+        """
+        state: dict[str, Any]
+        for state in xgraph.nodes.values():
+            node_value: TaskInitNode | TaskNode | DatasetTypeNode | None = state.pop("instance")
+            if node_value is not None:
+                state.update(node_value._to_xgraph_state())
+        if not skip_edges:
+            for _, _, state in xgraph.edges(data=True):
+                edge: Edge | None = state.pop("instance", None)
+                if edge is not None:
+                    state.update(edge._to_xgraph_state())
+        return xgraph
 
     def _replace_task_nodes(
         self,
@@ -1552,3 +1614,12 @@ class PipelineGraph:
         self._sorted_keys = None
         self._tasks._reset()
         self._dataset_types._reset()
+
+    _xgraph: networkx.MultiDiGraph
+    _sorted_keys: Sequence[NodeKey] | None
+    _task_subsets: dict[str, TaskSubset]
+    _description: str
+    _tasks: TaskMappingView
+    _dataset_types: DatasetTypeMappingView
+    _raw_data_id: dict[str, Any]
+    _universe: DimensionUniverse | None
