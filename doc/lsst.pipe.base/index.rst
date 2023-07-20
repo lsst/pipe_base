@@ -77,6 +77,10 @@ Python API reference
    :no-main-docstr:
    :skip: BuildId
    :skip: DatasetTypeName
+   :skip: PipelineGraph
+
+.. automodapi:: lsst.pipe.base.pipeline_graph
+   :no-main-docstr:
 
 .. automodapi:: lsst.pipe.base.testUtils
    :no-main-docstr:
