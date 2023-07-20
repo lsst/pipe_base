@@ -748,13 +748,19 @@ class Pipeline:
         """
         self._pipelineIR.write_to_uri(uri)
 
-    def to_graph(self) -> pipeline_graph.PipelineGraph:
+    def to_graph(self, registry: Registry | None = None) -> pipeline_graph.PipelineGraph:
         """Construct a pipeline graph from this pipeline.
 
         Constructing a graph applies all configuration overrides, freezes all
         configuration, checks all contracts, and checks for dataset type
         consistency between tasks (as much as possible without access to a data
         repository).  It cannot be reversed.
+
+        Parameters
+        ----------
+        registry : `lsst.daf.butler.Registry`, optional
+            Data repository client.  If provided, the graph's dataset types
+            and dimensions will be resolved (see `PipelineGraph.resolve`).
 
         Returns
         -------
@@ -787,6 +793,8 @@ class Pipeline:
                 label, subset.subset, subset.description if subset.description is not None else ""
             )
         graph.sort()
+        if registry is not None:
+            graph.resolve(registry)
         return graph
 
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
