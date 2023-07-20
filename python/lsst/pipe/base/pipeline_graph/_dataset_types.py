@@ -23,6 +23,7 @@ from __future__ import annotations
 __all__ = ("DatasetTypeNode",)
 
 import dataclasses
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 import networkx
@@ -69,6 +70,12 @@ class DatasetTypeNode:
     the Registry before graph creation.
     """
 
+    producing_edge: WriteEdge | None
+    """The edge to the task that produces this dataset type."""
+
+    consuming_edges: Collection[ReadEdge]
+    """The edges to tasks that consume this dataset type."""
+
     @classmethod
     def _from_edges(
         cls, key: NodeKey, xgraph: networkx.MultiDiGraph, registry: Registry, previous: DatasetTypeNode | None
@@ -109,7 +116,7 @@ class DatasetTypeNode:
         is_initial_query_constraint = True
         is_prerequisite: bool | None = None
         producer: str | None = None
-        write_edge: WriteEdge
+        producing_edge: WriteEdge | None = None
         # Iterate over the incoming edges to this node, which represent the
         # output connections of tasks that write this dataset type; these take
         # precedence over the inputs in determining the graph-wide dataset type
@@ -117,23 +124,26 @@ class DatasetTypeNode:
         # graph to register dataset types).  There should only be one such
         # connection, but we won't necessarily have checked that rule until
         # here.  As a result there can be at most one iteration of this loop.
-        for _, _, write_edge in xgraph.in_edges(key, data="instance"):
+        for _, _, producing_edge in xgraph.in_edges(key, data="instance"):
+            assert producing_edge is not None, "Should only be None if we never loop."
             if producer is not None:
                 raise DuplicateOutputError(
-                    f"Dataset type {key.name!r} is produced by both {write_edge.task_label!r} "
+                    f"Dataset type {key.name!r} is produced by both {producing_edge.task_label!r} "
                     f"and {producer!r}."
                 )
-            producer = write_edge.task_label
-            dataset_type = write_edge._resolve_dataset_type(dataset_type, universe=registry.dimensions)
+            producer = producing_edge.task_label
+            dataset_type = producing_edge._resolve_dataset_type(dataset_type, universe=registry.dimensions)
             is_prerequisite = False
             is_initial_query_constraint = False
-        read_edge: ReadEdge
+        consuming_edge: ReadEdge
         consumers: list[str] = []
-        read_edges = list(read_edge for _, _, read_edge in xgraph.out_edges(key, data="instance"))
+        consuming_edges = list(
+            consuming_edge for _, _, consuming_edge in xgraph.out_edges(key, data="instance")
+        )
         # Put edges that are not component datasets before any edges that are.
-        read_edges.sort(key=lambda read_edge: read_edge.component is not None)
-        for read_edge in read_edges:
-            dataset_type, is_initial_query_constraint, is_prerequisite = read_edge._resolve_dataset_type(
+        consuming_edges.sort(key=lambda consuming_edge: consuming_edge.component is not None)
+        for consuming_edge in consuming_edges:
+            dataset_type, is_initial_query_constraint, is_prerequisite = consuming_edge._resolve_dataset_type(
                 current=dataset_type,
                 universe=registry.dimensions,
                 is_initial_query_constraint=is_initial_query_constraint,
@@ -142,13 +152,15 @@ class DatasetTypeNode:
                 producer=producer,
                 consumers=consumers,
             )
-            consumers.append(read_edge.task_label)
+            consumers.append(consuming_edge.task_label)
         assert dataset_type is not None, "Graph structure guarantees at least one edge."
         assert is_prerequisite is not None, "Having at least one edge guarantees is_prerequisite is known."
         return DatasetTypeNode(
             dataset_type=dataset_type,
             is_initial_query_constraint=is_initial_query_constraint,
             is_prerequisite=is_prerequisite,
+            producing_edge=producing_edge,
+            consuming_edges=tuple(consuming_edges),
         )
 
     @property

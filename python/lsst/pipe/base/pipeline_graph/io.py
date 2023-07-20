@@ -30,6 +30,7 @@ __all__ = (
     "SerializedPipelineGraph",
 )
 
+from collections.abc import Mapping
 from typing import Any, TypeVar
 
 import networkx
@@ -118,14 +119,14 @@ class SerializedEdge(pydantic.BaseModel):
         self,
         task_key: NodeKey,
         connection_name: str,
+        dataset_type_keys: Mapping[str, NodeKey],
         is_prerequisite: bool = False,
     ) -> ReadEdge:
         """Transform a `SerializedEdge` to a `ReadEdge`."""
         parent_dataset_type_name, component = DatasetType.splitDatasetTypeName(self.dataset_type_name)
-        dataset_type_key = NodeKey(NodeType.DATASET_TYPE, parent_dataset_type_name)
         return ReadEdge(
-            dataset_type_key,
-            task_key,
+            dataset_type_key=dataset_type_keys[parent_dataset_type_name],
+            task_key=task_key,
             storage_class_name=self.storage_class,
             is_prerequisite=is_prerequisite,
             component=component,
@@ -139,12 +140,12 @@ class SerializedEdge(pydantic.BaseModel):
         self,
         task_key: NodeKey,
         connection_name: str,
+        dataset_type_keys: Mapping[str, NodeKey],
     ) -> WriteEdge:
         """Transform a `SerializedEdge` to a `WriteEdge`."""
-        dataset_type_key = NodeKey(NodeType.DATASET_TYPE, self.dataset_type_name)
         return WriteEdge(
             task_key=task_key,
-            dataset_type_key=dataset_type_key,
+            dataset_type_key=dataset_type_keys[self.dataset_type_name],
             storage_class_name=self.storage_class,
             connection_name=connection_name,
             is_calibration=self.is_calibration,
@@ -198,21 +199,25 @@ class SerializedTaskInitNode(pydantic.BaseModel):
         key: NodeKey,
         task_class_name: str,
         config_str: str,
+        dataset_type_keys: Mapping[str, NodeKey],
     ) -> TaskInitNode:
         """Transform a `SerializedTaskInitNode` to a `TaskInitNode`."""
         return TaskInitNode(
             key,
             inputs={
-                connection_name: serialized_edge.deserialize_read_edge(key, connection_name)
+                connection_name: serialized_edge.deserialize_read_edge(
+                    key, connection_name, dataset_type_keys
+                )
                 for connection_name, serialized_edge in self.inputs.items()
             },
             outputs={
-                connection_name: serialized_edge.deserialize_write_edge(key, connection_name)
+                connection_name: serialized_edge.deserialize_write_edge(
+                    key, connection_name, dataset_type_keys
+                )
                 for connection_name, serialized_edge in self.outputs.items()
             },
             config_output=self.config_output.deserialize_write_edge(
-                key,
-                acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME,
+                key, acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME, dataset_type_keys
             ),
             task_class_name=task_class_name,
             config_str=config_str,
@@ -289,7 +294,13 @@ class SerializedTaskNode(pydantic.BaseModel):
             ),
         )
 
-    def deserialize(self, key: NodeKey, init_key: NodeKey, universe: DimensionUniverse | None) -> TaskNode:
+    def deserialize(
+        self,
+        key: NodeKey,
+        init_key: NodeKey,
+        dataset_type_keys: Mapping[str, NodeKey],
+        universe: DimensionUniverse | None,
+    ) -> TaskNode:
         """Transform a `SerializedTaskNode` to a `TaskNode`."""
         init = self.init.deserialize(
             init_key,
@@ -297,25 +308,30 @@ class SerializedTaskNode(pydantic.BaseModel):
             config_str=expect_not_none(
                 self.config_str, f"No serialized config file for task with label {key.name!r}."
             ),
+            dataset_type_keys=dataset_type_keys,
         )
         inputs = {
-            connection_name: serialized_edge.deserialize_read_edge(key, connection_name)
+            connection_name: serialized_edge.deserialize_read_edge(key, connection_name, dataset_type_keys)
             for connection_name, serialized_edge in self.inputs.items()
         }
         prerequisite_inputs = {
-            connection_name: serialized_edge.deserialize_read_edge(key, connection_name, is_prerequisite=True)
+            connection_name: serialized_edge.deserialize_read_edge(
+                key, connection_name, dataset_type_keys, is_prerequisite=True
+            )
             for connection_name, serialized_edge in self.prerequisite_inputs.items()
         }
         outputs = {
-            connection_name: serialized_edge.deserialize_write_edge(key, connection_name)
+            connection_name: serialized_edge.deserialize_write_edge(key, connection_name, dataset_type_keys)
             for connection_name, serialized_edge in self.outputs.items()
         }
         if (serialized_log_output := self.log_output) is not None:
-            log_output = serialized_log_output.deserialize_write_edge(key, acc.LOG_OUTPUT_CONNECTION_NAME)
+            log_output = serialized_log_output.deserialize_write_edge(
+                key, acc.LOG_OUTPUT_CONNECTION_NAME, dataset_type_keys
+            )
         else:
             log_output = None
         metadata_output = self.metadata_output.deserialize_write_edge(
-            key, acc.METADATA_OUTPUT_CONNECTION_NAME
+            key, acc.METADATA_OUTPUT_CONNECTION_NAME, dataset_type_keys
         )
         dimensions: frozenset[str] | DimensionGraph
         if universe is not None:
@@ -384,7 +400,9 @@ class SerializedDatasetTypeNode(pydantic.BaseModel):
             is_prerequisite=target.is_prerequisite,
         )
 
-    def deserialize(self, key: NodeKey, universe: DimensionUniverse | None) -> DatasetTypeNode | None:
+    def deserialize(
+        self, key: NodeKey, xgraph: networkx.MultiDiGraph, universe: DimensionUniverse | None
+    ) -> DatasetTypeNode | None:
         """Transform a `SerializedDatasetTypeNode` to a `DatasetTypeNode`."""
         if self.dimensions is not None:
             dataset_type = DatasetType(
@@ -404,10 +422,25 @@ class SerializedDatasetTypeNode(pydantic.BaseModel):
                     "but no dimension universe was stored.",
                 ),
             )
+            producer: str | None = None
+            producing_edge: WriteEdge | None = None
+            for _, _, producing_edge in xgraph.in_edges(key, data="instance"):
+                assert producing_edge is not None, "Should only be None if we never loop."
+                if producer is not None:
+                    raise PipelineGraphReadError(
+                        f"Serialized dataset type {key.name!r} is produced by both "
+                        f"{producing_edge.task_label!r} and {producer!r} in resolved graph."
+                    )
+                producer = producing_edge.task_label
+            consuming_edges = tuple(
+                consuming_edge for _, _, consuming_edge in xgraph.in_edges(key, data="instance")
+            )
             return DatasetTypeNode(
                 dataset_type=dataset_type,
                 is_prerequisite=self.is_prerequisite,
                 is_initial_query_constraint=self.is_initial_query_constraint,
+                producing_edge=producing_edge,
+                consuming_edges=consuming_edges,
             )
         return None
 
@@ -511,18 +544,23 @@ class SerializedPipelineGraph(pydantic.BaseModel):
             )
         xgraph = networkx.MultiDiGraph()
         sort_index_map: dict[int, NodeKey] = {}
+        # Save the dataset type keys after the first time we make them - these
+        # may be tiny objects, but it's still to have only one copy of each
+        # value floating around the graph.
+        dataset_type_keys: dict[str, NodeKey] = {}
         for dataset_type_name, serialized_dataset_type in self.dataset_types.items():
             dataset_type_key = NodeKey(NodeType.DATASET_TYPE, dataset_type_name)
-            dataset_type_node = serialized_dataset_type.deserialize(dataset_type_key, universe)
-            xgraph.add_node(
-                dataset_type_key, instance=dataset_type_node, bipartite=NodeType.DATASET_TYPE.value
-            )
+            # We intentionally don't attach a DatasetTypeNode instance here
+            # yet, since we need edges to do that and those are saved with
+            # the tasks.
+            xgraph.add_node(dataset_type_key, bipartite=NodeType.DATASET_TYPE.value)
             if serialized_dataset_type.index is not None:
                 sort_index_map[serialized_dataset_type.index] = dataset_type_key
+            dataset_type_keys[dataset_type_name] = dataset_type_key
         for task_label, serialized_task in self.tasks.items():
             task_key = NodeKey(NodeType.TASK, task_label)
             task_init_key = NodeKey(NodeType.TASK_INIT, task_label)
-            task_node = serialized_task.deserialize(task_key, task_init_key, universe)
+            task_node = serialized_task.deserialize(task_key, task_init_key, dataset_type_keys, universe)
             if serialized_task.index is not None:
                 sort_index_map[serialized_task.index] = task_key
             if serialized_task.init.index is not None:
@@ -558,6 +596,12 @@ class SerializedPipelineGraph(pydantic.BaseModel):
                     write_edge.connection_name,
                     instance=write_edge,
                 )
+        # Iterate over dataset types again to add instances.
+        for dataset_type_name, serialized_dataset_type in self.dataset_types.items():
+            dataset_type_key = dataset_type_keys[dataset_type_name]
+            xgraph.nodes[dataset_type_key]["instance"] = serialized_dataset_type.deserialize(
+                dataset_type_key, xgraph, universe
+            )
         result = PipelineGraph.__new__(PipelineGraph)
         result._init_from_args(
             xgraph,
