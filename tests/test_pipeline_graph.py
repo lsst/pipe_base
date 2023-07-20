@@ -358,12 +358,37 @@ class PipelineGraphTestCase(unittest.TestCase):
             },
         )
         self.assertEqual({name for name, _ in graph.iter_overall_inputs()}, {"input_1"})
-        self.assertEqual({edge.task_label for edge in graph.consumers_of("input_1")}, {"a"})
-        self.assertEqual({edge.task_label for edge in graph.consumers_of("intermediate_1")}, {"b"})
-        self.assertEqual({edge.task_label for edge in graph.consumers_of("output_1")}, set())
+        self.assertEqual({edge.task_label for edge in graph.consuming_edges_of("input_1")}, {"a"})
+        self.assertEqual({edge.task_label for edge in graph.consuming_edges_of("intermediate_1")}, {"b"})
+        self.assertEqual({edge.task_label for edge in graph.consuming_edges_of("output_1")}, set())
+        self.assertEqual({node.label for node in graph.consumers_of("input_1")}, {"a"})
+        self.assertEqual({node.label for node in graph.consumers_of("intermediate_1")}, {"b"})
+        self.assertEqual({node.label for node in graph.consumers_of("output_1")}, set())
+
+        self.assertIsNone(graph.producing_edge_of("input_1"))
+        self.assertEqual(graph.producing_edge_of("intermediate_1").task_label, "a")
+        self.assertEqual(graph.producing_edge_of("output_1").task_label, "b")
         self.assertIsNone(graph.producer_of("input_1"))
-        self.assertEqual(graph.producer_of("intermediate_1").task_label, "a")
-        self.assertEqual(graph.producer_of("output_1").task_label, "b")
+        self.assertEqual(graph.producer_of("intermediate_1").label, "a")
+        self.assertEqual(graph.producer_of("output_1").label, "b")
+
+        self.assertEqual(graph.inputs_of("a").keys(), {"input_1"})
+        self.assertEqual(graph.inputs_of("b").keys(), {"intermediate_1"})
+        self.assertEqual(graph.inputs_of("a", init=True).keys(), set())
+        self.assertEqual(graph.inputs_of("b", init=True).keys(), {"schema"})
+        self.assertEqual(graph.outputs_of("a").keys(), {"intermediate_1", "a_log", "a_metadata"})
+        self.assertEqual(graph.outputs_of("b").keys(), {"output_1", "b_log", "b_metadata"})
+        self.assertEqual(
+            graph.outputs_of("a", include_automatic_connections=False).keys(), {"intermediate_1"}
+        )
+        self.assertEqual(graph.outputs_of("b", include_automatic_connections=False).keys(), {"output_1"})
+        self.assertEqual(graph.outputs_of("a", init=True).keys(), {"schema", "a_config"})
+        self.assertEqual(
+            graph.outputs_of("a", init=True, include_automatic_connections=False).keys(), {"schema"}
+        )
+        self.assertEqual(graph.outputs_of("b", init=True).keys(), {"b_config"})
+        self.assertEqual(graph.outputs_of("b", init=True, include_automatic_connections=False).keys(), set())
+
         self.assertTrue(repr(self.graph).startswith(f"PipelineGraph({self.description!r}, tasks="))
         self.assertEqual(
             repr(graph.task_subsets["only_b"]), f"only_b: {self.subset_description!r}, tasks={{b}}"

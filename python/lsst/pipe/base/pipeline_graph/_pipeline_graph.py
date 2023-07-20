@@ -37,6 +37,7 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from ._dataset_types import DatasetTypeNode
 from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import (
+    DuplicateOutputError,
     EdgesChangedError,
     PipelineDataCycleError,
     PipelineGraphError,
@@ -577,7 +578,7 @@ class PipelineGraph:
                 ) from err
             self._reorder(sorted_keys)
 
-    def producer_of(self, dataset_type_name: str) -> WriteEdge | None:
+    def producing_edge_of(self, dataset_type_name: str) -> WriteEdge | None:
         """Return the `WriteEdge` that links the producing task to the named
         dataset type.
 
@@ -590,14 +591,36 @@ class PipelineGraph:
         -------
         edge : `WriteEdge` or `None`
             Producing edge or `None` if there isn't one in this graph.
+
+        Raises
+        ------
+        DuplicateOutputError
+            Raised if there are multiple tasks defined to produce this dataset
+            type. This is only possible if the graph's dataset types are not
+            resolved.
+
+        Notes
+        -----
+        On resolved graphs, it may be slightly more efficient to use::
+
+            graph.dataset_types[dataset_type_name].producing_edge
+
+        but this method works on graphs with unresolved dataset types as well.
         """
-        for _, _, edge in self._xgraph.in_edges(
+        producer: str | None = None
+        producing_edge: WriteEdge | None = None
+        for _, _, producing_edge in self._xgraph.in_edges(
             NodeKey(NodeType.DATASET_TYPE, dataset_type_name), data="instance"
         ):
-            return edge
-        return None
+            assert producing_edge is not None, "Should only be None if we never loop."
+            if producer is not None:
+                raise DuplicateOutputError(
+                    f"Dataset type {dataset_type_name!r} is produced by both {producing_edge.task_label!r} "
+                    f"and {producer!r}."
+                )
+        return producing_edge
 
-    def consumers_of(self, dataset_type_name: str) -> list[ReadEdge]:
+    def consuming_edges_of(self, dataset_type_name: str) -> list[ReadEdge]:
         """Return the `ReadEdge` objects that link the named dataset type to
         the tasks that consume it.
 
@@ -610,6 +633,14 @@ class PipelineGraph:
         -------
         edges : `list` [ `ReadEdge` ]
             Edges that connect this dataset type to the tasks that consume it.
+
+        Notes
+        -----
+        On resolved graphs, it may be slightly more efficient to use::
+
+            graph.dataset_types[dataset_type_name].producing_edges
+
+        but this method works on graphs with unresolved dataset types as well.
         """
         return [
             edge
@@ -617,6 +648,140 @@ class PipelineGraph:
                 NodeKey(NodeType.DATASET_TYPE, dataset_type_name), data="instance"
             )
         ]
+
+    def producer_of(self, dataset_type_name: str) -> TaskNode | TaskInitNode | None:
+        """Return the `TaskNode` or `TaskInitNode` that writes the given
+        dataset type.
+
+        Parameters
+        ----------
+        dataset_type_name : `str`
+            Dataset type name.  Must not be a component.
+
+        Returns
+        -------
+        edge : `TaskNode`, `TaskInitNode`, or `None`
+            Producing node or `None` if there isn't one in this graph.
+
+        Raises
+        ------
+        DuplicateOutputError
+            Raised if there are multiple tasks defined to produce this dataset
+            type. This is only possible if the graph's dataset types are not
+            resolved.
+        """
+        if (producing_edge := self.producing_edge_of(dataset_type_name)) is not None:
+            return self._xgraph.nodes[producing_edge.task_key]["instance"]
+        return None
+
+    def consumers_of(self, dataset_type_name: str) -> list[TaskNode | TaskInitNode]:
+        """Return the  `TaskNode` and/or `TaskInitNode` objects that read
+        the given dataset type.
+
+        Parameters
+        ----------
+        dataset_type_name : `str`
+            Dataset type name.  Must not be a component.
+
+        Returns
+        -------
+        edges : `list` [ `ReadEdge` ]
+            Edges that connect this dataset type to the tasks that consume it.
+
+        Notes
+        -----
+        On resolved graphs, it may be slightly more efficient to use::
+
+            graph.dataset_types[dataset_type_name].producing_edges
+
+        but this method works on graphs with unresolved dataset types as well.
+        """
+        return [
+            self._xgraph.nodes[consuming_edge.task_key]["instance"]
+            for consuming_edge in self.consuming_edges_of(dataset_type_name)
+        ]
+
+    def inputs_of(self, task_label: str, init: bool = False) -> dict[str, DatasetTypeNode | None]:
+        """Return the dataset types that are inputs to a task.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label for the task in the pipeline.
+        init : `bool`, optional
+            If `True`, return init-input dataset types instead of runtime
+            (including prerequisite) inputs.
+
+        Returns
+        -------
+        inputs : `dict` [ `str`, `DatasetTypeNode` or `None` ]
+            Dictionary parent dataset type name keys and either
+            `DatasetTypeNode` values (if the dataset type has been resolved)
+            or `None` values.
+
+        Notes
+        -----
+        To get the input edges of a task or task init node (which provide
+        information about storage class overrides nd components) use::
+
+            graph.tasks[task_label].iter_all_inputs()
+
+        or
+
+            graph.tasks[task_label].init.iter_all_inputs()
+
+        or the various mapping attributes of the `TaskNode` and `TaskInitNode`
+        class.
+        """
+        node: TaskNode | TaskInitNode = self.tasks[task_label] if not init else self.tasks[task_label].init
+        return {
+            edge.parent_dataset_type_name: self._xgraph.nodes[edge.dataset_type_key]["instance"]
+            for edge in node.iter_all_inputs()
+        }
+
+    def outputs_of(
+        self, task_label: str, init: bool = False, include_automatic_connections: bool = True
+    ) -> dict[str, DatasetTypeNode | None]:
+        """Return the dataset types that are outputs of a task.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label for the task in the pipeline.
+        init : `bool`, optional
+            If `True`, return init-output dataset types instead of runtime
+            outputs.
+        include_automatic_connections : `bool`, optional
+            Whether to include automatic connections such as configs, metadata,
+            and logs.
+
+        Returns
+        -------
+        outputs : `dict` [ `str`, `DatasetTypeNode` or `None` ]
+            Dictionary parent dataset type name keys and either
+            `DatasetTypeNode` values (if the dataset type has been resolved)
+            or `None` values.
+
+        Notes
+        -----
+        To get the input edges of a task or task init node (which provide
+        information about storage class overrides nd components) use::
+
+            graph.tasks[task_label].iter_all_outputs()
+
+        or
+
+            graph.tasks[task_label].init.iter_all_outputs()
+
+        or the various mapping attributes of the `TaskNode` and `TaskInitNode`
+        class.
+        """
+        node: TaskNode | TaskInitNode = self.tasks[task_label] if not init else self.tasks[task_label].init
+        iterable = node.iter_all_outputs() if include_automatic_connections else node.outputs.values()
+        return {
+            edge.parent_dataset_type_name: self._xgraph.nodes[edge.dataset_type_key]["instance"]
+            for edge in iterable
+        }
 
     def add_task(
         self,

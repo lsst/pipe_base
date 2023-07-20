@@ -98,7 +98,7 @@ class PipelineStepTester:
                 {
                     name: node.dataset_type
                     for name, node in step_graph.dataset_types.items()
-                    if step_graph.producer_of(name) is not None
+                    if step_graph.producing_edge_of(name) is not None
                 }
             )
 
