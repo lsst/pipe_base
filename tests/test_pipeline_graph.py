@@ -133,9 +133,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         serialization.
         """
         stream = io.BytesIO()
-        self.graph.write_stream(stream)
+        self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph.read_stream(stream)
+        roundtripped = PipelineGraph._read_stream(stream)
         self.check_make_xgraph(roundtripped, resolved=False)
 
     def test_unresolved_file_io(self) -> None:
@@ -143,8 +143,8 @@ class PipelineGraphTestCase(unittest.TestCase):
         serialization.
         """
         with lsst.utils.tests.getTempFilePath(".json.gz") as filename:
-            self.graph.write_uri(filename)
-            roundtripped = PipelineGraph.read_uri(filename)
+            self.graph._write_uri(filename)
+            roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=False)
 
     def test_unresolved_deferred_import_io(self) -> None:
@@ -152,14 +152,14 @@ class PipelineGraphTestCase(unittest.TestCase):
         serialization, without immediately importing tasks on read.
         """
         stream = io.BytesIO()
-        self.graph.write_stream(stream)
+        self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph.read_stream(stream, import_and_configure=False)
+        roundtripped = PipelineGraph._read_stream(stream, import_and_configure=False)
         self.check_make_xgraph(roundtripped, resolved=False, imported_and_configured=False)
         # Check that we can still resolve the graph without importing tasks.
         roundtripped.resolve(MockRegistry(self.dimensions, {}))
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
-        roundtripped.import_and_configure(assume_edges_unchanged=True)
+        roundtripped._import_and_configure(assume_edges_unchanged=True)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 
     def test_resolved_accessors(self) -> None:
@@ -198,9 +198,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         """
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         stream = io.BytesIO()
-        self.graph.write_stream(stream)
+        self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph.read_stream(stream)
+        roundtripped = PipelineGraph._read_stream(stream)
         self.check_make_xgraph(roundtripped, resolved=True)
 
     def test_resolved_file_io(self) -> None:
@@ -209,8 +209,8 @@ class PipelineGraphTestCase(unittest.TestCase):
         """
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         with lsst.utils.tests.getTempFilePath(".json.gz") as filename:
-            self.graph.write_uri(filename)
-            roundtripped = PipelineGraph.read_uri(filename)
+            self.graph._write_uri(filename)
+            roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=True)
 
     def test_resolved_deferred_import_io(self) -> None:
@@ -219,11 +219,11 @@ class PipelineGraphTestCase(unittest.TestCase):
         """
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         stream = io.BytesIO()
-        self.graph.write_stream(stream)
+        self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph.read_stream(stream, import_and_configure=False)
+        roundtripped = PipelineGraph._read_stream(stream, import_and_configure=False)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
-        roundtripped.import_and_configure(check_edges_unchanged=True)
+        roundtripped._import_and_configure(check_edges_unchanged=True)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 
     def test_unresolved_copies(self) -> None:

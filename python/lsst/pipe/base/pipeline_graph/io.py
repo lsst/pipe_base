@@ -615,7 +615,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
             data_id=self.data_id,
         )
         if import_and_configure:
-            result.import_and_configure(
+            result._import_and_configure(
                 check_edges_unchanged=check_edges_unchanged,
                 assume_edges_unchanged=assume_edges_unchanged,
             )

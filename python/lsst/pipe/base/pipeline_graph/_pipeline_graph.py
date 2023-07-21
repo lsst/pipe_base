@@ -992,10 +992,15 @@ class PipelineGraph:
     #
     # Serialization Interface.
     #
+    # Serialization of PipelineGraphs is currently experimental and may not be
+    # retained in the future.  All serialization methods are
+    # underscore-prefixed to ensure nobody mistakes them for a stable interface
+    # (let a lone a stable file format).
+    #
     ###########################################################################
 
     @classmethod
-    def read_stream(
+    def _read_stream(
         cls,
         stream: BinaryIO,
         import_and_configure: bool = True,
@@ -1031,6 +1036,12 @@ class PipelineGraph:
         EdgesChangedError
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
+
+        Notes
+        -----
+        `PipelineGraph` serialization is currently experimental and may be
+        removed or significantly changed in the future, with no deprecation
+        period.
         """
         from .io import SerializedPipelineGraph
 
@@ -1044,7 +1055,7 @@ class PipelineGraph:
             )
 
     @classmethod
-    def read_uri(
+    def _read_uri(
         cls,
         uri: ResourcePathExpression,
         import_and_configure: bool = True,
@@ -1080,17 +1091,23 @@ class PipelineGraph:
         EdgesChangedError
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
+
+        Notes
+        -----
+        `PipelineGraph` serialization is currently experimental and may be
+        removed or significantly changed in the future, with no deprecation
+        period.
         """
         uri = ResourcePath(uri)
         with uri.open("rb") as stream:
-            return cls.read_stream(
+            return cls._read_stream(
                 cast(BinaryIO, stream),
                 import_and_configure=import_and_configure,
                 check_edges_unchanged=check_edges_unchanged,
                 assume_edges_unchanged=assume_edges_unchanged,
             )
 
-    def write_stream(self, stream: BinaryIO) -> None:
+    def _write_stream(self, stream: BinaryIO) -> None:
         """Write the pipeline to a file-like object.
 
         Parameters
@@ -1100,6 +1117,10 @@ class PipelineGraph:
 
         Notes
         -----
+        `PipelineGraph` serialization is currently experimental and may be
+        removed or significantly changed in the future, with no deprecation
+        period.
+
         The file format is gzipped JSON, and is intended to be human-readable,
         but it should not be considered a stable public interface for outside
         code, which should always use `PipelineGraph` methods (or at least the
@@ -1112,7 +1133,7 @@ class PipelineGraph:
                 SerializedPipelineGraph.serialize(self).json(exclude_defaults=True, indent=2).encode("utf-8")
             )
 
-    def write_uri(self, uri: ResourcePathExpression) -> None:
+    def _write_uri(self, uri: ResourcePathExpression) -> None:
         """Write the pipeline to a file given a URI.
 
         Parameters
@@ -1123,6 +1144,10 @@ class PipelineGraph:
 
         Notes
         -----
+        `PipelineGraph` serialization is currently experimental and may be
+        removed or significantly changed in the future, with no deprecation
+        period.
+
         The file format is gzipped JSON, and is intended to be human-readable,
         but it should not be considered a stable public interface for outside
         code, which should always use `PipelineGraph` methods (or at least the
@@ -1135,9 +1160,9 @@ class PipelineGraph:
         elif extension != ".json.gz":
             raise ValueError("Expanded pipeline files should always have a .json.gz extension.")
         with uri.open(mode="wb") as stream:
-            self.write_stream(cast(BinaryIO, stream))
+            self._write_stream(cast(BinaryIO, stream))
 
-    def import_and_configure(
+    def _import_and_configure(
         self, check_edges_unchanged: bool = False, assume_edges_unchanged: bool = False
     ) -> None:
         """Import the `PipelineTask` classes referenced by all task nodes and
