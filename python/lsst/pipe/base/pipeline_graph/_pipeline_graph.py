@@ -1130,7 +1130,7 @@ class PipelineGraph:
 
         with gzip.open(stream, mode="wb") as compressed_stream:
             compressed_stream.write(
-                SerializedPipelineGraph.serialize(self).json(exclude_defaults=True, indent=2).encode("utf-8")
+                SerializedPipelineGraph.serialize(self).json(exclude_defaults=True).encode("utf-8")
             )
 
     def _write_uri(self, uri: ResourcePathExpression) -> None:
