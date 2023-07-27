@@ -241,6 +241,7 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
             The label associated with this class's Task in a pipeline.
         """
         overrides = ConfigOverrides()
+        overrides.addParameters(parameters)
         if instrument is not None:
             overrides.addInstrumentOverride(instrument, taskDefaultName)
         if pipelineConfigs is not None:

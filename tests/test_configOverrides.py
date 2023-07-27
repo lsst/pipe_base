@@ -22,11 +22,13 @@
 """Simple unit test for configOverrides.
 """
 
+import tempfile
 import unittest
 
 import lsst.pex.config as pexConfig
 import lsst.utils.tests
 from lsst.pipe.base.configOverrides import ConfigOverrides
+from lsst.pipe.base.pipelineIR import ParametersIR
 
 # This is used in testSettingVar unit test
 TEST_CHOICE_VALUE = 1
@@ -265,6 +267,27 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "{'a': 'b'}")
         with self.assertRaises(pexConfig.FieldValidationError):
             self.checkSingleFieldOverride(field, {"a": "b"})
+
+    def testConfigParameters(self):
+        """Test that passing parameters works"""
+        config = ConfigTest()
+        parameters = ParametersIR(mapping={"number": 6, "text": "hello world"})
+        overrides = ConfigOverrides()
+        overrides.addParameters(parameters)
+        overrides.addPythonOverride("config.fStr = parameters.text")
+        with tempfile.NamedTemporaryFile(mode="w") as fileOverride:
+            fileOverride.write("config.fInt = parameters.number")
+            fileOverride.seek(0)
+            overrides.addFileOverride(fileOverride.name)
+            overrides.applyTo(config)
+        self.assertEqual(config.fStr, parameters.mapping["text"])
+        self.assertEqual(config.fInt, parameters.mapping["number"])
+
+        overrides = ConfigOverrides()
+        overrides.addParameters(parameters)
+        overrides.addPythonOverride("parameters.fail = 9")
+        with self.assertRaises(ValueError):
+            overrides.applyTo(config)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
