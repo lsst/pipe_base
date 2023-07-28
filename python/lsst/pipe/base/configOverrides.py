@@ -21,6 +21,7 @@
 
 """Module which defines ConfigOverrides class and related methods.
 """
+from __future__ import annotations
 
 __all__ = ["ConfigOverrides"]
 
@@ -28,12 +29,32 @@ import ast
 import inspect
 from enum import Enum
 from operator import attrgetter
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 from lsst.resources import ResourcePath
 
 from ._instrument import Instrument
 
+if TYPE_CHECKING:
+    from .pipelineIR import ParametersIR
+
 OverrideTypes = Enum("OverrideTypes", "Value File Python Instrument")
+
+
+class _FrozenSimpleNamespace(SimpleNamespace):
+    """SimpleNamespace subclass which disallows setting after construction"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        object.__setattr__(self, "_frozen", False)
+        super().__init__(**kwargs)
+        self._frozen = True
+
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        if self._frozen:
+            raise ValueError("Cannot set attributes on parameters")
+        else:
+            return super().__setattr__(__name, __value)
 
 
 class ConfigExpressionParser(ast.NodeVisitor):
@@ -139,8 +160,28 @@ class ConfigOverrides:
     necessary.
     """
 
-    def __init__(self):
-        self._overrides = []
+    def __init__(self) -> None:
+        self._overrides: list[tuple[OverrideTypes, Any]] = []
+        self._parameters: SimpleNamespace | None = None
+
+    def addParameters(self, parameters: ParametersIR) -> None:
+        """Add parameters which will be substituted when applying overrides.
+
+        Parameters
+        ----------
+        parameters : `ParametersIR`
+            Override parameters in the form as read from a Pipeline file.
+
+        Note
+        ----
+        This method may be called more than once, but each call will overwrite
+        any previous parameter defined with the same name.
+        """
+        if self._parameters is None:
+            self._parameters = SimpleNamespace()
+
+        for key, value in parameters.mapping.items():
+            setattr(self._parameters, key, value)
 
     def addFileOverride(self, filename):
         """Add overrides from a specified file.
@@ -222,20 +263,28 @@ class ConfigOverrides:
         # Look up a stack of variables people may be using when setting
         # configs. Create a dictionary that will be used akin to a namespace
         # for the duration of this function.
-        vars = {}
+        localVars = {}
         # pull in the variables that are declared in module scope of the config
         mod = inspect.getmodule(config)
-        vars.update({k: v for k, v in mod.__dict__.items() if not k.startswith("__")})
+        localVars.update({k: v for k, v in mod.__dict__.items() if not k.startswith("__")})
         # put the supplied config in the variables dictionary
-        vars["config"] = config
+        localVars["config"] = config
+        extraLocals = None
+
+        # If any parameters are supplied add them to the variables dictionary
+        if self._parameters is not None:
+            # make a copy of the params and "freeze" it
+            localParams = _FrozenSimpleNamespace(**vars(self._parameters))
+            localVars["parameters"] = localParams
+            extraLocals = {"parameters": localParams}
 
         # Create a parser for config expressions that may be strings
-        configParser = ConfigExpressionParser(namespace=vars)
+        configParser = ConfigExpressionParser(namespace=localVars)
 
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
                 with override.open("r") as buffer:
-                    config.loadFromStream(buffer, filename=override.ospath)
+                    config.loadFromStream(buffer, filename=override.ospath, extraLocals=extraLocals)
             elif otype is OverrideTypes.Value:
                 field, value = override
                 if isinstance(value, str):
@@ -289,7 +338,7 @@ class ConfigOverrides:
                 # in a python block will be put into this scope. This means
                 # other config setting branches can make use of these
                 # variables.
-                exec(override, None, vars)
+                exec(override, None, localVars)
             elif otype is OverrideTypes.Instrument:
                 instrument, name = override
                 instrument.applyConfigOverrides(name, config)

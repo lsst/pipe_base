@@ -227,7 +227,7 @@ class ParametersIR:
                         field2: parameters.shared_value
     """
 
-    mapping: MutableMapping[str, str]
+    mapping: MutableMapping[str, Any]
     """A mutable mapping of identifiers as keys, and shared configuration
     as values.
     """
