@@ -203,7 +203,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertIsInstance(fullMetadata["addMult:mult"], _TASK_METADATA_TYPE)
         self.assertEqual(set(fullMetadata), {"addMult", "addMult:add", "addMult:mult"})
 
-        all_names = fullMetadata.names(topLevelOnly=False)
+        all_names = fullMetadata.names()
         self.assertIn("addMult", all_names)
         self.assertIn("addMult.runStartUtc", all_names)
 

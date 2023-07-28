@@ -28,10 +28,8 @@ from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
 from lsst.daf.butler._compat import _BaseModelCompat
+from lsst.utils.introspection import find_outside_stacklevel
 from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
-
-_DEPRECATION_REASON = "Will be removed after v25."
-_DEPRECATION_VERSION = "v24"
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
@@ -256,41 +254,41 @@ class TaskMetadata(_BaseModelCompat):
             # Report the correct key.
             raise KeyError(f"'{key}' not found") from None
 
-    def names(self, topLevelOnly: bool = True) -> set[str]:
+    def names(self, topLevelOnly: bool | None = None) -> set[str]:
         """Return the hierarchical keys from the metadata.
 
         Parameters
         ----------
-        topLevelOnly  : `bool`
-            If true, return top-level keys, otherwise full metadata item keys.
+        topLevelOnly  : `bool` or `None`, optional
+            This parameter is deprecated and will be removed in the future.
+            If given it can only be `False`.  All names in the hierarchy are
+            always returned.
 
         Returns
         -------
         names : `collections.abc.Set`
-            A set of top-level keys or full metadata item keys, including
-            the top-level keys.
-
-        Notes
-        -----
-        Should never be called in new code with ``topLevelOnly`` set to `True`
-        -- this is equivalent to asking for the keys and is the default
-        when iterating through the task metadata. In this case a deprecation
-        message will be issued and the ability will raise an exception
-        in a future release.
-
-        When ``topLevelOnly`` is `False` all keys, including those from the
-        hierarchy and the top-level hierarchy, are returned.
+            A set of all keys, including those from the hierarchy and the
+            top-level hierarchy.
         """
         if topLevelOnly:
-            warnings.warn("Use keys() instead. " + _DEPRECATION_REASON, FutureWarning)
-            return set(self.keys())
-        else:
-            names = set()
-            for k, v in self.items():
-                names.add(k)  # Always include the current level
-                if isinstance(v, TaskMetadata):
-                    names.update({k + "." + item for item in v.names(topLevelOnly=topLevelOnly)})
-            return names
+            raise RuntimeError(
+                "The topLevelOnly parameter is no longer supported and can not have a True value."
+            )
+
+        if topLevelOnly is False:
+            warnings.warn(
+                "The topLevelOnly parameter is deprecated and is always assumed to be False."
+                " It will be removed completely after v26.",
+                category=FutureWarning,
+                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+            )
+
+        names = set()
+        for k, v in self.items():
+            names.add(k)  # Always include the current level
+            if isinstance(v, TaskMetadata):
+                names.update({k + "." + item for item in v.names()})
+        return names
 
     def paramNames(self, topLevelOnly: bool) -> set[str]:
         """Return hierarchical names.
