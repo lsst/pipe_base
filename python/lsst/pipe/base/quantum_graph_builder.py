@@ -77,13 +77,21 @@ class QuantumGraphBuilderError(Exception):
     pass
 
 
-class OutputExistsError(QuantumGraphBuilderError):
+class GraphBuilderError(QuantumGraphBuilderError):
+    """Backwards-compatibility near-alias for QuantumGraphBuilderError."""
+
+    pass
+
+
+# Inherit from backwards-compatibility alias for backwards-compatibility.
+class OutputExistsError(GraphBuilderError):
     """Exception generated when output datasets already exist."""
 
     pass
 
 
-class PrerequisiteMissingError(QuantumGraphBuilderError):
+# Inherit from backwards-compatibility alias for backwards-compatibility.
+class PrerequisiteMissingError(GraphBuilderError):
     """Exception generated when a prerequisite dataset does not exist."""
 
     pass
