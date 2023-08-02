@@ -23,7 +23,7 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import uuid
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 
 import networkx
 from lsst.daf.butler import Butler, DataCoordinate, DatasetRef
@@ -35,7 +35,7 @@ from .pipeline import PipelineDatasetTypes
 
 @dataclasses.dataclass
 class TaskExecutionReport:
-    failed: set[DataCoordinate] = dataclasses.field(default_factory=set)
+    failed: dict[DataCoordinate, DatasetRef] = dataclasses.field(default_factory=dict)
     failed_upstream: set[DataCoordinate] = dataclasses.field(default_factory=set)
     missing_datasets_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
     missing_datasets_not_produced: dict[DatasetRef, bool] = dataclasses.field(default_factory=dict)
@@ -43,10 +43,11 @@ class TaskExecutionReport:
     missing_upstream_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
     datasets_produced: dict[str, int] = dataclasses.field(default_factory=dict)
 
-    def inspect_quantum(self, quantum_node, status_graph: networkx.DiGraph, refs, metadata_name):
+    def inspect_quantum(self, quantum_node, status_graph: networkx.DiGraph, refs, metadata_name, log_name):
         quantum = quantum_node.quantum
-        (ref,) = quantum.outputs[metadata_name]
-        if ref.id not in refs[metadata_name]:
+        (metadata_ref,) = quantum.outputs[metadata_name]
+        (log_ref,) = quantum.outputs[log_name]
+        if metadata_ref.id not in refs[metadata_name]:
             if any(
                 status_graph.nodes[upstream_quantum_id]["failed"]
                 for upstream_dataset_id in status_graph.predecessors(quantum_node.nodeId)
@@ -54,32 +55,32 @@ class TaskExecutionReport:
             ):
                 self.failed_upstream.add(quantum.dataId)
             else:
-                self.failed.add(quantum.dataId)
+                self.failed[quantum.dataId] = log_ref
             failed = True
         else:
             failed = False
         status_graph.nodes[quantum_node.nodeId]["failed"] = failed
-        for ref in itertools.chain.from_iterable(quantum.outputs.values()):
-            if ref.id not in refs[ref.datasetType.name]:
+        for metadata_ref in itertools.chain.from_iterable(quantum.outputs.values()):
+            if metadata_ref.id not in refs[metadata_ref.datasetType.name]:
                 if failed:
-                    for upstream_quantum_id in status_graph.predecessors(ref.id):
+                    for upstream_quantum_id in status_graph.predecessors(metadata_ref.id):
                         if status_graph.nodes[upstream_quantum_id]["failed"]:
-                            self.missing_upstream_failed.add(ref)
+                            self.missing_upstream_failed.add(metadata_ref)
                             break
                     else:
-                        self.missing_datasets_failed.add(ref)
+                        self.missing_datasets_failed.add(metadata_ref)
                 else:
-                    status_graph.nodes[ref.id]["not_produced"] = True
-                    self.missing_datasets_not_produced[ref] = any(
+                    status_graph.nodes[metadata_ref.id]["not_produced"] = True
+                    self.missing_datasets_not_produced[metadata_ref] = any(
                         status_graph.nodes[upstream_dataset_id].get("not_produced", False)
-                        for upstream_quantum_id in status_graph.predecessors(ref.id)
+                        for upstream_quantum_id in status_graph.predecessors(metadata_ref.id)
                         for upstream_dataset_id in status_graph.predecessors(upstream_quantum_id)
                     )
 
             else:
-                status_graph.nodes[ref.id]["not_produced"] = False
-                self.datasets_produced[ref.datasetType.name] = (
-                    self.datasets_produced.setdefault(ref.datasetType.name, 0) + 1
+                status_graph.nodes[metadata_ref.id]["not_produced"] = False
+                self.datasets_produced[metadata_ref.datasetType.name] = (
+                    self.datasets_produced.setdefault(metadata_ref.datasetType.name, 0) + 1
                 )
 
     def __str__(self) -> str:
@@ -95,49 +96,48 @@ class QuantumGraphExecutionReport:
     def make_reports(
         cls,
         butler: Butler,
-        graph_uris: Iterable[ResourcePathExpression],
-        collections: Iterable[str] | None = None,
-    ) -> Iterator[QuantumGraphExecutionReport]:
-        pipeline_dataset_types = None
+        graph_uri: ResourcePathExpression,
+    ) -> QuantumGraphExecutionReport:
         refs = {}
         status_graph = networkx.DiGraph()
-        for graph_uri in graph_uris:
-            graph_uri = ResourcePath(graph_uri)
-            qg = QuantumGraph.loadUri(graph_uri)
-            report = cls(graph_uri)
-            if pipeline_dataset_types is None:
-                task_defs = list(qg.iterTaskGraph())
-                pipeline_dataset_types = PipelineDatasetTypes.fromPipeline(
-                    task_defs, registry=butler.registry
+        graph_uri = ResourcePath(graph_uri)
+        qg = QuantumGraph.loadUri(graph_uri)
+        collection = qg.metadata["output_run"]
+        report = cls(graph_uri)
+        task_defs = list(qg.iterTaskGraph())
+        pipeline_dataset_types = PipelineDatasetTypes.fromPipeline(task_defs, registry=butler.registry)
+        for dataset_type in itertools.chain(
+            pipeline_dataset_types.initIntermediates,
+            pipeline_dataset_types.initOutputs,
+            pipeline_dataset_types.intermediates,
+            pipeline_dataset_types.outputs,
+        ):
+            refs[dataset_type.name] = {
+                ref.id: ref
+                for ref in butler.registry.queryDatasets(
+                    dataset_type.name, collections=collection, findFirst=False
                 )
-                for dataset_type in itertools.chain(
-                    pipeline_dataset_types.initIntermediates,
-                    pipeline_dataset_types.initOutputs,
-                    pipeline_dataset_types.intermediates,
-                    pipeline_dataset_types.outputs,
-                ):
-                    refs[dataset_type.name] = {
-                        ref.id: ref
-                        for ref in butler.registry.queryDatasets(
-                            dataset_type.name, collections=collections, findFirst=False
-                        )
-                    }
-            for taskDef in qg.iterTaskGraph():
-                for node in qg.getNodesForTask(taskDef):
-                    status_graph.add_node(node.nodeId)
-                    for ref in itertools.chain.from_iterable(node.quantum.outputs.values()):
-                        status_graph.add_edge(node.nodeId, ref.id)
-                    for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
-                        status_graph.add_edge(ref.id, node.nodeId)
+            }
+        for taskDef in qg.iterTaskGraph():
+            for node in qg.getNodesForTask(taskDef):
+                status_graph.add_node(node.nodeId)
+                for ref in itertools.chain.from_iterable(node.quantum.outputs.values()):
+                    status_graph.add_edge(node.nodeId, ref.id)
+                for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
+                    status_graph.add_edge(ref.id, node.nodeId)
 
-            for taskDef in qg.iterTaskGraph():
-                task_report = TaskExecutionReport()
-                for node in qg.getNodesForTask(taskDef):
-                    task_report.inspect_quantum(
-                        node, status_graph, refs, metadata_name=taskDef.metadataDatasetName
-                    )
-                report.tasks[taskDef.label] = task_report
-            yield report
+        for taskDef in qg.iterTaskGraph():
+            task_report = TaskExecutionReport()
+            for node in qg.getNodesForTask(taskDef):
+                task_report.inspect_quantum(
+                    node,
+                    status_graph,
+                    refs,
+                    metadata_name=taskDef.metadataDatasetName,
+                    log_name=taskDef.logOutputDatasetName,
+                )
+            report.tasks[taskDef.label] = task_report
+        return report
 
     def __str__(self) -> str:
         return "\n".join(f"{tasklabel}:{report}" for tasklabel, report in self.tasks.items())
