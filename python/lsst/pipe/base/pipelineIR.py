@@ -43,6 +43,7 @@ from typing import Any, Literal
 
 import yaml
 from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.introspection import find_outside_stacklevel
 
 
 class _Tags(enum.Enum):
@@ -315,7 +316,8 @@ class ConfigIR:
                 warnings.warn(
                     f"config {key} contains value {match.group(0)} which is formatted like a "
                     "Pipeline parameter but was not found within the Pipeline, if this was not "
-                    "intentional, check for a typo"
+                    "intentional, check for a typo",
+                    stacklevel=find_outside_stacklevel("lsst.pipe.base"),
                 )
         return new_config
 

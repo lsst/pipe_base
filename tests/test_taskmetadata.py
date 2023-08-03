@@ -72,7 +72,7 @@ class TaskMetadataTestCase(unittest.TestCase):
 
         self.assertEqual(meta.paramNames(topLevelOnly=False), {"test", "new.int", "new.str"})
         self.assertEqual(meta.paramNames(topLevelOnly=True), {"test"})
-        self.assertEqual(meta.names(topLevelOnly=False), {"test", "new", "new.int", "new.str"})
+        self.assertEqual(meta.names(), {"test", "new", "new.int", "new.str"})
         self.assertEqual(meta.keys(), ("test", "new"))
         self.assertEqual(len(meta), 2)
         self.assertEqual(len(meta["new"]), 2)
@@ -234,6 +234,14 @@ class TaskMetadataTestCase(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             meta["numpy"] = numpy.zeros(5)
+
+    def test_deprecated(self):
+        meta = TaskMetadata()
+        with self.assertRaises(RuntimeError):
+            meta.names(topLevelOnly=True)
+
+        with self.assertWarns(FutureWarning):
+            meta.names(topLevelOnly=False)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ import warnings
 from collections.abc import Iterable, Iterator
 from typing import Protocol
 
+from lsst.utils.introspection import find_outside_stacklevel
+
 
 class DatasetQueryConstraintVariant(Iterable, Protocol):
     """Base for all the valid variants for controlling
@@ -83,7 +85,11 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
             return cls.OFF
         else:
             if " " in expression:
-                warnings.warn("Whitespace found in expression will be trimmed", RuntimeWarning)
+                warnings.warn(
+                    "Whitespace found in expression will be trimmed",
+                    RuntimeWarning,
+                    stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+                )
                 expression = expression.replace(" ", "")
             members = expression.split(",")
             return cls.LIST(members)

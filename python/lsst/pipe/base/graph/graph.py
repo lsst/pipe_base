@@ -26,11 +26,9 @@ import io
 import json
 import lzma
 import os
-import pickle
 import struct
 import time
 import uuid
-import warnings
 from collections import defaultdict, deque
 from collections.abc import Generator, Iterable, Mapping, MutableMapping
 from itertools import chain
@@ -901,9 +899,7 @@ class QuantumGraph:
         uri : convertible to `~lsst.resources.ResourcePath`
             URI from where to load the graph.
         universe : `~lsst.daf.butler.DimensionUniverse`, optional
-            `~lsst.daf.butler.DimensionUniverse` instance, not used by the
-            method itself but needed to ensure that registry data structures
-            are initialized. If `None` it is loaded from the `QuantumGraph`
+            If `None` it is loaded from the `QuantumGraph`
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
@@ -929,7 +925,7 @@ class QuantumGraph:
         Raises
         ------
         TypeError
-            Raised if pickle contains instance of a type other than
+            Raised if file contains instance of a type other than
             `QuantumGraph`.
         ValueError
             Raised if one or more of the nodes requested is not in the
@@ -940,33 +936,15 @@ class QuantumGraph:
             Raise if Supplied `~lsst.daf.butler.DimensionUniverse` is not
             compatible with the `~lsst.daf.butler.DimensionUniverse` saved in
             the graph.
-
-        Notes
-        -----
-        Reading Quanta from pickle requires existence of singleton
-        `~lsst.daf.butler.DimensionUniverse` which is usually instantiated
-        during `~lsst.daf.butler.Registry` initialization. To make sure
-        that `~lsst.daf.butler.DimensionUniverse` exists this method
-        accepts dummy `~lsst.daf.butler.DimensionUniverse` argument.
         """
         uri = ResourcePath(uri)
-        # With ResourcePath we have the choice of always using a local file
-        # or reading in the bytes directly. Reading in bytes can be more
-        # efficient for reasonably-sized pickle files when the resource
-        # is remote. For now use the local file variant. For a local file
-        # as_local() does nothing.
-
-        if uri.getExtension() in (".pickle", ".pkl"):
-            with uri.as_local() as local, open(local.ospath, "rb") as fd:
-                warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
-                qgraph = pickle.load(fd)
-        elif uri.getExtension() in (".qgraph"):
+        if uri.getExtension() in {".qgraph"}:
             with LoadHelper(uri, minimumVersion) as loader:
                 qgraph = loader.load(universe, nodes, graphID)
         else:
-            raise ValueError("Only know how to handle files saved as `pickle`, `pkl`, or `qgraph`")
+            raise ValueError(f"Only know how to handle files saved as `.qgraph`, not {uri}")
         if not isinstance(qgraph, QuantumGraph):
-            raise TypeError(f"QuantumGraph save file contains unexpected object type: {type(qgraph)}")
+            raise TypeError(f"QuantumGraph file {uri} contains unexpected object type: {type(qgraph)}")
         return qgraph
 
     @classmethod
@@ -995,17 +973,14 @@ class QuantumGraph:
         Raises
         ------
         ValueError
-            Raised if `QuantumGraph` was saved as a pickle.
             Raised if the extension of the file specified by uri is not a
             `QuantumGraph` extension.
         """
         uri = ResourcePath(uri)
-        if uri.getExtension() in (".pickle", ".pkl"):
-            raise ValueError("Reading a header from a pickle save is not supported")
-        elif uri.getExtension() in (".qgraph"):
+        if uri.getExtension() in {".qgraph"}:
             return LoadHelper(uri, minimumVersion).readHeader()
         else:
-            raise ValueError("Only know how to handle files saved as `qgraph`")
+            raise ValueError("Only know how to handle files saved as `.qgraph`")
 
     def buildAndPrintHeader(self) -> None:
         """Create a header that would be used in a save of this object and
@@ -1020,7 +995,7 @@ class QuantumGraph:
         Parameters
         ----------
         file : `io.BufferedIOBase`
-            File to write pickle data open in binary mode.
+            File to write data open in binary mode.
         """
         buffer = self._buildSaveObject()
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
@@ -1155,22 +1130,18 @@ class QuantumGraph:
         map_lengths = struct.pack(fmt_string, len(header_encode))
 
         # write each component of the save out in a deterministic order
-        # buffer = io.BytesIO()
-        # buffer.write(map_lengths)
-        # buffer.write(taskDef_pickle)
-        # buffer.write(map_pickle)
         buffer = bytearray()
         buffer.extend(MAGIC_BYTES)
         buffer.extend(save_bytes)
         buffer.extend(map_lengths)
         buffer.extend(header_encode)
-        # Iterate over the length of pickleData, and for each element pop the
+        # Iterate over the length of jsonData, and for each element pop the
         # leftmost element off the deque and write it out. This is to save
         # memory, as the memory is added to the buffer object, it is removed
         # from from the container.
         #
-        # Only this section needs to worry about memory pressue because
-        # everything else written to the buffer prior to this pickle data is
+        # Only this section needs to worry about memory pressure because
+        # everything else written to the buffer prior to this data is
         # only on the order of kilobytes to low numbers of megabytes.
         while jsonData:
             buffer.extend(jsonData.popleft())
@@ -1193,11 +1164,9 @@ class QuantumGraph:
         Parameters
         ----------
         file : `io.IO` of bytes
-            File with pickle data open in binary mode.
+            File with data open in binary mode.
         universe : `~lsst.daf.butler.DimensionUniverse`, optional
-            `~lsst.daf.butler.DimensionUniverse` instance, not used by the
-            method itself but needed to ensure that registry data structures
-            are initialized. If `None` it is loaded from the `QuantumGraph`
+            If `None` it is loaded from the `QuantumGraph`
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
@@ -1223,32 +1192,18 @@ class QuantumGraph:
         Raises
         ------
         TypeError
-            Raised if pickle contains instance of a type other than
+            Raised if data contains instance of a type other than
             `QuantumGraph`.
         ValueError
             Raised if one or more of the nodes requested is not in the
             `QuantumGraph` or if graphID parameter does not match the graph
             being loaded or if the supplied uri does not point at a valid
             `QuantumGraph` save file.
-
-        Notes
-        -----
-        Reading Quanta from pickle requires existence of singleton
-        `~lsst.daf.butler.DimensionUniverse` which is usually instantiated
-        during `~lsst.daf.butler.Registry` initialization. To make sure that
-        `~lsst.daf.butler.DimensionUniverse` exists this method accepts dummy
-        `~lsst.daf.butler.DimensionUniverse` argument.
         """
-        # Try to see if the file handle contains pickle data, this will be
-        # removed in the future
-        try:
-            qgraph = pickle.load(file)
-            warnings.warn("Pickle graphs are deprecated, please re-save your graph with the save method")
-        except pickle.UnpicklingError:
-            with LoadHelper(file, minimumVersion) as loader:
-                qgraph = loader.load(universe, nodes, graphID)
+        with LoadHelper(file, minimumVersion) as loader:
+            qgraph = loader.load(universe, nodes, graphID)
         if not isinstance(qgraph, QuantumGraph):
-            raise TypeError(f"QuantumGraph pickle file has contains unexpected object type: {type(qgraph)}")
+            raise TypeError(f"QuantumGraph file contains unexpected object type: {type(qgraph)}")
         return qgraph
 
     def iterTaskGraph(self) -> Generator[TaskDef, None, None]:
