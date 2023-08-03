@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lsst-pipe-base"
+requires-python = ">=3.10.0"
 description = "Pipeline infrastructure for the Rubin Science Pipelines."
 license = {text = "GPLv3+ License"}
 readme = "README.md"
