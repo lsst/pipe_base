@@ -463,7 +463,7 @@ class PipelineGraph:
 
         Notes
         -----
-        The `universe` attribute are set to ``registry.dimensions`` and used to
+        The `universe` attribute is set to ``registry.dimensions`` and used to
         set all `TaskNode.dimensions` attributes.  Dataset type nodes are
         resolved by first looking for a registry definition, then using the
         producing task's definition, then looking for consistency between all
@@ -503,6 +503,9 @@ class PipelineGraph:
                     new_dataset_type_node = DatasetTypeNode._from_edges(
                         node_key, self._xgraph, registry, previous=dataset_type_node
                     )
+                    # Usage of `is`` here is intentional; `_from_edges` returns
+                    # `previous=dataset_type_node` if it can determine that it
+                    # doesn't need to change.
                     if new_dataset_type_node is not dataset_type_node:
                         updates[node_key] = new_dataset_type_node
         try:
@@ -582,12 +585,10 @@ class PipelineGraph:
         it references and marks the graph as unsorted.  It is most effiecient
         to add all tasks up front and only then resolve and/or sort the graph.
         """
-        key = NodeKey(NodeType.TASK, label)
-        init_key = NodeKey(NodeType.TASK_INIT, label)
         task_node = TaskNode._from_imported_data(
-            key,
-            init_key,
-            _TaskNodeImportedData.configure(label, task_class, config, connections),
+            key=NodeKey(NodeType.TASK, label),
+            init_key=NodeKey(NodeType.TASK_INIT, label),
+            data=_TaskNodeImportedData.configure(label, task_class, config, connections),
             universe=self.universe,
         )
         self.add_task_nodes([task_node])
@@ -1449,7 +1450,10 @@ class PipelineGraph:
         self._dataset_types = DatasetTypeMappingView(self._xgraph)
         self._raw_data_id: dict[str, Any]
         if isinstance(data_id, DataCoordinate):
-            universe = data_id.universe
+            if universe is None:
+                universe = data_id.universe
+            else:
+                assert universe is data_id.universe, "data_id.universe and given universe differ"
             self._raw_data_id = data_id.byName()
         elif data_id is None:
             self._raw_data_id = {}
