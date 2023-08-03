@@ -1,0 +1,1 @@
+Removed support for reading quantum graphs in pickle format.
