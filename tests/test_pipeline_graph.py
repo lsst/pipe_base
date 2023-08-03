@@ -41,6 +41,7 @@ from lsst.pipe.base.pipeline_graph import (
     NodeType,
     PipelineGraph,
     PipelineGraphError,
+    TaskImportMode,
     UnresolvedGraphError,
 )
 from lsst.pipe.base.tests.mocks import (
@@ -154,12 +155,12 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream = io.BytesIO()
         self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph._read_stream(stream, import_and_configure=False)
+        roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=False, imported_and_configured=False)
         # Check that we can still resolve the graph without importing tasks.
         roundtripped.resolve(MockRegistry(self.dimensions, {}))
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
-        roundtripped._import_and_configure(assume_edges_unchanged=True)
+        roundtripped._import_and_configure(TaskImportMode.ASSUME_CONSISTENT_EDGES)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 
     def test_resolved_accessors(self) -> None:
@@ -221,9 +222,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream = io.BytesIO()
         self.graph._write_stream(stream)
         stream.seek(0)
-        roundtripped = PipelineGraph._read_stream(stream, import_and_configure=False)
+        roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
-        roundtripped._import_and_configure(check_edges_unchanged=True)
+        roundtripped._import_and_configure(TaskImportMode.REQUIRE_CONSISTENT_EDGES)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 
     def test_unresolved_copies(self) -> None:

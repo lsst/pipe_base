@@ -47,7 +47,7 @@ from ._exceptions import (
 from ._mapping_views import DatasetTypeMappingView, TaskMappingView
 from ._nodes import NodeKey, NodeType
 from ._task_subsets import TaskSubset
-from ._tasks import TaskInitNode, TaskNode, _TaskNodeImportedData
+from ._tasks import TaskImportMode, TaskInitNode, TaskNode, _TaskNodeImportedData
 
 if TYPE_CHECKING:
     from ..config import PipelineTaskConfig
@@ -1002,11 +1002,7 @@ class PipelineGraph:
 
     @classmethod
     def _read_stream(
-        cls,
-        stream: BinaryIO,
-        import_and_configure: bool = True,
-        check_edges_unchanged: bool = False,
-        assume_edges_unchanged: bool = False,
+        cls, stream: BinaryIO, import_mode: TaskImportMode = TaskImportMode.REQUIRE_CONSISTENT_EDGES
     ) -> PipelineGraph:
         """Read a serialized `PipelineGraph` from a file-like object.
 
@@ -1015,15 +1011,11 @@ class PipelineGraph:
         stream : `BinaryIO`
             File-like object opened for binary reading, containing
             gzip-compressed JSON.
-        import_and_configure : `bool`, optional
-            If `True`, import and configure all tasks immediately (see the
-            `import_and_configure` method).  If `False`, some `TaskNode` and
-            `TaskInitNode` attributes will not be available, but reading may be
-            much faster.
-        check_edges_unchanged : `bool`, optional
-            Forwarded to `import_and_configure` after reading.
-        assume_edges_unchanged : `bool`, optional
-            Forwarded to `import_and_configure` after reading.
+        import_mode : `TaskImportMode`, optional
+            Whether to import tasks, and how to reconcile any differences
+            between the imported task's connections and the those that were
+            persisted with the graph.  Default is to check that they are the
+            same.
 
         Returns
         -------
@@ -1035,8 +1027,9 @@ class PipelineGraph:
         PipelineGraphReadError
             Raised if the serialized `PipelineGraph` is not self-consistent.
         EdgesChangedError
-            Raised if ``check_edges_unchanged=True`` and the edges of a task do
-            change after import and reconfiguration.
+            Raised if ``import_mode`` is
+            `TaskImportMode.REQUIRED_CONSISTENT_EDGES` and the edges of a task
+            did change after import and reconfiguration.
 
         Notes
         -----
@@ -1049,19 +1042,13 @@ class PipelineGraph:
         with gzip.open(stream, "rb") as uncompressed_stream:
             data = json.load(uncompressed_stream)
             serialized_graph = SerializedPipelineGraph.parse_obj(data)
-            return serialized_graph.deserialize(
-                import_and_configure=import_and_configure,
-                check_edges_unchanged=check_edges_unchanged,
-                assume_edges_unchanged=assume_edges_unchanged,
-            )
+            return serialized_graph.deserialize(import_mode)
 
     @classmethod
     def _read_uri(
         cls,
         uri: ResourcePathExpression,
-        import_and_configure: bool = True,
-        check_edges_unchanged: bool = False,
-        assume_edges_unchanged: bool = False,
+        import_mode: TaskImportMode = TaskImportMode.REQUIRE_CONSISTENT_EDGES,
     ) -> PipelineGraph:
         """Read a serialized `PipelineGraph` from a file at a URI.
 
@@ -1070,15 +1057,11 @@ class PipelineGraph:
         uri : convertible to `lsst.resources.ResourcePath`
             URI to a gzip-compressed JSON file containing a serialized pipeline
             graph.
-        import_and_configure : `bool`, optional
-            If `True`, import and configure all tasks immediately (see
-            the `import_and_configure` method).  If `False`, some `TaskNode`
-            and `TaskInitNode` attributes will not be available, but reading
-            may be much faster.
-        check_edges_unchanged : `bool`, optional
-            Forwarded to `import_and_configure` after reading.
-        assume_edges_unchanged : `bool`, optional
-            Forwarded to `import_and_configure` after reading.
+        import_mode : `TaskImportMode`, optional
+            Whether to import tasks, and how to reconcile any differences
+            between the imported task's connections and the those that were
+            persisted with the graph.  Default is to check that they are the
+            same.
 
         Returns
         -------
@@ -1090,8 +1073,9 @@ class PipelineGraph:
         PipelineGraphReadError
             Raised if the serialized `PipelineGraph` is not self-consistent.
         EdgesChangedError
-            Raised if ``check_edges_unchanged=True`` and the edges of a task do
-            change after import and reconfiguration.
+            Raised if ``import_mode`` is
+            `TaskImportMode.REQUIRED_CONSISTENT_EDGES` and the edges of a task
+            did change after import and reconfiguration.
 
         Notes
         -----
@@ -1101,12 +1085,7 @@ class PipelineGraph:
         """
         uri = ResourcePath(uri)
         with uri.open("rb") as stream:
-            return cls._read_stream(
-                cast(BinaryIO, stream),
-                import_and_configure=import_and_configure,
-                check_edges_unchanged=check_edges_unchanged,
-                assume_edges_unchanged=assume_edges_unchanged,
-            )
+            return cls._read_stream(cast(BinaryIO, stream), import_mode=import_mode)
 
     def _write_stream(self, stream: BinaryIO) -> None:
         """Write the pipeline to a file-like object.
@@ -1164,31 +1143,26 @@ class PipelineGraph:
             self._write_stream(cast(BinaryIO, stream))
 
     def _import_and_configure(
-        self, check_edges_unchanged: bool = False, assume_edges_unchanged: bool = False
+        self, import_mode: TaskImportMode = TaskImportMode.REQUIRE_CONSISTENT_EDGES
     ) -> None:
         """Import the `PipelineTask` classes referenced by all task nodes and
         update those nodes accordingly.
 
         Parameters
         ----------
-        check_edges_unchanged : `bool`, optional
-            If `True`, require the edges (connections) of the modified tasks to
-            remain unchanged after importing and configuring each task, and
-            verify that this is the case.
-        assume_edges_unchanged : `bool`, optional
-            If `True`, the caller declares that the edges (connections) of the
-            modified tasks will remain unchanged importing and configuring each
-            task, and that it is unnecessary to check this.
+        import_mode : `TaskImportMode`, optional
+            Whether to import tasks, and how to reconcile any differences
+            between the imported task's connections and the those that were
+            persisted with the graph.  Default is to check that they are the
+            same.  This method does nothing if this is
+            `TaskImportMode.DO_NOT_IMPORT`.
 
         Raises
         ------
-        ValueError
-            Raised if ``assume_edges_unchanged`` and ``check_edges_unchanged``
-            are both `True`, or if a full config is provided for a task after
-            another full config or an override has already been provided.
         EdgesChangedError
-            Raised if ``check_edges_unchanged=True`` and the edges of a task do
-            change.
+            Raised if ``import_mode`` is
+            `TaskImportMode.REQUIRED_CONSISTENT_EDGES` and the edges of a task
+            did change after import and reconfiguration.
 
         Notes
         -----
@@ -1202,13 +1176,19 @@ class PipelineGraph:
         usually because the software used to read a serialized graph is newer
         than the software used to write it (e.g. a new config option has been
         added, or the task was moved to a new module with a forwarding alias
-        left behind).  These changes are allowed by ``check=True``.
+        left behind).  These changes are allowed by
+        `TaskImportMode.REQUIRE_CONSISTENT_EDGES`.
 
         If importing and configuring a task causes its edges to change, any
         dataset type nodes linked to those edges will be reset to the
         unresolved state.
         """
-        rebuild = check_edges_unchanged or not assume_edges_unchanged
+        if import_mode is TaskImportMode.DO_NOT_IMPORT:
+            return
+        rebuild = (
+            import_mode is TaskImportMode.REQUIRE_CONSISTENT_EDGES
+            or import_mode is TaskImportMode.OVERRIDE_EDGES
+        )
         updates: dict[str, TaskNode] = {}
         node_key: NodeKey
         for node_key, node_state in self._xgraph.nodes.items():
@@ -1219,8 +1199,8 @@ class PipelineGraph:
                     updates[task_node.label] = new_task_node
         self._replace_task_nodes(
             updates,
-            check_edges_unchanged=check_edges_unchanged,
-            assume_edges_unchanged=assume_edges_unchanged,
+            check_edges_unchanged=(import_mode is TaskImportMode.REQUIRE_CONSISTENT_EDGES),
+            assume_edges_unchanged=(import_mode is TaskImportMode.ASSUME_CONSISTENT_EDGES),
             message_header=(
                 "In task with label {task_label!r}, persisted edges (A)"
                 "differ from imported and configured edges (B):"

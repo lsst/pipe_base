@@ -20,9 +20,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("TaskNode", "TaskInitNode")
+__all__ = ("TaskNode", "TaskInitNode", "TaskImportMode")
 
 import dataclasses
+import enum
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -41,6 +42,38 @@ from ._nodes import NodeKey, NodeType
 if TYPE_CHECKING:
     from ..config import PipelineTaskConfig
     from ..pipelineTask import PipelineTask
+
+
+class TaskImportMode(enum.Enum):
+    """Enumeration of the ways to handle importing tasks when reading a
+    serialized PipelineGraph.
+    """
+
+    DO_NOT_IMPORT = enum.auto()
+    """Do not import tasks or instantiate their configs and connections."""
+
+    REQUIRE_CONSISTENT_EDGES = enum.auto()
+    """Import tasks and instantiate their config and connection objects, and
+    check that the connections still define the same edges.
+    """
+
+    ASSUME_CONSISTENT_EDGES = enum.auto()
+    """Import tasks and instantiate their config and connection objects, but do
+    not check that the connections still define the same edges.
+
+    This is safe only when the caller knows the task definition has not changed
+    since the pipeline graph was persisted, such as when it was saved and
+    loaded with the same pipeline version.
+    """
+
+    OVERRIDE_EDGES = enum.auto()
+    """Import tasks and instantiate their config and connection objects, and
+    allow the edges defined in those connections to override those in the
+    persisted graph.
+
+    This may cause dataset type nodes to be unresolved, since resolutions
+    consistent with the original edges may be invalidated.
+    """
 
 
 @dataclasses.dataclass(frozen=True)

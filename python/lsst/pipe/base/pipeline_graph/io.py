@@ -45,7 +45,7 @@ from ._exceptions import PipelineGraphReadError
 from ._nodes import NodeKey, NodeType
 from ._pipeline_graph import PipelineGraph
 from ._task_subsets import TaskSubset
-from ._tasks import TaskInitNode, TaskNode
+from ._tasks import TaskImportMode, TaskInitNode, TaskNode
 
 _U = TypeVar("_U")
 
@@ -527,9 +527,7 @@ class SerializedPipelineGraph(_BaseModelCompat):
 
     def deserialize(
         self,
-        import_and_configure: bool = True,
-        check_edges_unchanged: bool = False,
-        assume_edges_unchanged: bool = False,
+        import_mode: TaskImportMode,
     ) -> PipelineGraph:
         """Transform a `SerializedPipelineGraph` into a `PipelineGraph`."""
         universe: DimensionUniverse | None = None
@@ -615,9 +613,5 @@ class SerializedPipelineGraph(_BaseModelCompat):
             universe=universe,
             data_id=self.data_id,
         )
-        if import_and_configure:
-            result._import_and_configure(
-                check_edges_unchanged=check_edges_unchanged,
-                assume_edges_unchanged=assume_edges_unchanged,
-            )
+        result._import_and_configure(import_mode)
         return result
