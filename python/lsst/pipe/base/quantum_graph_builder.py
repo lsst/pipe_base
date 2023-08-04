@@ -32,8 +32,8 @@ import dataclasses
 import itertools
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, final
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, cast, final
 
 import networkx
 from lsst.daf.butler import (
@@ -43,11 +43,15 @@ from lsst.daf.butler import (
     DatasetId,
     DatasetRef,
     DatasetType,
+    DimensionGraph,
     DimensionUniverse,
     Quantum,
+    Registry,
+    SkyPixDimension,
 )
 from lsst.daf.butler.core.named import NamedKeyDict, NamedKeyMapping
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
+from lsst.sphgeom import RangeSet
 
 from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
@@ -263,7 +267,7 @@ class QuantumGraphBuilder(ABC):
                 "Processing pipeline subgraph %d of %d with tasks %s.",
                 i,
                 len(subgraphs),
-                ', '.join(str(t) for t in subgraph.tasks.keys()),
+                ", ".join(str(t) for t in subgraph.tasks.keys()),
             )
             subgraph_skeleton = self.process_subgraph(subgraph)
             full_skeleton.quanta.update(subgraph_skeleton.quanta)
@@ -330,6 +334,56 @@ class QuantumGraphBuilder(ABC):
         """
         raise NotImplementedError()
 
+    def compute_skypix_bounds(
+        self, dimension: SkyPixDimension, task_node: TaskNode, skeleton: QuantumGraphSkeleton
+    ) -> _SkyPixBounds:
+        result = _SkyPixBounds(dimension)
+        spatial_bounds_connections = task_node.get_spatial_bounds_connections()
+        if not spatial_bounds_connections:
+            if task_node.dimensions.spatial:
+                # Simple, usual case: task data ID is spatial and is all that's
+                # needed.
+                for quantum_key in skeleton.quanta[task_node.label]:
+                    result.add_quantum_data_id(quantum_key.data_id)
+            else:
+                # Simple but possibly problematic case: task data ID is not
+                # spatial, but it's all we've got.
+                _LOG.warning(
+                    "Task %r has no spatial bounds connections and does not have spatial dimensions, so "
+                    "lookups of prerequisite input datasets with %s data IDs will be limited only by the "
+                    "input collection contents.",
+                    task_node.label,
+                    dimension.name,
+                )
+                for quantum_key in skeleton.quanta[task_node.label]:
+                    result.add_unbounded(quantum_key.data_id)
+            return result
+        # Advanced case, where the task has provided additional connection
+        # names that should be used to compute the spatial bounds. We start by
+        # converting from a set of connection names to a set of parent dataset
+        # type names.
+        spatial_bounds_inputs = {
+            task_node.inputs[connection_name].parent_dataset_type_name
+            for connection_name in task_node.inputs.keys() & spatial_bounds_connections
+        }
+        spatial_bounds_outputs = {
+            task_node.inputs[connection_name].parent_dataset_type_name
+            for connection_name in task_node.outputs.keys() & spatial_bounds_connections
+        }
+        for quantum_key in skeleton.quanta[task_node.label]:
+            related_data_ids = set()
+            dataset_key: DatasetKey
+            if spatial_bounds_inputs:
+                for dataset_key in skeleton.xgraph.predecessors(quantum_key):
+                    if dataset_key.parent_dataset_type_name in spatial_bounds_inputs:
+                        related_data_ids.add(dataset_key.data_id)
+            if spatial_bounds_outputs:
+                for dataset_key in skeleton.xgraph.successors(quantum_key):
+                    if dataset_key.parent_dataset_type_name in spatial_bounds_outputs:
+                        related_data_ids.add(dataset_key.data_id)
+            result.add_quantum_data_id(quantum_key.data_id, related_data_ids)
+        return result
+
     @final
     def _resolve_task_quanta(self, task_node: TaskNode, skeleton: QuantumGraphSkeleton) -> None:
         """Process the quanta for one task in a skeleton graph to skip those
@@ -344,7 +398,7 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        This method modifies ``QuantumGraphskeleton`` in-place in several ways:
+        This method modifies ``skeleton`` in-place in several ways:
 
         - It adds a "ref" attribute to dataset nodes, using the contents of
           `existing_datasets`.  This ensures producing and consuming tasks
@@ -380,6 +434,28 @@ class QuantumGraphBuilder(ABC):
         # fine since networkx will deduplicate on add.
         for init_dataset_key, init_ref in task_init_info.inputs.items():
             skeleton.xgraph.add_node(init_dataset_key, ref=init_ref)
+        # Prepare finder objects for finding prerequisite inputs.  This
+        # can include executing queries to begin that search, depending on the
+        # finder that's matched.
+        prereq_finders: dict[str, _PrerequisiteFinder] = {}
+        skypix_bounds: dict[str, _SkyPixBounds] = {}
+        for read_edge in task_node.prerequisite_inputs.values():
+            for cls in _PrerequisiteFinder.implementations:
+                if matched := cls.match(self._pipeline_graph, read_edge):
+                    for skypix_dimension in matched.get_needed_skypix_bounds():
+                        if skypix_dimension.name not in skypix_bounds:
+                            skypix_bounds[skypix_dimension.name] = self.compute_skypix_bounds(
+                                skypix_dimension, task_node, skeleton
+                            )
+                    if matched.needs_temporal_bounds():
+                        raise NotImplementedError("TODO")
+                    matched.begin(
+                        self.butler,
+                        self.input_collections,
+                        (quantum_key.data_id for quantum_key in skeleton.quanta[task_node.label]),
+                        skypix_bounds,
+                    )
+                    prereq_finders[read_edge.connection_name] = matched
         # Loop over all quanta for this task, remembering the ones we've
         # gotten rid of.
         skipped_quanta = []
@@ -393,7 +469,7 @@ class QuantumGraphBuilder(ABC):
             # raise if one of the check conditions is not met, which is the
             # intended behavior.
             helper = AdjustQuantumHelper(
-                inputs=self._gather_quantum_inputs(task_node, quantum_key, skeleton),
+                inputs=self._gather_quantum_inputs(task_node, quantum_key, skeleton, prereq_finders),
                 outputs=self._gather_quantum_outputs(task_node, quantum_key, skeleton),
             )
             try:
@@ -523,6 +599,7 @@ class QuantumGraphBuilder(ABC):
         task_node: TaskNode,
         quantum_key: QuantumKey,
         skeleton: QuantumGraphSkeleton,
+        prereq_finders: Mapping[str, _PrerequisiteFinder],
     ) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
         """Collect input datasets for a preliminary quantum and put them in the
         form used by `~lsst.daf.butler.Quantum` and
@@ -536,6 +613,9 @@ class QuantumGraphBuilder(ABC):
             Identifier for this quantum in the graph.
         skeleton : `QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
+        prereq_finders : `~collections.abc.Mapping` [ `str`, \
+                `_PrerequisiteFinder` ]
+            Helper objects for finding prerequisites.
 
         Returns
         -------
@@ -602,11 +682,8 @@ class QuantumGraphBuilder(ABC):
         # in the skeleton graph, so we add them now.
         for read_edge in task_node.prerequisite_inputs.values():
             dataset_type_node = self._pipeline_graph.dataset_types[read_edge.parent_dataset_type_name]
-            prerequisite_refs = self._find_prerequisite_inputs(
-                task_node,
-                read_edge,
-                dataset_type_node,
-                quantum_key.data_id,
+            prerequisite_refs = prereq_finders[read_edge.connection_name].finish(
+                self.butler, self.input_collections, quantum_key.data_id
             )
             prerequisite_node_data = {
                 _PrerequisiteDatasetKey(ref.datasetType.name, ref.id): {"ref": ref}
@@ -732,85 +809,6 @@ class QuantumGraphBuilder(ABC):
                     ref = None
                 if ref is not None:
                     self.existing_datasets.outputs_in_the_way[key] = ref
-
-    @final
-    def _find_prerequisite_inputs(
-        self,
-        task: TaskNode,
-        edge: ReadEdge,
-        dataset_type_node: DatasetTypeNode,
-        data_id: DataCoordinate,
-    ) -> list[DatasetRef]:
-        """Query for the prerequisite inputs to a quantum.
-
-        Parameters
-        ----------
-        task_node : `pipeline_graph.TaskNode`
-            Node for this task in the pipeline graph.
-        edge : `pipeline_graph.ReadEdge`
-            Edge that relates this dataset type to the task.
-        dataset_type_node : `pipeline_graph.DatasetTypeNode`
-            Node for this dataset type in the pipeline_graph.
-        data_id : `lsst.daf.butler.DataCoordinate`
-            Data ID of the quantum.
-
-        Returns
-        -------
-        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
-            List of dataset refs, using the common dataset type, not the
-            task-specific one.
-        """
-        if (lookup_function := task.get_lookup_function(edge.connection_name)) is not None:
-            # PipelineTask has provided its own function to do the lookup.
-            # This always takes precedence.  We adapt the dataset type we pass
-            # in and then revert the dataset ref it returns to be extra
-            # defensive about storage classes and components: the task
-            # definition (including the lookup function) should always see
-            # exactly what it asked for, while the graph builder's nodes never
-            # use components and use the registry or output-edge storage
-            # classes.
-            return [
-                dataset_type_node.generalize_ref(ref)
-                for ref in lookup_function(
-                    edge.adapt_dataset_type(dataset_type_node.dataset_type),
-                    self.butler.registry,
-                    data_id,
-                    self.input_collections,
-                )
-            ]
-        elif (
-            dataset_type_node.is_calibration
-            and dataset_type_node.dataset_type.dimensions <= data_id.graph
-            and data_id.graph.temporal
-        ):
-            # This is a master calibration lookup, which we have to
-            # handle specially because the query system can't do a
-            # temporal join on a non-dimension-based timespan yet.
-            try:
-                prereq_ref = self.butler.registry.findDataset(
-                    dataset_type_node.dataset_type,
-                    data_id,
-                    collections=self.input_collections,
-                    timespan=data_id.timespan,
-                )
-                if prereq_ref is not None:
-                    return [prereq_ref]
-                else:
-                    return []
-            except (KeyError, MissingDatasetTypeError):
-                # This dataset type is not present in the registry,
-                # which just means there are no datasets here.
-                return []
-        else:
-            # Most general case.
-            return list(
-                self.butler.registry.queryDatasets(
-                    dataset_type_node.dataset_type,
-                    collections=self.input_collections,
-                    dataId=data_id,
-                    findFirst=True,
-                ).expanded()
-            )
 
     @final
     def _attach_datastore_records(self, skeleton: QuantumGraphSkeleton) -> None:
@@ -1214,3 +1212,371 @@ class _TaskInitInfo:
         predicted_outputs[edge.parent_dataset_type_name] = ref
         adapted_ref = edge.adapt_dataset_ref(ref)
         self.adapted_outputs[adapted_ref.datasetType] = adapted_ref
+
+
+class _PrerequisiteFinder(ABC):
+    """Base class for helper objects that search for prerequisite inputs.
+
+    Parameters
+    ----------
+    pipeline_graph : `pipeline_graph.PipelineGraph`
+        Graph form of the pipeline.
+    edge : `pipeline_graph.ReadEdge`
+        Edge object for this prerequisite input connection.
+
+    Notes
+    -----
+    Concrete implementations of this ABC are added to the `implementations`
+    class variable as they are declared, *in that order*, and are then matched
+    against each prerequisite input edge until a match is found.  This is a
+    convenient pattern as long as all concrete implementations are in this
+    file, but if this ABC is every made public it should be revisited so that
+    the order is more explicit.
+    """
+
+    def __init__(self, pipeline_graph: PipelineGraph, edge: ReadEdge):
+        self.pipeline_graph = pipeline_graph
+        self.edge = edge
+
+    implementations: ClassVar[list[type[_PrerequisiteFinder]]] = []
+    """Ordered list of all implementations of this task, which are assumed
+    to be concrete.
+    """
+
+    def __init_subclass__(cls) -> None:
+        cls.implementations.append(cls)
+
+    @classmethod
+    @abstractmethod
+    def match(cls, pipeline_graph: PipelineGraph, edge: ReadEdge) -> _PrerequisiteFinder | None:
+        """Test whether this finder type matches an edge, returning an instance
+        if it does.
+
+        Parameters
+        ----------
+        pipeline_graph : `pipeline_graph.PipelineGraph`
+            Graph form of the pipeline.
+        edge : `pipeline_graph.ReadEdge`
+            Edge object for this prerequisite input connection.
+
+        Returns
+        -------
+        finder : `_PrerequisiteInputFinder` or `None`
+            Finder object if this type can handle this edge; `None` otherwise.
+        """
+        raise NotImplementedError()
+
+    def get_needed_skypix_bounds(self) -> Iterable[SkyPixDimension]:
+        """Return an iterable of skypix dimensions over which the spatial
+        bounds of all data IDs need to be computed for this finder.
+
+        Dimensions returned here will be present as keys in the
+        ``skypix_bounds`` argument to `begin`.
+        """
+        return ()
+
+    def needs_temporal_bounds(self) -> bool:
+        """Whether this finder needs the temporal bounds of all data IDs to be
+        computed.
+
+        If `True`, the ``temporal_bounds`` argument to `begin` will not be
+        `None`.
+        """
+        return False
+
+    def begin(
+        self,
+        butler: Butler,
+        input_collections: Sequence[str],
+        data_ids: Iterable[DataCoordinate],
+        skypix_bounds: dict[str, _SkyPixBounds],
+    ) -> None:
+        """Perform any preliminary queries for all quanta.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            Data repository client to use for queries.
+        input_collections : `~collections.abc.Sequence`
+            Ordered sequence of collections to search in.
+        data_ids : `~collections.abc.Iterable` \
+                [ `lsst.daf.butler.DataCoordinate` ]
+            Superset of all quantum data IDs that will later be passed to
+            `finish`.
+        skypix_bounds : `dict` [ `str`, `_SkyPixBounds` ]
+            The spatial bounds of all data IDs for this task (values) for
+            all skypix dimensions (keys) for which those bounds have been
+            computed.  This should be updated in-place when these bounds are
+            needed so they can be reused by other prerequisite connections.
+
+        Notes
+        -----
+        Query results should be saved within ``self`` for later use by
+        `finish`.  This method is guaranteed to be called exactly once on
+        each instance, before any calls to `finish`.
+        """
+        return None
+
+    @abstractmethod
+    def finish(
+        self, butler: Butler, input_collections: Sequence[str], data_id: DataCoordinate
+    ) -> list[DatasetRef]:
+        """Perform any final queries and gather results from preliminary
+        queries.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            Data repository client to use for queries.
+        input_collections : `~collections.abc.Sequence`
+            Ordered sequence of collections to search in.
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for this quantum.
+
+        Returns
+        -------
+        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            Found datasets.  These must use the
+            ``self.dataset_type_node.dataset_type``, not the version specific
+            to this task.
+        """
+        raise NotImplementedError()
+
+
+class _LookupFunctionFinder(_PrerequisiteFinder):
+    """A prerequisite finder implementation that just delegates to a
+    lookupFunction defined in the connection object.
+
+    Parameters
+    ----------
+    pipeline_graph : `pipeline_graph.PipelineGraph`
+        Graph form of the pipeline.
+    edge : `pipeline_graph.ReadEdge`
+        Edge object for this prerequisite input connection.
+    lookupFunction : `~collections.abc.Callable`
+        Callable that performs the lookup, one data ID at a time.
+    """
+
+    def __init__(
+        self,
+        pipeline_graph: PipelineGraph,
+        edge: ReadEdge,
+        lookup_function: Callable[
+            [DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]
+        ],
+    ):
+        super().__init__(pipeline_graph, edge)
+        self.lookup_function = lookup_function
+        self.dataset_type_node = self.pipeline_graph.dataset_types[edge.parent_dataset_type_name]
+
+    @classmethod
+    def match(cls, pipeline_graph: PipelineGraph, edge: ReadEdge) -> _PrerequisiteFinder | None:
+        # Docstring inherited.
+        task_node = pipeline_graph.tasks[edge.task_label]
+        if (lookup_function := task_node.get_lookup_function(edge.connection_name)) is not None:
+            return cls(pipeline_graph, edge, lookup_function)
+        return None
+
+    def finish(
+        self, butler: Butler, input_collections: Sequence[str], data_id: DataCoordinate
+    ) -> list[DatasetRef]:
+        # Docstring inherited.
+        return [
+            self.dataset_type_node.generalize_ref(ref)
+            for ref in self.lookup_function(
+                self.edge.adapt_dataset_type(self.dataset_type_node.dataset_type),
+                butler.registry,
+                data_id,
+                input_collections,
+            )
+        ]
+
+
+class _CalibrationFinder(_PrerequisiteFinder):
+    """A prerequisite finder implementation that performs a standard
+    calibration-dataset temporal lookup.
+    """
+
+    def __init__(
+        self,
+        pipeline_graph: PipelineGraph,
+        edge: ReadEdge,
+        dataset_type_node: DatasetTypeNode,
+    ):
+        super().__init__(pipeline_graph, edge)
+        self.dataset_type_node = dataset_type_node
+
+    @classmethod
+    def match(cls, pipeline_graph: PipelineGraph, edge: ReadEdge) -> _PrerequisiteFinder | None:
+        # Docstring inherited.
+        dataset_type_node = pipeline_graph.dataset_types[edge.parent_dataset_type_name]
+        task_node = pipeline_graph.tasks[edge.task_label]
+        if (
+            dataset_type_node.is_calibration
+            and dataset_type_node.dataset_type.dimensions <= task_node.dimensions
+            and task_node.dimensions.temporal
+        ):
+            return cls(pipeline_graph, edge, dataset_type_node)
+        return None
+
+    def finish(
+        self, butler: Butler, input_collections: Sequence[str], data_id: DataCoordinate
+    ) -> list[DatasetRef]:
+        # Docstring inherited.
+        try:
+            prereq_ref = butler.registry.findDataset(
+                self.dataset_type_node.dataset_type,
+                data_id,
+                collections=input_collections,
+                timespan=data_id.timespan,
+            )
+            if prereq_ref is not None:
+                return [prereq_ref]
+            else:
+                return []
+        except (KeyError, MissingDatasetTypeError):
+            # This dataset type is not present in the registry,
+            # which just means there are no datasets here.
+            return []
+
+
+class _SkyPixPrerequisiteFinder(_PrerequisiteFinder):
+    def __init__(
+        self,
+        pipeline_graph: PipelineGraph,
+        edge: ReadEdge,
+        skypix: SkyPixDimension,
+    ):
+        super().__init__(pipeline_graph, edge)
+        self.skypix = skypix
+        self.dataset_type = self.pipeline_graph.dataset_types[edge.parent_dataset_type_name].dataset_type
+
+    @classmethod
+    def match(cls, pipeline_graph: PipelineGraph, edge: ReadEdge) -> _PrerequisiteFinder | None:
+        task_node = pipeline_graph.tasks[edge.task_label]
+        if not task_node.dimensions.spatial:
+            return None
+        dataset_type_node = pipeline_graph.dataset_types[edge.parent_dataset_type_name]
+        skypix: SkyPixDimension | None = None
+        for dimension in dataset_type_node.dimensions:
+            if isinstance(dimension, SkyPixDimension):
+                skypix = dimension
+            else:
+                # Only datasets whose _only_ dimension is a skypix dimension
+                # are currently supported.
+                return None
+        if skypix is None:
+            # Datasets with empty dimensions are also not supported
+            return None
+        return cls(pipeline_graph, edge, skypix)
+
+    def get_needed_skypix_bounds(self) -> Iterable[SkyPixDimension]:
+        return (self.skypix,)
+
+    def begin(
+        self,
+        butler: Butler,
+        input_collections: Sequence[str],
+        data_ids: Iterable[DataCoordinate],
+        skypix_bounds: dict[str, _SkyPixBounds],
+    ) -> None:
+        self.bounds = skypix_bounds[self.skypix.name]
+        self.refs = self.bounds.find_datasets(self.dataset_type, butler, input_collections)
+
+    def finish(
+        self, butler: Butler, input_collections: Sequence[str], data_id: DataCoordinate
+    ) -> list[DatasetRef]:
+        return self.bounds.index_datasets(self.refs, data_id)
+
+
+class _GeneralPrerequisiteFinder(_PrerequisiteFinder):
+    """A prerequisite finder implementation that runs queryDatasets with the
+    quantum data ID as a constraint.
+    """
+
+    def __init__(
+        self,
+        pipeline_graph: PipelineGraph,
+        edge: ReadEdge,
+    ):
+        super().__init__(pipeline_graph, edge)
+        self.dataset_type = self.pipeline_graph.dataset_types[edge.parent_dataset_type_name].dataset_type
+
+    @classmethod
+    def match(cls, pipeline_graph: PipelineGraph, edge: ReadEdge) -> _PrerequisiteFinder:
+        # Docstring inherited.
+        return cls(pipeline_graph, edge)
+
+    def finish(
+        self, butler: Butler, input_collections: Sequence[str], data_id: DataCoordinate
+    ) -> list[DatasetRef]:
+        # Docstring inherited.
+        return list(
+            butler.registry.queryDatasets(
+                self.dataset_type,
+                collections=input_collections,
+                dataId=data_id,
+                findFirst=True,
+            ).expanded()
+        )
+
+
+class _SkyPixBounds:
+    def __init__(self, dimension: SkyPixDimension) -> None:
+        self._dimension = dimension
+        self._contributors: dict[DimensionGraph, dict[DataCoordinate, RangeSet | None]] = {}
+        self._envelope: RangeSet | None = RangeSet()
+
+    def add_quantum_data_id(
+        self, quantum_data_id: DataCoordinate, related_data_ids: Iterable[DataCoordinate] = ()
+    ) -> None:
+        nested = self._contributors.setdefault(quantum_data_id.graph, {})
+        if quantum_data_id not in self._contributors:
+            ranges = self._dimension.pixelization.envelope(quantum_data_id.region)
+            for related_data_id in related_data_ids:
+                ranges |= self._dimension.pixelization.envelope(related_data_id.region)
+            nested[quantum_data_id] = ranges
+            if self._envelope is not None:
+                self._envelope |= ranges
+
+    def add_unbounded(self, quantum_data_id: DataCoordinate) -> None:
+        nested = self._contributors.setdefault(quantum_data_id.graph, {})
+        if quantum_data_id not in self._contributors:
+            nested[quantum_data_id] = None
+        self._envelope = None
+
+    def find_datasets(
+        self, dataset_type: DatasetType, butler: Butler, collections: Sequence[str]
+    ) -> dict[int, DatasetRef]:
+        if self._envelope is None:
+            return {
+                cast(int, ref.dataId[self._dimension]): ref
+                for ref in butler.registry.queryDatasets(
+                    dataset_type,
+                    collections=collections,
+                    findFirst=True,
+                )
+            }
+        pixels: list[int] = []
+        for begin, end in self._envelope:
+            pixels.extend(range(begin, end))
+        return {
+            cast(int, ref.dataId[self._dimension]): ref
+            for ref in butler.registry.queryDatasets(
+                dataset_type,
+                collections=collections,
+                where=f"{self._dimension} IN (pixels)",
+                bind={"pixels": pixels},
+                findFirst=True,
+            )
+        }
+
+    def index_datasets(self, refs: Mapping[int, DatasetRef], data_id: DataCoordinate) -> list[DatasetRef]:
+        result: list[DatasetRef] = []
+        ranges = self._contributors[data_id.graph][data_id]
+        if ranges is None:
+            return list(refs.values())
+        for begin, end in ranges:
+            for pixel in range(begin, end):
+                result.append(refs[pixel])
+        return result
