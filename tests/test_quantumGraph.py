@@ -25,8 +25,8 @@ import random
 import tempfile
 import unittest
 import uuid
+from collections.abc import Iterable
 from itertools import chain
-from typing import Iterable
 
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests

@@ -22,8 +22,8 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Callable
 from types import MappingProxyType
-from typing import Callable
 
 from lsst.pipe.base import PipelineTaskConfig, PipelineTaskConnections
 from lsst.pipe.base.connectionTypes import Input, Output, PrerequisiteInput

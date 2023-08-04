@@ -20,8 +20,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
-from typing import Any, ClassVar, Sequence, TypeVar, cast, overload
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from typing import Any, ClassVar, TypeVar, cast, overload
 
 import networkx
 
