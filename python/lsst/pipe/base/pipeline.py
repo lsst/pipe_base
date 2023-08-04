@@ -1037,9 +1037,9 @@ class TaskDatasetTypes:
                             "type name instead of 'ref_cat'."
                         ) from err
                     rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
-                    rest2 = set(
+                    rest2 = {
                         dim.name for dim in datasetType.dimensions if not isinstance(dim, SkyPixDimension)
-                    )
+                    }
                     if rest1 != rest2:
                         raise ValueError(
                             f"Non-skypix dimensions for dataset type {c.name} declared in "

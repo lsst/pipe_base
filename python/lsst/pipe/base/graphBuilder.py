@@ -604,7 +604,7 @@ class _QuantumScaffolding:
             quantum_records = {}
             input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
             input_refs += list(initInputs.values())
-            input_ids = set(ref.id for ref in input_refs)
+            input_ids = {ref.id for ref in input_refs}
             for datastore_name, records in datastore_records.items():
                 matching_records = records.subset(input_ids)
                 if matching_records is not None:
@@ -1647,7 +1647,7 @@ class _PipelineScaffolding:
             chain.append(self.globalInitOutputs)
 
         # Collect names of all dataset types.
-        all_names: set[str] = set(dstype.name for dstype in itertools.chain(*chain))
+        all_names: set[str] = {dstype.name for dstype in itertools.chain(*chain)}
         dataset_types = {ds.name: ds for ds in registry.queryDatasetTypes(all_names)}
 
         # Check for types that do not exist in registry yet:

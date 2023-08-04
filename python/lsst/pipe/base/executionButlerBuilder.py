@@ -169,7 +169,7 @@ def _accumulate(
                         ref = ref.makeCompositeRef()
                     check_refs.add(ref)
     exist_map = butler._exists_many(check_refs, full_check=False)
-    existing_ids = set(ref.id for ref, exists in exist_map.items() if exists)
+    existing_ids = {ref.id for ref, exists in exist_map.items() if exists}
     del exist_map
 
     for quantum in (n.quantum for n in graph):
