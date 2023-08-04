@@ -489,8 +489,8 @@ class ReadEdge(Edge):
                     f"Note that reference catalog names are now used as the dataset "
                     f"type name instead of 'ref_cat'."
                 )
-            rest1 = set(universe.extract(self.raw_dimensions - set(["skypix"])).names)
-            rest2 = set(dim.name for dim in current.dimensions if not isinstance(dim, SkyPixDimension))
+            rest1 = set(universe.extract(self.raw_dimensions - {"skypix"}).names)
+            rest2 = {dim.name for dim in current.dimensions if not isinstance(dim, SkyPixDimension)}
             if rest1 != rest2:
                 raise IncompatibleDatasetTypeError(
                     f"Non-skypix dimensions for dataset type {self.dataset_type_name} declared in "
