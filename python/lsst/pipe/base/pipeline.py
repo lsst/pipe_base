@@ -1036,7 +1036,7 @@ class TaskDatasetTypes:
                             "Note that reference catalog names are now used as the dataset "
                             "type name instead of 'ref_cat'."
                         ) from err
-                    rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
+                    rest1 = set(registry.dimensions.extract(dimensions - {"skypix"}).names)
                     rest2 = {
                         dim.name for dim in datasetType.dimensions if not isinstance(dim, SkyPixDimension)
                     }
