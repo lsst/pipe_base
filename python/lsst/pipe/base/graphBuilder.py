@@ -1076,7 +1076,7 @@ class _PipelineScaffolding:
             # Iterate over query results, populating data IDs for datasets and
             # quanta and then connecting them to each other.
             n = -1
-            for n, commonDataId in enumerate(commonDataIds):
+            for commonDataId in commonDataIds:
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
                 # We remember both those that already existed and those that we
