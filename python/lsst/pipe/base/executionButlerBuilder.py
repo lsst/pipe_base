@@ -159,7 +159,7 @@ def _accumulate(
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
             attr: Mapping[DatasetType, DatasetRef | list[DatasetRef]] = getattr(quantum, attrName)
-            for type, refs in attr.items():
+            for refs in attr.values():
                 # This if block is because init inputs has a different
                 # signature for its items
                 if not isinstance(refs, (list, tuple)):
