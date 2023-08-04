@@ -263,7 +263,7 @@ def _refFromConnection(
     try:
         butler.registry.getDatasetType(datasetType.name)
     except KeyError:
-        raise ValueError(f"Invalid dataset type {connection.name}.")
+        raise ValueError(f"Invalid dataset type {connection.name}.") from None
     if not butler.run:
         raise ValueError("Can not create a resolved DatasetRef since the butler has no default run defined.")
     try:
@@ -341,7 +341,7 @@ def _assertAttributeMatchesConnection(obj: Any, attrName: str, connection: BaseC
     try:
         attrValue = obj.__getattribute__(attrName)
     except AttributeError:
-        raise AssertionError(f"No such attribute on {obj!r}: {attrName}")
+        raise AssertionError(f"No such attribute on {obj!r}: {attrName}") from None
     # multiple
     if connection.multiple:
         if not isinstance(attrValue, collections.abc.Sequence):

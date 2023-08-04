@@ -1062,7 +1062,7 @@ class TaskDatasetTypes:
                                     "Component parent class cannot be determined, and "
                                     "composite name was not in storage class mapping, or no "
                                     "storage_class_mapping was supplied"
-                                )
+                                ) from None
                             else:
                                 parentStorageClass = storage_class_mapping[compositeName]
                         else:
