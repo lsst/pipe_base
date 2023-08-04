@@ -348,8 +348,7 @@ class TaskMetadata(_BaseModelCompat):
 
     def items(self) -> Iterator[tuple[str, Any]]:
         """Yield the top-level keys and values."""
-        for k, v in itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items()):
-            yield (k, v)
+        yield from itertools.chain(self.scalars.items(), self.arrays.items(), self.metadata.items())
 
     def __len__(self) -> int:
         """Return the number of items."""
