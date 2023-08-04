@@ -1106,7 +1106,8 @@ class QuantumGraph:
             count += len(dump)
 
         headerData["DimensionRecords"] = {
-            key: value.dict() for key, value in dimAccumulator.makeSerializedDimensionRecordMapping().items()
+            key: value.model_dump()
+            for key, value in dimAccumulator.makeSerializedDimensionRecordMapping().items()
         }
 
         # need to serialize this as a series of key,value tuples because of
