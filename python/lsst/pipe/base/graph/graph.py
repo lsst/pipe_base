@@ -636,10 +636,7 @@ class QuantumGraph:
         in_graph : `bool`
             The result of searching for the quantum.
         """
-        for node in self:
-            if quantum == node.quantum:
-                return True
-        return False
+        return any(quantum == node.quantum for node in self)
 
     def writeDotGraph(self, output: str | io.BufferedIOBase) -> None:
         """Write out the graph as a dot graph.
