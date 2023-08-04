@@ -166,7 +166,7 @@ class MockDatasetQuantum(_BaseModelCompat):
     """Mock datasets provided as input to the quantum."""
 
 
-MockDataset.update_forward_refs()
+MockDataset.model_rebuild()
 
 
 class MockStorageClassDelegate(StorageClassDelegate):
