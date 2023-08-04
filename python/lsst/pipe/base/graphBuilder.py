@@ -29,6 +29,7 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+import contextlib
 import itertools
 import logging
 from collections import ChainMap, defaultdict
@@ -1205,11 +1206,8 @@ class _PipelineScaffolding:
         # use it for resolving references but don't check it for existing refs.
         run_exists = False
         if run:
-            try:
+            with contextlib.suppress(MissingCollectionError):
                 run_exists = bool(registry.queryCollections(run))
-            except MissingCollectionError:
-                # Undocumented exception is raise if it does not exist
-                pass
 
         skip_collections_wildcard: CollectionWildcard | None = None
         skipExistingInRun = False
