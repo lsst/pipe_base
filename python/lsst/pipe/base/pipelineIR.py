@@ -365,8 +365,8 @@ class ConfigIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConfigIR):
             return False
-        return bool(
-            all(getattr(self, attr) == getattr(other, attr) for attr in ("python", "dataId", "file", "rest"))
+        return all(
+            getattr(self, attr) == getattr(other, attr) for attr in ("python", "dataId", "file", "rest")
         )
 
 
@@ -415,7 +415,7 @@ class TaskIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskIR):
             return False
-        return bool(all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config")))
+        return all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config"))
 
 
 @dataclass
@@ -496,11 +496,9 @@ class ImportIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ImportIR):
             return False
-        return bool(
-            all(
-                getattr(self, attr) == getattr(other, attr)
-                for attr in ("location", "include", "exclude", "importContracts")
-            )
+        return all(
+            getattr(self, attr) == getattr(other, attr)
+            for attr in ("location", "include", "exclude", "importContracts")
         )
 
 
