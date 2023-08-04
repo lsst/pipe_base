@@ -59,6 +59,7 @@ Developing Pipelines
 
    creating-a-pipeline.rst
    testing-pipelines-with-mocks.rst
+   working-with-pipeline-graphs.rst
 
 .. _lsst.pipe.base-contributing:
 
@@ -77,6 +78,10 @@ Python API reference
    :no-main-docstr:
    :skip: BuildId
    :skip: DatasetTypeName
+   :skip: PipelineGraph
+
+.. automodapi:: lsst.pipe.base.pipeline_graph
+   :no-main-docstr:
 
 .. automodapi:: lsst.pipe.base.testUtils
    :no-main-docstr:
