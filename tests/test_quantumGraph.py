@@ -271,7 +271,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.num_dataset_types = len(dataset_types)
 
     def testTaskGraph(self) -> None:
-        for taskDef in self.quantumMap.keys():
+        for taskDef in self.quantumMap:
             self.assertIn(taskDef, self.qGraph.taskGraph)
 
     def testGraph(self) -> None:

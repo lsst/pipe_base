@@ -232,7 +232,7 @@ class _DatasetDictBase(NamedKeyDict[DatasetType, _Refs]):
         base = self.universe.empty
         if len(self) == 0:
             return base
-        return base.union(*[datasetType.dimensions for datasetType in self.keys()])
+        return base.union(*[datasetType.dimensions for datasetType in self])
 
     def unpackSingleRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, DatasetRef]:
         """Unpack nested single-element `~lsst.daf.butler.DatasetRef` dicts
@@ -565,7 +565,7 @@ class _QuantumScaffolding:
         result = RangeSet()
         for dataset_type, datasets in itertools.chain(self.inputs.items(), self.outputs.items()):
             if dataset_type.dimensions.spatial:
-                for data_id in datasets.keys():
+                for data_id in datasets:
                     result |= pixelization.envelope(data_id.region)
         return result
 
@@ -1051,7 +1051,7 @@ class _PipelineScaffolding:
             _LOG.debug("Not using dataset existence to constrain query.")
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(datasetQueryConstraint)
-            inputs = {k.name: k for k in self.inputs.keys()}
+            inputs = {k.name: k for k in self.inputs}
             if remainder := constraint.difference(inputs.keys()):
                 raise ValueError(
                     f"{remainder} dataset type(s) specified as a graph constraint, but"

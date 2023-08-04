@@ -506,7 +506,7 @@ class SerializedPipelineGraph(_BaseModelCompat):
             tasks={label: SerializedTaskNode.serialize(node) for label, node in target.tasks.items()},
             dataset_types={
                 name: SerializedDatasetTypeNode().serialize(target.dataset_types.get_if_resolved(name))
-                for name in target.dataset_types.keys()
+                for name in target.dataset_types
             },
             task_subsets={
                 label: SerializedTaskSubset.serialize(subset) for label, subset in target.task_subsets.items()

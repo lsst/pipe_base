@@ -570,7 +570,7 @@ class QuantumGraph:
             multiple times with different labels.
         """
         results = []
-        for task in self._taskToQuantumNode.keys():
+        for task in self._taskToQuantumNode:
             split = task.taskName.split(".")
             if split[-1] == taskName:
                 results.append(task)
@@ -590,7 +590,7 @@ class QuantumGraph:
         result : `TaskDef`
             `TaskDef` objects that has the specified label.
         """
-        for task in self._taskToQuantumNode.keys():
+        for task in self._taskToQuantumNode:
             if label == task.label:
                 return task
         return None

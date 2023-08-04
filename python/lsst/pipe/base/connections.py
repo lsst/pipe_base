@@ -309,7 +309,7 @@ class PipelineTaskConnectionsMetaclass(type):
         # Extract the template names that were defined in the config instance
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time.
-        templateValues = {name: getattr(config.connections, name) for name in cls.defaultTemplates.keys()}
+        templateValues = {name: getattr(config.connections, name) for name in cls.defaultTemplates}
 
         # We now assemble a mapping of all connection instances keyed by
         # internal name, applying the configuration and templates to make new
