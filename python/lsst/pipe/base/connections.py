@@ -309,7 +309,9 @@ class PipelineTaskConnectionsMetaclass(type):
         # Extract the template names that were defined in the config instance
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time.
-        templateValues = {name: getattr(config.connections, name) for name in cls.defaultTemplates}
+        templateValues = {
+            name: getattr(config.connections, name) for name in cls.defaultTemplates  # type: ignore
+        }
 
         # We now assemble a mapping of all connection instances keyed by
         # internal name, applying the configuration and templates to make new
@@ -724,7 +726,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         """
         inputDatasetRefs = InputQuantizedConnection()
         outputDatasetRefs = OutputQuantizedConnection()
-        # operate on a reference object and an interable of names of class
+        # operate on a reference object and an iterable of names of class
         # connection attributes
         for refs, names in zip(
             (inputDatasetRefs, outputDatasetRefs),
