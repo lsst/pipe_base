@@ -122,7 +122,7 @@ class ContractIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ContractIR):
             return False
-        return bool(self.contract == other.contract and self.msg == other.msg)
+        return self.contract == other.contract and self.msg == other.msg
 
 
 @dataclass
@@ -948,7 +948,7 @@ class PipelineIR:
             return False
         # special case contracts because it is a list, but order is not
         # important
-        return bool(
+        return (
             all(
                 getattr(self, attr) == getattr(other, attr)
                 for attr in ("tasks", "instrument", "labeled_subsets", "parameters")
