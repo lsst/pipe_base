@@ -109,7 +109,7 @@ class ConfigExpressionParser(ast.NodeVisitor):
 
     def visit_Dict(self, node):
         """Build dict out of component nodes if dict node encountered."""
-        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values)}
+        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values, strict=True)}
 
     def visit_Set(self, node):
         """Build set out of node is set encountered."""

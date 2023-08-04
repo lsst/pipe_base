@@ -893,7 +893,7 @@ class _PipelineScaffolding:
             pipeline = pipeline.toExpandedPipeline()
         self.tasks = [
             _TaskScaffolding(taskDef=taskDef, parent=self, datasetTypes=taskDatasetTypes)
-            for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values())
+            for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values(), strict=True)
         ]
 
     def __repr__(self) -> str:

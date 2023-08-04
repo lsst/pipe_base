@@ -729,6 +729,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         for refs, names in zip(
             (inputDatasetRefs, outputDatasetRefs),
             (itertools.chain(self.inputs, self.prerequisiteInputs), self.outputs),
+            strict=True,
         ):
             # get a name of a class connection attribute
             for attributeName in names:

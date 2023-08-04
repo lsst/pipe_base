@@ -184,7 +184,9 @@ class PipelineGraph:
             return True
         return all(
             sorted == unsorted
-            for sorted, unsorted in zip(networkx.lexicographical_topological_sort(self._xgraph), self._xgraph)
+            for sorted, unsorted in zip(
+                networkx.lexicographical_topological_sort(self._xgraph), self._xgraph, strict=True
+            )
         )
 
     @property
