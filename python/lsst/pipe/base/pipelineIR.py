@@ -122,10 +122,7 @@ class ContractIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ContractIR):
             return False
-        elif self.contract == other.contract and self.msg == other.msg:
-            return True
-        else:
-            return False
+        return bool(self.contract == other.contract and self.msg == other.msg)
 
 
 @dataclass
@@ -368,12 +365,9 @@ class ConfigIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConfigIR):
             return False
-        elif all(
-            getattr(self, attr) == getattr(other, attr) for attr in ("python", "dataId", "file", "rest")
-        ):
-            return True
-        else:
-            return False
+        return bool(
+            all(getattr(self, attr) == getattr(other, attr) for attr in ("python", "dataId", "file", "rest"))
+        )
 
 
 @dataclass
@@ -421,10 +415,7 @@ class TaskIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskIR):
             return False
-        elif all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config")):
-            return True
-        else:
-            return False
+        return bool(all(getattr(self, attr) == getattr(other, attr) for attr in ("label", "klass", "config")))
 
 
 @dataclass
@@ -505,13 +496,12 @@ class ImportIR:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ImportIR):
             return False
-        elif all(
-            getattr(self, attr) == getattr(other, attr)
-            for attr in ("location", "include", "exclude", "importContracts")
-        ):
-            return True
-        else:
-            return False
+        return bool(
+            all(
+                getattr(self, attr) == getattr(other, attr)
+                for attr in ("location", "include", "exclude", "importContracts")
+            )
+        )
 
 
 class PipelineIR:
@@ -960,14 +950,11 @@ class PipelineIR:
             return False
         # special case contracts because it is a list, but order is not
         # important
-        elif (
+        return bool(
             all(
                 getattr(self, attr) == getattr(other, attr)
                 for attr in ("tasks", "instrument", "labeled_subsets", "parameters")
             )
             and len(self.contracts) == len(other.contracts)
             and all(c in self.contracts for c in other.contracts)
-        ):
-            return True
-        else:
-            return False
+        )
