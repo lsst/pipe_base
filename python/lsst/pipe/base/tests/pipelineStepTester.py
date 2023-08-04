@@ -110,5 +110,5 @@ class PipelineStepTester:
             raise AssertionError(f"Got unexpected pure_inputs: {missing}")
 
         if not all_outputs.keys() >= self.expected_outputs:
-            missing = [k for k in self.expected_outputs - all_outputs.keys()]
+            missing = list(self.expected_outputs - all_outputs.keys())
             raise AssertionError(f"Missing expected_outputs: {missing}")

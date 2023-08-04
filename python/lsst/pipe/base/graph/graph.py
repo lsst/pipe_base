@@ -733,7 +733,7 @@ class QuantumGraph:
         inputs : `set` of `QuantumNode`
             All the nodes that are direct inputs to specified node.
         """
-        return {pred for pred in self._connectedQuanta.predecessors(node)}
+        return set(self._connectedQuanta.predecessors(node))
 
     def determineOutputsOfQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct outputs of a specified
@@ -749,7 +749,7 @@ class QuantumGraph:
         outputs : `set` of `QuantumNode`
             All the nodes that are direct outputs to specified node.
         """
-        return {succ for succ in self._connectedQuanta.successors(node)}
+        return set(self._connectedQuanta.successors(node))
 
     def determineConnectionsOfQuantumNode(self: _T, node: QuantumNode) -> _T:
         """Return a graph of `QuantumNode` that are direct inputs and outputs
