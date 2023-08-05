@@ -86,7 +86,7 @@ class ApertureTaskConnections(
         # and order them consistently (note that consistent ordering is not
         # automatic).
         adjusted_inputs = {}
-        for name, refs in zip(input_names, inputs_by_data_id):
+        for name, refs in zip(input_names, inputs_by_data_id, strict=True):
             adjusted_inputs[name] = (
                 inputs[name][0],
                 [refs[data_id] for data_id in data_ids_to_keep],

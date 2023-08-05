@@ -25,8 +25,8 @@ import random
 import tempfile
 import unittest
 import uuid
+from collections.abc import Iterable
 from itertools import chain
-from typing import Iterable
 
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
@@ -271,7 +271,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.num_dataset_types = len(dataset_types)
 
     def testTaskGraph(self) -> None:
-        for taskDef in self.quantumMap.keys():
+        for taskDef in self.quantumMap:
             self.assertIn(taskDef, self.qGraph.taskGraph)
 
     def testGraph(self) -> None:
@@ -314,7 +314,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testGetNodesForTask(self) -> None:
         for task in self.tasks:
             nodes: Iterable[QuantumNode] = self.qGraph.getNodesForTask(task)
-            quanta_in_node = set(n.quantum for n in nodes)
+            quanta_in_node = {n.quantum for n in nodes}
             self.assertEqual(quanta_in_node, self.quantumMap[task])
 
     def testFindTasksWithInput(self) -> None:
@@ -408,9 +408,9 @@ class QuantumGraphTestCase(unittest.TestCase):
                 continue
             allNodes = list(cg)
             nodes = cg.determineInputsToQuantumNode(allNodes[1])
-            self.assertEqual(set([allNodes[0]]), nodes)
+            self.assertEqual({allNodes[0]}, nodes)
             nodes = cg.determineInputsToQuantumNode(allNodes[1])
-            self.assertEqual(set([allNodes[0]]), nodes)
+            self.assertEqual({allNodes[0]}, nodes)
 
     def testDetermineOutputsOfQuantumNode(self) -> None:
         testNodes = self.qGraph.getNodesForTask(self.tasks[0])
@@ -511,12 +511,10 @@ class QuantumGraphTestCase(unittest.TestCase):
                 self.assertEqual(len(restoreSub), 2)
                 self.assertEqual(
                     set(restoreSub),
-                    set(
-                        (
-                            restore.getQuantumNodeByNodeId(nodeNumber),
-                            restore.getQuantumNodeByNodeId(nodeNumber2),
-                        )
-                    ),
+                    {
+                        restore.getQuantumNodeByNodeId(nodeNumber),
+                        restore.getQuantumNodeByNodeId(nodeNumber2),
+                    },
                 )
                 # verify an error when requesting a non existant node number
                 with self.assertRaises(ValueError):

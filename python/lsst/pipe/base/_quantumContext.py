@@ -271,7 +271,7 @@ class QuantumContext:
             n_connections = len(dataset)
             n_retrieved = 0
             for i, (name, ref) in enumerate(dataset):
-                if isinstance(ref, (list, tuple)):
+                if isinstance(ref, list | tuple):
                     val = []
                     n_refs = len(ref)
                     for j, r in enumerate(ref):
@@ -302,7 +302,7 @@ class QuantumContext:
                     "Completed retrieval of %d datasets from %d connections", n_retrieved, n_connections
                 )
             return retVal
-        elif isinstance(dataset, (list, tuple)):
+        elif isinstance(dataset, list | tuple):
             n_datasets = len(dataset)
             retrieved = []
             for i, x in enumerate(dataset):
@@ -314,7 +314,7 @@ class QuantumContext:
             if periodic.num_issued > 0:
                 _LOG.verbose("Completed retrieval of %d datasets", n_datasets)
             return retrieved
-        elif isinstance(dataset, DatasetRef) or isinstance(dataset, DeferredDatasetRef) or dataset is None:
+        elif isinstance(dataset, DatasetRef | DeferredDatasetRef) or dataset is None:
             return self._get(dataset)
         else:
             raise TypeError(
@@ -364,14 +364,14 @@ class QuantumContext:
                 )
             for name, refs in dataset:
                 valuesAttribute = getattr(values, name)
-                if isinstance(refs, (list, tuple)):
+                if isinstance(refs, list | tuple):
                     if len(refs) != len(valuesAttribute):
                         raise ValueError(f"There must be a object to put for every Dataset ref in {name}")
                     for i, ref in enumerate(refs):
                         self._put(valuesAttribute[i], ref)
                 else:
                     self._put(valuesAttribute, refs)
-        elif isinstance(dataset, (list, tuple)):
+        elif isinstance(dataset, list | tuple):
             if not isinstance(values, Sequence):
                 raise ValueError("Values to put must be a sequence")
             if len(dataset) != len(values):
@@ -402,7 +402,7 @@ class QuantumContext:
             which may be important for Quanta with lots of
             `~lsst.daf.butler.DatasetRef`.
         """
-        if not isinstance(ref, (list, tuple)):
+        if not isinstance(ref, list | tuple):
             ref = [ref]
         for r in ref:
             if (r.datasetType, r.dataId) not in inout:

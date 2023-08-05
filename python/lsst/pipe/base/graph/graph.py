@@ -570,7 +570,7 @@ class QuantumGraph:
             multiple times with different labels.
         """
         results = []
-        for task in self._taskToQuantumNode.keys():
+        for task in self._taskToQuantumNode:
             split = task.taskName.split(".")
             if split[-1] == taskName:
                 results.append(task)
@@ -590,7 +590,7 @@ class QuantumGraph:
         result : `TaskDef`
             `TaskDef` objects that has the specified label.
         """
-        for task in self._taskToQuantumNode.keys():
+        for task in self._taskToQuantumNode:
             if label == task.label:
                 return task
         return None
@@ -636,10 +636,7 @@ class QuantumGraph:
         in_graph : `bool`
             The result of searching for the quantum.
         """
-        for node in self:
-            if quantum == node.quantum:
-                return True
-        return False
+        return any(quantum == node.quantum for node in self)
 
     def writeDotGraph(self, output: str | io.BufferedIOBase) -> None:
         """Write out the graph as a dot graph.
@@ -733,7 +730,7 @@ class QuantumGraph:
         inputs : `set` of `QuantumNode`
             All the nodes that are direct inputs to specified node.
         """
-        return set(pred for pred in self._connectedQuanta.predecessors(node))
+        return set(self._connectedQuanta.predecessors(node))
 
     def determineOutputsOfQuantumNode(self, node: QuantumNode) -> set[QuantumNode]:
         """Return a set of `QuantumNode` that are direct outputs of a specified
@@ -749,7 +746,7 @@ class QuantumGraph:
         outputs : `set` of `QuantumNode`
             All the nodes that are direct outputs to specified node.
         """
-        return set(succ for succ in self._connectedQuanta.successors(node))
+        return set(self._connectedQuanta.successors(node))
 
     def determineConnectionsOfQuantumNode(self: _T, node: QuantumNode) -> _T:
         """Return a graph of `QuantumNode` that are direct inputs and outputs
@@ -1106,7 +1103,8 @@ class QuantumGraph:
             count += len(dump)
 
         headerData["DimensionRecords"] = {
-            key: value.dict() for key, value in dimAccumulator.makeSerializedDimensionRecordMapping().items()
+            key: value.model_dump()
+            for key, value in dimAccumulator.makeSerializedDimensionRecordMapping().items()
         }
 
         # need to serialize this as a series of key,value tuples because of

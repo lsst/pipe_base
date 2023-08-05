@@ -1036,10 +1036,10 @@ class TaskDatasetTypes:
                             "Note that reference catalog names are now used as the dataset "
                             "type name instead of 'ref_cat'."
                         ) from err
-                    rest1 = set(registry.dimensions.extract(dimensions - set(["skypix"])).names)
-                    rest2 = set(
+                    rest1 = set(registry.dimensions.extract(dimensions - {"skypix"}).names)
+                    rest2 = {
                         dim.name for dim in datasetType.dimensions if not isinstance(dim, SkyPixDimension)
-                    )
+                    }
                     if rest1 != rest2:
                         raise ValueError(
                             f"Non-skypix dimensions for dataset type {c.name} declared in "
@@ -1062,7 +1062,7 @@ class TaskDatasetTypes:
                                     "Component parent class cannot be determined, and "
                                     "composite name was not in storage class mapping, or no "
                                     "storage_class_mapping was supplied"
-                                )
+                                ) from None
                             else:
                                 parentStorageClass = storage_class_mapping[compositeName]
                         else:

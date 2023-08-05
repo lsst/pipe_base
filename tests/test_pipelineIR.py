@@ -154,7 +154,7 @@ class PipelineIRTestCase(unittest.TestCase):
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
-        self.assertEqual(set(pipeline.tasks.keys()), set(["modA", "modB"]))
+        self.assertEqual(set(pipeline.tasks.keys()), {"modA", "modB"})
 
         # This should pass, as the conflicting task is no in includes
         pipeline_str = textwrap.dedent(
@@ -168,7 +168,7 @@ class PipelineIRTestCase(unittest.TestCase):
         )
 
         pipeline = PipelineIR.from_string(pipeline_str)
-        self.assertEqual(set(pipeline.tasks.keys()), set(["modA", "modB"]))
+        self.assertEqual(set(pipeline.tasks.keys()), {"modA", "modB"})
 
         # Test that you cant include and exclude a task
         pipeline_str = textwrap.dedent(

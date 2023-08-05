@@ -23,6 +23,7 @@ from __future__ import annotations
 
 __all__ = ("Instrument",)
 
+import contextlib
 import datetime
 import os.path
 from abc import ABCMeta, abstractmethod
@@ -325,10 +326,8 @@ class Instrument(metaclass=ABCMeta):
         records = list(registry.queryDimensionRecords("instrument"))
         for record in records:
             cls = record.class_name
-            try:
+            with contextlib.suppress(Exception):
                 doImportType(cls)
-            except Exception:
-                pass
 
     @abstractmethod
     def getRawFormatter(self, dataId: DataId) -> type[Formatter]:

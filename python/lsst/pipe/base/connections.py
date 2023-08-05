@@ -310,7 +310,7 @@ class PipelineTaskConnectionsMetaclass(type):
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time.
         templateValues = {
-            name: getattr(config.connections, name) for name in getattr(cls, "defaultTemplates").keys()
+            name: getattr(config.connections, name) for name in cls.defaultTemplates  # type: ignore
         }
 
         # We now assemble a mapping of all connection instances keyed by
@@ -726,11 +726,12 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         """
         inputDatasetRefs = InputQuantizedConnection()
         outputDatasetRefs = OutputQuantizedConnection()
-        # operate on a reference object and an interable of names of class
+        # operate on a reference object and an iterable of names of class
         # connection attributes
         for refs, names in zip(
             (inputDatasetRefs, outputDatasetRefs),
             (itertools.chain(self.inputs, self.prerequisiteInputs), self.outputs),
+            strict=True,
         ):
             # get a name of a class connection attribute
             for attributeName in names:

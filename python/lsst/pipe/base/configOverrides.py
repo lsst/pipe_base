@@ -26,6 +26,7 @@ from __future__ import annotations
 __all__ = ["ConfigOverrides"]
 
 import ast
+import contextlib
 import inspect
 from enum import Enum
 from operator import attrgetter
@@ -109,7 +110,7 @@ class ConfigExpressionParser(ast.NodeVisitor):
 
     def visit_Dict(self, node):
         """Build dict out of component nodes if dict node encountered."""
-        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values)}
+        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values, strict=True)}
 
     def visit_Set(self, node):
         """Build set out of node is set encountered."""
@@ -237,15 +238,12 @@ class ConfigOverrides:
         self._overrides.append((OverrideTypes.Instrument, (instrument, task_name)))
 
     def _parser(self, value, configParser):
-        try:
+        # Exception probably means it is a specific user string such as a URI.
+        # Let the value return as a string to attempt to continue to
+        # process as a string, another error will be raised in downstream
+        # code if that assumption is wrong
+        with contextlib.suppress(Exception):
             value = configParser.visit(ast.parse(value, mode="eval").body)
-        except Exception:
-            # This probably means it is a specific user string such as a URI.
-            # Let the value return as a string to attempt to continue to
-            # process as a string, another error will be raised in downstream
-            # code if that assumption is wrong
-            pass
-
         return value
 
     def applyTo(self, config):

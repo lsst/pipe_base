@@ -72,7 +72,7 @@ class PipelineTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             pipeline.addLabelToSubset("test", "missing_label")
         pipeline.addLabelToSubset("test", "task0")
-        self.assertEqual(pipeline._pipelineIR.labeled_subsets["test"].subset, set(("task0",)))
+        self.assertEqual(pipeline._pipelineIR.labeled_subsets["test"].subset, {"task0"})
 
         # Test removing labels.
         with self.assertRaises(ValueError):
@@ -89,7 +89,7 @@ class PipelineTestCase(unittest.TestCase):
         pipeline2.removeTask("task1")
 
         pipeline1.mergePipeline(pipeline2)
-        self.assertEqual(pipeline1._pipelineIR.tasks.keys(), set(("task0", "task1", "task2", "task3")))
+        self.assertEqual(pipeline1._pipelineIR.tasks.keys(), {"task0", "task1", "task2", "task3"})
 
     def testFindingSubset(self):
         pipeline = makeSimplePipeline(2)
@@ -103,7 +103,7 @@ class PipelineTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             pipeline.findSubsetsWithLabel("missing_label")
 
-        self.assertEqual(pipeline.findSubsetsWithLabel("task0"), set(("test1", "test3")))
+        self.assertEqual(pipeline.findSubsetsWithLabel("task0"), {"test1", "test3"})
 
     def testParameters(self):
         """Test that parameters can be set and used to format"""

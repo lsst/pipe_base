@@ -67,7 +67,7 @@ class MockRegistry:
         try:
             return self._dataset_types[name]
         except KeyError:
-            raise MissingDatasetTypeError(name)
+            raise MissingDatasetTypeError(name) from None
 
 
 class PipelineGraphTestCase(unittest.TestCase):

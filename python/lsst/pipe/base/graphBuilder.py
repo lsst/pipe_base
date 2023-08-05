@@ -29,6 +29,7 @@ __all__ = ["GraphBuilder"]
 # -------------------------------
 #  Imports of standard modules --
 # -------------------------------
+import contextlib
 import itertools
 import logging
 from collections import ChainMap, defaultdict
@@ -231,7 +232,7 @@ class _DatasetDictBase(NamedKeyDict[DatasetType, _Refs]):
         base = self.universe.empty
         if len(self) == 0:
             return base
-        return base.union(*[datasetType.dimensions for datasetType in self.keys()])
+        return base.union(*[datasetType.dimensions for datasetType in self])
 
     def unpackSingleRefs(self, storage_classes: dict[str, str]) -> NamedKeyDict[DatasetType, DatasetRef]:
         """Unpack nested single-element `~lsst.daf.butler.DatasetRef` dicts
@@ -564,7 +565,7 @@ class _QuantumScaffolding:
         result = RangeSet()
         for dataset_type, datasets in itertools.chain(self.inputs.items(), self.outputs.items()):
             if dataset_type.dimensions.spatial:
-                for data_id in datasets.keys():
+                for data_id in datasets:
                     result |= pixelization.envelope(data_id.region)
         return result
 
@@ -604,7 +605,7 @@ class _QuantumScaffolding:
             quantum_records = {}
             input_refs = list(itertools.chain.from_iterable(helper.inputs.values()))
             input_refs += list(initInputs.values())
-            input_ids = set(ref.id for ref in input_refs)
+            input_ids = {ref.id for ref in input_refs}
             for datastore_name, records in datastore_records.items():
                 matching_records = records.subset(input_ids)
                 if matching_records is not None:
@@ -893,7 +894,7 @@ class _PipelineScaffolding:
             pipeline = pipeline.toExpandedPipeline()
         self.tasks = [
             _TaskScaffolding(taskDef=taskDef, parent=self, datasetTypes=taskDatasetTypes)
-            for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values())
+            for taskDef, taskDatasetTypes in zip(pipeline, datasetTypes.byTask.values(), strict=True)
         ]
 
     def __repr__(self) -> str:
@@ -1050,7 +1051,7 @@ class _PipelineScaffolding:
             _LOG.debug("Not using dataset existence to constrain query.")
         elif datasetQueryConstraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(datasetQueryConstraint)
-            inputs = {k.name: k for k in self.inputs.keys()}
+            inputs = {k.name: k for k in self.inputs}
             if remainder := constraint.difference(inputs.keys()):
                 raise ValueError(
                     f"{remainder} dataset type(s) specified as a graph constraint, but"
@@ -1076,7 +1077,7 @@ class _PipelineScaffolding:
             # Iterate over query results, populating data IDs for datasets and
             # quanta and then connecting them to each other.
             n = -1
-            for n, commonDataId in enumerate(commonDataIds):
+            for commonDataId in commonDataIds:
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
                 # We remember both those that already existed and those that we
@@ -1205,11 +1206,8 @@ class _PipelineScaffolding:
         # use it for resolving references but don't check it for existing refs.
         run_exists = False
         if run:
-            try:
+            with contextlib.suppress(MissingCollectionError):
                 run_exists = bool(registry.queryCollections(run))
-            except MissingCollectionError:
-                # Undocumented exception is raise if it does not exist
-                pass
 
         skip_collections_wildcard: CollectionWildcard | None = None
         skipExistingInRun = False
@@ -1647,7 +1645,7 @@ class _PipelineScaffolding:
             chain.append(self.globalInitOutputs)
 
         # Collect names of all dataset types.
-        all_names: set[str] = set(dstype.name for dstype in itertools.chain(*chain))
+        all_names: set[str] = {dstype.name for dstype in itertools.chain(*chain)}
         dataset_types = {ds.name: ds for ds in registry.queryDatasetTypes(all_names)}
 
         # Check for types that do not exist in registry yet:

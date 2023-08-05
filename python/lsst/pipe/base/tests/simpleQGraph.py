@@ -319,7 +319,7 @@ def populateButler(
     butler.registry.insertDimensionData("instrument", dict(name=instrumentName, class_name=instrumentClass))
     butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0, full_name="det0"))
 
-    taskDefMap = dict((taskDef.label, taskDef) for taskDef in taskDefs)
+    taskDefMap = {taskDef.label: taskDef for taskDef in taskDefs}
     # Add inputs to butler
     if not datasetTypes:
         datasetTypes = {None: ["add_dataset0"]}

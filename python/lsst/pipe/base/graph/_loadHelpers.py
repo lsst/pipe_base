@@ -252,7 +252,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
         return self._resourceHandle.read(stop - start)
 
     def __enter__(self) -> "LoadHelper":
-        if isinstance(self.uri, (BinaryIO, BytesIO, BufferedRandom)):
+        if isinstance(self.uri, BinaryIO | BytesIO | BufferedRandom):
             self._resourceHandle = self.uri
         else:
             self._resourceHandle = self._exitStack.enter_context(self.uri.open("rb"))

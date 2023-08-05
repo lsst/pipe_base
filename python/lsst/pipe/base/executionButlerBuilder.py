@@ -159,17 +159,17 @@ def _accumulate(
     for quantum in (n.quantum for n in graph):
         for attrName in ("initInputs", "inputs", "outputs"):
             attr: Mapping[DatasetType, DatasetRef | list[DatasetRef]] = getattr(quantum, attrName)
-            for type, refs in attr.items():
+            for refs in attr.values():
                 # This if block is because init inputs has a different
                 # signature for its items
-                if not isinstance(refs, (list, tuple)):
+                if not isinstance(refs, list | tuple):
                     refs = [refs]
                 for ref in refs:
                     if ref.isComponent():
                         ref = ref.makeCompositeRef()
                     check_refs.add(ref)
     exist_map = butler._exists_many(check_refs, full_check=False)
-    existing_ids = set(ref.id for ref, exists in exist_map.items() if exists)
+    existing_ids = {ref.id for ref, exists in exist_map.items() if exists}
     del exist_map
 
     for quantum in (n.quantum for n in graph):
@@ -177,7 +177,7 @@ def _accumulate(
             attr = getattr(quantum, attrName)
 
             for type, refs in attr.items():
-                if not isinstance(refs, (list, tuple)):
+                if not isinstance(refs, list | tuple):
                     refs = [refs]
                 if type.component() is not None:
                     type = type.makeCompositeDatasetType()

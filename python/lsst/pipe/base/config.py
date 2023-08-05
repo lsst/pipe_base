@@ -74,7 +74,7 @@ class TemplateField(pexConfig.Field):
         if value is None:
             return
 
-        if not (isinstance(value, str) or isinstance(value, Number)):
+        if not (isinstance(value, str | Number)):
             raise TypeError(
                 f"Value {value} is of incorrect type {pexConfig.config._typeStr(value)}."
                 " Expected type str or a number"

@@ -27,6 +27,7 @@ __all__ = (
     "NoDimensionsTestTask",
 )
 
+import copy
 import dataclasses
 from typing import cast
 
@@ -97,7 +98,7 @@ class NoDimensionsTestTask(PipelineTask):
             Struct with a single ``output`` attribute.
         """
         self.log.info("Run method given data of type: %s", get_full_type_name(input))
-        output = input.copy()
+        output = copy.copy(input)
         config = cast(NoDimensionsTestConfig, self.config)
         output[config.key] = config.value
 
