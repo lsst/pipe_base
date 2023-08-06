@@ -919,6 +919,67 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
                 )
         return {}, {}
 
+    def getSpatialBoundsConnections(self) -> Iterable[str]:
+        """Return the names of regular input and output connections whose data
+        IDs should be used to compute the spatial bounds of this task's quanta.
+
+        The spatial bound for a quantum is defined as the union of the regions
+        of all data IDs of all connections returned here, along with the region
+        of the quantum data ID (if the task has spatial dimensions).
+
+        Returns
+        -------
+        connection_names : `collections.abc.Iterable` [ `str` ]
+            Names of collections with spatial dimensions.  These are the
+            task-internal connection names, not butler dataset type names.
+
+        Notes
+        -----
+        The spatial bound is used to search for prerequisite inputs that have
+        skypix dimensions. The default implementation returns an empty
+        iterable, which is usually sufficient for tasks with spatial
+        dimensions, but if a task's inputs or outputs are associated with
+        spatial regions that extend beyond the quantum data ID's region, this
+        method may need to be overridden to expand the set of prerequisite
+        inputs found.
+
+        Tasks that do not have spatial dimensions that have skypix prerequisite
+        inputs should always override this method, as the default spatial
+        bounds otherwise cover the full sky.
+        """
+        return ()
+
+    def getTemporalBoundsConnections(self) -> Iterable[str]:
+        """Return the names of regular input and output connections whose data
+        IDs should be used to compute the temporal bounds of this task's
+        quanta.
+
+        The temporal bound for a quantum is defined as the union of the
+        timespans of all data IDs of all connections returned here, along with
+        the timespan of the quantum data ID (if the task has temporal
+        dimensions).
+
+        Returns
+        -------
+        connection_names : `collections.abc.Iterable` [ `str` ]
+            Names of collections with temporal dimensions.  These are the
+            task-internal connection names, not butler dataset type names.
+
+        Notes
+        -----
+        The temporal bound is used to search for prerequisite inputs that are
+        calibration datasets. The default implementation returns an empty
+        iterable, which is usually sufficient for tasks with temporal
+        dimensions, but if a task's inputs or outputs are associated with
+        timespans that extend beyond the quantum data ID's timespan, this
+        method may need to be overridden to expand the set of prerequisite
+        inputs found.
+
+        Tasks that do not have temporal dimensions that do not implement this
+        method will use an infinite timespan for any calibration lookups.
+        """
+        return ()
+
 
 def iterConnections(
     connections: PipelineTaskConnections, connectionType: str | Iterable[str]
