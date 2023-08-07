@@ -1076,12 +1076,13 @@ class _PipelineScaffolding:
             _LOG.debug("Iterating over query results to associate quanta with datasets.")
             # Iterate over query results, populating data IDs for datasets and
             # quanta and then connecting them to each other.
-            n = -1
+            n = 0  # Must count in loop since this is a lazy iterable.
             for commonDataId in commonDataIds:
                 # Create DatasetRefs for all DatasetTypes from this result row,
                 # noting that we might have created some already.
                 # We remember both those that already existed and those that we
                 # create now.
+                n += 1
                 refsForRow = {}
                 dataIdCacheForRow: dict[DimensionGraph, DataCoordinate] = {}
                 for datasetType, refs in itertools.chain(
@@ -1123,7 +1124,7 @@ class _PipelineScaffolding:
                         dataId = dataIdCacheForRow[datasetType.dimensions]
                         ref_holder = refsForRow[datasetType.name]
                         quantum.outputs[datasetType.name][dataId] = ref_holder
-            if n < 0:
+            if n == 0:
                 _LOG.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
                 emptiness_explained = False
                 for message in commonDataIds.explain_no_results():
