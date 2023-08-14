@@ -35,6 +35,7 @@ __all__ = (
     "MockPipelineTask",
     "MockPipelineTaskConfig",
     "mock_task_defs",
+    "mock_pipeline_graph",
 )
 
 import dataclasses
@@ -58,6 +59,7 @@ from ... import connectionTypes as cT
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
 from ...pipeline import TaskDef
+from ...pipeline_graph import PipelineGraph
 from ...pipelineTask import PipelineTask
 from ._data_id_match import DataIdMatch
 from ._storage_class import MockDataset, MockDatasetQuantum, MockStorageClass, get_mock_name
@@ -119,6 +121,53 @@ def mock_task_defs(
         )
         results.append(mock_task_def)
     return results
+
+
+def mock_pipeline_graph(
+    original_graph: PipelineGraph,
+    unmocked_dataset_types: Iterable[str] = (),
+    force_failures: Mapping[str, tuple[str, type[Exception] | None]] | None = None,
+) -> PipelineGraph:
+    """Create mocks for a full pipeline graph.
+
+    Parameters
+    ----------
+    original_graph : `~..pipeline_graph.PipelineGraph`
+        Original tasks and configuration to mock.
+    unmocked_dataset_types : `~collections.abc.Iterable` [ `str` ], optional
+        Names of overall-input dataset types that should not be replaced with
+        mocks.
+    force_failures : `~collections.abc.Mapping` [ `str`, `tuple` [ `str`, \
+            `type` [ `Exception` ] or `None` ] ]
+        Mapping from original task label to a 2-tuple indicating that some
+        quanta should raise an exception when executed.  The first entry is a
+        data ID match using the butler expression language (i.e. a string of
+        the sort passed as the ``where`` argument to butler query methods),
+        while the second is the type of exception to raise when the quantum
+        data ID matches the expression.
+
+    Returns
+    -------
+    mocked : `~..pipeline_graph.PipelineGraph`
+        Pipeline graph using `MockPipelineTask` configurations that target the
+        original tasks.  Never resolved.
+    """
+    unmocked_dataset_types = tuple(unmocked_dataset_types)
+    if force_failures is None:
+        force_failures = {}
+    result = PipelineGraph(description=original_graph.description)
+    for original_task_node in original_graph.tasks.values():
+        config = MockPipelineTaskConfig()
+        config.original.retarget(original_task_node.task_class)
+        config.original = original_task_node.config
+        config.unmocked_dataset_types.extend(unmocked_dataset_types)
+        if original_task_node.label in force_failures:
+            condition, exception_type = force_failures[original_task_node.label]
+            config.fail_condition = condition
+            if exception_type is not None:
+                config.fail_exception = get_full_type_name(exception_type)
+        result.add_task(get_mock_name(original_task_node.label), MockPipelineTask, config=config)
+    return result
 
 
 class BaseTestPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
