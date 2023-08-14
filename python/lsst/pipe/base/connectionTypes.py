@@ -147,6 +147,7 @@ class DimensionedConnection(BaseConnection):
     isCalibration: bool = False
 
     def __post_init__(self):
+        super().__post_init__()
         if isinstance(self.dimensions, str):
             raise TypeError(
                 "Dimensions must be iterable of dimensions, got str, possibly omitted trailing comma"
