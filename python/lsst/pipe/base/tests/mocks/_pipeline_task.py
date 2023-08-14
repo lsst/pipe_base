@@ -277,7 +277,7 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
                 # registrations) has to be available whenever this dataset type
                 # is used.
                 storage_class = MockStorageClass.get_or_register_mock(connection.storageClass)
-                kwargs = {}
+                kwargs: dict[str, Any] = {}
                 if hasattr(connection, "dimensions"):
                     connection_dimensions = set(connection.dimensions)
                     # Replace the generic "skypix" placeholder with htm7, since
