@@ -30,6 +30,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import ClassVar
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
+from lsst.utils.introspection import find_outside_stacklevel
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,6 +66,13 @@ class BaseConnection:
     deprecated: str | None = dataclasses.field(default=None, kw_only=True)
 
     _connection_type_set: ClassVar[str]
+    _deprecation_context: str = ""
+
+    def __post_init__(self):
+        if self.deprecated and not self._deprecation_context:
+            info = {}
+            _ = find_outside_stacklevel("lsst.pipe.base", "dataclasses", stack_info=info)
+            object.__setattr__(self, "_deprecation_context", f"{info['filename']}:{info['lineno']}")
 
     def __get__(self, inst, klass):
         """Descriptor access method.
