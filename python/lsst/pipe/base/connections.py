@@ -46,7 +46,6 @@ from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
-from lsst.utils.introspection import find_outside_stacklevel
 
 from ._status import NoWorkFound
 from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInput
@@ -334,6 +333,7 @@ class PipelineTaskConnectionsMetaclass(type):
                     if connection.deprecated is None
                     else f"{connection.doc}\n{connection.deprecated}"
                 ),
+                _deprecation_context=connection._deprecation_context,
             )
             instance._allConnections[internal_name] = instance_connection
 
@@ -369,10 +369,13 @@ class PipelineTaskConnectionsMetaclass(type):
         instance._allConnections.clear()
         instance._allConnections.update(updated_all_connections)
 
-        for obj in instance._allConnections.values():
+        for connection_name, obj in instance._allConnections.items():
             if obj.deprecated is not None:
                 warnings.warn(
-                    obj.deprecated, FutureWarning, stacklevel=find_outside_stacklevel("lsst.pipe.base")
+                    f"Connection {connection_name} with datasetType {obj.name} "
+                    f"(from {obj._deprecation_context}): {obj.deprecated}",
+                    FutureWarning,
+                    stacklevel=1,  # Report from this location.
                 )
 
         # Freeze the connection instance dimensions now.  This at odds with the

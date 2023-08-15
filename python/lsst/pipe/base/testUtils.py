@@ -308,8 +308,9 @@ def runTestQuantum(
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
     inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
     if mockRun:
-        with unittest.mock.patch.object(task, "run") as mock, unittest.mock.patch(
-            "lsst.pipe.base.QuantumContext.put"
+        with (
+            unittest.mock.patch.object(task, "run") as mock,
+            unittest.mock.patch("lsst.pipe.base.QuantumContext.put"),
         ):
             task.runQuantum(butlerQc, inputRefs, outputRefs)
             return mock
