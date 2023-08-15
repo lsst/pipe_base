@@ -27,11 +27,13 @@ jobs:
           channels: conda-forge,defaults
           channel-priority: strict
           show-channel-urls: true
+          miniforge-variant: Mambaforge
+          use-mamba: true
 
       - name: Update pip/wheel infrastructure
         shell: bash -l {0}
         run: |
-          conda install -y -q pip wheel
+          mamba install -y -q pip wheel
 
       - name: Install dependencies
         shell: bash -l {0}
@@ -43,13 +45,13 @@ jobs:
       - name: Install pytest packages
         shell: bash -l {0}
         run: |
-          conda install -y -q \
+          mamba install -y -q \
             pytest pytest-xdist pytest-openfiles pytest-cov
 
       - name: List installed packages
         shell: bash -l {0}
         run: |
-          conda list
+          mamba list
           pip list -v
 
       - name: Build and install
