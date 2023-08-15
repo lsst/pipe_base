@@ -369,10 +369,11 @@ class PipelineTaskConnectionsMetaclass(type):
         instance._allConnections.clear()
         instance._allConnections.update(updated_all_connections)
 
-        for obj in instance._allConnections.values():
+        for connection_name, obj in instance._allConnections.items():
             if obj.deprecated is not None:
                 warnings.warn(
-                    f"{obj.name} (from {obj._deprecation_context}): {obj.deprecated}",
+                    f"Connection {connection_name} with datasetType {obj.name} "
+                    f"(from {obj._deprecation_context}): {obj.deprecated}",
                     FutureWarning,
                     stacklevel=1,  # Report from this location.
                 )
