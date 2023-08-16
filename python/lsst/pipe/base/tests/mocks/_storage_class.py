@@ -31,16 +31,16 @@ __all__ = (
     "is_mock_name",
 )
 
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
 from lsst.daf.butler import (
+    DataIdValue,
     DatasetComponent,
     Formatter,
     FormatterFactory,
     LookupKey,
-    SerializedDataCoordinate,
-    SerializedDatasetRef,
     SerializedDatasetType,
     StorageClass,
     StorageClassDelegate,
@@ -82,21 +82,31 @@ def is_mock_name(name: str) -> bool:
 class MockDataset(_BaseModelCompat):
     """The in-memory dataset type used by `MockStorageClass`."""
 
-    ref: SerializedDatasetRef
-    """Reference used to read and write this dataset.
+    dataset_id: uuid.UUID
+    """Universal unique identifier for this dataset."""
 
-    This is a `~lsst.daf.butler.SerializedDatasetRef` instead of a "real" one
-    for two reasons:
+    dataset_type: SerializedDatasetType
+    """Butler dataset type or this dataset.
+
+    See the documentation for ``data_id`` for why this is a
+    `~lsst.daf.butler.SerializedDatasetType` instead of a "real" one.
+    """
+
+    data_id: dict[str, DataIdValue]
+    """Butler data ID for this dataset.
+
+    This is a `~lsst.daf.butler.SerializedDataCoordinate` instead of a "real"
+    one for two reasons:
 
     - the mock dataset may need to be read from disk in a context in which a
       `~lsst.daf.butler.DimensionUniverse` is unavailable;
     - we don't want the complexity of having a separate
-      ``SerializedMockDataset``.
+      ``SerializedMockDataCoordinate``.
+    """
 
-    The downside of this is that we end up effectively reimplementing a few
-    fairly trivial DatasetType/DatasetRef methods that override storage classes
-    and extract components (in `MockStorageClass` and
-    `MockStorageClassDelegate`).
+    run: str
+    """`~lsst.daf.butler.CollectionType.RUN` collection this dataset belongs
+    to.
     """
 
     quantum: MockDatasetQuantum | None = None
@@ -122,10 +132,6 @@ class MockDataset(_BaseModelCompat):
     """`repr` of all parameters applied when reading this dataset."""
 
     @property
-    def dataset_type(self) -> SerializedDatasetType:
-        return cast(SerializedDatasetType, self.ref.datasetType)
-
-    @property
     def storage_class(self) -> str:
         return cast(str, self.dataset_type.storageClass)
 
@@ -139,8 +145,7 @@ class MockDataset(_BaseModelCompat):
         dataset_type_updates = {
             k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields  # type: ignore
         }
-        derived_dataset_type = self.dataset_type.copy(update=dataset_type_updates)
-        derived_ref = self.ref.copy(update=dict(datasetType=derived_dataset_type))
+        kwargs.setdefault("dataset_type", self.dataset_type.copy(update=dataset_type_updates))
         # Fields below are those that should not be propagated to the derived
         # dataset, because they're not about the intrinsic on-disk thing.
         kwargs.setdefault("converted_from", None)
@@ -149,7 +154,6 @@ class MockDataset(_BaseModelCompat):
         # Also use setdefault on the ref in case caller wants to override that
         # directly, but this is expected to be rare enough that it's not worth
         # it to try to optimize out the work above to make derived_ref.
-        kwargs.setdefault("ref", derived_ref)
         return self.copy(update=kwargs)
 
 
@@ -159,7 +163,7 @@ class MockDatasetQuantum(_BaseModelCompat):
     task_label: str
     """Label of the producing PipelineTask in its pipeline."""
 
-    data_id: SerializedDataCoordinate
+    data_id: dict[str, DataIdValue]
     """Data ID for the quantum."""
 
     inputs: dict[str, list[MockDataset]]

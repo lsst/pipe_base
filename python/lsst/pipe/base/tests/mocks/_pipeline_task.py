@@ -196,7 +196,7 @@ class BaseTestPipelineTask(PipelineTask):
         # Populate the bit of provenance we store in all outputs.
         _LOG.info("Reading input data for task '%s' on quantum %s", self.getName(), quantum.dataId)
         mock_dataset_quantum = MockDatasetQuantum(
-            task_label=self.getName(), data_id=quantum.dataId.to_simple(), inputs={}
+            task_label=self.getName(), data_id=quantum.dataId.full.byName(), inputs={}
         )
         for name, refs in inputRefs:
             inputs_list = []
@@ -215,7 +215,12 @@ class BaseTestPipelineTask(PipelineTask):
                     # level.
                     input_dataset.quantum = None
                 else:
-                    input_dataset = MockDataset(ref=ref.to_simple())
+                    input_dataset = MockDataset(
+                        dataset_id=ref.id,
+                        dataset_type=ref.datasetType.to_simple(),
+                        data_id=ref.dataId.full.byName(),
+                        run=ref.run,
+                    )
                 inputs_list.append(input_dataset)
             mock_dataset_quantum.inputs[name] = inputs_list
 
@@ -223,7 +228,12 @@ class BaseTestPipelineTask(PipelineTask):
         for name, refs in outputRefs:
             for ref in ensure_iterable(refs):
                 output = MockDataset(
-                    ref=ref.to_simple(), quantum=mock_dataset_quantum, output_connection_name=name
+                    dataset_id=ref.id,
+                    dataset_type=ref.datasetType.to_simple(),
+                    data_id=ref.dataId.full.byName(),
+                    run=ref.run,
+                    quantum=mock_dataset_quantum,
+                    output_connection_name=name,
                 )
                 butlerQC.put(output, ref)
 
