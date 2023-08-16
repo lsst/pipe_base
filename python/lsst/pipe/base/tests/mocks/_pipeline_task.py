@@ -36,7 +36,13 @@ import logging
 from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, DeferredDatasetHandle
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetRef,
+    DeferredDatasetHandle,
+    SerializedDatasetType,
+    SerializedDimensionGraph,
+)
 from lsst.pex.config import Config, ConfigDictField, ConfigurableField, Field, ListField
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -165,6 +171,7 @@ class BaseTestPipelineTask(PipelineTask):
         self,
         *,
         config: BaseTestPipelineTaskConfig,
+        initInputs: Mapping[str, Any],
         **kwargs: Any,
     ):
         super().__init__(config=config, **kwargs)
@@ -172,6 +179,47 @@ class BaseTestPipelineTask(PipelineTask):
         self.data_id_match = self.config.data_id_match()
         if self.data_id_match:
             self.fail_exception = doImportType(self.config.fail_exception)
+        # Look for, check, and record init-inputs.
+        task_connections = self.ConfigClass.ConnectionsClass(config=config)
+        mock_dataset_quantum = MockDatasetQuantum(task_label=self.getName(), data_id={}, inputs={})
+        for connection_name in task_connections.initInputs:
+            input_dataset = initInputs[connection_name]
+            if not isinstance(input_dataset, MockDataset):
+                raise TypeError(
+                    f"Expected MockDataset instance for init-input {self.getName()}.{connection_name}: "
+                    f"got {input_dataset!r} of type {type(input_dataset)!r}."
+                )
+            connection = task_connections.allConnections[connection_name]
+            if input_dataset.dataset_type.name != connection.name:
+                raise RuntimeError(
+                    f"Incorrect dataset type name for init-input {self.getName()}.{connection_name}: "
+                    f"got {input_dataset.dataset_type.name!r}, expected {connection.name!r}."
+                )
+            if input_dataset.storage_class != connection.storageClass:
+                raise RuntimeError(
+                    f"Incorrect storage class for init-input {self.getName()}.{connection_name}: "
+                    f"got {input_dataset.storage_class!r}, expected {connection.storageClass!r}."
+                )
+            # To avoid very deep provenance we trim inputs to a single
+            # level.
+            input_dataset.quantum = None
+            mock_dataset_quantum.inputs[connection_name] = [input_dataset]
+        # Add init-outputs as task instance attributes.
+        for connection_name in task_connections.initOutputs:
+            connection = task_connections.allConnections[connection_name]
+            output_dataset = MockDataset(
+                dataset_id=None,  # the task has no way to get this
+                dataset_type=SerializedDatasetType(
+                    name=connection.name,
+                    storageClass=connection.storageClass,
+                    dimensions=SerializedDimensionGraph(names=[]),
+                ),
+                data_id={},
+                run=None,  # task also has no way to get this
+                quantum=mock_dataset_quantum,
+                output_connection_name=connection_name,
+            )
+            setattr(self, connection_name, output_dataset)
 
     config: BaseTestPipelineTaskConfig
 
@@ -277,11 +325,6 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
         self.dimensions.update(self.original.dimensions)
         self.unmocked_dataset_types = frozenset(config.unmocked_dataset_types)
         for name, connection in self.original.allConnections.items():
-            if name in self.original.initInputs or name in self.original.initOutputs:
-                # We just ignore initInputs and initOutputs, because the task
-                # is never given DatasetRefs for those and hence can't create
-                # mocks.
-                continue
             if connection.name not in self.unmocked_dataset_types:
                 # We register the mock storage class with the global singleton
                 # here, but can only put its name in the connection. That means
@@ -307,6 +350,14 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
                 )
             elif name in self.original.outputs:
                 raise ValueError(f"Unmocked dataset type {connection.name!r} cannot be used as an output.")
+            elif name in self.original.initInputs:
+                raise ValueError(
+                    f"Unmocked dataset type {connection.name!r} cannot be used as an init-input."
+                )
+            elif name in self.original.initOutputs:
+                raise ValueError(
+                    f"Unmocked dataset type {connection.name!r} cannot be used as an init-output."
+                )
             setattr(self, name, connection)
 
     def getSpatialBoundsConnections(self) -> Iterable[str]:

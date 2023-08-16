@@ -84,7 +84,7 @@ def is_mock_name(name: str) -> bool:
 class MockDataset(_BaseModelCompat):
     """The in-memory dataset type used by `MockStorageClass`."""
 
-    dataset_id: uuid.UUID
+    dataset_id: uuid.UUID | None
     """Universal unique identifier for this dataset."""
 
     dataset_type: SerializedDatasetType
@@ -106,7 +106,7 @@ class MockDataset(_BaseModelCompat):
       ``SerializedMockDataCoordinate``.
     """
 
-    run: str
+    run: str | None
     """`~lsst.daf.butler.CollectionType.RUN` collection this dataset belongs
     to.
     """
@@ -160,7 +160,11 @@ class MockDataset(_BaseModelCompat):
 
 
 class MockDatasetQuantum(_BaseModelCompat):
-    """Description of the quantum that produced a mock dataset."""
+    """Description of the quantum that produced a mock dataset.
+
+    This is also used to represent task-init operations for init-output mock
+    datasets.
+    """
 
     task_label: str
     """Label of the producing PipelineTask in its pipeline."""
@@ -169,7 +173,10 @@ class MockDatasetQuantum(_BaseModelCompat):
     """Data ID for the quantum."""
 
     inputs: dict[str, list[MockDataset]]
-    """Mock datasets provided as input to the quantum."""
+    """Mock datasets provided as input to the quantum.
+
+    Keys are task-internal connection names, not dataset type names.
+    """
 
 
 MockDataset.model_rebuild()
