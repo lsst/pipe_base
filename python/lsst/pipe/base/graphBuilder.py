@@ -1609,7 +1609,8 @@ class _PipelineScaffolding:
         datastore_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore is not None:
             datastore_records = datastore.export_records(
-                itertools.chain(
+                ref.makeCompositeRef() if ref.isComponent() else ref
+                for ref in itertools.chain(
                     self.inputs.iter_resolved_refs(),
                     self.initInputs.iter_resolved_refs(),
                     self.prerequisites.iter_resolved_refs(),
