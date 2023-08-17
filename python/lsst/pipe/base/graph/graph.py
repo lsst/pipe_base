@@ -30,13 +30,20 @@ import struct
 import time
 import uuid
 from collections import defaultdict, deque
-from collections.abc import Generator, Iterable, Mapping, MutableMapping
+from collections.abc import Generator, Iterable, Iterator, Mapping, MutableMapping
 from itertools import chain
 from types import MappingProxyType
 from typing import Any, BinaryIO, TypeVar
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, DatasetType, DimensionRecordsAccumulator, DimensionUniverse, Quantum
+from lsst.daf.butler import (
+    DatasetId,
+    DatasetRef,
+    DatasetType,
+    DimensionRecordsAccumulator,
+    DimensionUniverse,
+    Quantum,
+)
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
 from networkx.drawing.nx_agraph import write_dot
@@ -1229,32 +1236,79 @@ class QuantumGraph:
         update_graph_id : `bool`, optional
             If `True` then also update graph ID with a new unique value.
         """
+        dataset_id_map: dict[DatasetId, DatasetId] = {}
 
-        def _update_refs_in_place(refs: list[DatasetRef], run: str) -> None:
-            """Update list of `~lsst.daf.butler.DatasetRef` with new run and
-            dataset IDs.
+        def _update_output_refs(
+            refs: Iterable[DatasetRef], run: str, dataset_id_map: MutableMapping[DatasetId, DatasetId]
+        ) -> Iterator[DatasetRef]:
+            """Update a collection of `~lsst.daf.butler.DatasetRef` with new
+            run and dataset IDs.
             """
             for ref in refs:
-                # hack the run to be replaced explicitly
-                object.__setattr__(ref, "run", run)
+                new_ref = ref.replace(run=run)
+                dataset_id_map[ref.id] = new_ref.id
+                yield new_ref
 
-        # Loop through all outputs and update their datasets.
+        def _update_intermediate_refs(
+            refs: Iterable[DatasetRef], run: str, dataset_id_map: Mapping[DatasetId, DatasetId]
+        ) -> Iterator[DatasetRef]:
+            """Update intermediate references with new run and IDs. Only the
+            references that appear in ``dataset_id_map`` are updated, others
+            are returned unchanged.
+            """
+            for ref in refs:
+                if dataset_id := dataset_id_map.get(ref.id):
+                    ref = ref.replace(run=run, id=dataset_id)
+                yield ref
+
+        # Replace quantum output refs first.
         for node in self._connectedQuanta:
-            for refs in node.quantum.outputs.values():
-                _update_refs_in_place(refs, run)
+            quantum = node.quantum
+            outputs = {
+                dataset_type: tuple(_update_output_refs(refs, run, dataset_id_map))
+                for dataset_type, refs in quantum.outputs.items()
+            }
+            updated_quantum = Quantum(
+                taskName=quantum.taskName,
+                dataId=quantum.dataId,
+                initInputs=quantum.initInputs,
+                inputs=quantum.inputs,
+                outputs=outputs,
+                datastore_records=quantum.datastore_records,
+            )
+            node._replace_quantum(updated_quantum)
 
-        for refs in self._initOutputRefs.values():
-            _update_refs_in_place(refs, run)
-
-        _update_refs_in_place(self._globalInitOutputRefs, run)
+        self._initOutputRefs = {
+            task_def: list(_update_output_refs(refs, run, dataset_id_map))
+            for task_def, refs in self._initOutputRefs.items()
+        }
+        self._globalInitOutputRefs = list(
+            _update_output_refs(self._globalInitOutputRefs, run, dataset_id_map)
+        )
 
         # Update all intermediates from their matching outputs.
         for node in self._connectedQuanta:
-            for refs in node.quantum.inputs.values():
-                _update_refs_in_place(refs, run)
+            quantum = node.quantum
+            inputs = {
+                dataset_type: tuple(_update_intermediate_refs(refs, run, dataset_id_map))
+                for dataset_type, refs in quantum.inputs.items()
+            }
+            initInputs = list(_update_intermediate_refs(quantum.initInputs.values(), run, dataset_id_map))
 
-        for refs in self._initInputRefs.values():
-            _update_refs_in_place(refs, run)
+            updated_quantum = Quantum(
+                taskName=quantum.taskName,
+                dataId=quantum.dataId,
+                initInputs=initInputs,
+                inputs=inputs,
+                outputs=quantum.outputs,
+                datastore_records=quantum.datastore_records,
+            )
+            node._replace_quantum(updated_quantum)
+
+        self._initInputRefs = {
+            task_def: list(_update_intermediate_refs(refs, run, dataset_id_map))
+            for task_def, refs in self._initInputRefs.items()
+        }
 
         if update_graph_id:
             self._buildId = BuildId(f"{time.time()}-{os.getpid()}")

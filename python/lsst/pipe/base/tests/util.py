@@ -68,3 +68,40 @@ def check_output_run(graph: QuantumGraph, run: str) -> list[DatasetRef]:
     newRefs += [ref for ref in intermediates if ref.run != run]
 
     return newRefs
+
+
+def get_output_refs(graph: QuantumGraph) -> list[DatasetRef]:
+    """Return all output and intermediate references in a graph.
+
+    Parameters
+    ----------
+    graph : `QuantumGraph`
+        Quantum graph.
+
+    Returns
+    -------
+    refs : `list` [ `~lsst.daf.butler.DatasetRef` ]
+        List of all output/intermediate dataset references, intermediates
+        will appear more than once in this list.
+    """
+    output_refs: set[DatasetRef] = set()
+    for node in graph:
+        for refs in node.quantum.outputs.values():
+            output_refs.update(refs)
+    for task_def in graph.iterTaskGraph():
+        init_refs = graph.initOutputRefs(task_def)
+        if init_refs:
+            output_refs.update(init_refs)
+    output_refs.update(graph.globalInitOutputRefs())
+
+    result = list(output_refs)
+
+    for node in graph:
+        for refs in node.quantum.inputs.values():
+            result += [ref for ref in refs if ref in output_refs]
+    for task_def in graph.iterTaskGraph():
+        init_refs = graph.initInputRefs(task_def)
+        if init_refs:
+            result += [ref for ref in init_refs if ref in output_refs]
+
+    return result

@@ -41,7 +41,7 @@ from lsst.pipe.base import (
     TaskDef,
 )
 from lsst.pipe.base.graph.quantumNode import BuildId, QuantumNode
-from lsst.pipe.base.tests.util import check_output_run
+from lsst.pipe.base.tests.util import check_output_run, get_output_refs
 from lsst.utils.introspection import get_full_type_name
 
 METADATA = {"a": [1, 2, 3]}
@@ -561,11 +561,17 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testUpdateRun(self) -> None:
         """Test for QuantumGraph.updateRun method."""
         self.assertEqual(check_output_run(self.qGraph, self.output_run), [])
+        output_refs = get_output_refs(self.qGraph)
+        self.assertGreater(len(output_refs), 0)
         graph_id = self.qGraph.graphID
 
         self.qGraph.updateRun("updated-run")
         self.assertEqual(check_output_run(self.qGraph, "updated-run"), [])
         self.assertEqual(self.qGraph.graphID, graph_id)
+        output_refs2 = get_output_refs(self.qGraph)
+        self.assertEqual(len(output_refs2), len(output_refs))
+        # All output dataset IDs must be updated.
+        self.assertTrue(set(ref.id for ref in output_refs).isdisjoint(set(ref.id for ref in output_refs2)))
 
         # Also update metadata.
         self.qGraph.updateRun("updated-run2", metadata_key="ouput_run")
