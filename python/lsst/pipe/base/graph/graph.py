@@ -42,6 +42,7 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionRecordsAccumulator,
     DimensionUniverse,
+    PersistenceContextVars,
     Quantum,
 )
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -1005,6 +1006,11 @@ class QuantumGraph:
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
 
     def _buildSaveObject(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
+        thing = PersistenceContextVars()
+        result = thing.run(self._buildSaveObjectImpl, returnHeader)
+        return result
+
+    def _buildSaveObjectImpl(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
         # make some containers
         jsonData: deque[bytes] = deque()
         # node map is a list because json does not accept mapping keys that
@@ -1076,7 +1082,7 @@ class QuantumGraph:
 
             # dump to json string, and encode that string to bytes and then
             # conpress those bytes
-            dump = lzma.compress(json.dumps(taskDescription).encode())
+            dump = lzma.compress(json.dumps(taskDescription).encode(), preset=2)
             # record the sizing and relation information
             taskDefMap[taskDef.label] = {
                 "bytes": (count, count + len(dump)),
@@ -1095,7 +1101,7 @@ class QuantumGraph:
             # a large impact on on disk size, so it is worth doing
             simpleNode = node.to_simple(accumulator=dimAccumulator)
 
-            dump = lzma.compress(simpleNode.json().encode())
+            dump = lzma.compress(simpleNode.json().encode(), preset=2)
             jsonData.append(dump)
             nodeMap.append(
                 (
