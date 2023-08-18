@@ -50,9 +50,11 @@ from lsst.daf.butler import (
 from lsst.daf.butler.core.named import NamedKeyDict, NamedKeyMapping
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.utils.logging import LsstLogAdapter, getLogger
+from lsst.utils.timer import timeMethod
 
 from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
+from ._task_metadata import TaskMetadata
 from .connections import AdjustQuantumHelper
 from .graph import QuantumGraph
 from .pipeline_graph import PipelineGraph, TaskNode
@@ -168,6 +170,7 @@ class QuantumGraphBuilder(ABC):
         clobber: bool = False,
     ):
         self.log = getLogger(__name__)
+        self.metadata = TaskMetadata()
         self._pipeline_graph = pipeline_graph
         self.butler = butler
         self._pipeline_graph.resolve(self.butler.registry)
@@ -231,6 +234,13 @@ class QuantumGraphBuilder(ABC):
     level or higher, per-dataset-type status messages should be logged at
     `~lsst.utils.logging.VERBOSE` or higher, and per-data-ID status messages
     should be logged at `logging.DEBUG` or higher.
+    """
+
+    metadata: TaskMetadata
+    """Metadata to store in the QuantumGraph.
+
+    The `TaskMetadata` class is used here primarily in order to enable
+    resource-usage collection with the `lsst.utils.timer.timeMethod` decorator.
     """
 
     butler: Butler
@@ -297,6 +307,7 @@ class QuantumGraphBuilder(ABC):
         return self.butler.dimensions
 
     @final
+    @timeMethod
     def build(self, metadata: Mapping[str, Any] | None = None) -> QuantumGraph:
         """Build the quantum graph.
 
@@ -406,6 +417,7 @@ class QuantumGraphBuilder(ABC):
         raise NotImplementedError()
 
     @final
+    @timeMethod
     def _resolve_task_quanta(self, task_node: TaskNode, skeleton: QuantumGraphSkeleton) -> None:
         """Process the quanta for one task in a skeleton graph to skip those
         that have already completed and adjust those that request it.
@@ -885,6 +897,7 @@ class QuantumGraphBuilder(ABC):
         # going to consume them.
 
     @final
+    @timeMethod
     def _find_empty_dimension_datasets(self) -> None:
         """Query for all dataset types with no dimensions, updating
         `existing_datasets` in-place.
@@ -935,6 +948,7 @@ class QuantumGraphBuilder(ABC):
                     self.existing_datasets.outputs_in_the_way[key] = ref
 
     @final
+    @timeMethod
     def _attach_datastore_records(self, skeleton: QuantumGraphSkeleton) -> None:
         """Add datastore records for all overall inputs to a preliminary
         quantum graph.
@@ -968,6 +982,7 @@ class QuantumGraphBuilder(ABC):
             skeleton[quantum_key]["datastore_records"] = quantum_records
 
     @final
+    @timeMethod
     def _construct_quantum_graph(
         self, skeleton: QuantumGraphSkeleton, metadata: Mapping[str, Any]
     ) -> QuantumGraph:
@@ -1019,9 +1034,11 @@ class QuantumGraphBuilder(ABC):
             node.dataset_type for node in self._pipeline_graph.dataset_types.values()
         ]
 
+        all_metadata = self.metadata.to_dict()
+        all_metadata.update(metadata)
         return QuantumGraph(
             quanta,
-            metadata=metadata,
+            metadata=all_metadata,
             universe=self.universe,
             initInputs=init_inputs,
             initOutputs=init_outputs,

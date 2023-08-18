@@ -36,6 +36,7 @@ from lsst.daf.butler import Butler, DimensionGraph
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.utils.logging import LsstLogAdapter
+from lsst.utils.timer import timeMethod
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .pipeline_graph import DatasetTypeNode, PipelineGraph, TaskNode
@@ -107,6 +108,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         self.dataset_query_constraint = dataset_query_constraint
         self.bind = bind
 
+    @timeMethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
         # Docstring inherited.
         # There is some chance that the dimension query for one subgraph would
@@ -117,6 +119,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             self._find_followup_datasets(query, skeleton)
         return skeleton
 
+    @timeMethod
     def _make_subgraph_skeleton(self, query: _AllDimensionsQuery) -> QuantumGraphSkeleton:
         """Build a `QuantumGraphSkeleton` by iterating over the result rows
         of the initial data ID query.
@@ -204,6 +207,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             )
         return skeleton
 
+    @timeMethod
     def _find_followup_datasets(self, query: _AllDimensionsQuery, skeleton: QuantumGraphSkeleton) -> None:
         """Populate `existing_datasets` by performing follow-up queries joined
         to column-subsets of the initial data ID query.
