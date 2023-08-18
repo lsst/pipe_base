@@ -49,7 +49,7 @@ from lsst.daf.butler import (
 )
 from lsst.daf.butler.core.named import NamedKeyDict, NamedKeyMapping
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
-from lsst.utils.logging import getLogger
+from lsst.utils.logging import LsstLogAdapter, getLogger
 
 from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
@@ -67,8 +67,6 @@ from .quantum_graph_skeleton import (
 
 if TYPE_CHECKING:
     from .pipeline import TaskDef
-
-_LOG = getLogger(__name__)
 
 
 class QuantumGraphBuilderError(Exception):
@@ -169,6 +167,7 @@ class QuantumGraphBuilder(ABC):
         skip_existing_in: Sequence[str] = (),
         clobber: bool = False,
     ):
+        self.log = getLogger(__name__)
         self._pipeline_graph = pipeline_graph
         self.butler = butler
         self._pipeline_graph.resolve(self.butler.registry)
@@ -224,6 +223,15 @@ class QuantumGraphBuilder(ABC):
             task_node.label: PrerequisiteInfo(task_node, self._pipeline_graph)
             for task_node in pipeline_graph.tasks.values()
         }
+
+    log: LsstLogAdapter
+    """Logger to use for all quantum-graph generation messages.
+
+    General and per-task status messages should be logged at `~logging.INFO`
+    level or higher, per-dataset-type status messages should be logged at
+    `~lsst.utils.logging.VERBOSE` or higher, and per-data-ID status messages
+    should be logged at `logging.DEBUG` or higher.
+    """
 
     butler: Butler
     """Client for the data repository.
@@ -311,13 +319,13 @@ class QuantumGraphBuilder(ABC):
         full_skeleton = QuantumGraphSkeleton(self._pipeline_graph.tasks)
         subgraphs = list(self._pipeline_graph.split_independent())
         for i, subgraph in enumerate(subgraphs):
-            _LOG.info(
+            self.log.info(
                 "Processing pipeline subgraph %d of %d with %d task(s).",
                 i + 1,
                 len(subgraphs),
                 len(subgraph.tasks),
             )
-            _LOG.verbose("Subgraph tasks: [%s]", ", ".join(label for label in subgraph.tasks))
+            self.log.verbose("Subgraph tasks: [%s]", ", ".join(label for label in subgraph.tasks))
             subgraph_skeleton = self.process_subgraph(subgraph)
             full_skeleton.update(subgraph_skeleton)
         # Loop over tasks.  The pipeline graph must be topologically sorted,
@@ -482,7 +490,7 @@ class QuantumGraphBuilder(ABC):
                     details = f"not enough datasets for connection {connection_name}."
                 except ValueError:
                     details = str(err)
-                _LOG.debug(
+                self.log.debug(
                     "No work found for quantum %s of task %s: %s",
                     quantum_key.data_id,
                     quantum_key.task_label,
@@ -493,7 +501,7 @@ class QuantumGraphBuilder(ABC):
             if helper.outputs_adjusted:
                 if not any(adjusted_refs for adjusted_refs in helper.outputs.values()):
                     # No outputs also means we don't generate this quantum.
-                    _LOG.debug(
+                    self.log.debug(
                         "No outputs predicted for quantum %s of task %s.",
                         quantum_key.data_id,
                         quantum_key.task_label,
@@ -535,14 +543,16 @@ class QuantumGraphBuilder(ABC):
             message_terms.append(f"{len(no_work_quanta)} previously succeeded")
         message_parenthetical = f" ({', '.join(message_terms)})" if message_terms else ""
         if remaining_quanta:
-            _LOG.info(
+            self.log.info(
                 "Generated %s for task %s%s.",
                 _quantum_or_quanta(len(remaining_quanta)),
                 task_node.label,
                 message_parenthetical,
             )
         else:
-            _LOG.info("Dropping task %s because no quanta remain%s.", task_node.label, message_parenthetical)
+            self.log.info(
+                "Dropping task %s because no quanta remain%s.", task_node.label, message_parenthetical
+            )
             skeleton.remove_task(task_node.label)
 
     def _skip_quantum_if_metadata_exists(

@@ -35,7 +35,7 @@ from typing import Any, final
 from lsst.daf.butler import Butler, DimensionGraph
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
-from lsst.utils.logging import getLogger
+from lsst.utils.logging import LsstLogAdapter
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .pipeline_graph import DatasetTypeNode, PipelineGraph, TaskNode
@@ -47,8 +47,6 @@ from .quantum_graph_builder import (
     QuantumGraphSkeleton,
     QuantumKey,
 )
-
-_LOG = getLogger(__name__)
 
 
 @final
@@ -153,7 +151,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             quantum_key = QuantumKey(task_label, self.empty_data_id)
             skeleton.add_quantum_node(quantum_key)
             empty_dimensions_quantum_keys.append(quantum_key)
-        _LOG.info("Iterating over query results to associate quanta with datasets.")
+        self.log.info("Iterating over query results to associate quanta with datasets.")
         # Iterate over query results, populating data IDs for datasets and
         # quanta and then connecting them to each other. This is the slowest
         # client-side part of QG generation, and it's often the slowest part
@@ -194,10 +192,10 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     )
             n_rows += 1
         if n_rows == 0:
-            query.log_failure()
+            query.log_failure(self.log)
         else:
             n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in query.subgraph.tasks)
-            _LOG.info(
+            self.log.info(
                 "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges from %d query row(s).",
                 n_quanta,
                 skeleton.n_nodes - n_quanta,
@@ -233,7 +231,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             count += 1
                     except MissingDatasetTypeError:
                         pass
-                    _LOG.verbose(
+                    self.log.verbose(
                         "Found %d overall-input dataset(s) of type %r.", count, dataset_type_node.name
                     )
                     continue
@@ -251,7 +249,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                                 self.existing_datasets.outputs_in_the_way[key] = ref
                     except MissingDatasetTypeError:
                         pass
-                    _LOG.verbose(
+                    self.log.verbose(
                         "Found %d output dataset(s) of type %r in %s.",
                         count,
                         dataset_type_node.name,
@@ -270,7 +268,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             count += 1
                     except MissingDatasetTypeError:
                         pass
-                    _LOG.verbose(
+                    self.log.verbose(
                         "Found %d output dataset(s) of type %r in %s.",
                         count,
                         dataset_type_node.name,
@@ -285,7 +283,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                 task_prerequisite_info = self.prerequisite_info[task_node.label]
                 for connection_name, finder in list(task_prerequisite_info.finders.items()):
                     if finder.lookup_function is not None:
-                        _LOG.verbose(
+                        self.log.verbose(
                             "Deferring prerequisite input %r of task %r to per-quantum processing "
                             "(lookup function provided).",
                             finder.dataset_type_node.name,
@@ -296,7 +294,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # nontrivial spatial or temporal join in the lookup.
                     if finder.dataset_skypix or finder.dataset_other_spatial:
                         if task_prerequisite_info.bounds.spatial_connections:
-                            _LOG.verbose(
+                            self.log.verbose(
                                 "Deferring prerequisite input %r of task %r to per-quantum processing "
                                 "(for spatial-bounds-connections handling).",
                                 finder.dataset_type_node.name,
@@ -304,7 +302,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             )
                             continue
                         if not task_node.dimensions.spatial:
-                            _LOG.verbose(
+                            self.log.verbose(
                                 "Deferring prerequisite input %r of task %r to per-quantum processing "
                                 "(dataset has spatial data IDs, but task does not).",
                                 finder.dataset_type_node.name,
@@ -313,7 +311,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             continue
                     if finder.dataset_has_timespan:
                         if task_prerequisite_info.bounds.spatial_connections:
-                            _LOG.verbose(
+                            self.log.verbose(
                                 "Deferring prerequisite input %r of task %r to per-quantum processing "
                                 "(for temporal-bounds-connections handling).",
                                 finder.dataset_type_node.name,
@@ -321,7 +319,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             )
                             continue
                         if not task_node.dimensions.temporal:
-                            _LOG.verbose(
+                            self.log.verbose(
                                 "Deferring prerequisite input %r of task %r to per-quantum processing "
                                 "(dataset has temporal data IDs, but task does not).",
                                 finder.dataset_type_node.name,
@@ -354,7 +352,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # Remove this finder from the mapping so the base class
                     # knows it doesn't have to look for these prerequisites.
                     del task_prerequisite_info.finders[connection_name]
-                    _LOG.verbose(
+                    self.log.verbose(
                         "Added %d prerequisite input edge(s) from dataset type %r to task %r.",
                         count,
                         finder.dataset_type_node.name,
@@ -430,7 +428,7 @@ class _AllDimensionsQuery:
             the lifetime of its temporary database table.
         """
         result = cls(subgraph)
-        _LOG.debug("Analyzing subgraph dimensions and overall-inputs.")
+        builder.log.debug("Analyzing subgraph dimensions and overall-inputs.")
         result.grouped_by_dimensions = result.subgraph.group_by_dimensions()
         (
             result.empty_dimensions_tasks,
@@ -445,7 +443,7 @@ class _AllDimensionsQuery:
         for dimensions_for_group in result.grouped_by_dimensions.keys():
             dimension_names.update(dimensions_for_group.names)
         dimensions = builder.universe.extract(dimension_names)
-        _LOG.debug("Building query for data IDs.")
+        builder.log.debug("Building query for data IDs.")
         result.query_args = {
             "dimensions": dimensions,
             "where": builder.where,
@@ -453,7 +451,7 @@ class _AllDimensionsQuery:
             "bind": builder.bind,
         }
         if builder.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
-            _LOG.debug("Constraining graph query using all datasets not marked as deferred.")
+            builder.log.debug("Constraining graph query using all datasets not marked as deferred.")
             result.query_args["datasets"] = {
                 name
                 for name, dataset_type_node in result.overall_inputs.items()
@@ -464,7 +462,7 @@ class _AllDimensionsQuery:
             }
             result.query_args["collections"] = builder.input_collections
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
-            _LOG.debug("Not using dataset existence to constrain query.")
+            builder.log.debug("Not using dataset existence to constrain query.")
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(builder.dataset_query_constraint)
             inputs = result.overall_inputs - result.empty_dimensions_dataset_types.keys()
@@ -474,7 +472,7 @@ class _AllDimensionsQuery:
                     f" do not appear as an overall input to the specified pipeline: {inputs}."
                     " Note that component datasets are not permitted as constraints."
                 )
-            _LOG.debug(f"Constraining graph query using {constraint}")
+            builder.log.debug(f"Constraining graph query using {constraint}")
             result.query_args["datasets"] = constraint
             result.query_args["collections"] = builder.input_collections
         else:
@@ -482,28 +480,28 @@ class _AllDimensionsQuery:
                 f"Unable to handle type {builder.dataset_query_constraint} "
                 "given as datasetQueryConstraint."
             )
-        _LOG.verbose("Querying for data IDs with arguments:")
-        _LOG.verbose("  dimensions=%s,", list(result.query_args["dimensions"].names))
-        _LOG.verbose("  dataId=%s,", result.query_args["dataId"].byName())
+        builder.log.verbose("Querying for data IDs with arguments:")
+        builder.log.verbose("  dimensions=%s,", list(result.query_args["dimensions"].names))
+        builder.log.verbose("  dataId=%s,", result.query_args["dataId"].byName())
         if result.query_args["where"]:
-            _LOG.verbose("  where=%s,", repr(result.query_args["where"]))
+            builder.log.verbose("  where=%s,", repr(result.query_args["where"]))
         if "datasets" in result.query_args:
-            _LOG.verbose("  datasets=%s,", list(result.query_args["datasets"]))
+            builder.log.verbose("  datasets=%s,", list(result.query_args["datasets"]))
         if "collections" in result.query_args:
-            _LOG.verbose("  collections=%s,", list(result.query_args["collections"]))
+            builder.log.verbose("  collections=%s,", list(result.query_args["collections"]))
         with builder.butler.registry.queryDataIds(**result.query_args).materialize() as common_data_ids:
-            _LOG.debug("Expanding data IDs.")
+            builder.log.debug("Expanding data IDs.")
             result.common_data_ids = common_data_ids.expanded()
             yield result
 
-    def log_failure(self) -> None:
+    def log_failure(self, log: LsstLogAdapter) -> None:
         """Emit a series of CRITICAL-level log message that attempts to explain
         why the initial data ID query returned no rows.
         """
-        _LOG.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
+        log.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
         for message in self.common_data_ids.explain_no_results():
-            _LOG.critical(message)
-        _LOG.critical(
+            log.critical(message)
+        log.critical(
             "To reproduce this query for debugging purposes, run "
             "Registry.queryDataIds with these arguments:"
         )
@@ -512,11 +510,11 @@ class _AllDimensionsQuery:
         # put these args in an easier-to-reconstruct equivalent form
         # so they can read it more easily and copy and paste into
         # a Python terminal.
-        _LOG.critical("  dimensions=%s,", list(self.query_args["dimensions"].names))
-        _LOG.critical("  dataId=%s,", self.query_args["dataId"].byName())
+        log.critical("  dimensions=%s,", list(self.query_args["dimensions"].names))
+        log.critical("  dataId=%s,", self.query_args["dataId"].byName())
         if self.query_args["where"]:
-            _LOG.critical("  where=%s,", repr(self.query_args["where"]))
+            log.critical("  where=%s,", repr(self.query_args["where"]))
         if "datasets" in self.query_args:
-            _LOG.critical("  datasets=%s,", list(self.query_args["datasets"]))
+            log.critical("  datasets=%s,", list(self.query_args["datasets"]))
         if "collections" in self.query_args:
-            _LOG.critical("  collections=%s,", list(self.query_args["collections"]))
+            log.critical("  collections=%s,", list(self.query_args["collections"]))
