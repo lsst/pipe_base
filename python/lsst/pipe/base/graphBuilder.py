@@ -1520,12 +1520,6 @@ class _PipelineScaffolding:
                 for dataset_type, refDict in quantum.outputs.items():
                     idMaker.resolveDict(dataset_type, refDict, is_output=True)
 
-            # Resolve task initInputs and initOutputs.
-            for dataset_type, refDict in task.initInputs.items():
-                idMaker.resolveDict(dataset_type, refDict, is_output=False)
-            for dataset_type, refDict in task.initOutputs.items():
-                idMaker.resolveDict(dataset_type, refDict, is_output=True)
-
             # Actually remove any quanta that we decided to skip above.
             if dataIdsSucceeded:
                 if skip_collections_wildcard is not None:
@@ -1552,6 +1546,30 @@ class _PipelineScaffolding:
                         len(dataIdsFailed),
                         task.taskDef.label,
                     )
+
+            # Resolve task initInputs and initOutputs.
+            for dataset_type, refDict in task.initInputs.items():
+                idMaker.resolveDict(dataset_type, refDict, is_output=False)
+            if task.quanta:
+                for dataset_type, refDict in task.initOutputs.items():
+                    idMaker.resolveDict(dataset_type, refDict, is_output=True)
+            else:
+                # If there are no quanta for this task remaining (because they
+                # all succeeded before and we're skipping those now), we do not
+                # resolve the init outputs as outputs; instead we might want to
+                # find them in the skip-existing-in collections instead, which
+                # means from the pipeline perspective they're initInputs, not
+                # initIntermediates.  They will be resolved by the tasks that
+                # use them as inputs, or not at all.
+                for dataset_type in task.initOutputs:
+                    init_datasets = self.initIntermediates.pop(dataset_type, None)
+                    if init_datasets is not None:
+                        self.initInputs[dataset_type] = init_datasets
+                    self.initOutputs.pop(dataset_type, None)
+                # Removing the initInputs of this task from the scaffolding
+                # data structures is trickier, because the same initInput may
+                # be used by multiple tasks.
+                # TODO: DM-38498: handle the above problem better.
 
         # Collect initOutputs that do not belong to any task.
         global_dataset_types: set[DatasetType] = set(self.initOutputs)
@@ -1591,7 +1609,8 @@ class _PipelineScaffolding:
         datastore_records: Mapping[str, DatastoreRecordData] | None = None
         if datastore is not None:
             datastore_records = datastore.export_records(
-                itertools.chain(
+                ref.makeCompositeRef() if ref.isComponent() else ref
+                for ref in itertools.chain(
                     self.inputs.iter_resolved_refs(),
                     self.initInputs.iter_resolved_refs(),
                     self.prerequisites.iter_resolved_refs(),
@@ -1600,16 +1619,20 @@ class _PipelineScaffolding:
 
         graphInput: dict[TaskDef, set[Quantum]] = {}
         for task in self.tasks:
+            if not task.quanta:
+                continue
             qset = task.makeQuantumSet(missing=self.missing, datastore_records=datastore_records)
             graphInput[task.taskDef] = qset
 
         taskInitInputs = {
             task.taskDef: task.initInputs.unpackSingleRefs(task.storage_classes).values()
             for task in self.tasks
+            if task.quanta
         }
         taskInitOutputs = {
             task.taskDef: task.initOutputs.unpackSingleRefs(task.storage_classes).values()
             for task in self.tasks
+            if task.quanta
         }
 
         globalInitOutputs: list[DatasetRef] = []

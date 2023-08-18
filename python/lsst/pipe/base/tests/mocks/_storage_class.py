@@ -31,16 +31,18 @@ __all__ = (
     "is_mock_name",
 )
 
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
 from lsst.daf.butler import (
+    DataIdValue,
     DatasetComponent,
+    DatasetRef,
+    DatasetType,
     Formatter,
     FormatterFactory,
     LookupKey,
-    SerializedDataCoordinate,
-    SerializedDatasetRef,
     SerializedDatasetType,
     StorageClass,
     StorageClassDelegate,
@@ -82,21 +84,31 @@ def is_mock_name(name: str) -> bool:
 class MockDataset(_BaseModelCompat):
     """The in-memory dataset type used by `MockStorageClass`."""
 
-    ref: SerializedDatasetRef
-    """Reference used to read and write this dataset.
+    dataset_id: uuid.UUID | None
+    """Universal unique identifier for this dataset."""
 
-    This is a `~lsst.daf.butler.SerializedDatasetRef` instead of a "real" one
-    for two reasons:
+    dataset_type: SerializedDatasetType
+    """Butler dataset type or this dataset.
+
+    See the documentation for ``data_id`` for why this is a
+    `~lsst.daf.butler.SerializedDatasetType` instead of a "real" one.
+    """
+
+    data_id: dict[str, DataIdValue]
+    """Butler data ID for this dataset.
+
+    This is a `~lsst.daf.butler.SerializedDataCoordinate` instead of a "real"
+    one for two reasons:
 
     - the mock dataset may need to be read from disk in a context in which a
       `~lsst.daf.butler.DimensionUniverse` is unavailable;
     - we don't want the complexity of having a separate
-      ``SerializedMockDataset``.
+      ``SerializedMockDataCoordinate``.
+    """
 
-    The downside of this is that we end up effectively reimplementing a few
-    fairly trivial DatasetType/DatasetRef methods that override storage classes
-    and extract components (in `MockStorageClass` and
-    `MockStorageClassDelegate`).
+    run: str | None
+    """`~lsst.daf.butler.CollectionType.RUN` collection this dataset belongs
+    to.
     """
 
     quantum: MockDatasetQuantum | None = None
@@ -122,10 +134,6 @@ class MockDataset(_BaseModelCompat):
     """`repr` of all parameters applied when reading this dataset."""
 
     @property
-    def dataset_type(self) -> SerializedDatasetType:
-        return cast(SerializedDatasetType, self.ref.datasetType)
-
-    @property
     def storage_class(self) -> str:
         return cast(str, self.dataset_type.storageClass)
 
@@ -139,8 +147,7 @@ class MockDataset(_BaseModelCompat):
         dataset_type_updates = {
             k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields  # type: ignore
         }
-        derived_dataset_type = self.dataset_type.copy(update=dataset_type_updates)
-        derived_ref = self.ref.copy(update=dict(datasetType=derived_dataset_type))
+        kwargs.setdefault("dataset_type", self.dataset_type.copy(update=dataset_type_updates))
         # Fields below are those that should not be propagated to the derived
         # dataset, because they're not about the intrinsic on-disk thing.
         kwargs.setdefault("converted_from", None)
@@ -149,21 +156,27 @@ class MockDataset(_BaseModelCompat):
         # Also use setdefault on the ref in case caller wants to override that
         # directly, but this is expected to be rare enough that it's not worth
         # it to try to optimize out the work above to make derived_ref.
-        kwargs.setdefault("ref", derived_ref)
         return self.copy(update=kwargs)
 
 
 class MockDatasetQuantum(_BaseModelCompat):
-    """Description of the quantum that produced a mock dataset."""
+    """Description of the quantum that produced a mock dataset.
+
+    This is also used to represent task-init operations for init-output mock
+    datasets.
+    """
 
     task_label: str
     """Label of the producing PipelineTask in its pipeline."""
 
-    data_id: SerializedDataCoordinate
+    data_id: dict[str, DataIdValue]
     """Data ID for the quantum."""
 
     inputs: dict[str, list[MockDataset]]
-    """Mock datasets provided as input to the quantum."""
+    """Mock datasets provided as input to the quantum.
+
+    Keys are task-internal connection names, not dataset type names.
+    """
 
 
 MockDataset.model_rebuild()
@@ -314,6 +327,115 @@ class MockStorageClass(StorageClass):
                 f"{other_storage_class.original.name!r}."
             )
         return incorrect.make_derived(storageClass=self.name, converted_from=incorrect)
+
+    @staticmethod
+    def mock_dataset_type(original_type: DatasetType) -> DatasetType:
+        """Replace a dataset type with a version that uses a mock storage class
+        and name.
+
+        Parameters
+        ----------
+        original_type : `lsst.daf.butler.DatasetType`
+            Original dataset type to be mocked.
+
+        Returns
+        -------
+        mock_type : `lsst.daf.butler.DatasetType`
+            A mock version of the dataset type, with name and storage class
+            changed and everything else unchanged.
+        """
+        mock_storage_class = MockStorageClass.get_or_register_mock(original_type.storageClass_name)
+        mock_parent_storage_class = None
+        if original_type.parentStorageClass is not None:
+            mock_parent_storage_class = MockStorageClass.get_or_register_mock(
+                original_type.parentStorageClass.name
+            )
+        return DatasetType(
+            get_mock_name(original_type.name),
+            original_type.dimensions,
+            mock_storage_class,
+            isCalibration=original_type.isCalibration(),
+            parentStorageClass=mock_parent_storage_class,
+        )
+
+    @staticmethod
+    def mock_dataset_refs(original_refs: Iterable[DatasetRef]) -> list[DatasetRef]:
+        """Replace dataset references with versions that uses a mock storage
+        class and dataset type name.
+
+        Parameters
+        ----------
+        original_refs : `~collections.abc.Iterable` [ \
+                `lsst.daf.butler.DatasetRef` ]
+            Original dataset references to be mocked.
+
+        Returns
+        -------
+        mock_refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            Mocked version of the dataset references, with dataset type name
+            and storage class changed and everything else unchanged.
+        """
+        original_refs = list(original_refs)
+        if not original_refs:
+            return original_refs
+        dataset_type = MockStorageClass.mock_dataset_type(original_refs[0].datasetType)
+        return [
+            DatasetRef(dataset_type, original_ref.dataId, run=original_ref.run, id=original_ref.id)
+            for original_ref in original_refs
+        ]
+
+    @staticmethod
+    def unmock_dataset_type(mock_type: DatasetType) -> DatasetType:
+        """Replace a mock dataset type with the original one it was created
+        from.
+
+        Parameters
+        ----------
+        mock_type : `lsst.daf.butler.DatasetType`
+            A dataset type with a mocked name and storage class.
+
+        Returns
+        -------
+        original_type : `lsst.daf.butler.DatasetType`
+            The original dataset type.
+        """
+        mock_storage_class = cast(MockStorageClass, mock_type.storageClass)
+        original_parent_storage_class = None
+        if mock_type.parentStorageClass is not None:
+            original_parent_storage_class = cast(MockStorageClass, mock_type.parentStorageClass).original
+        return DatasetType(
+            get_original_name(mock_type.name),
+            mock_type.dimensions,
+            mock_storage_class.original,
+            isCalibration=mock_type.isCalibration(),
+            parentStorageClass=original_parent_storage_class,
+        )
+
+    @staticmethod
+    def unmock_dataset_refs(mock_refs: Iterable[DatasetRef]) -> list[DatasetRef]:
+        """Replace dataset references with versions that do not use a mock
+        storage class and dataset type name.
+
+        Parameters
+        ----------
+        mock_refs : `~collections.abc.Iterable` [ \
+                `lsst.daf.butler.DatasetRef` ]
+            Dataset references that use a mocked dataset type name and storage
+            class.
+
+        Returns
+        -------
+        original_refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            The original dataset references.
+        """
+        mock_refs = list(mock_refs)
+        if not mock_refs:
+            return mock_refs
+        dataset_type = MockStorageClass.unmock_dataset_type(mock_refs[0].datasetType)
+        return [
+            DatasetRef(dataset_type, mock_ref.dataId, run=mock_ref.run, id=mock_ref.id)
+            for mock_ref in mock_refs
+        ]
 
 
 def _monkeypatch_daf_butler() -> None:
