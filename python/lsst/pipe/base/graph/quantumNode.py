@@ -151,6 +151,33 @@ class QuantumNode:
             nodeId=simple.nodeId,
         )
 
+    def _replace_quantum(self, quantum: Quantum) -> None:
+        """Replace Quantum instance in this node.
+
+        Parameters
+        ----------
+        quantum : `Quantum`
+            New Quantum instance for this node.
+
+        Raises
+        ------
+        ValueError
+            Raised if the hash of the new quantum is different from the hash of
+            the existing quantum.
+
+        Notes
+        -----
+        This class is immutable and hashable, so this method checks that new
+        quantum does not invalidate its current hash. This method is supposed
+        to used only by `QuantumGraph` class as its implementation detail,
+        so it is made "underscore-protected".
+        """
+        if hash(quantum) != hash(self.quantum):
+            raise ValueError(
+                f"Hash of the new quantum {quantum} does not match hash of existing quantum {self.quantum}"
+            )
+        object.__setattr__(self, "quantum", quantum)
+
 
 _fields_set = {"quantum", "taskLabel", "nodeId"}
 
