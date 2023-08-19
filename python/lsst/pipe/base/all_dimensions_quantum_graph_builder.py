@@ -144,16 +144,12 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         skeleton = QuantumGraphSkeleton(query.subgraph.tasks)
         empty_dimensions_dataset_keys = {}
         for dataset_type_name in query.empty_dimensions_dataset_types.keys():
-            dataset_key = DatasetKey(dataset_type_name, self.empty_data_id)
-            skeleton.add_dataset_node(dataset_key)
-            empty_dimensions_dataset_keys[dataset_type_name] = DatasetKey(
+            empty_dimensions_dataset_keys[dataset_type_name] = skeleton.add_dataset_node(
                 dataset_type_name, self.empty_data_id
             )
         empty_dimensions_quantum_keys = []
         for task_label in query.empty_dimensions_tasks.keys():
-            quantum_key = QuantumKey(task_label, self.empty_data_id)
-            skeleton.add_quantum_node(quantum_key)
-            empty_dimensions_quantum_keys.append(quantum_key)
+            empty_dimensions_quantum_keys.append(skeleton.add_quantum_node(task_label, self.empty_data_id))
         self.log.info("Iterating over query results to associate quanta with datasets.")
         # Iterate over query results, populating data IDs for datasets and
         # quanta and then connecting them to each other. This is the slowest
@@ -170,13 +166,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             for dimensions, (task_nodes, dataset_type_nodes) in query.grouped_by_dimensions.items():
                 data_id = common_data_id.subset(dimensions)
                 for dataset_type_name in dataset_type_nodes.keys():
-                    dataset_key = DatasetKey(dataset_type_name, data_id)
-                    dataset_keys_for_row[dataset_type_name] = dataset_key
-                    skeleton.add_dataset_node(dataset_key)
+                    dataset_keys_for_row[dataset_type_name] = skeleton.add_dataset_node(
+                        dataset_type_name, data_id
+                    )
                 for task_label in task_nodes.keys():
-                    quantum_key = QuantumKey(task_label, data_id)
-                    quantum_keys_for_row.append(quantum_key)
-                    skeleton.add_quantum_node(quantum_key)
+                    quantum_keys_for_row.append(skeleton.add_quantum_node(task_label, data_id))
             # Whether these quanta are new or existing, we can now associate
             # the dataset data IDs for this row with them.  The fact that a
             # quantum data ID and a dataset data ID both came from the same
@@ -230,7 +224,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, self.input_collections):
                             self.existing_datasets.inputs[
-                                DatasetKey(dataset_type_node.name, ref.dataId)
+                                DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
                             ] = ref
                             count += 1
                     except MissingDatasetTypeError:
@@ -246,7 +240,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     count = 0
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, self.skip_existing_in):
-                            key = DatasetKey(dataset_type_node.name, ref.dataId)
+                            key = DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
                             self.existing_datasets.outputs_for_skip[key] = ref
                             count += 1
                             if ref.run == self.output_run:
@@ -267,7 +261,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, [self.output_run]):
                             self.existing_datasets.outputs_in_the_way[
-                                DatasetKey(dataset_type_node.name, ref.dataId)
+                                DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
                             ] = ref
                             count += 1
                     except MissingDatasetTypeError:
@@ -337,8 +331,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     for data_id, ref in data_ids.findRelatedDatasets(
                         finder.dataset_type_node.dataset_type, self.input_collections
                     ):
-                        dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id)
-                        quantum_key = QuantumKey(task_node.label, data_id)
+                        dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id.bytes)
+                        quantum_key = QuantumKey(task_node.label, data_id.values_tuple())
                         # The column-subset operation used to make `data_ids`
                         # from `common_data_ids` can strip away post-query
                         # filtering; e.g. if we starts with a {visit, patch}

@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator, MutableMapping, Set
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
 
 import networkx
-from lsst.daf.butler import DataCoordinate, DatasetId, DatasetRef
+from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
 from lsst.utils.logging import getLogger
 
 if TYPE_CHECKING:
@@ -52,8 +52,12 @@ class QuantumKey(NamedTuple):
     task_label: str
     """Label of the task in the pipeline."""
 
-    data_id: DataCoordinate
-    """Data ID of the quantum."""
+    data_id_values: tuple[DataIdValue, ...]
+    """Data ID values of the quantum.
+
+    Note that keys are fixed given `task_label`, so using only the values here
+    speeds up comparisons.
+    """
 
     is_task: ClassVar[Literal[True]] = True
     """Whether this node represents a quantum or task initialization rather
@@ -79,13 +83,19 @@ class DatasetKey(NamedTuple):
     parent_dataset_type_name: str
     """Name of the dataset type (never a component)."""
 
-    data_id: DataCoordinate
-    """Data ID for the dataset."""
+    data_id_values: tuple[DataIdValue, ...]
+    """Data ID values of the dataset.
+
+    Note that keys are fixed given `parent_dataset_type_name`, so using only
+    the values here speeds up comparisons.
+    """
 
     is_task: ClassVar[Literal[False]] = False
     """Whether this node represents a quantum or task initialization rather
     than a dataset (always `False`).
     """
+
+    is_prerequisite: ClassVar[Literal[False]] = False
 
 
 class PrerequisiteDatasetKey(NamedTuple):
@@ -102,13 +112,15 @@ class PrerequisiteDatasetKey(NamedTuple):
     parent_dataset_type_name: str
     """Name of the dataset type (never a component)."""
 
-    dataset_id: DatasetId
-    """Dataset ID (UUID)."""
+    dataset_id_bytes: bytes
+    """Dataset ID (UUID) as raw bytes."""
 
     is_task: ClassVar[Literal[False]] = False
     """Whether this node represents a quantum or task initialization rather
     than a dataset (always `False`).
     """
+
+    is_prerequisite: ClassVar[Literal[True]] = True
 
 
 class QuantumGraphSkeleton:
@@ -224,19 +236,38 @@ class QuantumGraphSkeleton:
             self._tasks[task_label][1].update(quanta)
         self._xgraph.update(other._xgraph)
 
-    def add_quantum_node(self, key: QuantumKey, **attrs: Any) -> None:
+    def add_quantum_node(self, task_label: str, data_id: DataCoordinate, **attrs: Any) -> QuantumKey:
         """Add a new node representing a quantum."""
-        self._xgraph.add_node(key, **attrs)
+        key = QuantumKey(task_label, data_id.values_tuple())
+        self._xgraph.add_node(key, data_id=data_id, **attrs)
         self._tasks[key.task_label][1].add(key)
+        return key
 
     def add_dataset_node(
-        self, key: DatasetKey | PrerequisiteDatasetKey, is_global_init_output: bool = False, **attrs: Any
-    ) -> None:
+        self,
+        parent_dataset_type_name: str,
+        data_id: DataCoordinate,
+        is_global_init_output: bool = False,
+        **attrs: Any,
+    ) -> DatasetKey:
         """Add a new node representing a dataset."""
-        self._xgraph.add_node(key, **attrs)
+        key = DatasetKey(parent_dataset_type_name, data_id.values_tuple())
+        self._xgraph.add_node(key, data_id=data_id, **attrs)
         if is_global_init_output:
             assert isinstance(key, DatasetKey)
             self._global_init_outputs.add(key)
+        return key
+
+    def add_prerequisite_node(
+        self,
+        parent_dataset_type_name: str,
+        ref: DatasetRef,
+        **attrs: Any,
+    ) -> PrerequisiteDatasetKey:
+        """Add a new node representing a prerequisite input dataset."""
+        key = PrerequisiteDatasetKey(parent_dataset_type_name, ref.id.bytes)
+        self._xgraph.add_node(key, data_id=ref.dataId, ref=ref, **attrs)
+        return key
 
     def remove_quantum_node(self, key: QuantumKey, remove_outputs: bool) -> None:
         """Remove a node representing a quantum.

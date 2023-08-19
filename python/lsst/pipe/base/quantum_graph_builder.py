@@ -346,11 +346,13 @@ class QuantumGraphBuilder(ABC):
             self._resolve_task_quanta(task_node, full_skeleton)
         # Add global init-outputs to the skeleton.
         for dataset_type in self._global_init_output_types.values():
-            dataset_key = DatasetKey(dataset_type.name, self.empty_data_id)
+            dataset_key = full_skeleton.add_dataset_node(
+                dataset_type.name, self.empty_data_id, is_global_init_output=True
+            )
             ref = self.existing_datasets.outputs_in_the_way.get(dataset_key)
             if ref is None:
                 ref = DatasetRef(dataset_type, self.empty_data_id, run=self.output_run)
-            full_skeleton.add_dataset_node(dataset_key, ref=ref, is_global_init_output=True)
+            full_skeleton[dataset_key]["ref"] = ref
         # Remove dataset nodes with no edges that are not global init outputs,
         # which are generally overall-inputs whose original quanta end up
         # skipped or with no work to do (we can't remove these along with the
@@ -471,8 +473,9 @@ class QuantumGraphBuilder(ABC):
             if self._skip_quantum_if_metadata_exists(task_node, quantum_key, skeleton):
                 skipped_quanta.append(quantum_key)
                 continue
-            skypix_bounds_builder = task_prerequisite_info.bounds.make_skypix_bounds_builder(quantum_key)
-            timespan_builder = task_prerequisite_info.bounds.make_timespan_builder(quantum_key)
+            quantum_data_id = skeleton[quantum_key]["data_id"]
+            skypix_bounds_builder = task_prerequisite_info.bounds.make_skypix_bounds_builder(quantum_data_id)
+            timespan_builder = task_prerequisite_info.bounds.make_timespan_builder(quantum_data_id)
             adjusted_outputs = self._gather_quantum_outputs(
                 task_node, quantum_key, skeleton, skypix_bounds_builder, timespan_builder
             )
@@ -491,7 +494,7 @@ class QuantumGraphBuilder(ABC):
             helper = AdjustQuantumHelper(inputs=adjusted_inputs, outputs=adjusted_outputs)
             try:
                 helper.adjust_in_place(
-                    task_node._get_imported_data().connections, task_node.label, quantum_key.data_id
+                    task_node._get_imported_data().connections, task_node.label, quantum_data_id
                 )
             except NoWorkFound as err:
                 # Do not generate this quantum; it would not produce any
@@ -504,7 +507,7 @@ class QuantumGraphBuilder(ABC):
                     details = str(err)
                 self.log.debug(
                     "No work found for quantum %s of task %s: %s",
-                    quantum_key.data_id,
+                    quantum_key.data_id_values,
                     quantum_key.task_label,
                     details,
                 )
@@ -515,7 +518,7 @@ class QuantumGraphBuilder(ABC):
                     # No outputs also means we don't generate this quantum.
                     self.log.debug(
                         "No outputs predicted for quantum %s of task %s.",
-                        quantum_key.data_id,
+                        quantum_key.data_id_values,
                         quantum_key.task_label,
                     )
                     no_work_quanta.append(quantum_key)
@@ -528,7 +531,7 @@ class QuantumGraphBuilder(ABC):
             if helper.inputs_adjusted:
                 if not any(bool(adjusted_refs) for adjusted_refs in helper.inputs.values()):
                     raise QuantumGraphBuilderError(
-                        f"adjustQuantum implementation for {task_node.label}@{quantum_key.data_id} "
+                        f"adjustQuantum implementation for {task_node.label}@{quantum_key.data_id_values} "
                         "returned outputs but no inputs."
                     )
                 # Remove input dataset edges that were not retained by
@@ -599,7 +602,7 @@ class QuantumGraphBuilder(ABC):
         `ExistingDatasets.outputs_in_the_way` will be removed.
         """
         metadata_dataset_key = DatasetKey(
-            task_node.metadata_output.parent_dataset_type_name, quantum_key.data_id
+            task_node.metadata_output.parent_dataset_type_name, quantum_key.data_id_values
         )
         if metadata_dataset_key in self.existing_datasets.outputs_for_skip:
             # This quantum's metadata is already present in the the
@@ -677,9 +680,10 @@ class QuantumGraphBuilder(ABC):
         outputs_by_type: dict[str, list[DatasetRef]] = {}
         dataset_key: DatasetKey
         for dataset_key in skeleton.iter_outputs_of(quantum_key):
+            dataset_data_id = skeleton[dataset_key]["data_id"]
             dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
             if (ref := self.existing_datasets.outputs_in_the_way.get(dataset_key)) is None:
-                ref = DatasetRef(dataset_type_node.dataset_type, dataset_key.data_id, run=self.output_run)
+                ref = DatasetRef(dataset_type_node.dataset_type, dataset_data_id, run=self.output_run)
             elif not self.clobber:
                 # We intentionally raise here, before running adjustQuantum,
                 # because it'd be weird if we left an old potential output of a
@@ -689,8 +693,8 @@ class QuantumGraphBuilder(ABC):
                     f"Potential output dataset {ref} already exists in the output run "
                     f"{self.output_run}, but clobbering outputs was not expected to be necessary."
                 )
-            skypix_bounds_builder.handle_dataset(dataset_key)
-            timespan_builder.handle_dataset(dataset_key)
+            skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
+            timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             skeleton[dataset_key]["ref"] = ref
             outputs_by_type.setdefault(dataset_key.parent_dataset_type_name, []).append(ref)
         adapted_outputs: NamedKeyDict[DatasetType, list[DatasetRef]] = NamedKeyDict()
@@ -755,6 +759,7 @@ class QuantumGraphBuilder(ABC):
         and cannot in general be queried for in advance when
         `ExistingDatasets.inputs` is populated.
         """
+        quantum_data_id = skeleton[quantum_key]["data_id"]
         inputs_by_type: dict[str, set[DatasetRef]] = {}
         dataset_key: DatasetKey | PrerequisiteDatasetKey
         # Process inputs already present in the skeleton - this should include
@@ -774,8 +779,8 @@ class QuantumGraphBuilder(ABC):
                     continue
                 skeleton[dataset_key]["ref"] = ref
             inputs_by_type.setdefault(dataset_key.parent_dataset_type_name, set()).add(ref)
-            skypix_bounds_builder.handle_dataset(dataset_key)
-            timespan_builder.handle_dataset(dataset_key)
+            skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
+            timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
         # Query for any prerequisites not handled by process_subgraph.  Note
         # that these were not already in the skeleton graph, so we add them
         # now.
@@ -784,11 +789,12 @@ class QuantumGraphBuilder(ABC):
         for finder in task_prerequisite_info.finders.values():
             inputs_for_type = inputs_by_type.setdefault(finder.dataset_type_node.name, set())
             dataset_keys = []
-            for ref in finder.find(self.butler, self.input_collections, quantum_key, skypix_bounds, timespan):
-                dataset_key = PrerequisiteDatasetKey(ref.datasetType.name, ref.id)
+            for ref in finder.find(
+                self.butler, self.input_collections, quantum_data_id, skypix_bounds, timespan
+            ):
+                dataset_key = skeleton.add_prerequisite_node(ref.datasetType.name, ref=ref)
                 dataset_keys.append(dataset_key)
                 inputs_for_type.add(ref)
-                skeleton.add_dataset_node(dataset_key, ref=ref)
             skeleton.add_input_edges(quantum_key, dataset_keys)
         adapted_inputs: NamedKeyDict[DatasetType, list[DatasetRef]] = NamedKeyDict()
         for read_edge in task_node.iter_all_inputs():
@@ -834,7 +840,9 @@ class QuantumGraphBuilder(ABC):
             # Process init-inputs.
             input_keys: list[DatasetKey] = []
             for read_edge in task_node.init.iter_all_inputs():
-                dataset_key = DatasetKey(read_edge.parent_dataset_type_name, self.empty_data_id)
+                dataset_key = skeleton.add_dataset_node(
+                    read_edge.parent_dataset_type_name, self.empty_data_id
+                )
                 skeleton.add_input_edge(task_init_key, dataset_key)
                 if (ref := skeleton[dataset_key].get("ref")) is None:
                     try:
@@ -858,15 +866,16 @@ class QuantumGraphBuilder(ABC):
             # Process init-outputs.
             adapted_outputs: NamedKeyDict[DatasetType, DatasetRef] = NamedKeyDict()
             for write_edge in task_node.init.iter_all_outputs():
-                dataset_key = DatasetKey(write_edge.parent_dataset_type_name, self.empty_data_id)
+                dataset_key = skeleton.add_dataset_node(
+                    write_edge.parent_dataset_type_name, self.empty_data_id
+                )
                 if (ref := self.existing_datasets.outputs_in_the_way.get(dataset_key)) is None:
                     ref = DatasetRef(
                         self._pipeline_graph.dataset_types[write_edge.parent_dataset_type_name].dataset_type,
                         self.empty_data_id,
                         run=self.output_run,
                     )
-                dataset_key = DatasetKey(write_edge.parent_dataset_type_name, self.empty_data_id)
-                skeleton.add_dataset_node(dataset_key, ref=ref)
+                skeleton[dataset_key]["ref"] = ref
                 skeleton.add_output_edge(task_init_key, dataset_key)
                 adapted_ref = write_edge.adapt_dataset_ref(ref)
                 adapted_outputs[adapted_ref.datasetType] = adapted_ref
@@ -879,14 +888,16 @@ class QuantumGraphBuilder(ABC):
             # the skip_existing_in collections, too, and we need to put those
             # refs in the graph.
             for write_edge in task_node.init.iter_all_outputs():
-                dataset_key = DatasetKey(write_edge.parent_dataset_type_name, self.empty_data_id)
+                dataset_key = skeleton.add_dataset_node(
+                    write_edge.parent_dataset_type_name, self.empty_data_id
+                )
                 if (ref := self.existing_datasets.outputs_for_skip.get(dataset_key)) is None:
                     raise InitInputMissingError(
                         f"Init-output dataset {write_edge.parent_dataset_type_name!r} of skipped task "
                         f"{task_node.label!r} not found in skip-existing-in collection(s) "
                         f"{self.skip_existing_in}."
                     ) from None
-                skeleton.add_dataset_node(dataset_key, ref=ref)
+                skeleton[dataset_key]["ref"] = ref
                 # If this dataset was "in the way" (i.e. already in the output
                 # run), it isn't anymore.
                 self.existing_datasets.outputs_in_the_way.pop(dataset_key, None)
@@ -908,7 +919,7 @@ class QuantumGraphBuilder(ABC):
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
         for dataset_type in dataset_types:
-            key = DatasetKey(dataset_type.name, self.empty_data_id)
+            key = DatasetKey(dataset_type.name, self.empty_data_id.values_tuple())
             if (
                 self._pipeline_graph.producer_of(dataset_type.name) is None
                 and dataset_type.name not in self._global_init_output_types
@@ -1021,7 +1032,7 @@ class QuantumGraphBuilder(ABC):
                     Quantum(
                         taskName=task_node.task_class_name,
                         taskClass=task_node.task_class,
-                        dataId=quantum_key.data_id,
+                        dataId=node_state["data_id"],
                         initInputs=node_state["init_inputs"],
                         inputs=node_state["inputs"],
                         outputs=node_state["outputs"],
@@ -1075,7 +1086,7 @@ class QuantumGraphBuilder(ABC):
         for dataset_type, kept_refs in adjusted.items():
             parent_dataset_type_name, _ = DatasetType.splitDatasetTypeName(dataset_type.name)
             for kept_ref in kept_refs:
-                result.remove(DatasetKey(parent_dataset_type_name, kept_ref.dataId))
+                result.remove(DatasetKey(parent_dataset_type_name, kept_ref.dataId.values_tuple()))
         return result
 
 

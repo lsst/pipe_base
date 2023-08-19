@@ -40,18 +40,17 @@ from typing import cast
 
 from lsst.daf.butler import (
     Butler,
-    DatasetRef,
-    SkyPixDimension,
     DataCoordinate,
+    DatasetRef,
     DatasetType,
-    Registry,
     DimensionElement,
+    Registry,
+    SkyPixDimension,
     Timespan,
 )
 from lsst.sphgeom import RangeSet, Region
 
-from .pipeline_graph import TaskNode, ReadEdge, PipelineGraph, DatasetTypeNode
-from .quantum_graph_skeleton import DatasetKey, QuantumKey, PrerequisiteDatasetKey
+from .pipeline_graph import DatasetTypeNode, PipelineGraph, ReadEdge, TaskNode
 
 
 @dataclasses.dataclass
@@ -210,7 +209,7 @@ class PrerequisiteFinder:
         self,
         butler: Butler,
         input_collections: Sequence[str],
-        quantum_key: QuantumKey,
+        data_id: DataCoordinate,
         skypix_bounds: Mapping[str, RangeSet],
         timespan: Timespan | None,
     ) -> list[DatasetRef]:
@@ -222,8 +221,8 @@ class PrerequisiteFinder:
             Butler client to use for queries.
         input_collections : `~collections.abc.Sequence` [ `str` ]
             Sequence of collections to search, in order.
-        quantum_key : `quantum_graph_skeleton.QuantumKey`
-            Identifier for the quantum.
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for the quantum.
         skypix_bounds : `Mapping` [ `str`, `lsst.sphgeom.RangeSet` ]
             The spatial bounds of this quantum in various skypix dimensions.
             Keys are skypix dimension names (a superset of those in
@@ -256,7 +255,7 @@ class PrerequisiteFinder:
                 for ref in self.lookup_function(
                     self.edge.adapt_dataset_type(self.dataset_type_node.dataset_type),
                     butler.registry,
-                    quantum_key.data_id,
+                    data_id,
                     input_collections,
                 )
             ]
@@ -278,7 +277,7 @@ class PrerequisiteFinder:
                 # called.
                 ref = butler.registry.findDataset(
                     self.dataset_type_node.dataset_type,
-                    quantum_key.data_id.subset(self.constraint_dimensions),
+                    data_id.subset(self.constraint_dimensions),
                     collections=input_collections,
                     timespan=timespan,
                 )
@@ -320,7 +319,7 @@ class PrerequisiteFinder:
                     butler.registry.queryDatasets(
                         self.dataset_type_node.dataset_type,
                         collections=input_collections,
-                        dataId=quantum_key.data_id.subset(self.constraint_dimensions),
+                        dataId=data_id.subset(self.constraint_dimensions),
                         where=" AND ".join(where_terms),
                         bind=bind,
                         findFirst=True,
@@ -351,7 +350,7 @@ class PrerequisiteFinder:
             butler.registry.queryDatasets(
                 self.dataset_type_node.dataset_type,
                 collections=input_collections,
-                dataId=quantum_key.data_id,
+                dataId=data_id,
                 findFirst=True,
             ).expanded()
         )
@@ -399,14 +398,14 @@ class PrerequisiteBounds:
         self.spatial_connections = frozenset(self.task_node.get_spatial_bounds_connections())
         self.temporal_connections = frozenset(self.task_node.get_temporal_bounds_connections())
 
-    def make_skypix_bounds_builder(self, quantum_key: QuantumKey) -> SkyPixBoundsBuilder:
+    def make_skypix_bounds_builder(self, quantum_data_id: DataCoordinate) -> SkyPixBoundsBuilder:
         """Return an object that accumulates the appropriate spatial bounds for
         a quantum.
 
         Parameters
         ----------
-        quantum_key : `quantum_graph.skeleton.QuantumKey`
-            Identifier for this quantum.
+        quantum_data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for this quantum.
 
         Returns
         -------
@@ -419,21 +418,21 @@ class PrerequisiteBounds:
             return _TrivialSkyPixBoundsBuilder()
         if self.spatial_connections:
             return _ConnectionSkyPixBoundsBuilder(
-                self.task_node, self.spatial_connections, self.all_dataset_skypix.values(), quantum_key
+                self.task_node, self.spatial_connections, self.all_dataset_skypix.values(), quantum_data_id
             )
         if self.task_node.dimensions.spatial:
-            return _QuantumOnlySkyPixBoundsBuilder(self.all_dataset_skypix.values(), quantum_key)
+            return _QuantumOnlySkyPixBoundsBuilder(self.all_dataset_skypix.values(), quantum_data_id)
         else:
             return _UnboundedSkyPixBoundsBuilder(self.all_dataset_skypix.values())
 
-    def make_timespan_builder(self, quantum_key: QuantumKey) -> TimespanBuilder:
+    def make_timespan_builder(self, quantum_data_id: DataCoordinate) -> TimespanBuilder:
         """Return an object that accumulates the appropriate timespan for
         a quantum.
 
         Parameters
         ----------
-        quantum_key : `quantum_graph.skeleton.QuantumKey`
-            Identifier for this quantum.
+        quantum_data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for this quantum.
 
         Returns
         -------
@@ -444,9 +443,9 @@ class PrerequisiteBounds:
         if not self.any_dataset_has_timespan:
             return _TrivialTimespanBuilder()
         if self.temporal_connections:
-            return _ConnectionTimespanBuilder(self.task_node, self.temporal_connections, quantum_key)
+            return _ConnectionTimespanBuilder(self.task_node, self.temporal_connections, quantum_data_id)
         if self.task_node.dimensions.temporal:
-            return _QuantumOnlyTimespanBuilder(quantum_key)
+            return _QuantumOnlyTimespanBuilder(quantum_data_id)
         else:
             return _UnboundedTimespanBuilder()
 
@@ -456,18 +455,16 @@ class SkyPixBoundsBuilder(ABC):
     for a quantum.
     """
 
-    def handle_dataset(self, dataset_key: DatasetKey | PrerequisiteDatasetKey) -> None:
+    def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
         """Handle the skeleton graph node for a regular input/output connection
         for this quantum, including its data ID in the bounds if appropriate.
 
         Parameters
         ----------
-        dataset_key : `quantum_graph_skeleton.DatasetKey` or \
-                `quantum_graph_skeleton.PrerequisiteDatasetKey`
-            Identifier for a `~quantum_graph_skeleton.QuantumGraphSkeleton`
-            dataset node.  Nodes representing prerequisite inputs may be passed
-            but are always ignored, because they are never permitted in
-            `.PipelineTaskConnections.getSpatialBoundsConnections`.
+        parent_dataset_type_name : `str`
+            Name of the dataset type.  Never a component dataset type name.
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for the dataset.
         """
         pass
 
@@ -490,18 +487,16 @@ class TimespanBuilder(ABC):
     for a quantum.
     """
 
-    def handle_dataset(self, dataset_key: DatasetKey | PrerequisiteDatasetKey) -> None:
+    def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
         """Handle the skeleton graph node for a regular input/output connection
         for this quantum, including its data ID in the bounds if appropriate.
 
         Parameters
         ----------
-        dataset_key : `quantum_graph_skeleton.DatasetKey` or \
-                `quantum_graph_skeleton.PrerequisiteDatasetKey`
-            Identifier for a `~quantum_graph_skeleton.QuantumGraphSkeleton`
-            dataset node.  Nodes representing prerequisite inputs may be passed
-            but are always ignored, because they are never permitted in
-            `.PipelineTaskConnections.getSpatialBoundsConnections`.
+        parent_dataset_type_name : `str`
+            Name of the dataset type.  Never a component dataset type name.
+        data_id : `lsst.daf.butler.DataCoordinate`
+            Data ID for the dataset.
         """
         pass
 
@@ -539,8 +534,8 @@ class _QuantumOnlySkyPixBoundsBuilder(SkyPixBoundsBuilder):
     provide the only relevant spatial regions.
     """
 
-    def __init__(self, dimensions: Iterable[SkyPixDimension], quantum_key: QuantumKey) -> None:
-        self._region = quantum_key.data_id.region
+    def __init__(self, dimensions: Iterable[SkyPixDimension], quantum_data_id: DataCoordinate) -> None:
+        self._region = quantum_data_id.region
         self._dimensions = dimensions
 
     def finish(self) -> dict[str, RangeSet]:
@@ -554,8 +549,8 @@ class _QuantumOnlyTimespanBuilder(TimespanBuilder):
     provide the only relevant timespans.
     """
 
-    def __init__(self, quantum_key: QuantumKey) -> None:
-        self._timespan = cast(Timespan, quantum_key.data_id.timespan)
+    def __init__(self, quantum_data_id: DataCoordinate) -> None:
+        self._timespan = cast(Timespan, quantum_data_id.timespan)
 
     def finish(self) -> Timespan:
         return self._timespan
@@ -592,12 +587,12 @@ class _ConnectionSkyPixBoundsBuilder(SkyPixBoundsBuilder):
         task_node: TaskNode,
         bounds_connections: frozenset[str],
         dimensions: Iterable[SkyPixDimension],
-        quantum_key: QuantumKey,
+        quantum_data_id: DataCoordinate,
     ) -> None:
         self._dimensions = dimensions
         self._regions: list[Region] = []
         if task_node.dimensions.spatial:
-            self._regions.append(quantum_key.data_id.region)
+            self._regions.append(quantum_data_id.region)
         self._dataset_type_names: set[str] = set()
         for connection_name in bounds_connections:
             if edge := task_node.inputs.get(connection_name):
@@ -608,9 +603,9 @@ class _ConnectionSkyPixBoundsBuilder(SkyPixBoundsBuilder):
             # hence not in task_node.inputs or task_node.outputs); this
             # justifies the cast in `handle_dataset`.
 
-    def handle_dataset(self, dataset_key: DatasetKey | PrerequisiteDatasetKey) -> None:
-        if dataset_key.parent_dataset_type_name in self._dataset_type_names:
-            self._regions.append(cast(DatasetKey, dataset_key).data_id.region)
+    def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
+        if parent_dataset_type_name in self._dataset_type_names:
+            self._regions.append(data_id.region)
 
     def finish(self) -> dict[str, RangeSet]:
         result = {}
@@ -631,10 +626,10 @@ class _ConnectionTimespanBuilder(TimespanBuilder):
         self,
         task_node: TaskNode,
         bounds_connections: frozenset[str],
-        quantum_key: QuantumKey,
+        quantum_data_id: DataCoordinate,
     ) -> None:
         timespan = (
-            cast(Timespan, quantum_key.data_id.timespan)
+            cast(Timespan, quantum_data_id.timespan)
             if task_node.dimensions.temporal
             else Timespan.makeEmpty()
         )
@@ -650,9 +645,9 @@ class _ConnectionTimespanBuilder(TimespanBuilder):
             # hence not in task_node.inputs or task_node.outputs); this
             # justifies the cast in `handle_dataset`.
 
-    def handle_dataset(self, dataset_key: DatasetKey | PrerequisiteDatasetKey) -> None:
-        if dataset_key.parent_dataset_type_name in self._dataset_type_names:
-            nsec = cast(Timespan, cast(DatasetKey, dataset_key).data_id.timespan)._nsec
+    def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
+        if parent_dataset_type_name in self._dataset_type_names:
+            nsec = cast(Timespan, data_id.timespan)._nsec
             self._begin_nsec = min(self._begin_nsec, nsec[0])
             self._end_nsec = max(self._end_nsec, nsec[1])
 
