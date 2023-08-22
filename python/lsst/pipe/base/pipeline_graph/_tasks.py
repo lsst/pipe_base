@@ -303,6 +303,9 @@ class TaskInitNode:
         """
         return self._get_imported_data().config
 
+    def __repr__(self) -> str:
+        return f"{self.label} [init] ({self.task_class_name})"
+
     def get_config_str(self) -> str:
         """Return the configuration for this task as a string of override
         statements.

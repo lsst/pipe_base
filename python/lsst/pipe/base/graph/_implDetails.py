@@ -20,18 +20,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("_DatasetTracker", "DatasetTypeName", "_pruner")
+__all__ = ("_DatasetTracker", "DatasetTypeName")
 
 from collections import defaultdict
-from collections.abc import Iterable
-from itertools import chain
 from typing import Generic, NewType, TypeVar
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
-from lsst.pipe.base.connections import AdjustQuantumHelper
+from lsst.daf.butler import DatasetRef
 
-from .._status import NoWorkFound
 from ..pipeline import TaskDef
 from .quantumNode import QuantumNode
 
@@ -235,151 +231,3 @@ class _DatasetTracker(Generic[_T, _U]):
             Boolean of the presence of the supplied key.
         """
         return key in self._producers or key in self._consumers
-
-
-def _pruner(
-    datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode],
-    refsToRemove: Iterable[DatasetRef],
-    *,
-    alreadyPruned: set[QuantumNode] | None = None,
-) -> None:
-    r"""Prune supplied dataset refs out of ``datasetRefDict`` container,
-    recursing to additional nodes dependant on pruned refs.
-
-    Parameters
-    ----------
-    datasetRefDict : `_DatasetTracker` [ `~lsst.daf.butler.DatasetRef`, \
-            `QuantumNode`]
-        The dataset tracker that maps `~lsst.daf.butler.DatasetRef`\ s to the
-        `QuantumNode`\s that produce/consume that
-        `~lsst.daf.butler.DatasetRef`.
-        This function modifies ``datasetRefDict`` in-place.
-    refsToRemove : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
-        The `~lsst.daf.butler.DatasetRef`\ s which should be pruned from the
-        input dataset tracker.
-    alreadyPruned : `set` of `QuantumNode`
-        A set of nodes which have been pruned from the dataset tracker.
-    """
-    if alreadyPruned is None:
-        alreadyPruned = set()
-    for ref in refsToRemove:
-        # make a copy here, because this structure will be modified in
-        # recursion, hitting a node more than once won't be much of an
-        # issue, as we skip anything that has been processed
-        nodes = set(datasetRefDict.getConsumers(ref))
-        for node in nodes:
-            # This node will never be associated with this ref
-            datasetRefDict.removeConsumer(ref, node)
-            if node in alreadyPruned:
-                continue
-            # find the connection corresponding to the input ref
-            connectionRefs = node.quantum.inputs.get(ref.datasetType)
-            if connectionRefs is None:
-                # look to see if any inputs are component refs that match the
-                # input ref to prune
-                others = ref.datasetType.makeAllComponentDatasetTypes()
-                # for each other component type check if there are assocated
-                # refs
-                for other in others:
-                    connectionRefs = node.quantum.inputs.get(other)
-                    if connectionRefs is not None:
-                        # now search the component refs and see which one
-                        # matches the ref to trim
-                        for cr in connectionRefs:
-                            if cr.makeCompositeRef() == ref:
-                                toRemove = cr
-                        break
-                else:
-                    # Ref must be an initInput ref and we want to ignore those
-                    raise RuntimeError(f"Cannot prune on non-Input dataset type {ref.datasetType.name}")
-            else:
-                toRemove = ref
-
-            tmpRefs = set(connectionRefs).difference((toRemove,))
-            tmpConnections = NamedKeyDict[DatasetType, list[DatasetRef]](node.quantum.inputs.items())
-            tmpConnections[toRemove.datasetType] = list(tmpRefs)
-            helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
-            assert node.quantum.dataId is not None, (
-                "assert to make the type checker happy, it should not "
-                "actually be possible to not have dataId set to None "
-                "at this point"
-            )
-
-            # Try to adjust the quantum with the reduced refs to make sure the
-            # node will still satisfy all its conditions.
-            #
-            # If it can't because NoWorkFound is raised, that means a
-            # connection is no longer present, and the node should be removed
-            # from the graph.
-            try:
-                helper.adjust_in_place(node.taskDef.connections, node.taskDef.label, node.quantum.dataId)
-                # ignore the types because quantum really can take a sequence
-                # of inputs
-                newQuantum = Quantum(
-                    taskName=node.quantum.taskName,
-                    taskClass=node.quantum.taskClass,
-                    dataId=node.quantum.dataId,
-                    initInputs=node.quantum.initInputs,
-                    inputs=helper.inputs,
-                    outputs=helper.outputs,
-                )
-                # If the inputs or outputs were adjusted to something different
-                # than what was supplied by the graph builder, dissassociate
-                # node from those refs, and if they are output refs, prune them
-                # from downstream tasks. This means that based on new inputs
-                # the task wants to produce fewer outputs, or consume fewer
-                # inputs.
-                for condition, existingMapping, newMapping, remover in (
-                    (
-                        helper.inputs_adjusted,
-                        node.quantum.inputs,
-                        helper.inputs,
-                        datasetRefDict.removeConsumer,
-                    ),
-                    (
-                        helper.outputs_adjusted,
-                        node.quantum.outputs,
-                        helper.outputs,
-                        datasetRefDict.removeProducer,
-                    ),
-                ):
-                    if condition:
-                        notNeeded = set()
-                        for key in existingMapping:
-                            if key not in newMapping:
-                                compositeRefs = (
-                                    r if not r.isComponent() else r.makeCompositeRef()
-                                    for r in existingMapping[key]
-                                )
-                                notNeeded |= set(compositeRefs)
-                                continue
-                            notNeeded |= set(existingMapping[key]) - set(newMapping[key])
-                        if notNeeded:
-                            for ref in notNeeded:
-                                if ref.isComponent():
-                                    ref = ref.makeCompositeRef()
-                                remover(ref, node)
-                            if remover is datasetRefDict.removeProducer:
-                                _pruner(datasetRefDict, notNeeded, alreadyPruned=alreadyPruned)
-                object.__setattr__(node, "quantum", newQuantum)
-                noWorkFound = False
-
-            except NoWorkFound:
-                noWorkFound = True
-
-            if noWorkFound:
-                # This will throw if the length is less than the minimum number
-                for tmpRef in chain(
-                    chain.from_iterable(node.quantum.inputs.values()), node.quantum.initInputs.values()
-                ):
-                    if tmpRef.isComponent():
-                        tmpRef = tmpRef.makeCompositeRef()
-                    datasetRefDict.removeConsumer(tmpRef, node)
-                alreadyPruned.add(node)
-                # prune all outputs produced by this node
-                # mark that none of these will be produced
-                forwardPrunes = set()
-                for forwardRef in chain.from_iterable(node.quantum.outputs.values()):
-                    datasetRefDict.removeProducer(forwardRef, node)
-                    forwardPrunes.add(forwardRef)
-                _pruner(datasetRefDict, forwardPrunes, alreadyPruned=alreadyPruned)
