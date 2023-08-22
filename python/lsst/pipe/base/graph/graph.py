@@ -172,7 +172,7 @@ class QuantumGraph:
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structure used to identify relations between
         # DatasetTypeName -> TaskDef.
-        self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
+        self._datasetDict = _DatasetTracker(createInverse=True)
 
         # Temporary graph that will have dataset UUIDs (as raw bytes) and
         # QuantumNode objects as nodes; will be collapsed down to just quanta

@@ -23,27 +23,19 @@ from __future__ import annotations
 __all__ = ("_DatasetTracker", "DatasetTypeName")
 
 from collections import defaultdict
-from typing import Generic, NewType, TypeVar
+from typing import NewType
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef
 
 from ..pipeline import TaskDef
-from .quantumNode import QuantumNode
 
 # NewTypes
 DatasetTypeName = NewType("DatasetTypeName", str)
 
-# Generic type parameters
-_T = TypeVar("_T", DatasetTypeName, DatasetRef)
-_U = TypeVar("_U", TaskDef, QuantumNode)
 
-
-class _DatasetTracker(Generic[_T, _U]):
-    r"""A generic container for tracking keys which are produced or
-    consumed by some value. In the context of a QuantumGraph, keys may be
-    `~lsst.daf.butler.DatasetRef`\ s and the values would be Quanta that either
-    produce or consume those `~lsst.daf.butler.DatasetRef`\ s.
+class _DatasetTracker:
+    r"""A container for tracking the relationships between tasks and dataset
+    types.
 
     Prameters
     ---------
@@ -54,13 +46,13 @@ class _DatasetTracker(Generic[_T, _U]):
     """
 
     def __init__(self, createInverse: bool = False):
-        self._producers: dict[_T, _U] = {}
-        self._consumers: defaultdict[_T, set[_U]] = defaultdict(set)
+        self._producers: dict[DatasetTypeName, TaskDef] = {}
+        self._consumers: defaultdict[DatasetTypeName, set[TaskDef]] = defaultdict(set)
         self._createInverse = createInverse
         if self._createInverse:
-            self._itemsDict: defaultdict[_U, set[_T]] = defaultdict(set)
+            self._itemsDict: defaultdict[TaskDef, set[DatasetTypeName]] = defaultdict(set)
 
-    def addProducer(self, key: _T, value: _U) -> None:
+    def addProducer(self, key: DatasetTypeName, value: TaskDef) -> None:
         """Add a key which is produced by some value.
 
         Parameters
@@ -81,25 +73,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeProducer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
-        considered a producer of the corresponding key.
-
-        It is not an error to remove a key that is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            The type to track.
-        value : `~typing.TypeVar`
-            The type associated with the production of the key.
-        """
-        self._producers.pop(key, None)
-        if self._createInverse:
-            if result := self._itemsDict.get(value):
-                result.discard(key)
-
-    def addConsumer(self, key: _T, value: _U) -> None:
+    def addConsumer(self, key: DatasetTypeName, value: TaskDef) -> None:
         """Add a key which is consumed by some value.
 
         Parameters
@@ -113,26 +87,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeConsumer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
-        considered a consumer of the corresponding key.
-
-        It is not an error to remove a key that is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            The type to track.
-        value : `~typing.TypeVar`
-            The type associated with the consumption of the key.
-        """
-        if (result := self._consumers.get(key)) is not None:
-            result.discard(value)
-        if self._createInverse:
-            if result_inverse := self._itemsDict.get(value):
-                result_inverse.discard(key)
-
-    def getConsumers(self, key: _T) -> set[_U]:
+    def getConsumers(self, key: DatasetTypeName) -> set[TaskDef]:
         """Return all values associated with the consumption of the supplied
         key.
 
@@ -143,7 +98,7 @@ class _DatasetTracker(Generic[_T, _U]):
         """
         return self._consumers.get(key, set())
 
-    def getProducer(self, key: _T) -> _U | None:
+    def getProducer(self, key: DatasetTypeName) -> TaskDef | None:
         """Return the value associated with the consumption of the supplied
         key.
 
@@ -156,7 +111,7 @@ class _DatasetTracker(Generic[_T, _U]):
         # and if there are no refs (empty set) should return None
         return producer if (producer := self._producers.get(key)) else None
 
-    def getAll(self, key: _T) -> set[_U]:
+    def getAll(self, key: DatasetTypeName) -> set[TaskDef]:
         """Return all consumers and the producer associated with the the
         supplied key.
 
@@ -168,7 +123,7 @@ class _DatasetTracker(Generic[_T, _U]):
         return self.getConsumers(key).union(x for x in (self.getProducer(key),) if x is not None)
 
     @property
-    def inverse(self) -> defaultdict[_U, set[_T]] | None:
+    def inverse(self) -> defaultdict[TaskDef, set[DatasetTypeName]] | None:
         """Return the inverse mapping if class was instantiated to create an
         inverse, else return None.
         """
@@ -201,23 +156,11 @@ class _DatasetTracker(Generic[_T, _U]):
                     graph.add_edge(producer, consumer)
         return graph
 
-    def keys(self) -> set[_T]:
+    def keys(self) -> set[DatasetTypeName]:
         """Return all tracked keys."""
         return self._producers.keys() | self._consumers.keys()
 
-    def remove(self, key: _T) -> None:
-        """Remove a key and its corresponding value from the tracker, this is
-        a no-op if the key is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            A key tracked by the `_DatasetTracker`.
-        """
-        self._producers.pop(key, None)
-        self._consumers.pop(key, None)
-
-    def __contains__(self, key: _T) -> bool:
+    def __contains__(self, key: DatasetTypeName) -> bool:
         """Check if a key is in the `_DatasetTracker`.
 
         Parameters
