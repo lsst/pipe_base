@@ -328,9 +328,13 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # that joins the query we already have for the task data
                     # IDs to the datasets we're looking for.
                     count = 0
-                    for data_id, ref in data_ids.findRelatedDatasets(
-                        finder.dataset_type_node.dataset_type, self.input_collections
-                    ):
+                    try:
+                        query_results = data_ids.findRelatedDatasets(
+                            finder.dataset_type_node.dataset_type, self.input_collections
+                        )
+                    except MissingDatasetTypeError:
+                        query_results = []
+                    for data_id, ref in query_results:
                         dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id.bytes)
                         quantum_key = QuantumKey(task_node.label, data_id.values_tuple())
                         # The column-subset operation used to make `data_ids`
