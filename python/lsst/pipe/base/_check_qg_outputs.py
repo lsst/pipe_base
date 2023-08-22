@@ -24,8 +24,10 @@ import dataclasses
 import itertools
 import uuid
 from collections.abc import Iterable
+from typing import Any
 
 import networkx
+import yaml
 from lsst.daf.butler import Butler, DataCoordinate, DatasetRef
 from lsst.resources import ResourcePath, ResourcePathExpression
 
@@ -34,14 +36,64 @@ from .pipeline import PipelineDatasetTypes
 
 
 @dataclasses.dataclass
-class TaskExecutionReport:
-    failed: dict[DataCoordinate, DatasetRef] = dataclasses.field(default_factory=dict)
-    failed_upstream: set[DataCoordinate] = dataclasses.field(default_factory=set)
-    missing_datasets_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
-    missing_datasets_not_produced: dict[DatasetRef, bool] = dataclasses.field(default_factory=dict)
+class DatasetTypeExecutionReport:
+    missing_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
+    """Datasets not produced because their quanta failed directly in this run.
+    """
+    missing_not_produced: dict[DatasetRef, bool] = dataclasses.field(default_factory=dict)
+    """Datasets not produced because their inputs were not produced or not
+    found
+    """
     # bool: predicted inputs to this task were not produced
     missing_upstream_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
-    datasets_produced: dict[str, int] = dataclasses.field(default_factory=dict)
+    """Datasets not produced due to an upstream failure
+    """
+    n_produced: int = 0
+    """Counts of datasets produced by this run.
+    """
+
+    def to_summary_dict(self) -> dict[str, Any]:
+        return {
+            "produced": self.n_produced,
+            "missing_failed": len(self.missing_failed),
+            "missing_not_produced": len(self.missing_not_produced),
+            "missing_upstream_failed": len(self.missing_upstream_failed),
+        }
+
+    def handle_missing_dataset(self, output_ref: DatasetRef, failed: bool, status_graph: networkx.DiGraph):
+        if failed:
+            for upstream_quantum_id in status_graph.predecessors(output_ref.id):
+                if status_graph.nodes[upstream_quantum_id]["failed"]:
+                    self.missing_upstream_failed.add(output_ref)
+                    break
+            else:
+                self.missing_failed.add(output_ref)
+        else:
+            status_graph.nodes[output_ref.id]["not_produced"] = True
+            self.missing_not_produced[output_ref] = any(
+                status_graph.nodes[upstream_dataset_id].get("not_produced", False)
+                for upstream_quantum_id in status_graph.predecessors(output_ref.id)
+                for upstream_dataset_id in status_graph.predecessors(upstream_quantum_id)
+            )
+
+    def handle_produced_dataset(self, output_ref: DatasetRef, status_graph: networkx.DiGraph):
+        status_graph.nodes[output_ref.id]["not_produced"] = False
+        self.n_produced += 1
+
+
+@dataclasses.dataclass
+class TaskExecutionReport:
+    failed: dict[uuid.UUID, DatasetRef] = dataclasses.field(default_factory=dict)
+    """A mapping from quantum data ID to log dataset reference for quanta that
+    failed directly in this run.
+    """
+    failed_upstream: dict[uuid.UUID, DataCoordinate] = dataclasses.field(default_factory=dict)
+    """A mapping of data IDs of quanta that were not attempted due to an
+    upstream failure.
+    """
+    output_datasets: dict[str, DatasetTypeExecutionReport] = dataclasses.field(default_factory=dict)
+    """Reports of the missing and produced outputs of each DatasetType
+    """
 
     def inspect_quantum(self, quantum_node, status_graph: networkx.DiGraph, refs, metadata_name, log_name):
         quantum = quantum_node.quantum
@@ -53,35 +105,32 @@ class TaskExecutionReport:
                 for upstream_dataset_id in status_graph.predecessors(quantum_node.nodeId)
                 for upstream_quantum_id in status_graph.predecessors(upstream_dataset_id)
             ):
-                self.failed_upstream.add(quantum.dataId)
+                self.failed_upstream[quantum_node.nodeId] = quantum.dataId
             else:
-                self.failed[quantum.dataId] = log_ref
+                self.failed[quantum_node.nodeId] = log_ref
+                # note to self: log_ref may or may not actually exist
             failed = True
         else:
             failed = False
         status_graph.nodes[quantum_node.nodeId]["failed"] = failed
-        for metadata_ref in itertools.chain.from_iterable(quantum.outputs.values()):
-            if metadata_ref.id not in refs[metadata_ref.datasetType.name]:
-                if failed:
-                    for upstream_quantum_id in status_graph.predecessors(metadata_ref.id):
-                        if status_graph.nodes[upstream_quantum_id]["failed"]:
-                            self.missing_upstream_failed.add(metadata_ref)
-                            break
-                    else:
-                        self.missing_datasets_failed.add(metadata_ref)
-                else:
-                    status_graph.nodes[metadata_ref.id]["not_produced"] = True
-                    self.missing_datasets_not_produced[metadata_ref] = any(
-                        status_graph.nodes[upstream_dataset_id].get("not_produced", False)
-                        for upstream_quantum_id in status_graph.predecessors(metadata_ref.id)
-                        for upstream_dataset_id in status_graph.predecessors(upstream_quantum_id)
-                    )
-
+        for output_ref in itertools.chain.from_iterable(quantum.outputs.values()):
+            if (dataset_type_report := self.output_datasets.get(output_ref.datasetType.name)) is None:
+                dataset_type_report = DatasetTypeExecutionReport()
+                self.output_datasets[output_ref.datasetType.name] = dataset_type_report
+            if output_ref.id not in refs[output_ref.datasetType.name]:
+                dataset_type_report.handle_missing_dataset(output_ref, failed, status_graph)
             else:
-                status_graph.nodes[metadata_ref.id]["not_produced"] = False
-                self.datasets_produced[metadata_ref.datasetType.name] = (
-                    self.datasets_produced.setdefault(metadata_ref.datasetType.name, 0) + 1
-                )
+                dataset_type_report.handle_produced_dataset(output_ref, status_graph)
+
+    def to_summary_dict(self, butler: Butler) -> dict[str, Any]:
+        return {
+            "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
+            "failed_quanta": {
+                str(node_id): {"data_id": log_ref.dataId.byName(), "log_uri": str(butler.getURI(log_ref))}
+                for node_id, log_ref in self.failed.items()
+            },
+            "n_quanta_blocked": len(self.failed_upstream),
+        }
 
     def __str__(self) -> str:
         return f"failed: {len(self.failed)}\nfailed upstream: {len(self.failed_upstream)}\n"
@@ -91,6 +140,13 @@ class TaskExecutionReport:
 class QuantumGraphExecutionReport:
     uri: ResourcePath
     tasks: dict[str, TaskExecutionReport] = dataclasses.field(default_factory=dict)
+
+    def to_summary_dict(self, butler: Butler) -> dict[str, Any]:
+        return {task: report.to_summary_dict(butler) for task, report in self.tasks.items()}
+
+    def write_summary_yaml(self, butler: Butler, filename: str) -> None:
+        with open(filename, "w") as stream:
+            yaml.dump(self.to_summary_dict(butler), stream)
 
     @classmethod
     def make_reports(
