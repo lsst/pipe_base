@@ -48,6 +48,7 @@ from lsst.daf.butler import (
     SkyPixDimension,
     Timespan,
 )
+from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.sphgeom import RangeSet, Region
 
 from .pipeline_graph import DatasetTypeNode, PipelineGraph, ReadEdge, TaskNode
@@ -258,6 +259,7 @@ class PrerequisiteFinder:
                     data_id,
                     input_collections,
                 )
+                if ref is not None
             ]
         if self.dataset_type_node.is_calibration:
             if self.dataset_type_node.dimensions <= self.constraint_dimensions:
@@ -275,12 +277,15 @@ class PrerequisiteFinder:
                 #
                 # and when that happens PrerequisiteFinder.find never gets
                 # called.
-                ref = butler.registry.findDataset(
-                    self.dataset_type_node.dataset_type,
-                    data_id.subset(self.constraint_dimensions),
-                    collections=input_collections,
-                    timespan=timespan,
-                )
+                try:
+                    ref = butler.registry.findDataset(
+                        self.dataset_type_node.dataset_type,
+                        data_id.subset(self.constraint_dimensions),
+                        collections=input_collections,
+                        timespan=timespan,
+                    )
+                except MissingDatasetTypeError:
+                    ref = None
                 return [ref] if ref is not None else []
             else:
                 extra_dimensions = (
@@ -315,16 +320,19 @@ class PrerequisiteFinder:
                     for begin, end in skypix_bounds[name]:
                         pixels.extend(range(begin, end))
                     bind[f"{name}_pixels"] = pixels
-                return list(
-                    butler.registry.queryDatasets(
-                        self.dataset_type_node.dataset_type,
-                        collections=input_collections,
-                        dataId=data_id.subset(self.constraint_dimensions),
-                        where=" AND ".join(where_terms),
-                        bind=bind,
-                        findFirst=True,
-                    ).expanded()
-                )
+                try:
+                    return list(
+                        butler.registry.queryDatasets(
+                            self.dataset_type_node.dataset_type,
+                            collections=input_collections,
+                            dataId=data_id.subset(self.constraint_dimensions),
+                            where=" AND ".join(where_terms),
+                            bind=bind,
+                            findFirst=True,
+                        ).expanded()
+                    )
+                except MissingDatasetTypeError:
+                    return []
             else:
                 raise NotImplementedError(
                     f"No support for skypix lookup {self.task_node.label}.{self.edge.connection_name} "
@@ -346,14 +354,17 @@ class PrerequisiteFinder:
         # that strips out the spatial/temporal stuff, because here we want the
         # butler query system to handle the spatial/temporal stuff like it
         # normally would.
-        return list(
-            butler.registry.queryDatasets(
-                self.dataset_type_node.dataset_type,
-                collections=input_collections,
-                dataId=data_id,
-                findFirst=True,
-            ).expanded()
-        )
+        try:
+            return list(
+                butler.registry.queryDatasets(
+                    self.dataset_type_node.dataset_type,
+                    collections=input_collections,
+                    dataId=data_id,
+                    findFirst=True,
+                ).expanded()
+            )
+        except MissingDatasetTypeError:
+            return []
 
 
 @dataclasses.dataclass
