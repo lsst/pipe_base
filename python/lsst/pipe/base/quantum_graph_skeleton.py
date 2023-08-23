@@ -231,7 +231,12 @@ class QuantumGraphSkeleton:
         return self._xgraph.predecessors(quantum_key)
 
     def update(self, other: QuantumGraphSkeleton) -> None:
-        """Copy all nodes from ``other`` to ``self``."""
+        """Copy all nodes from ``other`` to ``self``.
+
+        The tasks in ``other`` must be a subset of the tasks in ``self`` (this
+        method is expected to be used to populate a skeleton for a full
+        from independent-subgraph skeletons).
+        """
         for task_label, (_, quanta) in other._tasks.items():
             self._tasks[task_label][1].update(quanta)
         self._xgraph.update(other._xgraph)
