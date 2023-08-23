@@ -358,16 +358,14 @@ class QuantumGraphSkeleton:
         self._xgraph.add_edge(dataset_key, task_key)
         return True
 
-    def add_output_edge(
-        self, task_key: QuantumKey | TaskInitKey, dataset_key: DatasetKey | PrerequisiteDatasetKey
-    ) -> None:
+    def add_output_edge(self, task_key: QuantumKey | TaskInitKey, dataset_key: DatasetKey) -> None:
         """Add an edge connecting a dataset to the quantum that produces it.
 
         Parameters
         ----------
         task_key : `QuantumKey` or `TaskInitKey`
             Identifier for the quantum node.
-        dataset_key : `DatasetKey` or `PrerequisiteKey`
+        dataset_key : `DatasetKey`
             Identifier for the dataset node.
         """
         assert task_key in self._xgraph
