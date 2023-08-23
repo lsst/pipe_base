@@ -203,7 +203,12 @@ class QuantumGraphBuilder(ABC):
         # starts with the output run collection, as an optimization to avoid
         # queries later.
         if self.skip_existing_in and self.output_run_exists:
-            first, *_ = self.butler.registry.queryCollections(self.skip_existing_in, flattenChains=True)
+            try:
+                first, *_ = self.butler.registry.queryCollections(self.skip_existing_in, flattenChains=True)
+            except ValueError:
+                raise QuantumGraphBuilderError(
+                    f"The skip_existing_in collections ({list(self.skip_existing_in)}) do not exist."
+                ) from None
             self.skip_existing_starts_with_output_run = self.output_run == first
         else:
             self.skip_existing_starts_with_output_run = False
