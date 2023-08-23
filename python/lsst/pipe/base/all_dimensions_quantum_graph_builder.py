@@ -347,8 +347,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         # the same patch, but do overlap the some common skypix
                         # ID).  We don't want to add quanta with those data ID
                         # here, which is why we pass
-                        # add_unrecognized_quanta=False here.
-                        if skeleton.add_input_edge(quantum_key, dataset_key, add_unrecognized_quanta=False):
+                        # ignore_unrecognized_quanta=True here.
+                        if skeleton.add_input_edge(quantum_key, dataset_key, ignore_unrecognized_quanta=True):
                             self.existing_datasets.inputs[dataset_key] = ref
                         count += 1
                     # Remove this finder from the mapping so the base class

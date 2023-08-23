@@ -299,8 +299,14 @@ class QuantumGraphSkeleton:
         self._xgraph.remove_nodes_from(keys)
 
     def remove_task(self, task_label: str) -> None:
+        """Fully remove a task from the skeleton.
+
+        All init-output datasets and quanta for the task must already have been
+        removed.
+        """
         task_init_key, quanta = self._tasks.pop(task_label)
         assert not quanta, "Cannot remove task unless all quanta have already been removed."
+        assert not list(self._xgraph.successors(task_init_key))
         self._xgraph.remove_node(task_init_key)
 
     def add_input_edges(
@@ -310,8 +316,12 @@ class QuantumGraphSkeleton:
     ) -> None:
         """Add edges connecting datasets to a quantum that consumes them.
 
-        *This must only be called if the task node has already been added.*
+        Notes
+        -----
+        This must only be called if the task node has already been added.
         Use `add_input_edge` if this cannot be assumed.
+
+        Dataset nodes that are not already present will be created.
         """
         assert task_key in self._xgraph
         self._xgraph.add_edges_from((dataset_key, task_key) for dataset_key in dataset_keys)
@@ -328,7 +338,7 @@ class QuantumGraphSkeleton:
         self,
         task_key: QuantumKey | TaskInitKey,
         dataset_key: DatasetKey | PrerequisiteDatasetKey,
-        add_unrecognized_quanta: bool = False,
+        ignore_unrecognized_quanta: bool = False,
     ) -> bool:
         """Add an edge connecting a dataset to a quantum that consumes it.
 
@@ -338,23 +348,22 @@ class QuantumGraphSkeleton:
             Identifier for the quantum node.
         dataset_key : `DatasetKey` or `PrerequisiteKey`
             Identifier for the dataset node.
-        add_unrecognized_quanta : `bool`, optional
-            If `True`, automatically add quantum nodes that are not already
-            present.  If `False`, do nothing if the quantum node is not already
-            present.
+        ignore_unrecognized_quanta : `bool`, optional
+            If `False`, do nothing if the quantum node is not already present.
+            If `True`, the quantum node is assumed to be present.
 
         Returns
         -------
         added : `bool`
             `True` if an edge was actually added, `False` if the quantum was
             not recognized and the edge was not added as a result.
+
+        Notes
+        -----
+        Dataset nodes that are not already present will be created.
         """
-        if task_key not in self._xgraph:
-            assert isinstance(task_key, QuantumKey)
-            if add_unrecognized_quanta:
-                self._tasks[task_key.task_label][1].add(task_key)
-            else:
-                return False
+        if ignore_unrecognized_quanta and task_key not in self._xgraph:
+            return False
         self._xgraph.add_edge(dataset_key, task_key)
         return True
 
@@ -364,11 +373,14 @@ class QuantumGraphSkeleton:
         Parameters
         ----------
         task_key : `QuantumKey` or `TaskInitKey`
-            Identifier for the quantum node.
+            Identifier for the quantum node.  Must identify a node already
+            present in the graph.
         dataset_key : `DatasetKey`
-            Identifier for the dataset node.
+            Identifier for the dataset node.  Must identify a node already
+            present in the graph.
         """
         assert task_key in self._xgraph
+        assert dataset_key in self._xgraph
         self._xgraph.add_edge(task_key, dataset_key)
 
     def remove_orphan_datasets(self) -> None:
