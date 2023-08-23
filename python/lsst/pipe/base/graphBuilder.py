@@ -159,7 +159,7 @@ class GraphBuilder:
             butler,
             input_collections=CollectionWildcard.from_expression(collections).require_ordered(),
             output_run=run,
-            skip_existing_in=self.skipExistingIn,
+            skip_existing_in=self.skipExistingIn if self.skipExistingIn is not None else (),
             clobber=self.clobberOutputs,
             where=userQuery if userQuery is not None else "",
             dataset_query_constraint=datasetQueryConstraint,
