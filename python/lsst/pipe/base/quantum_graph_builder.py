@@ -710,7 +710,7 @@ class QuantumGraphBuilder(ABC):
             edge_dataset_type = write_edge.adapt_dataset_type(dataset_type_node.dataset_type)
             adapted_outputs[edge_dataset_type] = [
                 write_edge.adapt_dataset_ref(ref)
-                for ref in outputs_by_type.get(write_edge.parent_dataset_type_name, [])
+                for ref in sorted(outputs_by_type.get(write_edge.parent_dataset_type_name, []))
             ]
         return adapted_outputs
 
@@ -810,7 +810,7 @@ class QuantumGraphBuilder(ABC):
             if (current_dataset_type := adapted_inputs.keys().get(edge_dataset_type.name)) is None:
                 adapted_inputs[edge_dataset_type] = [
                     read_edge.adapt_dataset_ref(ref)
-                    for ref in inputs_by_type.get(read_edge.parent_dataset_type_name, frozenset())
+                    for ref in sorted(inputs_by_type.get(read_edge.parent_dataset_type_name, frozenset()))
                 ]
             elif current_dataset_type != edge_dataset_type:
                 raise NotImplementedError(
