@@ -20,34 +20,22 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("_DatasetTracker", "DatasetTypeName", "_pruner")
+__all__ = ("_DatasetTracker", "DatasetTypeName")
 
 from collections import defaultdict
-from collections.abc import Iterable
-from itertools import chain
-from typing import Generic, NewType, TypeVar
+from typing import NewType
 
 import networkx as nx
-from lsst.daf.butler import DatasetRef, DatasetType, NamedKeyDict, Quantum
-from lsst.pipe.base.connections import AdjustQuantumHelper
 
-from .._status import NoWorkFound
 from ..pipeline import TaskDef
-from .quantumNode import QuantumNode
 
 # NewTypes
 DatasetTypeName = NewType("DatasetTypeName", str)
 
-# Generic type parameters
-_T = TypeVar("_T", DatasetTypeName, DatasetRef)
-_U = TypeVar("_U", TaskDef, QuantumNode)
 
-
-class _DatasetTracker(Generic[_T, _U]):
-    r"""A generic container for tracking keys which are produced or
-    consumed by some value. In the context of a QuantumGraph, keys may be
-    `~lsst.daf.butler.DatasetRef`\ s and the values would be Quanta that either
-    produce or consume those `~lsst.daf.butler.DatasetRef`\ s.
+class _DatasetTracker:
+    r"""A container for tracking the relationships between tasks and dataset
+    types.
 
     Prameters
     ---------
@@ -58,13 +46,13 @@ class _DatasetTracker(Generic[_T, _U]):
     """
 
     def __init__(self, createInverse: bool = False):
-        self._producers: dict[_T, _U] = {}
-        self._consumers: defaultdict[_T, set[_U]] = defaultdict(set)
+        self._producers: dict[DatasetTypeName, TaskDef] = {}
+        self._consumers: defaultdict[DatasetTypeName, set[TaskDef]] = defaultdict(set)
         self._createInverse = createInverse
         if self._createInverse:
-            self._itemsDict: defaultdict[_U, set[_T]] = defaultdict(set)
+            self._itemsDict: defaultdict[TaskDef, set[DatasetTypeName]] = defaultdict(set)
 
-    def addProducer(self, key: _T, value: _U) -> None:
+    def addProducer(self, key: DatasetTypeName, value: TaskDef) -> None:
         """Add a key which is produced by some value.
 
         Parameters
@@ -85,25 +73,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeProducer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
-        considered a producer of the corresponding key.
-
-        It is not an error to remove a key that is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            The type to track.
-        value : `~typing.TypeVar`
-            The type associated with the production of the key.
-        """
-        self._producers.pop(key, None)
-        if self._createInverse:
-            if result := self._itemsDict.get(value):
-                result.discard(key)
-
-    def addConsumer(self, key: _T, value: _U) -> None:
+    def addConsumer(self, key: DatasetTypeName, value: TaskDef) -> None:
         """Add a key which is consumed by some value.
 
         Parameters
@@ -117,26 +87,7 @@ class _DatasetTracker(Generic[_T, _U]):
         if self._createInverse:
             self._itemsDict[value].add(key)
 
-    def removeConsumer(self, key: _T, value: _U) -> None:
-        """Remove a value (e.g. `QuantumNode` or `TaskDef`) from being
-        considered a consumer of the corresponding key.
-
-        It is not an error to remove a key that is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            The type to track.
-        value : `~typing.TypeVar`
-            The type associated with the consumption of the key.
-        """
-        if (result := self._consumers.get(key)) is not None:
-            result.discard(value)
-        if self._createInverse:
-            if result_inverse := self._itemsDict.get(value):
-                result_inverse.discard(key)
-
-    def getConsumers(self, key: _T) -> set[_U]:
+    def getConsumers(self, key: DatasetTypeName) -> set[TaskDef]:
         """Return all values associated with the consumption of the supplied
         key.
 
@@ -147,7 +98,7 @@ class _DatasetTracker(Generic[_T, _U]):
         """
         return self._consumers.get(key, set())
 
-    def getProducer(self, key: _T) -> _U | None:
+    def getProducer(self, key: DatasetTypeName) -> TaskDef | None:
         """Return the value associated with the consumption of the supplied
         key.
 
@@ -160,7 +111,7 @@ class _DatasetTracker(Generic[_T, _U]):
         # and if there are no refs (empty set) should return None
         return producer if (producer := self._producers.get(key)) else None
 
-    def getAll(self, key: _T) -> set[_U]:
+    def getAll(self, key: DatasetTypeName) -> set[TaskDef]:
         """Return all consumers and the producer associated with the the
         supplied key.
 
@@ -172,7 +123,7 @@ class _DatasetTracker(Generic[_T, _U]):
         return self.getConsumers(key).union(x for x in (self.getProducer(key),) if x is not None)
 
     @property
-    def inverse(self) -> defaultdict[_U, set[_T]] | None:
+    def inverse(self) -> defaultdict[TaskDef, set[DatasetTypeName]] | None:
         """Return the inverse mapping if class was instantiated to create an
         inverse, else return None.
         """
@@ -205,23 +156,11 @@ class _DatasetTracker(Generic[_T, _U]):
                     graph.add_edge(producer, consumer)
         return graph
 
-    def keys(self) -> set[_T]:
+    def keys(self) -> set[DatasetTypeName]:
         """Return all tracked keys."""
         return self._producers.keys() | self._consumers.keys()
 
-    def remove(self, key: _T) -> None:
-        """Remove a key and its corresponding value from the tracker, this is
-        a no-op if the key is not in the tracker.
-
-        Parameters
-        ----------
-        key : `~typing.TypeVar`
-            A key tracked by the `_DatasetTracker`.
-        """
-        self._producers.pop(key, None)
-        self._consumers.pop(key, None)
-
-    def __contains__(self, key: _T) -> bool:
+    def __contains__(self, key: DatasetTypeName) -> bool:
         """Check if a key is in the `_DatasetTracker`.
 
         Parameters
@@ -235,151 +174,3 @@ class _DatasetTracker(Generic[_T, _U]):
             Boolean of the presence of the supplied key.
         """
         return key in self._producers or key in self._consumers
-
-
-def _pruner(
-    datasetRefDict: _DatasetTracker[DatasetRef, QuantumNode],
-    refsToRemove: Iterable[DatasetRef],
-    *,
-    alreadyPruned: set[QuantumNode] | None = None,
-) -> None:
-    r"""Prune supplied dataset refs out of ``datasetRefDict`` container,
-    recursing to additional nodes dependant on pruned refs.
-
-    Parameters
-    ----------
-    datasetRefDict : `_DatasetTracker` [ `~lsst.daf.butler.DatasetRef`, \
-            `QuantumNode`]
-        The dataset tracker that maps `~lsst.daf.butler.DatasetRef`\ s to the
-        `QuantumNode`\s that produce/consume that
-        `~lsst.daf.butler.DatasetRef`.
-        This function modifies ``datasetRefDict`` in-place.
-    refsToRemove : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
-        The `~lsst.daf.butler.DatasetRef`\ s which should be pruned from the
-        input dataset tracker.
-    alreadyPruned : `set` of `QuantumNode`
-        A set of nodes which have been pruned from the dataset tracker.
-    """
-    if alreadyPruned is None:
-        alreadyPruned = set()
-    for ref in refsToRemove:
-        # make a copy here, because this structure will be modified in
-        # recursion, hitting a node more than once won't be much of an
-        # issue, as we skip anything that has been processed
-        nodes = set(datasetRefDict.getConsumers(ref))
-        for node in nodes:
-            # This node will never be associated with this ref
-            datasetRefDict.removeConsumer(ref, node)
-            if node in alreadyPruned:
-                continue
-            # find the connection corresponding to the input ref
-            connectionRefs = node.quantum.inputs.get(ref.datasetType)
-            if connectionRefs is None:
-                # look to see if any inputs are component refs that match the
-                # input ref to prune
-                others = ref.datasetType.makeAllComponentDatasetTypes()
-                # for each other component type check if there are assocated
-                # refs
-                for other in others:
-                    connectionRefs = node.quantum.inputs.get(other)
-                    if connectionRefs is not None:
-                        # now search the component refs and see which one
-                        # matches the ref to trim
-                        for cr in connectionRefs:
-                            if cr.makeCompositeRef() == ref:
-                                toRemove = cr
-                        break
-                else:
-                    # Ref must be an initInput ref and we want to ignore those
-                    raise RuntimeError(f"Cannot prune on non-Input dataset type {ref.datasetType.name}")
-            else:
-                toRemove = ref
-
-            tmpRefs = set(connectionRefs).difference((toRemove,))
-            tmpConnections = NamedKeyDict[DatasetType, list[DatasetRef]](node.quantum.inputs.items())
-            tmpConnections[toRemove.datasetType] = list(tmpRefs)
-            helper = AdjustQuantumHelper(inputs=tmpConnections, outputs=node.quantum.outputs)
-            assert node.quantum.dataId is not None, (
-                "assert to make the type checker happy, it should not "
-                "actually be possible to not have dataId set to None "
-                "at this point"
-            )
-
-            # Try to adjust the quantum with the reduced refs to make sure the
-            # node will still satisfy all its conditions.
-            #
-            # If it can't because NoWorkFound is raised, that means a
-            # connection is no longer present, and the node should be removed
-            # from the graph.
-            try:
-                helper.adjust_in_place(node.taskDef.connections, node.taskDef.label, node.quantum.dataId)
-                # ignore the types because quantum really can take a sequence
-                # of inputs
-                newQuantum = Quantum(
-                    taskName=node.quantum.taskName,
-                    taskClass=node.quantum.taskClass,
-                    dataId=node.quantum.dataId,
-                    initInputs=node.quantum.initInputs,
-                    inputs=helper.inputs,
-                    outputs=helper.outputs,
-                )
-                # If the inputs or outputs were adjusted to something different
-                # than what was supplied by the graph builder, dissassociate
-                # node from those refs, and if they are output refs, prune them
-                # from downstream tasks. This means that based on new inputs
-                # the task wants to produce fewer outputs, or consume fewer
-                # inputs.
-                for condition, existingMapping, newMapping, remover in (
-                    (
-                        helper.inputs_adjusted,
-                        node.quantum.inputs,
-                        helper.inputs,
-                        datasetRefDict.removeConsumer,
-                    ),
-                    (
-                        helper.outputs_adjusted,
-                        node.quantum.outputs,
-                        helper.outputs,
-                        datasetRefDict.removeProducer,
-                    ),
-                ):
-                    if condition:
-                        notNeeded = set()
-                        for key in existingMapping:
-                            if key not in newMapping:
-                                compositeRefs = (
-                                    r if not r.isComponent() else r.makeCompositeRef()
-                                    for r in existingMapping[key]
-                                )
-                                notNeeded |= set(compositeRefs)
-                                continue
-                            notNeeded |= set(existingMapping[key]) - set(newMapping[key])
-                        if notNeeded:
-                            for ref in notNeeded:
-                                if ref.isComponent():
-                                    ref = ref.makeCompositeRef()
-                                remover(ref, node)
-                            if remover is datasetRefDict.removeProducer:
-                                _pruner(datasetRefDict, notNeeded, alreadyPruned=alreadyPruned)
-                object.__setattr__(node, "quantum", newQuantum)
-                noWorkFound = False
-
-            except NoWorkFound:
-                noWorkFound = True
-
-            if noWorkFound:
-                # This will throw if the length is less than the minimum number
-                for tmpRef in chain(
-                    chain.from_iterable(node.quantum.inputs.values()), node.quantum.initInputs.values()
-                ):
-                    if tmpRef.isComponent():
-                        tmpRef = tmpRef.makeCompositeRef()
-                    datasetRefDict.removeConsumer(tmpRef, node)
-                alreadyPruned.add(node)
-                # prune all outputs produced by this node
-                # mark that none of these will be produced
-                forwardPrunes = set()
-                for forwardRef in chain.from_iterable(node.quantum.outputs.values()):
-                    datasetRefDict.removeProducer(forwardRef, node)
-                    forwardPrunes.add(forwardRef)
-                _pruner(datasetRefDict, forwardPrunes, alreadyPruned=alreadyPruned)

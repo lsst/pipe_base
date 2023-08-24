@@ -24,10 +24,17 @@ __all__ = ("TaskNode", "TaskInitNode", "TaskImportMode")
 
 import dataclasses
 import enum
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from lsst.daf.butler import DimensionGraph, DimensionUniverse
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    DimensionGraph,
+    DimensionUniverse,
+    Registry,
+)
 from lsst.utils.classes import immutable
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -295,6 +302,9 @@ class TaskInitNode:
         `TaskNotImportedError`, but calling `get_config_str` will not.
         """
         return self._get_imported_data().config
+
+    def __repr__(self) -> str:
+        return f"{self.label} [init] ({self.task_class_name})"
 
     def get_config_str(self) -> str:
         """Return the configuration for this task as a string of override
@@ -705,6 +715,48 @@ class TaskNode:
             result.append("Log output is present in B, but not in A.")
         result += self.metadata_output.diff(other.metadata_output, "metadata output")
         return result
+
+    def get_lookup_function(
+        self, connection_name: str
+    ) -> Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]] | None:
+        """Return the custom dataset query function for an edge, if one exists.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        lookup_function : `~collections.abc.Callable` or `None`
+            Callable that takes a dataset type, a butler registry, a data
+            coordinate (the quantum data ID), and an ordered list of
+            collections to search, and returns an iterable of
+            `~lsst.daf.butler.DatasetRef`.
+        """
+        return getattr(self._get_imported_data().connection_map[connection_name], "lookupFunction", None)
+
+    def get_spatial_bounds_connections(self) -> frozenset[str]:
+        """Return the names of connections whose data IDs should be included
+        in the calculation of the spatial bounds for this task's quanta.
+
+        Returns
+        -------
+        connection_names : `frozenset` [ `str` ]
+            Names of connections with spatial dimensions.
+        """
+        return frozenset(self._get_imported_data().connections.getSpatialBoundsConnections())
+
+    def get_temporal_bounds_connections(self) -> frozenset[str]:
+        """Return the names of connections whose data IDs should be included
+        in the calculation of the temporal bounds for this task's quanta.
+
+        Returns
+        -------
+        connection_names : `frozenset` [ `str` ]
+            Names of connections with temporal dimensions.
+        """
+        return frozenset(self._get_imported_data().connections.getTemporalBoundsConnections())
 
     def _imported_and_configured(self, rebuild: bool) -> TaskNode:
         """Import the task class and use it to construct a new instance.

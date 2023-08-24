@@ -29,6 +29,8 @@ __all__ = (
     "CONFIG_INIT_OUTPUT_CONNECTION_NAME",
     "CONFIG_INIT_OUTPUT_TEMPLATE",
     "CONFIG_INIT_OUTPUT_STORAGE_CLASS",
+    "PACKAGES_INIT_OUTPUT_NAME",
+    "PACKAGES_INIT_OUTPUT_STORAGE_CLASS",
     "LOG_OUTPUT_CONNECTION_NAME",
     "LOG_OUTPUT_TEMPLATE",
     "LOG_OUTPUT_STORAGE_CLASS",
@@ -49,6 +51,14 @@ type names.
 
 CONFIG_INIT_OUTPUT_STORAGE_CLASS: str = "Config"
 """Name of the storage class for config init-output datasets.
+"""
+
+PACKAGES_INIT_OUTPUT_NAME: str = "packages"
+"""Name of the global init-output dataset type that holds software versions.
+"""
+
+PACKAGES_INIT_OUTPUT_STORAGE_CLASS: str = "Packages"
+"""Name of the storage class for the dataset type that holds software versions.
 """
 
 LOG_OUTPUT_CONNECTION_NAME: str = "_log"

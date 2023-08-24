@@ -42,6 +42,7 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionRecordsAccumulator,
     DimensionUniverse,
+    PersistenceContextVars,
     Quantum,
 )
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -50,7 +51,7 @@ from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-from ._implDetails import DatasetTypeName, _DatasetTracker, _pruner
+from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
 from .quantumNode import BuildId, QuantumNode
@@ -102,8 +103,6 @@ class QuantumGraph:
     metadata : Optional `~collections.abc.Mapping` of `str` to primitives
         This is an optional parameter of extra data to carry with the graph.
         Entries in this mapping should be able to be serialized in JSON.
-    pruneRefs : iterable [ `~lsst.daf.butler.DatasetRef` ], optional
-        Set of dataset refs to exclude from a graph.
     universe : `~lsst.daf.butler.DimensionUniverse`, optional
         The dimensions in which quanta can be defined. Need only be provided if
         no quanta have data IDs.
@@ -137,7 +136,6 @@ class QuantumGraph:
         self,
         quanta: Mapping[TaskDef, set[Quantum]],
         metadata: Mapping[str, Any] | None = None,
-        pruneRefs: Iterable[DatasetRef] | None = None,
         universe: DimensionUniverse | None = None,
         initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
         initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
@@ -147,7 +145,6 @@ class QuantumGraph:
         self._buildGraphs(
             quanta,
             metadata=metadata,
-            pruneRefs=pruneRefs,
             universe=universe,
             initInputs=initInputs,
             initOutputs=initOutputs,
@@ -162,7 +159,6 @@ class QuantumGraph:
         _quantumToNodeId: Mapping[Quantum, uuid.UUID] | None = None,
         _buildId: BuildId | None = None,
         metadata: Mapping[str, Any] | None = None,
-        pruneRefs: Iterable[DatasetRef] | None = None,
         universe: DimensionUniverse | None = None,
         initInputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
         initOutputs: Mapping[TaskDef, Iterable[DatasetRef]] | None = None,
@@ -174,11 +170,14 @@ class QuantumGraph:
         """
         self._metadata = metadata
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
-        # Data structures used to identify relations between components;
-        # DatasetTypeName -> TaskDef for task,
-        # and DatasetRef -> QuantumNode for the quanta
-        self._datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
-        self._datasetRefDict = _DatasetTracker[DatasetRef, QuantumNode]()
+        # Data structure used to identify relations between
+        # DatasetTypeName -> TaskDef.
+        self._datasetDict = _DatasetTracker(createInverse=True)
+
+        # Temporary graph that will have dataset UUIDs (as raw bytes) and
+        # QuantumNode objects as nodes; will be collapsed down to just quanta
+        # later.
+        bipartite_graph = nx.DiGraph()
 
         self._nodeIdMap: dict[uuid.UUID, QuantumNode] = {}
         self._taskToQuantumNode: MutableMapping[TaskDef, set[QuantumNode]] = defaultdict(set)
@@ -228,66 +227,24 @@ class QuantumGraph:
                 self._taskToQuantumNode[taskDef].add(value)
                 self._nodeIdMap[nodeId] = value
 
+                bipartite_graph.add_node(value, bipartite=0)
                 for dsRef in chain(inits, inputs):
                     # unfortunately, `Quantum` allows inits to be individual
                     # `DatasetRef`s or an Iterable of such, so there must
                     # be an instance check here
                     if isinstance(dsRef, Iterable):
                         for sub in dsRef:
-                            if sub.isComponent():
-                                sub = sub.makeCompositeRef()
-                            self._datasetRefDict.addConsumer(sub, value)
+                            bipartite_graph.add_node(sub.id.bytes, bipartite=1)
+                            bipartite_graph.add_edge(sub.id.bytes, value)
                     else:
                         assert isinstance(dsRef, DatasetRef)
                         if dsRef.isComponent():
                             dsRef = dsRef.makeCompositeRef()
-                        self._datasetRefDict.addConsumer(dsRef, value)
+                        bipartite_graph.add_node(dsRef.id.bytes, bipartite=1)
+                        bipartite_graph.add_edge(dsRef.id.bytes, value)
                 for dsRef in chain.from_iterable(quantum.outputs.values()):
-                    self._datasetRefDict.addProducer(dsRef, value)
-
-        if pruneRefs is not None:
-            # track what refs were pruned and prune the graph
-            prunes: set[QuantumNode] = set()
-            _pruner(self._datasetRefDict, pruneRefs, alreadyPruned=prunes)
-
-            # recreate the taskToQuantumNode dict removing nodes that have been
-            # pruned. Keep track of task defs that now have no QuantumNodes
-            emptyTasks: set[str] = set()
-            newTaskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
-            # accumulate all types
-            types_ = set()
-            # tracker for any pruneRefs that have caused tasks to have no nodes
-            # This helps the user find out what caused the issues seen.
-            culprits = set()
-            # Find all the types from the refs to prune
-            for r in pruneRefs:
-                types_.add(r.datasetType)
-
-            # For each of the tasks, and their associated nodes, remove any
-            # any nodes that were pruned. If there are no nodes associated
-            # with a task, record that task, and find out if that was due to
-            # a type from an input ref to prune.
-            for td, taskNodes in self._taskToQuantumNode.items():
-                diff = taskNodes.difference(prunes)
-                if len(diff) == 0:
-                    if len(taskNodes) != 0:
-                        tp: DatasetType
-                        for tp in types_:
-                            if (tmpRefs := next(iter(taskNodes)).quantum.inputs.get(tp)) and not set(
-                                tmpRefs
-                            ).difference(pruneRefs):
-                                culprits.add(tp.name)
-                    emptyTasks.add(td.label)
-                newTaskToQuantumNode[td] = diff
-
-            # update the internal dict
-            self._taskToQuantumNode = newTaskToQuantumNode
-
-            if emptyTasks:
-                raise ValueError(
-                    f"{', '.join(emptyTasks)} task(s) have no nodes associated with them "
-                    f"after graph pruning; {', '.join(culprits)} caused over-pruning"
-                )
+                    bipartite_graph.add_node(dsRef.id.bytes, bipartite=1)
+                    bipartite_graph.add_edge(value, dsRef.id.bytes)
 
         # Dimension universe
         if universe is None:
@@ -297,8 +254,11 @@ class QuantumGraph:
             )
         self._universe = universe
 
-        # Graph of quanta relations
-        self._connectedQuanta = self._datasetRefDict.makeNetworkXGraph()
+        # Make graph of quanta relations, by projecting out the dataset nodes
+        # in the bipartite_graph, leaving just the quanta.
+        self._connectedQuanta = nx.algorithms.bipartite.projected_graph(
+            bipartite_graph, self._nodeIdMap.values()
+        )
         self._count = len(self._connectedQuanta)
 
         # Graph of task relations, used in various methods
@@ -372,43 +332,6 @@ class QuantumGraph:
         directionality of connections (`bool`).
         """
         return nx.is_weakly_connected(self._connectedQuanta)
-
-    def pruneGraphFromRefs(self: _T, refs: Iterable[DatasetRef]) -> _T:
-        r"""Return a graph pruned of input `~lsst.daf.butler.DatasetRef`\ s
-        and nodes which depend on them.
-
-        Parameters
-        ----------
-        refs : `~collections.abc.Iterable` of `~lsst.daf.butler.DatasetRef`
-            Refs which should be removed from resulting graph
-
-        Returns
-        -------
-        graph : `QuantumGraph`
-            A graph that has been pruned of specified refs and the nodes that
-            depend on them.
-        """
-        newInst = object.__new__(type(self))
-        quantumMap = defaultdict(set)
-        for node in self:
-            quantumMap[node.taskDef].add(node.quantum)
-
-        # convert to standard dict to prevent accidental key insertion
-        quantumDict: dict[TaskDef, set[Quantum]] = dict(quantumMap.items())
-
-        # This should not change set of tasks in a graph, so we can keep the
-        # same registryDatasetTypes as in the original graph.
-        # TODO: Do we need to copy initInputs/initOutputs?
-        newInst._buildGraphs(
-            quantumDict,
-            _quantumToNodeId={n.quantum: n.nodeId for n in self},
-            metadata=self._metadata,
-            pruneRefs=refs,
-            universe=self._universe,
-            globalInitOutputs=self._globalInitOutputRefs,
-            registryDatasetTypes=self._registryDatasetTypes,
-        )
-        return newInst
 
     def getQuantumNodeByNodeId(self, nodeId: uuid.UUID) -> QuantumNode:
         """Lookup a `QuantumNode` from an id associated with the node.
@@ -1005,6 +928,11 @@ class QuantumGraph:
         file.write(buffer)  # type: ignore # Ignore because bytearray is safe to use in place of bytes
 
     def _buildSaveObject(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
+        thing = PersistenceContextVars()
+        result = thing.run(self._buildSaveObjectImpl, returnHeader)
+        return result
+
+    def _buildSaveObjectImpl(self, returnHeader: bool = False) -> bytearray | tuple[bytearray, dict]:
         # make some containers
         jsonData: deque[bytes] = deque()
         # node map is a list because json does not accept mapping keys that
@@ -1076,7 +1004,7 @@ class QuantumGraph:
 
             # dump to json string, and encode that string to bytes and then
             # conpress those bytes
-            dump = lzma.compress(json.dumps(taskDescription).encode())
+            dump = lzma.compress(json.dumps(taskDescription).encode(), preset=2)
             # record the sizing and relation information
             taskDefMap[taskDef.label] = {
                 "bytes": (count, count + len(dump)),
@@ -1095,7 +1023,7 @@ class QuantumGraph:
             # a large impact on on disk size, so it is worth doing
             simpleNode = node.to_simple(accumulator=dimAccumulator)
 
-            dump = lzma.compress(simpleNode.json().encode())
+            dump = lzma.compress(simpleNode.json().encode(), preset=2)
             jsonData.append(dump)
             nodeMap.append(
                 (

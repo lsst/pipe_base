@@ -531,7 +531,7 @@ class DeserializerV3(DeserializerBase):
         graph = nx.DiGraph()
         loadedTaskDef: dict[str, TaskDef] = {}
         container = {}
-        datasetDict = _DatasetTracker[DatasetTypeName, TaskDef](createInverse=True)
+        datasetDict = _DatasetTracker(createInverse=True)
         taskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
         initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
         initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
