@@ -35,7 +35,6 @@ __all__ = (
     "ForcedFailure",
     "MockPipelineTask",
     "MockPipelineTaskConfig",
-    "mock_task_defs",
     "mock_pipeline_graph",
 )
 
@@ -55,7 +54,6 @@ from ... import automatic_connection_constants as acc
 from ... import connectionTypes as cT
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
-from ...pipeline import TaskDef
 from ...pipeline_graph import PipelineGraph
 from ...pipelineTask import PipelineTask
 from ._data_id_match import DataIdMatch
@@ -94,48 +92,6 @@ class ForcedFailure:
         if self.exception_type:
             config.fail_exception = get_full_type_name(self.exception_type)
         config.memory_required = self.memory_required
-
-
-def mock_task_defs(
-    originals: Iterable[TaskDef],
-    unmocked_dataset_types: Iterable[str] = (),
-    force_failures: Mapping[str, ForcedFailure] | None = None,
-) -> list[TaskDef]:
-    """Create mocks for an iterable of TaskDefs.
-
-    Parameters
-    ----------
-    originals : `~collections.abc.Iterable` [ `TaskDef` ]
-        Original tasks and configuration to mock.
-    unmocked_dataset_types : `~collections.abc.Iterable` [ `str` ], optional
-        Names of overall-input dataset types that should not be replaced with
-        mocks.
-    force_failures : `~collections.abc.Mapping` [ `str`, `ForcedFailure` ]
-        Mapping from original task label to information about an exception one
-        or more quanta for this task should raise.
-
-    Returns
-    -------
-    mocked : `list` [ `TaskDef` ]
-        List of `TaskDef` objects using `MockPipelineTask` configurations that
-        target the original tasks, in the same order.
-    """
-    unmocked_dataset_types = tuple(unmocked_dataset_types)
-    if force_failures is None:
-        force_failures = {}
-    results: list[TaskDef] = []
-    for original_task_def in originals:
-        config = MockPipelineTaskConfig()
-        config.original.retarget(original_task_def.taskClass)
-        config.original = original_task_def.config
-        config.unmocked_dataset_types.extend(unmocked_dataset_types)
-        if original_task_def.label in force_failures:
-            force_failures[original_task_def.label].set_config(config)
-        mock_task_def = TaskDef(
-            config=config, taskClass=MockPipelineTask, label=get_mock_name(original_task_def.label)
-        )
-        results.append(mock_task_def)
-    return results
 
 
 def mock_pipeline_graph(
