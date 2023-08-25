@@ -172,4 +172,4 @@ class GraphBuilder:
             dataset_query_constraint=datasetQueryConstraint,
             bind=bind,
         )
-        return qgb.build(metadata)
+        return qgb.build(metadata, attach_datastore_records=(self.datastore is not None))
