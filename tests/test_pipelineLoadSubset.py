@@ -1,69 +1,98 @@
+# This file is part of pipe_base.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
 import unittest
-
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
 
 import lsst.pipe.base as pipeBase
-import lsst.utils.tests
 
 
 class PipelineLoadSubsetTest(unittest.TestCase):
+    """Tests for loading subsets of pipelines from YAML files."""
+
     def setUp(self):
-        frozen_pipeline = dedent("""
+        frozen_pipeline = dedent(
+            """
             description: Frozen Pipeline
-            instrument: lsst.obs.subaru.HyperSuprimeCam
             tasks:
               isr:
-                class: lsst.ip.isr.IsrTask
-              charImage:
-                class: lsst.pipe.tasks.characterizeImage.CharacterizeImageTask
+                class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+                config:
+                  python: |
+                    from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                    config.dimensions = ['exposure', 'detector']
+                    config.inputs['input_image'] = DynamicConnectionConfig(
+                      dataset_type_name='raw',
+                      dimensions={'exposure', 'detector'},
+                    )
+                    config.outputs['output_image'] = DynamicConnectionConfig(
+                      dataset_type_name='detrended',
+                      dimensions={'exposure', 'detector'},
+                    )
               calibrate:
-                class: lsst.pipe.tasks.calibrate.CalibrateTask
-              makeWarpTask:
-                class: lsst.pipe.tasks.makeWarp.MakeWarpTask
+                class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
                 config:
-                - python: config.warpAndPsfMatch.psfMatch.kernel['AL'].alardSigGauss = [1.0, 2.0,
-                    4.5]
-                  matchingKernelSize: 29
-                  makePsfMatched: true
-                  modelPsf.defaultFwhm: 7.7
-                  doApplyExternalPhotoCalib: false
-                  doApplyExternalSkyWcs: false
-                  doApplySkyCorr: false
-                  doWriteEmptyWarps: true
+                  python: |
+                    from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                    config.dimensions = ['visit', 'detector']
+                    config.inputs['input_image'] = DynamicConnectionConfig(
+                      dataset_type_name='detrended',
+                      dimensions={'exposure', 'detector'},
+                    )
+                    config.outputs['output_image'] = DynamicConnectionConfig(
+                      dataset_type_name='pvi',
+                      dimensions={'visit', 'detector'},
+                    )
+              makeWarp:
+                class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+                config:
+                  python: |
+                    from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                    config.dimensions = ['patch', 'visit']
+                    config.inputs['input_image'] = DynamicConnectionConfig(
+                      dataset_type_name='pvi',
+                      dimensions={'visit', 'detector'},
+                    )
+                    config.outputs['output_image'] = DynamicConnectionConfig(
+                      dataset_type_name='warp',
+                      dimensions={'visit', 'patch'},
+                    )
               assembleCoadd:
-                class: lsst.pipe.tasks.assembleCoadd.CompareWarpAssembleCoaddTask
-              detection:
-                class: lsst.pipe.tasks.multiBand.DetectCoaddSourcesTask
-              mergeDetections:
-                class: lsst.pipe.tasks.mergeDetections.MergeDetectionsTask
+                class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
                 config:
-                - priorityList:
-                  - i
-                  - r
-              deblend:
-                class: lsst.pipe.tasks.deblendCoaddSourcesPipeline.DeblendCoaddSourcesSingleTask
-              measure:
-                class: lsst.pipe.tasks.multiBand.MeasureMergedCoaddSourcesTask
-                config:
-                - inputCatalog: deblendedFlux
-                - doAddFootprints: false
-              mergeMeasurements:
-                class: lsst.pipe.tasks.mergeMeasurements.MergeMeasurementsTask
-                config:
-                - priorityList:
-                  - i
-                  - r
-              forcedPhotCcd:
-                class: lsst.meas.base.forcedPhotCcd.ForcedPhotCcdTask
-                config:
-                - doApplyExternalPhotoCalib: false
-                  doApplyExternalSkyWcs: false
-                  doApplySkyCorr: false
-              forcedPhotCoadd:
-                class: lsst.drp.tasks.forcedPhotCoadd.ForcedPhotCoaddTask
-            """)
+                  python: |
+                    from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                    config.dimensions = ['patch', 'band']
+                    config.inputs['input_image'] = DynamicConnectionConfig(
+                      dataset_type_name='warp',
+                      dimensions={'visit', 'patch'},
+                    )
+                    config.outputs['output_image'] = DynamicConnectionConfig(
+                      dataset_type_name='coadd',
+                      dimensions={'patch', 'band'},
+                    )
+            """
+        )
         self.temp_pipeline_name = ""
         while not self.temp_pipeline_name:
             self.temp_pipeline = NamedTemporaryFile()
@@ -78,45 +107,45 @@ class PipelineLoadSubsetTest(unittest.TestCase):
         self.temp_pipeline.close()
 
     def testLoadList(self):
-        """This function tests loading a specific list of labels
-        """
-        labels = ("charImage", "calibrate", "makeWarpTask")
+        """Test loading a specific list of labels."""
+        labels = ("isr", "makeWarp")
         path = os.path.expandvars(f"{self.temp_pipeline_name}#{','.join(labels)}")
         pipeline = pipeBase.Pipeline.fromFile(path)
         self.assertEqual(set(labels), pipeline._pipelineIR.tasks.keys())
 
     def testLoadSingle(self):
-        """This function tests loading a specific label
-        """
-        label = "charImage"
+        """Test loading a specific label."""
+        label = "calibrate"
         path = os.path.expandvars(f"{self.temp_pipeline_name}#{label}")
         pipeline = pipeBase.Pipeline.fromFile(path)
         self.assertEqual(set((label,)), pipeline._pipelineIR.tasks.keys())
 
     def testLoadBoundedRange(self):
-        """This function tests loading a bounded range
-        """
-        path = os.path.expandvars(f"{self.temp_pipeline_name}#charImage..assembleCoadd")
+        """Test loading a bounded range."""
+        path = os.path.expandvars(f"{self.temp_pipeline_name}#calibrate..assembleCoadd")
         pipeline = pipeBase.Pipeline.fromFile(path)
-        self.assertEqual(set(('charImage', 'calibrate', 'makeWarpTask', 'assembleCoadd')),
-                         pipeline._pipelineIR.tasks.keys())
+        self.assertEqual(
+            {"calibrate", "makeWarp", "assembleCoadd"},
+            pipeline._pipelineIR.tasks.keys(),
+        )
 
     def testLoadUpperBound(self):
-        """This function tests loading a range that only has an upper bound
-        """
-        path = os.path.expandvars(f"{self.temp_pipeline_name}#..assembleCoadd")
+        """Test loading a range that only has an upper bound."""
+        path = os.path.expandvars(f"{self.temp_pipeline_name}#..makeWarp")
         pipeline = pipeBase.Pipeline.fromFile(path)
-        self.assertEqual(set(('isr', 'charImage', 'calibrate', 'makeWarpTask', 'assembleCoadd')),
-                         pipeline._pipelineIR.tasks.keys())
+        self.assertEqual(
+            {"isr", "calibrate", "makeWarp"},
+            pipeline._pipelineIR.tasks.keys(),
+        )
 
     def testLoadLowerBound(self):
-        """This function tests loading a range that only has an upper bound
-        """
-        path = os.path.expandvars(f"{self.temp_pipeline_name}#mergeDetections..")
+        """Test loading a range that only has a lower bound."""
+        path = os.path.expandvars(f"{self.temp_pipeline_name}#makeWarp..")
         pipeline = pipeBase.Pipeline.fromFile(path)
-        self.assertEqual(set(('mergeDetections', 'deblend', 'measure', 'mergeMeasurements', 'forcedPhotCcd',
-                             'forcedPhotCoadd')),
-                         pipeline._pipelineIR.tasks.keys())
+        self.assertEqual(
+            {"makeWarp", "assembleCoadd"},
+            pipeline._pipelineIR.tasks.keys(),
+        )
 
     def testLabelChecks(self):
         # test a bad list
@@ -137,16 +166,11 @@ class PipelineLoadSubsetTest(unittest.TestCase):
     def testContractRemoval(self):
         path = os.path.expandvars(f"{self.temp_pipeline_name}")
         pipeline = pipeBase.Pipeline.fromFile(path)
-        contract = pipeBase.pipelineIR.ContractIR("forcedPhotCcd.doApplyExternalPhotoCalib == False", None)
+        contract = pipeBase.pipelineIR.ContractIR("'visit' in calibrate.dimensions", None)
         pipeline._pipelineIR.contracts.append(contract)
-        pipeline = pipeline.subsetFromLabels(pipeBase.LabelSpecifier(labels=set(("isr",))))
+        pipeline = pipeline.subsetFromLabels(pipeBase.LabelSpecifier(labels={"isr"}))
         self.assertEqual(len(pipeline._pipelineIR.contracts), 0)
 
 
-class MemoryTester(lsst.utils.tests.MemoryTestCase):
-    pass
-
-
 if __name__ == "__main__":
-    lsst.utils.tests.init()
     unittest.main()
