@@ -321,13 +321,18 @@ class QuantumGraphBuilder(ABC):
 
     @final
     @timeMethod
-    def build(self, metadata: Mapping[str, Any] | None = None) -> QuantumGraph:
+    def build(
+        self, metadata: Mapping[str, Any] | None = None, attach_datastore_records: bool = True
+    ) -> QuantumGraph:
         """Build the quantum graph.
 
         Parameters
         ----------
         metadata : `~collections.abc.Mapping`, optional
             Flexible metadata to add to the quantum graph.
+        attach_datastore_records : `bool`, optional
+            Whether to include datastore records in the graph.  Required for
+            `lsst.daf.butler.QuantumBackedButler` execution.
 
         Returns
         -------
@@ -373,7 +378,8 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
-            self._attach_datastore_records(full_skeleton)
+            if attach_datastore_records:
+                self._attach_datastore_records(full_skeleton)
             # TODO initialize most metadata here instead of in ctrl_mpexec.
             if metadata is None:
                 metadata = {}
