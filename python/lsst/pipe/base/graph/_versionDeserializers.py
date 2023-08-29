@@ -657,6 +657,7 @@ class DeserializerV3(DeserializerBase):
         newGraph._globalInitOutputRefs = self.infoMappings.globalInitOutputRefs
         newGraph._registryDatasetTypes = self.infoMappings.registryDatasetTypes
         newGraph._universe = universe
+        newGraph._pipeline_graph = None
         return newGraph
 
 

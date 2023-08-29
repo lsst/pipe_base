@@ -278,8 +278,11 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.num_dataset_types = len(dataset_types)
 
     def testTaskGraph(self) -> None:
+        task_def_labels: list[str] = []
         for taskDef in self.quantumMap:
+            task_def_labels.append(taskDef.label)
             self.assertIn(taskDef, self.qGraph.taskGraph)
+        self.assertCountEqual(task_def_labels, self.qGraph.pipeline_graph.tasks.keys())
 
     def testGraph(self) -> None:
         graphSet = {q.quantum for q in self.qGraph.graph}
