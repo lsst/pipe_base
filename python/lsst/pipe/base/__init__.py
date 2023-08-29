@@ -1,5 +1,9 @@
 from . import automatic_connection_constants, connectionTypes, pipeline_graph, pipelineIR
 from ._dataset_handle import *
+
+# Symbols from _datasetQueryConstraints are exported from
+# all_dimensions_quantum_graph_builder, since that's the only place they are
+# used.
 from ._instrument import *
 from ._observation_dimension_packer import *
 from ._quantumContext import *

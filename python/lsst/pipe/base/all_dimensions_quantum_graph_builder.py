@@ -31,7 +31,7 @@ algorithm.
 
 from __future__ import annotations
 
-__all__ = ("AllDimensionsQuantumGraphBuilder",)
+__all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
 from collections.abc import Iterator, Mapping
