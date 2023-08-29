@@ -31,13 +31,14 @@ __all__ = ("PipelineGraph",)
 import gzip
 import itertools
 import json
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
-from lsst.daf.butler import DataCoordinate, DataId, DimensionGroup, DimensionUniverse, Registry
+from lsst.daf.butler import DataCoordinate, DataId, DatasetType, DimensionGroup, DimensionUniverse, Registry
+from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 from ._dataset_types import DatasetTypeNode
@@ -465,7 +466,12 @@ class PipelineGraph:
             for edge in iterable
         }
 
-    def resolve(self, registry: Registry) -> None:
+    def resolve(
+        self,
+        registry: Registry | None = None,
+        dimensions: DimensionUniverse | None = None,
+        dataset_types: Mapping[str, DatasetType] | None = None,
+    ) -> None:
         """Resolve all dimensions and dataset types and check them for
         consistency.
 
@@ -473,16 +479,22 @@ class PipelineGraph:
 
         Parameters
         ----------
-        registry : `lsst.daf.butler.Registry`
-            Client for the data repository to resolve against.
+        registry : `lsst.daf.butler.Registry`, optional
+            Client for the data repository to resolve against.  If not
+            provided, both ``dimensions`` and ``dataset_types`` must be.
+        dimensions : `lsst.daf.butler.DimensionUniverse`, optional
+            Definitions for all dimensions.
+        dataset_types : `~collection.abc.Mapping` [ `str`, \
+                `~lsst.daf.butler.DatasetType` ], optional
+            Mapping of dataset types to consider registered.
 
         Notes
         -----
-        The `universe` attribute is set to ``registry.dimensions`` and used to
-        set all `TaskNode.dimensions` attributes.  Dataset type nodes are
-        resolved by first looking for a registry definition, then using the
-        producing task's definition, then looking for consistency between all
-        consuming task definitions.
+        The `universe` attribute is set to ``dimensions`` and used to set all
+        `TaskNode.dimensions` attributes.  Dataset type nodes are resolved by
+        first looking for a registry definition, then using the producing
+        task's definition, then looking for consistency between all consuming
+        task definitions.
 
         Raises
         ------
@@ -504,19 +516,40 @@ class PipelineGraph:
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
         """
+        get_registered: Callable[[str], DatasetType | None]
+        if registry is None:
+            if dimensions is None or dataset_types is None:
+                raise PipelineGraphError(
+                    "Either 'registry' or both 'dimensions' and 'dataset_types' "
+                    "must be passed to PipelineGraph.resolve."
+                )
+
+        else:
+            if dimensions is None:
+                dimensions = registry.dimensions
+
+            def get_registered(name: str) -> DatasetType | None:
+                try:
+                    return registry.getDatasetType(name)
+                except MissingDatasetTypeError:
+                    return None
+
+        if dataset_types is not None:
+            # Ruff seems confused about whether this is used below; it is!
+            get_registered = dataset_types.get
         node_key: NodeKey
         updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
         for node_key, node_state in self._xgraph.nodes.items():
             match node_key.node_type:
                 case NodeType.TASK:
                     task_node: TaskNode = node_state["instance"]
-                    new_task_node = task_node._resolved(registry.dimensions)
+                    new_task_node = task_node._resolved(dimensions)
                     if new_task_node is not task_node:
                         updates[node_key] = new_task_node
                 case NodeType.DATASET_TYPE:
                     dataset_type_node: DatasetTypeNode | None = node_state["instance"]
                     new_dataset_type_node = DatasetTypeNode._from_edges(
-                        node_key, self._xgraph, registry, previous=dataset_type_node
+                        node_key, self._xgraph, get_registered, dimensions, previous=dataset_type_node
                     )
                     # Usage of `is`` here is intentional; `_from_edges` returns
                     # `previous=dataset_type_node` if it can determine that it
@@ -533,7 +566,7 @@ class PipelineGraph:
                 "Error during dataset type resolution has left the graph in an inconsistent state."
             ) from err
         self.sort()
-        self._universe = registry.dimensions
+        self._universe = dimensions
 
     ###########################################################################
     #

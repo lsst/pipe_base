@@ -29,12 +29,11 @@ from __future__ import annotations
 __all__ = ("DatasetTypeNode",)
 
 import dataclasses
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any
 
 import networkx
-from lsst.daf.butler import DatasetRef, DatasetType, DimensionGroup, Registry, StorageClass
-from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionGroup, DimensionUniverse, StorageClass
 
 from ._exceptions import DuplicateOutputError
 from ._nodes import NodeKey, NodeType
@@ -84,7 +83,12 @@ class DatasetTypeNode:
 
     @classmethod
     def _from_edges(
-        cls, key: NodeKey, xgraph: networkx.MultiDiGraph, registry: Registry, previous: DatasetTypeNode | None
+        cls,
+        key: NodeKey,
+        xgraph: networkx.MultiDiGraph,
+        get_registered: Callable[[str], DatasetType | None],
+        dimensions: DimensionUniverse,
+        previous: DatasetTypeNode | None,
     ) -> DatasetTypeNode:
         """Construct a dataset type node from its edges.
 
@@ -95,9 +99,12 @@ class DatasetTypeNode:
             object in the internal networkx graph.
         xgraph : `networkx.MultiDiGraph`
             The internal networkx graph.
-        registry : `lsst.daf.butler.Registry`
-            Registry client for the data repository.  Only used to get
-            dataset type definitions and the dimension universe.
+        get_registered : `~collections.abc.Callable`
+            Callable that takes a dataset type name and returns the
+            `DatasetType` registered in the data repository, or `None` if it is
+            not registered.
+        dimensions : `lsst.daf.butler.DimensionUniverse`
+            Definitions of all dimensions.
         previous : `DatasetTypeNode` or `None`
             Previous node for this dataset type.
 
@@ -107,12 +114,8 @@ class DatasetTypeNode:
             Node consistent with all edges pointing to it and the data
             repository.
         """
-        try:
-            dataset_type = registry.getDatasetType(key.name)
-            is_registered = True
-        except MissingDatasetTypeError:
-            dataset_type = None
-            is_registered = False
+        dataset_type = get_registered(key.name)
+        is_registered = dataset_type is not None
         if previous is not None and previous.dataset_type == dataset_type:
             # This node was already resolved (with exactly the same edges
             # contributing, since we clear resolutions when edges are added or
@@ -138,7 +141,7 @@ class DatasetTypeNode:
                     f"and {producer!r}."
                 )
             producer = producing_edge.task_label
-            dataset_type = producing_edge._resolve_dataset_type(dataset_type, universe=registry.dimensions)
+            dataset_type = producing_edge._resolve_dataset_type(dataset_type, universe=dimensions)
             is_prerequisite = False
             is_initial_query_constraint = False
         consuming_edge: ReadEdge
@@ -151,7 +154,7 @@ class DatasetTypeNode:
         for consuming_edge in consuming_edges:
             dataset_type, is_initial_query_constraint, is_prerequisite = consuming_edge._resolve_dataset_type(
                 current=dataset_type,
-                universe=registry.dimensions,
+                universe=dimensions,
                 is_initial_query_constraint=is_initial_query_constraint,
                 is_prerequisite=is_prerequisite,
                 is_registered=is_registered,
