@@ -31,7 +31,6 @@ from __future__ import annotations
 
 __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
-import itertools
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, cast
@@ -47,12 +46,14 @@ from lsst.utils.introspection import get_full_type_name
 
 from .. import connectionTypes as cT
 from .._instrument import Instrument
+from ..all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
+from ..all_dimensions_quantum_graph_builder import DatasetQueryConstraintVariant as DSQVariant
+from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
 from ..config import PipelineTaskConfig
 from ..connections import PipelineTaskConnections
 from ..graph import QuantumGraph
-from ..graphBuilder import DatasetQueryConstraintVariant as DSQVariant
-from ..graphBuilder import GraphBuilder
-from ..pipeline import Pipeline, TaskDatasetTypes, TaskDef
+from ..pipeline import Pipeline, TaskDef
+from ..pipeline_graph import PipelineGraph
 from ..pipelineTask import PipelineTask
 from ..struct import Struct
 from ..task import _TASK_FULL_METADATA_TYPE
@@ -184,7 +185,7 @@ class AddTaskFactoryMock(TaskFactory):
         return task
 
 
-def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskDef]) -> None:
+def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskDef] | PipelineGraph) -> None:
     """Register all dataset types used by tasks in a registry.
 
     Copied and modified from `PreExecInit.initializeDatasetTypes`.
@@ -193,33 +194,42 @@ def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskD
     ----------
     registry : `~lsst.daf.butler.Registry`
         Registry instance.
-    pipeline : `typing.Iterable` of `TaskDef`
-        Iterable of TaskDef instances, likely the output of the method
-        `Pipelines.toExpandedPipeline` on a `~lsst.pipe.base.Pipeline` object.
+    pipeline : `.Pipeline`, `~collections.abc..Iterable` of `.TaskDef`, or \
+            `.pipeline_graph.PipelineGraph`
+        The pipeline whose dataset types should be registered, as a `.Pipeline`
+        instance, `.PipelineGraph` instance, or iterable of `.TaskDef`
+        instances.  Support for `.TaskDef` is deprecated and will be removed
+        after v26.
     """
-    for taskDef in pipeline:
-        configDatasetType = DatasetType(
-            taskDef.configDatasetName, {}, storageClass="Config", universe=registry.dimensions
+    match pipeline:
+        case PipelineGraph() as pipeline_graph:
+            pass
+        case Pipeline():
+            pipeline_graph = pipeline.to_graph()
+        case _:
+            warnings.warn(
+                "Passing TaskDefs is deprecated and will not be supported after v26.",
+                category=FutureWarning,
+                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+            )
+            pipeline_graph = PipelineGraph()
+            for task_def in pipeline:
+                pipeline_graph.add_task(
+                    task_def.label, task_def.taskClass, task_def.config, connections=task_def.connections
+                )
+    pipeline_graph.resolve(registry)
+    dataset_types = [node.dataset_type for node in pipeline_graph.dataset_types.values()]
+    dataset_types.append(
+        DatasetType(
+            PACKAGES_INIT_OUTPUT_NAME,
+            {},
+            storageClass=PACKAGES_INIT_OUTPUT_STORAGE_CLASS,
+            universe=registry.dimensions,
         )
-        storageClass = "Packages"
-        packagesDatasetType = DatasetType(
-            "packages", {}, storageClass=storageClass, universe=registry.dimensions
-        )
-        datasetTypes = TaskDatasetTypes.fromTaskDef(taskDef, registry=registry)
-        for datasetType in itertools.chain(
-            datasetTypes.initInputs,
-            datasetTypes.initOutputs,
-            datasetTypes.inputs,
-            datasetTypes.outputs,
-            datasetTypes.prerequisites,
-            [configDatasetType, packagesDatasetType],
-        ):
-            _LOG.info("Registering %s with registry", datasetType)
-            # this is a no-op if it already exists and is consistent,
-            # and it raises if it is inconsistent. But components must be
-            # skipped
-            if not datasetType.isComponent():
-                registry.registerDatasetType(datasetType)
+    )
+    for dataset_type in dataset_types:
+        _LOG.info("Registering %s with registry", dataset_type)
+        registry.registerDatasetType(dataset_type)
 
 
 def makeSimplePipeline(nQuanta: int, instrument: str | None = None) -> Pipeline:
@@ -294,7 +304,10 @@ def makeSimpleButler(
 
 
 def populateButler(
-    pipeline: Pipeline, butler: Butler, datasetTypes: dict[str | None, list[str]] | None = None
+    pipeline: Pipeline | PipelineGraph,
+    butler: Butler,
+    datasetTypes: dict[str | None, list[str]] | None = None,
+    instrument: str | None = None,
 ) -> None:
     """Populate data butler with data needed for test.
 
@@ -312,20 +325,32 @@ def populateButler(
 
     Parameters
     ----------
-    pipeline : `~lsst.pipe.base.Pipeline`
-        Pipeline instance.
+    pipeline : `.Pipeline` or `.pipeline_graph.PipelineGraph`.
+        Pipeline or pipeline graph instance.
     butler : `~lsst.daf.butler.Butler`
         Data butler instance.
     datasetTypes : `dict` [ `str`, `list` ], optional
         Dictionary whose keys are collection names and values are lists of
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
+    instrument : `str`, optional
+        Fully-qualified name of the instrumemnt class (as it appears in a
+        pipeline).  This is needed to propagate the instrument from the
+        original pipeline if a pipeline graph is passed instead.
     """
     # Add dataset types to registry
-    taskDefs = list(pipeline.toExpandedPipeline())
-    registerDatasetTypes(butler.registry, taskDefs)
+    match pipeline:
+        case PipelineGraph() as pipeline_graph:
+            pass
+        case Pipeline():
+            pipeline_graph = pipeline.to_graph()
+            if instrument is None:
+                instrument = pipeline.getInstrument()
+        case _:
+            raise TypeError(f"Unexpected pipeline object: {pipeline!r}.")
 
-    instrument = pipeline.getInstrument()
+    registerDatasetTypes(butler.registry, pipeline_graph)
+
     if instrument is not None:
         instrument_class = doImportType(instrument)
         instrumentName = cast(Instrument, instrument_class).getName()
@@ -338,8 +363,7 @@ def populateButler(
     butler.registry.insertDimensionData("instrument", dict(name=instrumentName, class_name=instrumentClass))
     butler.registry.insertDimensionData("detector", dict(instrument=instrumentName, id=0, full_name="det0"))
 
-    taskDefMap = {taskDef.label: taskDef for taskDef in taskDefs}
-    # Add inputs to butler
+    # Add inputs to butler.
     if not datasetTypes:
         datasetTypes = {None: ["add_dataset0"]}
     for run, dsTypes in datasetTypes.items():
@@ -355,9 +379,9 @@ def populateButler(
                 if dsType.endswith("_config"):
                     # find a config from matching task name or make a new one
                     taskLabel, _, _ = dsType.rpartition("_")
-                    taskDef = taskDefMap.get(taskLabel)
-                    if taskDef is not None:
-                        data = taskDef.config
+                    task_node = pipeline_graph.tasks.get(taskLabel)
+                    if task_node is not None:
+                        data = task_node.config
                     else:
                         data = AddTaskConfig()
                 elif dsType.endswith("_metadata"):
@@ -371,7 +395,7 @@ def populateButler(
 
 def makeSimpleQGraph(
     nQuanta: int = 5,
-    pipeline: Pipeline | None = None,
+    pipeline: Pipeline | PipelineGraph | None = None,
     butler: Butler | None = None,
     root: str | None = None,
     callPopulateButler: bool = True,
@@ -396,9 +420,9 @@ def makeSimpleQGraph(
     ----------
     nQuanta : `int`
         Number of quanta in a graph, only used if ``pipeline`` is None.
-    pipeline : `~lsst.pipe.base.Pipeline`
-        If `None` then a pipeline is made with `AddTask` and default
-        `AddTaskConfig`.
+    pipeline : `.Pipeline` or `.pipeline_graph.PipelineGraph`
+        Pipeline or pipeline graph to build the graph from. If `None`, a
+        pipeline is made with `AddTask` and default `AddTaskConfig`.
     butler : `~lsst.daf.butler.Butler`, optional
         Data butler instance, if None then new data butler is created by
         calling `makeSimpleButler`.
@@ -447,8 +471,17 @@ def makeSimpleQGraph(
     qgraph : `~lsst.pipe.base.QuantumGraph`
         Quantum graph instance.
     """
-    if pipeline is None:
-        pipeline = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument)
+    match pipeline:
+        case PipelineGraph() as pipeline_graph:
+            pass
+        case Pipeline():
+            pipeline_graph = pipeline.to_graph()
+            if instrument is None:
+                instrument = pipeline.getInstrument()
+        case None:
+            pipeline_graph = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument).to_graph()
+        case _:
+            raise TypeError(f"Unexpected pipeline object: {pipeline!r}.")
 
     if butler is None:
         if root is None:
@@ -458,37 +491,36 @@ def makeSimpleQGraph(
         butler = makeSimpleButler(root, run=run, inMemory=inMemory)
 
     if callPopulateButler:
-        populateButler(pipeline, butler, datasetTypes=datasetTypes)
+        populateButler(pipeline_graph, butler, datasetTypes=datasetTypes, instrument=instrument)
 
     # Make the graph
-    _LOG.debug("Instantiating GraphBuilder, skipExistingIn=%s", skipExistingIn)
-    builder = GraphBuilder(
-        registry=butler.registry,
-        skipExistingIn=skipExistingIn,
-        datastore=butler._datastore if makeDatastoreRecords else None,
-    )
-    if not run:
-        assert butler.run is not None, "Butler must have run defined"
-        run = butler.run
     _LOG.debug(
-        "Calling GraphBuilder.makeGraph, collections=%r, run=%r, userQuery=%r bind=%s",
+        "Instantiating QuantumGraphBuilder, "
+        "skip_existing_in=%s, input_collections=%r, output_run=%r, where=%r, bind=%s.",
+        skipExistingIn,
         butler.collections,
         run,
         userQuery,
         bind,
     )
+    if not run:
+        assert butler.run is not None, "Butler must have run defined"
+        run = butler.run
+    builder = AllDimensionsQuantumGraphBuilder(
+        pipeline_graph,
+        butler,
+        skip_existing_in=skipExistingIn if skipExistingIn is not None else [],
+        input_collections=butler.collections if butler.collections is not None else [run],
+        output_run=run,
+        where=userQuery,
+        bind=bind,
+        dataset_query_constraint=datasetQueryConstraint,
+    )
+    _LOG.debug("Calling QuantumGraphBuilder.build.")
     if not metadata:
         metadata = {}
     metadata["output_run"] = run
 
-    qgraph = builder.makeGraph(
-        pipeline,
-        collections=butler.collections,
-        run=run,
-        userQuery=userQuery,
-        datasetQueryConstraint=datasetQueryConstraint,
-        bind=bind,
-        metadata=metadata,
-    )
+    qgraph = builder.build(metadata=metadata, attach_datastore_records=makeDatastoreRecords)
 
     return butler, qgraph
