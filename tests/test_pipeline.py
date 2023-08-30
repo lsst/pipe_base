@@ -33,7 +33,7 @@ import textwrap
 import unittest
 
 import lsst.utils.tests
-from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
+from lsst.pipe.base import Pipeline, TaskDef
 from lsst.pipe.base.pipelineIR import LabeledSubset
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
@@ -167,21 +167,6 @@ class PipelineTestCase(unittest.TestCase):
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
-
-    def test_initOutputNames(self):
-        """Test for PipelineDatasetTypes.initOutputNames method."""
-        pipeline = makeSimplePipeline(3)
-        dsType = set(PipelineDatasetTypes.initOutputNames(pipeline))
-        expected = {
-            "packages",
-            "add_init_output1",
-            "add_init_output2",
-            "add_init_output3",
-            "task0_config",
-            "task1_config",
-            "task2_config",
-        }
-        self.assertEqual(dsType, expected)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

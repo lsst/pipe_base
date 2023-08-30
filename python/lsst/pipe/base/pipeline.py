@@ -47,6 +47,8 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 # -----------------------------
 #  Imports for other modules --
+# -----------------------------
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import DataCoordinate, DatasetType, DimensionUniverse, NamedValueSet, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
@@ -943,6 +945,12 @@ class Pipeline:
         )
 
 
+# TODO: remove on DM-40443.
+@deprecated(
+    reason="TaskDatasetTypes has been replaced by PipelineGraph, and will be removed after v26.",
+    version="v26.0",
+    category=FutureWarning,
+)
 @dataclass(frozen=True)
 class TaskDatasetTypes:
     """An immutable struct that extracts and classifies the dataset types used
@@ -1247,6 +1255,12 @@ class TaskDatasetTypes:
         )
 
 
+# TODO: remove on DM-40443.
+@deprecated(
+    reason="PipelineDatasetTypes has been replaced by PipelineGraph, and will be removed after v26.",
+    version="v26.0",
+    category=FutureWarning,
+)
 @dataclass(frozen=True)
 class PipelineDatasetTypes:
     """An immutable struct that classifies the dataset types used in a
