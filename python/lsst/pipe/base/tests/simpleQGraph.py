@@ -32,6 +32,7 @@ from __future__ import annotations
 __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import logging
+import warnings
 from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -42,7 +43,7 @@ from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, For
 from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
-from lsst.utils.introspection import get_full_type_name
+from lsst.utils.introspection import find_outside_stacklevel, get_full_type_name
 
 from .. import connectionTypes as cT
 from .._instrument import Instrument
@@ -53,7 +54,7 @@ from ..config import PipelineTaskConfig
 from ..connections import PipelineTaskConnections
 from ..graph import QuantumGraph
 from ..pipeline import Pipeline, TaskDef
-from ..pipeline_graph import PipelineGraph
+from ..pipeline_graph import PipelineGraph, TaskNode
 from ..pipelineTask import PipelineTask
 from ..struct import Struct
 from ..task import _TASK_FULL_METADATA_TYPE
@@ -176,11 +177,24 @@ class AddTaskFactoryMock(TaskFactory):
         self.stopAt = stopAt  # AddTask raises exception at this call to run()
 
     def makeTask(
-        self, taskDef: TaskDef, butler: LimitedButler, initInputRefs: Iterable[DatasetRef] | None
+        self,
+        task_node: TaskDef | TaskNode,
+        /,
+        butler: LimitedButler,
+        initInputRefs: Iterable[DatasetRef] | None,
     ) -> PipelineTask:
-        taskClass = taskDef.taskClass
-        assert taskClass is not None
-        task = taskClass(config=taskDef.config, initInputs=None, name=taskDef.label)
+        if isinstance(task_node, TaskDef):
+            # TODO: remove support on DM-40443.
+            warnings.warn(
+                "Passing TaskDef to TaskFactory is deprecated and will not be supported after v26.",
+                FutureWarning,
+                find_outside_stacklevel("lsst.pipe.base"),
+            )
+            task_class = task_node.taskClass
+            assert task_class is not None
+        else:
+            task_class = task_node.task_class
+        task = task_class(config=task_node.config, initInputs=None, name=task_node.label)
         task.taskFactory = self  # type: ignore
         return task
 
