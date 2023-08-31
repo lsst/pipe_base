@@ -152,7 +152,8 @@ class _TaskNodeImportedData:
                     f"Configuration validation failed for task {label!r} (see chained exception)."
                 ) from err
             config.freeze()
-            connections = task_class.ConfigClass.ConnectionsClass(config=config)
+            # MyPy doesn't see the metaclass attribute defined for this.
+            connections = config.ConnectionsClass(config=config)  # type: ignore
         connection_map = dict(connections.allConnections)
         connection_map[acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME] = InitOutput(
             acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=label),
