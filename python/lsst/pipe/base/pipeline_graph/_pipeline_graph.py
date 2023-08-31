@@ -585,21 +585,23 @@ class PipelineGraph:
 
     def add_task(
         self,
-        label: str,
+        label: str | None,
         task_class: type[PipelineTask],
-        config: PipelineTaskConfig,
+        config: PipelineTaskConfig | None = None,
         connections: PipelineTaskConnections | None = None,
     ) -> TaskNode:
         """Add a new task to the graph.
 
         Parameters
         ----------
-        label : `str`
-            Label for the task in the pipeline.
+        label : `str` or `None`
+            Label for the task in the pipeline.  If `None`, `Task._DefaultName`
+            is used.
         task_class : `type` [ `PipelineTask` ]
             Class object for the task.
-        config : `PipelineTaskConfig`
-            Configuration for the task.
+        config : `PipelineTaskConfig`, optional
+            Configuration for the task.  If not provided, a default-constructed
+            instance of ``task_class.ConfigClass`` is used.
         connections : `PipelineTaskConnections`, optional
             Object that describes the dataset types used by the task.  If not
             provided, one will be constructed from the given configuration.  If
@@ -633,6 +635,10 @@ class PipelineGraph:
         it references and marks the graph as unsorted.  It is most effiecient
         to add all tasks up front and only then resolve and/or sort the graph.
         """
+        if label is None:
+            label = task_class._DefaultName
+        if config is None:
+            config = task_class.ConfigClass()
         task_node = TaskNode._from_imported_data(
             key=NodeKey(NodeType.TASK, label),
             init_key=NodeKey(NodeType.TASK_INIT, label),
