@@ -33,11 +33,14 @@ from __future__ import annotations
 __all__ = ["GraphBuilder"]
 
 
+import warnings
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import Butler, DataCoordinate, Datastore, Registry
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
+from lsst.utils.introspection import find_outside_stacklevel
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
@@ -50,7 +53,19 @@ from .quantum_graph_builder import GraphBuilderError  # noqa: F401
 from .quantum_graph_builder import OutputExistsError  # noqa: F401
 from .quantum_graph_builder import PrerequisiteMissingError  # noqa: F401
 
+# TODO: remove this module on DM-40443.
+warnings.warn(
+    "The graphBuilder module is deprecated in favor of quantum_graph_builder, and will be removed after v26.",
+    category=FutureWarning,
+    stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+)
 
+
+@deprecated(
+    "Deprecated in favor of QuantumGraphBuilder and will be removed after v26.",
+    version="v26.0",
+    category=FutureWarning,
+)
 class GraphBuilder:
     """GraphBuilder class is responsible for building task execution graph from
     a Pipeline.
