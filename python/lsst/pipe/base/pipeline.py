@@ -82,11 +82,15 @@ class LabelSpecifier:
     """A structure to specify a subset of labels to load.
 
     This structure may contain a set of labels to be used in subsetting a
-    pipeline, or a beginning and end point. Beginning or end may be empty,
-    in which case the range will be a half open interval. Unlike python
-    iteration bounds, end bounds are *INCLUDED*. Note that range based
-    selection is not well defined for pipelines that are not linear in nature,
-    and correct behavior is not guaranteed, or may vary from run to run.
+    pipeline, or a beginning and end point. Beginning or end may be empty, in
+    which case the range will be a half open interval. Unlike python iteration
+    bounds, end bounds are *INCLUDED*.
+
+    There are multiple potential definitions of range-based slicing for graphs
+    that are not a simple linear sequence.  The definition used here is the
+    intersection of the tasks downstream of ``begin`` and the tasks upstream of
+    ``end``, i.e. tasks with no dependency relationship to a bounding task are
+    not included.
     """
 
     labels: set[str] | None = None
@@ -386,31 +390,20 @@ class Pipeline:
             # be dropped
             pipeline = copy.deepcopy(self)
             pipeline._pipelineIR.contracts = []
-            labels = {taskdef.label: True for taskdef in pipeline.toExpandedPipeline()}
+            graph = pipeline.to_graph()
 
             # Verify the bounds are in the labels
-            if labelSpecifier.begin is not None:
-                if labelSpecifier.begin not in labels:
-                    raise ValueError(
-                        f"Beginning of range subset, {labelSpecifier.begin}, not found in pipeline definition"
-                    )
-            if labelSpecifier.end is not None:
-                if labelSpecifier.end not in labels:
-                    raise ValueError(
-                        f"End of range subset, {labelSpecifier.end}, not found in pipeline definition"
-                    )
+            if labelSpecifier.begin is not None and labelSpecifier.begin not in graph.tasks:
+                raise ValueError(
+                    f"Beginning of range subset, {labelSpecifier.begin}, not found in pipeline definition"
+                )
+            if labelSpecifier.end is not None and labelSpecifier.end not in graph.tasks:
+                raise ValueError(
+                    f"End of range subset, {labelSpecifier.end}, not found in pipeline definition"
+                )
 
-            labelSet = set()
-            for label in labels:
-                if labelSpecifier.begin is not None:
-                    if label != labelSpecifier.begin:
-                        continue
-                    else:
-                        labelSpecifier.begin = None
-                labelSet.add(label)
-                if labelSpecifier.end is not None and label == labelSpecifier.end:
-                    break
-        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet, subsetCtrl))
+            labelSet = set(graph.tasks.between(labelSpecifier.begin, labelSpecifier.end))
+        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
     def _parse_file_specifier(uri: ResourcePathExpression) -> tuple[ResourcePath, LabelSpecifier | None]:
