@@ -194,25 +194,25 @@ class Edge(ABC):
         result = []
         if self.dataset_type_name != other.dataset_type_name:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has dataset type "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has dataset type "
                 f"{self.dataset_type_name!r} in A, but {other.dataset_type_name!r} in B."
             )
         if self.storage_class_name != other.storage_class_name:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has storage class "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has storage class "
                 f"{self.storage_class_name!r} in A, but {other.storage_class_name!r} in B."
             )
         if self.raw_dimensions != other.raw_dimensions:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has raw dimensions "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has raw dimensions "
                 f"{set(self.raw_dimensions)} in A, but {set(other.raw_dimensions)} in B "
                 "(differences in raw dimensions may not lead to differences in resolved dimensions, "
                 "but this cannot be checked without re-resolving the dataset type)."
             )
         if self.is_calibration != other.is_calibration:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} is marked as a calibration "
-                f"{'in A but not in B' if self.is_calibration else 'in B but not in A'}."
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} is marked as a "
+                f"calibration {'in A but not in B' if self.is_calibration else 'in B but not in A'}."
             )
         return result
 

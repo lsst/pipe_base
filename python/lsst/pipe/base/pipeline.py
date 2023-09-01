@@ -934,12 +934,10 @@ class Pipeline:
             # the same as well.  But the converse is not true.
             return True
         else:
-            self_expanded = {td.label: (td.taskClass,) for td in self}
-            other_expanded = {td.label: (td.taskClass,) for td in other}
-            if self_expanded != other_expanded:
+            # Compare as much as we can (task classes and their edges).
+            if self.to_graph().diff_tasks(other.to_graph()):
                 return False
-        # After DM-27847, we should compare configuration here, or better,
-        # delegated to TaskDef.__eq__ after making that compare configurations.
+        # After DM-27847, we should compare configuration here.
         raise NotImplementedError(
             "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
         )

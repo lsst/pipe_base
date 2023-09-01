@@ -845,15 +845,21 @@ class PipelineGraphTestCase(unittest.TestCase):
         """Tests for adding and removing tasks and task subsets from a
         PipelineGraph.
         """
+        original = self.graph.copy()
         # Can't remove a task while it's still in a subset.
         with self.assertRaises(PipelineGraphError):
             self.graph.remove_tasks(["b"], drop_from_subsets=False)
+        self.assertEqual(original.diff_tasks(self.graph), [])
         # ...unless you remove the subset.
         self.graph.remove_task_subset("only_b")
         self.assertFalse(self.graph.task_subsets)
         ((b, referencing_subsets),) = self.graph.remove_tasks(["b"], drop_from_subsets=False)
         self.assertFalse(referencing_subsets)
         self.assertEqual(self.graph.tasks.keys(), {"a"})
+        self.assertEqual(
+            original.diff_tasks(self.graph),
+            ["Pipelines have different tasks: A & ~B = ['b'], B & ~A = []."],
+        )
         # Add that task back in.
         self.graph.add_task_nodes([b])
         self.assertEqual(self.graph.tasks.keys(), {"a", "b"})
@@ -880,6 +886,7 @@ class PipelineGraphTestCase(unittest.TestCase):
 
     def test_reconfigure(self) -> None:
         """Tests for PipelineGraph.reconfigure."""
+        original = self.graph.copy()
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.b_config.outputs["output1"].storage_class = "TaskMetadata"
         with self.assertRaises(ValueError):
@@ -892,6 +899,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         with self.assertRaises(EdgesChangedError):
             self.graph.reconfigure_tasks(b=self.b_config, check_edges_unchanged=True)
         self.check_base_accessors(self.graph)
+        self.assertEqual(original.diff_tasks(self.graph), [])
         # Make a change that does affect edges; this will unresolve most
         # dataset types.
         self.graph.reconfigure_tasks(b=self.b_config)
@@ -899,6 +907,13 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertFalse(self.graph.dataset_types.is_resolved("output_1"))
         self.assertFalse(self.graph.dataset_types.is_resolved("schema"))
         self.assertFalse(self.graph.dataset_types.is_resolved("intermediate_1"))
+        self.assertEqual(
+            original.diff_tasks(self.graph),
+            [
+                "Output b.output1 has storage class '_mock_StructuredDataDict' in A, "
+                "but '_mock_TaskMetadata' in B."
+            ],
+        )
         # Resolving again will pick up the new storage class
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertEqual(

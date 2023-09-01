@@ -31,7 +31,7 @@ __all__ = ("PipelineGraph",)
 import gzip
 import itertools
 import json
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 
 import networkx
@@ -260,6 +260,46 @@ class PipelineGraph:
         # Genuine deep copies are unnecessary, since we should only ever care
         # that mutable state is copied.
         return self.copy()
+
+    def diff_tasks(self, other: PipelineGraph) -> list[str]:
+        """Compare two pipeline graphs.
+
+        This only compares graph structure and task classes (including their
+        edges).  It does *not* compare full configuration (which is subject to
+        spurious differences due to import-cache state), dataset type
+        resolutions, or sort state.
+
+        Parameters
+        ----------
+        other : `PipelineGraph`
+            Graph to compare to.
+
+        Returns
+        -------
+        differences : `list` [ `str` ]
+            List of string messages describing differences between the
+            pipelines.  If empty, the graphs have the same tasks and
+            connections.
+        """
+        messages: list[str] = []
+        common_labels: Set[str]
+        if self.tasks.keys() != other.tasks.keys():
+            common_labels = self.tasks.keys() & other.tasks.keys()
+            messages.append(
+                f"Pipelines have different tasks: A & ~B = {list(self.tasks.keys() - common_labels)}, "
+                f"B & ~A = {list(other.tasks.keys() - common_labels)}."
+            )
+        else:
+            common_labels = self.tasks.keys()
+        for label in common_labels:
+            a = self.tasks[label]
+            b = other.tasks[label]
+            if a.task_class != b.task_class:
+                messages.append(
+                    f"Task {label!r} has class {a.task_class_name} in A, " f"but {b.task_class_name} in B."
+                )
+            messages.extend(a.diff_edges(b))
+        return messages
 
     def producing_edge_of(self, dataset_type_name: str) -> WriteEdge | None:
         """Return the `WriteEdge` that links the producing task to the named
