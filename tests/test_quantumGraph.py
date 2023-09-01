@@ -31,7 +31,6 @@ import random
 import tempfile
 import unittest
 import uuid
-from collections.abc import Iterable
 from itertools import chain
 
 import lsst.pipe.base.connectionTypes as cT
@@ -46,7 +45,7 @@ from lsst.pipe.base import (
     QuantumGraph,
     TaskDef,
 )
-from lsst.pipe.base.graph.quantumNode import BuildId, QuantumNode
+from lsst.pipe.base.graph.quantumNode import BuildId
 from lsst.pipe.base.tests.util import check_output_run, get_output_refs
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.packages import Packages
@@ -323,9 +322,14 @@ class QuantumGraphTestCase(unittest.TestCase):
 
     def testGetNodesForTask(self) -> None:
         for task in self.tasks:
-            nodes: Iterable[QuantumNode] = self.qGraph.getNodesForTask(task)
+            nodes = list(self.qGraph.getNodesForTask(task))
             quanta_in_node = {n.quantum for n in nodes}
             self.assertEqual(quanta_in_node, self.quantumMap[task])
+            for node in nodes:
+                self.assertEqual(
+                    node.task_node.task_class_name,
+                    self.qGraph.pipeline_graph.tasks[node.task_node.label].task_class_name,
+                )
 
     def testFindTasksWithInput(self) -> None:
         self.assertEqual(

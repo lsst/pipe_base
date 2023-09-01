@@ -42,6 +42,7 @@ from lsst.daf.butler import (
 )
 
 from ..pipeline import TaskDef
+from ..pipeline_graph import PipelineGraph, TaskNode
 
 BuildId = NewType("BuildId", str)
 
@@ -100,6 +101,19 @@ class QuantumNode:
     """The unique position of the node within the graph assigned at graph
     creation.
     """
+
+    @property
+    def task_node(self) -> TaskNode:
+        """Return the node object that represents this task in a pipeline
+        graph.
+        """
+        pipeline_graph = PipelineGraph()
+        return pipeline_graph.add_task(
+            self.taskDef.label,
+            self.taskDef.taskClass,
+            self.taskDef.config,
+            connections=self.taskDef.connections,
+        )
 
     __slots__ = ("quantum", "taskDef", "nodeId", "_precomputedHash")
 
