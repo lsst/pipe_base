@@ -1497,7 +1497,7 @@ class PipelineGraph:
                 config=node.config,
                 taskClass=node.task_class,
                 label=node.label,
-                connections=node._get_imported_data().connections,
+                connections=node.get_connections(),
             )
 
     def _init_from_args(

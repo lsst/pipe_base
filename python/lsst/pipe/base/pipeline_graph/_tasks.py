@@ -765,6 +765,17 @@ class TaskNode:
         """
         return getattr(self._get_imported_data().connection_map[connection_name], "lookupFunction", None)
 
+    def get_connections(self) -> PipelineTaskConnections:
+        """Return the connections class instance for this task.
+
+        Returns
+        -------
+        connections : `.PipelineTaskConnections`
+            Task-provided object that defines inputs and outputs from
+            configuration.
+        """
+        return self._get_imported_data().connections
+
     def get_spatial_bounds_connections(self) -> frozenset[str]:
         """Return the names of connections whose data IDs should be included
         in the calculation of the spatial bounds for this task's quanta.

@@ -514,9 +514,7 @@ class QuantumGraphBuilder(ABC):
             # intended behavior.
             helper = AdjustQuantumHelper(inputs=adjusted_inputs, outputs=adjusted_outputs)
             try:
-                helper.adjust_in_place(
-                    task_node._get_imported_data().connections, task_node.label, quantum_data_id
-                )
+                helper.adjust_in_place(task_node.get_connections(), task_node.label, quantum_data_id)
             except NoWorkFound as err:
                 # Do not generate this quantum; it would not produce any
                 # outputs.  Remove it and all of the outputs it might have
