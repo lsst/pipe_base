@@ -858,6 +858,12 @@ class Pipeline:
             graph.resolve(registry)
         return graph
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v26.",
+        version="v26.0",
+        category=FutureWarning,
+    )
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
         r"""Return a generator of `TaskDef`\s which can be used to create
         quantum graphs.
@@ -904,9 +910,21 @@ class Pipeline:
         )
         graph.add_task(label, taskClass, config)
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v26.",
+        version="v26.0",
+        category=FutureWarning,
+    )
     def __iter__(self) -> Generator[TaskDef, None, None]:
         return self.toExpandedPipeline()
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v26.",
+        version="v26.0",
+        category=FutureWarning,
+    )
     def __getitem__(self, item: str) -> TaskDef:
         # Making a whole graph and then making a TaskDef from that is pretty
         # backwards, but I'm hoping to deprecate this method shortly in favor
