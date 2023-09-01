@@ -100,7 +100,7 @@ class AddTask2(pipeBase.PipelineTask):
     """Example task which overrides runQuantum() method."""
 
     ConfigClass = AddConfig
-    _DefaultName = "add_task"
+    _DefaultName = "add_task_2"
 
     def runQuantum(
         self, butlerQC: pipeBase.QuantumContext, inputRefs: DatasetRef, outputRefs: DatasetRef
@@ -114,33 +114,45 @@ class AddTask2(pipeBase.PipelineTask):
 class PipelineTaskTestCase(unittest.TestCase):
     """A test case for PipelineTask."""
 
-    def _makeDSRefVisit(self, dstype: DatasetType, visitId: int, universe: DimensionUniverse) -> DatasetRef:
+    def _makeDSRefVisit(self, dstype: DatasetType, visitId: int) -> DatasetRef:
         dataId = DataCoordinate.standardize(
             detector="X",
             visit=visitId,
             physical_filter="a",
             band="b",
             instrument="TestInstrument",
-            universe=universe,
+            graph=dstype.dimensions,
         )
         run = "test"
         ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
         return ref
 
-    def _makeQuanta(self, config: pipeBase.PipelineTaskConfig, nquanta: int = 100) -> list[Quantum]:
-        """Create set of Quanta."""
-        universe = DimensionUniverse()
-        connections = config.connections.ConnectionsClass(config=config)
-
-        dstype0 = connections.input.makeDatasetType(universe)
-        dstype1 = connections.output.makeDatasetType(universe)
-
+    def _makeQuanta(
+        self,
+        task_node: pipeBase.pipeline_graph.TaskNode,
+        pipeline_graph: pipeBase.PipelineGraph,
+        nquanta: int = 100,
+    ) -> list[Quantum]:
+        """Create set of Quanta"""
         quanta = []
         for visit in range(nquanta):
-            inputRef = self._makeDSRefVisit(dstype0, visit, universe)
-            outputRef = self._makeDSRefVisit(dstype1, visit, universe)
             quantum = Quantum(
-                inputs={inputRef.datasetType: [inputRef]}, outputs={outputRef.datasetType: [outputRef]}
+                inputs={
+                    pipeline_graph.dataset_types[edge.dataset_type_name].dataset_type: [
+                        self._makeDSRefVisit(
+                            pipeline_graph.dataset_types[edge.dataset_type_name].dataset_type, visit
+                        )
+                    ]
+                    for edge in task_node.inputs.values()
+                },
+                outputs={
+                    pipeline_graph.dataset_types[edge.dataset_type_name].dataset_type: [
+                        self._makeDSRefVisit(
+                            pipeline_graph.dataset_types[edge.dataset_type_name].dataset_type, visit
+                        )
+                    ]
+                    for edge in task_node.outputs.values()
+                },
             )
             quanta.append(quantum)
 
@@ -158,13 +170,18 @@ class PipelineTaskTestCase(unittest.TestCase):
         """Test for AddTask.runQuantum() implementation."""
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
-        connections = task.config.connections.ConnectionsClass(config=task.config)
+        input_name = task.config.connections.input
+        output_name = task.config.connections.output
+
+        pipeline_graph = pipeBase.PipelineGraph()
+        task_node = pipeline_graph.add_task(None, type(task), task.config)
+        pipeline_graph.resolve(dimensions=butler.dimensions, dataset_types={})
 
         # make all quanta
-        quanta = self._makeQuanta(task.config)
+        quanta = self._makeQuanta(task_node, pipeline_graph)
 
         # add input data to butler
-        dstype0 = connections.input.makeDatasetType(butler.dimensions)
+        dstype0 = pipeline_graph.dataset_types[input_name].dataset_type
         for i, quantum in enumerate(quanta):
             ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, ref)
@@ -173,7 +190,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         checked_get = False
         for quantum in quanta:
             butlerQC = pipeBase.QuantumContext(butler, quantum)
-            inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
+            inputRefs, outputRefs = task_node.get_connections().buildDatasetRefs(quantum)
             task.runQuantum(butlerQC, inputRefs, outputRefs)
 
             # Test getting of datasets in different ways.
@@ -210,11 +227,10 @@ class PipelineTaskTestCase(unittest.TestCase):
                     butlerQC.get(outputs[0])
 
         # look at the output produced by the task
-        outputName = connections.output.name
-        dsdata = butler.datasets[outputName]
+        dsdata = butler.datasets[output_name]
         self.assertEqual(len(dsdata), len(quanta))
         for i, quantum in enumerate(quanta):
-            ref = quantum.outputs[outputName][0]
+            ref = quantum.outputs[output_name][0]
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3)
 
     def testChain2Full(self) -> None:
@@ -229,22 +245,27 @@ class PipelineTaskTestCase(unittest.TestCase):
         """Test for two-task chain."""
         butler = ButlerMock()
         config1 = AddConfig()
-        connections1 = config1.connections.ConnectionsClass(config=config1)
+        overall_input_name = config1.connections.input
+        intermediate_name = config1.connections.output
         task1 = AddTask(config=config1)
         config2 = AddConfig()
         config2.addend = 200
-        config2.connections.input = task1.config.connections.output
-        config2.connections.output = "add_output_2"
+        config2.connections.input = intermediate_name
+        overall_output_name = "add_output_2"
+        config2.connections.output = overall_output_name
         task2 = AddTask2(config=config2)
-        connections2 = config2.connections.ConnectionsClass(config=config2)
+
+        pipeline_graph = pipeBase.PipelineGraph()
+        task1_node = pipeline_graph.add_task(None, type(task1), task1.config)
+        task2_node = pipeline_graph.add_task(None, type(task2), task2.config)
+        pipeline_graph.resolve(dimensions=butler.dimensions, dataset_types={})
 
         # make all quanta
-        quanta1 = self._makeQuanta(task1.config)
-        quanta2 = self._makeQuanta(task2.config)
+        quanta1 = self._makeQuanta(task1_node, pipeline_graph)
+        quanta2 = self._makeQuanta(task2_node, pipeline_graph)
 
         # add input data to butler
-        task1Connections = task1.config.connections.ConnectionsClass(config=task1.config)
-        dstype0 = task1Connections.input.makeDatasetType(butler.dimensions)
+        dstype0 = pipeline_graph.dataset_types[overall_input_name].dataset_type
         for i, quantum in enumerate(quanta1):
             ref = quantum.inputs[dstype0.name][0]
             butler.put(100 + i, ref)
@@ -252,26 +273,24 @@ class PipelineTaskTestCase(unittest.TestCase):
         # run task on each quanta
         for quantum in quanta1:
             butlerQC = pipeBase.QuantumContext(butler, quantum)
-            inputRefs, outputRefs = connections1.buildDatasetRefs(quantum)
+            inputRefs, outputRefs = task1_node.get_connections().buildDatasetRefs(quantum)
             task1.runQuantum(butlerQC, inputRefs, outputRefs)
         for quantum in quanta2:
             butlerQC = pipeBase.QuantumContext(butler, quantum)
-            inputRefs, outputRefs = connections2.buildDatasetRefs(quantum)
+            inputRefs, outputRefs = task2_node.get_connections().buildDatasetRefs(quantum)
             task2.runQuantum(butlerQC, inputRefs, outputRefs)
 
         # look at the output produced by the task
-        outputName = task1.config.connections.output
-        dsdata = butler.datasets[outputName]
+        dsdata = butler.datasets[intermediate_name]
         self.assertEqual(len(dsdata), len(quanta1))
         for i, quantum in enumerate(quanta1):
-            ref = quantum.outputs[outputName][0]
+            ref = quantum.outputs[intermediate_name][0]
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3)
 
-        outputName = task2.config.connections.output
-        dsdata = butler.datasets[outputName]
+        dsdata = butler.datasets[overall_output_name]
         self.assertEqual(len(dsdata), len(quanta2))
         for i, quantum in enumerate(quanta2):
-            ref = quantum.outputs[outputName][0]
+            ref = quantum.outputs[overall_output_name][0]
             self.assertEqual(dsdata[ref.dataId], 100 + i + 3 + 200)
 
     def testButlerQC(self):
@@ -280,13 +299,17 @@ class PipelineTaskTestCase(unittest.TestCase):
         """
         butler = ButlerMock()
         task = AddTask(config=AddConfig())
-        connections = task.config.connections.ConnectionsClass(config=task.config)
+        input_name = task.config.connections.input
+
+        pipeline_graph = pipeBase.PipelineGraph()
+        task_node = pipeline_graph.add_task(None, type(task), config=task.config)
+        pipeline_graph.resolve(dimensions=butler.dimensions, dataset_types={})
 
         # make one quantum
-        (quantum,) = self._makeQuanta(task.config, 1)
+        (quantum,) = self._makeQuanta(task_node, pipeline_graph, 1)
 
         # add input data to butler
-        dstype0 = connections.input.makeDatasetType(butler.dimensions)
+        dstype0 = pipeline_graph.dataset_types[input_name].dataset_type
         ref = quantum.inputs[dstype0.name][0]
         butler.put(100, ref)
 
@@ -311,7 +334,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         self.assertEqual(obj, [100, None])
 
         # Use refs from a QuantizedConnection.
-        inputRefs, outputRefs = connections.buildDatasetRefs(quantum)
+        inputRefs, outputRefs = task_node.get_connections().buildDatasetRefs(quantum)
         obj = butlerQC.get(inputRefs)
         self.assertEqual(obj, {"input": 100})
 
