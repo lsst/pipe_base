@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from lsst.daf.butler import DatasetRef, LimitedButler
 
-    from .pipeline import TaskDef
     from .pipeline_graph import TaskNode
     from .pipelineTask import PipelineTask
 
@@ -54,7 +53,7 @@ class TaskFactory(metaclass=ABCMeta):
     @abstractmethod
     def makeTask(
         self,
-        task_node: TaskDef | TaskNode,  # TODO: remove TaskDef on DM-40443.
+        task_node: TaskNode,
         /,
         butler: LimitedButler,
         initInputRefs: Iterable[DatasetRef] | None,
@@ -63,9 +62,8 @@ class TaskFactory(metaclass=ABCMeta):
 
         Parameters
         ----------
-        task_node : `~pipeline_graph.TaskNode` or `TaskDef`
-            Task definition structure.  `TaskDef` support is deprecated and
-            will be removed after v27.
+        task_node : `~pipeline_graph.TaskNode`
+            Task definition structure.
         butler : `lsst.daf.butler.LimitedButler`
             Butler instance used to obtain initialization inputs for task.
         initInputRefs : `~collections.abc.Iterable` of \
