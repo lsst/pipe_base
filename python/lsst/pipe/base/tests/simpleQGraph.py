@@ -32,7 +32,6 @@ from __future__ import annotations
 __all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
 
 import logging
-import warnings
 from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -43,7 +42,7 @@ from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, For
 from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
-from lsst.utils.introspection import find_outside_stacklevel, get_full_type_name
+from lsst.utils.introspection import get_full_type_name
 
 from .. import connectionTypes as cT
 from .._instrument import Instrument
@@ -53,7 +52,7 @@ from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES
 from ..config import PipelineTaskConfig
 from ..connections import PipelineTaskConnections
 from ..graph import QuantumGraph
-from ..pipeline import Pipeline, TaskDef
+from ..pipeline import Pipeline
 from ..pipeline_graph import PipelineGraph, TaskNode
 from ..pipelineTask import PipelineTask
 from ..struct import Struct
@@ -178,28 +177,17 @@ class AddTaskFactoryMock(TaskFactory):
 
     def makeTask(
         self,
-        task_node: TaskDef | TaskNode,
+        task_node: TaskNode,
         /,
         butler: LimitedButler,
         initInputRefs: Iterable[DatasetRef] | None,
     ) -> PipelineTask:
-        if isinstance(task_node, TaskDef):
-            # TODO: remove support on DM-40443.
-            warnings.warn(
-                "Passing TaskDef to TaskFactory is deprecated and will not be supported after v27.",
-                FutureWarning,
-                find_outside_stacklevel("lsst.pipe.base"),
-            )
-            task_class = task_node.taskClass
-            assert task_class is not None
-        else:
-            task_class = task_node.task_class
-        task = task_class(config=task_node.config, initInputs=None, name=task_node.label)
+        task = task_node.task_class(config=task_node.config, initInputs=None, name=task_node.label)
         task.taskFactory = self  # type: ignore
         return task
 
 
-def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskDef] | PipelineGraph) -> None:
+def registerDatasetTypes(registry: Registry, pipeline: Pipeline | PipelineGraph) -> None:
     """Register all dataset types used by tasks in a registry.
 
     Copied and modified from `PreExecInit.initializeDatasetTypes`.
@@ -208,12 +196,9 @@ def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskD
     ----------
     registry : `~lsst.daf.butler.Registry`
         Registry instance.
-    pipeline : `.Pipeline`, `~collections.abc..Iterable` of `.TaskDef`, or \
-            `.pipeline_graph.PipelineGraph`
+    pipeline : `.Pipeline`, or `.pipeline_graph.PipelineGraph`
         The pipeline whose dataset types should be registered, as a `.Pipeline`
-        instance, `.PipelineGraph` instance, or iterable of `.TaskDef`
-        instances.  Support for `.TaskDef` is deprecated and will be removed
-        after v27.
+        instance or `.PipelineGraph` instance.
     """
     match pipeline:
         case PipelineGraph() as pipeline_graph:
@@ -221,16 +206,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskD
         case Pipeline():
             pipeline_graph = pipeline.to_graph()
         case _:
-            warnings.warn(
-                "Passing TaskDefs is deprecated and will not be supported after v27.",
-                category=FutureWarning,
-                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
-            )
-            pipeline_graph = PipelineGraph()
-            for task_def in pipeline:
-                pipeline_graph.add_task(
-                    task_def.label, task_def.taskClass, task_def.config, connections=task_def.connections
-                )
+            raise TypeError(f"Unexpected pipeline argument value: {pipeline}.")
     pipeline_graph.resolve(registry)
     dataset_types = [node.dataset_type for node in pipeline_graph.dataset_types.values()]
     dataset_types.append(
