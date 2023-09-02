@@ -44,6 +44,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, final
 
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import (
     Butler,
     CollectionType,
@@ -84,6 +85,13 @@ class QuantumGraphBuilderError(Exception):
     pass
 
 
+# TODO: remove class and switch downstream inheritance to just
+# QuantumGraphBuilderError on DM-40443.
+@deprecated(
+    "Deprecated in favor of QuantumGraphBuilderError and will be removed after v26.",
+    version="v26.0",
+    category=FutureWarning,
+)
 class GraphBuilderError(QuantumGraphBuilderError):
     """Backwards-compatibility near-alias for QuantumGraphBuilderError."""
 
