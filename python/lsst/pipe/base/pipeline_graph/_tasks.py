@@ -412,6 +412,35 @@ class TaskInitNode:
                 "(see PipelineGraph.import_and_configure)."
             ) from None
 
+    @staticmethod
+    def _unreduce(kwargs: dict[str, Any]) -> TaskInitNode:
+        """Unpickle a `TaskInitNode` instance."""
+        # Connections classes are not pickleable, so we can't use the
+        # dataclass-provided pickle implementation of _TaskNodeImportedData,
+        # and it's easier to just call its `configure` method than to fix it.
+        if (imported_data_args := kwargs.pop("imported_data_args", None)) is not None:
+            imported_data = _TaskNodeImportedData.configure(*imported_data_args)
+        else:
+            imported_data = None
+        return TaskInitNode(imported_data=imported_data, **kwargs)
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], TaskInitNode], tuple[dict[str, Any]]]:
+        kwargs = dict(
+            key=self.key,
+            inputs=self.inputs,
+            outputs=self.outputs,
+            config_output=self.config_output,
+            task_class_name=getattr(self, "_task_class_name", None),
+            config_str=getattr(self, "_config_str", None),
+        )
+        if hasattr(self, "_imported_data"):
+            kwargs["imported_data_args"] = (
+                self.label,
+                self.task_class,
+                self.config,
+            )
+        return (self._unreduce, (kwargs,))
+
 
 @immutable
 class TaskNode:
@@ -444,7 +473,7 @@ class TaskNode:
         The special runtime output that persists the task's logs.
     metadata_output : `WriteEdge`
         The special runtime output that persists the task's metadata.
-    dimensions : `lsst.daf.butler.DimensionGroup` or `frozenset`
+    dimensions : `lsst.daf.butler.DimensionGroup` or `frozenset` [ `str` ]
         Dimensions of the task.  If a `frozenset`, the dimensions have not been
         resolved by a `~lsst.daf.butler.DimensionUniverse` and cannot be safely
         compared to other sets of dimensions.
@@ -461,7 +490,7 @@ class TaskNode:
     - ``task_class_name``
     - ``bipartite`` (see `NodeType.bipartite`)
     - ``task_class`` (only if `is_imported` is `True`)
-    - ``config`` (only if `is_importd` is `True`)
+    - ``config`` (only if `is_imported` is `True`)
     """
 
     def __init__(
@@ -474,7 +503,7 @@ class TaskNode:
         outputs: Mapping[str, WriteEdge],
         log_output: WriteEdge | None,
         metadata_output: WriteEdge,
-        dimensions: DimensionGroup | frozenset,
+        dimensions: DimensionGroup | frozenset[str],
     ):
         self.key = key
         self.init = init
@@ -938,6 +967,28 @@ class TaskNode:
             Raised if `is_imported` is `False`.
         """
         return self.init._get_imported_data()
+
+    @staticmethod
+    def _unreduce(kwargs: dict[str, Any]) -> TaskNode:
+        """Unpickle a `TaskNode` instance."""
+        return TaskNode(**kwargs)
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], TaskNode], tuple[dict[str, Any]]]:
+        return (
+            self._unreduce,
+            (
+                dict(
+                    key=self.key,
+                    init=self.init,
+                    prerequisite_inputs=self.prerequisite_inputs,
+                    inputs=self.inputs,
+                    outputs=self.outputs,
+                    log_output=self.log_output,
+                    metadata_output=self.metadata_output,
+                    dimensions=self._dimensions,
+                ),
+            ),
+        )
 
 
 def _diff_edge_mapping(
