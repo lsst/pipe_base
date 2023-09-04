@@ -41,6 +41,7 @@ from lsst.daf.butler import (
     DimensionUniverse,
     Registry,
 )
+from lsst.pex.config import FieldValidationError
 from lsst.utils.classes import immutable
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -147,6 +148,9 @@ class _TaskNodeImportedData:
             # validated yet.
             try:
                 config.validate()
+            except FieldValidationError as err:
+                err.fullname = f"{label}: {err.fullname}"
+                raise err
             except Exception as err:
                 raise ValueError(
                     f"Configuration validation failed for task {label!r} (see chained exception)."
