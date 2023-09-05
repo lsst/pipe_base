@@ -1,5 +1,4 @@
 from . import automatic_connection_constants, connectionTypes, pipeline_graph, pipelineIR
-from ._check_qg_outputs import *
 from ._dataset_handle import *
 from ._instrument import *
 from ._observation_dimension_packer import *
