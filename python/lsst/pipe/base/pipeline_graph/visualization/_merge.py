@@ -35,7 +35,7 @@ __all__ = (
 
 import dataclasses
 from collections import defaultdict
-from typing import Any, Generic, Iterable, TypeVar
+from typing import Any, Iterable, TypeVar
 
 import networkx
 import networkx.algorithms.dag
@@ -144,9 +144,9 @@ def merge_graph_intermediates(
     "Parallel" nodes here are nodes that have the exact same predecessor and
     successors.
     """
-    groups: dict[_MergeKey[NodeKey], set[NodeKey]] = defaultdict(set)
+    groups: dict[_MergeKey, set[NodeKey]] = defaultdict(set)
     for node, state in xgraph.nodes.items():
-        merge_key = _MergeKey[NodeKey].from_node_state(
+        merge_key = _MergeKey.from_node_state(
             state,
             xgraph.predecessors(node),
             xgraph.successors(node),
@@ -175,12 +175,12 @@ def merge_graph_intermediates(
 
 
 @dataclasses.dataclass(frozen=True)
-class _MergeKey(Generic[_C]):
+class _MergeKey:
     """A helper class for merge algorithms that is used as a dictionary key
     when grouping nodes that may be merged by their attributes.
     """
 
-    parents: frozenset[NodeKey]
+    parents: frozenset[Any]
     """Nodes of the original graph that are successors or predecessors of
     the nodes being considered for merging.
     """
@@ -202,7 +202,7 @@ class _MergeKey(Generic[_C]):
     this is a dataset type node group.
     """
 
-    children: frozenset[_C]
+    children: frozenset[Any]
     """Nodes that are predecessors or successors (the opposite of ``parents``
     of the nodes being considered for merging.
 
@@ -216,10 +216,10 @@ class _MergeKey(Generic[_C]):
     def from_node_state(
         cls,
         state: dict[str, Any],
-        parents: Iterable[NodeKey],
+        parents: Iterable[_P],
         children: Iterable[_C],
         options: NodeAttributeOptions,
-    ) -> _MergeKey[_C]:
+    ) -> _MergeKey:
         """Construct from a NetworkX node attribute state dictionary.
 
         Parameters
@@ -244,15 +244,11 @@ class _MergeKey(Generic[_C]):
         )
 
 
-_TreeGroupMergeKey = _MergeKey["_TreeGroupMergeKey"]
-_TreeApplyMergeKey = _MergeKey["_TreeApplyMergeKey"]
-
-
 def _make_tree_merge_groups(
     xgraph: networkx.DiGraph | networkx.MultiDiGraph,
     options: NodeAttributeOptions,
     depth: int,
-) -> list[dict[_TreeGroupMergeKey, set[NodeKey]]]:
+) -> list[dict[_MergeKey, set[NodeKey]]]:
     """First-stage implementation of `merge_graph_input_trees` and
     (when run on the reversed graph) `merge_graph_output_trees`.
     """
@@ -263,7 +259,7 @@ def _make_tree_merge_groups(
     # corresponding to a different depth for the trees it represents.  We start
     # with a special empty dict for "0-depth trees", since that makes
     # result[depth] valid and hence off-by-one errors less likely.
-    result: list[dict[_TreeGroupMergeKey, set[NodeKey]]] = [{}]
+    result: list[dict[_MergeKey, set[NodeKey]]] = [{}]
     if depth == 0:
         return result
     # We start with the nodes that have no predecessors in the graph.
@@ -272,14 +268,14 @@ def _make_tree_merge_groups(
     # with an empty dict.  All of these initial nodes are valid trees,
     # since they're just single nodes.
     first_generation = next(networkx.algorithms.dag.topological_generations(xgraph))
-    current_candidates: dict[NodeKey, dict[NodeKey, _TreeGroupMergeKey]] = dict.fromkeys(first_generation, {})
+    current_candidates: dict[NodeKey, dict[NodeKey, _MergeKey]] = dict.fromkeys(first_generation, {})
     # Set up an outer loop over tree depth; we'll construct a new set of
     # candidates at each iteration.
     while current_candidates:
         # As we go, we'll remember nodes that have just one predecessor, as
         # those predecessors might be the roots of slightly taller trees.
         # We store the successors and their merge keys under them.
-        next_candidates: dict[NodeKey, dict[NodeKey, _TreeGroupMergeKey]] = defaultdict(dict)
+        next_candidates: dict[NodeKey, dict[NodeKey, _MergeKey]] = defaultdict(dict)
         # We also want to track the nodes the level up that are not trees
         # because some node has both them and some other node as a
         # predecessor.
@@ -287,14 +283,14 @@ def _make_tree_merge_groups(
         # Make a dictionary for the results at this depth, then start the
         # inner iteration over candidates and (after the first iteration)
         # their children.
-        result_for_depth: dict[_TreeGroupMergeKey, set[NodeKey]] = defaultdict(set)
+        result_for_depth: dict[_MergeKey, set[NodeKey]] = defaultdict(set)
         for node, children in current_candidates.items():
             # Make a _TreeMergeKey for this node and add it to the results for
             # this depth.  Two nodes with the same _TreeMergeKey are roots of
             # isomorphic trees that have the same predecessor(s), and can be
             # merged (with isomorphism defined as both both structure and
             # whatever comparisons are in 'options').
-            merge_key = _TreeGroupMergeKey.from_node_state(
+            merge_key = _MergeKey.from_node_state(
                 xgraph.nodes[node], xgraph.successors(node), children.values(), options
             )
             result_for_depth[merge_key].add(node)
@@ -317,14 +313,14 @@ def _make_tree_merge_groups(
 
 def _apply_tree_merges(
     xgraph: networkx.DiGraph | networkx.MultiDiGraph,
-    groups: list[dict[_TreeGroupMergeKey, set[NodeKey]]],
+    groups: list[dict[_MergeKey, set[NodeKey]]],
 ) -> None:
     """Second-stage implementation of `merge_graph_input_trees` and
     `merge_graph_output_trees`.
     """
     replacements: dict[NodeKey, MergedNodeKey] = {}
     for group in reversed(groups):
-        new_group: dict[_TreeApplyMergeKey, set[NodeKey]] = defaultdict(set)
+        new_group: dict[_MergeKey, set[NodeKey]] = defaultdict(set)
         for merge_key, members in group.items():
             if merge_key.parents & replacements.keys():
                 replaced_parents = frozenset(replacements.get(p, p) for p in merge_key.parents)
