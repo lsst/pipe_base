@@ -176,6 +176,13 @@ class PipelineGraph:
         return self._task_subsets
 
     @property
+    def is_fully_resolved(self) -> bool:
+        """Whether all of this graph's nodes are resolved."""
+        return self._universe is not None and all(
+            self.dataset_types.is_resolved(k) for k in self.dataset_types
+        )
+
+    @property
     def is_sorted(self) -> bool:
         """Whether this graph's tasks and dataset types are topologically
         sorted with the exact same deterministic tiebreakers that `sort` would
@@ -1550,6 +1557,9 @@ class PipelineGraph:
             node_value: TaskInitNode | TaskNode | DatasetTypeNode | None = state.pop("instance")
             if node_value is not None:
                 state.update(node_value._to_xgraph_state())
+            else:
+                # This is a dataset type node that is not resolved.
+                state["bipartite"] = NodeType.DATASET_TYPE.bipartite
         if not skip_edges:
             for _, _, state in xgraph.edges(data=True):
                 edge: Edge | None = state.pop("instance", None)
