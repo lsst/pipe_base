@@ -1,4 +1,0 @@
-* Execution butler creation has been changed to use the DatasetRefs from the graph rather than creating new registry entries from the dataIDs.
-  This is possible now that the graph is always created with resolved refs and ensures that provenance is consistent between the graph and the outputs.
-* This change to execution butler required that ``ButlerQuantumContext.put()`` no longer unresolves the graph ``DatasetRef`` (otherwise there would be a dataset ID mismatch).
-  This results in the dataset always using the output run defined in the graph even if the Butler was created with a different default run.

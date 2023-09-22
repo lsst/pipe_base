@@ -1,3 +1,113 @@
+lsst-pipe-base v26.0.0 (2023-09-22)
+===================================
+
+New Features
+------------
+
+- Added system for obtaining data ID packer objects from the combination of an ``Instrument`` class and configuration. (`DM-31924 <https://jira.lsstcorp.org/browse/DM-31924>`_)
+- Added a ``PipelineGraph`` class that represents a Pipeline with all configuration overrides applied as a graph. (`DM-33027 <https://jira.lsstcorp.org/browse/DM-33027>`_)
+- Added new command ``butler transfer-from-graph`` to transfer results of execution with Quantum-backed butler. (`DM-33497 <https://jira.lsstcorp.org/browse/DM-33497>`_)
+- ``buildExecutionButler`` method now supports input graph with all dataset references resolved. (`DM-37582 <https://jira.lsstcorp.org/browse/DM-37582>`_)
+- Added convince methods to the Python api for Pipelines.
+  These methods allow merging pipelines, adding labels to / removing labels from subsets, and finding subsets containing a specified label. (`DM-37655 <https://jira.lsstcorp.org/browse/DM-37655>`_)
+- An ``Instrument`` can now specify the dataset type definition that it would like to use for raw data.
+  This can be done by setting the ``raw_definition`` class property to a tuple of the dataset type name, the dimensions to use for this dataset type, and the storage class name. (`DM-37950 <https://jira.lsstcorp.org/browse/DM-37950>`_)
+- Modified ``InMemoryDatasetHandle`` to allow it to be constructed with keyword arguments that will be converted to the relevant DataId. (`DM-38091 <https://jira.lsstcorp.org/browse/DM-38091>`_)
+- Modified ``InMemoryDatasetHandle`` to allow it to be configured to always deep copy the Python object on ``get()``. (`DM-38694 <https://jira.lsstcorp.org/browse/DM-38694>`_)
+- Revived bit-rotted support for "mocked" ``PipelineTask`` execution and moved it here (from ``ctrl_mpexec``). (`DM-38952 <https://jira.lsstcorp.org/browse/DM-38952>`_)
+- Formalized support for modifying connections in ``PipelineTaskConnections.__init__`` implementations.
+
+  Connections can now be added, removed, or replaced with normal attribute syntax.
+  Removing entries from e.g. ``self.inputs`` in ``__init__`` still works for backwards compatibility, but deleting attributes is generally preferred.
+  The task dimensions can also be replaced or modified in place in ``__init__``. (`DM-38953 <https://jira.lsstcorp.org/browse/DM-38953>`_)
+- Added a method on ``PipelineTaskConfig`` objects named ``applyConfigOverrides``.
+  This method is called by the system executing ``PipelineTask``\ s within a pipeline, and is passed the instrument and config overrides defined within the pipeline for that task. (`DM-39100 <https://jira.lsstcorp.org/browse/DM-39100>`_)
+- Add ``Instrument.make_default_dimension_packer`` to restore simple access to the default data ID packer for an instrument. (`DM-39453 <https://jira.lsstcorp.org/browse/DM-39453>`_)
+- The back-end to quantum graph loading has been optimized such that duplicate objects are not created in memory, but create shared references.
+  This results in a large decrease in memory usage, and decrease in load times. (`DM-39582 <https://jira.lsstcorp.org/browse/DM-39582>`_)
+- * A new class ``ExecutionResources`` has been created to record the number of cores and memory that has been allocated for the execution of a quantum.
+  * ``QuantumContext`` (newly renamed from ``ButlerQuantumContext``) now has a ``resources`` property that can be queried by a task in ``runQuantum``.
+    This can be used to tell the task that it can use multiple cores or possibly should make a more efficient use of the available memory resources. (`DM-39661 <https://jira.lsstcorp.org/browse/DM-39661>`_)
+- Made it possible to deprecate ``PipelineTask`` connections. (`DM-39902 <https://jira.lsstcorp.org/browse/DM-39902>`_)
+- Parameters defined in a Pipeline can now be used within a config Python block as well as within config files loaded by a Pipeline. (`DM-40198 <https://jira.lsstcorp.org/browse/DM-40198>`_)
+- When looking up prerequisite inputs with skypix data IDs (e.g., reference catalogs) for a quantum whose data ID is not spatial, use the union of the spatial regions of the input and output datasets as a constraint.
+
+  This keeps global sequence-point tasks from being given all such datasets in the input collections. (`DM-40243 <https://jira.lsstcorp.org/browse/DM-40243>`_)
+- Added support for init-input/output datasets in PipelineTask mocking. (`DM-40381 <https://jira.lsstcorp.org/browse/DM-40381>`_)
+
+
+API Changes
+-----------
+
+- Several changes to API to add support for ``QuantumBackedButler``:
+
+  * Added a ``globalInitOutputRefs`` method to the ``QuantumGraph`` class which returns global per-graph output dataset references (e.g. for "packages" dataset type).
+  * ``ButlerQuantumContext`` can work with either ``Butler`` or ``LimitedButler``.
+    Its ``__init__`` method should not be used directly, instead one of the two new class methods should be used - ``from_full`` or ``from_limited``.
+  * The ``ButlerQuantumContext.registry`` attribute was removed, and ``ButlerQuantumContext.dimensions`` has been added to hold the ``DimensionUniverse``.
+  * The abstract method ``TaskFactory.makeTask`` was updated and simplified to accept ``TaskDef`` and ``LimitedButler``. (`DM-33497 <https://jira.lsstcorp.org/browse/DM-33497>`_)
+- * ``ButlerQuantumContext`` was updated to only need a ``LimitedButler``.
+  * Factory methods ``from_full`` and ``from_limited`` were dropped, a constructor accepting a ``LimitedButler`` instance is now used to make instances. (`DM-37704 <https://jira.lsstcorp.org/browse/DM-37704>`_)
+- - Added method ``QuantumGraph.updateRun``.
+    This new method updates run collection name and dataset IDs for all output and intermediate datasets in a graph, allowing the graph to be reused.
+  - ``GraphBuilder.makeGraph`` method dropped the ``resolveRefs`` argument, the builder now always makes resolved references.
+    The ``run`` argument is now required to be non-empty string. (`DM-38780 <https://jira.lsstcorp.org/browse/DM-38780>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed a bug that led to valid storage class conversions being rejected when using execution butler. (`DM-38614 <https://jira.lsstcorp.org/browse/DM-38614>`_)
+- Fixed a bug related to checking component datasets in execution butler creation, introduced in `DM-38614 <https://jira.lsstcorp.org/browse/DM-38614>`_. (`DM-38888 <https://jira.lsstcorp.org/browse/DM-38888>`_)
+- Fixed handling of storage classes in ``QuantumGraph`` generation.
+
+  This could lead to a failure downstream in execution butler creation, and would likely have led to problems with Quantum-Backed Butler usage as well. (`DM-39198 <https://jira.lsstcorp.org/browse/DM-39198>`_)
+- Fixed a bug in ``QuantumGraph`` generation that could result in datasets from ``skip_existing_in`` collections being used as outputs, and another that prevented ``QuantumGraph`` generation when a ``skip_existing_in`` collection has some outputs from a failed quantum. (`DM-39672 <https://jira.lsstcorp.org/browse/DM-39672>`_)
+- Fixed a bug in quantum graph builder which resulted in missing datastore records for calibration datasets.
+  This bug was causing failures for ``pipetask`` execution with quantum-backed butler. (`DM-40254 <https://jira.lsstcorp.org/browse/DM-40254>`_)
+- Ensured QuantumGraphs are built with datastore records for init-input datasets that might have been produced by another task in the pipeline, but will not be because all quanta for that task were skipped due to existing outputs. (`DM-40381 <https://jira.lsstcorp.org/browse/DM-40381>`_)
+- ``QuantumGraph.updateRun()`` method was fixed to update dataset ID in references which have their run collection changed. (`DM-40392 <https://jira.lsstcorp.org/browse/DM-40392>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Modified the calling signature for the ``Task`` constructor such that only the ``config`` parameter can be positional.
+  All other parameters must now be keyword parameters. (`DM-15325 <https://jira.lsstcorp.org/browse/DM-15325>`_)
+- The ``Struct`` class is now a subclass of ``SimpleNamespace``. (`DM-36649 <https://jira.lsstcorp.org/browse/DM-36649>`_)
+- The ``DuplicateOutputError`` logger now produces a more helpful error message. (`DM-38234 <https://jira.lsstcorp.org/browse/DM-38234>`_)
+- * Execution butler creation has been changed to use the ``DatasetRefs`` from the graph rather than creating new registry entries from the dataIDs.
+    This is possible now that the graph is always created with resolved refs and ensures that provenance is consistent between the graph and the outputs.
+  * This change to execution butler required that ``ButlerQuantumContext.put()`` no longer unresolves the graph ``DatasetRef`` (otherwise there would be a dataset ID mismatch).
+    This results in the dataset always using the output run defined in the graph even if the Butler was created with a different default run. (`DM-38779 <https://jira.lsstcorp.org/browse/DM-38779>`_)
+- Stopped sorting Pipeline elements on read.
+
+  Ordering specified in pipeline files is now preserved instead. (`DM-38953 <https://jira.lsstcorp.org/browse/DM-38953>`_)
+- Loosened documentation of ``QuantumGraph.inputQuanta`` and ``outputQuanta``.
+  They are not guaranteed to be (and currently are not) lists, so the new documentation describes them as iterables.
+
+  Documented ``universe`` constructor parameter to ``QuantumGraph``.
+
+  Brought ``QuantumGraph`` property docs in line with DM standards.
+
+
+An API Removal or Deprecation
+-----------------------------
+
+- * Removed deprecated kwargs parameter from in-memory equivalent dataset handle.
+  * Removed deprecated ``pipe_base`` ``timer`` module (it was moved to ``utils``).
+  * Removed the warning from deprecated ``PipelineIR._read_imports`` and replaced with a raise.
+  * Removed the warning from deprecated ``Pipeline._parse_file_specifier`` and replaced with a raise.
+  * Removed deprecated methods from ``TaskMetadata``. (`DM-37534 <https://jira.lsstcorp.org/browse/DM-37534>`_)
+- - The ``PipelineTaskConfig.saveMetadata`` field is now deprecated and will be removed after v26.
+    Its value is ignored and task metadata is always saved.
+  - The ``ResourceConfig`` class has been removed; it was never used. (`DM-39377 <https://jira.lsstcorp.org/browse/DM-39377>`_)
+- Deprecated the ``reconstituteDimensions`` argument from ``QuantumNode.from_simple`` (`DM-39582 <https://jira.lsstcorp.org/browse/DM-39582>`_)
+- ``ButlerQuantumContext`` has been renamed to ``QuantumContext``.
+  This reflects the additional functionality it now has. (`DM-39661 <https://jira.lsstcorp.org/browse/DM-39661>`_)
+- Removed support for reading quantum graphs in pickle format. (`DM-40032 <https://jira.lsstcorp.org/browse/DM-40032>`_)
+
+
 lsst-pipe-base v25.0.0 (2023-02-28)
 ===================================
 
