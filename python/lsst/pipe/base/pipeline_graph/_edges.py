@@ -713,7 +713,7 @@ class WriteEdge(Edge):
             if not current.is_compatible_with(dataset_type):
                 raise IncompatibleDatasetTypeError(
                     f"Incompatible definition for output dataset type {self.parent_dataset_type_name!r}: "
-                    f"task {self.task_label!r} has {current}, but data repository has {dataset_type}."
+                    f"task {self.task_label!r} has {dataset_type}, but data repository has {current}."
                 )
             return current
         else:
