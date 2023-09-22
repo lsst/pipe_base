@@ -1,2 +1,0 @@
-``ButlerQuantumContext`` has been renamed to ``QuantumContext``.
-This reflects the additional functionality it now has.

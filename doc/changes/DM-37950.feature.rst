@@ -1,2 +1,0 @@
-An ``Instrument`` can now specify the dataset type definition that it would like to use for raw data.
-This can be done by setting the ``raw_definition`` class property to a tuple of the dataset type name, the dimensions to use for this dataset type, and the storage class name.
