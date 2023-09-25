@@ -22,10 +22,10 @@ classifiers = [
 ]
 keywords=["lsst"]
 dependencies = [
-    "lsst-resources [s3]",
-    "lsst-utils",
-    "lsst-daf-butler",
-    "lsst-pex-config",
+    "lsst-resources [s3] >=26.0,<26.100",
+    "lsst-utils >=26.0,<26.100",
+    "lsst-daf-butler >=26.0,<26.100",
+    "lsst-pex-config >=26.0,<26.100",
     "astropy",
     "pydantic <3.0",
     "networkx",
