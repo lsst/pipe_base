@@ -35,7 +35,8 @@ __all__ = (
 
 import dataclasses
 from collections import defaultdict
-from typing import Any, Iterable, TypeVar
+from collections.abc import Iterable
+from typing import Any, TypeVar
 
 import networkx
 import networkx.algorithms.dag
