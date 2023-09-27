@@ -145,9 +145,6 @@ class Struct(SimpleNamespace):
         """
         return Struct(**self.getDict())
 
-    def __eq__(self, other: Any) -> bool:
-        return self.__dict__ == other.__dict__
-
     def __len__(self) -> int:
         return len(self.__dict__)
 
