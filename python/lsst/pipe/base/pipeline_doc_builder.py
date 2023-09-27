@@ -376,7 +376,7 @@ class PipelineDocBuilder(_DocPaths):
     def __call__(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         if task_defs is None:
             task_defs = list(self.pipeline)
-        self.write_expanded_pipeline(task_defs)
+        self.pipeline.write_to_uri(self.yaml_path.parent)
         self.write_dot(task_defs)
         self.write_rst(task_defs)
 
@@ -405,23 +405,6 @@ class PipelineDocBuilder(_DocPaths):
         yield (self.graph_path, self.dot_path)
         for task_paths in self.tasks.values():
             yield (task_paths.graph_path, task_paths.dot_path)
-
-    def write_expanded_pipeline(self, task_defs: Sequence[TaskDef] | None = None) -> None:
-        """Write the expanded pipeline.
-
-        This just calls `Pipeline.write_to_uri` with ``expand=True``.
-
-        Parameters
-        ----------
-        task_defs : `Sequence` [ `TaskDef` ], optional
-            The result of a call to `Pipeline.toExpandedPipeline`, captured in
-            a sequence.  May be `None` (default) to expand internally; provided
-            as a way for calling code to only expand the pipeline once.
-        """
-        if task_defs is None:
-            task_defs = list(self.pipeline)
-        self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
-        self.pipeline.write_to_uri(self.yaml_path.parent, expand=True, task_defs=task_defs)
 
     def write_dot(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         """Write the GraphViz DOT representations of the pipeline and its
