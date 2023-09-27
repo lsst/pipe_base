@@ -608,7 +608,9 @@ class PackagePipelinesDocBuilder(_DocPaths):
     def _write_index_rst_standalone(
         cls, target_path: Path, relative_pipeline_rst_paths: Iterable[Path]
     ) -> None:
-        """Implementation of `write_index_rst`.
+        """Write Sphinx index files.
+
+        Implementation of `write_index_rst`.
 
         This is a classmethod so it can also be called by `scons_script`
         without reconstructing all nested `PipelineDocBuilder` instances, with
@@ -665,8 +667,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
         return str(source_yaml.relative_to(source_root).with_suffix(""))
 
     def scons_generate(self, env, graph_action="dot ${SOURCE} -Tsvg -o ${TARGET}"):  # type: ignore
-        """A generator for SCons actions that build the documentation for all
-        pipelines in a package.
+        """Build documentation for all pipelines in a package using SCons.
 
         Parameters
         ----------
@@ -714,7 +715,6 @@ class PackagePipelinesDocBuilder(_DocPaths):
 
         Examples
         --------
-
         Usage in a ``doc/SConscript`` file, where ``lsst.drp.pipe`` is the
         name of the package, and the environment object and management of
         top-level tarets comes from `lsst.sconsUtils`::
