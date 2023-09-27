@@ -34,8 +34,7 @@ import unittest
 
 import lsst.pipe.base.connectionTypes as cT
 import lsst.utils.tests
-from lsst.ctrl.mpexec.dotTools import pipeline2dot
-from lsst.pipe.base import Pipeline, PipelineTask, PipelineTaskConfig, PipelineTaskConnections
+from lsst.pipe.base import Pipeline, PipelineTask, PipelineTaskConfig, PipelineTaskConnections, pipeline2dot
 
 
 class ExamplePipelineTaskConnections(PipelineTaskConnections, dimensions=()):
