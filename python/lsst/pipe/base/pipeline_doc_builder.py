@@ -36,11 +36,10 @@ __all__ = ("PackagePipelinesDocBuilder", "PipelineDocBuilder")
 import argparse
 import contextlib
 import dataclasses
-import io
 import os
 import textwrap
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, Optional, Sequence, TextIO, Tuple
 
 from .dotTools import pipeline2dot
 from .pipeline import Pipeline, TaskDef
@@ -108,7 +107,7 @@ class _DocPaths:
 
     @staticmethod
     @contextlib.contextmanager
-    def _mkdir_and_open(filename: Path) -> Iterator[io.TextIO]:
+    def _mkdir_and_open(filename: Path) -> Iterator[TextIO]:
         """Return a context manager that opens a file for writing after first
         ensuring its parent directory exists.
 
@@ -119,7 +118,7 @@ class _DocPaths:
 
         Returns
         -------
-        cm : `contextlib.ContextManager` [ `io.TextIO` ]
+        cm : `contextlib.ContextManager` [ `typing.TextIO` ]
             Context manager wrapping a text file open for writing.
         """
         filename.parent.mkdir(parents=True, exist_ok=True)
@@ -493,7 +492,7 @@ class PipelineDocBuilder(_DocPaths):
             self.tasks[task_def.label].write_rst(self.name, task_def)
 
     @classmethod
-    def scons_script(cls, args):
+    def scons_script(cls, args: argparse.Namespace) -> None:
         """Command-line script used to invoke the builder by SCons.
 
         This script builds the docs for a single pipeline.
@@ -606,7 +605,9 @@ class PackagePipelinesDocBuilder(_DocPaths):
         )
 
     @classmethod
-    def _write_index_rst_standalone(cls, target_path: Path, relative_pipeline_rst_paths: Iterable[Path]):
+    def _write_index_rst_standalone(
+        cls, target_path: Path, relative_pipeline_rst_paths: Iterable[Path]
+    ) -> None:
         """Implementation of `write_index_rst`.
 
         This is a classmethod so it can also be called by `scons_script`
@@ -630,7 +631,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
                 buffer.write(f"   {path}\n")
 
     @classmethod
-    def scons_script(cls, args):
+    def scons_script(cls, args: argparse.Namespace) -> None:
         """Command-line script used to invoke the builder by SCons.
 
         This script builds only the index reStructuredText file, not the
@@ -663,7 +664,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
         """
         return str(source_yaml.relative_to(source_root).with_suffix(""))
 
-    def scons_generate(self, env, graph_action="dot ${SOURCE} -Tsvg -o ${TARGET}"):
+    def scons_generate(self, env, graph_action="dot ${SOURCE} -Tsvg -o ${TARGET}"):  # type: ignore
         """A generator for SCons actions that build the documentation for all
         pipelines in a package.
 
@@ -782,7 +783,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
         )
 
 
-def main(argv):
+def main(argv: Sequence[str]) -> None:
     """Entry point for command-line invocations used as SCons actions.
 
     Parameters
