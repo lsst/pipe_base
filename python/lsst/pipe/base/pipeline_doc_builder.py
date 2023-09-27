@@ -38,8 +38,9 @@ import contextlib
 import dataclasses
 import os
 import textwrap
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional, Sequence, TextIO, Tuple
+from typing import TextIO
 
 from .dotTools import pipeline2dot
 from .pipeline import Pipeline, TaskDef
@@ -301,7 +302,7 @@ class PipelineDocBuilder(_DocPaths):
     """Path to the rendered graph for the pipeline.
     """
 
-    tasks: Dict[str, _TaskInPipelineDocBuilder] = dataclasses.field(default_factory=dict)
+    tasks: dict[str, _TaskInPipelineDocBuilder] = dataclasses.field(default_factory=dict)
     """Mapping of associated builders for each task in the pipeline.
 
     Keys are task labels.
@@ -366,7 +367,7 @@ class PipelineDocBuilder(_DocPaths):
             },
         )
 
-    def __call__(self, task_defs: Optional[Sequence[TaskDef]] = None) -> None:
+    def __call__(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         if task_defs is None:
             task_defs = list(self.pipeline)
         self.write_expanded_pipeline(task_defs)
@@ -388,7 +389,7 @@ class PipelineDocBuilder(_DocPaths):
             yield task_paths.config_path
             yield task_paths.dot_path
 
-    def iter_graph_dot_paths(self) -> Iterator[Tuple[Path, Path]]:
+    def iter_graph_dot_paths(self) -> Iterator[tuple[Path, Path]]:
         """Iterate over pairs of ``(graph_path, dot_path)`` for the pipeline
         and all of its tasks.
 
@@ -399,7 +400,7 @@ class PipelineDocBuilder(_DocPaths):
         for task_paths in self.tasks.values():
             yield (task_paths.graph_path, task_paths.dot_path)
 
-    def write_expanded_pipeline(self, task_defs: Optional[Sequence[TaskDef]] = None) -> None:
+    def write_expanded_pipeline(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         """Write the expanded pipeline.
 
         This just calls `Pipeline.write_to_uri` with ``expand=True``.
@@ -416,7 +417,7 @@ class PipelineDocBuilder(_DocPaths):
         self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
         self.pipeline.write_to_uri(self.yaml_path.parent, expand=True, task_defs=task_defs)
 
-    def write_dot(self, task_defs: Optional[Sequence[TaskDef]] = None) -> None:
+    def write_dot(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         """Write the GraphViz DOT representations of the pipeline and its
         tasks.
 
@@ -434,7 +435,7 @@ class PipelineDocBuilder(_DocPaths):
         for task_def in task_defs:
             self.tasks[task_def.label].write_dot(task_def)
 
-    def write_rst(self, task_defs: Optional[Sequence[TaskDef]] = None) -> None:
+    def write_rst(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         """Write the reStructuredText files for the pipeline and its tasks.
 
         Parameters
@@ -528,7 +529,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
     not a direct call to the constructor.
     """
 
-    pipelines: Dict[Path, PipelineDocBuilder]
+    pipelines: dict[Path, PipelineDocBuilder]
     """Builders for each pipeline, keyed by the path to the ``yaml`` source
     file for it (i.e. by convention a path in the packages ``pipelines``
     directory).
@@ -544,7 +545,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
         dot_root: Path,
         graph_root: Path,
         graph_suffix: str = ".svg",
-        rst_path: Optional[Path] = None,
+        rst_path: Path | None = None,
     ) -> PackagePipelinesDocBuilder:
         """Construct by walking a directory tree containing source ``yaml``
         pipeline files.
