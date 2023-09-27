@@ -46,7 +46,10 @@ from typing import TYPE_CHECKING, Any
 #  Imports for other modules --
 # -----------------------------
 from lsst.daf.butler import DatasetType, DimensionUniverse
-from lsst.pipe.base import Pipeline, connectionTypes, iterConnections
+
+from . import connectionTypes
+from .connections import iterConnections
+from .pipeline import Pipeline
 
 if TYPE_CHECKING:
     from lsst.daf.butler import DatasetRef
