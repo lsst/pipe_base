@@ -51,9 +51,10 @@ from lsst.daf.butler import (
     DatasetRef,
     DatasetType,
     DimensionUniverse,
+    NamedKeyDict,
+    NamedKeyMapping,
     Quantum,
 )
-from lsst.daf.butler.core.named import NamedKeyDict, NamedKeyMapping
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.timer import timeMethod
