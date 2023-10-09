@@ -802,7 +802,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         Mapping[str, tuple[Output, Collection[DatasetRef]]],
     ]:
         """Override to make adjustments to `lsst.daf.butler.DatasetRef` objects
-        in the `lsst.daf.butler.core.Quantum` during the graph generation stage
+        in the `lsst.daf.butler.Quantum` during the graph generation stage
         of the activator.
 
         Parameters

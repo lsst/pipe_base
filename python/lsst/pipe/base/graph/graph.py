@@ -48,9 +48,9 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionRecordsAccumulator,
     DimensionUniverse,
-    PersistenceContextVars,
     Quantum,
 )
+from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
 from networkx.drawing.nx_agraph import write_dot

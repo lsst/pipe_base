@@ -40,7 +40,7 @@ import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 import numpy
 from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, Formatter, LimitedButler
-from lsst.daf.butler.core.logging import ButlerLogRecords
+from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name

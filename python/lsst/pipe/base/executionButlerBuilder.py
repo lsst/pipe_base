@@ -33,8 +33,8 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 
 from lsst.daf.butler import Butler, Config, DatasetRef, DatasetType, Registry
-from lsst.daf.butler.core.repoRelocation import BUTLER_ROOT_TAG
 from lsst.daf.butler.registry import ConflictingDefinitionError, MissingDatasetTypeError
+from lsst.daf.butler.repo_relocation import BUTLER_ROOT_TAG
 from lsst.daf.butler.transfers import RepoExportContext
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_class_of

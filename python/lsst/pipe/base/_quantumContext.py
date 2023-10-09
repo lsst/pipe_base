@@ -169,7 +169,7 @@ class QuantumContext:
     ----------
     butler : `lsst.daf.butler.LimitedButler`
         Butler object from/to which datasets will be get/put.
-    quantum : `lsst.daf.butler.core.Quantum`
+    quantum : `lsst.daf.butler.Quantum`
         Quantum object that describes the datasets which will be get/put by a
         single execution of this node in the pipeline graph.
     resources : `ExecutionResources`, optional

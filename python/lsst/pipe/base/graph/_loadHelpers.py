@@ -37,7 +37,8 @@ from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO
 from uuid import UUID
 
-from lsst.daf.butler import DimensionUniverse, PersistenceContextVars
+from lsst.daf.butler import DimensionUniverse
+from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.resources import ResourceHandleProtocol, ResourcePath
 
 if TYPE_CHECKING:
