@@ -48,27 +48,25 @@ class DatasetTypeExecutionReport:
     """A report on the number of produced datasets as well as the status of
     missing datasets based on metadata.
 
-    A DatasetTypeExecutionReport is created for each DatasetType in a
-    TaskExecutionReport.
-
-    See Also
-    --------
-    TaskExecutionReport
-    QuantumGraphExecutionReport
+    A `DatasetTypeExecutionReport` is created for each `DatasetType` in a
+    `TaskExecutionReport`.
     """
 
     missing_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
     """Datasets not produced because their quanta failed directly in this
     run (`set`).
     """
+
     missing_not_produced: dict[DatasetRef, bool] = dataclasses.field(default_factory=dict)
     """Missing datasets which were not produced due either missing inputs or a
     failure in finding inputs (`dict`).
         bool: were predicted inputs produced?
     """
+
     missing_upstream_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
     """Datasets not produced due to an upstream failure (`set`).
     """
+
     n_produced: int = 0
     """Count of datasets produced (`int`).
     """
@@ -78,9 +76,11 @@ class DatasetTypeExecutionReport:
 
         Returns
         -------
-        A count of the DatasetTypes with each outcome; the number of produced,
-        missing_failed, missing_not_produced, and missing_upstream_failed
-        DatasetTypes. See above for attribute descriptions.
+        summary_dict : `dict`
+            A count of the datasets with each outcome; the number of
+            produced, `missing_failed`, `missing_not_produced`, and
+            `missing_upstream_failed` `DatasetTypes`. See above for attribute
+            descriptions.
         """
         return {
             "produced": self.n_produced,
@@ -96,18 +96,14 @@ class DatasetTypeExecutionReport:
 
         Parameters
         ----------
-        output_ref: `DatasetRef`
+        output_ref : `~lsst.daf.butler.DatasetRef`
             Dataset reference of the missing dataset.
-        failed: `bool`
+        failed : `bool`
             Whether the task associated with the missing dataset failed.
-        status_graph: `networkx.DiGraph`
-            The quantum graph produced by TaskExecutionReport.inspect_quantum
+        status_graph : `networkx.DiGraph`
+            The quantum graph produced by `TaskExecutionReport.inspect_quantum`
             which steps through the run quantum graph and logs the status of
             each quanta.
-
-        See Also
-        --------
-        TaskExecutionReport.inspect_quantum
         """
         if failed:
             for upstream_quantum_id in status_graph.predecessors(output_ref.id):
@@ -129,11 +125,11 @@ class DatasetTypeExecutionReport:
 
         Parameters
         ----------
-        output_ref: `DatasetRef`
+        output_ref : `~lsst.daf.butler.DatasetRef`
             Dataset reference of the dataset.
-        status_graph: `networkx.DiGraph`
+        status_graph : `networkx.DiGraph`
             The quantum graph produced by
-            QuantumGraphExecutionReport.make_reports() which steps through the
+            `QuantumGraphExecutionReport.make_reports` which steps through the
             quantum graph of a run and logs the status of each quantum.
 
         See Also
@@ -162,12 +158,14 @@ class TaskExecutionReport:
     """A mapping from quantum data ID to log dataset reference for quanta that
     failed directly in this run (`dict`).
     """
+
     failed_upstream: dict[uuid.UUID, DataCoordinate] = dataclasses.field(default_factory=dict)
     """A mapping of data IDs of quanta that were not attempted due to an
     upstream failure (`dict`).
     """
+
     output_datasets: dict[str, DatasetTypeExecutionReport] = dataclasses.field(default_factory=dict)
-    """Missing and produced outputs of each DatasetType (`dict`).
+    """Missing and produced outputs of each `DatasetType` (`dict`).
     """
 
     def inspect_quantum(
@@ -183,18 +181,20 @@ class TaskExecutionReport:
 
         Parameters
         ----------
-        quantum_node: `QuantumNode`
+        quantum_node : `QuantumNode`
             The specific node of the quantum graph to be inspected.
-        status_graph: `networkx.DiGraph`
+        status_graph : `networkx.DiGraph`
             The quantum graph produced by
-            QuantumGraphExecutionReport.make_reports which steps through the
+            `QuantumGraphExecutionReport.make_reports` which steps through the
             quantum graph of a run and logs the status of each quantum.
-        refs: `Mapping[str, Mapping[uuid.UUID, DatasetRef]]`
+        refs : `~collections.abc.Mapping` [ `str`,\
+                `~collections.abc.Mapping` [ `uuid.UUID`,\
+                `~lsst.daf.butler.DatasetRef` ] ]
             The DatasetRefs of each of the DatasetTypes produced by the task.
             Includes initialization, intermediate and output data products.
-        metadata_name: `str`
-            The metadataDataset name for the node.
-        log_name: `str`
+        metadata_name : `str`
+            The metadata dataset name for the node.
+        log_name : `str`
             The name of the log files for the node.
 
         See Also
@@ -235,22 +235,24 @@ class TaskExecutionReport:
 
         Parameters
         ----------
-        butler: `lsst.daf.butler.Butler`
+        butler : `lsst.daf.butler.Butler`
             The Butler used for this report.
-        logs: `bool`
+        logs : `bool`
             Store the logs in the summary dictionary.
 
         Returns
         -------
-        A dictionary containing:
-            outputs: `dict`
-                A dictionary summarizing the DatasetTypeExecutionReport for
-                each DatasetType associated with the task
-            failed_quanta: `dict`
-                A dictionary of quanta which failed and their dataIDs by
-                quantum graph node id
-            n_quanta_blocked: `int`
-                The number of quanta which failed due to upstream failures.
+        summary_dict : `dict`
+            A dictionary containing:
+
+            - outputs: A dictionary summarizing the
+              DatasetTypeExecutionReport for each DatasetType associated with
+              the task
+            - failed_quanta: A dictionary of quanta which failed and their
+              dataIDs by quantum graph node id
+            - n_quanta_blocked: The number of quanta which failed due to
+              upstream failures.
+
         """
         failed_quanta = {}
         for node_id, log_ref in self.failed.items():
@@ -290,8 +292,8 @@ class QuantumGraphExecutionReport:
 
     Parameters
     ----------
-    tasks: `dict`
-        A dictionary of TaskExecutionReports by pipetask
+    tasks : `dict`
+        A dictionary of TaskExecutionReports by task label.
 
     See Also
     --------
@@ -300,38 +302,40 @@ class QuantumGraphExecutionReport:
     """
 
     tasks: dict[str, TaskExecutionReport] = dataclasses.field(default_factory=dict)
-    """A dictionary of TaskExecutionReports by pipetask (`dict`).
+    """A dictionary of TaskExecutionReports by task label (`dict`).
     """
 
     def to_summary_dict(self, butler: Butler, logs: bool = True) -> dict[str, Any]:
-        """Summarize the results of the QuantumGraphExecutionReport in a
+        """Summarize the results of the `QuantumGraphExecutionReport` in a
         dictionary.
 
         Parameters
         ----------
-        butler: `lsst.daf.butler.Butler`
+        butler : `lsst.daf.butler.Butler`
             The Butler used for this report.
-        logs: `bool`
+        logs : `bool`
             Store the logs in the summary dictionary.
 
         Returns
         -------
-        A dictionary containing a TaskExecutionReport for each task in the
-        quantum graph.
+        summary_dict : `dict`
+            A dictionary containing a summary of a `TaskExecutionReport` for
+            each task in the quantum graph.
         """
         return {task: report.to_summary_dict(butler, logs=logs) for task, report in self.tasks.items()}
 
     def write_summary_yaml(self, butler: Butler, filename: str, logs: bool = True) -> None:
-        """Take the dictionary from QuantumGraphExecutionReport.to_summary_dict
-        and store its contents in a yaml file.
+        """Take the dictionary from
+        `QuantumGraphExecutionReport.to_summary_dict` and store its contents in
+        a yaml file.
 
         Parameters
         ----------
-        butler: `lsst.daf.butler.Butler`
+        butler : `lsst.daf.butler.Butler`
             The Butler used for this report.
-        filename: `str`
+        filename : `str`
             The name to be used for the summary yaml file.
-        logs: `bool`
+        logs : `bool`
             Store the logs in the summary dictionary.
         """
         with open(filename, "w") as stream:
@@ -343,28 +347,28 @@ class QuantumGraphExecutionReport:
         butler: Butler,
         graph: QuantumGraph | ResourcePathExpression,
     ) -> QuantumGraphExecutionReport:
-        """Make a QuantumGraphExecutionReport.
+        """Make a `QuantumGraphExecutionReport`.
 
         Step through the quantum graph associated with a run, creating a
-        networkx.DiGraph called status_graph to annotate the status of each
+        `networkx.DiGraph` called status_graph to annotate the status of each
         quantum node. For each task in the quantum graph, use
-        TaskExecutionReport.inspect_quantum to make a TaskExecutionReport based
-        on the status of each node. Return a TaskExecutionReport for each task
-        in the quantum graph.
+        `TaskExecutionReport.inspect_quantum` to make a `TaskExecutionReport`
+        based on the status of each node. Return a `TaskExecutionReport` for
+        each task in the quantum graph.
 
         Parameters
         ----------
-        butler: `lsst.daf.butler.Butler`
+        butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler used
             for the run associated with the executed quantum graph.
-        graph: `QuantumGraph` | `ResourcePathExpression`
+        graph : `QuantumGraph` | `ResourcePathExpression`
             Either the associated quantum graph object or the uri of the
             location of said quantum graph.
 
         Returns
         -------
         report: `QuantumGraphExecutionReport`
-            The TaskExecutionReport for each task in the quantum graph.
+            The `TaskExecutionReport` for each task in the quantum graph.
         """
         refs = {}  # type: dict[str, Any]
         status_graph = networkx.DiGraph()
@@ -424,15 +428,16 @@ def lookup_quantum_data_id(
 
     Parameters
     ----------
-    graph_uri: `ResourcePathExpression`
+    graph_uri : `ResourcePathExpression`
         URI of the quantum graph of the run.
-    nodes: `Sequence[uuid.UUID]`
+    nodes : `~collections.abc.Iterable` [ `uuid.UUID` ]
         Quantum graph nodeID.
 
     Returns
     -------
-    A list of human-readable dataIDs which map to the nodeIDs on the quantum
-    graph at graph_uri.
+    data_ids : `list` [ `lsst.daf.butler.DataCoordinate` ]
+        A list of human-readable dataIDs which map to the nodeIDs on the
+        quantum graph at graph_uri.
     """
     qg = QuantumGraph.loadUri(graph_uri, nodes=nodes)
     return [qg.getQuantumNodeByNodeId(node).quantum.dataId for node in nodes]
