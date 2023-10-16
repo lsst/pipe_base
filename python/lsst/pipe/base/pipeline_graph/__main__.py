@@ -77,7 +77,7 @@ def main(argv: Sequence[str]) -> int:
     args = Arguments.from_parsed_args(parser.parse_args(argv))
     pipeline_graph = read_input_pipeline(args.input_pipeline)
     if args.resolve:
-        butler = Butler(args.resolve, writeable=False)
+        butler = Butler.from_config(args.resolve, writeable=False)
         pipeline_graph.resolve(butler.registry)
     if args.save:
         pipeline_graph._write_uri(ResourcePath(args.save))
