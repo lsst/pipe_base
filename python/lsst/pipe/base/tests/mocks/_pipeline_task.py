@@ -95,7 +95,8 @@ def mock_task_defs(
         data ID match using the butler expression language (i.e. a string of
         the sort passed ass the ``where`` argument to butler query methods),
         while the second is the type of exception to raise when the quantum
-        data ID matches the expression.
+        data ID matches the expression.  An exception type of `None` uses
+        the default, `ValueError`.
 
     Returns
     -------
@@ -145,7 +146,8 @@ def mock_pipeline_graph(
         data ID match using the butler expression language (i.e. a string of
         the sort passed as the ``where`` argument to butler query methods),
         while the second is the type of exception to raise when the quantum
-        data ID matches the expression.
+        data ID matches the expression.  An exception type of `None` uses
+        the default, `ValueError`.
 
     Returns
     -------
