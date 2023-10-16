@@ -405,16 +405,18 @@ class MockStorageClass(StorageClass):
         original_type : `lsst.daf.butler.DatasetType`
             The original dataset type.
         """
-        mock_storage_class = cast(MockStorageClass, mock_type.storageClass)
-        original_parent_storage_class = None
-        if mock_type.parentStorageClass is not None:
-            original_parent_storage_class = cast(MockStorageClass, mock_type.parentStorageClass).original
+        storage_class = mock_type.storageClass
+        parent_storage_class = mock_type.parentStorageClass
+        if isinstance(storage_class, MockStorageClass):
+            storage_class = storage_class.original
+        if parent_storage_class is not None and isinstance(parent_storage_class, MockStorageClass):
+            parent_storage_class = parent_storage_class.original
         return DatasetType(
             get_original_name(mock_type.name),
             mock_type.dimensions,
-            mock_storage_class.original,
+            storage_class,
             isCalibration=mock_type.isCalibration(),
-            parentStorageClass=original_parent_storage_class,
+            parentStorageClass=parent_storage_class,
         )
 
     @staticmethod
