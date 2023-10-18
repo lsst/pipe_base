@@ -33,6 +33,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 
 from lsst.daf.butler import Butler, Config, DatasetRef, DatasetType, Registry
+from lsst.daf.butler.direct_butler import DirectButler
 from lsst.daf.butler.registry import ConflictingDefinitionError, MissingDatasetTypeError
 from lsst.daf.butler.repo_relocation import BUTLER_ROOT_TAG
 from lsst.daf.butler.transfers import RepoExportContext
@@ -235,7 +236,9 @@ def _discoverCollections(butler: Butler, collections: Iterable[str]) -> set[str]
     return collections
 
 
-def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetTypeRefMap) -> io.StringIO:
+def _export(
+    butler: DirectButler, collections: Iterable[str] | None, inserts: DataSetTypeRefMap
+) -> io.StringIO:
     # This exports relevant dimension records and collections using daf butler
     # objects, however it reaches in deep and does not use the public methods
     # so that it can export it to a string buffer and skip disk access.  This
@@ -270,7 +273,7 @@ def _export(butler: Butler, collections: Iterable[str] | None, inserts: DataSetT
 
 
 def _setupNewButler(
-    butler: Butler,
+    butler: DirectButler,
     outputLocation: ResourcePath,
     dirExists: bool,
     datastoreRoot: ResourcePath | None = None,
@@ -337,7 +340,7 @@ def _setupNewButler(
     )
 
     # Return a newly created butler
-    return Butler(config, writeable=True)
+    return Butler.from_config(config, writeable=True)
 
 
 def _import(
@@ -374,7 +377,7 @@ def _import(
 
 
 def buildExecutionButler(
-    butler: Butler,
+    butler: DirectButler,
     graph: QuantumGraph,
     outputLocation: ResourcePathExpression,
     run: str | None,
@@ -398,8 +401,8 @@ def buildExecutionButler(
     Parameters
     ----------
     butler : `lsst.daf.butler.Butler`
-        This is the existing `~lsst.daf.butler.Butler` instance from which
-        existing datasets will be exported. This should be the
+        This is the existing `~lsst.daf.butler.Butler` instance from
+        which existing datasets will be exported. This should be the
         `~lsst.daf.butler.Butler` which was used to create any `QuantumGraphs`
         that will be converted with this object.
     graph : `QuantumGraph`

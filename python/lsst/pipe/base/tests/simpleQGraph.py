@@ -276,7 +276,7 @@ def makeSimpleButler(
         butler_config["registry", "db"] = f"sqlite:///{root_path.ospath}/gen3.sqlite"
         butler_config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
     repo = butlerTests.makeTestRepo(str(root_path), {}, config=butler_config)
-    butler = Butler(butler=repo, run=run)
+    butler = Butler.from_config(butler=repo, run=run)
     return butler
 
 

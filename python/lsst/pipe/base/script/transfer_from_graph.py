@@ -98,7 +98,7 @@ def transfer_from_graph(
         dataset_types=dataset_types,
     )
 
-    dest_butler = Butler(dest, writeable=True)
+    dest_butler = Butler.from_config(dest, writeable=True)
 
     transferred = dest_butler.transfer_from(
         qbb,

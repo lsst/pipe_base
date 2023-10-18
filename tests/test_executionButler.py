@@ -32,6 +32,7 @@ import unittest
 
 import lsst.utils.tests
 from lsst.daf.butler import Butler
+from lsst.daf.butler.direct_butler import DirectButler
 from lsst.pipe.base.executionButlerBuilder import buildExecutionButler
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
@@ -46,6 +47,7 @@ class ExecutionTestCase(unittest.TestCase):
         """Test buildExecutionButler with default butler config."""
         with temporaryDirectory() as root:
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root, inMemory=False)
+            assert isinstance(butler, DirectButler), "Expect DirectButler in tests"
             buildExecutionButler(butler, qgraph, os.path.join(root, "exec_butler"), butler.run)
 
     def test_obscore(self) -> None:
@@ -57,7 +59,8 @@ class ExecutionTestCase(unittest.TestCase):
 
             # Need a fresh butler instance to make sure it reads config from
             # butler.yaml, which does not have full obscore config.
-            butler = Butler(root, run=butler.run)
+            butler = Butler.from_config(root, run=butler.run)
+            assert isinstance(butler, DirectButler), "Expect DirectButler in tests"
             buildExecutionButler(butler, qgraph, os.path.join(root, "exec_butler"), butler.run)
 
 
