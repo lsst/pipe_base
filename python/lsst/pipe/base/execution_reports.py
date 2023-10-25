@@ -230,14 +230,14 @@ class TaskExecutionReport:
             else:
                 dataset_type_report.handle_produced_dataset(output_ref, status_graph)
 
-    def to_summary_dict(self, butler: Butler, logs: bool = True) -> dict[str, Any]:
+    def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the results of the TaskExecutionReport in a dictionary.
 
         Parameters
         ----------
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report.
-        logs : `bool`
+        do_store_logs : `bool`
             Store the logs in the summary dictionary.
 
         Returns
@@ -257,7 +257,7 @@ class TaskExecutionReport:
         failed_quanta = {}
         for node_id, log_ref in self.failed.items():
             quantum_info: dict[str, Any] = {"data_id": log_ref.dataId.byName()}
-            if logs:
+            if do_store_logs:
                 try:
                     log = butler.get(log_ref)
                 except LookupError:
@@ -307,7 +307,7 @@ class QuantumGraphExecutionReport:
     """A dictionary of TaskExecutionReports by task label (`dict`).
     """
 
-    def to_summary_dict(self, butler: Butler, logs: bool = True) -> dict[str, Any]:
+    def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the results of the `QuantumGraphExecutionReport` in a
         dictionary.
 
@@ -315,7 +315,7 @@ class QuantumGraphExecutionReport:
         ----------
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report.
-        logs : `bool`
+        do_store_logs : `bool`
             Store the logs in the summary dictionary.
 
         Returns
@@ -324,9 +324,12 @@ class QuantumGraphExecutionReport:
             A dictionary containing a summary of a `TaskExecutionReport` for
             each task in the quantum graph.
         """
-        return {task: report.to_summary_dict(butler, logs=logs) for task, report in self.tasks.items()}
+        return {
+            task: report.to_summary_dict(butler, do_store_logs=do_store_logs)
+            for task, report in self.tasks.items()
+        }
 
-    def write_summary_yaml(self, butler: Butler, filename: str, logs: bool = True) -> None:
+    def write_summary_yaml(self, butler: Butler, filename: str, do_store_logs: bool = True) -> None:
         """Take the dictionary from
         `QuantumGraphExecutionReport.to_summary_dict` and store its contents in
         a yaml file.
@@ -337,11 +340,11 @@ class QuantumGraphExecutionReport:
             The Butler used for this report.
         filename : `str`
             The name to be used for the summary yaml file.
-        logs : `bool`
+        do_store_logs : `bool`
             Store the logs in the summary dictionary.
         """
         with open(filename, "w") as stream:
-            yaml.safe_dump(self.to_summary_dict(butler, logs=logs), stream)
+            yaml.safe_dump(self.to_summary_dict(butler, do_store_logs=do_store_logs), stream)
 
     @classmethod
     def make_reports(
