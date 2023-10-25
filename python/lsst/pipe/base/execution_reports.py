@@ -262,6 +262,8 @@ class TaskExecutionReport:
                     log = butler.get(log_ref)
                 except LookupError:
                     quantum_info["error"] = []
+                except FileNotFoundError:
+                    quantum_info["error"] = None
                 else:
                     quantum_info["error"] = [
                         record.message for record in log if record.levelno >= logging.ERROR
