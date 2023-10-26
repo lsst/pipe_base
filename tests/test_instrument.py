@@ -32,8 +32,9 @@ import datetime
 import math
 import unittest
 
-from lsst.daf.butler import DataCoordinate, DimensionPacker, DimensionUniverse, Registry, RegistryConfig
+from lsst.daf.butler import DataCoordinate, DimensionPacker, DimensionUniverse, RegistryConfig
 from lsst.daf.butler.formatters.json import JsonFormatter
+from lsst.daf.butler.registry.sql_registry import SqlRegistry
 from lsst.pex.config import Config
 from lsst.pipe.base import Instrument
 from lsst.utils.introspection import get_full_type_name
@@ -124,7 +125,7 @@ class InstrumentTestCase(unittest.TestCase):
         """Test that register() sets appropriate Dimensions."""
         registryConfig = RegistryConfig()
         registryConfig["db"] = "sqlite://"
-        registry = Registry.createFromConfig(registryConfig)
+        registry = SqlRegistry.createFromConfig(registryConfig)
         # Check that the registry starts out empty.
         self.instrument.importAll(registry)
         self.assertFalse(list(registry.queryDimensionRecords("instrument")))
@@ -205,7 +206,7 @@ class InstrumentTestCase(unittest.TestCase):
         """
         registry_config = RegistryConfig()
         registry_config["db"] = "sqlite://"
-        registry = Registry.createFromConfig(registry_config)
+        registry = SqlRegistry.createFromConfig(registry_config)
         self.instrument.register(registry)
         config = DimensionPackerTestConfig()
         instrument_data_id = registry.expandDataId(instrument=self.name)
@@ -238,7 +239,7 @@ class InstrumentTestCase(unittest.TestCase):
         """
         registry_config = RegistryConfig()
         registry_config["db"] = "sqlite://"
-        registry = Registry.createFromConfig(registry_config)
+        registry = SqlRegistry.createFromConfig(registry_config)
         # Intentionally do not register instrument or insert any other
         # dimension records to ensure we don't need them in this mode.
         config = DimensionPackerTestConfig()
