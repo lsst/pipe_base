@@ -264,16 +264,16 @@ def _refFromConnection(
     _checkDimensionsMatch(universe, set(connection.dimensions), dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
 
-    datasetType = butler.registry.getDatasetType(connection.name)
+    datasetType = butler.get_dataset_type(connection.name)
 
     try:
-        butler.registry.getDatasetType(datasetType.name)
+        butler.get_dataset_type(datasetType.name)
     except KeyError:
         raise ValueError(f"Invalid dataset type {connection.name}.") from None
     if not butler.run:
         raise ValueError("Can not create a resolved DatasetRef since the butler has no default run defined.")
     try:
-        registry_ref = butler.registry.findDataset(datasetType, dataId, collections=[butler.run])
+        registry_ref = butler.find_dataset(datasetType, dataId, collections=[butler.run])
         if registry_ref:
             ref = registry_ref
         else:
