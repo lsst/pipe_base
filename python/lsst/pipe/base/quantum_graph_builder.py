@@ -1100,7 +1100,10 @@ class QuantumGraphBuilder(ABC):
         for dataset_type, kept_refs in adjusted.items():
             parent_dataset_type_name, _ = DatasetType.splitDatasetTypeName(dataset_type.name)
             for kept_ref in kept_refs:
-                result.remove(DatasetKey(parent_dataset_type_name, kept_ref.dataId.values_tuple()))
+                # We don't know if this was a DatasetKey or a
+                # PrerequisiteDatasetKey; just try both.
+                result.discard(DatasetKey(parent_dataset_type_name, kept_ref.dataId.values_tuple()))
+                result.discard(PrerequisiteDatasetKey(parent_dataset_type_name, kept_ref.id.bytes))
         return result
 
 
