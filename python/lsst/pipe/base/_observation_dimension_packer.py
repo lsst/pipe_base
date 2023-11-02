@@ -74,7 +74,7 @@ class ObservationDimensionPacker(DimensionPacker):
         Data ID that identifies at least the ``instrument`` dimension.  Must
         have dimension records attached unless ``config.n_detectors`` and
         ``config.n_visits`` are both not `None`.
-    config : `ObservationDimensionPackerConfig`
+    config : `ObservationDimensionPackerConfig`, optional
         Configuration for this dimension packer.
     is_exposure : `bool`, optional
         If `False`, construct a packer for visit+detector data IDs.  If `True`,
@@ -103,9 +103,11 @@ class ObservationDimensionPacker(DimensionPacker):
     def __init__(
         self,
         data_id: DataCoordinate,
-        config: ObservationDimensionPackerConfig,
+        config: ObservationDimensionPackerConfig | None = None,
         is_exposure: bool | None = None,
     ):
+        if config is None:
+            config = ObservationDimensionPackerConfig()
         fixed = data_id.subset(data_id.universe.extract(["instrument"]))
         if is_exposure is None:
             if "visit" in data_id.graph.names:
