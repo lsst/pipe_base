@@ -223,9 +223,7 @@ class QuantumGraphBuilder(ABC):
             self.skip_existing_starts_with_output_run = False
         self.existing_datasets = ExistingDatasets()
         try:
-            packages_storage_class = butler.registry.getDatasetType(
-                acc.PACKAGES_INIT_OUTPUT_NAME
-            ).storageClass_name
+            packages_storage_class = butler.get_dataset_type(acc.PACKAGES_INIT_OUTPUT_NAME).storageClass_name
         except MissingDatasetTypeError:
             packages_storage_class = acc.PACKAGES_INIT_OUTPUT_STORAGE_CLASS
         self._global_init_output_types = {
@@ -941,9 +939,7 @@ class QuantumGraphBuilder(ABC):
                 # Dataset type is an overall input; we always need to try to
                 # find these.
                 try:
-                    ref = self.butler.registry.findDataset(
-                        dataset_type.name, collections=self.input_collections
-                    )
+                    ref = self.butler.find_dataset(dataset_type.name, collections=self.input_collections)
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:
@@ -953,9 +949,7 @@ class QuantumGraphBuilder(ABC):
                 # if only they're from previously executed quanta that we might
                 # skip...
                 try:
-                    ref = self.butler.registry.findDataset(
-                        dataset_type.name, collections=self.skip_existing_in
-                    )
+                    ref = self.butler.find_dataset(dataset_type.name, collections=self.skip_existing_in)
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:
@@ -966,7 +960,7 @@ class QuantumGraphBuilder(ABC):
                 # ...or if they're in the way and would need to be clobbered
                 # (and we haven't already found them in the previous block).
                 try:
-                    ref = self.butler.registry.findDataset(dataset_type.name, collections=[self.output_run])
+                    ref = self.butler.find_dataset(dataset_type.name, collections=[self.output_run])
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:

@@ -284,7 +284,7 @@ class PrerequisiteFinder:
                 # and when that happens PrerequisiteFinder.find never gets
                 # called.
                 try:
-                    ref = butler.registry.findDataset(
+                    ref = butler.find_dataset(
                         self.dataset_type_node.dataset_type,
                         data_id.subset(self.constraint_dimensions),
                         collections=input_collections,
