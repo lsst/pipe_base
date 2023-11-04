@@ -33,7 +33,7 @@ from collections.abc import Iterator
 
 import networkx
 import networkx.algorithms.community
-from lsst.daf.butler import DimensionGraph
+from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType
 from ._merge import MergedNodeKey
@@ -124,24 +124,27 @@ class GetNodeText:
             return f"{description[:self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
         return description
 
-    def format_dimensions(self, dimensions: DimensionGraph) -> str:
+    def format_dimensions(self, dimensions: DimensionGroup) -> str:
         """Format the dimensions of a task or dataset type node."""
         match self.options.dimensions:
             case "full":
-                return str(dimensions)
+                return str(dimensions.names)
             case "concise":
-                kept = set(dimensions)
+                kept = set(dimensions.names)
                 done = False
                 while not done:
                     for dimension in kept:
-                        if any(dimension != other and dimension in other.graph for other in kept):
+                        if any(
+                            dimension != other and dimension in dimensions.universe[other].dimensions
+                            for other in kept
+                        ):
                             kept.remove(dimension)
                             break
                     else:
                         done = True
                 # We still iterate over dimensions instead of kept to preserve
                 # order.
-                return f"{{{', '.join(d.name for d in dimensions if d in kept)}}}"
+                return f"{{{', '.join(d for d in dimensions.names if d in kept)}}}"
             case False:
                 return ""
         raise ValueError(f"Invalid display option for dimensions: {self.options.dimensions!r}.")

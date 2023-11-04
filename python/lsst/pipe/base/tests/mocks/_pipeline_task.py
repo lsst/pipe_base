@@ -43,13 +43,7 @@ import logging
 from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from lsst.daf.butler import (
-    DataCoordinate,
-    DatasetRef,
-    DeferredDatasetHandle,
-    SerializedDatasetType,
-    SerializedDimensionGraph,
-)
+from lsst.daf.butler import DataCoordinate, DatasetRef, DeferredDatasetHandle, SerializedDatasetType
 from lsst.pex.config import Config, ConfigDictField, ConfigurableField, Field, ListField
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -270,7 +264,7 @@ class BaseTestPipelineTask(PipelineTask):
                 dataset_type=SerializedDatasetType(
                     name=connection.name,
                     storageClass=connection.storageClass,
-                    dimensions=SerializedDimensionGraph(names=[]),
+                    dimensions=[],
                 ),
                 data_id={},
                 run=None,  # task also has no way to get this
@@ -304,7 +298,7 @@ class BaseTestPipelineTask(PipelineTask):
         # Populate the bit of provenance we store in all outputs.
         _LOG.info("Reading input data for task '%s' on quantum %s", self.getName(), quantum.dataId)
         mock_dataset_quantum = MockDatasetQuantum(
-            task_label=self.getName(), data_id=quantum.dataId.full.byName(), inputs={}
+            task_label=self.getName(), data_id=dict(quantum.dataId.mapping), inputs={}
         )
         for name, refs in inputRefs:
             inputs_list = []
@@ -326,7 +320,7 @@ class BaseTestPipelineTask(PipelineTask):
                     input_dataset = MockDataset(
                         dataset_id=ref.id,
                         dataset_type=ref.datasetType.to_simple(),
-                        data_id=ref.dataId.full.byName(),
+                        data_id=dict(ref.dataId.mapping),
                         run=ref.run,
                     )
                 inputs_list.append(input_dataset)
@@ -338,7 +332,7 @@ class BaseTestPipelineTask(PipelineTask):
                 output = MockDataset(
                     dataset_id=ref.id,
                     dataset_type=ref.datasetType.to_simple(),
-                    data_id=ref.dataId.full.byName(),
+                    data_id=dict(ref.dataId.mapping),
                     run=ref.run,
                     quantum=mock_dataset_quantum,
                     output_connection_name=name,

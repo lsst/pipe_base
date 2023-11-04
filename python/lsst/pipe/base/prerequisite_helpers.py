@@ -147,7 +147,10 @@ class PrerequisiteFinder:
         self.constraint_dimensions = self.task_node.dimensions
         if self.lookup_function is None:
             for family in self.dataset_type_node.dimensions.spatial - self.task_node.dimensions.spatial:
-                best_spatial_element = family.choose(self.dataset_type_node.dimensions.elements)
+                best_spatial_element = family.choose(
+                    self.dataset_type_node.dimensions.elements.names,
+                    self.dataset_type_node.dimensions.universe,
+                )
                 if isinstance(best_spatial_element, SkyPixDimension):
                     self.dataset_skypix[best_spatial_element.name] = best_spatial_element
                 else:
@@ -157,13 +160,16 @@ class PrerequisiteFinder:
             self.dataset_has_timespan = self.dataset_type_node.is_calibration or bool(
                 self.dataset_type_node.dimensions.temporal - self.task_node.dimensions.temporal
             )
-            self.constraint_dimensions = self.constraint_dimensions.universe.extract(
-                {
-                    d.name
-                    for d in self.task_node.dimensions
-                    if d.name in self.dataset_type_node.dimensions or not (d.spatial or d.temporal)
-                }
-            )
+            new_constraint_dimensions = set()
+            universe = self.task_node.dimensions.universe
+            for dimension_name in self.task_node.dimensions.names:
+                if dimension_name in self.dataset_type_node.dimensions.names:
+                    new_constraint_dimensions.add(dimension_name)
+                else:
+                    dimension = universe[dimension_name]
+                    if not (dimension.spatial or dimension.temporal):
+                        new_constraint_dimensions.add(dimension_name)
+            self.constraint_dimensions = universe.conform(new_constraint_dimensions)
 
     edge: ReadEdge
     """The `~pipeline_graph.PipelineGraph` edge that represents the
@@ -294,9 +300,7 @@ class PrerequisiteFinder:
                     ref = None
                 return [ref] if ref is not None else []
             else:
-                extra_dimensions = (
-                    self.dataset_type_node.dimensions.dimensions - self.constraint_dimensions.dimensions
-                )
+                extra_dimensions = self.dataset_type_node.dimensions.names - self.constraint_dimensions.names
                 raise NotImplementedError(
                     f"No support for calibration lookup {self.task_node.label}.{self.edge.connection_name} "
                     f"with dimension(s) {extra_dimensions} not fully constrained by the task. "

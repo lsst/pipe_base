@@ -248,8 +248,8 @@ class InstrumentTestCase(unittest.TestCase):
         config.packer.name = "observation"
         instrument_data_id = DataCoordinate.standardize(instrument=self.name, universe=registry.dimensions)
         full_data_id = DataCoordinate.standardize(instrument_data_id, detector=1, visit=3, exposure=7)
-        visit_data_id = full_data_id.subset(full_data_id.universe.extract(["visit", "detector"]))
-        exposure_data_id = full_data_id.subset(full_data_id.universe.extract(["exposure", "detector"]))
+        visit_data_id = full_data_id.subset(full_data_id.universe.conform(["visit", "detector"]))
+        exposure_data_id = full_data_id.subset(full_data_id.universe.conform(["exposure", "detector"]))
         self.check_dimension_packers(
             registry.dimensions,
             # Note that we don't need to pass any more than the instrument in
@@ -302,8 +302,8 @@ class InstrumentTestCase(unittest.TestCase):
         full_data_id = DataCoordinate.standardize(
             instrument=self.name, detector=1, visit=3, exposure=7, universe=universe
         )
-        visit_data_id = full_data_id.subset(full_data_id.universe.extract(["visit", "detector"]))
-        exposure_data_id = full_data_id.subset(full_data_id.universe.extract(["exposure", "detector"]))
+        visit_data_id = full_data_id.subset(full_data_id.universe.conform(["visit", "detector"]))
+        exposure_data_id = full_data_id.subset(full_data_id.universe.conform(["exposure", "detector"]))
         for n, packer in enumerate(visit_packers):
             with self.subTest(n=n):
                 packed_id, max_bits = packer.pack(full_data_id, returnMaxBits=True)

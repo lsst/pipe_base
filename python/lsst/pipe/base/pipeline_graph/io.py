@@ -41,7 +41,7 @@ from typing import Any, TypeVar
 
 import networkx
 import pydantic
-from lsst.daf.butler import DatasetType, DimensionConfig, DimensionGraph, DimensionUniverse
+from lsst.daf.butler import DatasetType, DimensionConfig, DimensionGroup, DimensionUniverse
 from lsst.daf.butler._compat import _BaseModelCompat
 
 from .. import automatic_connection_constants as acc
@@ -340,9 +340,9 @@ class SerializedTaskNode(_BaseModelCompat):
         metadata_output = self.metadata_output.deserialize_write_edge(
             key, acc.METADATA_OUTPUT_CONNECTION_NAME, dataset_type_keys
         )
-        dimensions: frozenset[str] | DimensionGraph
+        dimensions: frozenset[str] | DimensionGroup
         if universe is not None:
-            dimensions = universe.extract(self.dimensions)
+            dimensions = universe.conform(self.dimensions)
         else:
             dimensions = frozenset(self.dimensions)
         return TaskNode(

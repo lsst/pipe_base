@@ -33,7 +33,7 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 import networkx
-from lsst.daf.butler import DatasetRef, DatasetType, DimensionGraph, Registry, StorageClass
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionGroup, Registry, StorageClass
 from lsst.daf.butler.registry import MissingDatasetTypeError
 
 from ._exceptions import DuplicateOutputError
@@ -185,9 +185,9 @@ class DatasetTypeNode:
         return NodeKey(NodeType.DATASET_TYPE, self.dataset_type.name)
 
     @property
-    def dimensions(self) -> DimensionGraph:
+    def dimensions(self) -> DimensionGroup:
         """Dimensions of the dataset type."""
-        return self.dataset_type.dimensions
+        return self.dataset_type.dimensions.as_group()
 
     @property
     def storage_class_name(self) -> str:

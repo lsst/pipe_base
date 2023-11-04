@@ -108,20 +108,20 @@ class ObservationDimensionPacker(DimensionPacker):
     ):
         if config is None:
             config = ObservationDimensionPackerConfig()
-        fixed = data_id.subset(data_id.universe.extract(["instrument"]))
+        fixed = data_id.subset(data_id.universe.conform(["instrument"]))
         if is_exposure is None:
-            if "visit" in data_id.graph.names:
+            if "visit" in data_id.dimensions.names:
                 is_exposure = False
-            elif "exposure" in data_id.graph.names:
+            elif "exposure" in data_id.dimensions.names:
                 is_exposure = True
             else:
                 raise ValueError(
                     "'is_exposure' was not provided and 'data_id' has no visit or exposure value."
                 )
         if is_exposure:
-            dimensions = fixed.universe.extract(["instrument", "exposure", "detector"])
+            dimensions = fixed.universe.conform(["instrument", "exposure", "detector"])
         else:
-            dimensions = fixed.universe.extract(["instrument", "visit", "detector"])
+            dimensions = fixed.universe.conform(["instrument", "visit", "detector"])
         super().__init__(fixed, dimensions)
         self.is_exposure = is_exposure
         if config.n_detectors is not None:
@@ -166,7 +166,7 @@ class ObservationDimensionPacker(DimensionPacker):
                 "detector": detector,
                 ("exposure" if self.is_exposure else "visit"): observation,
             },
-            graph=self.dimensions,
+            dimensions=self._dimensions,
         )
 
 

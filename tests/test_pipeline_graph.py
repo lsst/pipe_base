@@ -808,10 +808,10 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.b_config.outputs["output1"].dimensions = ["htm7"]
         self.graph.reconfigure_tasks(a=self.a_config, b=self.b_config)
         self.graph.resolve(MockRegistry(self.dimensions, {}))
-        visit_dims = self.dimensions.extract(["visit"])
-        htm7_dims = self.dimensions.extract(["htm7"])
+        visit_dims = self.dimensions.conform(["visit"])
+        htm7_dims = self.dimensions.conform(["htm7"])
         expected = {
-            self.dimensions.empty: (
+            self.dimensions.empty.as_group(): (
                 {},
                 {
                     "schema": self.graph.dataset_types["schema"],
@@ -1087,7 +1087,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
                     {
                         "d": DatasetType(
                             "d",
-                            dimensions=self.dimensions.extract(["htm7"]),
+                            dimensions=self.dimensions.conform(["htm7"]),
                             storageClass="StructuredDataDict",
                         )
                     },
@@ -1100,7 +1100,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
                     {
                         "d": DatasetType(
                             "d",
-                            dimensions=self.dimensions.extract(["htm7", "visit", "skymap"]),
+                            dimensions=self.dimensions.conform(["htm7", "visit", "skymap"]),
                             storageClass="StructuredDataDict",
                         )
                     },

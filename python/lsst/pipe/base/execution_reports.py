@@ -256,7 +256,7 @@ class TaskExecutionReport:
         """
         failed_quanta = {}
         for node_id, log_ref in self.failed.items():
-            quantum_info: dict[str, Any] = {"data_id": log_ref.dataId.byName()}
+            quantum_info: dict[str, Any] = {"data_id": dict(log_ref.dataId.required)}
             if do_store_logs:
                 try:
                     log = butler.get(log_ref)

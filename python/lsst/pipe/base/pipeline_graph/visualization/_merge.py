@@ -40,7 +40,7 @@ from typing import Any, Iterable, TypeVar
 import networkx
 import networkx.algorithms.dag
 import networkx.algorithms.tree
-from lsst.daf.butler import DimensionGraph
+from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType
 from ._options import NodeAttributeOptions
@@ -185,7 +185,7 @@ class _MergeKey:
     the nodes being considered for merging.
     """
 
-    dimensions: DimensionGraph | None
+    dimensions: DimensionGroup | None
     """Dimensions of the nodes being considered for merging, or `None` if
     dimensions are not included in the similarity criteria.
     """

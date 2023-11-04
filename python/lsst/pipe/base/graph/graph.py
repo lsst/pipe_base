@@ -1285,7 +1285,7 @@ class QuantumGraph:
             dId = node.quantum.dataId
             if dId is None:
                 continue
-            universe = dId.graph.universe
+            universe = dId.universe
         return {"reduced": self._buildSaveObject(), "graphId": self._buildId, "universe": universe}
 
     def __setstate__(self, state: dict) -> None:
