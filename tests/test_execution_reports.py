@@ -47,7 +47,7 @@ class ExecutionReportsTestCase(unittest.TestCase):
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
             report = QuantumGraphExecutionReport.make_reports(butler, qgraph)
-            dict_of_expected_failures = report.to_summary_dict(butler, logs=False)
+            dict_of_expected_failures = report.to_summary_dict(butler, do_store_logs=False)
             self.assertIsNotNone(dict_of_expected_failures["task0"]["failed_quanta"])
             self.assertEqual(
                 dict_of_expected_failures["task1"]["outputs"]["add_dataset2"]["missing_upstream_failed"], 1
