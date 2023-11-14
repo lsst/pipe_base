@@ -38,10 +38,15 @@ __all__ = (
     "PrerequisiteDatasetKey",
 )
 
+import itertools
 from typing import TYPE_CHECKING, ClassVar, Literal, NamedTuple
 
-from lsst.daf.butler import DataIdValue
+import networkx
+from lsst.daf.butler import Butler, DataIdValue
+from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import getLogger
+
+from .graph import QuantumGraph
 
 if TYPE_CHECKING:
     pass
@@ -118,3 +123,25 @@ class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
     information.
     """
+
+    def __init__(self):
+        self._xgraph = networkx.DiGraph()
+
+    def add_new_graph(self, qgraph: QuantumGraph | ResourcePathExpression, butler: Butler) -> None:
+        if not isinstance(qgraph, QuantumGraph):
+            qgraph = QuantumGraph.loadUri(qgraph)
+        assert qgraph.metadata is not None, "Saved QGs always have metadata."
+        qgraph.metadata["output_run"]
+        for node in qgraph:
+            quantum_key = QuantumKey(node.taskDef.label, node.quantum.dataId.values_tuple())
+            self._xgraph.add_node(quantum_key)
+            for ref in itertools.chain.from_iterable(node.quantum.outputs.values()):
+                dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.values_tuple())
+                self._xgraph.add_edge(quantum_key, dataset_key)
+            for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
+                dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.values_tuple())
+                if dataset_key in self._xgraph:
+                    self._xgraph.add_edge(dataset_key, quantum_key)
+
+    def resolve_duplicates():
+        pass
