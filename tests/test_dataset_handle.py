@@ -139,7 +139,7 @@ class TestDatasetHandle(unittest.TestCase):
         hdl = InMemoryDatasetHandle(42)
         self.assertEqual(dict(hdl.dataId.required), {})
 
-        dataId = DataCoordinate.makeEmpty(DimensionUniverse())
+        dataId = DataCoordinate.make_empty(DimensionUniverse())
         hdl = InMemoryDatasetHandle(42, dataId=dataId)
         self.assertIs(hdl.dataId, dataId)
 

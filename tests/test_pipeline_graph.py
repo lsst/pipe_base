@@ -1248,7 +1248,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             b_i.adapt_dataset_type(dataset_type),
             dataset_type.overrideStorageClass(get_mock_name("ArrowAstropy")),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(dataset_type, data_id, run="r")
         a_ref = a_i.adapt_dataset_ref(ref)
         b_ref = b_i.adapt_dataset_ref(ref)
@@ -1277,7 +1277,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             a_o.adapt_dataset_type(dataset_type),
             dataset_type.overrideStorageClass(get_mock_name("ArrowTable")),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(dataset_type, data_id, run="r")
         a_ref = a_o.adapt_dataset_ref(ref)
         self.assertEqual(a_ref, ref.overrideStorageClass(get_mock_name("ArrowTable")))
@@ -1310,7 +1310,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             b_i.adapt_dataset_type(graph.dataset_types["d"].dataset_type),
             graph.dataset_types["d"].dataset_type.overrideStorageClass(get_mock_name("ArrowAstropy")),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(graph.dataset_types["d"].dataset_type, data_id, run="r")
         a_ref = a_o.adapt_dataset_ref(ref)
         b_ref = b_i.adapt_dataset_ref(ref)
@@ -1342,7 +1342,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             b_i.adapt_dataset_type(parent_dataset_type),
             parent_dataset_type.makeComponentDatasetType("schema"),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(parent_dataset_type, data_id, run="r")
         a_ref = a_i.adapt_dataset_ref(ref)
         b_ref = b_i.adapt_dataset_ref(ref)
@@ -1376,7 +1376,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             b_i.adapt_dataset_type(parent_dataset_type),
             parent_dataset_type.makeComponentDatasetType("schema"),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(parent_dataset_type, data_id, run="r")
         a_ref = a_o.adapt_dataset_ref(ref)
         b_ref = b_i.adapt_dataset_ref(ref)
@@ -1405,7 +1405,7 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
             b_i.adapt_dataset_type(parent_dataset_type),
             parent_dataset_type.makeComponentDatasetType("schema"),
         )
-        data_id = DataCoordinate.makeEmpty(self.dimensions)
+        data_id = DataCoordinate.make_empty(self.dimensions)
         ref = DatasetRef(parent_dataset_type, data_id, run="r")
         b_ref = b_i.adapt_dataset_ref(ref)
         self.assertEqual(b_ref, ref.makeComponentRef("schema"))

@@ -191,7 +191,7 @@ class QuantumGraphBuilder(ABC):
             raise ValueError("No output RUN collection provided.")
         self.output_run = output_run
         self.skip_existing_in = skip_existing_in
-        self.empty_data_id = DataCoordinate.makeEmpty(butler.dimensions)
+        self.empty_data_id = DataCoordinate.make_empty(butler.dimensions)
         self.clobber = clobber
         # See whether the output run already exists.
         self.output_run_exists = False

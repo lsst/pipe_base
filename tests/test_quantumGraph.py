@@ -218,7 +218,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                     initRefs = [
                         DatasetRef(
                             initInputDSType,
-                            DataCoordinate.makeEmpty(universe),
+                            DataCoordinate.make_empty(universe),
                             run=self.input_collection,
                         )
                     ]
@@ -229,7 +229,7 @@ class QuantumGraphTestCase(unittest.TestCase):
             if connections.initOutputs:
                 initOutputDSType = _makeDatasetType(connections.initOutput)
                 initRefs = [
-                    DatasetRef(initOutputDSType, DataCoordinate.makeEmpty(universe), run=self.output_run)
+                    DatasetRef(initOutputDSType, DataCoordinate.make_empty(universe), run=self.output_run)
                 ]
                 init_dataset_refs[initOutputDSType] = initRefs[0]
                 initOutputs[taskDef] = initRefs
@@ -262,7 +262,7 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
         dataset_types.add(self.packagesDSType)
         globalInitOutputs = [
-            DatasetRef(self.packagesDSType, DataCoordinate.makeEmpty(universe), run=self.output_run)
+            DatasetRef(self.packagesDSType, DataCoordinate.make_empty(universe), run=self.output_run)
         ]
         self.qGraph = QuantumGraph(
             quantumMap,

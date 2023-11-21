@@ -634,7 +634,7 @@ class Pipeline:
             instrument_class = cast(PipeBaseInstrument, doImportType(instrument_class_name))
             if instrument_class is not None:
                 return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
-        return DataCoordinate.makeEmpty(universe)
+        return DataCoordinate.make_empty(universe)
 
     def addTask(self, task: type[PipelineTask] | str, label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
