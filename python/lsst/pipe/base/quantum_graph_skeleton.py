@@ -249,7 +249,7 @@ class QuantumGraphSkeleton:
 
     def add_quantum_node(self, task_label: str, data_id: DataCoordinate, **attrs: Any) -> QuantumKey:
         """Add a new node representing a quantum."""
-        key = QuantumKey(task_label, data_id.values_tuple())
+        key = QuantumKey(task_label, data_id.required_values)
         self._xgraph.add_node(key, data_id=data_id, **attrs)
         self._tasks[key.task_label][1].add(key)
         return key
@@ -262,7 +262,7 @@ class QuantumGraphSkeleton:
         **attrs: Any,
     ) -> DatasetKey:
         """Add a new node representing a dataset."""
-        key = DatasetKey(parent_dataset_type_name, data_id.values_tuple())
+        key = DatasetKey(parent_dataset_type_name, data_id.required_values)
         self._xgraph.add_node(key, data_id=data_id, **attrs)
         if is_global_init_output:
             assert isinstance(key, DatasetKey)

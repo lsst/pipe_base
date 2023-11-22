@@ -191,7 +191,7 @@ class QuantumGraphBuilder(ABC):
             raise ValueError("No output RUN collection provided.")
         self.output_run = output_run
         self.skip_existing_in = skip_existing_in
-        self.empty_data_id = DataCoordinate.makeEmpty(butler.dimensions)
+        self.empty_data_id = DataCoordinate.make_empty(butler.dimensions)
         self.clobber = clobber
         # See whether the output run already exists.
         self.output_run_exists = False
@@ -930,11 +930,11 @@ class QuantumGraphBuilder(ABC):
 
         This includes but is not limited to init inputs and init outputs.
         """
-        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty]
+        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty.as_group()]
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
         for dataset_type in dataset_types:
-            key = DatasetKey(dataset_type.name, self.empty_data_id.values_tuple())
+            key = DatasetKey(dataset_type.name, self.empty_data_id.required_values)
             if (
                 self._pipeline_graph.producer_of(dataset_type.name) is None
                 and dataset_type.name not in self._global_init_output_types
@@ -1099,7 +1099,7 @@ class QuantumGraphBuilder(ABC):
             for kept_ref in kept_refs:
                 # We don't know if this was a DatasetKey or a
                 # PrerequisiteDatasetKey; just try both.
-                result.discard(DatasetKey(parent_dataset_type_name, kept_ref.dataId.values_tuple()))
+                result.discard(DatasetKey(parent_dataset_type_name, kept_ref.dataId.required_values))
                 result.discard(PrerequisiteDatasetKey(parent_dataset_type_name, kept_ref.id.bytes))
         return result
 

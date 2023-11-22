@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
-from lsst.daf.butler import DataCoordinate, DataId, DimensionGraph, DimensionUniverse, Registry
+from lsst.daf.butler import DataCoordinate, DataId, DimensionGroup, DimensionUniverse, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 from ._dataset_types import DatasetTypeNode
@@ -1329,7 +1329,7 @@ class PipelineGraph:
 
     def group_by_dimensions(
         self, prerequisites: bool = False
-    ) -> dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]]:
+    ) -> dict[DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]]:
         """Group this graph's tasks and dataset types by their dimensions.
 
         Parameters
@@ -1340,8 +1340,8 @@ class PipelineGraph:
 
         Returns
         -------
-        groups : `dict` [ `DimensionGraph`, `tuple` ]
-            A dictionary of groups keyed by `DimensionGraph`, in which each
+        groups : `dict` [ `DimensionGroup`, `tuple` ]
+            A dictionary of groups keyed by `DimensionGroup`, in which each
             value is a tuple of:
 
             - a `dict` of `TaskNode` instances, keyed by task label
@@ -1355,7 +1355,7 @@ class PipelineGraph:
         Init inputs and outputs are always included, but always have empty
         dimensions and are hence are all grouped together.
         """
-        result: dict[DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = {}
+        result: dict[DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = {}
         next_new_value: tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]] = ({}, {})
         for task_label, task_node in self.tasks.items():
             if task_node.dimensions is None:
@@ -1368,7 +1368,9 @@ class PipelineGraph:
                 raise UnresolvedGraphError(f"Dataset type {dataset_type_name!r} has not been resolved.")
             if not dataset_type_node.is_prerequisite or prerequisites:
                 if (
-                    group := result.setdefault(dataset_type_node.dataset_type.dimensions, next_new_value)
+                    group := result.setdefault(
+                        dataset_type_node.dataset_type.dimensions.as_group(), next_new_value
+                    )
                 ) is next_new_value:
                     next_new_value = ({}, {})  # make new lists for next time
                 group[1][dataset_type_node.name] = dataset_type_node
@@ -1507,7 +1509,7 @@ class PipelineGraph:
                 universe = data_id.universe
             else:
                 assert universe is data_id.universe, "data_id.universe and given universe differ"
-            self._raw_data_id = data_id.byName()
+            self._raw_data_id = dict(data_id.required)
         elif data_id is None:
             self._raw_data_id = {}
         else:

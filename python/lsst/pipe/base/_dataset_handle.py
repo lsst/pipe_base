@@ -44,7 +44,7 @@ from lsst.daf.butler import (
 
 # Use an empty dataID as a default.
 def _default_dataId() -> DataCoordinate:
-    return DataCoordinate.makeEmpty(DimensionUniverse())
+    return DataCoordinate.make_empty(DimensionUniverse())
 
 
 @dataclasses.dataclass(frozen=True, init=False)
@@ -56,7 +56,7 @@ class InMemoryDatasetHandle:
     parameters will be converted into a dataId-like entity.
     """
 
-    _empty = DataCoordinate.makeEmpty(DimensionUniverse())
+    _empty = DataCoordinate.make_empty(DimensionUniverse())
 
     def __init__(
         self,

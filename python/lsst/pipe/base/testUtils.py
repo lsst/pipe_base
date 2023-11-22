@@ -97,8 +97,9 @@ def makeQuantum(
     # it for sure will have this property
     connections = task.config.ConnectionsClass(config=task.config)  # type: ignore
 
+    dataId = DataCoordinate.standardize(dataId, universe=butler.dimensions)
     try:
-        _checkDimensionsMatch(butler.dimensions, connections.dimensions, dataId.keys())
+        _checkDimensionsMatch(butler.dimensions, connections.dimensions, dataId.dimensions.required)
     except ValueError as e:
         raise ValueError("Error in quantum dimensions.") from e
 
@@ -261,8 +262,8 @@ def _refFromConnection(
     """
     universe = butler.dimensions
     # DatasetRef only tests if required dimension is missing, but not extras
-    _checkDimensionsMatch(universe, set(connection.dimensions), dataId.keys())
     dataId = DataCoordinate.standardize(dataId, **kwargs, universe=universe)
+    _checkDimensionsMatch(universe, set(connection.dimensions), dataId.dimensions.required)
 
     datasetType = butler.get_dataset_type(connection.name)
 
@@ -281,7 +282,7 @@ def _refFromConnection(
             butler.registry._importDatasets([ref])
         return ref
     except KeyError as e:
-        raise ValueError(f"Dataset type ({connection.name}) and ID {dataId.byName()} not compatible.") from e
+        raise ValueError(f"Dataset type ({connection.name}) and ID {dataId} not compatible.") from e
 
 
 def runTestQuantum(
@@ -437,7 +438,7 @@ def getInitInputs(butler: Butler, config: PipelineTaskConfig) -> dict[str, Any]:
     for name in connections.initInputs:
         attribute = getattr(connections, name)
         # Get full dataset type to check for consistency problems
-        dsType = DatasetType(attribute.name, butler.dimensions.extract(set()), attribute.storageClass)
+        dsType = DatasetType(attribute.name, butler.dimensions.empty, attribute.storageClass)
         # All initInputs have empty data IDs
         initInputs[name] = butler.get(dsType)
 

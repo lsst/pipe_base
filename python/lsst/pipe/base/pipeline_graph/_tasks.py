@@ -37,7 +37,7 @@ from lsst.daf.butler import (
     DataCoordinate,
     DatasetRef,
     DatasetType,
-    DimensionGraph,
+    DimensionGroup,
     DimensionUniverse,
     Registry,
 )
@@ -433,7 +433,7 @@ class TaskNode:
         The special runtime output that persists the task's logs.
     metadata_output : `WriteEdge`
         The special runtime output that persists the task's metadata.
-    dimensions : `lsst.daf.butler.DimensionGraph` or `frozenset`
+    dimensions : `lsst.daf.butler.DimensionGroup` or `frozenset`
         Dimensions of the task.  If a `frozenset`, the dimensions have not been
         resolved by a `~lsst.daf.butler.DimensionUniverse` and cannot be safely
         compared to other sets of dimensions.
@@ -463,7 +463,7 @@ class TaskNode:
         outputs: Mapping[str, WriteEdge],
         log_output: WriteEdge | None,
         metadata_output: WriteEdge,
-        dimensions: DimensionGraph | frozenset,
+        dimensions: DimensionGroup | frozenset,
     ):
         self.key = key
         self.init = init
@@ -552,7 +552,7 @@ class TaskNode:
             dimensions=(
                 frozenset(data.connections.dimensions)
                 if universe is None
-                else universe.extract(data.connections.dimensions)
+                else universe.conform(data.connections.dimensions)
             ),
         )
         return instance
@@ -636,14 +636,14 @@ class TaskNode:
         set of dimension names that has not been resolved by a
         `~lsst.daf.butler.DimensionsUniverse`.
         """
-        return type(self._dimensions) is DimensionGraph
+        return type(self._dimensions) is DimensionGroup
 
     @property
-    def dimensions(self) -> DimensionGraph:
+    def dimensions(self) -> DimensionGroup:
         """Standardized dimensions of the task."""
         if not self.has_resolved_dimensions:
             raise UnresolvedGraphError(f"Dimensions for task {self.label!r} have not been resolved.")
-        return cast(DimensionGraph, self._dimensions)
+        return cast(DimensionGroup, self._dimensions)
 
     @property
     def raw_dimensions(self) -> frozenset[str]:
@@ -651,7 +651,7 @@ class TaskNode:
         `~lsst.daf.butler.DimensionUniverse` not guaranteed.
         """
         if self.has_resolved_dimensions:
-            return frozenset(cast(DimensionGraph, self._dimensions).names)
+            return frozenset(cast(DimensionGroup, self._dimensions).names)
         else:
             return cast(frozenset[str], self._dimensions)
 
@@ -827,7 +827,7 @@ class TaskNode:
                 self.key,
                 self.init.key,
                 imported_data,
-                universe=self._dimensions.universe if type(self._dimensions) is DimensionGraph else None,
+                universe=self._dimensions.universe if type(self._dimensions) is DimensionGroup else None,
             )
         else:
             return TaskNode(
@@ -862,7 +862,7 @@ class TaskNode:
             universe.  Will be ``self`` if this is the case already.
         """
         if self.has_resolved_dimensions:
-            if cast(DimensionGraph, self._dimensions).universe is universe:
+            if cast(DimensionGroup, self._dimensions).universe is universe:
                 return self
         elif universe is None:
             return self
@@ -875,7 +875,7 @@ class TaskNode:
             log_output=self.log_output,
             metadata_output=self.metadata_output,
             dimensions=(
-                universe.extract(self.raw_dimensions) if universe is not None else self.raw_dimensions
+                universe.conform(self.raw_dimensions) if universe is not None else self.raw_dimensions
             ),
         )
 

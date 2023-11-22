@@ -38,7 +38,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any, final
 
-from lsst.daf.butler import Butler, DimensionGraph
+from lsst.daf.butler import Butler, DimensionGroup
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
 from lsst.utils.logging import LsstLogAdapter
@@ -230,7 +230,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, self.input_collections):
                             self.existing_datasets.inputs[
-                                DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
+                                DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
                             count += 1
                     except MissingDatasetTypeError:
@@ -246,7 +246,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     count = 0
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, self.skip_existing_in):
-                            key = DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
+                            key = DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             self.existing_datasets.outputs_for_skip[key] = ref
                             count += 1
                             if ref.run == self.output_run:
@@ -267,7 +267,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     try:
                         for ref in data_ids.findDatasets(dataset_type_node.name, [self.output_run]):
                             self.existing_datasets.outputs_in_the_way[
-                                DatasetKey(dataset_type_node.name, ref.dataId.values_tuple())
+                                DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
                             count += 1
                     except MissingDatasetTypeError:
@@ -342,7 +342,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         query_results = []
                     for data_id, ref in query_results:
                         dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id.bytes)
-                        quantum_key = QuantumKey(task_node.label, data_id.values_tuple())
+                        quantum_key = QuantumKey(task_node.label, data_id.required_values)
                         # The column-subset operation used to make `data_ids`
                         # from `common_data_ids` can strip away post-query
                         # filtering; e.g. if we starts with a {visit, patch}
@@ -382,7 +382,7 @@ class _AllDimensionsQuery:
     """Graph of this subset of the pipeline."""
 
     grouped_by_dimensions: dict[
-        DimensionGraph, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]
+        DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]
     ] = dataclasses.field(default_factory=dict)
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
@@ -441,7 +441,7 @@ class _AllDimensionsQuery:
         (
             result.empty_dimensions_tasks,
             result.empty_dimensions_dataset_types,
-        ) = result.grouped_by_dimensions.pop(builder.universe.empty)
+        ) = result.grouped_by_dimensions.pop(builder.universe.empty.as_group())
         result.overall_inputs = {
             name: node  # type: ignore
             for name, node in result.subgraph.iter_overall_inputs()
@@ -450,7 +450,7 @@ class _AllDimensionsQuery:
         dimension_names: set[str] = set()
         for dimensions_for_group in result.grouped_by_dimensions.keys():
             dimension_names.update(dimensions_for_group.names)
-        dimensions = builder.universe.extract(dimension_names)
+        dimensions = builder.universe.conform(dimension_names)
         builder.log.debug("Building query for data IDs.")
         result.query_args = {
             "dimensions": dimensions,
@@ -490,7 +490,7 @@ class _AllDimensionsQuery:
             )
         builder.log.verbose("Querying for data IDs with arguments:")
         builder.log.verbose("  dimensions=%s,", list(result.query_args["dimensions"].names))
-        builder.log.verbose("  dataId=%s,", result.query_args["dataId"].byName())
+        builder.log.verbose("  dataId=%s,", dict(result.query_args["dataId"].required))
         if result.query_args["where"]:
             builder.log.verbose("  where=%s,", repr(result.query_args["where"]))
         if "datasets" in result.query_args:
@@ -519,7 +519,7 @@ class _AllDimensionsQuery:
         # so they can read it more easily and copy and paste into
         # a Python terminal.
         log.critical("  dimensions=%s,", list(self.query_args["dimensions"].names))
-        log.critical("  dataId=%s,", self.query_args["dataId"].byName())
+        log.critical("  dataId=%s,", dict(self.query_args["dataId"].required))
         if self.query_args["where"]:
             log.critical("  where=%s,", repr(self.query_args["where"]))
         if "datasets" in self.query_args:

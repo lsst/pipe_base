@@ -190,7 +190,7 @@ class DimensionedConnection(BaseConnection):
         """
         return DatasetType(
             self.name,
-            universe.extract(self.dimensions),
+            universe.conform(self.dimensions),
             self.storageClass,
             isCalibration=self.isCalibration,
             parentStorageClass=parentStorageClass,

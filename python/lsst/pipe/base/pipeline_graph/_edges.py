@@ -32,7 +32,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, TypeVar
 
-from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse, SkyPixDimension
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.utils.classes import immutable
 
@@ -495,17 +495,17 @@ class ReadEdge(Edge):
                     f"Note that reference catalog names are now used as the dataset "
                     f"type name instead of 'ref_cat'."
                 )
-            rest1 = set(universe.extract(self.raw_dimensions - {"skypix"}).names)
-            rest2 = {dim.name for dim in current.dimensions if not isinstance(dim, SkyPixDimension)}
+            rest1 = set(universe.conform(self.raw_dimensions - {"skypix"}).names)
+            rest2 = current.dimensions.names - current.dimensions.skypix.names
             if rest1 != rest2:
                 raise IncompatibleDatasetTypeError(
                     f"Non-skypix dimensions for dataset type {self.dataset_type_name} declared in "
                     f"connections ({rest1}) are inconsistent with those in "
                     f"registry's version of this dataset ({rest2})."
                 )
-            dimensions = current.dimensions
+            dimensions = current.dimensions.as_group()
         else:
-            dimensions = universe.extract(self.raw_dimensions)
+            dimensions = universe.conform(self.raw_dimensions)
         is_initial_query_constraint = is_initial_query_constraint and not self.defer_query_constraint
         if is_prerequisite is None:
             is_prerequisite = self.is_prerequisite
@@ -702,7 +702,7 @@ class WriteEdge(Edge):
             Raised if ``current is not None`` and this edge's definition is not
             compatible with it.
         """
-        dimensions = universe.extract(self.raw_dimensions)
+        dimensions = universe.conform(self.raw_dimensions)
         dataset_type = DatasetType(
             self.parent_dataset_type_name,
             dimensions,

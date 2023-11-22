@@ -47,14 +47,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 # -----------------------------
 #  Imports for other modules --
-from lsst.daf.butler import (
-    DataCoordinate,
-    DatasetType,
-    DimensionUniverse,
-    NamedValueSet,
-    Registry,
-    SkyPixDimension,
-)
+from lsst.daf.butler import DataCoordinate, DatasetType, DimensionUniverse, NamedValueSet, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -641,7 +634,7 @@ class Pipeline:
             instrument_class = cast(PipeBaseInstrument, doImportType(instrument_class_name))
             if instrument_class is not None:
                 return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
-        return DataCoordinate.makeEmpty(universe)
+        return DataCoordinate.make_empty(universe)
 
     def addTask(self, task: type[PipelineTask] | str, label: str) -> None:
         """Add a new task to the pipeline, or replace a task that is already
@@ -1042,10 +1035,8 @@ class TaskDatasetTypes:
                             "Note that reference catalog names are now used as the dataset "
                             "type name instead of 'ref_cat'."
                         ) from err
-                    rest1 = set(registry.dimensions.extract(dimensions - {"skypix"}).names)
-                    rest2 = {
-                        dim.name for dim in datasetType.dimensions if not isinstance(dim, SkyPixDimension)
-                    }
+                    rest1 = set(registry.dimensions.conform(dimensions - {"skypix"}).names)
+                    rest2 = datasetType.dimensions.names - datasetType.dimensions.skypix.names
                     if rest1 != rest2:
                         raise ValueError(
                             f"Non-skypix dimensions for dataset type {c.name} declared in "
@@ -1143,7 +1134,7 @@ class TaskDatasetTypes:
 
         # Metadata is supposed to be of the TaskMetadata type, its dimensions
         # correspond to a task quantum.
-        dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
+        dimensions = registry.dimensions.conform(taskDef.connections.dimensions)
 
         # Allow the storage class definition to be read from the existing
         # dataset type definition if present.
@@ -1158,7 +1149,7 @@ class TaskDatasetTypes:
 
         if taskDef.logOutputDatasetName is not None:
             # Log output dimensions correspond to a task quantum.
-            dimensions = registry.dimensions.extract(taskDef.connections.dimensions)
+            dimensions = registry.dimensions.conform(taskDef.connections.dimensions)
             outputs.update(
                 {
                     DatasetType(
