@@ -86,9 +86,12 @@ class TestDatasetHandle(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        config = StorageClassConfig.fromYaml(storageClasses)
+        cls.storage_class_config = StorageClassConfig.fromYaml(storageClasses)
         cls.factory = StorageClassFactory()
-        cls.factory.addFromConfig(config)
+
+    def setUp(self):
+        self.factory.reset()
+        self.factory.addFromConfig(self.storage_class_config)
 
     def test_dataset_handle_basic(self):
         inMemoryDataset = 42
