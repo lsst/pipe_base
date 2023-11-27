@@ -247,7 +247,7 @@ class PipelineTaskTestSuite(lsst.utils.tests.TestCase):
 
     def setUp(self):
         super().setUp()
-        self.butler = butlerTests.makeTestCollection(self.repo)
+        self.butler = butlerTests.makeTestCollection(self.repo, uniqueId=self.id())
 
     def _makeVisitTestData(self, dataId):
         """Create dummy datasets suitable for VisitTask.
