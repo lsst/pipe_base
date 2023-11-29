@@ -49,9 +49,7 @@ class ExecutionReportsTestCase(unittest.TestCase):
             report = QuantumGraphExecutionReport.make_reports(butler, qgraph)
             dict_of_expected_failures = report.to_summary_dict(butler, do_store_logs=False)
             self.assertIsNotNone(dict_of_expected_failures["task0"]["failed_quanta"])
-            self.assertEqual(
-                dict_of_expected_failures["task1"]["outputs"]["add_dataset2"]["missing_upstream_failed"], 1
-            )
+            self.assertEqual(dict_of_expected_failures["task1"]["outputs"]["add_dataset2"]["blocked"], 1)
             self.assertDictEqual(dict_of_expected_failures["task2"]["failed_quanta"], {})
             self.assertEqual(dict_of_expected_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
             self.assertEqual(dict_of_expected_failures["task4"]["n_quanta_blocked"], 1)
