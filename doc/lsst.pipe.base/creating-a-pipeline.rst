@@ -341,6 +341,33 @@ Once a ``subset`` is created the label associated with it can be used in
 any context where task labels are accepted.  Examples of this will be shown
 in :ref:`pipeline-running-intro`.
 
+.. _pipeline_creating_steps:
+
+-----
+Steps
+-----
+Subsets are designed to be an encapsulation of a collection of tasks that are
+useful to be run together. These runs could be for reasons as small as a
+producing quick set of QA debugging plots or as large as divisions of the
+complete pipeline for survey level production.
+
+Because divisions of the pipeline have a special place in survey production, pipelines have a special place where they are highlighted, the ``steps`` key.
+This key is a list of the labels for all subsets that are considered steps in end to end processing.
+Alongside each label, a step must be declared with the set of dimensions the step is expected to run over.
+An example of what the step syntax looks like can be seen in the example below.
+These bits of information allow campaign management / batch production software better reason about how to handle the processing workflow found withing a pipeline.
+
+.. code-block:: yaml
+
+  steps:
+    # the label corresponding to a declared subset, and the dimensions
+    # the processing of that subset is expected to take
+    - label: step1
+      sharding_dimensions: visit, detector
+    - label: step2
+      sharding_dimensions: tract, patch, skymap
+      
+
 .. _pipeline_creating_imports:
 
 -----------

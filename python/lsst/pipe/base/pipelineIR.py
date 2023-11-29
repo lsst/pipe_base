@@ -464,6 +464,10 @@ class ImportIR:
     """Boolean attribute to dictate if contracts should be inherited with the
     pipeline or not.
     """
+    importSteps: bool = True
+    """Boolean attribute to dictate if steps should be inherited with the
+    pipeline or not.
+    """
     labeledSubsetModifyMode: PipelineSubsetCtrl = PipelineSubsetCtrl.DROP
     """Controls how labeled subsets are handled when an import ends up not
     including (either through an include or exclusion list) a task label that
@@ -517,6 +521,9 @@ class ImportIR:
             for label in subsets_in_exclude:
                 included_labels.difference_update(tmp_pipeline.labeled_subsets[label].subset)
 
+        if not self.importSteps:
+            tmp_pipeline.steps = []
+
         tmp_pipeline = tmp_pipeline.subset_from_labels(included_labels, self.labeledSubsetModifyMode)
 
         if not self.importContracts:
@@ -531,6 +538,16 @@ class ImportIR:
             getattr(self, attr) == getattr(other, attr)
             for attr in ("location", "include", "exclude", "importContracts")
         )
+
+
+@dataclass
+class StepIR:
+    """Intermediate representation of a step definition."""
+
+    label: str
+    """The label associated with this step."""
+    sharding_dimensions: list[str]
+    """The dimensions to use when sharding this step."""
 
 
 class PipelineIR:
@@ -584,11 +601,17 @@ class PipelineIR:
         # Process any named label subsets
         self._read_labeled_subsets(loaded_yaml)
 
+        # Process defined sets
+        self._read_step_declaration(loaded_yaml)
+
         # Process any inherited pipelines
         self._read_imports(loaded_yaml)
 
         # verify named subsets, must be done after inheriting
         self._verify_labeled_subsets()
+
+        # verify steps, must be done after inheriting
+        self._verify_steps()
 
     def _read_contracts(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the contracts portion of the loaded yaml document
@@ -639,6 +662,28 @@ class PipelineIR:
         for key, value in loaded_subsets.items():
             self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
 
+    def _read_step_declaration(self, loaded_yaml: dict[str, Any]) -> None:
+        """Process the steps portion of the loaded yaml document
+
+        Steps are subsets that are declared to be normal parts of the overall
+        processing of the pipeline. Not all subsets need to be a step, as they
+        can exist for certain targeted processing, such as debugging.
+
+        Parameters
+        ----------
+        loaded_yaml: `dict`
+            A dictionary which matches the structure that would be produced
+            by a yaml reader which parses a pipeline definition document
+        """
+        loaded_steps = loaded_yaml.pop("steps", [])
+        temp_steps: dict[str, StepIR] = {}
+        for declaration in loaded_steps:
+            new_step = StepIR(**declaration)
+            existing = temp_steps.setdefault(new_step.label, new_step)
+            if existing is not new_step:
+                raise ValueError(f"Step {existing.label} was declared twice.")
+        self.steps = [step for step in temp_steps.values()]
+
     def _verify_labeled_subsets(self) -> None:
         """Verify that all the labels in each named subset exist within the
         pipeline.
@@ -655,6 +700,16 @@ class PipelineIR:
         label_intersection = self.labeled_subsets.keys() & self.tasks.keys()
         if label_intersection:
             raise ValueError(f"Labeled subsets can not use the same label as a task: {label_intersection}")
+
+    def _verify_steps(self) -> None:
+        """Verify that all step definitions have a corresponding labeled
+        subset.
+        """
+        for step in self.steps:
+            if step.label not in self.labeled_subsets:
+                raise ValueError(
+                    f"{step.label} was declared to be a step, but was not declared to be a labeled subset"
+                )
 
     def _read_imports(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the inherits portion of the loaded yaml document
@@ -725,6 +780,7 @@ class PipelineIR:
         accumulate_tasks: dict[str, TaskIR] = {}
         accumulate_labeled_subsets: dict[str, LabeledSubset] = {}
         accumulated_parameters = ParametersIR({})
+        accumulated_steps: dict[str, StepIR] = {}
 
         for tmp_IR in pipelines:
             if self.instrument is None:
@@ -757,6 +813,17 @@ class PipelineIR:
                 )
             accumulate_labeled_subsets.update(tmp_IR.labeled_subsets)
             accumulated_parameters.update(tmp_IR.parameters)
+            for tmp_step in tmp_IR.steps:
+                existing = accumulated_steps.setdefault(tmp_step.label, tmp_step)
+                if existing != tmp_step:
+                    raise ValueError(
+                        f"There were conflicting step definitions in import {tmp_step}, {existing}"
+                    )
+
+        for tmp_step in self.steps:
+            existing = accumulated_steps.setdefault(tmp_step.label, tmp_step)
+            if existing != tmp_step:
+                raise ValueError(f"There were conflicting step definitions in import {tmp_step}, {existing}")
 
         # verify that any accumulated labeled subsets dont clash with a label
         # from this pipeline
@@ -783,6 +850,7 @@ class PipelineIR:
         self.tasks: dict[str, TaskIR] = accumulate_tasks
         accumulated_parameters.update(self.parameters)
         self.parameters = accumulated_parameters
+        self.steps = list(accumulated_steps.values())
 
     def _read_tasks(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the tasks portion of the loaded yaml document
@@ -905,7 +973,7 @@ class PipelineIR:
 
         # create a copy of the object to iterate over
         labeled_subsets = copy.copy(pipeline.labeled_subsets)
-        # remove any labeled subsets that no longer have a complete set
+        # remove or edit any labeled subsets that no longer have a complete set
         for label, labeled_subset in labeled_subsets.items():
             if extraTaskLabels := (labeled_subset.subset - pipeline.tasks.keys()):
                 match subsetCtrl:
@@ -914,6 +982,14 @@ class PipelineIR:
                     case PipelineSubsetCtrl.EDIT:
                         for extra in extraTaskLabels:
                             labeled_subset.subset.discard(extra)
+
+        # remove any steps that correspond to removed subsets
+        new_steps = []
+        for step in pipeline.steps:
+            if step.label not in pipeline.labeled_subsets:
+                continue
+            new_steps.append(step)
+        pipeline.steps = new_steps
 
         return pipeline
 
