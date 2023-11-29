@@ -33,6 +33,7 @@ from __future__ import annotations
 
 __all__ = ("DatasetQueryConstraintVariant",)
 
+import sys
 import warnings
 from collections.abc import Iterable, Iterator
 from typing import Protocol
@@ -101,7 +102,16 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
             return cls.LIST(members)
 
 
-class _ALLMETA(DatasetQueryConstraintVariant, type(Protocol)):
+if sys.version_info.minor < 12:
+    MetaMeta = type
+else:
+
+    class MetaMeta(type(Protocol)):
+        def __init__(cls, *args, **kwargs):
+            return super().__init__(cls, *args, **kwargs)
+
+
+class _ALLMETA(DatasetQueryConstraintVariant, type(Protocol), metaclass=MetaMeta):
     def __iter__(self) -> Iterator:  # noqa: N804
         raise NotImplementedError("This variant cannot be iterated")
 
@@ -111,7 +121,7 @@ class _ALL(metaclass=_ALLMETA):
         return cls
 
 
-class _OFFMETA(DatasetQueryConstraintVariant, type(Protocol)):
+class _OFFMETA(DatasetQueryConstraintVariant, type(Protocol), metaclass=MetaMeta):
     def __iter__(self) -> Iterator:  # noqa: N804
         raise NotImplementedError("This variant cannot be iterated")
 
@@ -121,7 +131,7 @@ class _OFF(metaclass=_OFFMETA):
         return cls
 
 
-class _LISTMETA(type(Protocol)):
+class _LISTMETA(type(Protocol), metaclass=MetaMeta):
     def __iter__(self):  # noqa: N804
         return iter(tuple())
 
