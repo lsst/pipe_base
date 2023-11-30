@@ -88,6 +88,27 @@ class PipelineTestCase(unittest.TestCase):
         pipeline.removeLabelFromSubset("test", "task0")
         self.assertEqual(pipeline._pipelineIR.labeled_subsets["test"].subset, set())
 
+        # Test creating new labeled subsets.
+        with self.assertRaises(ValueError):
+            # missing task label
+            pipeline.addLabeledSubset("newSubset", "test description", {"missing_task_label"})
+        with self.assertRaises(ValueError):
+            # duplicate labeled subset
+            pipeline.addLabeledSubset("test", "test description", {"missing_task_label"})
+
+        taskLabels = {"task0", "task1"}
+        pipeline.addLabeledSubset("newSubset", "test description", taskLabels)
+
+        # verify using the subset property interface
+        self.assertEqual(pipeline.subsets["newSubset"], taskLabels)
+
+        # Test removing labeled subsets
+        with self.assertRaises(ValueError):
+            pipeline.removeLabeledSubset("missing_subset")
+
+        pipeline.removeLabeledSubset("newSubset")
+        self.assertNotIn("newSubset", pipeline.subsets.keys())
+
     def testMergingPipelines(self):
         pipeline1 = makeSimplePipeline(2)
         pipeline2 = makeSimplePipeline(4)

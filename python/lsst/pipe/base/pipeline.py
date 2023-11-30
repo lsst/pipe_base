@@ -597,6 +597,57 @@ class Pipeline:
                 results.add(subset.label)
         return results
 
+    @property
+    def subsets(self) -> MappingProxyType[str, set]:
+        """Returns a `MappingProxyType` where the keys are the labels of
+        labeled subsets in the `Pipeline` and the values are the set of task
+        labels contained within that subset.
+        """
+        return MappingProxyType(
+            {label: subsetIr.subset for label, subsetIr in self._pipelineIR.labeled_subsets.items()}
+        )
+
+    def addLabeledSubset(self, label: str, description: str, taskLabels: set[str]) -> None:
+        """Add a new labeled subset to the `Pipeline`.
+
+        Parameters
+        ----------
+        label : `str`
+            The label to assign to the subset.
+        description : `str`
+            A description of what the subset is for.
+        taskLabels : `set` [`str`]
+            The set of task labels to be associated with the labeled subset.
+
+        Raises
+        ------
+        ValueError
+            Raised if label already exists in the `Pipeline`.
+            Raised if a task label is not found within the `Pipeline`.
+        """
+        if label in self._pipelineIR.labeled_subsets.keys():
+            raise ValueError(f"Subset label {label} is already found within the Pipeline")
+        if extra := (taskLabels - self._pipelineIR.tasks.keys()):
+            raise ValueError(f"Task labels {extra} were not found within the Pipeline")
+        self._pipelineIR.labeled_subsets[label] = pipelineIR.LabeledSubset(label, taskLabels, description)
+
+    def removeLabeledSubset(self, label: str) -> None:
+        """Remove a labeled subset from the `Pipeline`.
+
+        Parameters
+        ----------
+        label : `str`
+            The label of the subset to remove from the `Pipeline`
+
+        Raises
+        ------
+        ValueError
+            Raised if the label is not found within the `Pipeline`
+        """
+        if label not in self._pipelineIR.labeled_subsets.keys():
+            raise ValueError(f"Subset label {label} was not found in the pipeline")
+        self._pipelineIR.labeled_subsets.pop(label)
+
     def addInstrument(self, instrument: Instrument | str) -> None:
         """Add an instrument to the pipeline, or replace an instrument that is
         already defined.
