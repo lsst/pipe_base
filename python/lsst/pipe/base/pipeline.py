@@ -247,6 +247,8 @@ class Pipeline:
         A description of that this pipeline does.
     """
 
+    PipelineSubsetCtrl = pipelineIR.PipelineSubsetCtrl
+
     def __init__(self, description: str):
         pipeline_dict = {"description": description, "tasks": {}}
         self._pipelineIR = pipelineIR.PipelineIR(pipeline_dict)
@@ -330,13 +332,24 @@ class Pipeline:
             pipeline = pipeline.subsetFromLabels(label_specifier)
         return pipeline
 
-    def subsetFromLabels(self, labelSpecifier: LabelSpecifier) -> Pipeline:
+    def subsetFromLabels(
+        self,
+        labelSpecifier: LabelSpecifier,
+        subsetCtrl: pipelineIR.PipelineSubsetCtrl = PipelineSubsetCtrl.DROP,
+    ) -> Pipeline:
         """Subset a pipeline to contain only labels specified in labelSpecifier
 
         Parameters
         ----------
         labelSpecifier : `labelSpecifier`
             Object containing labels that describes how to subset a pipeline.
+        subsetCtrl : `PipelineSubsetCtrl`
+            Control object which decides how subsets with missing labels are
+            handled. Setting to `PipelineSubsetCtrl.DROP` (the default) will
+            cause any subsets that have labels which are not in the set of all
+            task labels to be dropped. Setting to `PipelineSubsetCtrl.EDIT`
+            will cause the subset to instead be edited to remove the
+            nonexistent label.
 
         Returns
         -------
@@ -394,7 +407,7 @@ class Pipeline:
                 labelSet.add(label)
                 if labelSpecifier.end is not None and label == labelSpecifier.end:
                     break
-        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
+        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet, subsetCtrl))
 
     @staticmethod
     def _parse_file_specifier(uri: ResourcePathExpression) -> tuple[ResourcePath, LabelSpecifier | None]:

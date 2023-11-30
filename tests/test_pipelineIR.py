@@ -31,7 +31,7 @@ import textwrap
 import unittest
 
 import lsst.utils.tests
-from lsst.pipe.base.pipelineIR import ConfigIR, PipelineIR
+from lsst.pipe.base.pipelineIR import ConfigIR, PipelineIR, PipelineSubsetCtrl
 
 # Find where the test pipelines exist and store it in an environment variable.
 os.environ["TESTDIR"] = os.path.dirname(__file__)
@@ -169,6 +169,7 @@ class PipelineIRTestCase(unittest.TestCase):
         imports:
             - location: $TESTDIR/testPipeline1.yaml
               include: modB
+              labeledSubsetModifyMode: DROP
             - $TESTDIR/testPipeline2.yaml
         """
         )
@@ -184,10 +185,26 @@ class PipelineIRTestCase(unittest.TestCase):
             - location: $TESTDIR/testPipeline1.yaml
               exclude: modA
               include: modB
+              labeledSubsetModifyMode: EDIT
             - $TESTDIR/testPipeline2.yaml
         """
         )
 
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test unknown labeledSubsetModifyModes raise
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/testPipeline1.yaml
+              exclude: modA
+              include: modB
+              labeledSubsetModifyMode: WRONG
+            - $TESTDIR/testPipeline2.yaml
+        """
+        )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
@@ -528,6 +545,40 @@ class PipelineIRTestCase(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
+
+    def testSubsettingPipeline(self):
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        tasks:
+            modA: test.modA
+            modB:
+              class: test.modB
+            modC: test.modC
+            modD: test.modD
+        subsets:
+            subset1:
+              - modA
+              - modB
+            subset2:
+              subset:
+                - modC
+                - modD
+              description: "A test named subset"
+        """
+        )
+        pipeline = PipelineIR.from_string(pipeline_str)
+        # verify that creating a pipeline subset with the default drop behavior
+        # removes any labeled subset that contains a label not in the set of
+        # all task labels.
+        pipelineSubset1 = pipeline.subset_from_labels({"modA", "modB", "modC"})
+        self.assertEqual(pipelineSubset1.labeled_subsets.keys(), {"subset1"})
+        # verify that creating a pipeline subset with the edit behavior
+        # edits any labeled subset that contains a label not in the set of
+        # all task labels.
+        pipelineSubset2 = pipeline.subset_from_labels({"modA", "modB", "modC"}, PipelineSubsetCtrl.EDIT)
+        self.assertEqual(pipelineSubset2.labeled_subsets.keys(), {"subset1", "subset2"})
+        self.assertEqual(pipelineSubset2.labeled_subsets["subset2"].subset, {"modC"})
 
     def testInstrument(self):
         # Verify that if instrument is defined it is parsed out

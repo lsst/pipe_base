@@ -375,7 +375,15 @@ place of a label. This will have the same effect as typing out all of the
 labels listed in the subset. Another important point is the behavior of
 labels that are not imported (either because they are excluded, or they are
 not part of the include list). If any omitted label appears as part of a
-subset, then the subset definition is not imported.
+subset, then the subset definition is not imported by default. This can be
+changed by adding the ``labeledSubsetModifyMode`` key to the import definition
+and setting its value to ``EDIT``. This will cause the subset to still be
+imported but task labels which are missing (due to ``include`` / ``exclude``
+specifications) to be removed from the subset. A warning about this ``EDIT``
+behavior, using it can leave subsets in states where the subsets are no longer
+logically sound as some required task could be missing. Because of this, this
+mode should only be used when one has a good understanding of the `Pipeline`\ s
+in question and the consequences of the decision.
 
 The order that `Pipeline`\s are listed in the ``imports`` section is not
 important. Another thing to note is that declared labels must be unique
