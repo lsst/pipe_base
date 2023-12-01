@@ -197,7 +197,9 @@ class TaskExecutionReport:
             else:
                 dataset_type_report.n_produced += 1
 
-    def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
+    def to_summary_dict(
+        self, butler: Butler, do_store_logs: bool = True, human_readable: bool = False
+    ) -> dict[str, Any]:
         """Summarize the results of the TaskExecutionReport in a dictionary.
 
         Parameters
@@ -206,6 +208,9 @@ class TaskExecutionReport:
             The Butler used for this report.
         do_store_logs : `bool`
             Store the logs in the summary dictionary.
+        human_readable : `bool`
+            Store more human-readable information to be printed out to the
+            command-line.
 
         Returns
         -------
@@ -220,10 +225,18 @@ class TaskExecutionReport:
             - n_quanta_blocked: The number of quanta which failed due to
               upstream failures.
             - n_succeded: The number of quanta which succeeded.
+
+            And possibly, if human-readable is passed:
+
+            - errors: A dictionary of data ids associated with each error
+              message. If `human-readable` and `do_store_logs`, this is stored
+              here. Otherwise, if `do_store_logs`, it is stored in
+              `failed_quanta` keyed by the quantum graph node id.
         """
         failed_quanta = {}
         for node_id, log_ref in self.failed.items():
-            quantum_info: dict[str, Any] = {"data_id": dict(log_ref.dataId.required)}
+            data_ids = dict(log_ref.dataId.required)
+            quantum_info: dict[str, Any] = {"data_id": data_ids}
             if do_store_logs:
                 try:
                     log = butler.get(log_ref)
@@ -235,7 +248,17 @@ class TaskExecutionReport:
                     quantum_info["error"] = [
                         record.message for record in log if record.levelno >= logging.ERROR
                     ]
-            failed_quanta[str(node_id)] = quantum_info
+            if human_readable:
+                failed_quanta["data_id"] = data_ids
+                return {
+                    "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
+                    "failed_quanta": failed_quanta,
+                    "n_quanta_blocked": len(self.blocked),
+                    "n_succeeded": self.n_succeeded,
+                    "errors": quantum_info,
+                }
+            else:
+                failed_quanta[str(node_id)] = quantum_info
         return {
             "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
             "failed_quanta": failed_quanta,
@@ -274,7 +297,9 @@ class QuantumGraphExecutionReport:
     tasks: dict[str, TaskExecutionReport] = dataclasses.field(default_factory=dict)
     """A dictionary of TaskExecutionReports by task label (`dict`)."""
 
-    def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
+    def to_summary_dict(
+        self, butler: Butler, do_store_logs: bool = True, human_readable: bool = False
+    ) -> dict[str, Any]:
         """Summarize the results of the `QuantumGraphExecutionReport` in a
         dictionary.
 
@@ -284,6 +309,9 @@ class QuantumGraphExecutionReport:
             The Butler used for this report.
         do_store_logs : `bool`
             Store the logs in the summary dictionary.
+        human_readable : `bool`
+            Store more human-readable information to be printed out to the
+            command-line.
 
         Returns
         -------
@@ -292,7 +320,7 @@ class QuantumGraphExecutionReport:
             each task in the quantum graph.
         """
         return {
-            task: report.to_summary_dict(butler, do_store_logs=do_store_logs)
+            task: report.to_summary_dict(butler, do_store_logs=do_store_logs, human_readable=human_readable)
             for task, report in self.tasks.items()
         }
 

@@ -47,9 +47,20 @@ class ExecutionReportsTestCase(unittest.TestCase):
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
             report = QuantumGraphExecutionReport.make_reports(butler, qgraph)
-            dict_of_expected_failures = report.to_summary_dict(butler, do_store_logs=False)
-            self.assertIsNotNone(dict_of_expected_failures["task0"]["failed_quanta"])
-            self.assertEqual(dict_of_expected_failures["task1"]["outputs"]["add_dataset2"]["blocked"], 1)
-            self.assertDictEqual(dict_of_expected_failures["task2"]["failed_quanta"], {})
-            self.assertEqual(dict_of_expected_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
-            self.assertEqual(dict_of_expected_failures["task4"]["n_quanta_blocked"], 1)
+            # make a summary dictionary with a certain amount of
+            # expected failures and check that they are there
+            exp_failures = report.to_summary_dict(butler, do_store_logs=False)
+            self.assertIsNotNone(exp_failures["task0"]["failed_quanta"])
+            self.assertEqual(exp_failures["task1"]["outputs"]["add_dataset2"]["blocked"], 1)
+            self.assertDictEqual(exp_failures["task2"]["failed_quanta"], {})
+            self.assertEqual(exp_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
+            self.assertEqual(exp_failures["task4"]["n_quanta_blocked"], 1)
+
+            # now we'll make a human-readable summary dict and
+            # repeat the tests:
+            hr_exp_failures = report.to_summary_dict(butler, do_store_logs=False, human_readable=True)
+            self.assertIsNotNone(hr_exp_failures["task0"]["failed_quanta"])
+            self.assertEqual(hr_exp_failures["task1"]["outputs"]["add_dataset2"]["blocked"], 1)
+            self.assertDictEqual(hr_exp_failures["task2"]["failed_quanta"], {})
+            self.assertEqual(hr_exp_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
+            self.assertEqual(hr_exp_failures["task4"]["n_quanta_blocked"], 1)
