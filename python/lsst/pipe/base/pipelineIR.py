@@ -52,6 +52,22 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import find_outside_stacklevel
 
 
+class PipelineSubsetCtrl(enum.Enum):
+    """An Enumeration of the various ways a pipeline subsetting operation will
+    handle labeled subsets when task labels they defined are missing.
+    """
+
+    DROP = enum.auto()
+    """Drop any subsets that contain labels which are no longer in the set of
+    task labels when subsetting an entire pipeline
+    """
+    EDIT = enum.auto()
+    """Edit any subsets that contain labels which are no longer in the set of
+    task labels to remove the missing label, but leave the subset when
+    subsetting a pipeline.
+    """
+
+
 class _Tags(enum.Enum):
     KeepInstrument = enum.auto()
 
@@ -446,6 +462,13 @@ class ImportIR:
     """Boolean attribute to dictate if contracts should be inherited with the
     pipeline or not.
     """
+    labeledSubsetModifyMode: PipelineSubsetCtrl = PipelineSubsetCtrl.DROP
+    """Controls how labeled subsets are handled when an import ends up not
+    including (either through an include or exclusion list) a task label that
+    is defined in the `Pipeline` being imported. DROP will remove any
+    subsets which contain a missing label. EDIT will change any subsets to not
+    include the missing label.
+    """
     instrument: Literal[_Tags.KeepInstrument] | str | None = _Tags.KeepInstrument
     """Instrument to assign to the Pipeline at import. The default value of
     `_Tags.KeepInstrument`` indicates that whatever instrument the pipeline is
@@ -492,7 +515,7 @@ class ImportIR:
             for label in subsets_in_exclude:
                 included_labels.difference_update(tmp_pipeline.labeled_subsets[label].subset)
 
-        tmp_pipeline = tmp_pipeline.subset_from_labels(included_labels)
+        tmp_pipeline = tmp_pipeline.subset_from_labels(included_labels, self.labeledSubsetModifyMode)
 
         if not self.importContracts:
             tmp_pipeline.contracts = []
@@ -651,6 +674,14 @@ class PipelineIR:
                     argument["include"] = [argument["include"]]
                 if "instrument" in argument and argument["instrument"] == "None":
                     argument["instrument"] = None
+                if "labeledSubsetModifyMode" in argument:
+                    match argument["labeledSubsetModifyMode"]:
+                        case "DROP":
+                            argument["labeledSubsetModifyMode"] = PipelineSubsetCtrl.DROP
+                        case "EDIT":
+                            argument["labeledSubsetModifyMode"] = PipelineSubsetCtrl.EDIT
+                        case unknown:
+                            raise ValueError(f"{unknown} is not a valid mode for labeledSubsetModifyMode")
                 return argument
 
         if not {"inherits", "imports"} - loaded_yaml.keys():
@@ -807,14 +838,23 @@ class PipelineIR:
             new_contracts.append(contract)
         self.contracts = new_contracts
 
-    def subset_from_labels(self, labelSpecifier: set[str]) -> PipelineIR:
+    def subset_from_labels(
+        self, labelSpecifier: set[str], subsetCtrl: PipelineSubsetCtrl = PipelineSubsetCtrl.DROP
+    ) -> PipelineIR:
         """Subset a pipelineIR to contain only labels specified in
         labelSpecifier.
 
         Parameters
         ----------
         labelSpecifier : `set` of `str`
-            set containing labels that describes how to subset a pipeline.
+            Set containing labels that describes how to subset a pipeline.
+        subsetCtrl : `PipelineSubsetCtrl`
+            Control object which decides how subsets with missing labels are
+            handled. Setting to `PipelineSubsetCtrl.DROP` (the default) will
+            cause any subsets that have labels which are not in the set of all
+            task labels to be dropped. Setting to `PipelineSubsetCtrl.EDIT`
+            will cause the subset to instead be edited to remove the
+            nonexistent label.
 
         Returns
         -------
@@ -831,9 +871,7 @@ class PipelineIR:
         This method attempts to prune any contracts that contain labels which
         are not in the declared subset of labels. This pruning is done using a
         string based matching due to the nature of contracts and may prune more
-        than it should. Any labeled subsets defined that no longer have all
-        members of the subset present in the pipeline will be removed from the
-        resulting pipeline.
+        than it should.
         """
         pipeline = copy.deepcopy(self)
 
@@ -867,8 +905,13 @@ class PipelineIR:
         labeled_subsets = copy.copy(pipeline.labeled_subsets)
         # remove any labeled subsets that no longer have a complete set
         for label, labeled_subset in labeled_subsets.items():
-            if labeled_subset.subset - pipeline.tasks.keys():
-                pipeline.labeled_subsets.pop(label)
+            if extraTaskLabels := (labeled_subset.subset - pipeline.tasks.keys()):
+                match subsetCtrl:
+                    case PipelineSubsetCtrl.DROP:
+                        pipeline.labeled_subsets.pop(label)
+                    case PipelineSubsetCtrl.EDIT:
+                        for extra in extraTaskLabels:
+                            labeled_subset.subset.discard(extra)
 
         return pipeline
 
