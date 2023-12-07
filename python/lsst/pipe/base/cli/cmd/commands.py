@@ -53,7 +53,7 @@ def register_instrument(*args: Any, **kwargs: Any) -> None:
 @click.argument("graph", required=True)
 @click.argument("dest", required=True)
 @register_dataset_types_option()
-@transfer_dimensions_option()
+@transfer_dimensions_option(default=False)
 @update_output_chain_option()
 @options_file_option()
 def transfer_from_graph(**kwargs: Any) -> None:
