@@ -52,18 +52,16 @@ class DatasetTypeExecutionReport:
     `TaskExecutionReport`.
     """
 
-    missing_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
+    failed: set[DatasetRef] = dataclasses.field(default_factory=set)
     """Datasets not produced because their quanta failed directly in this
     run (`set`).
     """
 
-    missing_not_produced: dict[DatasetRef, bool] = dataclasses.field(default_factory=dict)
-    """Missing datasets which were not produced due either missing inputs or a
-    failure in finding inputs (`dict`).
-        bool: were predicted inputs produced?
+    not_produced: set[DatasetRef] = dataclasses.field(default_factory=set)
+    """Missing datasets which were not produced by successful quanta.
     """
 
-    missing_upstream_failed: set[DatasetRef] = dataclasses.field(default_factory=set)
+    blocked: set[DatasetRef] = dataclasses.field(default_factory=set)
     """Datasets not produced due to an upstream failure (`set`).
     """
 
@@ -78,66 +76,15 @@ class DatasetTypeExecutionReport:
         -------
         summary_dict : `dict`
             A count of the datasets with each outcome; the number of
-            produced, `missing_failed`, `missing_not_produced`, and
-            `missing_upstream_failed` `DatasetTypes`. See above for attribute
-            descriptions.
+            produced, `failed`, `not_produced`, and `blocked` `DatasetTypes`.
+            See above for attribute descriptions.
         """
         return {
             "produced": self.n_produced,
-            "missing_failed": len(self.missing_failed),
-            "missing_not_produced": len(self.missing_not_produced),
-            "missing_upstream_failed": len(self.missing_upstream_failed),
+            "failed": len(self.failed),
+            "not_produced": len(self.not_produced),
+            "blocked": len(self.blocked),
         }
-
-    def handle_missing_dataset(
-        self, output_ref: DatasetRef, failed: bool, status_graph: networkx.DiGraph
-    ) -> None:
-        """Sort missing datasets into outcomes.
-
-        Parameters
-        ----------
-        output_ref : `~lsst.daf.butler.DatasetRef`
-            Dataset reference of the missing dataset.
-        failed : `bool`
-            Whether the task associated with the missing dataset failed.
-        status_graph : `networkx.DiGraph`
-            The quantum graph produced by `TaskExecutionReport.inspect_quantum`
-            which steps through the run quantum graph and logs the status of
-            each quanta.
-        """
-        if failed:
-            for upstream_quantum_id in status_graph.predecessors(output_ref.id):
-                if status_graph.nodes[upstream_quantum_id]["failed"]:
-                    self.missing_upstream_failed.add(output_ref)
-                    break
-            else:
-                self.missing_failed.add(output_ref)
-        else:
-            status_graph.nodes[output_ref.id]["not_produced"] = True
-            self.missing_not_produced[output_ref] = any(
-                status_graph.nodes[upstream_dataset_id].get("not_produced", False)
-                for upstream_quantum_id in status_graph.predecessors(output_ref.id)
-                for upstream_dataset_id in status_graph.predecessors(upstream_quantum_id)
-            )
-
-    def handle_produced_dataset(self, output_ref: DatasetRef, status_graph: networkx.DiGraph) -> None:
-        """Account for produced datasets.
-
-        Parameters
-        ----------
-        output_ref : `~lsst.daf.butler.DatasetRef`
-            Dataset reference of the dataset.
-        status_graph : `networkx.DiGraph`
-            The quantum graph produced by
-            `QuantumGraphExecutionReport.make_reports` which steps through the
-            quantum graph of a run and logs the status of each quantum.
-
-        See Also
-        --------
-        TaskExecutionReport.inspect_quantum
-        """
-        status_graph.nodes[output_ref.id]["not_produced"] = False
-        self.n_produced += 1
 
 
 @dataclasses.dataclass
@@ -159,7 +106,14 @@ class TaskExecutionReport:
     failed directly in this run (`dict`).
     """
 
-    failed_upstream: dict[uuid.UUID, DataCoordinate] = dataclasses.field(default_factory=dict)
+    n_succeeded: int = 0
+    """A count of successful quanta.
+
+    This may include quanta that did not produce any datasets; ie, raised
+    `NoWorkFound`.
+    """
+
+    blocked: dict[uuid.UUID, DataCoordinate] = dataclasses.field(default_factory=dict)
     """A mapping of data IDs of quanta that were not attempted due to an
     upstream failure (`dict`).
     """
@@ -199,13 +153,12 @@ class TaskExecutionReport:
 
         See Also
         --------
-        DatasetTypeExecutionReport.handle_missing_dataset
-        DatasetTypeExecutionReport.handle_produced_dataset
         QuantumGraphExecutionReport.make_reports
         """
         quantum = quantum_node.quantum
         (metadata_ref,) = quantum.outputs[metadata_name]
         (log_ref,) = quantum.outputs[log_name]
+        blocked = False
         if metadata_ref.id not in refs[metadata_name]:
             if any(
                 status_graph.nodes[upstream_quantum_id]["failed"]
@@ -213,22 +166,34 @@ class TaskExecutionReport:
                 for upstream_quantum_id in status_graph.predecessors(upstream_dataset_id)
             ):
                 assert quantum.dataId is not None
-                self.failed_upstream[quantum_node.nodeId] = quantum.dataId
+                self.blocked[quantum_node.nodeId] = quantum.dataId
+                blocked = True
             else:
                 self.failed[quantum_node.nodeId] = log_ref
                 # note: log_ref may or may not actually exist
             failed = True
         else:
             failed = False
+            self.n_succeeded += 1
         status_graph.nodes[quantum_node.nodeId]["failed"] = failed
+
+        # Now, loop over the datasets to make a DatasetTypeExecutionReport.
         for output_ref in itertools.chain.from_iterable(quantum.outputs.values()):
+            if output_ref == metadata_ref or output_ref == log_ref:
+                continue
             if (dataset_type_report := self.output_datasets.get(output_ref.datasetType.name)) is None:
                 dataset_type_report = DatasetTypeExecutionReport()
                 self.output_datasets[output_ref.datasetType.name] = dataset_type_report
             if output_ref.id not in refs[output_ref.datasetType.name]:
-                dataset_type_report.handle_missing_dataset(output_ref, failed, status_graph)
+                if failed:
+                    if blocked:
+                        dataset_type_report.blocked.add(output_ref)
+                    else:
+                        dataset_type_report.failed.add(output_ref)
+                else:
+                    dataset_type_report.not_produced.add(output_ref)
             else:
-                dataset_type_report.handle_produced_dataset(output_ref, status_graph)
+                dataset_type_report.n_produced += 1
 
     def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the results of the TaskExecutionReport in a dictionary.
@@ -252,6 +217,7 @@ class TaskExecutionReport:
               dataIDs by quantum graph node id
             - n_quanta_blocked: The number of quanta which failed due to
               upstream failures.
+            - n_succeded: The number of quanta which succeeded.
 
         """
         failed_quanta = {}
@@ -272,14 +238,15 @@ class TaskExecutionReport:
         return {
             "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
             "failed_quanta": failed_quanta,
-            "n_quanta_blocked": len(self.failed_upstream),
+            "n_quanta_blocked": len(self.blocked),
+            "n_succeeded": self.n_succeeded,
         }
 
     def __str__(self) -> str:
-        """Return a count of the failed and failed_upstream tasks in the
+        """Return a count of the failed and blocked tasks in the
         TaskExecutionReport.
         """
-        return f"failed: {len(self.failed)}\nfailed upstream: {len(self.failed_upstream)}\n"
+        return f"failed: {len(self.failed)}\nblocked: {len(self.blocked)}\n"
 
 
 @dataclasses.dataclass
