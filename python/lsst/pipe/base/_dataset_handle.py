@@ -51,9 +51,26 @@ def _default_dataId() -> DataCoordinate:
 class InMemoryDatasetHandle:
     """An in-memory version of a `~lsst.daf.butler.DeferredDatasetHandle`.
 
-    If ``dataId`` is not specified, a default empty dataId will be constructed.
-    If ``kwargs`` are provided without specifying a ``dataId``, those
-    parameters will be converted into a dataId-like entity.
+    Parameters
+    ----------
+    inMemoryDataset : `~typing.Any`
+        The dataset to be used by this handle.
+    storageClass : `~lsst.daf.butler.StorageClass` or `None`, optional
+        The storage class associated with the in-memory dataset. If `None`
+        and if a storage class is needed, an attempt will be made to work one
+        out from the underlying python type.
+    parameters : `dict` [`str`, `~typing.Any`]
+        Parameters to be used with `get`.
+    dataId : `~lsst.daf.butler.DataId` or `None`, optional
+        The dataId associated with this dataset. Only used for compatibility
+        with the Butler implementation. Can be used for logging messages
+        by calling code. If ``dataId`` is not specified, a default empty
+        dataId will be constructed.
+    copy : `bool`, optional
+        Whether to copy on `get` or not.
+    **kwargs : `~typing.Any`
+        If ``kwargs`` are provided without specifying a ``dataId``, those
+        parameters will be converted into a dataId-like entity.
     """
 
     _empty = DataCoordinate.make_empty(DimensionUniverse())

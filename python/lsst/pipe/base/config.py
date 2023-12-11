@@ -188,7 +188,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
 
 
 class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
-    """Configuration class for `PipelineTask`
+    """Configuration class for `PipelineTask`.
 
     This Configuration class functions in largely the same manner as any other
     derived from `lsst.pex.config.Config`. The only difference is in how it is

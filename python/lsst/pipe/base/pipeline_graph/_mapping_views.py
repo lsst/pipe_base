@@ -44,7 +44,6 @@ class MappingView(Mapping[str, _N]):
     """Base class for mapping views into nodes of certain types in a
     `PipelineGraph`.
 
-
     Parameters
     ----------
     parent_xgraph : `networkx.MultiDiGraph`
@@ -172,7 +171,18 @@ class DatasetTypeMappingView(MappingView[DatasetTypeNode]):
         return result
 
     def is_resolved(self, key: str) -> bool:
-        """Test whether a node has been resolved."""
+        """Test whether a node has been resolved.
+
+        Parameters
+        ----------
+        key : `str`
+            Node to check.
+
+        Returns
+        -------
+        `bool`
+            Whether the node has been resolved or not.
+        """
         return super().__getitem__(key) is not None
 
     @overload
@@ -190,8 +200,13 @@ class DatasetTypeMappingView(MappingView[DatasetTypeNode]):
         ----------
         key : `str`
             Parent dataset type name.
-        default
+        default : `~typing.Any`
             Value to return if this dataset type has not been resolved.
+
+        Returns
+        -------
+        result : `DatasetTypeNode`
+            The resolved node or the default value.
 
         Raises
         ------

@@ -78,6 +78,13 @@ class PipelineTaskConnectionDict(UserDict):
     the corresponding class attribute. This information is a duplicate of
     what exists in ``__dict__``, but provides a simple place to lookup and
     iterate on only these variables.
+
+    Parameters
+    ----------
+    *args : `~typing.Any`
+        Passed to `dict` constructor.
+    **kwargs : `~typing.Any`
+        Passed to `dict` constructor.
     """
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -117,7 +124,7 @@ class PipelineTaskConnectionDict(UserDict):
 
 
 class PipelineTaskConnectionsMetaclass(type):
-    """Metaclass used in the declaration of PipelineTaskConnections classes"""
+    """Metaclass used in the declaration of PipelineTaskConnections classes."""
 
     # We can annotate these attributes as `collections.abc.Set` to discourage
     # undesirable modifications in type-checked code, since the internal code
@@ -403,6 +410,11 @@ class QuantizedConnection(SimpleNamespace):
     instance.  This will be a quantum of execution based on the graph created
     by examining all the connections defined on the
     `PipelineTaskConnections` class.
+
+    Parameters
+    ----------
+    **kwargs : `~typing.Any`
+        Not used.
     """
 
     def __init__(self, **kwargs):
@@ -436,7 +448,7 @@ class QuantizedConnection(SimpleNamespace):
 
     def keys(self) -> Generator[str, None, None]:
         """Return an iterator over all the attributes added to a
-        `QuantizedConnection` class
+        `QuantizedConnection` class.
         """
         yield from self._attributes
 

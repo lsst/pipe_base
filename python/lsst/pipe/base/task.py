@@ -85,7 +85,7 @@ class Task:
 
     name : `str`, optional
         Brief name of task, or `None`; if `None` then defaults to
-        `Task._DefaultName`
+        `Task._DefaultName`.
     parentTask : `Task`-type, optional
         The parent task of this subtask, if any.
 
@@ -268,7 +268,7 @@ class Task:
 
         See Also
         --------
-        getFullName
+        getFullName : Get the full name of the task.
         """
         return self._name
 
@@ -320,7 +320,7 @@ class Task:
         name : `str`
             Name of code being timed; data will be logged using item name:
             ``Start`` and ``End``.
-        logLevel
+        logLevel : `int`
             A `logging` level constant.
 
         Examples
@@ -334,7 +334,7 @@ class Task:
 
         See Also
         --------
-        lsst.utils.timer.logInfo
+        lsst.utils.timer.logInfo : Implementation function.
         """
         logInfo(obj=self, prefix=name + "Start", logLevel=logLevel)
         try:

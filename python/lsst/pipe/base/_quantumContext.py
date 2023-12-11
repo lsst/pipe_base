@@ -221,7 +221,7 @@ class QuantumContext:
             return self.__butler.get(ref)
 
     def _put(self, value: Any, ref: DatasetRef) -> None:
-        """Store data in butler"""
+        """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
         self.__butler.put(value, ref)
 
@@ -234,11 +234,11 @@ class QuantumContext:
         | DeferredDatasetRef
         | None,
     ) -> Any:
-        """Fetch data from the butler
+        """Fetch data from the butler.
 
         Parameters
         ----------
-        dataset
+        dataset : see description
             This argument may either be an `InputQuantizedConnection` which
             describes all the inputs of a quantum, a list of
             `~lsst.daf.butler.DatasetRef`, or a single
@@ -348,7 +348,8 @@ class QuantumContext:
             only a single object need be passed. The same restriction applies
             if dataset is directly a `list` of `~lsst.daf.butler.DatasetRef`
             or a single `~lsst.daf.butler.DatasetRef`.
-        dataset
+        dataset : `OutputQuantizedConnection` or `list`[`DatasetRef`] \
+                or `DatasetRef`
             This argument may either be an `InputQuantizedConnection` which
             describes all the inputs of a quantum, a list of
             `lsst.daf.butler.DatasetRef`, or a single

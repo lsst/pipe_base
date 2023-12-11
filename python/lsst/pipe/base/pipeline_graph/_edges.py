@@ -220,6 +220,16 @@ class Edge(ABC):
     def adapt_dataset_type(self, dataset_type: DatasetType) -> DatasetType:
         """Transform the graph's definition of a dataset type (parent, with the
         registry or producer's storage class) to the one seen by this task.
+
+        Parameters
+        ----------
+        dataset_type : `~lsst.daf.butler.DatasetType`
+            Graph's definition of dataset type.
+
+        Returns
+        -------
+        out_dataset_type : `~lsst.daf.butler.DatasetType`
+            Dataset type seen by this task.
         """
         raise NotImplementedError()
 
@@ -228,6 +238,16 @@ class Edge(ABC):
         """Transform the graph's definition of a dataset reference (parent
         dataset type, with the registry or producer's storage class) to the one
         seen by this task.
+
+        Parameters
+        ----------
+        ref : `~lsst.daf.butler.DatasetRef`
+            Graph's definition of the dataset reference.
+
+        Returns
+        -------
+        out_dataset_ref : `~lsst.daf.butler.DatasetRef`
+            Dataset reference seen by this task.
         """
         raise NotImplementedError()
 

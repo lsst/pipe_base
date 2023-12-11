@@ -113,7 +113,7 @@ class PrerequisiteFinder:
     bounds : `PrerequisiteBounds`
         Another helper object that manages the spatial/temporal bounds of the
         task's quanta, shared by all prerequisite inputs for that task.
-    pipeline_graph `pipeline_graph.PipelineGraph`
+    pipeline_graph : `pipeline_graph.PipelineGraph`
         Graph representation of the pipeline.
 
     Notes

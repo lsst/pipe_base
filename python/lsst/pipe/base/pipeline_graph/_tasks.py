@@ -181,6 +181,8 @@ class TaskInitNode:
 
     Parameters
     ----------
+    key : `NodeKey`
+        Key that identifies this node in internal and exported networkx graphs.
     inputs : `~collections.abc.Mapping` [ `str`, `ReadEdge` ]
         Graph edges that represent inputs required just to construct an
         instance of this task, keyed by connection name.
@@ -335,12 +337,22 @@ class TaskInitNode:
         updated to include any automatic init-input connections added in the
         future, while `inputs` will continue to hold only task-defined init
         inputs.
+
+        Yields
+        ------
+        `ReadEdge`
+            All the inputs required for construction.
         """
         return iter(self.inputs.values())
 
     def iter_all_outputs(self) -> Iterator[WriteEdge]:
         """Iterate over all outputs available after construction, including
         special ones.
+
+        Yields
+        ------
+        `ReadEdge`
+            All the outputs available after construction.
         """
         yield from self.outputs.values()
         yield self.config_output
@@ -675,12 +687,23 @@ class TaskNode:
     def iter_all_inputs(self) -> Iterator[ReadEdge]:
         """Iterate over all runtime inputs, including both regular inputs and
         prerequisites.
+
+        Yields
+        ------
+        `ReadEdge`
+            All the runtime inputs.
         """
         yield from self.prerequisite_inputs.values()
         yield from self.inputs.values()
 
     def iter_all_outputs(self) -> Iterator[WriteEdge]:
-        """Iterate over all runtime outputs, including special ones."""
+        """Iterate over all runtime outputs, including special ones.
+
+        Yields
+        ------
+        `ReadEdge`
+            All the runtime outputs.
+        """
         yield from self.outputs.values()
         yield self.metadata_output
         if self.log_output is not None:
