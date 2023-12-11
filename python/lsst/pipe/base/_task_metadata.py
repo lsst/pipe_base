@@ -265,7 +265,7 @@ class TaskMetadata(_BaseModelCompat):
 
         Parameters
         ----------
-        topLevelOnly  : `bool` or `None`, optional
+        topLevelOnly : `bool` or `None`, optional
             This parameter is deprecated and will be removed in the future.
             If given it can only be `False`.  All names in the hierarchy are
             always returned.

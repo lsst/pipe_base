@@ -259,17 +259,17 @@ class Pipeline:
 
         Parameters
         ----------
-        filename: `str`
-           A path that points to a pipeline defined in yaml format. This
-           filename may also supply additional labels to be used in
-           subsetting the loaded Pipeline. These labels are separated from
-           the path by a ``#``, and may be specified as a comma separated
-           list, or a range denoted as beginning..end. Beginning or end may
-           be empty, in which case the range will be a half open interval.
-           Unlike python iteration bounds, end bounds are *INCLUDED*. Note
-           that range based selection is not well defined for pipelines that
-           are not linear in nature, and correct behavior is not guaranteed,
-           or may vary from run to run.
+        filename : `str`
+            A path that points to a pipeline defined in yaml format. This
+            filename may also supply additional labels to be used in
+            subsetting the loaded Pipeline. These labels are separated from
+            the path by a ``#``, and may be specified as a comma separated
+            list, or a range denoted as beginning..end. Beginning or end may
+            be empty, in which case the range will be a half open interval.
+            Unlike python iteration bounds, end bounds are *INCLUDED*. Note
+            that range based selection is not well defined for pipelines that
+            are not linear in nature, and correct behavior is not guaranteed,
+            or may vary from run to run.
 
         Returns
         -------
@@ -478,7 +478,7 @@ class Pipeline:
 
         Parameters
         ----------
-        deserialized_pipeline: `PipelineIR`
+        deserialized_pipeline : `PipelineIR`
             An already created pipeline intermediate representation object
 
         Returns
@@ -495,7 +495,7 @@ class Pipeline:
 
         Parameters
         ----------
-        pipeline: `Pipeline`
+        pipeline : `Pipeline`
             An already created pipeline intermediate representation object
 
         Returns
@@ -706,10 +706,10 @@ class Pipeline:
 
         Parameters
         ----------
-        task: `PipelineTask` or `str`
+        task : `PipelineTask` or `str`
             Either a derived class object of a `PipelineTask` or a string
             corresponding to a fully qualified `PipelineTask` name.
-        label: `str`
+        label : `str`
             A label that is used to identify the `PipelineTask` being added
         """
         if isinstance(task, str):
@@ -753,7 +753,7 @@ class Pipeline:
         ----------
         label : `str`
             Label of the task.
-        key: `str`
+        key : `str`
             Fully-qualified field name.
         value : object
             Value to be given to a field.
@@ -781,7 +781,7 @@ class Pipeline:
         label : `str`
             The label used to identity the task associated with config to
             modify.
-        pythonString: `str`
+        pythonString : `str`
             A string which is valid python code to be executed. This is done
             with config as the only local accessible value.
         """
@@ -1333,9 +1333,9 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
+        pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A collection of tasks that can be run together.
-        registry: `Registry`
+        registry : `Registry`
             Registry used to construct normalized
             `~lsst.daf.butler.DatasetType` objects and retrieve those that are
             incomplete.
@@ -1478,7 +1478,7 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
+        pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A `Pipeline` instance or collection of `TaskDef` instances.
         include_configs : `bool`, optional
             If `True` (default) include config dataset types.

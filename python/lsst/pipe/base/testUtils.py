@@ -81,7 +81,7 @@ def makeQuantum(
         The task whose processing the quantum represents.
     butler : `lsst.daf.butler.Butler`
         The collection the quantum refers to.
-    dataId: any data ID type
+    dataId : any data ID type
         The data ID of the quantum. Must have the same dimensions as
         ``task``'s connections class.
     ioDataIds : `collections.abc.Mapping` [`str`]

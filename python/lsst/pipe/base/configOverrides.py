@@ -179,8 +179,8 @@ class ConfigOverrides:
         parameters : `ParametersIR`
             Override parameters in the form as read from a Pipeline file.
 
-        Note
-        ----
+        Notes
+        -----
         This method may be called more than once, but each call will overwrite
         any previous parameter defined with the same name.
         """
@@ -214,7 +214,7 @@ class ConfigOverrides:
         ----------
         field : str
             Fully-qualified field name.
-        value :
+        value : `~typing.Any`
             Value to be given to a filed.
         """
         self._overrides.append((OverrideTypes.Value, (field, value)))
@@ -224,7 +224,7 @@ class ConfigOverrides:
 
         Parameters
         ----------
-        python_snippet: str
+        python_snippet : str
             A string which is valid python code to be executed. This is done
             with config as the only local accessible value.
         """
@@ -235,9 +235,9 @@ class ConfigOverrides:
 
         Parameters
         ----------
-        instrument: `Instrument`
+        instrument : `Instrument`
             An instrument instance which will apply configs
-        task_name: str
+        task_name : str
             The _DefaultName of a task associated with a config, used to look
             up overrides from the instrument.
         """

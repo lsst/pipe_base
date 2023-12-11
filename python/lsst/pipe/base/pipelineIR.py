@@ -626,7 +626,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        loaded_yaml: `MutableMapping`
+        loaded_yaml : `MutableMapping`
             A dictionary which matches the structure that would be produced
             by a yaml reader which parses a pipeline definition document
         """
@@ -935,7 +935,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        uri: convertible to `~lsst.resources.ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             Location of document to use in creating a `PipelineIR` object.
 
         Returns
@@ -954,7 +954,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        uri: convertible to `~lsst.resources.ResourcePath`
+        uri : convertible to `~lsst.resources.ResourcePath`
             Location of document to write a `PipelineIR` object.
         """
         with ResourcePath(uri).open("w") as buffer:

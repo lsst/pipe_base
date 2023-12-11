@@ -61,7 +61,7 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
     ----------
     pipeline : `Pipeline` or `collections.abc.Iterable` [ `TaskDef` ]
         Pipeline description.
-    taskFactory: `TaskFactory`, optional
+    taskFactory : `TaskFactory`, optional
         Ignored; present only for backwards compatibility.
 
     Returns

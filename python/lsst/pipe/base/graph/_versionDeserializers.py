@@ -93,7 +93,7 @@ class DeserializerBase(ABC):
 
         Parameters
         ----------
-        rawheader : bytes
+        rawHeader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
             and before the headerSize bytes.
@@ -120,7 +120,7 @@ class DeserializerBase(ABC):
 
         Parameters
         ----------
-        rawheader : bytes
+        rawHeader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
             and before the headerSize bytes

@@ -487,7 +487,7 @@ class TaskNode:
         ----------
         key : `NodeKey`
             Identifier for this node in networkx graphs.
-        init : `TaskInitNode`
+        init_key : `TaskInitNode`
             Node representing the initialization of this task.
         data : `_TaskNodeImportedData`
             Internal struct that holds information that requires the task class

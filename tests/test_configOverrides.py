@@ -68,7 +68,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
         ----------
         field : `str`
             Field name.
-        value :
+        value : `typing.Any`
             Field value to set, can be a string or anything else.
         result : optional
             Expected value of the field.

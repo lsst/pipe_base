@@ -518,7 +518,7 @@ class QuantumGraph:
 
         Parameters
         ----------
-        taskName : `str`
+        label : `str`
             Name of a task to search for
 
         Returns

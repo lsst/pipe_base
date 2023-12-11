@@ -394,7 +394,7 @@ class QuantumGraphBuilder(ABC):
         Returns
         -------
         skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
-           Class representing an initial quantum graph. See
+            Class representing an initial quantum graph. See
             `quantum_graph_skeleton.QuantumGraphSkeleton` docs for details.
             After this is returned, the object may be modified in-place in
             unspecified ways.
