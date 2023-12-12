@@ -475,7 +475,7 @@ class DeferredDatasetRef:
     ----------
     datasetRef : `lsst.daf.butler.DatasetRef`
         The `lsst.daf.butler.DatasetRef` that will be eventually used to
-        resolve a dataset
+        resolve a dataset.
     """
 
     datasetRef: DatasetRef
@@ -493,7 +493,7 @@ class DeferredDatasetRef:
 
 class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     """PipelineTaskConnections is a class used to declare desired IO when a
-    PipelineTask is run by an activator
+    PipelineTask is run by an activator.
 
     Parameters
     ----------

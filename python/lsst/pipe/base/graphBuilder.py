@@ -59,7 +59,7 @@ class GraphBuilder:
     ----------
     registry : `~lsst.daf.butler.Registry`
         Data butler instance.
-    skipExistingIn
+    skipExistingIn : `~typing.Any`
         Expressions representing the collections to search for existing
         output datasets that should be skipped.  See
         :ref:`daf_butler_ordered_collection_searches`.
@@ -101,7 +101,7 @@ class GraphBuilder:
         ----------
         pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             Pipeline definition, task names/classes and their configs.
-        collections
+        collections : `~typing.Any`
             Expressions representing the collections to search for input
             datasets.  See :ref:`daf_butler_ordered_collection_searches`.
         run : `str`
@@ -130,6 +130,7 @@ class GraphBuilder:
         Returns
         -------
         graph : `QuantumGraph`
+            The constructed graph.
 
         Raises
         ------

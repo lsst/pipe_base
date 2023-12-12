@@ -103,7 +103,7 @@ class TemplateField(pexConfig.Field):
 
 
 class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
-    """Metaclass used in the creation of PipelineTaskConfig classes
+    """Metaclass used in the creation of PipelineTaskConfig classes.
 
     This metaclass ensures a `PipelineTaskConnections` class is specified in
     the class construction parameters with a parameter name of

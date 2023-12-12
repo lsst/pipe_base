@@ -407,7 +407,7 @@ def buildExecutionButler(
         that will be converted with this object.
     graph : `QuantumGraph`
         Graph containing nodes that are to be exported into an execution
-        butler
+        butler.
     outputLocation : convertible to `~lsst.resources.ResourcePath`
         URI Location at which the execution butler is to be exported. May be
         specified as a string or a `~lsst.resources.ResourcePath` instance.
@@ -418,7 +418,7 @@ def buildExecutionButler(
         By default a butler will not be created if a file or directory
         already exists at the output location. If this is set to `True`
         what is at the location will be deleted prior to running the
-        export. Defaults to `False`
+        export. Defaults to `False`.
     butlerModifier : `~typing.Callable`, Optional
         If supplied this should be a callable that accepts a
         `~lsst.daf.butler.Butler`, and returns an instantiated

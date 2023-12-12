@@ -133,7 +133,6 @@ class Instrument(metaclass=ABCMeta):
                 registry.syncDimensionData("instrument", ...)
                 registry.syncDimensionData("detector", ...)
                 self.registerFilters(registry)
-
         """
         raise NotImplementedError()
 
@@ -227,7 +226,7 @@ class Instrument(metaclass=ABCMeta):
 
         See Also
         --------
-        Instrument.fromName
+        Instrument.fromName : Constructing Instrument from a name.
         """
         if "." not in name and registry is not None:
             try:

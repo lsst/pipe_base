@@ -178,7 +178,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
             graph universe.
         nodes : `~collections.abc.Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
-            (the default)
+            (the default).
         graphID : `str` or `None`
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no

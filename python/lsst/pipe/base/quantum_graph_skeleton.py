@@ -189,11 +189,32 @@ class QuantumGraphSkeleton:
 
         Tasks are only added to the skeleton at initialization, but may be
         removed by `remove_task` if they end up having no quanta.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Task to check for.
+
+        Returns
+        -------
+        has : `bool`
+            `True` if the task is in this skeleton.
         """
         return task_label in self._tasks
 
     def get_task_init_node(self, task_label: str) -> TaskInitKey:
-        """Return the graph node that represents a task's initialization."""
+        """Return the graph node that represents a task's initialization.
+
+        Parameters
+        ----------
+        task_label : `str`
+            The task label to use.
+
+        Returns
+        -------
+        node : `TaskInitKey`
+            The graph node representing this task's initialization.
+        """
         return self._tasks[task_label][0]
 
     def get_quanta(self, task_label: str) -> Set[QuantumKey]:
@@ -210,7 +231,7 @@ class QuantumGraphSkeleton:
             A set-like object with the identifiers of all quanta for the given
             task.  *The skeleton object's set of quanta must not be modified
             while iterating over this container; make a copy if mutation during
-            iteration is necessary.*
+            iteration is necessary*.
         """
         return self._tasks[task_label][1]
 

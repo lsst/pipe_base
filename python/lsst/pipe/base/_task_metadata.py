@@ -43,7 +43,7 @@ _ALLOWED_PRIMITIVE_TYPES = (str, float, int, bool)
 
 
 class PropertySetLike(Protocol):
-    """Protocol that looks like a ``lsst.daf.base.PropertySet``
+    """Protocol that looks like a ``lsst.daf.base.PropertySet``.
 
     Enough of the API is specified to support conversion of a
     ``PropertySet`` to a `TaskMetadata`.
@@ -164,7 +164,7 @@ class TaskMetadata(_BaseModelCompat):
         ----------
         name : `str`
             Name of the metadata property.
-        value
+        value : `~typing.Any`
             Metadata property value.
         """
         keys = self._getKeys(name)
@@ -416,7 +416,7 @@ class TaskMetadata(_BaseModelCompat):
         ----------
         key : `str`
             The key to retrieve. Can be dot-separated hierarchical.
-        default
+        default : `~typing.Any`
             The value to return if the key does not exist.
 
         Returns

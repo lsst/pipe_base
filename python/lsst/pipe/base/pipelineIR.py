@@ -114,7 +114,9 @@ class MultilineStringDumper(yaml.Dumper):
 
 
 class ContractError(Exception):
-    """An exception that is raised when a pipeline contract is not satisfied"""
+    """An exception that is raised when a pipeline contract is not
+    satisfied.
+    """
 
     pass
 
@@ -135,7 +137,7 @@ class ContractIR:
     """
 
     def to_primitives(self) -> dict[str, str]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization."""
         accumulate = {"contract": self.contract}
         if self.msg is not None:
             accumulate["msg"] = self.msg
@@ -217,7 +219,7 @@ class LabeledSubset:
 class ParametersIR:
     """Intermediate representation of parameters that are global to a pipeline.
 
-    Parameters
+    Attributes
     ----------
     mapping : `dict` [`str`, `str`]
         A mutable mapping of identifiers as keys, and shared configuration
@@ -257,7 +259,7 @@ class ParametersIR:
             self.mapping.update(other.mapping)
 
     def to_primitives(self) -> MutableMapping[str, str]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization."""
         return self.mapping
 
     def __contains__(self, value: str) -> bool:
@@ -298,7 +300,7 @@ class ConfigIR:
     """
 
     def to_primitives(self) -> dict[str, str | dict | list[str]]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization."""
         accumulate = {}
         for name in ("python", "dataId", "file"):
             # if this attribute is thruthy add it to the accumulation
@@ -312,7 +314,7 @@ class ConfigIR:
 
     def formatted(self, parameters: ParametersIR) -> ConfigIR:
         """Return a new ConfigIR object that is formatted according to the
-        specified parameters
+        specified parameters.
 
         Parameters
         ----------
@@ -322,7 +324,7 @@ class ConfigIR:
         Returns
         -------
         config : `ConfigIR`
-            A new ConfigIR object formatted with the input parameters
+            A new ConfigIR object formatted with the input parameters.
         """
         new_config = copy.deepcopy(self)
         for key, value in new_config.rest.items():
@@ -351,8 +353,8 @@ class ConfigIR:
         other_config : `ConfigIR`
             An instance of `ConfigIR` to merge into this instance.
 
-        Returns
-        -------
+        Yields
+        ------
         Generator : `ConfigIR`
             A generator containing either self, or self and other_config if
             the configs could be merged or not respectively.
@@ -409,7 +411,7 @@ class TaskIR:
     """
 
     def to_primitives(self) -> dict[str, str | list[dict]]:
-        """Convert to a representation used in yaml serialization"""
+        """Convert to a representation used in yaml serialization."""
         accumulate: dict[str, str | list[dict]] = {"class": self.klass}
         if self.config:
             accumulate["config"] = [c.to_primitives() for c in self.config]
@@ -442,7 +444,7 @@ class TaskIR:
 
 @dataclass
 class ImportIR:
-    """An intermediate representation of imported pipelines"""
+    """An intermediate representation of imported pipelines."""
 
     location: str
     """This is the location of the pipeline to inherit. The path should be
@@ -483,7 +485,7 @@ class ImportIR:
         Returns
         -------
         pipeline : `PipelineIR`
-            A pipeline generated from the imported pipeline file
+            A pipeline generated from the imported pipeline file.
         """
         if self.include and self.exclude:
             raise ValueError(
@@ -532,13 +534,13 @@ class ImportIR:
 
 
 class PipelineIR:
-    """Intermediate representation of a pipeline definition
+    """Intermediate representation of a pipeline definition.
 
     Parameters
     ----------
     loaded_yaml : `dict`
         A dictionary which matches the structure that would be produced by a
-        yaml reader which parses a pipeline definition document
+        yaml reader which parses a pipeline definition document.
 
     Raises
     ------
@@ -859,12 +861,12 @@ class PipelineIR:
         Returns
         -------
         pipeline : `PipelineIR`
-            A new pipelineIR object that is a subset of the old pipelineIR
+            A new pipelineIR object that is a subset of the old pipelineIR.
 
         Raises
         ------
         ValueError
-            Raised if there is an issue with specified labels
+            Raised if there is an issue with specified labels.
 
         Notes
         -----
@@ -918,12 +920,12 @@ class PipelineIR:
     @classmethod
     def from_string(cls, pipeline_string: str) -> PipelineIR:
         """Create a `PipelineIR` object from a string formatted like a pipeline
-        document
+        document.
 
         Parameters
         ----------
         pipeline_string : `str`
-            A string that is formatted according like a pipeline document
+            A string that is formatted according like a pipeline document.
         """
         loaded_yaml = yaml.load(pipeline_string, Loader=PipelineYamlLoader)
         return cls(loaded_yaml)
@@ -941,7 +943,7 @@ class PipelineIR:
         Returns
         -------
         pipelineIR : `PipelineIR`
-            The loaded pipeline
+            The loaded pipeline.
         """
         loaded_uri = ResourcePath(uri)
         with loaded_uri.open("r") as buffer:
@@ -961,12 +963,12 @@ class PipelineIR:
             yaml.dump(self.to_primitives(), buffer, sort_keys=False, Dumper=MultilineStringDumper)
 
     def to_primitives(self) -> dict[str, Any]:
-        """Convert to a representation used in yaml serialization
+        """Convert to a representation used in yaml serialization.
 
         Returns
         -------
         primitives : `dict`
-            dictionary that maps directly to the serialized YAML form.
+            Dictionary that maps directly to the serialized YAML form.
         """
         accumulate = {"description": self.description}
         if self.instrument is not None:

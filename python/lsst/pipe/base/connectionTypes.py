@@ -43,7 +43,7 @@ from lsst.utils.introspection import find_outside_stacklevel
 class BaseConnection:
     """Base class used for declaring `PipelineTask` connections.
 
-    Parameters
+    Attributes
     ----------
     name : `str`
         The name used to identify the dataset type.
@@ -132,14 +132,14 @@ class BaseConnection:
 @dataclasses.dataclass(frozen=True)
 class DimensionedConnection(BaseConnection):
     """Class used for declaring PipelineTask connections that includes
-    dimensions
+    dimensions.
 
-    Parameters
+    Attributes
     ----------
     name : `str`
-        The name used to identify the dataset type
+        The name used to identify the dataset type.
     storageClass : `str`
-        The storage class used when (un)/persisting the dataset type
+        The storage class used when (un)/persisting the dataset type.
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
@@ -150,8 +150,8 @@ class DimensionedConnection(BaseConnection):
         produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
-        to identify the dataset type identified by the specified name
-    isCalibration: `bool`, optional
+        to identify the dataset type identified by the specified name.
+    isCalibration : `bool`, optional
         `True` if this dataset type may be included in CALIBRATION-type
         collections to associate it with a validity range, `False` (default)
         otherwise.
@@ -199,14 +199,14 @@ class DimensionedConnection(BaseConnection):
 
 @dataclasses.dataclass(frozen=True)
 class BaseInput(DimensionedConnection):
-    """Class used for declaring PipelineTask input connections
+    """Class used for declaring PipelineTask input connections.
 
-    Parameters
+    Attributes
     ----------
     name : `str`
-        The default name used to identify the dataset type
+        The default name used to identify the dataset type.
     storageClass : `str`
-        The storage class used when (un)/persisting the dataset type
+        The storage class used when (un)/persisting the dataset type.
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
@@ -217,7 +217,7 @@ class BaseInput(DimensionedConnection):
         produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
-        to identify the dataset type identified by the specified name
+        to identify the dataset type identified by the specified name.
     deferLoad : `bool`
         Indicates that this dataset type will be loaded as a
         `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
@@ -254,14 +254,14 @@ class BaseInput(DimensionedConnection):
 
 @dataclasses.dataclass(frozen=True)
 class Input(BaseInput):
-    """Class used for declaring PipelineTask input connections
+    """Class used for declaring PipelineTask input connections.
 
-    Parameters
+    Attributes
     ----------
     name : `str`
-        The default name used to identify the dataset type
+        The default name used to identify the dataset type.
     storageClass : `str`
-        The storage class used when (un)/persisting the dataset type
+        The storage class used when (un)/persisting the dataset type.
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
@@ -272,7 +272,7 @@ class Input(BaseInput):
         produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
-        to identify the dataset type identified by the specified name
+        to identify the dataset type identified by the specified name.
     deferLoad : `bool`
         Indicates that this dataset type will be loaded as a
         `lsst.daf.butler.DeferredDatasetHandle`. PipelineTasks can use this
@@ -288,7 +288,7 @@ class Input(BaseInput):
         provide custom `~PipelineTaskConnections.adjustQuantum` implementations
         for more fine-grained or configuration-driven constraints, as long as
         they are compatible with this minium.
-    deferGraphConstraint: `bool`, optional
+    deferGraphConstraint : `bool`, optional
         If `True`, do not include this dataset type's existence in the initial
         query that starts the QuantumGraph generation process.  This can be
         used to make QuantumGraph generation faster by avoiding redundant
@@ -322,12 +322,12 @@ class Input(BaseInput):
 class PrerequisiteInput(BaseInput):
     """Class used for declaring PipelineTask prerequisite connections.
 
-    Parameters
+    Attributes
     ----------
     name : `str`
-        The default name used to identify the dataset type
+        The default name used to identify the dataset type.
     storageClass : `str`
-        The storage class used when (un)/persisting the dataset type
+        The storage class used when (un)/persisting the dataset type.
     multiple : `bool`
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
@@ -338,7 +338,7 @@ class PrerequisiteInput(BaseInput):
         produced because the corresponding input is missing.
     dimensions : iterable of `str`
         The `lsst.daf.butler.Butler` `lsst.daf.butler.Registry` dimensions used
-        to identify the dataset type identified by the specified name
+        to identify the dataset type identified by the specified name.
     minimum : `bool`
         Minimum number of datasets required for this connection, per quantum.
         This is checked in the base implementation of
@@ -348,7 +348,7 @@ class PrerequisiteInput(BaseInput):
         provide custom `~PipelineTaskConnections.adjustQuantum` implementations
         for more fine-grained or configuration-driven constraints, as long as
         they are compatible with this minium.
-    lookupFunction: `typing.Callable`, optional
+    lookupFunction : `typing.Callable`, optional
         An optional callable function that will look up PrerequisiteInputs
         using the DatasetType, registry, quantum dataId, and input collections
         passed to it. If no function is specified, the default temporal spatial
