@@ -135,20 +135,20 @@ def show(
         If `True` (default) merge interior parallel nodes with the same inputs,
         outputs, and other properties (dimensions, task classes, storage
         classes).
-    include_automatic_connection : `bool`, optional
-        Whether to include automatically-added connections like the config,
-        log, and metadata dataset types for each task.  Default is `False`.
     width : `int`, optional
         Number of columns the full graph should occupy, including text
         descriptions on the right.  If ``0``, there is no limit (and hence no
         text-wrapping).  If negative (default) use the current terminal width.
+    include_automatic_connections : `bool`, optional
+        Whether to include automatically-added connections like the config,
+        log, and metadata dataset types for each task.  Default is `False`.
     column_interior_penalty : `int`
         Penalty applied to a prospective column for a node when that column is
         between two existing columns.
     column_crossing_penalty : `int`
         Penalty applied to a prospective column for a node for each ongoing
         (vertical) edge that node's incoming edges would have to "hop".
-    column_insertion_penalty: `int`
+    column_insertion_penalty : `int`
         Penalty applied to a prospective column for a node when considering a
         new columns on the sides or between two existing columns.
     """

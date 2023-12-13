@@ -82,14 +82,20 @@ class ConfigExpressionParser(ast.NodeVisitor):
     ----------
     namespace : `dict` of `str` to variable
         This is a mapping of strings corresponding to variable names, to the
-        object that is associated with that name
+        object that is associated with that name.
     """
 
     def __init__(self, namespace):
         self.variables = namespace
 
     def visit_Name(self, node):
-        """Handle a node corresponding to a variable name."""
+        """Handle a node corresponding to a variable name.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
+        """
         # If the id (name) of the variable is in the dictionary of valid names,
         # load and return the corresponding variable.
         if node.id in self.variables:
@@ -101,25 +107,53 @@ class ConfigExpressionParser(ast.NodeVisitor):
     def visit_List(self, node):
         """Build a list out of the sub nodes when a list node is
         encountered.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
         """
         return [self.visit(elm) for elm in node.elts]
 
     def visit_Tuple(self, node):
         """Build a list out of the sub nodes and then turn it into a
         tuple.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
         """
         return tuple(self.visit_List(node))
 
     def visit_Constant(self, node):
-        """Return constant from node."""
+        """Return constant from node.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
+        """
         return node.value
 
     def visit_Dict(self, node):
-        """Build dict out of component nodes if dict node encountered."""
+        """Build dict out of component nodes if dict node encountered.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
+        """
         return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values, strict=True)}
 
     def visit_Set(self, node):
-        """Build set out of node is set encountered."""
+        """Build set out of node is set encountered.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
+        """
         return {self.visit(el) for el in node.elts}
 
     def visit_UnaryOp(self, node):
@@ -128,6 +162,11 @@ class ConfigExpressionParser(ast.NodeVisitor):
         This method is visited if the node is a unary operator. Currently
         The only operator we support is the negative (-) operator, all others
         are passed to generic_visit method.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
         """
         if isinstance(node.op, ast.USub):
             value = self.visit(node.operand)
@@ -140,6 +179,11 @@ class ConfigExpressionParser(ast.NodeVisitor):
         This method is called for all other node types. It will just raise
         a value error, because this is a type of expression that we do not
         support.
+
+        Parameters
+        ----------
+        node : `ast.Name`
+            Node to use.
         """
         raise ValueError("Unable to parse string into literal expression")
 
@@ -179,8 +223,8 @@ class ConfigOverrides:
         parameters : `ParametersIR`
             Override parameters in the form as read from a Pipeline file.
 
-        Note
-        ----
+        Notes
+        -----
         This method may be called more than once, but each call will overwrite
         any previous parameter defined with the same name.
         """
@@ -214,7 +258,7 @@ class ConfigOverrides:
         ----------
         field : str
             Fully-qualified field name.
-        value :
+        value : `~typing.Any`
             Value to be given to a filed.
         """
         self._overrides.append((OverrideTypes.Value, (field, value)))
@@ -224,20 +268,20 @@ class ConfigOverrides:
 
         Parameters
         ----------
-        python_snippet: str
+        python_snippet : str
             A string which is valid python code to be executed. This is done
             with config as the only local accessible value.
         """
         self._overrides.append((OverrideTypes.Python, python_snippet))
 
     def addInstrumentOverride(self, instrument: Instrument, task_name: str) -> None:
-        """Apply any overrides that an instrument has for a task
+        """Apply any overrides that an instrument has for a task.
 
         Parameters
         ----------
-        instrument: `Instrument`
-            An instrument instance which will apply configs
-        task_name: str
+        instrument : `Instrument`
+            An instrument instance which will apply configs.
+        task_name : str
             The _DefaultName of a task associated with a config, used to look
             up overrides from the instrument.
         """

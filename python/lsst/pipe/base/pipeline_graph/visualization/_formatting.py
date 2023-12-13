@@ -125,7 +125,18 @@ class GetNodeText:
         return description
 
     def format_dimensions(self, dimensions: DimensionGroup) -> str:
-        """Format the dimensions of a task or dataset type node."""
+        """Format the dimensions of a task or dataset type node.
+
+        Parameters
+        ----------
+        dimensions : `~lsst.daf.butler.DimensionGroup`
+            The dimensions to be formatted.
+
+        Returns
+        -------
+        formatted : `str`
+            The formatted dimension string.
+        """
         match self.options.dimensions:
             case "full":
                 return str(dimensions.names)
@@ -150,7 +161,18 @@ class GetNodeText:
         raise ValueError(f"Invalid display option for dimensions: {self.options.dimensions!r}.")
 
     def format_task_class(self, task_class_name: str) -> str:
-        """Format the type object for a task or task init node."""
+        """Format the type object for a task or task init node.
+
+        Parameters
+        ----------
+        task_class_name : `str`
+            The name of the task class.
+
+        Returns
+        -------
+        formatted : `str`
+            The formatted string.
+        """
         match self.options.task_classes:
             case "full":
                 return task_class_name

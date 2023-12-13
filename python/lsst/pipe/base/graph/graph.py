@@ -88,14 +88,14 @@ MAGIC_BYTES = b"qgraph4\xf6\xe8\xa9"
 
 class IncompatibleGraphError(Exception):
     """Exception class to indicate that a lookup by NodeId is impossible due
-    to incompatibilities
+    to incompatibilities.
     """
 
     pass
 
 
 class QuantumGraph:
-    """QuantumGraph is a directed acyclic graph of `QuantumNode` objects
+    """QuantumGraph is a directed acyclic graph of `QuantumNode` objects.
 
     This data structure represents a concrete workflow generated from a
     `Pipeline`.
@@ -345,12 +345,12 @@ class QuantumGraph:
         Parameters
         ----------
         nodeId : `NodeId`
-            The number associated with a node
+            The number associated with a node.
 
         Returns
         -------
         node : `QuantumNode`
-            The node corresponding with input number
+            The node corresponding with input number.
 
         Raises
         ------
@@ -518,8 +518,8 @@ class QuantumGraph:
 
         Parameters
         ----------
-        taskName : `str`
-            Name of a task to search for
+        label : `str`
+            Name of a task to search for.
 
         Returns
         -------
@@ -551,8 +551,7 @@ class QuantumGraph:
         Raises
         ------
         KeyError
-            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`
-
+            Raised if the `DatasetTypeName` is not part of the `QuantumGraph`.
         """
         tasks = self._datasetDict.getAll(datasetTypeName)
         result: set[Quantum] = set()
@@ -710,7 +709,7 @@ class QuantumGraph:
         Parameters
         ----------
         node : `QuantumNode`
-            The node for which all ancestors are to be determined
+            The node for which all ancestors are to be determined.
 
         Returns
         -------
@@ -1146,12 +1145,12 @@ class QuantumGraph:
         return qgraph
 
     def iterTaskGraph(self) -> Generator[TaskDef, None, None]:
-        """Iterate over the `taskGraph` attribute in topological order
+        """Iterate over the `taskGraph` attribute in topological order.
 
         Yields
         ------
         taskDef : `TaskDef`
-            `TaskDef` objects in topological order
+            `TaskDef` objects in topological order.
         """
         yield from nx.topological_sort(self.taskGraph)
 

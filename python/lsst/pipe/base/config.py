@@ -103,7 +103,7 @@ class TemplateField(pexConfig.Field):
 
 
 class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
-    """Metaclass used in the creation of PipelineTaskConfig classes
+    """Metaclass used in the creation of PipelineTaskConfig classes.
 
     This metaclass ensures a `PipelineTaskConnections` class is specified in
     the class construction parameters with a parameter name of
@@ -116,6 +116,17 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     Finally the newly constructed config class (not an instance of it) is
     assigned to the Config class under construction with the attribute name
     ``ConnectionsConfigClass``.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of config.
+    bases : `~collections.abc.Collection`
+        Base classes.
+    dct : `~collections.abc.Mapping`
+        Parameter dict.
+    **kwargs : `~typing.Any`
+        Additional parameters.
     """
 
     def __new__(
@@ -188,7 +199,7 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
 
 
 class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
-    """Configuration class for `PipelineTask`
+    """Configuration class for `PipelineTask`.
 
     This Configuration class functions in largely the same manner as any other
     derived from `lsst.pex.config.Config`. The only difference is in how it is

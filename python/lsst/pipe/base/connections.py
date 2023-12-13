@@ -78,6 +78,13 @@ class PipelineTaskConnectionDict(UserDict):
     the corresponding class attribute. This information is a duplicate of
     what exists in ``__dict__``, but provides a simple place to lookup and
     iterate on only these variables.
+
+    Parameters
+    ----------
+    *args : `~typing.Any`
+        Passed to `dict` constructor.
+    **kwargs : `~typing.Any`
+        Passed to `dict` constructor.
     """
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -117,7 +124,19 @@ class PipelineTaskConnectionDict(UserDict):
 
 
 class PipelineTaskConnectionsMetaclass(type):
-    """Metaclass used in the declaration of PipelineTaskConnections classes"""
+    """Metaclass used in the declaration of PipelineTaskConnections classes.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of connection.
+    bases : `~collections.abc.Collection`
+        Base classes.
+    dct : `~collections.abc.Mapping`
+        Connections dict.
+    **kwargs : `~typing.Any`
+        Additional parameters.
+    """
 
     # We can annotate these attributes as `collections.abc.Set` to discourage
     # undesirable modifications in type-checked code, since the internal code
@@ -403,6 +422,11 @@ class QuantizedConnection(SimpleNamespace):
     instance.  This will be a quantum of execution based on the graph created
     by examining all the connections defined on the
     `PipelineTaskConnections` class.
+
+    Parameters
+    ----------
+    **kwargs : `~typing.Any`
+        Not used.
     """
 
     def __init__(self, **kwargs):
@@ -436,7 +460,7 @@ class QuantizedConnection(SimpleNamespace):
 
     def keys(self) -> Generator[str, None, None]:
         """Return an iterator over all the attributes added to a
-        `QuantizedConnection` class
+        `QuantizedConnection` class.
         """
         yield from self._attributes
 
@@ -459,11 +483,11 @@ class DeferredDatasetRef:
     `PipelineTask` should receive a `~lsst.daf.butler.DeferredDatasetHandle`
     instead of an in-memory dataset.
 
-    Parameters
+    Attributes
     ----------
     datasetRef : `lsst.daf.butler.DatasetRef`
         The `lsst.daf.butler.DatasetRef` that will be eventually used to
-        resolve a dataset
+        resolve a dataset.
     """
 
     datasetRef: DatasetRef
@@ -481,7 +505,7 @@ class DeferredDatasetRef:
 
 class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     """PipelineTaskConnections is a class used to declare desired IO when a
-    PipelineTask is run by an activator
+    PipelineTask is run by an activator.
 
     Parameters
     ----------
@@ -491,7 +515,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     See Also
     --------
-    iterConnections
+    iterConnections : Iterator over selected connections.
 
     Notes
     -----

@@ -77,7 +77,7 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass
 class LabelSpecifier:
-    """A structure to specify a subset of labels to load
+    """A structure to specify a subset of labels to load.
 
     This structure may contain a set of labels to be used in subsetting a
     pipeline, or a beginning and end point. Beginning or end may be empty,
@@ -106,7 +106,7 @@ class TaskDef:
     all of them so that attributes could potentially be modified in place
     (e.g. if configuration needs extra overrides).
 
-    Attributes
+    Parameters
     ----------
     taskName : `str`, optional
         The fully-qualified `PipelineTask` class name.  If not provided,
@@ -171,12 +171,12 @@ class TaskDef:
 
     @property
     def configDatasetName(self) -> str:
-        """Name of a dataset type for configuration of this task (`str`)"""
+        """Name of a dataset type for configuration of this task (`str`)."""
         return acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=self.label)
 
     @property
     def metadataDatasetName(self) -> str:
-        """Name of a dataset type for metadata of this task (`str`)"""
+        """Name of a dataset type for metadata of this task (`str`)."""
         return self.makeMetadataDatasetName(self.label)
 
     @classmethod
@@ -198,7 +198,7 @@ class TaskDef:
     @property
     def logOutputDatasetName(self) -> str | None:
         """Name of a dataset type for log output from this task, `None` if
-        logs are not to be saved (`str`)
+        logs are not to be saved (`str`).
         """
         if self.config.saveLogOutput:
             return acc.LOG_OUTPUT_TEMPLATE.format(label=self.label)
@@ -259,17 +259,17 @@ class Pipeline:
 
         Parameters
         ----------
-        filename: `str`
-           A path that points to a pipeline defined in yaml format. This
-           filename may also supply additional labels to be used in
-           subsetting the loaded Pipeline. These labels are separated from
-           the path by a ``#``, and may be specified as a comma separated
-           list, or a range denoted as beginning..end. Beginning or end may
-           be empty, in which case the range will be a half open interval.
-           Unlike python iteration bounds, end bounds are *INCLUDED*. Note
-           that range based selection is not well defined for pipelines that
-           are not linear in nature, and correct behavior is not guaranteed,
-           or may vary from run to run.
+        filename : `str`
+            A path that points to a pipeline defined in yaml format. This
+            filename may also supply additional labels to be used in
+            subsetting the loaded Pipeline. These labels are separated from
+            the path by a ``#``, and may be specified as a comma separated
+            list, or a range denoted as beginning..end. Beginning or end may
+            be empty, in which case the range will be a half open interval.
+            Unlike python iteration bounds, end bounds are *INCLUDED*. Note
+            that range based selection is not well defined for pipelines that
+            are not linear in nature, and correct behavior is not guaranteed,
+            or may vary from run to run.
 
         Returns
         -------
@@ -337,7 +337,8 @@ class Pipeline:
         labelSpecifier: LabelSpecifier,
         subsetCtrl: pipelineIR.PipelineSubsetCtrl = PipelineSubsetCtrl.DROP,
     ) -> Pipeline:
-        """Subset a pipeline to contain only labels specified in labelSpecifier
+        """Subset a pipeline to contain only labels specified in
+        ``labelSpecifier``.
 
         Parameters
         ----------
@@ -354,7 +355,7 @@ class Pipeline:
         Returns
         -------
         pipeline : `Pipeline`
-            A new pipeline object that is a subset of the old pipeline
+            A new pipeline object that is a subset of the old pipeline.
 
         Raises
         ------
@@ -463,11 +464,12 @@ class Pipeline:
         Parameters
         ----------
         pipeline_string : `str`
-            A string that is formatted according like a pipeline document
+            A string that is formatted according like a pipeline document.
 
         Returns
         -------
         pipeline: `Pipeline`
+            The new pipeline.
         """
         pipeline = cls.fromIR(pipelineIR.PipelineIR.from_string(pipeline_string))
         return pipeline
@@ -478,12 +480,13 @@ class Pipeline:
 
         Parameters
         ----------
-        deserialized_pipeline: `PipelineIR`
-            An already created pipeline intermediate representation object
+        deserialized_pipeline : `PipelineIR`
+            An already created pipeline intermediate representation object.
 
         Returns
         -------
         pipeline: `Pipeline`
+            The new pipeline.
         """
         pipeline = cls.__new__(cls)
         pipeline._pipelineIR = deserialized_pipeline
@@ -495,12 +498,13 @@ class Pipeline:
 
         Parameters
         ----------
-        pipeline: `Pipeline`
-            An already created pipeline intermediate representation object
+        pipeline : `Pipeline`
+            An already created pipeline intermediate representation object.
 
         Returns
         -------
         pipeline: `Pipeline`
+           The new pipeline.
         """
         return cls.fromIR(copy.deepcopy(pipeline._pipelineIR))
 
@@ -527,7 +531,7 @@ class Pipeline:
         Parameters
         ----------
         subset : `str`
-            The labeled subset to modify
+            The labeled subset to modify.
         label : `str`
             The task label to add to the specified subset.
 
@@ -549,7 +553,7 @@ class Pipeline:
         Parameters
         ----------
         subset : `str`
-            The labeled subset to modify
+            The labeled subset to modify.
         label : `str`
             The task label to remove from the specified subset.
 
@@ -576,7 +580,7 @@ class Pipeline:
         Parameters
         ----------
         label : `str`
-            The task label to use in membership check
+            The task label to use in membership check.
 
         Returns
         -------
@@ -637,12 +641,12 @@ class Pipeline:
         Parameters
         ----------
         label : `str`
-            The label of the subset to remove from the `Pipeline`
+            The label of the subset to remove from the `Pipeline`.
 
         Raises
         ------
         ValueError
-            Raised if the label is not found within the `Pipeline`
+            Raised if the label is not found within the `Pipeline`.
         """
         if label not in self._pipelineIR.labeled_subsets.keys():
             raise ValueError(f"Subset label {label} was not found in the pipeline")
@@ -706,11 +710,11 @@ class Pipeline:
 
         Parameters
         ----------
-        task: `PipelineTask` or `str`
+        task : `PipelineTask` or `str`
             Either a derived class object of a `PipelineTask` or a string
             corresponding to a fully qualified `PipelineTask` name.
-        label: `str`
-            A label that is used to identify the `PipelineTask` being added
+        label : `str`
+            A label that is used to identify the `PipelineTask` being added.
         """
         if isinstance(task, str):
             taskName = task
@@ -736,13 +740,12 @@ class Pipeline:
         Parameters
         ----------
         label : `str`
-            The label used to identify the task that is to be removed
+            The label used to identify the task that is to be removed.
 
         Raises
         ------
         KeyError
-            If no task with that label exists in the pipeline
-
+            If no task with that label exists in the pipeline.
         """
         self._pipelineIR.tasks.pop(label)
 
@@ -753,7 +756,7 @@ class Pipeline:
         ----------
         label : `str`
             Label of the task.
-        key: `str`
+        key : `str`
             Fully-qualified field name.
         value : object
             Value to be given to a field.
@@ -767,7 +770,7 @@ class Pipeline:
         ----------
         label : `str`
             The label used to identify the task associated with config to
-            modify
+            modify.
         filename : `str`
             Path to the override file.
         """
@@ -781,7 +784,7 @@ class Pipeline:
         label : `str`
             The label used to identity the task associated with config to
             modify.
-        pythonString: `str`
+        pythonString : `str`
             A string which is valid python code to be executed. This is done
             with config as the only local accessible value.
         """
@@ -874,7 +877,7 @@ class Pipeline:
         ------
         NotImplementedError
             If a dataId is supplied in a config block. This is in place for
-            future use
+            future use.
         """
         yield from self.to_graph()._iter_task_defs()
 
@@ -943,7 +946,7 @@ class Pipeline:
 @dataclass(frozen=True)
 class TaskDatasetTypes:
     """An immutable struct that extracts and classifies the dataset types used
-    by a `PipelineTask`
+    by a `PipelineTask`.
     """
 
     initInputs: NamedValueSet[DatasetType]
@@ -1012,9 +1015,9 @@ class TaskDatasetTypes:
 
         Parameters
         ----------
-        taskDef: `TaskDef`
+        taskDef : `TaskDef`
             An instance of a `TaskDef` class for a particular `PipelineTask`.
-        registry: `Registry`
+        registry : `Registry`
             Registry used to construct normalized
             `~lsst.daf.butler.DatasetType` objects and retrieve those that are
             incomplete.
@@ -1056,7 +1059,8 @@ class TaskDatasetTypes:
             ----------
             connectionType : `str`
                 Name of the connection type to produce a set for, corresponds
-                to an attribute of type `list` on the connection class instance
+                to an attribute of type `list` on the connection class
+                instance.
             is_input : `bool`
                 These are input dataset types, else they are output dataset
                 types.
@@ -1068,7 +1072,7 @@ class TaskDatasetTypes:
             datasetTypes : `NamedValueSet`
                 A set of all datasetTypes which correspond to the input
                 connection type specified in the connection class of this
-                `PipelineTask`
+                `PipelineTask`.
 
             Raises
             ------
@@ -1333,9 +1337,9 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
+        pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A collection of tasks that can be run together.
-        registry: `Registry`
+        registry : `Registry`
             Registry used to construct normalized
             `~lsst.daf.butler.DatasetType` objects and retrieve those that are
             incomplete.
@@ -1478,7 +1482,7 @@ class PipelineDatasetTypes:
 
         Parameters
         ----------
-        pipeline: `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
+        pipeline : `Pipeline` or `~collections.abc.Iterable` [ `TaskDef` ]
             A `Pipeline` instance or collection of `TaskDef` instances.
         include_configs : `bool`, optional
             If `True` (default) include config dataset types.

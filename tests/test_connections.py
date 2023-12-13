@@ -47,7 +47,7 @@ class TestConnectionsClass(unittest.TestCase):
         self.test_dims = ("a", "b")
 
     def testConnectionsDeclaration(self):
-        """Tests the declaration of a Connections Class"""
+        """Tests the declaration of a Connections Class."""
         with pytest.raises(TypeError):
             # This should raise because this Connections class is created with
             # no dimensions

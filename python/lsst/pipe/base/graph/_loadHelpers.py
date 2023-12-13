@@ -104,8 +104,8 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
     def _validateSave(self, magic: bytes, versionBytes: bytes) -> int:
         """Implement validation on input file, prior to attempting to load it
 
-        Paramters
-        ---------
+        Parameters
+        ----------
         magic : `bytes`
             The first few bytes of the file, used to verify it is a
             `QuantumGraph` save file.
@@ -170,7 +170,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
 
         Parameters
         ----------
-        universe: `~lsst.daf.butler.DimensionUniverse` or None
+        universe : `~lsst.daf.butler.DimensionUniverse` or None
             DimensionUniverse instance, not used by the method itself but
             needed to ensure that registry data structures are initialized.
             The universe saved with the graph is used, but if one is passed
@@ -178,7 +178,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
             graph universe.
         nodes : `~collections.abc.Iterable` of `UUID` or `str`; or `None`
             The nodes to load from the graph, loads all if value is None
-            (the default)
+            (the default).
         graphID : `str` or `None`
             If specified this ID is verified against the loaded graph prior to
             loading any Nodes. This defaults to None in which case no
@@ -239,7 +239,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
         ----------
         start : `int`
             The beginning byte location to read
-        end : `int`
+        stop : `int`
             The end byte location to read
 
         Returns

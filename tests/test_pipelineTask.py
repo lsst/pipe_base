@@ -42,7 +42,7 @@ from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUn
 
 
 class ButlerMock:
-    """Mock version of butler, only usable for this test"""
+    """Mock version of butler, only usable for this test."""
 
     def __init__(self) -> None:
         self.datasets: dict[str, dict[DataCoordinate, Any]] = {}
@@ -112,7 +112,7 @@ class AddTask2(pipeBase.PipelineTask):
 
 
 class PipelineTaskTestCase(unittest.TestCase):
-    """A test case for PipelineTask"""
+    """A test case for PipelineTask."""
 
     def _makeDSRefVisit(self, dstype: DatasetType, visitId: int, universe: DimensionUniverse) -> DatasetRef:
         dataId = DataCoordinate.standardize(
@@ -128,7 +128,7 @@ class PipelineTaskTestCase(unittest.TestCase):
         return ref
 
     def _makeQuanta(self, config: pipeBase.PipelineTaskConfig, nquanta: int = 100) -> list[Quantum]:
-        """Create set of Quanta"""
+        """Create set of Quanta."""
         universe = DimensionUniverse()
         connections = config.connections.ConnectionsClass(config=config)
 

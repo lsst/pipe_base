@@ -65,7 +65,15 @@ _LOG = logging.getLogger(__name__)
 
 
 class SimpleInstrument(Instrument):
-    """Simple instrument class suitable for testing."""
+    """Simple instrument class suitable for testing.
+
+    Parameters
+    ----------
+    *args : `~typing.Any`
+        Ignore parameters.
+    **kwargs : `~typing.Any`
+        Unused keyword arguments.
+    """
 
     def __init__(self, *args: Any, **kwargs: Any):
         pass
@@ -155,6 +163,11 @@ class AddTaskFactoryMock(TaskFactory):
 
     It also defines some bookkeeping variables used by AddTask to report
     progress to unit tests.
+
+    Parameters
+    ----------
+    stopAt : `int`, optional
+        Number of times to call `run` before stopping.
     """
 
     def __init__(self, stopAt: int = -1):
@@ -224,7 +237,7 @@ def makeSimplePipeline(nQuanta: int, instrument: str | None = None) -> Pipeline:
     instrument : `str` or `None`, optional
         The importable name of an instrument to be added to the pipeline or
         if no instrument should be added then an empty string or `None`, by
-        default None
+        default `None`.
 
     Returns
     -------
@@ -389,13 +402,13 @@ def makeSimpleQGraph(
     butler : `~lsst.daf.butler.Butler`, optional
         Data butler instance, if None then new data butler is created by
         calling `makeSimpleButler`.
+    root : `str`
+        Path or URI to the root location of the new repository. Only used if
+        ``butler`` is None.
     callPopulateButler : `bool`, optional
         If True insert datasets into the butler prior to building a graph.
         If False butler argument must not be None, and must be pre-populated.
         Defaults to True.
-    root : `str`
-        Path or URI to the root location of the new repository. Only used if
-        ``butler`` is None.
     run : `str`, optional
         Name of the RUN collection to add to butler, only used if ``butler``
         is None.
@@ -403,7 +416,7 @@ def makeSimpleQGraph(
         The importable name of an instrument to be added to the pipeline or
         if no instrument should be added then an empty string or `None`, by
         default `None`. Only used if ``pipeline`` is `None`.
-    skipExistingIn
+    skipExistingIn : `~typing.Any`
         Expressions representing the collections to search for existing
         output datasets that should be skipped.  See
         :ref:`daf_butler_ordered_collection_searches`.
@@ -415,7 +428,7 @@ def makeSimpleQGraph(
         Dictionary whose keys are collection names and values are lists of
         dataset type names. By default a single dataset of type "add_dataset0"
         is added to a ``butler.run`` collection.
-    datasetQueryQConstraint : `DatasetQueryConstraintVariant`
+    datasetQueryConstraint : `DatasetQueryConstraintVariant`
         The query constraint variant that should be used to constrain the
         query based on dataset existence, defaults to
         `DatasetQueryConstraintVariant.ALL`.
@@ -430,9 +443,9 @@ def makeSimpleQGraph(
     Returns
     -------
     butler : `~lsst.daf.butler.Butler`
-        Butler instance
+        Butler instance.
     qgraph : `~lsst.pipe.base.QuantumGraph`
-        Quantum graph instance
+        Quantum graph instance.
     """
     if pipeline is None:
         pipeline = makeSimplePipeline(nQuanta=nQuanta, instrument=instrument)

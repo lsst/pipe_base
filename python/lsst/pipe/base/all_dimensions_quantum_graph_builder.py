@@ -508,6 +508,11 @@ class _AllDimensionsQuery:
     def log_failure(self, log: LsstLogAdapter) -> None:
         """Emit a series of CRITICAL-level log message that attempts to explain
         why the initial data ID query returned no rows.
+
+        Parameters
+        ----------
+        log : `logging.Logger`
+            The logger to use to emit log messages.
         """
         log.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
         for message in self.common_data_ids.explain_no_results():

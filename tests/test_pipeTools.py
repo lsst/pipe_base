@@ -98,14 +98,15 @@ def _makePipeline(tasks):
     ----------
     tasks : list of tuples
         Each tuple in the list has 3 or 4 items:
+
         - input DatasetType name(s), string or tuple of strings
         - output DatasetType name(s), string or tuple of strings
         - task label, string
-        - optional task class object, can be None
+        - optional task class object, can be None.
 
     Returns
     -------
-    Pipeline instance
+    Pipeline instance.
     """
     pipe = Pipeline("test pipeline")
     for task in tasks:
@@ -119,7 +120,7 @@ def _makePipeline(tasks):
 
 
 class PipelineToolsTestCase(unittest.TestCase):
-    """A test case for pipelineTools"""
+    """A test case for pipelineTools."""
 
     def setUp(self):
         pass
@@ -128,7 +129,7 @@ class PipelineToolsTestCase(unittest.TestCase):
         pass
 
     def testIsOrdered(self):
-        """Tests for pipeTools.isPipelineOrdered method"""
+        """Tests for pipeTools.isPipelineOrdered method."""
         pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
@@ -143,7 +144,7 @@ class PipelineToolsTestCase(unittest.TestCase):
         self.assertTrue(pipeTools.isPipelineOrdered(pipeline))
 
     def testOrderPipeline(self):
-        """Tests for pipeTools.orderPipeline method"""
+        """Tests for pipeTools.orderPipeline method."""
         pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])
         pipeline = pipeTools.orderPipeline(pipeline)
         self.assertEqual(len(pipeline), 2)

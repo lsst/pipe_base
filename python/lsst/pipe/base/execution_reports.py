@@ -48,8 +48,8 @@ class DatasetTypeExecutionReport:
     """A report on the number of produced datasets as well as the status of
     missing datasets based on metadata.
 
-    A `DatasetTypeExecutionReport` is created for each `DatasetType` in a
-    `TaskExecutionReport`.
+    A `DatasetTypeExecutionReport` is created for each
+    `~lsst.daf.butler.DatasetType` in a `TaskExecutionReport`.
     """
 
     failed: set[DatasetRef] = dataclasses.field(default_factory=set)
@@ -70,13 +70,14 @@ class DatasetTypeExecutionReport:
     """
 
     def to_summary_dict(self) -> dict[str, Any]:
-        """Summarize the DatasetTypeExecutionReport in a dictionary.
+        r"""Summarize the DatasetTypeExecutionReport in a dictionary.
 
         Returns
         -------
         summary_dict : `dict`
             A count of the datasets with each outcome; the number of
-            produced, `failed`, `not_produced`, and `blocked` `DatasetTypes`.
+            produced, ``failed``, ``not_produced``, and ``blocked``
+            `~lsst.daf.butler.DatasetType`\ s.
             See above for attribute descriptions.
         """
         return {
@@ -97,8 +98,8 @@ class TaskExecutionReport:
 
     See Also
     --------
-    QuantumGraphExecutionReport
-    DatasetTypeExecutionReport
+    QuantumGraphExecutionReport : Quantum graph report.
+    DatasetTypeExecutionReport : DatasetType report.
     """
 
     failed: dict[uuid.UUID, DatasetRef] = dataclasses.field(default_factory=dict)
@@ -119,7 +120,8 @@ class TaskExecutionReport:
     """
 
     output_datasets: dict[str, DatasetTypeExecutionReport] = dataclasses.field(default_factory=dict)
-    """Missing and produced outputs of each `DatasetType` (`dict`).
+    """Missing and produced outputs of each `~lsst.daf.butler.DatasetType`
+    (`dict`).
     """
 
     def inspect_quantum(
@@ -153,7 +155,7 @@ class TaskExecutionReport:
 
         See Also
         --------
-        QuantumGraphExecutionReport.make_reports
+        QuantumGraphExecutionReport.make_reports : Make reports.
         """
         quantum = quantum_node.quantum
         (metadata_ref,) = quantum.outputs[metadata_name]
@@ -218,7 +220,6 @@ class TaskExecutionReport:
             - n_quanta_blocked: The number of quanta which failed due to
               upstream failures.
             - n_succeded: The number of quanta which succeeded.
-
         """
         failed_quanta = {}
         for node_id, log_ref in self.failed.items():
@@ -259,20 +260,19 @@ class QuantumGraphExecutionReport:
     produced DatasetTypes for each task. This report can be output as a
     dictionary or a yaml file.
 
-    Parameters
+    Attributes
     ----------
     tasks : `dict`
         A dictionary of TaskExecutionReports by task label.
 
     See Also
     --------
-    TaskExecutionReport
-    DatasetTypeExecutionReport
+    TaskExecutionReport : A task report.
+    DatasetTypeExecutionReport : A dataset type report.
     """
 
     tasks: dict[str, TaskExecutionReport] = dataclasses.field(default_factory=dict)
-    """A dictionary of TaskExecutionReports by task label (`dict`).
-    """
+    """A dictionary of TaskExecutionReports by task label (`dict`)."""
 
     def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the results of the `QuantumGraphExecutionReport` in a

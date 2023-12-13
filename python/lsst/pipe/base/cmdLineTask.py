@@ -24,8 +24,14 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import contextlib
+import logging
+from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 from deprecated.sphinx import deprecated
+
+if TYPE_CHECKING:
+    import cProfile
 
 
 @deprecated(
@@ -34,9 +40,8 @@ from deprecated.sphinx import deprecated
     category=FutureWarning,
 )
 @contextlib.contextmanager
-def profile(filename, log=None):
+def profile(filename: str, log: logging.Logger | None = None) -> Generator[cProfile.Profile, None, None]:
     """Context manager for profiling with cProfile.
-
 
     Parameters
     ----------
@@ -46,6 +51,13 @@ def profile(filename, log=None):
     log : `logging.Logger`, optional
         Log object for logging the profile operations.
 
+    Yields
+    ------
+    `cProfile.Profile`
+        Profiling object.
+
+    Notes
+    -----
     If profiling is enabled, the context manager returns the cProfile.Profile
     object (otherwise it returns None), which allows additional control over
     profiling.  You can obtain this using the "as" clause, e.g.:
@@ -64,7 +76,7 @@ def profile(filename, log=None):
     """
     if not filename:
         # Nothing to do
-        yield
+        yield None  # type: ignore
         return
     from cProfile import Profile
 

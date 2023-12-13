@@ -80,9 +80,18 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
         """Select and return the correct Variant that corresponds to the input
         expression.
 
-        Valid values are ``all`` for all inputs dataset types in pipeline,
-        ``off`` to not consider dataset type existence as a constraint, single
-        or comma-separated list of dataset type names.
+        Parameters
+        ----------
+        expression : `str`
+            Input expression. Valid values are ``all`` for all inputs dataset
+            types in pipeline, ``off`` to not consider dataset type existence
+            as a constraint, single or comma-separated list of dataset type
+            names.
+
+        Returns
+        -------
+        variant : `DatasetQueryConstraintVariant`
+            Correct variant for this expression.
         """
         if not isinstance(expression, str):
             raise ValueError("Expression must be a string")

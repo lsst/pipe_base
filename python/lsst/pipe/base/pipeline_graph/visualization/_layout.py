@@ -261,6 +261,11 @@ class Layout(Generic[_K]):
 
         This is intended for use as a debugging diagnostic, not part of a real
         visualization system.
+
+        Parameters
+        ----------
+        stream : `io.TextIO`
+            Output stream to use for printing.
         """
         for row in self:
             print(f"{' ' * row.x}●{' ' * (self.width - row.x)} {row.node}", file=stream)

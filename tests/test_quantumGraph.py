@@ -137,7 +137,7 @@ class Dummy4PipelineTask(PipelineTask):
 
 
 class QuantumGraphTestCase(unittest.TestCase):
-    """Tests the various functions of a quantum graph"""
+    """Tests the various functions of a quantum graph."""
 
     input_collection = "inputs"
     output_run = "run"

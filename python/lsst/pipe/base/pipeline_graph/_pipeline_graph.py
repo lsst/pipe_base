@@ -866,7 +866,13 @@ class PipelineGraph:
         self._task_subsets[subset_label] = subset
 
     def remove_task_subset(self, subset_label: str) -> None:
-        """Remove a labeled set of tasks."""
+        """Remove a labeled set of tasks.
+
+        Parameters
+        ----------
+        subset_label : `str`
+            Label for this set of tasks.
+        """
         del self._task_subsets[subset_label]
 
     ###########################################################################

@@ -31,7 +31,7 @@ from lsst.pipe.base.tests.mocks import DataIdMatch
 
 
 class DataIdMatchTestCase(unittest.TestCase):
-    """A test case for DataidMatch class"""
+    """A test case for DataidMatch class."""
 
     dataIds = (
         {"instrument": "INSTR", "detector": 1, "number": 4},
@@ -41,7 +41,7 @@ class DataIdMatchTestCase(unittest.TestCase):
     )
 
     def test_strings(self):
-        """Tests for string comparisons method"""
+        """Tests for string comparisons method."""
         tests = (
             ("instrument = 'INSTR'", [True, True, False, False]),
             ("instrument = 'LSST'", [False, False, True, True]),
@@ -54,7 +54,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_comparisons(self):
-        """Test all supported comparison operators"""
+        """Test all supported comparison operators."""
         tests = (
             ("detector = 1", [True, False, False, False]),
             ("detector != 1", [False, True, True, True]),
@@ -69,7 +69,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_arith(self):
-        """Test all supported arithmetical operators"""
+        """Test all supported arithmetical operators."""
         tests = (
             ("detector + number = 5", [True, True, True, True]),
             ("detector - number = 1", [False, False, True, False]),
@@ -85,7 +85,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_logical(self):
-        """Test all supported logical operators"""
+        """Test all supported logical operators."""
         tests = (
             ("detector = 1 OR instrument = 'LSST'", [True, False, True, True]),
             ("detector = 1 AND instrument = 'INSTR'", [True, False, False, False]),
@@ -97,7 +97,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_parens(self):
-        """Test parentheses"""
+        """Test parentheses."""
         tests = (("(detector = 1 OR number = 1) AND instrument = 'LSST'", [False, False, False, True]),)
 
         for expr, result in tests:
@@ -105,7 +105,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_in(self):
-        """Test IN expression"""
+        """Test IN expression."""
         tests = (
             ("detector in (1, 3, 2)", [True, True, True, False]),
             ("detector not in (1, 3, 2)", [False, False, False, True]),
@@ -118,7 +118,7 @@ class DataIdMatchTestCase(unittest.TestCase):
             self.assertEqual([dataIdMatch.match(dataId) for dataId in self.dataIds], result)
 
     def test_errors(self):
-        """Test for errors in expressions"""
+        """Test for errors in expressions."""
         dataId = {"instrument": "INSTR", "detector": 1}
 
         # Unknown identifier

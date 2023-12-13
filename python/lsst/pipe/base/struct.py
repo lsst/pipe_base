@@ -33,8 +33,8 @@ class Struct(SimpleNamespace):
 
     Parameters
     ----------
-    keyArgs
-        keyword arguments specifying fields and their values.
+    **keyArgs
+        Keyword arguments specifying fields and their values.
 
     Notes
     -----
@@ -65,7 +65,6 @@ class Struct(SimpleNamespace):
     >>>     strVal = 'the value of the field named "strVal"',
     >>>     intVal = 35,
     >>> )
-
     """
 
     def __init__(self, **keyArgs: Any):

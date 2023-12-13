@@ -50,7 +50,13 @@ from lsst.utils.introspection import get_full_type_name
 
 
 class NoDimensionsTestConnections(PipelineTaskConnections, dimensions=set()):
-    """Connections class for `NoDimensionsTestTask`."""
+    """Connections class for `NoDimensionsTestTask`.
+
+    Parameters
+    ----------
+    config : `PipelineTaskConfig` or `None`, optional
+        Config to use for the connection.
+    """
 
     input = connectionTypes.Input(
         name="input", doc="some dict-y input data for testing", storageClass="StructuredDataDict"

@@ -200,6 +200,15 @@ class BaseTestPipelineTask(PipelineTask):
     """A base class for test-utility `PipelineTask` classes that read and write
     mock datasets `runQuantum`.
 
+    Parameters
+    ----------
+    config : `PipelineTaskConfig`
+        The pipeline task config.
+    initInputs : `~collections.abc.Mapping`
+        The init inputs datasets.
+    **kwargs : `~typing.Any`
+        Keyword parameters passed to base class constructor.
+
     Notes
     -----
     This class overrides `runQuantum` to read inputs and write a bit of
@@ -368,6 +377,11 @@ class MockPipelineDefaultTargetTask(PipelineTask):
 class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()):
     """A connections class that creates mock connections from the connections
     of a real PipelineTask.
+
+    Parameters
+    ----------
+    config : `PipelineTaskConfig`
+        The config to use for the connection.
     """
 
     def __init__(self, *, config: MockPipelineTaskConfig):
@@ -556,6 +570,11 @@ class DynamicConnectionConfig(Config):
 class DynamicTestPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
     """A connections class whose dimensions and connections are wholly
     determined via configuration.
+
+    Parameters
+    ----------
+    config : `PipelineTaskConfig`
+        Config to use for this connections object.
     """
 
     def __init__(self, *, config: DynamicTestPipelineTaskConfig):

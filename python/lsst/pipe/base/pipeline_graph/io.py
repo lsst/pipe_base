@@ -65,14 +65,14 @@ def expect_not_none(value: _U | None, msg: str) -> _U:
 
     Parameters
     ----------
-    value
-        Value to check
-    msg
+    value : `~typing.Any`
+        Value to check.
+    msg : `str`
         Error message for the case where ``value is None``.
 
     Returns
     -------
-    value
+    value : `typing.Any`
         Value, guaranteed not to be `None`.
 
     Raises
@@ -113,7 +113,18 @@ class SerializedEdge(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: Edge) -> SerializedEdge:
-        """Transform an `Edge` to a `SerializedEdge`."""
+        """Transform an `Edge` to a `SerializedEdge`.
+
+        Parameters
+        ----------
+        target : `Edge`
+            The object to serialize.
+
+        Returns
+        -------
+        `SerializedEdge`
+            Model transformed into something that can be serialized.
+        """
         return SerializedEdge.model_construct(
             storage_class=target.storage_class_name,
             dataset_type_name=target.dataset_type_name,
@@ -129,7 +140,25 @@ class SerializedEdge(_BaseModelCompat):
         dataset_type_keys: Mapping[str, NodeKey],
         is_prerequisite: bool = False,
     ) -> ReadEdge:
-        """Transform a `SerializedEdge` to a `ReadEdge`."""
+        """Transform a `SerializedEdge` to a `ReadEdge`.
+
+        Parameters
+        ----------
+        task_key : `NodeKey`
+            Key for the task node this edge is connected to.
+        connection_name : `str`
+            Internal name for the connection as seen by the task.
+        dataset_type_keys : `~collections.abc.Mapping` [`str`, `NodeKey`]
+            Mapping of dataset type name to node key.
+        is_prerequisite : `bool`, optional
+            Whether this dataset must be present in the data repository prior
+            to `QuantumGraph` generation.
+
+        Returns
+        -------
+        `ReadEdge`
+            Deserialized object.
+        """
         parent_dataset_type_name, component = DatasetType.splitDatasetTypeName(self.dataset_type_name)
         return ReadEdge(
             dataset_type_key=dataset_type_keys[parent_dataset_type_name],
@@ -149,7 +178,22 @@ class SerializedEdge(_BaseModelCompat):
         connection_name: str,
         dataset_type_keys: Mapping[str, NodeKey],
     ) -> WriteEdge:
-        """Transform a `SerializedEdge` to a `WriteEdge`."""
+        """Transform a `SerializedEdge` to a `WriteEdge`.
+
+        Parameters
+        ----------
+        task_key : `NodeKey`
+            Key for the task node this edge is connected to.
+        connection_name : `str`
+            Internal name for the connection as seen by the task.
+        dataset_type_keys : `~collections.abc.Mapping` [`str`, `NodeKey`]
+            Mapping of dataset type name to node key.
+
+        Returns
+        -------
+        `WriteEdge`
+            Deserialized object.
+        """
         return WriteEdge(
             task_key=task_key,
             dataset_type_key=dataset_type_keys[self.dataset_type_name],
@@ -188,7 +232,18 @@ class SerializedTaskInitNode(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: TaskInitNode) -> SerializedTaskInitNode:
-        """Transform a `TaskInitNode` to a `SerializedTaskInitNode`."""
+        """Transform a `TaskInitNode` to a `SerializedTaskInitNode`.
+
+        Parameters
+        ----------
+        target : `TaskInitNode`
+            Object to be serialized.
+
+        Returns
+        -------
+        `SerializedTaskInitNode`
+            Model that can be serialized.
+        """
         return cls.model_construct(
             inputs={
                 connection_name: SerializedEdge.serialize(edge)
@@ -208,7 +263,26 @@ class SerializedTaskInitNode(_BaseModelCompat):
         config_str: str,
         dataset_type_keys: Mapping[str, NodeKey],
     ) -> TaskInitNode:
-        """Transform a `SerializedTaskInitNode` to a `TaskInitNode`."""
+        """Transform a `SerializedTaskInitNode` to a `TaskInitNode`.
+
+        Parameters
+        ----------
+        key : `NodeKey`
+            Key that identifies this node in internal and exported networkx
+            graphs.
+        task_class_name : `str`, optional
+            Fully-qualified name of the task class.  Must be provided if
+            ``imported_data`` is not.
+        config_str : `str`, optional
+            Configuration for the task as a string of override statements.
+        dataset_type_keys : `~collections.abc.Mapping` [`str`, `NodeKey`]
+            Mapping of dataset type name to node key.
+
+        Returns
+        -------
+        `TaskInitNode`
+            Deserialized object.
+        """
         return TaskInitNode(
             key,
             inputs={
@@ -277,7 +351,18 @@ class SerializedTaskNode(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: TaskNode) -> SerializedTaskNode:
-        """Transform a `TaskNode` to a `SerializedTaskNode`."""
+        """Transform a `TaskNode` to a `SerializedTaskNode`.
+
+        Parameters
+        ----------
+        target : `TaskNode`
+            Object to be serialized.
+
+        Returns
+        -------
+        `SerializedTaskNode`
+            Object tha can be serialized.
+        """
         return cls.model_construct(
             task_class=target.task_class_name,
             init=SerializedTaskInitNode.serialize(target.init),
@@ -308,7 +393,26 @@ class SerializedTaskNode(_BaseModelCompat):
         dataset_type_keys: Mapping[str, NodeKey],
         universe: DimensionUniverse | None,
     ) -> TaskNode:
-        """Transform a `SerializedTaskNode` to a `TaskNode`."""
+        """Transform a `SerializedTaskNode` to a `TaskNode`.
+
+        Parameters
+        ----------
+        key : `NodeKey`
+            Key that identifies this node in internal and exported networkx
+            graphs.
+        init_key : `NodeKey`
+            Key that identifies the init node in internal and exported networkx
+            graphs.
+        dataset_type_keys : `~collections.abc.Mapping` [`str`, `NodeKey`]
+            Mapping of dataset type name to node key.
+        universe : `~lsst.daf.butler.DimensionUniverse` or `None`
+            The dimension universe.
+
+        Returns
+        -------
+        `TaskNode`
+            Deserialized object.
+        """
         init = self.init.deserialize(
             init_key,
             task_class_name=self.task_class,
@@ -396,7 +500,18 @@ class SerializedDatasetTypeNode(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: DatasetTypeNode | None) -> SerializedDatasetTypeNode:
-        """Transform a `DatasetTypeNode` to a `SerializedDatasetTypeNode`."""
+        """Transform a `DatasetTypeNode` to a `SerializedDatasetTypeNode`.
+
+        Parameters
+        ----------
+        target : `DatasetTypeNode` or `None`
+            Object to serialize.
+
+        Returns
+        -------
+        `SerializedDatasetTypeNode`
+            Object in serializable form.
+        """
         if target is None:
             return cls.model_construct()
         return cls.model_construct(
@@ -410,7 +525,23 @@ class SerializedDatasetTypeNode(_BaseModelCompat):
     def deserialize(
         self, key: NodeKey, xgraph: networkx.MultiDiGraph, universe: DimensionUniverse | None
     ) -> DatasetTypeNode | None:
-        """Transform a `SerializedDatasetTypeNode` to a `DatasetTypeNode`."""
+        """Transform a `SerializedDatasetTypeNode` to a `DatasetTypeNode`.
+
+        Parameters
+        ----------
+        key : `NodeKey`
+            Key that identifies this node in internal and exported networkx
+            graphs.
+        xgraph : `networkx.MultiDiGraph`
+            <unknown>.
+        universe : `~lsst.daf.butler.DimensionUniverse` or `None`
+            The dimension universe.
+
+        Returns
+        -------
+        `DatasetTypeNode`
+            Deserialized object.
+        """
         if self.dimensions is not None:
             dataset_type = DatasetType(
                 key.name,
@@ -470,11 +601,35 @@ class SerializedTaskSubset(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: TaskSubset) -> SerializedTaskSubset:
-        """Transform a `TaskSubset` into a `SerializedTaskSubset`."""
+        """Transform a `TaskSubset` into a `SerializedTaskSubset`.
+
+        Parameters
+        ----------
+        target : `TaskSubset`
+            Object to serialize.
+
+        Returns
+        -------
+        `SerializedTaskSubset`
+            Object in serializable form.
+        """
         return cls.model_construct(description=target._description, tasks=list(sorted(target)))
 
     def deserialize_task_subset(self, label: str, xgraph: networkx.MultiDiGraph) -> TaskSubset:
-        """Transform a `SerializedTaskSubset` into a `TaskSubset`."""
+        """Transform a `SerializedTaskSubset` into a `TaskSubset`.
+
+        Parameters
+        ----------
+        label : `str`
+            Subset label.
+        xgraph : `networkx.MultiDiGraph`
+            <unknown>.
+
+        Returns
+        -------
+        `TaskSubset`
+            Deserialized object.
+        """
         members = set(self.tasks)
         return TaskSubset(xgraph, label, members, self.description)
 
@@ -506,7 +661,18 @@ class SerializedPipelineGraph(_BaseModelCompat):
 
     @classmethod
     def serialize(cls, target: PipelineGraph) -> SerializedPipelineGraph:
-        """Transform a `PipelineGraph` into a `SerializedPipelineGraph`."""
+        """Transform a `PipelineGraph` into a `SerializedPipelineGraph`.
+
+        Parameters
+        ----------
+        target : `PipelineGraph`
+            Object to serialize.
+
+        Returns
+        -------
+        `SerializedPipelineGraph`
+            Object in serializable form.
+        """
         result = SerializedPipelineGraph.model_construct(
             description=target.description,
             tasks={label: SerializedTaskNode.serialize(node) for label, node in target.tasks.items()},
@@ -535,7 +701,18 @@ class SerializedPipelineGraph(_BaseModelCompat):
         self,
         import_mode: TaskImportMode,
     ) -> PipelineGraph:
-        """Transform a `SerializedPipelineGraph` into a `PipelineGraph`."""
+        """Transform a `SerializedPipelineGraph` into a `PipelineGraph`.
+
+        Parameters
+        ----------
+        import_mode : `TaskImportMode`
+            Import mode.
+
+        Returns
+        -------
+        `PipelineGraph`
+            Deserialized object.
+        """
         universe: DimensionUniverse | None = None
         if self.dimensions is not None:
             universe = DimensionUniverse(

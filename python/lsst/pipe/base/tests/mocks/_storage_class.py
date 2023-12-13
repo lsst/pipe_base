@@ -64,6 +64,16 @@ _NAME_PREFIX: str = "_mock_"
 def get_mock_name(original: str) -> str:
     """Return the name of the mock storage class, dataset type, or task label
     for the given original name.
+
+    Parameters
+    ----------
+    original : `str`
+        Original name.
+
+    Returns
+    -------
+    name : `str`
+        The name of the mocked version.
     """
     return _NAME_PREFIX + original
 
@@ -71,6 +81,16 @@ def get_mock_name(original: str) -> str:
 def get_original_name(mock: str) -> str:
     """Return the name of the original storage class, dataset type, or task
     label that corresponds to the given mock name.
+
+    Parameters
+    ----------
+    mock : `str`
+        The mocked name.
+
+    Returns
+    -------
+    original : `str`
+        The original name.
     """
     assert mock.startswith(_NAME_PREFIX)
     return mock.removeprefix(_NAME_PREFIX)
@@ -79,6 +99,16 @@ def get_original_name(mock: str) -> str:
 def is_mock_name(name: str) -> bool:
     """Return whether the given name is that of a mock storage class, dataset
     type, or task label.
+
+    Parameters
+    ----------
+    name : `str`
+        The given name to check.
+
+    Returns
+    -------
+    is_mock : `bool`
+        Whether the name is for a mock or not.
     """
     return name.startswith(_NAME_PREFIX)
 
@@ -147,8 +177,16 @@ class MockDataset(_BaseModelCompat):
         """Return a new MockDataset that represents applying some storage class
         operation to this one.
 
-        Keyword arguments are fields of `MockDataset` or
-        `~lsst.daf.butler.SerializedDatasetType` to override in the result.
+        Parameters
+        ----------
+        **kwargs : `~typing.Any`
+            Keyword arguments are fields of `MockDataset` or
+            `~lsst.daf.butler.SerializedDatasetType` to override in the result.
+
+        Returns
+        -------
+        derived : `MockDataset`
+            The newly-mocked dataset.
         """
         dataset_type_updates = {
             k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields  # type: ignore
@@ -231,9 +269,18 @@ class MockStorageClassDelegate(StorageClassDelegate):
 class MockStorageClass(StorageClass):
     """A reimplementation of `lsst.daf.butler.StorageClass` for mock datasets.
 
+    Parameters
+    ----------
+    original : `~lsst.daf.butler.StorageClass`
+        The original storage class.
+    factory : `~lsst.daf.butler.StorageClassFactory` or `None`, optional
+        Storage class factory to use. If `None` the default factory is used.
+
+    Notes
+    -----
     Each `MockStorageClass` instance corresponds to a real "original" storage
     class, with components and conversions that are mocks of the original's
-    components and conversions.  The `pytype` for all `MockStorageClass`
+    components and conversions.  The ``pytype`` for all `MockStorageClass`
     instances is `MockDataset`.
     """
 

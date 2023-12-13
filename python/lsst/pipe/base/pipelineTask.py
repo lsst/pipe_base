@@ -98,6 +98,8 @@ class PipelineTask(Task):
         obtained by calling `~lsst.daf.butler.Butler.get` with those
         DatasetTypes and no data IDs.  While it is optional for the base class,
         subclasses are permitted to require this argument.
+    **kwargs : `~typing.Any`
+        Arbitrary parameters, passed to base class constructor.
     """
 
     ConfigClass: ClassVar[type[PipelineTaskConfig]]
@@ -131,11 +133,16 @@ class PipelineTask(Task):
         This method should return a `Struct` whose attributes share the same
         name as the connection fields describing output dataset types.
 
+        Parameters
+        ----------
+        **kwargs : `~typing.Any`
+            Arbitrary parameters accepted by subclasses.
+
         Returns
         -------
         struct : `Struct`
             Struct with attribute names corresponding to output connection
-            fields
+            fields.
 
         Examples
         --------
@@ -154,7 +161,6 @@ class PipelineTask(Task):
 
                 # If output dataset is `scalar` then return object, not list
                 return Struct(output=image)
-
         """
         raise NotImplementedError("run() is not implemented")
 

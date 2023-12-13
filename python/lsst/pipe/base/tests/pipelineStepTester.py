@@ -55,18 +55,18 @@ class PipelineStepTester:
     These sets will be checked against user-supplied sets to ensure that the
     named pipeline may still be run without raising a missing data error.
 
-    Parameters
+    Attributes
     ----------
     filename : `str`
-        The full path to the pipeline YAML
+        The full path to the pipeline YAML.
     step_suffixes : `list` [`str`]
-        A list, in the order of data reduction, of the step subsets to check
+        A list, in the order of data reduction, of the step subsets to check.
     initial_dataset_types : `list` [`tuple`]
-        Dataset types which require initial registry by the butler
+        Dataset types which require initial registry by the butler.
     expected_inputs : `set` [`str`]
-        Dataset types expected as an input into the pipeline
+        Dataset types expected as an input into the pipeline.
     expected_outputs : `set` [`str`]
-        Dataset types expected to be produced as an output by the pipeline
+        Dataset types expected to be produced as an output by the pipeline.
     """
 
     filename: str

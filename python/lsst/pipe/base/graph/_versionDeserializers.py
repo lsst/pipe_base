@@ -93,7 +93,7 @@ class DeserializerBase(ABC):
 
         Parameters
         ----------
-        rawheader : bytes
+        rawHeader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
             and before the headerSize bytes.
@@ -116,14 +116,14 @@ class DeserializerBase(ABC):
 
     def readHeaderInfo(self, rawHeader: bytes) -> SimpleNamespace:
         """Parse the supplied raw bytes into the header information and
-        byte ranges of specific TaskDefs and QuantumNodes
+        byte ranges of specific TaskDefs and QuantumNodes.
 
         Parameters
         ----------
-        rawheader : bytes
+        rawHeader : bytes
             The bytes that are to be parsed into the header information. These
             are the bytes after the preamble and structsize number of bytes
-            and before the headerSize bytes
+            and before the headerSize bytes.
         """
         raise NotImplementedError("Base class does not implement this method")
 
@@ -138,18 +138,24 @@ class DeserializerBase(ABC):
         Parameters
         ----------
         nodes : `set` of `uuid.UUID`
-            The nodes to include in the graph
+            The nodes to include in the graph.
         _readBytes : callable
             A callable that can be used to read bytes from the file handle.
             The callable will take two ints, start and stop, to use as the
             numerical bounds to read and returns a byte stream.
         universe : `~lsst.daf.butler.DimensionUniverse`
-            The singleton of all dimensions known to the middleware registry
+            The singleton of all dimensions known to the middleware registry.
         """
         raise NotImplementedError("Base class does not implement this method")
 
     def description(self) -> str:
-        """Return the description of the serialized data format"""
+        """Return the description of the serialized data format.
+
+        Returns
+        -------
+        desc : `str`
+            Description of serialized data format.
+        """
         raise NotImplementedError("Base class does not implement this method")
 
 
