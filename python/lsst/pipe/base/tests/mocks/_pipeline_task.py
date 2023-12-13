@@ -570,6 +570,11 @@ class DynamicConnectionConfig(Config):
 class DynamicTestPipelineTaskConnections(PipelineTaskConnections, dimensions=()):
     """A connections class whose dimensions and connections are wholly
     determined via configuration.
+
+    Parameters
+    ----------
+    config : `PipelineTaskConfig`
+        Config to use for this connections object.
     """
 
     def __init__(self, *, config: DynamicTestPipelineTaskConfig):

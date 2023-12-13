@@ -124,7 +124,19 @@ class PipelineTaskConnectionDict(UserDict):
 
 
 class PipelineTaskConnectionsMetaclass(type):
-    """Metaclass used in the declaration of PipelineTaskConnections classes."""
+    """Metaclass used in the declaration of PipelineTaskConnections classes.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of connection.
+    bases : `~collections.abc.Collection`
+        Base classes.
+    dct : `~collections.abc.Mapping`
+        Connections dict.
+    **kwargs : `~typing.Any`
+        Additional parameters.
+    """
 
     # We can annotate these attributes as `collections.abc.Set` to discourage
     # undesirable modifications in type-checked code, since the internal code
@@ -471,7 +483,7 @@ class DeferredDatasetRef:
     `PipelineTask` should receive a `~lsst.daf.butler.DeferredDatasetHandle`
     instead of an in-memory dataset.
 
-    Parameters
+    Attributes
     ----------
     datasetRef : `lsst.daf.butler.DatasetRef`
         The `lsst.daf.butler.DatasetRef` that will be eventually used to
@@ -503,7 +515,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
     See Also
     --------
-    iterConnections
+    iterConnections : Iterator over selected connections.
 
     Notes
     -----

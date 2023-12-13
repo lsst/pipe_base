@@ -64,6 +64,13 @@ from .pipeline_graph import DatasetTypeNode, PipelineGraph, ReadEdge, TaskNode
 class PrerequisiteInfo:
     """A QuantumGraph-generation helper class that manages the searches for all
     prerequisite input connections for a task.
+
+    Parameters
+    ----------
+    task_node : `TaskNode`
+        The relevant node.
+    pipeline_graph : `PipelineGraph`
+        The pipeline graph.
     """
 
     bounds: PrerequisiteBounds

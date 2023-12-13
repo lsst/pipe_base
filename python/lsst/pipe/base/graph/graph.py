@@ -552,7 +552,6 @@ class QuantumGraph:
         ------
         KeyError
             Raised if the `DatasetTypeName` is not part of the `QuantumGraph`.
-
         """
         tasks = self._datasetDict.getAll(datasetTypeName)
         result: set[Quantum] = set()

@@ -116,6 +116,17 @@ class PipelineTaskConfigMeta(pexConfig.ConfigMeta):
     Finally the newly constructed config class (not an instance of it) is
     assigned to the Config class under construction with the attribute name
     ``ConnectionsConfigClass``.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of config.
+    bases : `~collections.abc.Collection`
+        Base classes.
+    dct : `~collections.abc.Mapping`
+        Parameter dict.
+    **kwargs : `~typing.Any`
+        Additional parameters.
     """
 
     def __new__(

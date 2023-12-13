@@ -248,28 +248,64 @@ class QuantumGraphSkeleton:
             yield from quanta
 
     def iter_outputs_of(self, quantum_key: QuantumKey | TaskInitKey) -> Iterator[DatasetKey]:
-        """Iterate over the datasets produced by the given quantum."""
+        """Iterate over the datasets produced by the given quantum.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey` or `TaskInitKey`
+            Quantum to iterate over.
+
+        Returns
+        -------
+        datasets : `~collections.abc.Iterator` of `DatasetKey`
+            Datasets produced by the given quanta.
+        """
         return self._xgraph.successors(quantum_key)
 
     def iter_inputs_of(
         self, quantum_key: QuantumKey | TaskInitKey
     ) -> Iterator[DatasetKey | PrerequisiteDatasetKey]:
-        """Iterate over the datasets consumed by the given quantum."""
+        """Iterate over the datasets consumed by the given quantum.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey` or `TaskInitKey`
+            Quantum to iterate over.
+
+        Returns
+        -------
+        datasets : `~collections.abc.Iterator` of `DatasetKey` \
+                or `PrequisiteDatasetKey`
+            Datasets consumed by the given quanta.
+        """
         return self._xgraph.predecessors(quantum_key)
 
     def update(self, other: QuantumGraphSkeleton) -> None:
         """Copy all nodes from ``other`` to ``self``.
 
-        The tasks in ``other`` must be a subset of the tasks in ``self`` (this
-        method is expected to be used to populate a skeleton for a full
-        from independent-subgraph skeletons).
+        Parameters
+        ----------
+        other : `QuantumGraphSkeleton`
+            Source of nodes. The tasks in ``other`` must be a subset of the
+            tasks in ``self`` (this method is expected to be used to populate
+            a skeleton for a full from independent-subgraph skeletons).
         """
         for task_label, (_, quanta) in other._tasks.items():
             self._tasks[task_label][1].update(quanta)
         self._xgraph.update(other._xgraph)
 
     def add_quantum_node(self, task_label: str, data_id: DataCoordinate, **attrs: Any) -> QuantumKey:
-        """Add a new node representing a quantum."""
+        """Add a new node representing a quantum.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Name of task.
+        data_id : `~lsst.daf.butler.DataCoordinate`
+            The data ID of the quantum.
+        **attrs : `~typing.Any`
+            Additional attributes.
+        """
         key = QuantumKey(task_label, data_id.required_values)
         self._xgraph.add_node(key, data_id=data_id, **attrs)
         self._tasks[key.task_label][1].add(key)
@@ -282,7 +318,19 @@ class QuantumGraphSkeleton:
         is_global_init_output: bool = False,
         **attrs: Any,
     ) -> DatasetKey:
-        """Add a new node representing a dataset."""
+        """Add a new node representing a dataset.
+
+        Parameters
+        ----------
+        parent_dataset_type_name : `str`
+            Name of the parent dataset type.
+        data_id : `~lsst.daf.butler.DataCoordinate`
+            The dataset data ID.
+        is_global_init_output : `bool`, optional
+            Whether this dataset is a global init output.
+        **attrs : `~typing.Any`
+            Additional attributes for the node.
+        """
         key = DatasetKey(parent_dataset_type_name, data_id.required_values)
         self._xgraph.add_node(key, data_id=data_id, **attrs)
         if is_global_init_output:
@@ -296,7 +344,17 @@ class QuantumGraphSkeleton:
         ref: DatasetRef,
         **attrs: Any,
     ) -> PrerequisiteDatasetKey:
-        """Add a new node representing a prerequisite input dataset."""
+        """Add a new node representing a prerequisite input dataset.
+
+        Parameters
+        ----------
+        parent_dataset_type_name : `str`
+            Name of the parent dataset type.
+        ref : `~lsst.daf.butler.DatasetRef`
+            The dataset ref of the pre-requisite.
+        **attrs : `~typing.Any`
+            Additional attributes for the node.
+        """
         key = PrerequisiteDatasetKey(parent_dataset_type_name, ref.id.bytes)
         self._xgraph.add_node(key, data_id=ref.dataId, ref=ref, **attrs)
         return key
@@ -322,7 +380,14 @@ class QuantumGraphSkeleton:
             self._xgraph.remove_node(key)
 
     def remove_dataset_nodes(self, keys: Iterable[DatasetKey | PrerequisiteDatasetKey]) -> None:
-        """Remove nodes representing datasets."""
+        """Remove nodes representing datasets.
+
+        Parameters
+        ----------
+        keys : `~collections.abc.Iterable` of `DatasetKey`\
+                or `PrerequisiteDatasetKey`
+            Nodes to remove.
+        """
         self._xgraph.remove_nodes_from(keys)
 
     def remove_task(self, task_label: str) -> None:
@@ -330,6 +395,11 @@ class QuantumGraphSkeleton:
 
         All init-output datasets and quanta for the task must already have been
         removed.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Name of task to remove.
         """
         task_init_key, quanta = self._tasks.pop(task_label)
         assert not quanta, "Cannot remove task unless all quanta have already been removed."
@@ -342,6 +412,14 @@ class QuantumGraphSkeleton:
         dataset_keys: Iterable[DatasetKey | PrerequisiteDatasetKey],
     ) -> None:
         """Add edges connecting datasets to a quantum that consumes them.
+
+        Parameters
+        ----------
+        task_key : `QuantumKey` or `TaskInitKey`
+            Quantum to connect.
+        dataset_keys : `~collections.abc.Iterable` of `DatasetKey`\
+                or `PrequisiteDatasetKey`
+            Datasets to join to the quantum.
 
         Notes
         -----
@@ -358,7 +436,16 @@ class QuantumGraphSkeleton:
         task_key: QuantumKey | TaskInitKey,
         dataset_keys: Iterable[DatasetKey | PrerequisiteDatasetKey],
     ) -> None:
-        """Remove edges connecting datasets to a quantum that consumes them."""
+        """Remove edges connecting datasets to a quantum that consumes them.
+
+        Parameters
+        ----------
+        task_key : `QuantumKey` or `TaskInitKey`
+            Quantum to disconnect.
+        dataset_keys : `~collections.abc.Iterable` of `DatasetKey`\
+                or `PrequisiteDatasetKey`
+            Datasets to remove from the quantum.
+        """
         self._xgraph.remove_edges_from((dataset_key, task_key) for dataset_key in dataset_keys)
 
     def add_input_edge(
