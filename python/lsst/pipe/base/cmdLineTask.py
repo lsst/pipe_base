@@ -25,8 +25,13 @@ __all__: list[str] = []
 
 import contextlib
 import logging
+from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 from deprecated.sphinx import deprecated
+
+if TYPE_CHECKING:
+    import cProfile
 
 
 @deprecated(
@@ -35,7 +40,7 @@ from deprecated.sphinx import deprecated
     category=FutureWarning,
 )
 @contextlib.contextmanager
-def profile(filename: str, log: logging.Logger | None = None):
+def profile(filename: str, log: logging.Logger | None = None) -> Generator[cProfile.Profile, None, None]:
     """Context manager for profiling with cProfile.
 
     Parameters
@@ -71,7 +76,7 @@ def profile(filename: str, log: logging.Logger | None = None):
     """
     if not filename:
         # Nothing to do
-        yield
+        yield None  # type: ignore
         return
     from cProfile import Profile
 
