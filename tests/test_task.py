@@ -94,7 +94,7 @@ class AddMultTask(pipeBase.Task):
     _DefaultName = "addMult"
     _add_module_logger_prefix = False
 
-    """First add, then multiply"""
+    """First add, then multiply."""
 
     def __init__(self, **keyArgs):
         pipeBase.Task.__init__(self, **keyArgs)
@@ -146,7 +146,7 @@ class TaskTestCase(unittest.TestCase):
         self.valDict = None
 
     def testBasics(self):
-        """Test basic construction and use of a task"""
+        """Test basic construction and use of a task."""
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
@@ -161,7 +161,7 @@ class TaskTestCase(unittest.TestCase):
                     self.assertAlmostEqual(ret.val, (val + addend) * multiplicand)
 
     def testNames(self):
-        """Test getName() and getFullName()"""
+        """Test getName() and getFullName()."""
         addMultTask = AddMultTask()
         self.assertEqual(addMultTask.getName(), "addMult")
         self.assertEqual(addMultTask.add.getName(), "add")
@@ -180,7 +180,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask.mult._fullName, "addMult.mult")
 
     def testLog(self):
-        """Test the Task's logger"""
+        """Test the Task's logger."""
         addMultTask = AddMultTask()
         self.assertEqual(addMultTask.log.name, "addMult")
         self.assertEqual(addMultTask.add.log.name, "addMult.add")
@@ -194,7 +194,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(addMultTask2.log.name, f"{__name__}.addMult")
 
     def testGetFullMetadata(self):
-        """Test getFullMetadata()"""
+        """Test getFullMetadata()."""
         addMultTask = AddMultTask()
         addMultTask.run(val=1.234)  # Add some metadata
         fullMetadata = addMultTask.getFullMetadata()
@@ -226,7 +226,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(len(fullMetadata["addMult:mult"]), 0)
 
     def testReplace(self):
-        """Test replacing one subtask with another"""
+        """Test replacing one subtask with another."""
         for addend in (1.1, -3.5):
             for multiplicand in (0.9, -45.0):
                 config = AddMultTask.ConfigClass()
@@ -239,7 +239,7 @@ class TaskTestCase(unittest.TestCase):
                     self.assertAlmostEqual(ret.val, (val + (2 * addend)) * multiplicand)
 
     def testFail(self):
-        """Test timers when the code they are timing fails"""
+        """Test timers when the code they are timing fails."""
         addMultTask = AddMultTask()
         try:
             addMultTask.failDec()
@@ -253,7 +253,7 @@ class TaskTestCase(unittest.TestCase):
             self.assertIn("failCtxEndCpuTime", addMultTask.metadata)
 
     def testTimeMethod(self):
-        """Test that the timer is adding the right metadata"""
+        """Test that the timer is adding the right metadata."""
         addMultTask = AddMultTask()
 
         # Run twice to ensure we are additive.

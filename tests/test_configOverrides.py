@@ -59,7 +59,7 @@ class ConfigTest(pexConfig.Config):
 
 
 class ConfigOverridesTestCase(unittest.TestCase):
-    """A test case for Task"""
+    """A test case for Task."""
 
     def checkSingleFieldOverride(self, field, value, result=None):
         """Apply overrides of a single field.
@@ -80,7 +80,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
         self.assertEqual(getattr(config, field), result)
 
     def testSimpleValueStr(self):
-        """Test for applying value override to a string field"""
+        """Test for applying value override to a string field."""
         field = "fStr"
 
         # values of supported type
@@ -91,7 +91,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, 1)
 
     def testSimpleValueBool(self):
-        """Test for applying value override to a boolean field"""
+        """Test for applying value override to a boolean field."""
         field = "fBool"
 
         # values of supported type
@@ -111,7 +111,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "1")
 
     def testSimpleValueInt(self):
-        """Test for applying value override to a int field"""
+        """Test for applying value override to a int field."""
         field = "fInt"
 
         # values of supported type
@@ -133,7 +133,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "[]")
 
     def testSimpleValueFloat(self):
-        """Test for applying value override to a float field"""
+        """Test for applying value override to a float field."""
         field = "fFloat"
 
         # values of supported type
@@ -152,7 +152,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "(1, 1)")
 
     def testListValueStr(self):
-        """Test for applying value override to a list field"""
+        """Test for applying value override to a list field."""
         field = "fListStr"
 
         # values of supported type
@@ -168,7 +168,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "['a', []]")
 
     def testListValueBool(self):
-        """Test for applying value override to a list field"""
+        """Test for applying value override to a list field."""
         field = "fListBool"
 
         # values of supported type
@@ -188,7 +188,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "5")
 
     def testListValueInt(self):
-        """Test for applying value override to a list field"""
+        """Test for applying value override to a list field."""
         field = "fListInt"
 
         # values of supported type
@@ -209,7 +209,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "5")
 
     def testChoiceValueStr(self):
-        """Test for applying value override to a choice field"""
+        """Test for applying value override to a choice field."""
         field = "fChoiceStr"
 
         # values of supported type
@@ -221,7 +221,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, "X")
 
     def testChoiceValueInt(self):
-        """Test for applying value override to a choice field"""
+        """Test for applying value override to a choice field."""
         field = "fChoiceInt"
 
         # values of supported type
@@ -257,7 +257,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
         self.assertEqual(config.fFloat, pi)
 
     def testDictValueInt(self):
-        """Test for applying value override to a dict field"""
+        """Test for applying value override to a dict field."""
         field = "fDictStrInt"
 
         # values of supported type
@@ -275,7 +275,7 @@ class ConfigOverridesTestCase(unittest.TestCase):
             self.checkSingleFieldOverride(field, {"a": "b"})
 
     def testConfigParameters(self):
-        """Test that passing parameters works"""
+        """Test that passing parameters works."""
         config = ConfigTest()
         parameters = ParametersIR(mapping={"number": 6, "text": "hello world"})
         overrides = ConfigOverrides()

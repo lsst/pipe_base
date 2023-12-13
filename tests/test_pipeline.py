@@ -42,7 +42,7 @@ class PipelineTestCase(unittest.TestCase):
     """A test case for TaskDef and Pipeline."""
 
     def testTaskDef(self):
-        """Tests for TaskDef structure"""
+        """Tests for TaskDef structure."""
         task1 = TaskDef(taskClass=AddTask, config=AddTask.ConfigClass())
         self.assertIn("Add", task1.taskName)
         self.assertIsInstance(task1.config, AddTask.ConfigClass)
@@ -52,12 +52,12 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(task1, task1a)
 
     def testEmpty(self):
-        """Creating empty pipeline"""
+        """Creating empty pipeline."""
         pipeline = Pipeline("test")
         self.assertEqual(len(pipeline), 0)
 
     def testInitial(self):
-        """Testing constructor with initial data"""
+        """Testing constructor with initial data."""
         pipeline = makeSimplePipeline(2)
         self.assertEqual(len(pipeline), 2)
         expandedPipeline = list(pipeline.toExpandedPipeline())
@@ -133,7 +133,7 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(pipeline.findSubsetsWithLabel("task0"), {"test1", "test3"})
 
     def testParameters(self):
-        """Test that parameters can be set and used to format"""
+        """Test that parameters can be set and used to format."""
         pipeline_str = textwrap.dedent(
             """
             description: Test Pipeline

@@ -38,10 +38,10 @@ os.environ["TESTDIR"] = os.path.dirname(__file__)
 
 
 class ConfigIRTestCase(unittest.TestCase):
-    """A test case for ConfigIR Objects
+    """A test case for ConfigIR Objects.
 
     ConfigIR contains a method that is not exercised by the PipelineIR task,
-    so it should be tested here
+    so it should be tested here.
     """
 
     def setUp(self):
@@ -82,7 +82,7 @@ class ConfigIRTestCase(unittest.TestCase):
 
 
 class PipelineIRTestCase(unittest.TestCase):
-    """A test case for PipelineIR objects"""
+    """A test case for PipelineIR objects."""
 
     def setUp(self):
         pass

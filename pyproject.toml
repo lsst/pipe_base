@@ -193,6 +193,7 @@ checks = [
 ]
 exclude = [
     '^__init__$',
+    "^test_.*",  # Do not test docstrings in test code.
     '^commands\.',  # Click docstrings, not numpydoc
     '\._[a-zA-Z_]+$',  # Private methods.
 ]

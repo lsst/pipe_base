@@ -39,7 +39,7 @@ TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
 
 class SimpleConfig(lsst.pex.config.Config):
-    """Config to use in tests for butler put/get"""
+    """Config to use in tests for butler put/get."""
 
     i = lsst.pex.config.Field("integer test", int)
     c = lsst.pex.config.Field("string", str)
@@ -64,7 +64,7 @@ class PexConfigFormatterTestCase(unittest.TestCase):
         removeTestTempDir(self.root)
 
     def testPexConfig(self) -> None:
-        """Test that we can put and get pex_config Configs"""
+        """Test that we can put and get pex_config Configs."""
         c = SimpleConfig(i=10, c="hello")
         self.assertEqual(c.i, 10)
         ref = self.butler.put(c, "config")

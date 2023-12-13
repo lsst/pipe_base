@@ -71,7 +71,7 @@ StructuredDataTestListSet:
 
 
 class SpecialThing:
-    """Class known not to have associated StorageClass"""
+    """Class known not to have associated StorageClass."""
 
 
 class NotCopyable(MetricsExample):
