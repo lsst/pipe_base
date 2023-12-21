@@ -33,6 +33,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, NewType
 
+import pydantic
 from lsst.daf.butler import (
     DatasetRef,
     DimensionRecord,
@@ -41,7 +42,6 @@ from lsst.daf.butler import (
     Quantum,
     SerializedQuantum,
 )
-from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
 
 from ..pipeline import TaskDef
@@ -188,7 +188,7 @@ class QuantumNode:
 _fields_set = {"quantum", "taskLabel", "nodeId"}
 
 
-class SerializedQuantumNode(_BaseModelCompat):
+class SerializedQuantumNode(pydantic.BaseModel):
     """Model representing a `QuantumNode` in serializable form."""
 
     quantum: SerializedQuantum

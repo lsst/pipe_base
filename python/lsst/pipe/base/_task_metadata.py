@@ -33,9 +33,8 @@ import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
-from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
@@ -60,7 +59,7 @@ def _isListLike(v: Any) -> bool:
     return isinstance(v, Sequence) and not isinstance(v, str)
 
 
-class TaskMetadata(_BaseModelCompat):
+class TaskMetadata(BaseModel):
     """Dict-like object for storing task metadata.
 
     Metadata can be stored at two levels: single task or task plus subtasks.
