@@ -165,7 +165,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # overall, so inside this loop is where it's really critical to avoid
         # expensive things, especially in the nested loops.
         n_rows = 0
-        for common_data_id in query.common_data_ids:
+        for common_data_id in query.common_data_ids.expanded():
             # Create a data ID for each set of dimensions used by one or more
             # tasks or dataset types, and use that to record all quanta and
             # dataset data IDs for this row.
@@ -220,7 +220,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Object representing the full-pipeline data ID query.
         """
         for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
-            data_ids = query.common_data_ids.subset(dimensions, unique=True)
+            data_ids = query.common_data_ids.subset(dimensions, unique=True).expanded()
             # Iterate over regular input/output dataset type nodes with these
             # dimensions to find those datasets using straightforward followup
             # queries.
@@ -501,8 +501,7 @@ class _AllDimensionsQuery:
             builder.log.verbose("  collections=%s,", list(result.query_args["collections"]))
         with builder.butler._query() as query:
             with query.data_ids(**result.query_args).materialize() as common_data_ids:
-                builder.log.debug("Expanding data IDs.")
-                result.common_data_ids = common_data_ids.expanded()
+                result.common_data_ids = common_data_ids.subset(unique=True)
                 yield result
 
     def log_failure(self, log: LsstLogAdapter) -> None:
