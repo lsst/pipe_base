@@ -1073,7 +1073,7 @@ class PipelineGraph:
 
         with gzip.open(stream, "rb") as uncompressed_stream:
             data = json.load(uncompressed_stream)
-            serialized_graph = SerializedPipelineGraph.parse_obj(data)
+            serialized_graph = SerializedPipelineGraph.model_validate(data)
             return serialized_graph.deserialize(import_mode)
 
     @classmethod
@@ -1142,7 +1142,7 @@ class PipelineGraph:
 
         with gzip.open(stream, mode="wb") as compressed_stream:
             compressed_stream.write(
-                SerializedPipelineGraph.serialize(self).json(exclude_defaults=True).encode("utf-8")
+                SerializedPipelineGraph.serialize(self).model_dump_json(exclude_defaults=True).encode("utf-8")
             )
 
     def _write_uri(self, uri: ResourcePathExpression) -> None:

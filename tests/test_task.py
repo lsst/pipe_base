@@ -318,8 +318,8 @@ class TaskTestCase(unittest.TestCase):
         # TaskMetadata can serialize to JSON but not YAML
         # and PropertySet can serialize to YAML and not JSON.
         if hasattr(addMultTask.metadata, "json"):
-            j = addMultTask.metadata.json()
-            new_meta = pipeBase.TaskMetadata.parse_obj(json.loads(j))
+            j = addMultTask.metadata.model_dump_json()
+            new_meta = pipeBase.TaskMetadata.model_validate(json.loads(j))
         else:
             y = yaml.dump(addMultTask.metadata)
             new_meta = yaml.safe_load(y)

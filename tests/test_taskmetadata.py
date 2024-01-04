@@ -196,8 +196,8 @@ class TaskMetadataTestCase(unittest.TestCase):
         d2 = meta.to_dict()
         self.assertEqual(d2, d)
 
-        j = meta.json()
-        meta2 = TaskMetadata.parse_obj(json.loads(j))
+        j = meta.model_dump_json()
+        meta2 = TaskMetadata.model_validate(json.loads(j))
         self.assertEqual(meta2, meta)
 
         # Round trip.
