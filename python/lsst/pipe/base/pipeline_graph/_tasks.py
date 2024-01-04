@@ -158,8 +158,6 @@ class _TaskNodeImportedData:
             acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=label),
             acc.CONFIG_INIT_OUTPUT_STORAGE_CLASS,
         )
-        if not config.saveMetadata:
-            raise ValueError(f"Metadata for task {label} cannot be disabled.")
         connection_map[acc.METADATA_OUTPUT_CONNECTION_NAME] = Output(
             acc.METADATA_OUTPUT_TEMPLATE.format(label=label),
             acc.METADATA_OUTPUT_STORAGE_CLASS,
