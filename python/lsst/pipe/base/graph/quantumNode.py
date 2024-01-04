@@ -29,20 +29,17 @@ from __future__ import annotations
 __all__ = ("QuantumNode", "NodeId", "BuildId")
 
 import uuid
-import warnings
 from dataclasses import dataclass
 from typing import Any, NewType
 
 import pydantic
 from lsst.daf.butler import (
     DatasetRef,
-    DimensionRecord,
     DimensionRecordsAccumulator,
     DimensionUniverse,
     Quantum,
     SerializedQuantum,
 )
-from lsst.utils.introspection import find_outside_stacklevel
 
 from ..pipeline import TaskDef
 
@@ -143,14 +140,7 @@ class QuantumNode:
         simple: SerializedQuantumNode,
         taskDefMap: dict[str, TaskDef],
         universe: DimensionUniverse,
-        recontitutedDimensions: dict[int, tuple[str, DimensionRecord]] | None = None,
     ) -> QuantumNode:
-        if recontitutedDimensions is not None:
-            warnings.warn(
-                "The recontitutedDimensions argument is now ignored and may be removed after v26",
-                category=FutureWarning,
-                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
-            )
         return QuantumNode(
             quantum=Quantum.from_simple(simple.quantum, universe),
             taskDef=taskDefMap[simple.taskLabel],
