@@ -30,11 +30,9 @@ __all__ = ["TaskMetadata"]
 import itertools
 import numbers
 import sys
-import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-from lsst.utils.introspection import find_outside_stacklevel
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 # The types allowed in a Task metadata field are restricted
@@ -260,15 +258,8 @@ class TaskMetadata(BaseModel):
             # Report the correct key.
             raise KeyError(f"'{key}' not found") from None
 
-    def names(self, topLevelOnly: bool | None = None) -> set[str]:
+    def names(self) -> set[str]:
         """Return the hierarchical keys from the metadata.
-
-        Parameters
-        ----------
-        topLevelOnly : `bool` or `None`, optional
-            This parameter is deprecated and will be removed in the future.
-            If given it can only be `False`.  All names in the hierarchy are
-            always returned.
 
         Returns
         -------
@@ -276,19 +267,6 @@ class TaskMetadata(BaseModel):
             A set of all keys, including those from the hierarchy and the
             top-level hierarchy.
         """
-        if topLevelOnly:
-            raise RuntimeError(
-                "The topLevelOnly parameter is no longer supported and can not have a True value."
-            )
-
-        if topLevelOnly is False:
-            warnings.warn(
-                "The topLevelOnly parameter is deprecated and is always assumed to be False."
-                " It will be removed completely after v26.",
-                category=FutureWarning,
-                stacklevel=find_outside_stacklevel("lsst.pipe.base"),
-            )
-
         names = set()
         for k, v in self.items():
             names.add(k)  # Always include the current level

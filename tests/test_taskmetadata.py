@@ -241,14 +241,6 @@ class TaskMetadataTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             meta["numpy"] = numpy.zeros(5)
 
-    def test_deprecated(self):
-        meta = TaskMetadata()
-        with self.assertRaises(RuntimeError):
-            meta.names(topLevelOnly=True)
-
-        with self.assertWarns(FutureWarning):
-            meta.names(topLevelOnly=False)
-
 
 if __name__ == "__main__":
     unittest.main()
