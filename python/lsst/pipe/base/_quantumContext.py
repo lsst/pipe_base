@@ -31,7 +31,7 @@ graph building query.
 
 from __future__ import annotations
 
-__all__ = ("ButlerQuantumContext", "ExecutionResources", "QuantumContext")
+__all__ = ("ExecutionResources", "QuantumContext")
 
 import numbers
 from collections.abc import Callable, Sequence
@@ -39,7 +39,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
-from deprecated.sphinx import deprecated
 from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
@@ -421,16 +420,3 @@ class QuantumContext:
         repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions
-
-
-# TODO: remove on DM-40063.
-@deprecated(
-    reason="ButlerQuantumContext has been renamed to QuantumContext and been given extra functionality. "
-    "Please use the new name. Will be removed after v26.",
-    version="v26",
-    category=FutureWarning,
-)
-class ButlerQuantumContext(QuantumContext):
-    """Deprecated version of `QuantumContext`."""
-
-    pass
