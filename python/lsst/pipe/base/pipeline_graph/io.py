@@ -42,7 +42,6 @@ from typing import Any, TypeVar
 import networkx
 import pydantic
 from lsst.daf.butler import DatasetType, DimensionConfig, DimensionGroup, DimensionUniverse
-from lsst.daf.butler._compat import _BaseModelCompat
 
 from .. import automatic_connection_constants as acc
 from ._dataset_types import DatasetTypeNode
@@ -85,7 +84,7 @@ def expect_not_none(value: _U | None, msg: str) -> _U:
     return value
 
 
-class SerializedEdge(_BaseModelCompat):
+class SerializedEdge(pydantic.BaseModel):
     """Struct used to represent a serialized `Edge` in a `PipelineGraph`.
 
     All `ReadEdge` and `WriteEdge` state not included here is instead
@@ -204,7 +203,7 @@ class SerializedEdge(_BaseModelCompat):
         )
 
 
-class SerializedTaskInitNode(_BaseModelCompat):
+class SerializedTaskInitNode(pydantic.BaseModel):
     """Struct used to represent a serialized `TaskInitNode` in a
     `PipelineGraph`.
 
@@ -305,7 +304,7 @@ class SerializedTaskInitNode(_BaseModelCompat):
         )
 
 
-class SerializedTaskNode(_BaseModelCompat):
+class SerializedTaskNode(pydantic.BaseModel):
     """Struct used to represent a serialized `TaskNode` in a `PipelineGraph`.
 
     The task label is serialized by the context in which a
@@ -461,7 +460,7 @@ class SerializedTaskNode(_BaseModelCompat):
         )
 
 
-class SerializedDatasetTypeNode(_BaseModelCompat):
+class SerializedDatasetTypeNode(pydantic.BaseModel):
     """Struct used to represent a serialized `DatasetTypeNode` in a
     `PipelineGraph`.
 
@@ -583,7 +582,7 @@ class SerializedDatasetTypeNode(_BaseModelCompat):
         return None
 
 
-class SerializedTaskSubset(_BaseModelCompat):
+class SerializedTaskSubset(pydantic.BaseModel):
     """Struct used to represent a serialized `TaskSubset` in a `PipelineGraph`.
 
     The subsetlabel is serialized by the context in which a
@@ -634,7 +633,7 @@ class SerializedTaskSubset(_BaseModelCompat):
         return TaskSubset(xgraph, label, members, self.description)
 
 
-class SerializedPipelineGraph(_BaseModelCompat):
+class SerializedPipelineGraph(pydantic.BaseModel):
     """Struct used to represent a serialized `PipelineGraph`."""
 
     version: str = ".".join(str(v) for v in _IO_VERSION_INFO)

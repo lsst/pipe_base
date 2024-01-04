@@ -29,13 +29,13 @@ __all__ = ["TaskMetadata"]
 
 import itertools
 import numbers
+import sys
 import warnings
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
-from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.utils.introspection import find_outside_stacklevel
-from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
@@ -60,7 +60,7 @@ def _isListLike(v: Any) -> bool:
     return isinstance(v, Sequence) and not isinstance(v, str)
 
 
-class TaskMetadata(_BaseModelCompat):
+class TaskMetadata(BaseModel):
     """Dict-like object for storing task metadata.
 
     Metadata can be stored at two levels: single task or task plus subtasks.
@@ -571,6 +571,27 @@ class TaskMetadata(_BaseModelCompat):
             return "scalar", value
 
         raise ValueError(f"TaskMetadata does not support values of type {value!r}.")
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
 
 
 # Needed because a TaskMetadata can contain a TaskMetadata.

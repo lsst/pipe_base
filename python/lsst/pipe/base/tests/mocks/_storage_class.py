@@ -37,10 +37,12 @@ __all__ = (
     "is_mock_name",
 )
 
+import sys
 import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
+import pydantic
 from lsst.daf.butler import (
     DataIdValue,
     DatasetComponent,
@@ -54,7 +56,6 @@ from lsst.daf.butler import (
     StorageClassDelegate,
     StorageClassFactory,
 )
-from lsst.daf.butler._compat import _BaseModelCompat
 from lsst.daf.butler.formatters.json import JsonFormatter
 from lsst.utils.introspection import get_full_type_name
 
@@ -117,7 +118,7 @@ def is_mock_name(name: str) -> bool:
 # access to complex real storage classes (and their pytypes) to test against.
 
 
-class MockDataset(_BaseModelCompat):
+class MockDataset(pydantic.BaseModel):
     """The in-memory dataset type used by `MockStorageClass`."""
 
     dataset_id: uuid.UUID | None
@@ -189,9 +190,9 @@ class MockDataset(_BaseModelCompat):
             The newly-mocked dataset.
         """
         dataset_type_updates = {
-            k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields  # type: ignore
+            k: kwargs.pop(k) for k in list(kwargs) if k in SerializedDatasetType.model_fields
         }
-        kwargs.setdefault("dataset_type", self.dataset_type.copy(update=dataset_type_updates))
+        kwargs.setdefault("dataset_type", self.dataset_type.model_copy(update=dataset_type_updates))
         # Fields below are those that should not be propagated to the derived
         # dataset, because they're not about the intrinsic on-disk thing.
         kwargs.setdefault("converted_from", None)
@@ -200,10 +201,31 @@ class MockDataset(_BaseModelCompat):
         # Also use setdefault on the ref in case caller wants to override that
         # directly, but this is expected to be rare enough that it's not worth
         # it to try to optimize out the work above to make derived_ref.
-        return self.copy(update=kwargs)
+        return self.model_copy(update=kwargs)
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
 
 
-class MockDatasetQuantum(_BaseModelCompat):
+class MockDatasetQuantum(pydantic.BaseModel):
     """Description of the quantum that produced a mock dataset.
 
     This is also used to represent task-init operations for init-output mock
@@ -221,6 +243,27 @@ class MockDatasetQuantum(_BaseModelCompat):
 
     Keys are task-internal connection names, not dataset type names.
     """
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
 
 
 MockDataset.model_rebuild()

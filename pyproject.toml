@@ -27,7 +27,7 @@ dependencies = [
     "lsst-daf-butler",
     "lsst-pex-config",
     "astropy",
-    "pydantic <3.0",
+    "pydantic >=2,<3.0",
     "networkx",
     "pyyaml >= 5.1",
     "numpy >= 1.17",
