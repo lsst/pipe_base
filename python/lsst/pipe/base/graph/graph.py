@@ -1028,7 +1028,7 @@ class QuantumGraph:
             # a large impact on on disk size, so it is worth doing
             simpleNode = node.to_simple(accumulator=dimAccumulator)
 
-            dump = lzma.compress(simpleNode.json().encode(), preset=2)
+            dump = lzma.compress(simpleNode.model_dump_json().encode(), preset=2)
             jsonData.append(dump)
             nodeMap.append(
                 (

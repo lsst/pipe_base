@@ -217,12 +217,6 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
     based on a PipelineTaskConnections class.
     """
 
-    saveMetadata = pexConfig.Field[bool](
-        default=True,
-        optional=False,
-        doc="Flag to enable/disable metadata saving for a task, enabled by default.",
-        deprecated="This field is deprecated and will be removed after v26.",
-    )
     saveLogOutput = pexConfig.Field[bool](
         default=True,
         optional=False,
