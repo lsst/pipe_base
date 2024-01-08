@@ -44,6 +44,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, final
 
+from lsst.sphgeom import DISJOINT
 from lsst.daf.butler import (
     Butler,
     CollectionType,
@@ -489,6 +490,27 @@ class QuantumGraphBuilder(ABC):
                 skipped_quanta.append(quantum_key)
                 continue
             quantum_data_id = skeleton[quantum_key]["data_id"]
+
+            # This is a workaround for butler queries not being as clever about
+            # spatial overlap postprocessing as they could be; this should be
+            # fixed in daf_butler in the future, but since the query system
+            # there is being overhauled for client/server it's not worth the
+            # significant effort to fix it there now.  We'll just get it right
+            # when we rework things.
+            if task_node.dimensions.spatial.names == {"observation_regions", "skymap_regions"}:
+                side1, side2 = [
+                    family.choose(task_node.dimensions.names, self.universe)
+                    for family in task_node.dimensions.spatial
+                ]
+                if (
+                    quantum_data_id.records[side1.name].region.relate(
+                        quantum_data_id.records[side2.name].region
+                    )
+                    & DISJOINT
+                ):
+                    no_work_quanta.append(quantum_key)
+                    continue
+
             skypix_bounds_builder = task_prerequisite_info.bounds.make_skypix_bounds_builder(quantum_data_id)
             timespan_builder = task_prerequisite_info.bounds.make_timespan_builder(quantum_data_id)
             adjusted_outputs = self._gather_quantum_outputs(
