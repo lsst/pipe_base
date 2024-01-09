@@ -164,8 +164,21 @@ class PrerequisiteFinder:
                     self.dataset_other_spatial[best_spatial_element.name] = cast(
                         DimensionElement, best_spatial_element
                     )
-            self.dataset_has_timespan = self.dataset_type_node.is_calibration or bool(
-                self.dataset_type_node.dimensions.temporal - self.task_node.dimensions.temporal
+            self.dataset_has_timespan = bool(
+                # If the task dimensions has a temporal family that isn't in
+                # the dataset type (i.e. "observation_timespans", like visit
+                # or exposure)...
+                self.task_node.dimensions.temporal
+                - self.dataset_type_node.dimensions.temporal
+            ) and (
+                # ...and the dataset type has a temporal family that isn't in
+                # the task dimensions, or is a calibration, the prerequisite
+                # search needs a temporal join.  Note that the default
+                # dimension universe only has one temporal dimension family, so
+                # in practice this just means "calibration lookups when visit
+                # or exposure is in the task dimensions".
+                self.dataset_type_node.is_calibration
+                or bool(self.dataset_type_node.dimensions.temporal - self.task_node.dimensions.temporal)
             )
             new_constraint_dimensions = set()
             universe = self.task_node.dimensions.universe
@@ -280,39 +293,38 @@ class PrerequisiteFinder:
                 )
                 if ref is not None
             ]
-        if self.dataset_type_node.is_calibration:
-            if self.dataset_type_node.dimensions <= self.constraint_dimensions:
-                # If this is a calibration dataset and the dataset doesn't have
-                # any dimensions that aren't constrained by the quantum data
-                # ID, we know there'll only be one result, and that means we
-                # can call Registry.findDataset, which takes a timespan. Note
-                # that the AllDimensionsQuantumGraphBuilder subclass will
-                # intercept this case in order to optimize it when:
-                #
-                #  - PipelineTaskConnections.getTemporalBoundsConnections is
-                #    empty;
-                #
-                #  - the quantum data IDs have temporal dimensions;
-                #
-                # and when that happens PrerequisiteFinder.find never gets
-                # called.
-                try:
-                    ref = butler.find_dataset(
-                        self.dataset_type_node.dataset_type,
-                        data_id.subset(self.constraint_dimensions),
-                        collections=input_collections,
-                        timespan=timespan,
-                    )
-                except MissingDatasetTypeError:
-                    ref = None
-                return [ref] if ref is not None else []
-            else:
-                extra_dimensions = self.dataset_type_node.dimensions.names - self.constraint_dimensions.names
-                raise NotImplementedError(
-                    f"No support for calibration lookup {self.task_node.label}.{self.edge.connection_name} "
-                    f"with dimension(s) {extra_dimensions} not fully constrained by the task. "
-                    "Please create a feature-request ticket and use a lookup function in the meantime."
+        if self.dataset_type_node.dimensions <= self.constraint_dimensions:
+            # If this is a calibration dataset and the dataset doesn't have
+            # any dimensions that aren't constrained by the quantum data
+            # ID, we know there'll only be one result, and that means we
+            # can call Butler.find_dataset, which takes a timespan. Note
+            # that the AllDimensionsQuantumGraphBuilder subclass will
+            # intercept this case in order to optimize it when:
+            #
+            #  - PipelineTaskConnections.getTemporalBoundsConnections is
+            #    empty;
+            #
+            #  - the quantum data IDs have temporal dimensions;
+            #
+            # and when that happens PrerequisiteFinder.find never gets
+            # called.
+            try:
+                ref = butler.find_dataset(
+                    self.dataset_type_node.dataset_type,
+                    data_id.subset(self.constraint_dimensions),
+                    collections=input_collections,
+                    timespan=timespan,
                 )
+            except MissingDatasetTypeError:
+                ref = None
+            return [ref] if ref is not None else []
+        elif self.dataset_has_timespan:
+            extra_dimensions = self.dataset_type_node.dimensions.names - self.constraint_dimensions.names
+            raise NotImplementedError(
+                f"No support for calibration lookup {self.task_node.label}.{self.edge.connection_name} "
+                f"with dimension(s) {extra_dimensions} not fully constrained by the task. "
+                "Please create a feature-request ticket and use a lookup function in the meantime."
+            )
         if self.dataset_skypix:
             if not self.dataset_has_timespan and not self.dataset_other_spatial:
                 # If the dataset has skypix dimensions but is not otherwise
