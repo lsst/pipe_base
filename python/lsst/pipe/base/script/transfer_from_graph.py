@@ -38,6 +38,7 @@ def transfer_from_graph(
     register_dataset_types: bool,
     transfer_dimensions: bool,
     update_output_chain: bool,
+    dry_run: bool,
 ) -> int:
     """Transfer output datasets from quantum graph to dest.
 
@@ -57,6 +58,8 @@ def transfer_from_graph(
         If quantum graph metadata includes output run name and output
         collection which is a chain, update the chain definition to include run
         name as a the first collection in the chain.
+    dry_run : `bool`
+        Run the transfer without updating the destination butler.
 
     Returns
     -------
@@ -106,6 +109,7 @@ def transfer_from_graph(
         transfer="auto",
         register_dataset_types=register_dataset_types,
         transfer_dimensions=transfer_dimensions,
+        dry_run=dry_run,
     )
     count = len(transferred)
 
