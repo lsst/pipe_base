@@ -28,11 +28,14 @@ from __future__ import annotations
 
 __all__ = ("QuantumGraph", "IncompatibleGraphError")
 
+import datetime
+import getpass
 import io
 import json
 import lzma
 import os
 import struct
+import sys
 import time
 import uuid
 from collections import defaultdict, deque
@@ -53,6 +56,7 @@ from lsst.daf.butler import (
 from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
+from lsst.utils.packages import getVersionFromGit
 from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
@@ -60,6 +64,7 @@ from ..pipeline import TaskDef
 from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
+from .graphSummary import QgraphSummary, QgraphTaskSummary
 from .quantumNode import BuildId, QuantumNode
 
 _T = TypeVar("_T", bound="QuantumGraph")
@@ -84,6 +89,27 @@ STRUCT_FMT_STRING = {1: ">QQ", 2: ">Q"}
 
 # magic bytes that help determine this is a graph save
 MAGIC_BYTES = b"qgraph4\xf6\xe8\xa9"
+
+
+def _getPipeBaseVersion():
+    """Return value of pipe_base to be saved in QuantumGraph.
+
+    Returns
+    -------
+    version: `str`
+       Version of pipe_base.
+
+    Note:  Cannot guarantee eups is being used.
+    """
+    # Get circular import errors if import up top
+    from lsst.pipe.base import __path__, __version__
+
+    version = __version__
+    if version == "unknown":
+        # In case python earlier in path, split only on last one
+        rsplit_results = __path__[0].rsplit("python", 1)[:-1]
+        version = getVersionFromGit(rsplit_results[0])
+    return version
 
 
 class IncompatibleGraphError(Exception):
@@ -174,7 +200,12 @@ class QuantumGraph:
         """Build the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
-        self._metadata = metadata
+        self._metadata = metadata if metadata else {}
+        self._metadata["user"] = getpass.getuser()
+        self._metadata["time"] = f"{datetime.datetime.now()}"
+        self._metadata["pipe_base_version"] = _getPipeBaseVersion()
+        self._metadata["full_command"] = " ".join(sys.argv)
+
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structure used to identify relations between
         # DatasetTypeName -> TaskDef.
@@ -1321,3 +1352,36 @@ class QuantumGraph:
         if set(self.allDatasetTypes) != set(other.allDatasetTypes):
             return False
         return set(self.taskGraph) == set(other.taskGraph)
+
+    def summary(self):
+        """Create summary of graph.
+
+        Return
+        ------
+        summary: QgraphSummary
+           Summary of QuantumGraph
+        """
+        inCollection = self.metadata.get("input", None)
+        if isinstance(inCollection, str):
+            inCollection = [inCollection]
+        summary = QgraphSummary(
+            cmdLine=self.metadata.get("full_command", None),
+            pipeBaseVersion=self.metadata.get("pipe_base_version", None),
+            creationUTC=self.metadata.get("time", None),
+            inputCollection=inCollection,
+            outputCollection=self.metadata.get("output", None),
+            outputRun=self.metadata.get("output_run", None),
+        )
+        for q in self:
+            qts = summary.qgraphTaskSummaries.setdefault(
+                q.taskDef.label, QgraphTaskSummary(taskLabel=q.taskDef.label)
+            )
+            qts.numQuanta += 1
+
+            for k in q.quantum.inputs.keys():
+                qts.numInputs[k.name] += 1
+
+            for k in q.quantum.outputs.keys():
+                qts.numOutputs[k.name] += 1
+
+        return summary
