@@ -54,7 +54,7 @@ zip-safe = true
 license-files = ["COPYRIGHT", "LICENSE", "bsd_license.txt", "gpl-v3.0.txt"]
 
 [tool.setuptools.package-data]
-"lsst.pipe.base" = ["py.typed"]
+"lsst.pipe.base" = ["py.typed", "cli/resources.yaml"]
 
 [tool.setuptools.dynamic]
 version = { attr = "lsst_versions.get_lsst_version" }
