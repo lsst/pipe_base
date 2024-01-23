@@ -55,6 +55,9 @@ def register_instrument(*args: Any, **kwargs: Any) -> None:
 @register_dataset_types_option()
 @transfer_dimensions_option(default=False)
 @update_output_chain_option()
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Run the transfer but do not update the destination butler"
+)
 @options_file_option()
 def transfer_from_graph(**kwargs: Any) -> None:
     """Transfer datasets from a quantum graph to a destination butler.
