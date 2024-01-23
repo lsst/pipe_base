@@ -335,6 +335,96 @@ class PipelineIRTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineIR.from_string(pipeline_str)
 
+        # Test that importing Pipelines with different step definitions fails
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - $TESTDIR/testPipeline5.yaml
+        steps:
+            - label: sub1
+              sharding_dimensions: ['a', 'e']
+        """
+        )
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that it does not fail if steps are excluded
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/testPipeline5.yaml
+              importSteps: false
+        steps:
+            - label: sub1
+              sharding_dimensions: ['a', 'e']
+        """
+        )
+        PipelineIR.from_string(pipeline_str)
+
+        # Test that importing does work
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/testPipeline5.yaml
+        """
+        )
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(set(step.label for step in pipeline.steps), {"sub1", "sub2"})
+
+    def testSteps(self):
+        # Test that steps definitions are created
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        tasks:
+            modA: "test.moduleA"
+            modB: "test.moduleB"
+        subsets:
+            sub1:
+                subset:
+                - modA
+                - modB
+            sub2:
+                subset:
+                - modA
+        steps:
+            - label: sub1
+              sharding_dimensions: ['a', 'b']
+            - label: sub2
+              sharding_dimensions: ['a', 'b']
+        """
+        )
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(set(step.label for step in pipeline.steps), {"sub1", "sub2"})
+
+        # Test that steps definitions must be unique
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        tasks:
+            modA: "test.moduleA"
+            modB: "test.moduleB"
+        subsets:
+            sub1:
+                subset:
+                - modA
+                - modB
+            sub2:
+                subset:
+                - modA
+        steps:
+            - label: sub1
+              sharding_dimensions: ['a', 'b']
+            - label: sub1
+              sharding_dimensions: ['a', 'b']
+        """
+        )
+        with self.assertRaises(ValueError):
+            pipeline = PipelineIR.from_string(pipeline_str)
+
     def testReadParameters(self):
         # verify that parameters section are read in from a pipeline
         pipeline_str = textwrap.dedent(

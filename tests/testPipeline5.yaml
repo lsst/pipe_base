@@ -1,0 +1,20 @@
+description: Test Pipeline
+parameters:
+  value1: valueA
+  value2: valueB
+tasks:
+  modA: "test.moduleA"
+  modB: "test.moduleB"
+subsets:
+  sub1:
+    subset:
+      - modA
+      - modB
+  sub2:
+    subset:
+      - modA
+steps:
+  - label: sub1
+    sharding_dimensions: ['a', 'b']
+  - label: sub2
+    sharding_dimensions: ['a', 'c']
