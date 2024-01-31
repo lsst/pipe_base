@@ -570,7 +570,7 @@ class QuantumGraphBuilder(ABC):
         if no_work_quanta:
             message_terms.append(f"{len(no_work_quanta)} had no work to do")
         if skipped_quanta:
-            message_terms.append(f"{len(no_work_quanta)} previously succeeded")
+            message_terms.append(f"{len(skipped_quanta)} previously succeeded")
         message_parenthetical = f" ({', '.join(message_terms)})" if message_terms else ""
         if remaining_quanta:
             self.log.info(
