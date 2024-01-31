@@ -47,11 +47,9 @@ class PropertySetLike(Protocol):
     ``PropertySet`` to a `TaskMetadata`.
     """
 
-    def paramNames(self, topLevelOnly: bool = True) -> Collection[str]:
-        ...
+    def paramNames(self, topLevelOnly: bool = True) -> Collection[str]: ...
 
-    def getArray(self, name: str) -> Any:
-        ...
+    def getArray(self, name: str) -> Any: ...
 
 
 def _isListLike(v: Any) -> bool:

@@ -186,12 +186,10 @@ class DatasetTypeMappingView(MappingView[DatasetTypeNode]):
         return super().__getitem__(key) is not None
 
     @overload
-    def get_if_resolved(self, key: str) -> DatasetTypeNode | None:
-        ...  # pragma: nocover
+    def get_if_resolved(self, key: str) -> DatasetTypeNode | None: ...  # pragma: nocover
 
     @overload
-    def get_if_resolved(self, key: str, default: _T) -> DatasetTypeNode | _T:
-        ...  # pragma: nocover
+    def get_if_resolved(self, key: str, default: _T) -> DatasetTypeNode | _T: ...  # pragma: nocover
 
     def get_if_resolved(self, key: str, default: Any = None) -> DatasetTypeNode | Any:
         """Get a node or return a default if it has not been resolved.

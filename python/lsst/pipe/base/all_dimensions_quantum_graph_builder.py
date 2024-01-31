@@ -384,9 +384,9 @@ class _AllDimensionsQuery:
     subgraph: PipelineGraph
     """Graph of this subset of the pipeline."""
 
-    grouped_by_dimensions: dict[
-        DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]
-    ] = dataclasses.field(default_factory=dict)
+    grouped_by_dimensions: dict[DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = (
+        dataclasses.field(default_factory=dict)
+    )
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
 

@@ -226,12 +226,14 @@ class QuantumContext:
 
     def get(
         self,
-        dataset: InputQuantizedConnection
-        | list[DatasetRef | None]
-        | list[DeferredDatasetRef | None]
-        | DatasetRef
-        | DeferredDatasetRef
-        | None,
+        dataset: (
+            InputQuantizedConnection
+            | list[DatasetRef | None]
+            | list[DeferredDatasetRef | None]
+            | DatasetRef
+            | DeferredDatasetRef
+            | None
+        ),
     ) -> Any:
         """Fetch data from the butler.
 
