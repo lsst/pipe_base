@@ -259,10 +259,6 @@ class QuantumProvenanceGraph:
         qgraph : `QuantumGraph` | `ResourcePathExpression`
             Either the associated quantum graph object or the uri of the
             location of said quantum graph.
-
-        See Also
-        --------
-        `QuantumProvenanceGraph.resolve_duplicates`
         """
         # first we load the quantum graph and associated output run collection
         if not isinstance(qgraph, QuantumGraph):
@@ -380,7 +376,7 @@ class QuantumProvenanceGraph:
                 }
                 # note: we expect len(winners) = 1
                 for run, quantum_run in self._xgraph.nodes[quantum_key]["runs"].items():
-                    if quantum_run.status != "suceeded" and run in winners:
+                    if quantum_run.status != "successful" and run in winners:
                         for dataset_key in self.iter_outputs_of(quantum_key):
                             # the outputs of this quantum in this run may have
                             # been mistakenly published
@@ -390,7 +386,7 @@ class QuantumProvenanceGraph:
                                     ResolvedDatasetKey(key=dataset_key, run=run, id=dataset_run.id)
                                 )
                         break
-                    if quantum_run.status == "succeded" and run not in winners:
+                    if quantum_run.status == "successful" and run not in winners:
                         if len(winners) == 0:
                             # the quantum succeeded but no outputs were
                             # published
@@ -456,7 +452,7 @@ class QuantumProvenanceGraph:
               dataIDs by quantum graph node id
             - n_quanta_blocked: The number of quanta which failed due to
               upstream failures.
-            - n_succeded: The number of quanta which succeeded.
+            - n_successful: The number of quanta which succeeeded.
         """
         result = {
             "tasks": {},
@@ -474,21 +470,20 @@ class QuantumProvenanceGraph:
                 key.to_summary_dict(self._xgraph) for key in sorted(self._heterogeneous_quanta)
             ],
         }
-
         for task_label, quanta in self._quanta.items():
             n_blocked = 0
-            n_succeeded = 0
+            n_successful = 0
             failed_quanta = []
             # every item in this list will correspond to a data_id and be a
             # dict keyed by run
             for quantum_key in quanta:
                 failed_quantum_info = {"data_id": {}, "runs": {}}
                 for run, quantum_run in self._xgraph.nodes[quantum_key]["runs"].items():
-                    if quantum_run.status == "succeeded":
+                    if quantum_run.status == "successful":
                         failed_quantum_info["runs"].clear()
-                        # if any of the quantum runs succeeded, we don't worry
+                        # if any of the quantum runs successful, we don't worry
                         # about it
-                        n_succeeded += 1
+                        n_successful += 1
                         break
                     elif quantum_run.status == "blocked":
                         n_blocked += 1
@@ -520,7 +515,7 @@ class QuantumProvenanceGraph:
             result["tasks"][task_label] = {
                 "failed_quanta": failed_quanta,
                 "n_quanta_blocked": n_blocked,
-                "n_succeeded": n_succeeded,
+                "n_successful": n_successful,
             }
         return result
 
