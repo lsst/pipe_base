@@ -139,12 +139,6 @@ class AddTwiceTask(AddTask):
 class TaskTestCase(unittest.TestCase):
     """A test case for Task."""
 
-    def setUp(self):
-        self.valDict = dict()
-
-    def tearDown(self):
-        self.valDict = None
-
     def testBasics(self):
         """Test basic construction and use of a task."""
         for addend in (1.1, -3.5):

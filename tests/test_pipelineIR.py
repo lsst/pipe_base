@@ -44,12 +44,6 @@ class ConfigIRTestCase(unittest.TestCase):
     so it should be tested here.
     """
 
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
-
     def testMergeConfig(self):
         # Create some configs to merge
         config1 = ConfigIR(
@@ -83,12 +77,6 @@ class ConfigIRTestCase(unittest.TestCase):
 
 class PipelineIRTestCase(unittest.TestCase):
     """A test case for PipelineIR objects."""
-
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
 
     def testPipelineIRInitChecks(self):
         # Missing description
