@@ -385,9 +385,9 @@ class PrerequisiteInput(BaseInput):
     - Prerequisite inputs may be optional (regular inputs are never optional).
     """
 
-    lookupFunction: Callable[
-        [DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]
-    ] | None = None
+    lookupFunction: (
+        Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]] | None
+    ) = None
 
     _connection_type_set: ClassVar[str] = "prerequisiteInputs"
 

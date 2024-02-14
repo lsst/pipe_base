@@ -204,9 +204,9 @@ class PrerequisiteFinder:
     dataset type.
     """
 
-    lookup_function: Callable[
-        [DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]
-    ] | None
+    lookup_function: (
+        Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]] | None
+    )
     """A task-provided callback for finding these datasets.
 
     If this is not `None`, it must be used to ensure correct behavior.
