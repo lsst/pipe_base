@@ -541,7 +541,8 @@ class TaskMetadata(BaseModel):
         Parameters
         ----------
         key : `str`
-            String key associated with the mapping.
+            String key associated with the mapping.  May not have a ``.``
+            character.
 
         Returns
         -------
@@ -564,11 +565,12 @@ class TaskMetadata(BaseModel):
         Parameters
         ----------
         key : `str`
-            String key associated with the mapping.
+            String key associated with the mapping.  May not have a ``.``
+            character.
         value : `~collections.abc.Mapping`
             Possibly-nested mapping, with `str` keys and values that are `int`,
             `float`, `str`, `bool`, or another `dict` with the same key and
-            value types.
+            value types.  Nested keys may not have a ``.`` character.
         """
         self[key] = value
 
