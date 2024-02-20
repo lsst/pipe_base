@@ -25,7 +25,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["TaskMetadata", "SetDictMetadata", "GetDictMetadata", "NestedMetadataDict"]
+__all__ = [
+    "TaskMetadata",
+    "SetDictMetadata",
+    "GetDictMetadata",
+    "GetSetDictMetadata",
+    "NestedMetadataDict",
+]
 
 import itertools
 import numbers
@@ -93,6 +99,12 @@ class GetDictMetadata(Protocol):
     """
 
     def get_dict(self, key: str) -> NestedMetadataDict: ...
+
+
+class GetSetDictMetadata(SetDictMetadata, GetDictMetadata, Protocol):
+    """Protocol for objects that can assign and extract a possibly-nested
+    mapping of primitives.
+    """
 
 
 class TaskMetadata(BaseModel):
@@ -520,7 +532,8 @@ class TaskMetadata(BaseModel):
         """Return a possibly-hierarchical nested `dict`.
 
         This implements the `GetDictMetadata` protocol for consistency with
-        `lsst.daf.base.PropertySet` and `lsst.daf.base.PropertyList`.
+        `lsst.daf.base.PropertySet` and `lsst.daf.base.PropertyList`.  The
+        returned `dict` is guaranteed to be a deep copy, not a view.
 
         Parameters
         ----------
@@ -554,7 +567,7 @@ class TaskMetadata(BaseModel):
             `float`, `str`, `bool`, or another `dict` with the same key and
             value types.
         """
-        self[key] = TaskMetadata.from_dict(value)
+        self[key] = value
 
     def _validate_value(self, value: Any) -> tuple[str, Any]:
         """Validate the given value.
