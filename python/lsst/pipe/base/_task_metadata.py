@@ -69,7 +69,7 @@ class SetDictMetadata(Protocol):
     dictionary into these objects that avoids their historical idiosyncrasies.
 
     The form in which these entries appear in the object's native keys and
-    values is implementation-defined.  *Empty nested dictionaries *may* be
+    values is implementation-defined.  *Empty nested dictionaries may be
     dropped, and if the top-level dictionary is empty this method may do
     nothing.*
     """
