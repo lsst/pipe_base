@@ -78,6 +78,9 @@ class SetDictMetadata(Protocol):
     values is implementation-defined.  *Empty nested dictionaries may be
     dropped, and if the top-level dictionary is empty this method may do
     nothing.*
+
+    Neither the top-level key nor nested keys may contain ``.`` (period)
+    characters.
     """
 
     def set_dict(self, key: str, nested: NestedMetadataDict) -> None: ...
