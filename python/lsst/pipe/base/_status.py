@@ -33,6 +33,18 @@ __all__ = (
     "InvalidQuantumError",
 )
 
+from typing import Protocol
+
+from ._task_metadata import GetSetDictMetadata
+
+
+class GetSetDictMetadataHolder(Protocol):
+    """Protocol for objects that have a ``metadata`` attribute that satisfies
+    `GetSetDictMetadata`.
+    """
+
+    metadata: GetSetDictMetadata | None
+
 
 class NoWorkFound(BaseException):
     """An exception raised when a Quantum should not exist because there is no
