@@ -25,19 +25,29 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["TaskMetadata"]
+__all__ = [
+    "TaskMetadata",
+    "SetDictMetadata",
+    "GetDictMetadata",
+    "GetSetDictMetadata",
+    "NestedMetadataDict",
+]
 
 import itertools
 import numbers
 import sys
 from collections.abc import Collection, Iterator, Mapping, Sequence
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeAlias, Union
 
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
 _ALLOWED_PRIMITIVE_TYPES = (str, float, int, bool)
+
+# Note that '|' syntax for unions doesn't work when we have to use a string
+# literal (and we do since it's recursive and not an annotation).
+NestedMetadataDict: TypeAlias = Mapping[str, Union[str, float, int, bool, "NestedMetadataDict"]]
 
 
 class PropertySetLike(Protocol):
@@ -54,6 +64,50 @@ class PropertySetLike(Protocol):
 
 def _isListLike(v: Any) -> bool:
     return isinstance(v, Sequence) and not isinstance(v, str)
+
+
+class SetDictMetadata(Protocol):
+    """Protocol for objects that can be assigned a possibly-nested `dict` of
+    primitives.
+
+    This protocol is satisfied by `TaskMetadata`, `lsst.daf.base.PropertySet`,
+    and `lsst.daf.base.PropertyList`, providing a consistent way to insert a
+    dictionary into these objects that avoids their historical idiosyncrasies.
+
+    The form in which these entries appear in the object's native keys and
+    values is implementation-defined.  *Empty nested dictionaries may be
+    dropped, and if the top-level dictionary is empty this method may do
+    nothing.*
+
+    Neither the top-level key nor nested keys may contain ``.`` (period)
+    characters.
+    """
+
+    def set_dict(self, key: str, nested: NestedMetadataDict) -> None: ...
+
+
+class GetDictMetadata(Protocol):
+    """Protocol for objects that can extract a possibly-nested mapping of
+    primitives.
+
+    This protocol is satisfied by `TaskMetadata`, `lsst.daf.base.PropertySet`,
+    and `lsst.daf.base.PropertyList`, providing a consistent way to extract a
+    dictionary from these objects that avoids their historical idiosyncrasies.
+
+    This is guaranteed to work for mappings inserted by
+    `~SetMapping.set_dict`.  It should not be expected to work for values
+    inserted in other ways.  If a value was never inserted with the given key
+    at all, *an empty `dict` will be returned* (this is a concession to
+    implementation constraints in `~lsst.daf.base.PropertyList`.
+    """
+
+    def get_dict(self, key: str) -> NestedMetadataDict: ...
+
+
+class GetSetDictMetadata(SetDictMetadata, GetDictMetadata, Protocol):
+    """Protocol for objects that can assign and extract a possibly-nested
+    mapping of primitives.
+    """
 
 
 class TaskMetadata(BaseModel):
@@ -476,6 +530,49 @@ class TaskMetadata(BaseModel):
         except KeyError:
             # Report the correct key.
             raise KeyError(f"'{key}' not found'") from None
+
+    def get_dict(self, key: str) -> NestedMetadataDict:
+        """Return a possibly-hierarchical nested `dict`.
+
+        This implements the `GetDictMetadata` protocol for consistency with
+        `lsst.daf.base.PropertySet` and `lsst.daf.base.PropertyList`.  The
+        returned `dict` is guaranteed to be a deep copy, not a view.
+
+        Parameters
+        ----------
+        key : `str`
+            String key associated with the mapping.  May not have a ``.``
+            character.
+
+        Returns
+        -------
+        value : `~collections.abc.Mapping`
+            Possibly-nested mapping, with `str` keys and values that are `int`,
+            `float`, `str`, `bool`, or another `dict` with the same key and
+            value types.  Will be empty if ``key`` does not exist.
+        """
+        if value := self.get(key):
+            return value.to_dict()
+        else:
+            return {}
+
+    def set_dict(self, key: str, value: NestedMetadataDict) -> None:
+        """Assign a possibly-hierarchical nested `dict`.
+
+        This implements the `SetDictMetadata` protocol for consistency with
+        `lsst.daf.base.PropertySet` and `lsst.daf.base.PropertyList`.
+
+        Parameters
+        ----------
+        key : `str`
+            String key associated with the mapping.  May not have a ``.``
+            character.
+        value : `~collections.abc.Mapping`
+            Possibly-nested mapping, with `str` keys and values that are `int`,
+            `float`, `str`, `bool`, or another `dict` with the same key and
+            value types.  Nested keys may not have a ``.`` character.
+        """
+        self[key] = value
 
     def _validate_value(self, value: Any) -> tuple[str, Any]:
         """Validate the given value.
