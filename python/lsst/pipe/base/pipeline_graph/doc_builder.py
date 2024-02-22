@@ -48,8 +48,10 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from .dot_tools import pipeline2dot
-from .pipeline import Pipeline, TaskDef
+from ..dot_tools import pipeline2dot
+from ..pipeline import Pipeline, TaskDef
+from ._pipeline_graph import PipelineGraph
+from ._tasks import TaskNode
 
 
 @dataclasses.dataclass
@@ -155,7 +157,7 @@ class _TaskInPipelineDocBuilder(_DocPaths):
     and its inputs and outputs.
     """
 
-    graph_path: Path
+    svg_path: Path
     """Path to the rendered graph that includes just this task and its inputs
     and outputs.
     """
@@ -169,8 +171,7 @@ class _TaskInPipelineDocBuilder(_DocPaths):
         rst_dir: Path,
         config_dir: Path,
         dot_dir: Path,
-        graph_dir: Path,
-        graph_suffix: str,
+        svg_dir: Path,
     ) -> _TaskInPipelineDocBuilder:
         """Construct from base directories.
 
@@ -189,11 +190,9 @@ class _TaskInPipelineDocBuilder(_DocPaths):
         dot_dir : `Path`
             Path to the directory that will contain all GraphViz DOT files for
             the pipeline.
-        graph_dir : `Path`
+        svg_dir : `Path`
             Path to the directory that will contain all rendered graphs for
             the pipeline.
-        graph_suffix : `str`
-            File extension (including the ``.``) for rendered graph files.
 
         Returns
         -------
@@ -205,7 +204,7 @@ class _TaskInPipelineDocBuilder(_DocPaths):
             rst_path=rst_dir.joinpath("tasks", label + ".rst"),
             config_path=config_dir.joinpath("config", label + ".py"),
             dot_path=dot_dir.joinpath("dot", label + ".dot"),
-            graph_path=graph_dir.joinpath("graph", label + graph_suffix),
+            svg_path=svg_dir.joinpath("graph", label + ".svg"),
         )
 
     def write_dot(self, task_def: TaskDef) -> None:
@@ -219,18 +218,18 @@ class _TaskInPipelineDocBuilder(_DocPaths):
         with self._mkdir_and_open(self.dot_path) as buffer:
             pipeline2dot([task_def], buffer)
 
-    def write_rst(self, pipeline_name: str, task_def: TaskDef) -> None:
+    def write_rst(self, pipeline_name: str, task_node: TaskNode) -> None:
         """Write the reStructuredText file for this task.
 
         Parameters
         ----------
         pipeline_name : `str`
             Display name of the pipeline to which this task belongs.
-        task_def : `TaskDef`
-            Expanded `TaskDef` for this task in its pipeline.
+        task_node : `TaskNode`
+            Expanded `TaskNode` for this task in its pipeline.
         """
         with self._mkdir_and_open(self.rst_path) as buffer:
-            title = f"{pipeline_name}.{task_def.label}: `~{task_def.taskName}`"
+            title = f"{pipeline_name}.{task_node.label}: `~{task_node.task_class_name}`"
             buffer.write(
                 textwrap.dedent(
                     f"""\
@@ -239,18 +238,29 @@ class _TaskInPipelineDocBuilder(_DocPaths):
                     {title}
                     {'"' * len(title)}
 
-                    `{task_def.taskName}`
+                    `{task_node.task_class_name}`
 
 
                     (open graph in a separate tab/window to zoom and pan)
 
-                    .. image:: {self._relative_to_rst(self.graph_path)}
+                    .. image:: {self._relative_to_rst(self.svg_path)}
 
                     .. literalinclude:: {self._relative_to_rst(self.config_path)}
 
                     """
                 )
             )
+
+    def write_config(self, task_node: TaskNode) -> None:
+        """Write the config file for this task.
+
+        Parameters
+        ----------
+        task_node : `TaskNode`
+            Expanded `TaskNode` for this task in its pipeline.
+        """
+        with self._mkdir_and_open(self.config_path) as buffer:
+            task_node.config.saveToStream(buffer)
 
 
 @dataclasses.dataclass
@@ -304,7 +314,7 @@ class PipelineDocBuilder(_DocPaths):
     """Path to the GraphViz DOT file for the pipeline.
     """
 
-    graph_path: Path
+    svg_path: Path
     """Path to the rendered graph for the pipeline.
     """
 
@@ -323,8 +333,7 @@ class PipelineDocBuilder(_DocPaths):
         rst_dir: Path,
         yaml_dir: Path,
         dot_dir: Path,
-        graph_dir: Path,
-        graph_suffix: str,
+        svg_dir: Path,
     ) -> PipelineDocBuilder:
         """Construct a builder from the directories that will contain its
         outputs.
@@ -345,20 +354,19 @@ class PipelineDocBuilder(_DocPaths):
         dot_dir : `Path`
             Path to the directory that will contain all GraphViz DOT files for
             the pipeline.
-        graph_dir : `Path`
+        svg_dir : `Path`
             Path to the directory that will contain all rendered graphs for
             the pipeline.
-        graph_suffix : `str`
-            File extension (including the ``.``) for rendered graph files.
         """
         return cls(
             pipeline=pipeline,
+            pipeline_graph=pipeline.to_graph(),
             name=name,
             sanitized_name=cls._sanitize_for_rst(name),
             rst_path=rst_dir.joinpath("pipeline.rst"),
             yaml_path=yaml_dir.joinpath("pipeline.yaml"),
             dot_path=dot_dir.joinpath("pipeline.dot"),
-            graph_path=graph_dir.joinpath("pipeline" + graph_suffix),
+            svg_path=svg_dir.joinpath("pipeline.svg"),
             tasks={
                 label: _TaskInPipelineDocBuilder.from_pipeline_dirs(
                     pipeline_name=name,
@@ -366,25 +374,25 @@ class PipelineDocBuilder(_DocPaths):
                     rst_dir=rst_dir,
                     config_dir=yaml_dir,
                     dot_dir=dot_dir,
-                    graph_dir=graph_dir,
-                    graph_suffix=graph_suffix,
+                    svg_dir=svg_dir,
                 )
                 for label in pipeline.tasks
             },
         )
 
-    def __call__(self, task_defs: Sequence[TaskDef] | None = None) -> None:
-        if task_defs is None:
-            task_defs = list(self.pipeline)
-        self.pipeline.write_to_uri(self.yaml_path.parent)
+    def __call__(self) -> None:
+        pipeline_graph = self.pipeline.to_graph()
+        task_defs = list(pipeline_graph._iter_task_defs())
+        self.pipeline.write_to_uri(self.yaml_path)
         self.write_dot(task_defs)
-        self.write_rst(task_defs)
+        self.write_rst(pipeline_graph)
+        self.write_configs(pipeline_graph)
 
     def iter_write_paths(self) -> Iterator[Path]:
         """Iterate over the paths of all files written by this object's
         function call operator.
 
-        This does not include `graph_path` or the similar graph paths for each
+        This does not include `svg_path` or the similar graph paths for each
         task, as those are not actually produced by this class.
         """
         yield self.rst_path
@@ -395,16 +403,16 @@ class PipelineDocBuilder(_DocPaths):
             yield task_paths.config_path
             yield task_paths.dot_path
 
-    def iter_graph_dot_paths(self) -> Iterator[tuple[Path, Path]]:
-        """Iterate over pairs of ``(graph_path, dot_path)`` for the pipeline
+    def iter_svg_dot_paths(self) -> Iterator[tuple[Path, Path]]:
+        """Iterate over pairs of ``(svg_path, dot_path)`` for the pipeline
         and all of its tasks.
 
         This is intended to be used to contruct calls to the ``dot`` tool (or
         some other GraphViz interpreter) that build the rendered graph files.
         """
-        yield (self.graph_path, self.dot_path)
+        yield (self.svg_path, self.dot_path)
         for task_paths in self.tasks.values():
-            yield (task_paths.graph_path, task_paths.dot_path)
+            yield (task_paths.svg_path, task_paths.dot_path)
 
     def write_dot(self, task_defs: Sequence[TaskDef] | None = None) -> None:
         """Write the GraphViz DOT representations of the pipeline and its
@@ -418,24 +426,15 @@ class PipelineDocBuilder(_DocPaths):
             as a way for calling code to only expand the pipeline once.
         """
         if task_defs is None:
-            task_defs = list(self.pipeline)
+            task_defs = list(self.pipeline_graph._iter_task_defs())
         with self._mkdir_and_open(self.dot_path) as buffer:
             pipeline2dot(task_defs, buffer)
         for task_def in task_defs:
             self.tasks[task_def.label].write_dot(task_def)
 
-    def write_rst(self, task_defs: Sequence[TaskDef] | None = None) -> None:
+    def write_rst(self, pipeline_graph: PipelineGraph) -> None:
         """Write the reStructuredText files for the pipeline and its tasks.
-
-        Parameters
-        ----------
-        task_defs : `Sequence` [ `TaskDef` ], optional
-            The result of a call to `Pipeline.toExpandedPipeline`, captured in
-            a sequence.  May be `None` (default) to expand internally; provided
-            as a way for calling code to only expand the pipeline once.
         """
-        if task_defs is None:
-            task_defs = list(self.pipeline)
         with self._mkdir_and_open(self.rst_path) as buffer:
             buffer.write(
                 textwrap.dedent(
@@ -445,7 +444,7 @@ class PipelineDocBuilder(_DocPaths):
                     {self.name}
                     {'-' * len(self.name)}
 
-                    {self.pipeline.description}
+                    {pipeline_graph.description}
 
                     Tasks
                     ^^^^^
@@ -455,9 +454,9 @@ class PipelineDocBuilder(_DocPaths):
                     """
                 )
             )
-            for task_def in task_defs:
+            for label in pipeline_graph.tasks:
                 buffer.write(
-                    f"   {task_def.label} <{self._relative_to_rst(self.tasks[task_def.label].rst_path)}>\n"
+                    f"   {label} <{self._relative_to_rst(self.tasks[label].rst_path)}>\n"
                 )
             buffer.write("\n")
             buffer.write(
@@ -468,7 +467,7 @@ class PipelineDocBuilder(_DocPaths):
 
                     (open in a separate tab/window to zoom and pan)
 
-                    .. image:: {self._relative_to_rst(self.graph_path)}
+                    .. image:: {self._relative_to_rst(self.svg_path)}
 
                     Definition
                     ^^^^^^^^^^
@@ -478,8 +477,14 @@ class PipelineDocBuilder(_DocPaths):
                     """
                 )
             )
-        for task_def in task_defs:
-            self.tasks[task_def.label].write_rst(self.name, task_def)
+        for task_node in pipeline_graph.tasks.values():
+            self.tasks[task_node.label].write_rst(self.name, task_node)
+
+    def write_configs(self, pipeline_graph: PipelineGraph) -> None:
+        """Write the config file for all tasks.
+        """
+        for task_node in pipeline_graph.tasks.values():
+            self.tasks[task_node.label].write_config(self.name, task_node)
 
     @classmethod
     def scons_script(cls, args: argparse.Namespace) -> None:
@@ -504,8 +509,7 @@ class PipelineDocBuilder(_DocPaths):
             rst_dir=Path(args.rst_dir),
             yaml_dir=Path(args.yaml_dir),
             dot_dir=Path(args.dot_dir),
-            graph_dir=Path(args.graph_dir),
-            graph_suffix=args.graph_suffix,
+            svg_dir=Path(args.svg_dir),
         )
         builder()
 
@@ -533,7 +537,6 @@ class PackagePipelinesDocBuilder(_DocPaths):
         pipeline_root: Path,
         dot_root: Path,
         graph_root: Path,
-        graph_suffix: str = ".svg",
         rst_path: Path | None = None,
     ) -> PackagePipelinesDocBuilder:
         """Construct by walking a directory tree containing source ``yaml``
@@ -552,12 +555,9 @@ class PackagePipelinesDocBuilder(_DocPaths):
         dot_dir : `Path`
             Path to the directory that will contain all GraphViz DOT files for
             all pipelines.
-        graph_dir : `Path`
+        svg_dir : `Path`
             Path to the directory that will contain all rendered graphs for
             all pipelines.
-        graph_suffix : `str`, optional
-            File extension (including the ``.``) for rendered graph files.
-            Defaults to ``.svg``.
         rst_path : `Path`, optional
             Path to the reStructuredText index file.  This file must be
             included in the package's Sphinx documentation manually, via
@@ -577,8 +577,7 @@ class PackagePipelinesDocBuilder(_DocPaths):
                         rst_dir=rst_root.joinpath(name),
                         yaml_dir=pipeline_root.joinpath(name),
                         dot_dir=dot_root.joinpath(name),
-                        graph_dir=graph_root.joinpath(name),
-                        graph_suffix=graph_suffix,
+                        svg_dir=graph_root.joinpath(name),
                     )
         return cls(
             rst_path=rst_path if rst_path is not None else rst_root.joinpath("index.rst"),
@@ -665,9 +664,9 @@ class PackagePipelinesDocBuilder(_DocPaths):
             SCons build environment instance.
         graph_action : `str` or `Callable`, optional
             A string command-line (or more rarely, a Python callable) that
-            renders a GraphViz DOT into an graphics file consistent with the
-            ``graph_suffix`` passed to `from_source`. satisfying the SCons
-            "Action" interface.  The default runs ``dot -Tsvg``.
+            renders a GraphViz DOT into an svg passed to `from_source`
+            satisfying the SCons "Action" interface.  The default runs
+            ``dot -Tsvg``.
 
         Yields
         ------
@@ -723,7 +722,6 @@ class PackagePipelinesDocBuilder(_DocPaths):
                     pipeline_root=target_root,
                     dot_root=target_root,
                     graph_root=target_root,
-                    graph_suffix=".svg",
                     rst_path=Path(str(env.File("lsst.drp.pipe/pipelines_index.rst"))),
                 ).scons_generate(env)
             )
@@ -752,14 +750,13 @@ class PackagePipelinesDocBuilder(_DocPaths):
                     f"--rst-dir {pipeline_builder.rst_path.parent.resolve()} "
                     f"--yaml-dir {pipeline_builder.yaml_path.parent.resolve()} "
                     f"--dot-dir {pipeline_builder.dot_path.parent.resolve()} "
-                    f"--graph-dir {pipeline_builder.graph_path.parent.resolve()} "
-                    f"--graph-suffix={pipeline_builder.graph_path.suffix} "
+                    f"--graph-dir {pipeline_builder.svg_path.parent.resolve()} "
                 ),
             )
             if graph_action:
-                for graph_path, dot_path in pipeline_builder.iter_graph_dot_paths():
+                for svg_path, dot_path in pipeline_builder.iter_graph_dot_paths():
                     yield from env.Command(
-                        [env.File(graph_path)],
+                        [env.File(svg_path)],
                         [env.File(dot_path)],
                         action=graph_action,
                     )
@@ -798,7 +795,6 @@ def main(argv: Sequence[str]) -> None:
     pipeline_parser.add_argument("--yaml-dir", type=str)
     pipeline_parser.add_argument("--dot-dir", type=str)
     pipeline_parser.add_argument("--graph-dir", type=str)
-    pipeline_parser.add_argument("--graph-suffix", type=str, default=".svg")
     pipeline_parser.set_defaults(func=PipelineDocBuilder.scons_script)
     args = parser.parse_args(argv)
     args.func(args)
