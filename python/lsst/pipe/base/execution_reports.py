@@ -359,12 +359,24 @@ class QuantumGraphExecutionReport:
             pipeline_dataset_types.intermediates,
             pipeline_dataset_types.outputs,
         ):
-            refs[dataset_type.name] = {
-                ref.id: ref
-                for ref in butler.registry.queryDatasets(
-                    dataset_type.name, collections=collection, findFirst=False
-                )
-            }
+            if (component := dataset_type.component()) is not None:
+                # Work around the fact that component support has been phased
+                # out of daf_butler queries but not pipe_base's QGs.  This
+                # should go away on DM-40441.
+                parent_dataset_type = dataset_type.makeCompositeDatasetType()
+                refs[dataset_type.name] = {
+                    ref.id: ref.makeComponentRef(component)
+                    for ref in butler.registry.queryDatasets(
+                        parent_dataset_type.name, collections=collection, findFirst=False
+                    )
+                }
+            else:
+                refs[dataset_type.name] = {
+                    ref.id: ref
+                    for ref in butler.registry.queryDatasets(
+                        dataset_type.name, collections=collection, findFirst=False
+                    )
+                }
         for task_def in qg.iterTaskGraph():
             for node in qg.getNodesForTask(task_def):
                 status_graph.add_node(node.nodeId)
