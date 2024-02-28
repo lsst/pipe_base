@@ -34,12 +34,13 @@ import datetime
 import os.path
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast, final
+from typing import TYPE_CHECKING, Any, Self, cast, final
 
 from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
 from lsst.pex.config import Config, RegistryField
 from lsst.utils import doImportType
+from lsst.utils.introspection import get_full_type_name
 
 from ._observation_dimension_packer import observation_packer_registry
 
@@ -136,8 +137,8 @@ class Instrument(metaclass=ABCMeta):
         """
         raise NotImplementedError()
 
-    @staticmethod
-    def fromName(name: str, registry: Registry, collection_prefix: str | None = None) -> Instrument:
+    @classmethod
+    def fromName(cls, name: str, registry: Registry, collection_prefix: str | None = None) -> Self:
         """Given an instrument name and a butler registry, retrieve a
         corresponding instantiated instrument object.
 
@@ -184,12 +185,12 @@ class Instrument(metaclass=ABCMeta):
             raise TypeError(
                 f"Unexpected class name retrieved from {name} instrument dimension (got {cls_name})"
             )
-        return Instrument._from_cls_name(cls_name, collection_prefix)
+        return cls._from_cls_name(cls_name, collection_prefix)
 
-    @staticmethod
+    @classmethod
     def from_string(
-        name: str, registry: Registry | None = None, collection_prefix: str | None = None
-    ) -> Instrument:
+        cls, name: str, registry: Registry | None = None, collection_prefix: str | None = None
+    ) -> Self:
         """Return an instance from the short name or class name.
 
         If the instrument name is not qualified (does not contain a '.') and a
@@ -230,7 +231,7 @@ class Instrument(metaclass=ABCMeta):
         """
         if "." not in name and registry is not None:
             try:
-                instr = Instrument.fromName(name, registry, collection_prefix=collection_prefix)
+                instr = cls.fromName(name, registry, collection_prefix=collection_prefix)
             except Exception as err:
                 raise RuntimeError(
                     f"Could not get instrument from name: {name}. Failed with exception: {err}"
@@ -243,12 +244,12 @@ class Instrument(metaclass=ABCMeta):
                     f"Could not import instrument: {name}. Failed with exception: {err}"
                 ) from err
             instr = instr_class(collection_prefix=collection_prefix)
-        if not isinstance(instr, Instrument):
-            raise TypeError(f"{name} is not an Instrument subclass.")
+        if not isinstance(instr, cls):
+            raise TypeError(f"{name} is not a {get_full_type_name(cls)} subclass.")
         return instr
 
-    @staticmethod
-    def from_data_id(data_id: DataCoordinate, collection_prefix: str | None = None) -> Instrument:
+    @classmethod
+    def from_data_id(cls, data_id: DataCoordinate, collection_prefix: str | None = None) -> Self:
         """Instantiate an `Instrument` object from a fully-expanded data ID.
 
         Parameters
@@ -272,12 +273,12 @@ class Instrument(metaclass=ABCMeta):
             Raised if the class name retrieved is not a string or the imported
             symbol is not an `Instrument` subclass.
         """
-        return Instrument._from_cls_name(
+        return cls._from_cls_name(
             cast(DimensionRecord, data_id.records["instrument"]).class_name, collection_prefix
         )
 
-    @staticmethod
-    def _from_cls_name(cls_name: str, collection_prefix: str | None = None) -> Instrument:
+    @classmethod
+    def _from_cls_name(cls, cls_name: str, collection_prefix: str | None = None) -> Self:
         """Instantiate an `Instrument` object type name.
 
         This just provides common error-handling for `fromName` and
@@ -305,9 +306,10 @@ class Instrument(metaclass=ABCMeta):
             symbol is not an `Instrument` subclass.
         """
         instrument_cls: type = doImportType(cls_name)
-        if not issubclass(instrument_cls, Instrument):
+        if not issubclass(instrument_cls, cls):
             raise TypeError(
-                f"{instrument_cls!r}, obtained from importing {cls_name}, is not an Instrument subclass."
+                f"{instrument_cls!r}, obtained from importing {cls_name}, is not a subclass "
+                f"of {get_full_type_name(cls)}."
             )
         return instrument_cls(collection_prefix=collection_prefix)
 
