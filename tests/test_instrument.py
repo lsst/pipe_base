@@ -40,8 +40,8 @@ from lsst.pipe.base import Instrument
 from lsst.utils.introspection import get_full_type_name
 
 
-class DummyInstrument(Instrument):
-    """Test instrument."""
+class BaseDummyInstrument(Instrument):
+    """Test instrument base class."""
 
     @classmethod
     def getName(cls):
@@ -63,6 +63,17 @@ class DummyInstrument(Instrument):
 
     def getRawFormatter(self, dataId):
         return JsonFormatter
+
+
+class DummyInstrument(BaseDummyInstrument):
+    """Test instrument."""
+
+
+class NotInstrument:
+    """Not an instrument class at all."""
+
+    def __init__(self, collection_prefix: str = ""):
+        self.collection_prefix = collection_prefix
 
 
 class BadInstrument(DummyInstrument):
@@ -155,6 +166,34 @@ class InstrumentTestCase(unittest.TestCase):
 
         # This should work even with the bad class name.
         self.instrument.importAll(registry)
+
+        # Check that from_string falls back to fromName.
+        from_string = DummyInstrument.from_string("DummyInstrument", registry)
+        self.assertIsInstance(from_string, type(from_registry))
+
+    def test_from_string(self):
+        """Test Instrument.from_string works."""
+        with self.assertRaises(RuntimeError):
+            # No registry.
+            DummyInstrument.from_string("DummyInstrument")
+
+        with self.assertRaises(TypeError):
+            # This will raise because collection_prefix is not understood.
+            DummyInstrument.from_string("lsst.pipe.base.Task")
+
+        with self.assertRaises(TypeError):
+            # Not an instrument but does have collection_prefix.
+            DummyInstrument.from_string(get_full_type_name(NotInstrument))
+
+        with self.assertRaises(TypeError):
+            # This will raise because BaseDummyInstrument is not a subclass
+            # of DummyInstrument.
+            DummyInstrument.from_string(get_full_type_name(BaseDummyInstrument))
+
+        instrument = DummyInstrument.from_string(
+            get_full_type_name(DummyInstrument), collection_prefix="test"
+        )
+        self.assertEqual(instrument.collection_prefix, "test")
 
     def test_defaults(self):
         self.assertEqual(self.instrument.makeDefaultRawIngestRunName(), "DummyInstrument/raw/all")
