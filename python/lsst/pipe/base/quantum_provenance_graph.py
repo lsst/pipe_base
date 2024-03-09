@@ -43,12 +43,11 @@ import dataclasses
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator, Sequence, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
+from collections.abc import Iterator, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypedDict
 
 import networkx
-from lsst.daf.butler import Butler, DataIdValue
-from lsst.daf.butler.nonempty_mapping import NonemptyMapping
+from lsst.daf.butler import Butler, DataCoordinate, DataIdValue
 from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import getLogger
 
@@ -139,8 +138,38 @@ class QuantumRun:
     """The quantum graph node ID associated with the dataId in a specific run.
     """
 
-    status: Literal["failed", "not_attempted", "successful", "logs_missing"] = "not_attempted"
+    status: Literal[
+        "failed", "successful", "logs_missing", "blocked", "metadata_missing"
+    ] = "metadata_missing"
     """The status of the quantum in that run.
+    """
+
+
+class QuantumInfo(TypedDict):
+    """Information about a quantum across all run collections.
+
+    Used to annotate the networkx node dictionary.
+    """
+
+    data_id: DataCoordinate
+    """The data_id of the quantum.
+    """
+
+    runs: dict[str, QuantumRun]
+    """All run collections associated with the quantum.
+    """
+
+    status: Literal["successful", "wonky", "blocked", "not_attempted", "failed"]
+    """The overall status of the quantum. Note that it is impossible to exit a
+    wonky state.
+    """
+
+    recovered: bool
+    """The quantum was originally not successful but was ultimately successful.
+    """
+
+    messages: list[str]
+    """Diagnostic messages to help disambiguate wonky states.
     """
 
 
@@ -160,24 +189,36 @@ class DatasetRun:
     """Whether this dataset was published in the final output collection.
     """
 
+    def __post_init__(self) -> None:
+        assert not (self.published and not self.produced)
 
-@dataclasses.dataclass(frozen=True, order=True)
-class ResolvedDatasetKey:
-    """A combination of a dataset key and a particular dataset run to be used
-    for recording specific instances of issues.
+
+class DatasetInfo(TypedDict):
+    """Information about a given dataset across all runs.
+
+    Used to annotate the networkx node dictionary.
     """
 
-    key: DatasetKey
-    run: str
-    id: uuid.UUID
+    data_id: DataCoordinate
+    """The data_id of the quantum.
+    """
 
-    def to_summary_dict(self, xgraph: networkx.DiGraph) -> dict[str, Any]:
-        return {
-            "dataset_type": self.key.parent_dataset_type_name,
-            "data_id": xgraph.nodes[self.key]["data_id"],
-            "uuid": self.id,
-            "run": self.run,
-        }
+    runs: dict[str, DatasetRun]
+    """All runs associated with the dataset.
+    """
+
+    status: Literal["published", "unpublished", "predicted_only", "unsuccessful", "cursed"]
+    """Overall status of the dataset.
+    """
+
+    messages: list[str]
+    """Diagnostic messages to help disambiguate cursed states.
+    """
+
+    winner: str | None
+    """The run whose dataset was published, if any. These are retrievable with
+    butler.get
+    """
 
 
 class QuantumProvenanceGraph:
@@ -204,38 +245,12 @@ class QuantumProvenanceGraph:
         # The nodes representing datasets in `_xgraph` grouped by dataset type
         # name.
         self._datasets: dict[str, set[DatasetKey]] = {}
-        self._published_failures: NonemptyMapping[str, set[ResolvedDatasetKey]] = NonemptyMapping()
-        self._ignored_successes: NonemptyMapping[str, set[ResolvedDatasetKey]] = NonemptyMapping()
-        self._rejected_successes: NonemptyMapping[str, set[ResolvedDatasetKey]] = NonemptyMapping()
-        self._no_work_datasets: NonemptyMapping[str, set[ResolvedDatasetKey]] = NonemptyMapping()
-        self._heterogeneous_quanta: set[QuantumKey] = set()
 
-    @property
-    def published_failures(self) -> Set[ResolvedDatasetKey]:
-        """Datasets that appeared in the final output collection even though
-        the quantum that produced them failed.
-        """
-        return self._published_failures
+    def get_quantum_info(self, key: QuantumKey) -> QuantumInfo:
+        return self._xgraph.nodes[key]
 
-    @property
-    def ignored_successes(self) -> Set[ResolvedDatasetKey]:
-        """Dataset types and data ids that were produced by one or more
-        successful quanta but not included in the final output collection.
-        """
-        # Note: we want to make this a set[DatasetKey] instead.
-        return self._ignored_successes
-
-    @property
-    def rejected_successes(self) -> Set[ResolvedDatasetKey]:
-        """Datasets from successful quanta that were not published, where
-        another dataset with the same data id was published.
-        """
-        return self._rejected_successes
-
-    @property
-    def heterogeneous_quanta(self) -> Set[QuantumKey]:
-        """Quanta whose published outputs came from multiple runs."""
-        return self._heterogeneous_quanta
+    def get_dataset_info(self, key: DatasetKey) -> DatasetInfo:
+        return self._xgraph.nodes[key]
 
     def add_new_graph(self, butler: Butler, qgraph: QuantumGraph | ResourcePathExpression) -> None:
         """Add a new quantum graph to the `QuantumProvenanceGraph`.
@@ -272,13 +287,14 @@ class QuantumProvenanceGraph:
             # nodes.
             quantum_key = QuantumKey(node.taskDef.label, node.quantum.dataId.required_values)
             self._xgraph.add_node(quantum_key)
-            self._xgraph.nodes[quantum_key]["data_id"] = node.quantum.dataId
+            quantum_info = self.get_quantum_info(quantum_key)
+            quantum_info["data_id"] = node.quantum.dataId
             new_quanta.append(quantum_key)
             self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
             # associate run collections with specific quanta. this is important
             # if the same quanta are processed in multiple runs as in recovery
             # workflows.
-            quantum_runs = self._xgraph.nodes[quantum_key].setdefault("runs", {})
+            quantum_runs = quantum_info.setdefault("runs", {})
             # the QuantumRun here is the specific quantum-run collection
             # combination.
             quantum_runs[output_run] = QuantumRun(node.nodeId)
@@ -287,17 +303,18 @@ class QuantumProvenanceGraph:
                 # add datasets to the nodes of the mirror graph, with edges on
                 # the quanta.
                 self._xgraph.add_edge(quantum_key, dataset_key)
-                self._xgraph.nodes[dataset_key]["data_id"] = ref.dataId
+                dataset_info = self.get_dataset_info(dataset_key)
+                dataset_info["data_id"] = ref.dataId
                 self._datasets.setdefault(dataset_key.parent_dataset_type_name, set()).add(dataset_key)
-                dataset_runs = self._xgraph.nodes[dataset_key].setdefault("runs", {})
+                dataset_runs = dataset_info.setdefault("runs", {})
                 # make a DatasetRun for the specific dataset-run collection
                 # combination.
                 dataset_runs[output_run] = DatasetRun(ref.id)
                 # save metadata and logs for easier status interpretation
                 if dataset_key.parent_dataset_type_name.endswith("_metadata"):
-                    self._xgraph.nodes[quantum_key]["metadata"] = dataset_key
+                    quantum_info["metadata"] = dataset_key
                 if dataset_key.parent_dataset_type_name.endswith("_log"):
-                    self._xgraph.nodes[quantum_key]["log"] = dataset_key
+                    quantum_info[quantum_key]["log"] = dataset_key
             for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
                 dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.required_values)
                 if dataset_key in self._xgraph:
@@ -308,16 +325,19 @@ class QuantumProvenanceGraph:
             for ref in butler.registry.queryDatasets(dataset_type_name, collections=output_run):
                 # find the datasets in the butler
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
-                dataset_run = self._xgraph.nodes[dataset_key]["runs"][output_run]  # dataset run (singular)
+                dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
                 # if the dataset is in the output run collection, we produced
                 # it!
                 dataset_run.produced = True
+        # the outputs of failed or blocked quanta in this run.
+        blocked: set[DatasetKey] = set()
         for quantum_key in new_quanta:
-            quantum_run: QuantumRun = self._xgraph.nodes[quantum_key]["runs"][output_run]
-            metadata_key = self._xgraph.nodes[quantum_key]["metadata"]
-            log_key = self._xgraph.nodes[quantum_key]["log"]
-            metadata_dataset_run: DatasetRun = self._xgraph.nodes[metadata_key]["runs"][output_run]
-            log_dataset_run: DatasetRun = self._xgraph.nodes[log_key]["runs"][output_run]
+            quantum_info = self.get_quantum_info(quantum_key)
+            quantum_run = quantum_info["runs"][output_run]
+            metadata_key = quantum_info["metadata"]
+            log_key = quantum_info["log"]
+            metadata_dataset_run = self.get_dataset_info(metadata_key)["runs"][output_run]
+            log_dataset_run = self.get_dataset_info(log_key)["runs"][output_run]
             if metadata_dataset_run.produced:  # check with Jim about this condition
                 # if we do have metadata:
                 if log_dataset_run.produced:
@@ -339,20 +359,46 @@ class QuantumProvenanceGraph:
                     # in the task itself. This includes all payload errors and
                     # some other errors.
                     quantum_run.status = "failed"
+                    # if a quantum fails, all its successor datasets are
+                    # blocked.
+                    blocked.update(self._xgraph.successors(quantum_key))
                 else:
                     # we are missing metadata and logs. Either the task was not
                     # started, or a hard external environmental error prevented
                     # it from writing logs or metadata.
-                    quantum_run.status = "not_attempted"
+                    if blocked.isdisjoint(self._xgraph.predecessors(quantum_key)):
+                        # None of this quantum's inputs were blocked.
+                        quantum_run.status = "metadata_missing"
+                    else:
+                        quantum_run.status = "blocked"
+                        blocked.update(self._xgraph.successors(quantum_key))
 
-    # I imagine that the next step is to call `resolve_duplicates` on the
-    # self._xgraph.
-    # Things that could have happened to a quanta over multiple runs
-    # Failed until it suceeded
-    # Never been attempted
-    # Succeeded immediately
-    # Failed and continued to fail
-    # Horrible flip-flopping (doesn't happen with skip-existing-in)
+            # Now we can start using state transitions to mark overall status.
+            if len(quantum_info["runs"]) == 1:
+                last_status = "not_attempted"
+            else:
+                last_run = list(quantum_info["runs"].values())[-1]
+                last_status = last_run.status
+            match last_status, quantum_run.status:
+                case ("not_attempted", new_status):
+                    pass
+                case ("wonky", _):
+                    new_status = "wonky"
+                case (_, "successful"):
+                    new_status = "successful"
+                    if last_status != "successful":
+                        quantum_info["recovered"] = True
+                case (_, "logs_missing"):
+                    new_status = "wonky"
+                case ("successful", _):
+                    new_status = "wonky"
+                case (_, "blocked"):
+                    pass
+                case (_, "metadata_missing"):
+                    new_status = "not_attempted"
+                case ("failed", _):
+                    pass
+            quantum_info["status"] = new_status
 
     def resolve_duplicates(self, butler: Butler, collections: Sequence[str] | None = None, where: str = ""):
         for dataset_type_name in self._datasets:
@@ -366,62 +412,40 @@ class QuantumProvenanceGraph:
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 self._xgraph.nodes[dataset_key]["winner"] = ref.run
                 self._xgraph.nodes[dataset_key]["runs"][ref.run].published = True
+
         for task_label, task_quanta in self._quanta.items():
             for quantum_key in task_quanta:
                 # these are the run collections of the datasets produced by
                 # this quantum that were published in the final collection
+                dataset_keys = self.iter_outputs_of(quantum_key)
                 winners = {
                     winner
-                    for dataset_key in self.iter_outputs_of(quantum_key)
+                    for dataset_key in dataset_keys
                     if (winner := self._xgraph.nodes[dataset_key].get("winner"))
                 }
                 # note: we expect len(winners) = 1
                 for run, quantum_run in self._xgraph.nodes[quantum_key]["runs"].items():
-                    if quantum_run.status != "successful" and run in winners:
-                        for dataset_key in self.iter_outputs_of(quantum_key):
-                            # the outputs of this quantum in this run may have
-                            # been mistakenly published
-                            dataset_run = self._xgraph.nodes[dataset_key]["runs"][run]
-                            if dataset_run.published:
-                                self._published_failures[dataset_key.parent_dataset_type_name].add(
-                                    ResolvedDatasetKey(key=dataset_key, run=run, id=dataset_run.id)
-                                )
-                        break
-                    if quantum_run.status == "successful" and run not in winners:
-                        if len(winners) == 0:
-                            # the quantum succeeded but no outputs were
-                            # published
-                            for dataset_key in self.iter_outputs_of(quantum_key):
-                                dataset_run: DatasetRun = self._xgraph.nodes[dataset_key]["runs"][run]
-                                if not dataset_run.published and dataset_run.produced:
-                                    self._ignored_successes[dataset_key.parent_dataset_type_name].add(
-                                        ResolvedDatasetKey(key=dataset_key, run=run, id=dataset_run.id)
-                                    )
-                        else:
-                            for dataset_key in self.iter_outputs_of(quantum_key):
-                                dataset_run = self._xgraph.nodes[dataset_key]["runs"][run]
-                                self._rejected_successes[dataset_key.parent_dataset_type_name].add(
-                                    ResolvedDatasetKey(key=dataset_key, run=run, id=dataset_run.id)
-                                )
-                if len(winners) > 1:
-                    # some rejected outputs may be in here
-                    print("published outputs for this quantum were from multiple runs")
-                    self._heterogeneous_quanta.add(quantum_key)
-        for dataset_type_name, datasets_for_type in self._datasets.items():
-            for dataset_key in datasets_for_type:
-                for run, dataset_run in self._xgraph.nodes[dataset_key]["runs"].items():
-                    if not dataset_run.produced:
-                        quantum_key = self.get_producer_of(dataset_key)
-                        quantum_run: QuantumRun = self._xgraph.nodes[quantum_key]["runs"][run]
-                        if quantum_run.status == "successful":
-                            self._no_work_datasets[dataset_key.parent_dataset_type_name].add(
-                                ResolvedDatasetKey(key=dataset_key, run=run, id=dataset_run.id)
-                            )
-                            # this is a NoWorkFound
-
-    # for each dataset, how many got published of each type? how many were
-    # produced and not published? how many were predicted and not produced
-    # (for various reasons)
+                    for dataset_key in dataset_keys:
+                        dataset_info = self.get_dataset_info(dataset_key)
+                        match (quantum_run.status, (run in winners)):
+                            case ("successful", True):
+                                dataset_info["status"] = "published"
+                            case ("successful", False):
+                                if len(winners) == 0:
+                                    # This is the No Work Found case
+                                    dataset_info["status"] = "predicted_only"
+                                else:
+                                    dataset_info["status"] = "unpublished"
+                            case (_, True):
+                                # If anything other than a successful quantum
+                                # produces a published dataset, that dataset
+                                # is cursed.
+                                dataset_info["status"] = "cursed"
+                            case _:
+                                if len(winners) > 1:
+                                    dataset_info["status"] = "cursed"
+                                else:
+                                    dataset_info["status"] = "unsuccessful"
 
     def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the results of the TaskExecutionReport in a dictionary.
@@ -450,22 +474,6 @@ class QuantumProvenanceGraph:
         result = {
             "tasks": {},
             "datasets": {},
-            "published_failures": [
-                key.to_summary_dict(self._xgraph)
-                for key in sorted(itertools.chain.from_iterable(self._published_failures.values()))
-            ],
-            "rejected_successes": [
-                key.to_summary_dict(self._xgraph)
-                for key in sorted(itertools.chain.from_iterable(self._rejected_successes.values()))
-            ],
-            "ignored_successes": [
-                key.to_summary_dict(self._xgraph)
-                for key in sorted(itertools.chain.from_iterable(self._ignored_successes.values()))
-            ],
-            "heterogeneous_quanta": [
-                key.to_summary_dict(self._xgraph)
-                for key in sorted(itertools.chain.from_iterable(self._heterogeneous_quanta.values()))
-            ],
         }
         for task_label, quanta in self._quanta.items():
             n_blocked = 0
@@ -526,9 +534,9 @@ class QuantumProvenanceGraph:
                         n_successful += 1
                 else:
                     # A dataset for this data ID was not published.
-                    # THIS BRANCH VERY MUCH TO DO.  IT MAY BE GARBAGE.
+                    # THIS BRANCH VERY MUCH TO DO. IT MAY BE GARBAGE.
                     dataset_run: DatasetRun
-                    final_status: str = "not_attempted"
+                    # final_status: str = "not_attempted"
                     for run, dataset_run in reversed(self._xgraph.nodes[dataset_key]["runs"].items()):
                         if dataset_run.produced:
                             # Published failures handled elsewhere.
@@ -544,13 +552,8 @@ class QuantumProvenanceGraph:
                 "predicted": len(datasets),
                 # These should all add up to 'predicted'...
                 "successful": n_successful,  # (and published)
-                "no_work": self._no_work_datasets[dataset_type_name],
-                "ignored_successes": self._ignored_successes[dataset_type_name],
-                "published_failures": self._published_failures[dataset_type_name],
                 "failed": ...,
                 "blocked": ...,
-                # ... these do not sum nicely to anything:
-                "rejected_successes": self._rejected_successes[dataset_type_name],
             }
         return result
 
