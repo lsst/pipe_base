@@ -430,6 +430,7 @@ class QuantumProvenanceGraph:
                         match (quantum_run.status, (run in winners)):
                             case ("successful", True):
                                 dataset_info["status"] = "published"
+                                dataset_info["winner"] = run
                             case ("successful", False):
                                 if len(winners) == 0:
                                     # This is the No Work Found case
@@ -443,12 +444,14 @@ class QuantumProvenanceGraph:
                                 dataset_info["status"] = "cursed"
                             case _:
                                 if len(winners) > 1:
+                                    # This is the heterogeneous quanta case.
                                     dataset_info["status"] = "cursed"
                                 else:
+                                    # This should be a regular failure.
                                     dataset_info["status"] = "unsuccessful"
 
     def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
-        """Summarize the results of the TaskExecutionReport in a dictionary.
+        """Summarize the QuantumProvenanceGraph in a dictionary.
 
         Parameters
         ----------
@@ -460,100 +463,105 @@ class QuantumProvenanceGraph:
         Returns
         -------
         summary_dict : `dict`
-            A dictionary containing:
-
-            - outputs: A dictionary summarizing the
-              DatasetTypeExecutionReport for each DatasetType associated with
-              the task
-            - failed_quanta: A dictionary of quanta which failed and their
-              dataIDs by quantum graph node id
-            - n_quanta_blocked: The number of quanta which failed due to
-              upstream failures.
-            - n_successful: The number of quanta which succeeeded.
+            A dictionary containing counts of quanta and datasets in each of
+            the overall states defined in `QuantumInfo` and `DatasetInfo`,
+            as well as diagnostic information and error messages for failed
+            quanta and strange edge cases, and a list of recovered quanta.
         """
         result = {
             "tasks": {},
             "datasets": {},
         }
         for task_label, quanta in self._quanta.items():
-            n_blocked = 0
             n_successful = 0
-            failed_quanta = []
+            n_wonky = 0
+            n_blocked = 0
+            n_failed = 0
+            failed_quanta = {"data_id": {}, "runs": {}, "message": {}}
+            recovered_quanta = []
+            wonky_quanta = {"data_id": {}, "runs": {}, "message": {}}
             # every item in this list will correspond to a data_id and be a
             # dict keyed by run
             for quantum_key in quanta:
-                failed_quantum_info = {"data_id": {}, "runs": {}}
-                for run, quantum_run in self._xgraph.nodes[quantum_key]["runs"].items():
-                    if quantum_run.status == "successful":
-                        failed_quantum_info["runs"].clear()
-                        # if any of the quantum runs successful, we don't worry
-                        # about it
-                        n_successful += 1
-                        break
-                    elif quantum_run.status == "blocked":
-                        n_blocked += 1
-                        continue
-                    else:
-                        log_key: DatasetKey = self._xgraph.nodes[quantum_key]["log"]
-                        quantum_data_id = self._xgraph.nodes[quantum_key]["data_id"]
-                        failed_quantum_info["data_id"].update(quantum_data_id.mapping)
-                        quantum_info = {"id": quantum_run.id, "status": quantum_run.status}
-                        if do_store_logs:
+                quantum_info = self.get_quantum_info(quantum_key)
+                if quantum_info["status"] == "successful":
+                    n_successful += 1
+                    if quantum_info["recovered"]:
+                        recovered_quanta.append(quantum_info["data_id"])
+                elif quantum_info["status"] == "wonky":
+                    n_wonky += 1
+                    wonky_quanta["data_id"].update(quantum_info["data_id"])
+                    wonky_quanta["runs"].update(quantum_info["runs"])
+                    wonky_quanta["message"].update(quantum_info["messages"])
+                elif quantum_info["status"] == "blocked":
+                    n_blocked += 1
+                elif quantum_info["status"] == "failed":
+                    n_failed += 1
+                    failed_quanta["data_id"].update(quantum_info["data_id"])
+                    runs = quantum_info["runs"]
+                    failed_quanta["runs"].update(runs)
+                    log_key: DatasetKey = self._xgraph.nodes[quantum_key]["log"]
+                    if do_store_logs:
+                        for run in runs:
                             try:
                                 # should probably upgrade this to use a dataset
                                 # ref
                                 log = butler.get(
-                                    log_key.parent_dataset_type_name, quantum_data_id, collections=run
+                                    log_key.parent_dataset_type_name, quantum_info["data_id"], collections=run
                                 )
                             except LookupError:
-                                quantum_info["error"] = []
+                                failed_quanta["message"] = []
                             except FileNotFoundError:
-                                quantum_info["error"] = None
+                                failed_quanta["message"] = None
                             else:
-                                quantum_info["error"] = [
-                                    record.message for record in log if record.levelno >= logging.ERROR
-                                ]
-                        failed_quantum_info["runs"][run] = quantum_info
-                if failed_quantum_info["runs"]:
-                    # if the quantum runs continue to fail, report.
-                    failed_quanta.append(failed_quantum_info)
+                                failed_quanta["message"].update(
+                                    [record.message for record in log if record.levelno >= logging.ERROR]
+                                )
             result["tasks"][task_label] = {
-                "failed_quanta": failed_quanta,
-                "n_quanta_blocked": n_blocked,
                 "n_successful": n_successful,
+                "n_wonky": n_wonky,
+                "n_blocked": n_blocked,
+                "n_failed": n_failed,
+                "failed_quanta": failed_quanta,
+                "recovered_quanta": recovered_quanta,
+                "wonky_quanta": wonky_quanta,
             }
         for dataset_type_name, datasets in self._datasets.items():
-            n_successful = 0
+            n_published = 0
+            n_unpublished = 0
+            n_predicted_only = 0
+            n_unsuccessful = 0
+            n_cursed = 0
+            unsuccessful_datasets = []
+            cursed_datasets = {"parent_data_id": {}, "runs": {}, "message": {}}
             for dataset_key in datasets:
-                producer_quantum_key = self.get_producer_of(dataset_key)
-                producer_quantum_run: QuantumRun
-                if winning_run := self._xgraph.nodes[dataset_key].get("winner"):
-                    # A dataset for this data ID was published.
-                    producer_quantum_run = self._xgraph.nodes[producer_quantum_key]["runs"][winning_run]
-                    if producer_quantum_run.status == "successful":
-                        n_successful += 1
-                else:
-                    # A dataset for this data ID was not published.
-                    # THIS BRANCH VERY MUCH TO DO. IT MAY BE GARBAGE.
-                    dataset_run: DatasetRun
-                    # final_status: str = "not_attempted"
-                    for run, dataset_run in reversed(self._xgraph.nodes[dataset_key]["runs"].items()):
-                        if dataset_run.produced:
-                            # Published failures handled elsewhere.
-                            break
-                        producer_quantum_run = self._xgraph.nodes[producer_quantum_key]["runs"][run]
-                        match producer_quantum_run.status:
-                            case "successful":
-                                # No work handled elsewhere.
-                                break
+                dataset_info = self.get_dataset_info(dataset_key)
+                if dataset_info["status"] == "published":
+                    n_published += 1
+                elif dataset_info["status"] == "unpublished":
+                    n_unpublished += 1
+                elif dataset_info["status"] == "predicted_only":
+                    n_predicted_only += 1
+                elif dataset_info["status"] == "unsuccessful":
+                    n_unsuccessful += 1
+                    unsuccessful_datasets.append(dataset_info["data_id"])
+                elif dataset_info["status"] == "cursed":
+                    n_cursed += 1
+                    cursed_datasets["parent_data_id"].update(dataset_info["data_id"])
+                    cursed_datasets["runs"].update(dataset_info["runs"])
+                    cursed_datasets["message"].update(dataset_info["message"])
 
             result["datasets"][dataset_type_name] = {
                 # This is the total number in the original QG.
-                "predicted": len(datasets),
+                "n_predicted": len(datasets),
                 # These should all add up to 'predicted'...
-                "successful": n_successful,  # (and published)
-                "failed": ...,
-                "blocked": ...,
+                "n_published": n_published,  # (and published)
+                "n_unpublished": n_unpublished,
+                "n_predicted_only": n_predicted_only,
+                "n_unsuccessful": n_unsuccessful,
+                "n_cursed": n_cursed,
+                "unsuccessful_datasets": unsuccessful_datasets,
+                "cursed_datasets": cursed_datasets,
             }
         return result
 
