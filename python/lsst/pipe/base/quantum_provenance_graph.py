@@ -215,11 +215,6 @@ class DatasetInfo(TypedDict):
     """Diagnostic messages to help disambiguate cursed states.
     """
 
-    winner: str | None
-    """The run whose dataset was published, if any. These are retrievable with
-    butler.get
-    """
-
 
 class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
@@ -288,7 +283,11 @@ class QuantumProvenanceGraph:
             quantum_key = QuantumKey(node.taskDef.label, node.quantum.dataId.required_values)
             self._xgraph.add_node(quantum_key)
             quantum_info = self.get_quantum_info(quantum_key)
-            quantum_info["data_id"] = node.quantum.dataId
+            quantum_info.setdefault("messages", [])
+            quantum_info.setdefault("runs", {})
+            quantum_info.setdefault("data_id", node.quantum.dataId)
+            quantum_info.setdefault("status", "not_attempted")
+            quantum_info.setdefault("recovered", False)
             new_quanta.append(quantum_key)
             self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
             # associate run collections with specific quanta. this is important
@@ -304,7 +303,9 @@ class QuantumProvenanceGraph:
                 # the quanta.
                 self._xgraph.add_edge(quantum_key, dataset_key)
                 dataset_info = self.get_dataset_info(dataset_key)
-                dataset_info["data_id"] = ref.dataId
+                dataset_info.setdefault("data_id", ref.dataId)
+                dataset_info.setdefault("status", "missing")
+                dataset_info.setdefault("messages", [])
                 self._datasets.setdefault(dataset_key.parent_dataset_type_name, set()).add(dataset_key)
                 dataset_runs = dataset_info.setdefault("runs", {})
                 # make a DatasetRun for the specific dataset-run collection
@@ -390,8 +391,13 @@ class QuantumProvenanceGraph:
                         quantum_info["recovered"] = True
                 case (_, "logs_missing"):
                     new_status = "wonky"
+                    quantum_info["messages"].append(f"Logs missing for run {output_run!r}.")
                 case ("successful", _):
                     new_status = "wonky"
+                    quantum_info["messages"].append(
+                        f"Status went from successful in run {last_run!r} "
+                        f"to {quantum_run.status!r} in {output_run!r}."
+                    )
                 case (_, "blocked"):
                     pass
                 case (_, "metadata_missing"):
@@ -410,45 +416,49 @@ class QuantumProvenanceGraph:
             ):
                 # find the datasets in a larger collection. "who won?"
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
-                self._xgraph.nodes[dataset_key]["winner"] = ref.run
-                self._xgraph.nodes[dataset_key]["runs"][ref.run].published = True
+                dataset_info = self.get_dataset_info(dataset_key)
+                dataset_info["runs"][ref.run].published = True
 
         for task_label, task_quanta in self._quanta.items():
             for quantum_key in task_quanta:
                 # these are the run collections of the datasets produced by
                 # this quantum that were published in the final collection
-                dataset_keys = self.iter_outputs_of(quantum_key)
-                winners = {
-                    winner
-                    for dataset_key in dataset_keys
-                    if (winner := self._xgraph.nodes[dataset_key].get("winner"))
-                }
-                # note: we expect len(winners) = 1
-                for run, quantum_run in self._xgraph.nodes[quantum_key]["runs"].items():
-                    for dataset_key in dataset_keys:
-                        dataset_info = self.get_dataset_info(dataset_key)
-                        match (quantum_run.status, (run in winners)):
-                            case ("successful", True):
-                                dataset_info["status"] = "published"
-                                dataset_info["winner"] = run
-                            case ("successful", False):
-                                if len(winners) == 0:
-                                    # This is the No Work Found case
-                                    dataset_info["status"] = "predicted_only"
-                                else:
-                                    dataset_info["status"] = "unpublished"
-                            case (_, True):
-                                # If anything other than a successful quantum
-                                # produces a published dataset, that dataset
-                                # is cursed.
-                                dataset_info["status"] = "cursed"
-                            case _:
-                                if len(winners) > 1:
-                                    # This is the heterogeneous quanta case.
-                                    dataset_info["status"] = "cursed"
-                                else:
-                                    # This should be a regular failure.
-                                    dataset_info["status"] = "unsuccessful"
+                published_runs = set()
+                quantum_info = self.get_quantum_info(quantum_key)
+                for dataset_key in self.iter_outputs_of(quantum_key):
+                    dataset_info = self.get_dataset_info(dataset_key)
+                    published_runs.update(
+                        run for run, dataset_run in dataset_info["runs"].items() if dataset_run.published
+                    )
+                    if any(dataset_run.published for dataset_run in dataset_info["runs"].values()):
+                        publish_state = "published"
+                    elif any(dataset_run.produced for dataset_run in dataset_info["runs"].values()):
+                        publish_state = "unpublished"
+                    else:
+                        publish_state = "missing"
+                    match (quantum_info["status"], publish_state):
+                        case ("successful", "published"):
+                            dataset_info["status"] = "published"
+                        case ("successful", "missing"):
+                            dataset_info["status"] = "predicted_only"
+                        case ("successful", "unpublished"):
+                            dataset_info["status"] = "unpublished"
+                        case (_, "published"):
+                            # If anything other than a successful quantum
+                            # produces a published dataset, that dataset
+                            # is cursed.
+                            dataset_info["status"] = "cursed"
+                            dataset_info["messages"].append(
+                                "Published dataset is from an unsuccessful quantum."
+                            )
+                        case _:
+                            # This should be a regular failure.
+                            dataset_info["status"] = "unsuccessful"
+                if len(published_runs) > 1:
+                    quantum_info["status"] = "wonky"
+                    quantum_info["messages"].append(
+                        f"Outputs from different runs of the same quanta were published: {published_runs}."
+                    )
 
     def to_summary_dict(self, butler: Butler, do_store_logs: bool = True) -> dict[str, Any]:
         """Summarize the QuantumProvenanceGraph in a dictionary.
@@ -480,8 +490,6 @@ class QuantumProvenanceGraph:
             failed_quanta = {"data_id": {}, "runs": {}, "message": {}}
             recovered_quanta = []
             wonky_quanta = {"data_id": {}, "runs": {}, "message": {}}
-            # every item in this list will correspond to a data_id and be a
-            # dict keyed by run
             for quantum_key in quanta:
                 quantum_info = self.get_quantum_info(quantum_key)
                 if quantum_info["status"] == "successful":
@@ -555,7 +563,7 @@ class QuantumProvenanceGraph:
                 # This is the total number in the original QG.
                 "n_predicted": len(datasets),
                 # These should all add up to 'predicted'...
-                "n_published": n_published,  # (and published)
+                "n_published": n_published,
                 "n_unpublished": n_unpublished,
                 "n_predicted_only": n_predicted_only,
                 "n_unsuccessful": n_unsuccessful,
