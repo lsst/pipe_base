@@ -45,6 +45,32 @@ from ._dataset_handle import InMemoryDatasetHandle
 
 
 class CachingLimitedButler(LimitedButler):
+    """A `LimitedButler` that caches datasets.
+
+    A `CachingLimitedButler` caches on both `.put()` and `.get()`, and holds a
+    single instance of the most recently used dataset type for that put/get.
+
+    The dataset types which will be cached on put/get are controlled via the
+    `cache_on_put` and `cache_on_get` attributes, respectively.
+
+    By default, copies of the cached items are returned on `get`, so that code
+    is free to operate on data in-place. A `no_copy_on_cache` attribute also
+    exists to tell the `CachingLimitedButler` not to return copies when it is
+    known that the calling code can be trusted not to change values, e.g. when
+    passing calibs to `isrTask`.
+
+    Parameters
+    ----------
+    wrapped : `LimitedButler`
+        The butler to wrap.
+    cache_on_put : `set` [`str`], optional
+        The dataset types to cache on put.
+    cache_on_get : `set` [`str`], optional
+        The dataset types to cache on get.
+    no_copy_on_cache : `set` [`str`], optional
+        The dataset types for which to not return copies when cached.
+    """
+
     def __init__(
         self,
         wrapped: LimitedButler,
