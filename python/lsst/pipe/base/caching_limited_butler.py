@@ -29,6 +29,7 @@ from __future__ import annotations
 
 __all__ = ["CachingLimitedButler"]
 
+import logging
 from collections.abc import Set
 from typing import Any, Iterable
 
@@ -42,6 +43,8 @@ from lsst.daf.butler import (
 )
 
 from ._dataset_handle import InMemoryDatasetHandle
+
+_LOG = logging.getLogger(__name__)
 
 
 class CachingLimitedButler(LimitedButler):
@@ -103,6 +106,7 @@ class CachingLimitedButler(LimitedButler):
         if cached := self._cache.get(ref.datasetType.name):
             dataset_id, handle = cached
             if dataset_id == ref.id:  # if we do, check it's the right object
+                _LOG.debug("Returning cached dataset %s", ref)
                 return handle.get(parameters=parameters, storageClass=storageClass)
 
         obj = self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
@@ -117,6 +121,7 @@ class CachingLimitedButler(LimitedButler):
                     copy=ref.datasetType.name not in self._no_copy_on_cache,
                 ),
             )
+            _LOG.debug("Cached dataset %s", ref)
         return obj
 
     def getDeferred(
@@ -161,6 +166,7 @@ class CachingLimitedButler(LimitedButler):
                     copy=ref.datasetType.name not in self._no_copy_on_cache,
                 ),
             )
+            _LOG.debug("Cached dataset %s on put", ref)
         return self._wrapped.put(obj, ref)
 
     def pruneDatasets(
