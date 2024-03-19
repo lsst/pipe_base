@@ -111,17 +111,17 @@ class CachingLimitedButler(LimitedButler):
 
         obj = self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
         if ref.datasetType.name in self._cache_on_get and not parameters:
-            # and not parameters is to make sure we don't cache sub-images etc
-            self._cache[ref.datasetType.name] = (
-                ref.id,
-                InMemoryDatasetHandle(
-                    obj,
-                    storageClass=storageClass,
-                    dataId=ref.dataId,
-                    copy=ref.datasetType.name not in self._no_copy_on_cache,
-                ),
+            handle = InMemoryDatasetHandle(
+                obj,
+                storageClass=storageClass,
+                dataId=ref.dataId,
+                copy=ref.datasetType.name not in self._no_copy_on_cache,
             )
+            # and not parameters is to make sure we don't cache sub-images etc
+            self._cache[ref.datasetType.name] = (ref.id, handle)
             _LOG.debug("Cached dataset %s", ref)
+            # make sure copy fires if needed
+            return handle.get()
         return obj
 
     def getDeferred(
