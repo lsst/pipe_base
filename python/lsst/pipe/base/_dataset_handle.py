@@ -79,7 +79,7 @@ class InMemoryDatasetHandle:
         self,
         inMemoryDataset: Any,
         *,
-        storageClass: StorageClass | None = None,
+        storageClass: StorageClass | str | None = None,
         parameters: dict[str, Any] | None = None,
         dataId: DataId | None = None,
         copy: bool = False,
@@ -252,7 +252,10 @@ class InMemoryDatasetHandle:
         """
         factory = StorageClassFactory()
         if self.storageClass:
-            return factory.getStorageClass(self.storageClass)
+            if isinstance(self.storageClass, str):
+                return factory.getStorageClass(self.storageClass)
+            else:
+                return self.storageClass
 
         # Need to match python type.
         pytype = type(self.inMemoryDataset)
@@ -267,7 +270,7 @@ class InMemoryDatasetHandle:
     handle.
     """
 
-    storageClass: str | None = None
+    storageClass: StorageClass | str | None = None
     """The name of the `~lsst.daf.butler.StorageClass` associated with this
     dataset.
 
