@@ -138,11 +138,18 @@ class QuantumRun:
     """The quantum graph node ID associated with the dataId in a specific run.
     """
 
-    status: Literal[
-        "failed", "successful", "logs_missing", "blocked", "metadata_missing"
-    ] = "metadata_missing"
+    status: Literal["failed", "successful", "logs_missing", "blocked", "metadata_missing"] = (
+        "metadata_missing"
+    )
     """The status of the quantum in that run.
     """
+
+    def to_summary_dict(
+        self,
+    ) -> dict[str, Literal["failed", "successful", "logs_missing", "blocked", "metadata_missing"]]:
+        return {
+            "status": self.status,
+        }
 
 
 class QuantumInfo(TypedDict):
@@ -173,6 +180,21 @@ class QuantumInfo(TypedDict):
     """
 
 
+def make_quantum_info_summary_dict(quantum_info: QuantumInfo) -> dict[str, Any]:
+    return {
+        "data_id": dict(quantum_info["data_id"].required),
+        "runs": dict(
+            zip(
+                quantum_info["runs"].keys(),
+                [value.to_summary_dict() for value in quantum_info["runs"].values()],
+            )
+        ),
+        "status": quantum_info["status"],
+        "recovered": quantum_info["recovered"],
+        "messages": quantum_info["messages"],
+    }
+
+
 @dataclasses.dataclass
 class DatasetRun:
     """Information about a dataset in a given run collection."""
@@ -192,11 +214,21 @@ class DatasetRun:
     def __post_init__(self) -> None:
         assert not (self.published and not self.produced)
 
+    def to_summary_dict(self) -> dict[str, bool]:
+        return {
+            "produced": self.produced,
+            "published": self.published,
+        }
+
 
 class DatasetInfo(TypedDict):
     """Information about a given dataset across all runs.
 
     Used to annotate the networkx node dictionary.
+    """
+
+    parent_task: QuantumKey.task_label
+    """The task_label of the task which produced this dataset.
     """
 
     data_id: DataCoordinate
@@ -214,6 +246,21 @@ class DatasetInfo(TypedDict):
     messages: list[str]
     """Diagnostic messages to help disambiguate cursed states.
     """
+
+
+def make_dataset_info_summary_dict(dataset_info: DatasetInfo) -> dict[str, Any]:
+    return {
+        "parent_task": str(dataset_info["parent_task"]),
+        "data_id": dict(dataset_info["data_id"].required),
+        "runs": dict(
+            zip(
+                dataset_info["runs"].keys(),
+                [value.to_summary_dict() for value in dataset_info["runs"].values()],
+            )
+        ),
+        "status": dataset_info["status"],
+        "messages": dataset_info["messages"],
+    }
 
 
 class QuantumProvenanceGraph:
@@ -303,6 +350,7 @@ class QuantumProvenanceGraph:
                 # the quanta.
                 self._xgraph.add_edge(quantum_key, dataset_key)
                 dataset_info = self.get_dataset_info(dataset_key)
+                dataset_info.setdefault("parent_task", quantum_key.task_label)
                 dataset_info.setdefault("data_id", ref.dataId)
                 dataset_info.setdefault("status", "missing")
                 dataset_info.setdefault("messages", [])
@@ -315,7 +363,7 @@ class QuantumProvenanceGraph:
                 if dataset_key.parent_dataset_type_name.endswith("_metadata"):
                     quantum_info["metadata"] = dataset_key
                 if dataset_key.parent_dataset_type_name.endswith("_log"):
-                    quantum_info[quantum_key]["log"] = dataset_key
+                    quantum_info["log"] = dataset_key
             for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
                 dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.required_values)
                 if dataset_key in self._xgraph:
@@ -399,14 +447,15 @@ class QuantumProvenanceGraph:
                         f"to {quantum_run.status!r} in {output_run!r}."
                     )
                 case (_, "blocked"):
-                    pass
+                    new_status = last_status
                 case (_, "metadata_missing"):
                     new_status = "not_attempted"
-                case ("failed", _):
-                    pass
+                case (_, "failed"):
+                    new_status = "failed"
             quantum_info["status"] = new_status
 
     def resolve_duplicates(self, butler: Butler, collections: Sequence[str] | None = None, where: str = ""):
+        # could also call "resolve runs"
         for dataset_type_name in self._datasets:
             for ref in butler.registry.queryDatasets(
                 dataset_type_name,
@@ -427,6 +476,7 @@ class QuantumProvenanceGraph:
                 quantum_info = self.get_quantum_info(quantum_key)
                 for dataset_key in self.iter_outputs_of(quantum_key):
                     dataset_info = self.get_dataset_info(dataset_key)
+                    dataset_info["parent_task"] = quantum_key.task_label
                     published_runs.update(
                         run for run, dataset_run in dataset_info["runs"].items() if dataset_run.published
                     )
@@ -487,27 +537,28 @@ class QuantumProvenanceGraph:
             n_wonky = 0
             n_blocked = 0
             n_failed = 0
-            failed_quanta = {"data_id": {}, "runs": {}, "message": {}}
+            failed_quanta = {"data_id": {}, "runs": {}, "messages": {}}
             recovered_quanta = []
-            wonky_quanta = {"data_id": {}, "runs": {}, "message": {}}
+            wonky_quanta = {"data_id": {}, "runs": {}, "messages": {}}
             for quantum_key in quanta:
                 quantum_info = self.get_quantum_info(quantum_key)
-                if quantum_info["status"] == "successful":
+                quantum_summary = make_quantum_info_summary_dict(quantum_info)
+                if quantum_summary["status"] == "successful":
                     n_successful += 1
-                    if quantum_info["recovered"]:
-                        recovered_quanta.append(quantum_info["data_id"])
-                elif quantum_info["status"] == "wonky":
+                    if quantum_summary["recovered"]:
+                        recovered_quanta.append(quantum_summary["data_id"])
+                elif quantum_summary["status"] == "wonky":
                     n_wonky += 1
-                    wonky_quanta["data_id"].update(quantum_info["data_id"])
-                    wonky_quanta["runs"].update(quantum_info["runs"])
-                    wonky_quanta["message"].update(quantum_info["messages"])
-                elif quantum_info["status"] == "blocked":
+                    wonky_quanta.update({"data_id": quantum_summary["data_id"]})
+                    wonky_quanta.update({"runs": quantum_summary["runs"]})
+                    wonky_quanta.update({"messages": quantum_summary["messages"]})
+                elif quantum_summary["status"] == "blocked":
                     n_blocked += 1
-                elif quantum_info["status"] == "failed":
+                elif quantum_summary["status"] == "failed":
                     n_failed += 1
-                    failed_quanta["data_id"].update(quantum_info["data_id"])
-                    runs = quantum_info["runs"]
-                    failed_quanta["runs"].update(runs)
+                    failed_quanta.update({"data_id": quantum_summary["data_id"]})
+                    runs = quantum_summary["runs"]
+                    failed_quanta.update({"runs": runs})
                     log_key: DatasetKey = self._xgraph.nodes[quantum_key]["log"]
                     if do_store_logs:
                         for run in runs:
@@ -518,11 +569,11 @@ class QuantumProvenanceGraph:
                                     log_key.parent_dataset_type_name, quantum_info["data_id"], collections=run
                                 )
                             except LookupError:
-                                failed_quanta["message"] = []
+                                failed_quanta["messages"] = []
                             except FileNotFoundError:
-                                failed_quanta["message"] = None
+                                failed_quanta["messages"] = None
                             else:
-                                failed_quanta["message"].update(
+                                failed_quanta["messages"].extend(
                                     [record.message for record in log if record.levelno >= logging.ERROR]
                                 )
             result["tasks"][task_label] = {
@@ -541,9 +592,15 @@ class QuantumProvenanceGraph:
             n_unsuccessful = 0
             n_cursed = 0
             unsuccessful_datasets = []
-            cursed_datasets = {"parent_data_id": {}, "runs": {}, "message": {}}
+            cursed_datasets = {
+                "parent_task_name": "",
+                "parent_data_id": {},
+                "runs": {},
+                "messages": [],
+            }
             for dataset_key in datasets:
                 dataset_info = self.get_dataset_info(dataset_key)
+                dataset_summary = make_dataset_info_summary_dict(dataset_info)
                 if dataset_info["status"] == "published":
                     n_published += 1
                 elif dataset_info["status"] == "unpublished":
@@ -552,12 +609,13 @@ class QuantumProvenanceGraph:
                     n_predicted_only += 1
                 elif dataset_info["status"] == "unsuccessful":
                     n_unsuccessful += 1
-                    unsuccessful_datasets.append(dataset_info["data_id"])
+                    unsuccessful_datasets.append(dataset_summary["data_id"])
                 elif dataset_info["status"] == "cursed":
                     n_cursed += 1
-                    cursed_datasets["parent_data_id"].update(dataset_info["data_id"])
-                    cursed_datasets["runs"].update(dataset_info["runs"])
-                    cursed_datasets["message"].update(dataset_info["message"])
+                    cursed_datasets.update({"parent_task_name": dataset_summary["parent_task"]})
+                    cursed_datasets.update({"parent_data_id": dataset_summary["data_id"]})
+                    cursed_datasets.update({"runs": dataset_summary["runs"]})
+                    cursed_datasets.update({"messages": dataset_summary["messages"]})
 
             result["datasets"][dataset_type_name] = {
                 # This is the total number in the original QG.
