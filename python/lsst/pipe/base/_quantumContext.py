@@ -348,7 +348,8 @@ class QuantumContext:
             ``[calexp1, calexp2]``. Like wise if there is a single ref, then
             only a single object need be passed. The same restriction applies
             if dataset is directly a `list` of `~lsst.daf.butler.DatasetRef`
-            or a single `~lsst.daf.butler.DatasetRef`.
+            or a single `~lsst.daf.butler.DatasetRef`. If ``values.NAME`` is
+            None, no output is written.
         dataset : `OutputQuantizedConnection` or `list`[`DatasetRef`] \
                 or `DatasetRef`
             This argument may either be an `InputQuantizedConnection` which
@@ -371,7 +372,8 @@ class QuantumContext:
                     " attributes must be passed as the values to put"
                 )
             for name, refs in dataset:
-                valuesAttribute = getattr(values, name)
+                if (valuesAttribute := getattr(values, name, None)) is None:
+                    continue
                 if isinstance(refs, list | tuple):
                     if len(refs) != len(valuesAttribute):
                         raise ValueError(f"There must be a object to put for every Dataset ref in {name}")

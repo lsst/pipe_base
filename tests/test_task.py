@@ -139,12 +139,6 @@ class AddTwiceTask(AddTask):
 class TaskTestCase(unittest.TestCase):
     """A test case for Task."""
 
-    def setUp(self):
-        self.valDict = dict()
-
-    def tearDown(self):
-        self.valDict = None
-
     def testBasics(self):
         """Test basic construction and use of a task."""
         for addend in (1.1, -3.5):
@@ -324,6 +318,41 @@ class TaskTestCase(unittest.TestCase):
             y = yaml.dump(addMultTask.metadata)
             new_meta = yaml.safe_load(y)
         self.assertEqual(new_meta, addMultTask.metadata)
+
+    def test_annotate_exception(self):
+        """Test annotating failures in the task metadata when a non-Task
+        exception is raised (when there is no `metadata` on the exception).
+        """
+        task = AddMultTask()
+        msg = "something failed!"
+        error = ValueError(msg)
+        with self.assertLogs("addMult", level="ERROR") as cm:
+            pipeBase.AnnotatedPartialOutputsError.annotate(error, task, log=task.log)
+        self.assertIn(msg, "\n".join(cm.output))
+        self.assertEqual(task.metadata["failure"]["message"], msg)
+        self.assertEqual(task.metadata["failure"]["type"], "ValueError")
+        self.assertNotIn("metadata", task.metadata["failure"])
+
+    def test_annotate_task_exception(self):
+        """Test annotating failures in the task metadata when a Task-specific
+        exception is raised.
+        """
+
+        class TestError(pipeBase.AlgorithmError):
+            @property
+            def metadata(self):
+                return {"something": 12345}
+
+        task = AddMultTask()
+        msg = "something failed!"
+        error = TestError(msg)
+        with self.assertLogs("addMult", level="ERROR") as cm:
+            pipeBase.AnnotatedPartialOutputsError.annotate(error, task, log=task.log)
+        self.assertIn(msg, "\n".join(cm.output))
+        self.assertEqual(task.metadata["failure"]["message"], msg)
+        result = "test_task.TaskTestCase.test_annotate_task_exception.<locals>.TestError"
+        self.assertEqual(task.metadata["failure"]["type"], result)
+        self.assertEqual(task.metadata["failure"]["metadata"]["something"], 12345)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

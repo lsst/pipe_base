@@ -122,12 +122,6 @@ def _makePipeline(tasks):
 class PipelineToolsTestCase(unittest.TestCase):
     """A test case for pipelineTools."""
 
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
-
     def testIsOrdered(self):
         """Tests for pipeTools.isPipelineOrdered method."""
         pipeline = _makePipeline([("A", "B", "task1"), ("B", "C", "task2")])

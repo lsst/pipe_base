@@ -31,6 +31,7 @@ from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import lsst.utils
+import lsst.utils.introspection
 import lsst.utils.logging
 from lsst.pex.config import ConfigurableField
 from lsst.utils.timer import logInfo
