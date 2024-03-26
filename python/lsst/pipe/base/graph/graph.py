@@ -53,6 +53,7 @@ from lsst.daf.butler import (
 from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
+from lsst.utils.packages import Packages
 from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
@@ -174,7 +175,10 @@ class QuantumGraph:
         """Build the graph that is used to store the relation between tasks,
         and the graph that holds the relations between quanta
         """
-        self._metadata = metadata
+        # Save packages to metadata
+        self._metadata = dict(metadata) if metadata is not None else {}
+        self._metadata["packages"] = Packages.fromSystem()
+
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structure used to identify relations between
         # DatasetTypeName -> TaskDef.
@@ -757,8 +761,6 @@ class QuantumGraph:
         The mapping is a dynamic view of this object's metadata. Values should
         be able to be serialized in JSON.
         """
-        if self._metadata is None:
-            return None
         return MappingProxyType(self._metadata)
 
     def initInputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
@@ -1246,11 +1248,9 @@ class QuantumGraph:
         if update_graph_id:
             self._buildId = BuildId(f"{time.time()}-{os.getpid()}")
 
-        # Update metadata if present.
-        if self._metadata is not None and metadata_key is not None:
-            metadata = dict(self._metadata)
-            metadata[metadata_key] = run
-            self._metadata = metadata
+        # Update run if given.
+        if metadata_key is not None:
+            self._metadata[metadata_key] = run
 
     @property
     def graphID(self) -> BuildId:

@@ -49,6 +49,7 @@ from lsst.pipe.base import (
 from lsst.pipe.base.graph.quantumNode import BuildId, QuantumNode
 from lsst.pipe.base.tests.util import check_output_run, get_output_refs
 from lsst.utils.introspection import get_full_type_name
+from lsst.utils.packages import Packages
 
 METADATA = {"a": [1, 2, 3]}
 
@@ -498,7 +499,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 uri = tmpFile.name
                 self.qGraph.saveUri(uri)
                 restore = QuantumGraph.loadUri(uri)
-                self.assertEqual(restore.metadata, METADATA)
+                self.assertEqual(restore.metadata, self.qGraph.metadata)
                 self.assertEqual(self.qGraph, restore)
                 nodeNumberId = random.randint(0, len(self.qGraph) - 1)
                 nodeNumber = [n.nodeId for n in self.qGraph][nodeNumberId]
@@ -580,17 +581,22 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertTrue(set(ref.id for ref in output_refs).isdisjoint(set(ref.id for ref in output_refs2)))
 
         # Also update metadata.
-        self.qGraph.updateRun("updated-run2", metadata_key="ouput_run")
+        self.qGraph.updateRun("updated-run2", metadata_key="output_run")
         self.assertEqual(check_output_run(self.qGraph, "updated-run2"), [])
         self.assertEqual(self.qGraph.graphID, graph_id)
         assert self.qGraph.metadata is not None
-        self.assertIn("ouput_run", self.qGraph.metadata)
-        self.assertEqual(self.qGraph.metadata["ouput_run"], "updated-run2")
+        self.assertIn("output_run", self.qGraph.metadata)
+        self.assertEqual(self.qGraph.metadata["output_run"], "updated-run2")
 
         # Update graph ID.
-        self.qGraph.updateRun("updated-run3", metadata_key="ouput_run", update_graph_id=True)
+        self.qGraph.updateRun("updated-run3", metadata_key="output_run", update_graph_id=True)
         self.assertEqual(check_output_run(self.qGraph, "updated-run3"), [])
         self.assertNotEqual(self.qGraph.graphID, graph_id)
+
+    def testMetadataPackage(self) -> None:
+        """Test package versions added to QuantumGraph metadata."""
+        packages = Packages.fromSystem()
+        self.assertEqual(self.qGraph.metadata["packages"], packages)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
