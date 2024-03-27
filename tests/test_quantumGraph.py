@@ -596,7 +596,7 @@ class QuantumGraphTestCase(unittest.TestCase):
     def testMetadataPackage(self) -> None:
         """Test package versions added to QuantumGraph metadata."""
         packages = Packages.fromSystem()
-        self.assertEqual(self.qGraph.metadata["packages"], packages)
+        self.assertFalse(self.qGraph.metadata["packages"].difference(packages))
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

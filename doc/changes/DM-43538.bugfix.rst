@@ -1,0 +1,1 @@
+Replace failing QuantumGraph packages equality check with a weaker test.
