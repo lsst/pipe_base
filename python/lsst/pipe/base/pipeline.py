@@ -597,6 +597,17 @@ class Pipeline:
         return results
 
     @property
+    def task_labels(self) -> Set[str]:
+        """Labels of all tasks in the pipelines.
+
+        For simple pipelines with no imports, iteration over this set will
+        match the order in which tasks are defined in the pipeline file.  In
+        all other cases the order is unspecified but deterministic.  It is not
+        dependency-ordered (use ``to_graph().tasks.keys()`` for that).
+        """
+        return self._pipelineIR.tasks.keys()
+
+    @property
     def subsets(self) -> MappingProxyType[str, set]:
         """Returns a `MappingProxyType` where the keys are the labels of
         labeled subsets in the `Pipeline` and the values are the set of task

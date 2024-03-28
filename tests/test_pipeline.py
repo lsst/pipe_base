@@ -67,6 +67,7 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(task_nodes[1].task_class, AddTask)
         self.assertEqual(task_nodes[0].label, "task0")
         self.assertEqual(task_nodes[1].label, "task1")
+        self.assertEqual(pipeline.task_labels, {"task0", "task1"})
 
     def testModifySubset(self):
         pipeline = makeSimplePipeline(2)
