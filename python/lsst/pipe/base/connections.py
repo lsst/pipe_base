@@ -759,60 +759,50 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         """
         inputDatasetRefs = InputQuantizedConnection()
         outputDatasetRefs = OutputQuantizedConnection()
-        # operate on a reference object and an iterable of names of class
-        # connection attributes
-        for refs, names in zip(
-            (inputDatasetRefs, outputDatasetRefs),
-            (itertools.chain(self.inputs, self.prerequisiteInputs), self.outputs),
-            strict=True,
-        ):
-            # get a name of a class connection attribute
-            for attributeName in names:
-                # get the attribute identified by name
-                attribute = getattr(self, attributeName)
-                # Branch if the attribute dataset type is an input
-                if attribute.name in quantum.inputs:
-                    # if the dataset is marked to load deferred, wrap it in a
-                    # DeferredDatasetRef
-                    quantumInputRefs: list[DatasetRef] | list[DeferredDatasetRef]
-                    if attribute.deferLoad:
-                        quantumInputRefs = [
-                            DeferredDatasetRef(datasetRef=ref) for ref in quantum.inputs[attribute.name]
-                        ]
-                    else:
-                        quantumInputRefs = list(quantum.inputs[attribute.name])
-                    # Unpack arguments that are not marked multiples (list of
-                    # length one)
-                    if not attribute.multiple:
-                        if len(quantumInputRefs) > 1:
-                            raise ScalarError(
-                                "Received multiple datasets "
-                                f"{', '.join(str(r.dataId) for r in quantumInputRefs)} "
-                                f"for scalar connection {attributeName} "
-                                f"({quantumInputRefs[0].datasetType.name}) "
-                                f"of quantum for {quantum.taskName} with data ID {quantum.dataId}."
-                            )
-                        if len(quantumInputRefs) == 0:
-                            continue
-                        setattr(refs, attributeName, quantumInputRefs[0])
-                    else:
-                        # Add to the QuantizedConnection identifier
-                        setattr(refs, attributeName, quantumInputRefs)
-                # Branch if the attribute dataset type is an output
-                elif attribute.name in quantum.outputs:
-                    value = quantum.outputs[attribute.name]
-                    # Unpack arguments that are not marked multiples (list of
-                    # length one)
-                    if not attribute.multiple:
-                        setattr(refs, attributeName, value[0])
-                    else:
-                        setattr(refs, attributeName, value)
-                # Specified attribute is not in inputs or outputs dont know how
-                # to handle, throw
-                else:
-                    raise ValueError(
-                        f"Attribute with name {attributeName} has no counterpart in input quantum"
+
+        # populate inputDatasetRefs from quantum inputs
+        for attributeName in itertools.chain(self.inputs, self.prerequisiteInputs):
+            # get the attribute identified by name
+            attribute = getattr(self, attributeName)
+            # if the dataset is marked to load deferred, wrap it in a
+            # DeferredDatasetRef
+            quantumInputRefs: list[DatasetRef] | list[DeferredDatasetRef]
+            if attribute.deferLoad:
+                quantumInputRefs = [
+                    DeferredDatasetRef(datasetRef=ref) for ref in quantum.inputs[attribute.name]
+                ]
+            else:
+                quantumInputRefs = list(quantum.inputs[attribute.name])
+            # Unpack arguments that are not marked multiples (list of
+            # length one)
+            if not attribute.multiple:
+                if len(quantumInputRefs) > 1:
+                    raise ScalarError(
+                        "Received multiple datasets "
+                        f"{', '.join(str(r.dataId) for r in quantumInputRefs)} "
+                        f"for scalar connection {attributeName} "
+                        f"({quantumInputRefs[0].datasetType.name}) "
+                        f"of quantum for {quantum.taskName} with data ID {quantum.dataId}."
                     )
+                if len(quantumInputRefs) == 0:
+                    continue
+                setattr(inputDatasetRefs, attributeName, quantumInputRefs[0])
+            else:
+                # Add to the QuantizedConnection identifier
+                setattr(inputDatasetRefs, attributeName, quantumInputRefs)
+
+        # populate outputDatasetRefs from quantum outputs
+        for attributeName in self.outputs:
+            # get the attribute identified by name
+            attribute = getattr(self, attributeName)
+            value = quantum.outputs[attribute.name]
+            # Unpack arguments that are not marked multiples (list of
+            # length one)
+            if not attribute.multiple:
+                setattr(outputDatasetRefs, attributeName, value[0])
+            else:
+                setattr(outputDatasetRefs, attributeName, value)
+
         return inputDatasetRefs, outputDatasetRefs
 
     def adjustQuantum(
