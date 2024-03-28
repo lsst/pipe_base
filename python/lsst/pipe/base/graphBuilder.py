@@ -55,15 +55,15 @@ from .quantum_graph_builder import PrerequisiteMissingError  # noqa: F401
 
 # TODO: remove this module on DM-40443.
 warnings.warn(
-    "The graphBuilder module is deprecated in favor of quantum_graph_builder, and will be removed after v26.",
+    "The graphBuilder module is deprecated in favor of quantum_graph_builder, and will be removed after v27.",
     category=FutureWarning,
     stacklevel=find_outside_stacklevel("lsst.pipe.base"),
 )
 
 
 @deprecated(
-    "Deprecated in favor of QuantumGraphBuilder and will be removed after v26.",
-    version="v26.0",
+    "Deprecated in favor of QuantumGraphBuilder and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 class GraphBuilder:

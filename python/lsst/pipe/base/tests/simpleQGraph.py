@@ -186,7 +186,7 @@ class AddTaskFactoryMock(TaskFactory):
         if isinstance(task_node, TaskDef):
             # TODO: remove support on DM-40443.
             warnings.warn(
-                "Passing TaskDef to TaskFactory is deprecated and will not be supported after v26.",
+                "Passing TaskDef to TaskFactory is deprecated and will not be supported after v27.",
                 FutureWarning,
                 find_outside_stacklevel("lsst.pipe.base"),
             )
@@ -213,7 +213,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskD
         The pipeline whose dataset types should be registered, as a `.Pipeline`
         instance, `.PipelineGraph` instance, or iterable of `.TaskDef`
         instances.  Support for `.TaskDef` is deprecated and will be removed
-        after v26.
+        after v27.
     """
     match pipeline:
         case PipelineGraph() as pipeline_graph:
@@ -222,7 +222,7 @@ def registerDatasetTypes(registry: Registry, pipeline: Pipeline | Iterable[TaskD
             pipeline_graph = pipeline.to_graph()
         case _:
             warnings.warn(
-                "Passing TaskDefs is deprecated and will not be supported after v26.",
+                "Passing TaskDefs is deprecated and will not be supported after v27.",
                 category=FutureWarning,
                 stacklevel=find_outside_stacklevel("lsst.pipe.base"),
             )
@@ -329,7 +329,7 @@ def populateButler(
     - registers dataset types which are defined by pipeline
     - create dimensions data for (instrument, detector)
     - adds datasets based on ``datasetTypes`` dictionary, if dictionary is
-      missing then a single dataset with type "add_dataset0" is added
+      missing then a single dataset with type "add_dataset0" is added.
 
     All datasets added to butler have ``dataId={instrument=instrument,
     detector=0}`` where ``instrument`` is extracted from pipeline, "INSTR" is
@@ -339,7 +339,7 @@ def populateButler(
 
     Parameters
     ----------
-    pipeline : `.Pipeline` or `.pipeline_graph.PipelineGraph`.
+    pipeline : `.Pipeline` or `.pipeline_graph.PipelineGraph`
         Pipeline or pipeline graph instance.
     butler : `~lsst.daf.butler.Butler`
         Data butler instance.

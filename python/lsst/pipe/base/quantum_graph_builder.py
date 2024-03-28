@@ -88,8 +88,8 @@ class QuantumGraphBuilderError(Exception):
 # TODO: remove class and switch downstream inheritance to just
 # QuantumGraphBuilderError on DM-40443.
 @deprecated(
-    "Deprecated in favor of QuantumGraphBuilderError and will be removed after v26.",
-    version="v26.0",
+    "Deprecated in favor of QuantumGraphBuilderError and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 class GraphBuilderError(QuantumGraphBuilderError):
