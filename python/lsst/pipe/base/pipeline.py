@@ -860,8 +860,8 @@ class Pipeline:
 
     # TODO: remove on DM-40443.
     @deprecated(
-        reason="Deprecated in favor of to_graph; will be removed after v26.",
-        version="v26.0",
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
         category=FutureWarning,
     )
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
@@ -912,8 +912,8 @@ class Pipeline:
 
     # TODO: remove on DM-40443.
     @deprecated(
-        reason="Deprecated in favor of to_graph; will be removed after v26.",
-        version="v26.0",
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
         category=FutureWarning,
     )
     def __iter__(self) -> Generator[TaskDef, None, None]:
@@ -921,8 +921,8 @@ class Pipeline:
 
     # TODO: remove on DM-40443.
     @deprecated(
-        reason="Deprecated in favor of to_graph; will be removed after v26.",
-        version="v26.0",
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
         category=FutureWarning,
     )
     def __getitem__(self, item: str) -> TaskDef:
@@ -956,8 +956,8 @@ class Pipeline:
 
 # TODO: remove on DM-40443.
 @deprecated(
-    reason="TaskDatasetTypes has been replaced by PipelineGraph, and will be removed after v26.",
-    version="v26.0",
+    reason="TaskDatasetTypes has been replaced by PipelineGraph, and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 @dataclass(frozen=True)
@@ -1266,8 +1266,8 @@ class TaskDatasetTypes:
 
 # TODO: remove on DM-40443.
 @deprecated(
-    reason="PipelineDatasetTypes has been replaced by PipelineGraph, and will be removed after v26.",
-    version="v26.0",
+    reason="PipelineDatasetTypes has been replaced by PipelineGraph, and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 @dataclass(frozen=True)

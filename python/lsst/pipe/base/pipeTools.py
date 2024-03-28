@@ -51,15 +51,15 @@ if TYPE_CHECKING:
 # TODO: remove this module on DM-40443.
 warnings.warn(
     "The pipeTools module and its contents are deprecated in favor of PipelineGraph, and will be removed "
-    "after v26.",
+    "after v27.",
     category=FutureWarning,
     stacklevel=find_outside_stacklevel("lsst.pipe.base"),
 )
 
 
 @deprecated(
-    "Deprecated and will be removed after v26.",
-    version="v26.0",
+    "Deprecated and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 class MissingTaskFactoryError(Exception):
@@ -69,8 +69,8 @@ class MissingTaskFactoryError(Exception):
 
 
 @deprecated(
-    "Deprecated in favor of PipelineGraph methods and will be removed after v26.",
-    version="v26.0",
+    "Deprecated in favor of PipelineGraph methods and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskFactory | None = None) -> bool:
@@ -117,8 +117,8 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
 
 
 @deprecated(
-    "Deprecated in favor of PipelineGraph methods and will be removed after v26.",
-    version="v26.0",
+    "Deprecated in favor of PipelineGraph methods and will be removed after v27.",
+    version="v27.0",
     category=FutureWarning,
 )
 def orderPipeline(pipeline: Pipeline | Iterable[TaskDef]) -> list[TaskDef]:

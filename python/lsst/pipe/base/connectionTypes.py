@@ -108,8 +108,8 @@ class BaseConnection:
 
     # TODO: remove on DM-40443.
     @deprecated_sphinx(
-        reason="Deprecated in favor of PipelineGraph, and will be removed after v26.",
-        version="26.0",
+        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
+        version="27.0",
         category=FutureWarning,
     )
     def makeDatasetType(
@@ -178,8 +178,8 @@ class DimensionedConnection(BaseConnection):
 
     # TODO: remove on DM-40443.
     @deprecated_sphinx(
-        reason="Deprecated in favor of PipelineGraph, and will be removed after v26.",
-        version="26.0",
+        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
+        version="27.0",
         category=FutureWarning,
     )
     def makeDatasetType(
