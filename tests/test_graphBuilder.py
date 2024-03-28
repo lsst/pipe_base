@@ -34,7 +34,7 @@ import unittest
 import lsst.utils.tests
 from lsst.daf.butler.registry import UserExpressionError
 from lsst.pipe.base import QuantumGraph
-from lsst.pipe.base.graphBuilder import DatasetQueryConstraintVariant
+from lsst.pipe.base.all_dimensions_quantum_graph_builder import DatasetQueryConstraintVariant
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
 

@@ -30,6 +30,7 @@
 import copy
 import io
 import logging
+import pickle
 import textwrap
 import unittest
 from typing import Any
@@ -156,6 +157,10 @@ class PipelineGraphTestCase(unittest.TestCase):
             roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=False)
 
+    def test_unresolved_pickle(self) -> None:
+        """Test that unresolved PipelineGraph objects can be pickled."""
+        self.check_make_xgraph(pickle.loads(pickle.dumps(self.graph)), resolved=False)
+
     def test_unresolved_deferred_import_io(self) -> None:
         """Test round-tripping an unresolved PipelineGraph through
         serialization, without immediately importing tasks on read.
@@ -165,6 +170,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream.seek(0)
         roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=False, imported_and_configured=False)
+        self.check_make_xgraph(
+            pickle.loads(pickle.dumps(roundtripped)), resolved=False, imported_and_configured=False
+        )
         # Check that we can still resolve the graph without importing tasks.
         roundtripped.resolve(MockRegistry(self.dimensions, {}))
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
@@ -222,6 +230,11 @@ class PipelineGraphTestCase(unittest.TestCase):
             roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=True)
 
+    def test_resolved_pickle(self) -> None:
+        """Test that resolved PipelineGraph objects can be pickled."""
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        self.check_make_xgraph(pickle.loads(pickle.dumps(self.graph)), resolved=True)
+
     def test_resolved_deferred_import_io(self) -> None:
         """Test round-tripping a resolved PipelineGraph through serialization,
         without immediately importing tasks on read.
@@ -232,6 +245,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream.seek(0)
         roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
+        self.check_make_xgraph(
+            pickle.loads(pickle.dumps(roundtripped)), resolved=True, imported_and_configured=False
+        )
         roundtripped._import_and_configure(TaskImportMode.REQUIRE_CONSISTENT_EDGES)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 

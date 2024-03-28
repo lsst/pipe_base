@@ -58,6 +58,7 @@ from networkx.drawing.nx_agraph import write_dot
 
 from ..connections import iterConnections
 from ..pipeline import TaskDef
+from ..pipeline_graph import PipelineGraph
 from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
@@ -290,6 +291,47 @@ class QuantumGraph:
             self._globalInitOutputRefs = list(globalInitOutputs)
         if registryDatasetTypes is not None:
             self._registryDatasetTypes = list(registryDatasetTypes)
+
+        # PipelineGraph is current constructed on first use.
+        # TODO DM-40442: use PipelineGraph instead of TaskDef
+        # collections.
+        self._pipeline_graph: PipelineGraph | None = None
+
+    @property
+    def pipeline_graph(self) -> PipelineGraph:
+        """A graph representation of the tasks and dataset types in the quantum
+        graph.
+        """
+        if self._pipeline_graph is None:
+            # Construct into a temporary for strong exception safety.
+            pipeline_graph = PipelineGraph()
+            for task_def in self._taskToQuantumNode.keys():
+                pipeline_graph.add_task(
+                    task_def.label, task_def.taskClass, task_def.config, connections=task_def.connections
+                )
+            dataset_types = {dataset_type.name: dataset_type for dataset_type in self._registryDatasetTypes}
+            pipeline_graph.resolve(dimensions=self._universe, dataset_types=dataset_types)
+            self._pipeline_graph = pipeline_graph
+        return self._pipeline_graph
+
+    def get_task_quanta(self, label: str) -> Mapping[uuid.UUID, Quantum]:
+        """Return the quanta associated with the given task label.
+
+        Parameters
+        ----------
+        label : `str`
+            Task label.
+
+        Returns
+        -------
+        quanta : `~collections.abc.Mapping` [ uuid.UUID, `Quantum` ]
+            Mapping from quantum ID to quantum.  Empty if ``label`` does not
+            correspond to a task in this graph.
+        """
+        task_def = self.findTaskDefByLabel(label)
+        if not task_def:
+            return {}
+        return {node.nodeId: node.quantum for node in self.getNodesForTask(task_def)}
 
     @property
     def taskGraph(self) -> nx.DiGraph:
@@ -949,7 +991,7 @@ class QuantumGraph:
         taskDefMap = {}
         headerData: dict[str, Any] = {}
 
-        # Store the QauntumGraph BuildId, this will allow validating BuildIds
+        # Store the QuantumGraph BuildId, this will allow validating BuildIds
         # at load time, prior to loading any QuantumNodes. Name chosen for
         # unlikely conflicts.
         headerData["GraphBuildID"] = self.graphID

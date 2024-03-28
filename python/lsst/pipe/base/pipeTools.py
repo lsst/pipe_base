@@ -33,8 +33,12 @@ from __future__ import annotations
 # No one should do import * from this module
 __all__ = ["isPipelineOrdered", "orderPipeline"]
 
+import warnings
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
+
+from deprecated.sphinx import deprecated
+from lsst.utils.introspection import find_outside_stacklevel
 
 from .pipeline import Pipeline, TaskDef
 
@@ -44,13 +48,31 @@ from .pipeline_graph import DuplicateOutputError, PipelineDataCycleError, Pipeli
 if TYPE_CHECKING:
     from .taskFactory import TaskFactory
 
+# TODO: remove this module on DM-40443.
+warnings.warn(
+    "The pipeTools module and its contents are deprecated in favor of PipelineGraph, and will be removed "
+    "after v27.",
+    category=FutureWarning,
+    stacklevel=find_outside_stacklevel("lsst.pipe.base"),
+)
 
+
+@deprecated(
+    "Deprecated and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 class MissingTaskFactoryError(Exception):
     """Exception raised when client fails to provide TaskFactory instance."""
 
     pass
 
 
+@deprecated(
+    "Deprecated in favor of PipelineGraph methods and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskFactory | None = None) -> bool:
     """Check whether tasks in pipeline are correctly ordered.
 
@@ -94,6 +116,11 @@ def isPipelineOrdered(pipeline: Pipeline | Iterable[TaskDef], taskFactory: TaskF
     return True
 
 
+@deprecated(
+    "Deprecated in favor of PipelineGraph methods and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 def orderPipeline(pipeline: Pipeline | Iterable[TaskDef]) -> list[TaskDef]:
     """Re-order tasks in pipeline to satisfy data dependencies.
 

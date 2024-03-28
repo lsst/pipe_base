@@ -31,7 +31,7 @@ algorithm.
 
 from __future__ import annotations
 
-__all__ = ("AllDimensionsQuantumGraphBuilder",)
+__all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
 from collections.abc import Iterator, Mapping
@@ -71,7 +71,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         in-place with the given butler (any existing resolution is ignored).
     butler : `lsst.daf.butler.Butler`
         Client for the data repository.  Should be read-only.
-    where : `str`
+    where : `str`, optional
         Butler expression language constraint to apply to all data IDs.
     dataset_query_constraint : `DatasetQueryConstraintVariant`, optional
         Specification of which overall-input datasets should be used to
@@ -107,7 +107,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         pipeline_graph: PipelineGraph,
         butler: Butler,
         *,
-        where: str,
+        where: str = "",
         dataset_query_constraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         bind: Mapping[str, Any] | None = None,
         **kwargs: Any,

@@ -35,6 +35,7 @@ import dataclasses
 from collections.abc import Callable, Iterable, Sequence
 from typing import ClassVar
 
+from deprecated.sphinx import deprecated as deprecated_sphinx  # avoid clash with BaseConnection.deprecated
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
 from lsst.utils.introspection import find_outside_stacklevel
 
@@ -105,6 +106,12 @@ class BaseConnection:
                 f"Connection {self.varName!r} of {klass.__name__} has been removed."
             ) from None
 
+    # TODO: remove on DM-40443.
+    @deprecated_sphinx(
+        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
+        version="27.0",
+        category=FutureWarning,
+    )
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
@@ -169,6 +176,12 @@ class DimensionedConnection(BaseConnection):
         if not isinstance(self.dimensions, Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
 
+    # TODO: remove on DM-40443.
+    @deprecated_sphinx(
+        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
+        version="27.0",
+        category=FutureWarning,
+    )
     def makeDatasetType(
         self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
     ) -> DatasetType:
