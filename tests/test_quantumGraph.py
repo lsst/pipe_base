@@ -258,6 +258,7 @@ class QuantumGraphTestCase(unittest.TestCase):
                 )
             quantumMap[taskDef] = quantumSet
         self.tasks = tasks
+        self.quanta_by_task_label = {task_def.label: set(quanta) for task_def, quanta in quantumMap.items()}
         self.quantumMap = quantumMap
         self.packagesDSType = DatasetType("packages", universe.empty, storageClass="Packages")
         dataset_types.add(self.packagesDSType)
@@ -604,6 +605,11 @@ class QuantumGraphTestCase(unittest.TestCase):
         """Test package versions added to QuantumGraph metadata."""
         packages = Packages.fromSystem()
         self.assertFalse(self.qGraph.metadata["packages"].difference(packages))
+
+    def test_get_task_quanta(self) -> None:
+        for task_label in self.qGraph.pipeline_graph.tasks.keys():
+            quanta = self.qGraph.get_task_quanta(task_label)
+            self.assertCountEqual(quanta.values(), self.quanta_by_task_label[task_label])
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

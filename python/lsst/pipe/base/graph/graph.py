@@ -314,6 +314,25 @@ class QuantumGraph:
             self._pipeline_graph = pipeline_graph
         return self._pipeline_graph
 
+    def get_task_quanta(self, label: str) -> Mapping[uuid.UUID, Quantum]:
+        """Return the quanta associated with the given task label.
+
+        Parameters
+        ----------
+        label : `str`
+            Task label.
+
+        Returns
+        -------
+        quanta : `~collections.abc.Mapping` [ uuid.UUID, `Quantum` ]
+            Mapping from quantum ID to quantum.  Empty if ``label`` does not
+            correspond to a task in this graph.
+        """
+        task_def = self.findTaskDefByLabel(label)
+        if not task_def:
+            return {}
+        return {node.nodeId: node.quantum for node in self.getNodesForTask(task_def)}
+
     @property
     def taskGraph(self) -> nx.DiGraph:
         """A graph representing the relations between the tasks inside
