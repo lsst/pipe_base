@@ -298,6 +298,13 @@ class Input(BaseInput):
         spatial overlaps.  This option has no effect when the connection is not
         an overall input of the pipeline (or subset thereof) for which a graph
         is being created, and it never affects the ordering of quanta.
+    deferBinding : `bool`, optional
+        If `True`, the dataset will not be automatically included in
+        the pipeline graph, ``deferGraphConstraint`` is implied.
+        The custom QuantumGraphBuilder is required to bind it and add a
+        corresponding edge to the pipeline graph.
+        This option allows to have the same dataset type as both
+        input and output of a quantum.
 
     Raises
     ------
@@ -309,6 +316,8 @@ class Input(BaseInput):
     """
 
     deferGraphConstraint: bool = False
+
+    deferBinding: bool = False
 
     _connection_type_set: ClassVar[str] = "inputs"
 

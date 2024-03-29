@@ -527,6 +527,7 @@ class TaskNode:
         inputs = {
             name: ReadEdge._from_connection_map(key, name, data.connection_map)
             for name in data.connections.inputs
+            if not getattr(data.connections, name).deferBinding
         }
         init_outputs = {
             name: WriteEdge._from_connection_map(init_key, name, data.connection_map)
