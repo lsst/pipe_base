@@ -33,7 +33,7 @@ import textwrap
 import unittest
 
 import lsst.utils.tests
-from lsst.pipe.base import Pipeline, PipelineDatasetTypes, TaskDef
+from lsst.pipe.base import Pipeline, TaskDef
 from lsst.pipe.base.pipelineIR import LabeledSubset
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
 
@@ -60,13 +60,14 @@ class PipelineTestCase(unittest.TestCase):
         """Testing constructor with initial data."""
         pipeline = makeSimplePipeline(2)
         self.assertEqual(len(pipeline), 2)
-        expandedPipeline = list(pipeline.toExpandedPipeline())
-        self.assertEqual(expandedPipeline[0].taskName, "lsst.pipe.base.tests.simpleQGraph.AddTask")
-        self.assertEqual(expandedPipeline[1].taskName, "lsst.pipe.base.tests.simpleQGraph.AddTask")
-        self.assertEqual(expandedPipeline[0].taskClass, AddTask)
-        self.assertEqual(expandedPipeline[1].taskClass, AddTask)
-        self.assertEqual(expandedPipeline[0].label, "task0")
-        self.assertEqual(expandedPipeline[1].label, "task1")
+        pipeline_graph = pipeline.to_graph()
+        pipeline_graph.sort()
+        task_nodes = list(pipeline_graph.tasks.values())
+        self.assertEqual(task_nodes[0].task_class, AddTask)
+        self.assertEqual(task_nodes[1].task_class, AddTask)
+        self.assertEqual(task_nodes[0].label, "task0")
+        self.assertEqual(task_nodes[1].label, "task1")
+        self.assertEqual(pipeline.task_labels, {"task0", "task1"})
 
     def testModifySubset(self):
         pipeline = makeSimplePipeline(2)
@@ -148,13 +149,13 @@ class PipelineTestCase(unittest.TestCase):
         )
         # verify that parameters are used in expanding a pipeline
         pipeline = Pipeline.fromString(pipeline_str)
-        expandedPipeline = list(pipeline.toExpandedPipeline())
-        self.assertEqual(expandedPipeline[0].config.addend, 5)
+        pipeline_graph = pipeline.to_graph()
+        self.assertEqual(pipeline_graph.tasks["add"].config.addend, 5)
 
         # verify that a parameter can be overridden on the "command line"
         pipeline.addConfigOverride("parameters", "testValue", 14)
-        expandedPipeline = list(pipeline.toExpandedPipeline())
-        self.assertEqual(expandedPipeline[0].config.addend, 14)
+        pipeline_graph = pipeline.to_graph()
+        self.assertEqual(pipeline_graph.tasks["add"].config.addend, 14)
 
         # verify that parameters does not support files or python overrides
         with self.assertRaises(ValueError):
@@ -167,21 +168,6 @@ class PipelineTestCase(unittest.TestCase):
         dump = str(pipeline)
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
-
-    def test_initOutputNames(self):
-        """Test for PipelineDatasetTypes.initOutputNames method."""
-        pipeline = makeSimplePipeline(3)
-        dsType = set(PipelineDatasetTypes.initOutputNames(pipeline))
-        expected = {
-            "packages",
-            "add_init_output1",
-            "add_init_output2",
-            "add_init_output3",
-            "task0_config",
-            "task1_config",
-            "task2_config",
-        }
-        self.assertEqual(dsType, expected)
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

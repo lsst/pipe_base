@@ -31,13 +31,14 @@ __all__ = ("PipelineGraph",)
 import gzip
 import itertools
 import json
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
-from lsst.daf.butler import DataCoordinate, DataId, DimensionGroup, DimensionUniverse, Registry
+from lsst.daf.butler import DataCoordinate, DataId, DatasetType, DimensionGroup, DimensionUniverse, Registry
+from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 from ._dataset_types import DatasetTypeNode
@@ -260,6 +261,46 @@ class PipelineGraph:
         # that mutable state is copied.
         return self.copy()
 
+    def diff_tasks(self, other: PipelineGraph) -> list[str]:
+        """Compare two pipeline graphs.
+
+        This only compares graph structure and task classes (including their
+        edges).  It does *not* compare full configuration (which is subject to
+        spurious differences due to import-cache state), dataset type
+        resolutions, or sort state.
+
+        Parameters
+        ----------
+        other : `PipelineGraph`
+            Graph to compare to.
+
+        Returns
+        -------
+        differences : `list` [ `str` ]
+            List of string messages describing differences between the
+            pipelines.  If empty, the graphs have the same tasks and
+            connections.
+        """
+        messages: list[str] = []
+        common_labels: Set[str]
+        if self.tasks.keys() != other.tasks.keys():
+            common_labels = self.tasks.keys() & other.tasks.keys()
+            messages.append(
+                f"Pipelines have different tasks: A & ~B = {list(self.tasks.keys() - common_labels)}, "
+                f"B & ~A = {list(other.tasks.keys() - common_labels)}."
+            )
+        else:
+            common_labels = self.tasks.keys()
+        for label in common_labels:
+            a = self.tasks[label]
+            b = other.tasks[label]
+            if a.task_class != b.task_class:
+                messages.append(
+                    f"Task {label!r} has class {a.task_class_name} in A, " f"but {b.task_class_name} in B."
+                )
+            messages.extend(a.diff_edges(b))
+        return messages
+
     def producing_edge_of(self, dataset_type_name: str) -> WriteEdge | None:
         """Return the `WriteEdge` that links the producing task to the named
         dataset type.
@@ -465,7 +506,12 @@ class PipelineGraph:
             for edge in iterable
         }
 
-    def resolve(self, registry: Registry) -> None:
+    def resolve(
+        self,
+        registry: Registry | None = None,
+        dimensions: DimensionUniverse | None = None,
+        dataset_types: Mapping[str, DatasetType] | None = None,
+    ) -> None:
         """Resolve all dimensions and dataset types and check them for
         consistency.
 
@@ -473,16 +519,22 @@ class PipelineGraph:
 
         Parameters
         ----------
-        registry : `lsst.daf.butler.Registry`
-            Client for the data repository to resolve against.
+        registry : `lsst.daf.butler.Registry`, optional
+            Client for the data repository to resolve against.  If not
+            provided, both ``dimensions`` and ``dataset_types`` must be.
+        dimensions : `lsst.daf.butler.DimensionUniverse`, optional
+            Definitions for all dimensions.
+        dataset_types : `~collection.abc.Mapping` [ `str`, \
+                `~lsst.daf.butler.DatasetType` ], optional
+            Mapping of dataset types to consider registered.
 
         Notes
         -----
-        The `universe` attribute is set to ``registry.dimensions`` and used to
-        set all `TaskNode.dimensions` attributes.  Dataset type nodes are
-        resolved by first looking for a registry definition, then using the
-        producing task's definition, then looking for consistency between all
-        consuming task definitions.
+        The `universe` attribute is set to ``dimensions`` and used to set all
+        `TaskNode.dimensions` attributes.  Dataset type nodes are resolved by
+        first looking for a registry definition, then using the producing
+        task's definition, then looking for consistency between all consuming
+        task definitions.
 
         Raises
         ------
@@ -504,19 +556,40 @@ class PipelineGraph:
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
         """
+        get_registered: Callable[[str], DatasetType | None]
+        if registry is None:
+            if dimensions is None or dataset_types is None:
+                raise PipelineGraphError(
+                    "Either 'registry' or both 'dimensions' and 'dataset_types' "
+                    "must be passed to PipelineGraph.resolve."
+                )
+
+        else:
+            if dimensions is None:
+                dimensions = registry.dimensions
+
+            def get_registered(name: str) -> DatasetType | None:
+                try:
+                    return registry.getDatasetType(name)
+                except MissingDatasetTypeError:
+                    return None
+
+        if dataset_types is not None:
+            # Ruff seems confused about whether this is used below; it is!
+            get_registered = dataset_types.get
         node_key: NodeKey
         updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
         for node_key, node_state in self._xgraph.nodes.items():
             match node_key.node_type:
                 case NodeType.TASK:
                     task_node: TaskNode = node_state["instance"]
-                    new_task_node = task_node._resolved(registry.dimensions)
+                    new_task_node = task_node._resolved(dimensions)
                     if new_task_node is not task_node:
                         updates[node_key] = new_task_node
                 case NodeType.DATASET_TYPE:
                     dataset_type_node: DatasetTypeNode | None = node_state["instance"]
                     new_dataset_type_node = DatasetTypeNode._from_edges(
-                        node_key, self._xgraph, registry, previous=dataset_type_node
+                        node_key, self._xgraph, get_registered, dimensions, previous=dataset_type_node
                     )
                     # Usage of `is`` here is intentional; `_from_edges` returns
                     # `previous=dataset_type_node` if it can determine that it
@@ -533,7 +606,7 @@ class PipelineGraph:
                 "Error during dataset type resolution has left the graph in an inconsistent state."
             ) from err
         self.sort()
-        self._universe = registry.dimensions
+        self._universe = dimensions
 
     ###########################################################################
     #
@@ -552,21 +625,23 @@ class PipelineGraph:
 
     def add_task(
         self,
-        label: str,
+        label: str | None,
         task_class: type[PipelineTask],
-        config: PipelineTaskConfig,
+        config: PipelineTaskConfig | None = None,
         connections: PipelineTaskConnections | None = None,
     ) -> TaskNode:
         """Add a new task to the graph.
 
         Parameters
         ----------
-        label : `str`
-            Label for the task in the pipeline.
+        label : `str` or `None`
+            Label for the task in the pipeline.  If `None`, `Task._DefaultName`
+            is used.
         task_class : `type` [ `PipelineTask` ]
             Class object for the task.
-        config : `PipelineTaskConfig`
-            Configuration for the task.
+        config : `PipelineTaskConfig`, optional
+            Configuration for the task.  If not provided, a default-constructed
+            instance of ``task_class.ConfigClass`` is used.
         connections : `PipelineTaskConnections`, optional
             Object that describes the dataset types used by the task.  If not
             provided, one will be constructed from the given configuration.  If
@@ -600,6 +675,10 @@ class PipelineGraph:
         it references and marks the graph as unsorted.  It is most effiecient
         to add all tasks up front and only then resolve and/or sort the graph.
         """
+        if label is None:
+            label = task_class._DefaultName
+        if config is None:
+            config = task_class.ConfigClass()
         task_node = TaskNode._from_imported_data(
             key=NodeKey(NodeType.TASK, label),
             init_key=NodeKey(NodeType.TASK_INIT, label),
@@ -1458,7 +1537,7 @@ class PipelineGraph:
                 config=node.config,
                 taskClass=node.task_class,
                 label=node.label,
-                connections=node._get_imported_data().connections,
+                connections=node.get_connections(),
             )
 
     def _init_from_args(

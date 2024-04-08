@@ -752,10 +752,11 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
         Returns
         -------
-        retVal : `tuple` of (`InputQuantizedConnection`,
-            `OutputQuantizedConnection`) Namespaces mapping attribute names
+        retVal : `tuple` of (`InputQuantizedConnection`, \
+                `OutputQuantizedConnection`)
+            Namespaces mapping attribute names
             (identifiers of connections) to butler references defined in the
-            input `lsst.daf.butler.Quantum`.
+            input `~lsst.daf.butler.Quantum`.
         """
         inputDatasetRefs = InputQuantizedConnection()
         outputDatasetRefs = OutputQuantizedConnection()

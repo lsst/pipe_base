@@ -132,6 +132,47 @@ class TaskMappingView(MappingView[TaskNode]):
 
     _NODE_TYPE = NodeType.TASK
 
+    def between(self, first: str | None = None, last: str | None = None) -> Mapping[str, TaskNode]:
+        """Return a mapping whose tasks are between a range of tasks.
+
+        Parameters
+        ----------
+        first : `str`, optional
+            Label of the first task to include, inclusive.
+        last : `str`, optional
+            Label of the last task to include, inclusive.
+
+        Returns
+        -------
+        between : `~collections.abc.Mapping` [ `str`, `TaskNode` ]
+            Tasks that are downstream of ``first`` and upstream of ``last``.
+            If either ``first`` or ``last`` is `None` (default), that side
+            of the result is unbounded.  Tasks that have no dependency
+            relationship to either task are not included, and if both bounds
+            are provided, included tasks must have the right relationship with
+            both bounding tasks.
+        """
+        # This is definitely not the fastest way to compute this subset, but
+        # it's a very simple one (given what networkx provides), and pipeline
+        # graphs are never *that* big.
+        if first is not None:
+            first_key = NodeKey(NodeType.TASK, first)
+            a: set[NodeKey] = set(networkx.dag.descendants(self._parent_xgraph, first_key))
+            a.add(first_key)
+        else:
+            a = set(self._parent_xgraph.nodes.keys())
+        if last is not None:
+            last_key = NodeKey(NodeType.TASK, last)
+            b: set[NodeKey] = set(networkx.dag.ancestors(self._parent_xgraph, last_key))
+            b.add(last_key)
+        else:
+            b = set(self._parent_xgraph.nodes.keys())
+        return {
+            key.name: self._parent_xgraph.nodes[key]["instance"]
+            for key in a & b
+            if key.node_type is NodeType.TASK
+        }
+
 
 class TaskInitMappingView(MappingView[TaskInitNode]):
     """A mapping view of the nodes representing task initialization in a

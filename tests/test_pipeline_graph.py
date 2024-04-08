@@ -30,6 +30,7 @@
 import copy
 import io
 import logging
+import pickle
 import textwrap
 import unittest
 from typing import Any
@@ -156,6 +157,10 @@ class PipelineGraphTestCase(unittest.TestCase):
             roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=False)
 
+    def test_unresolved_pickle(self) -> None:
+        """Test that unresolved PipelineGraph objects can be pickled."""
+        self.check_make_xgraph(pickle.loads(pickle.dumps(self.graph)), resolved=False)
+
     def test_unresolved_deferred_import_io(self) -> None:
         """Test round-tripping an unresolved PipelineGraph through
         serialization, without immediately importing tasks on read.
@@ -165,6 +170,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream.seek(0)
         roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=False, imported_and_configured=False)
+        self.check_make_xgraph(
+            pickle.loads(pickle.dumps(roundtripped)), resolved=False, imported_and_configured=False
+        )
         # Check that we can still resolve the graph without importing tasks.
         roundtripped.resolve(MockRegistry(self.dimensions, {}))
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
@@ -222,6 +230,11 @@ class PipelineGraphTestCase(unittest.TestCase):
             roundtripped = PipelineGraph._read_uri(filename)
         self.check_make_xgraph(roundtripped, resolved=True)
 
+    def test_resolved_pickle(self) -> None:
+        """Test that resolved PipelineGraph objects can be pickled."""
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        self.check_make_xgraph(pickle.loads(pickle.dumps(self.graph)), resolved=True)
+
     def test_resolved_deferred_import_io(self) -> None:
         """Test round-tripping a resolved PipelineGraph through serialization,
         without immediately importing tasks on read.
@@ -232,6 +245,9 @@ class PipelineGraphTestCase(unittest.TestCase):
         stream.seek(0)
         roundtripped = PipelineGraph._read_stream(stream, import_mode=TaskImportMode.DO_NOT_IMPORT)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=False)
+        self.check_make_xgraph(
+            pickle.loads(pickle.dumps(roundtripped)), resolved=True, imported_and_configured=False
+        )
         roundtripped._import_and_configure(TaskImportMode.REQUIRE_CONSISTENT_EDGES)
         self.check_make_xgraph(roundtripped, resolved=True, imported_and_configured=True)
 
@@ -845,15 +861,21 @@ class PipelineGraphTestCase(unittest.TestCase):
         """Tests for adding and removing tasks and task subsets from a
         PipelineGraph.
         """
+        original = self.graph.copy()
         # Can't remove a task while it's still in a subset.
         with self.assertRaises(PipelineGraphError):
             self.graph.remove_tasks(["b"], drop_from_subsets=False)
+        self.assertEqual(original.diff_tasks(self.graph), [])
         # ...unless you remove the subset.
         self.graph.remove_task_subset("only_b")
         self.assertFalse(self.graph.task_subsets)
         ((b, referencing_subsets),) = self.graph.remove_tasks(["b"], drop_from_subsets=False)
         self.assertFalse(referencing_subsets)
         self.assertEqual(self.graph.tasks.keys(), {"a"})
+        self.assertEqual(
+            original.diff_tasks(self.graph),
+            ["Pipelines have different tasks: A & ~B = ['b'], B & ~A = []."],
+        )
         # Add that task back in.
         self.graph.add_task_nodes([b])
         self.assertEqual(self.graph.tasks.keys(), {"a", "b"})
@@ -880,6 +902,7 @@ class PipelineGraphTestCase(unittest.TestCase):
 
     def test_reconfigure(self) -> None:
         """Tests for PipelineGraph.reconfigure."""
+        original = self.graph.copy()
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.b_config.outputs["output1"].storage_class = "TaskMetadata"
         with self.assertRaises(ValueError):
@@ -892,6 +915,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         with self.assertRaises(EdgesChangedError):
             self.graph.reconfigure_tasks(b=self.b_config, check_edges_unchanged=True)
         self.check_base_accessors(self.graph)
+        self.assertEqual(original.diff_tasks(self.graph), [])
         # Make a change that does affect edges; this will unresolve most
         # dataset types.
         self.graph.reconfigure_tasks(b=self.b_config)
@@ -899,6 +923,13 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertFalse(self.graph.dataset_types.is_resolved("output_1"))
         self.assertFalse(self.graph.dataset_types.is_resolved("schema"))
         self.assertFalse(self.graph.dataset_types.is_resolved("intermediate_1"))
+        self.assertEqual(
+            original.diff_tasks(self.graph),
+            [
+                "Output b.output1 has storage class '_mock_StructuredDataDict' in A, "
+                "but '_mock_TaskMetadata' in B."
+            ],
+        )
         # Resolving again will pick up the new storage class
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertEqual(

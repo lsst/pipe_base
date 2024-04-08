@@ -47,6 +47,8 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 # -----------------------------
 #  Imports for other modules --
+# -----------------------------
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import DataCoordinate, DatasetType, DimensionUniverse, NamedValueSet, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
@@ -80,11 +82,15 @@ class LabelSpecifier:
     """A structure to specify a subset of labels to load.
 
     This structure may contain a set of labels to be used in subsetting a
-    pipeline, or a beginning and end point. Beginning or end may be empty,
-    in which case the range will be a half open interval. Unlike python
-    iteration bounds, end bounds are *INCLUDED*. Note that range based
-    selection is not well defined for pipelines that are not linear in nature,
-    and correct behavior is not guaranteed, or may vary from run to run.
+    pipeline, or a beginning and end point. Beginning or end may be empty, in
+    which case the range will be a half open interval. Unlike python iteration
+    bounds, end bounds are *INCLUDED*.
+
+    There are multiple potential definitions of range-based slicing for graphs
+    that are not a simple linear sequence.  The definition used here is the
+    intersection of the tasks downstream of ``begin`` and the tasks upstream of
+    ``end``, i.e. tasks with no dependency relationship to a bounding task are
+    not included.
     """
 
     labels: set[str] | None = None
@@ -384,31 +390,20 @@ class Pipeline:
             # be dropped
             pipeline = copy.deepcopy(self)
             pipeline._pipelineIR.contracts = []
-            labels = {taskdef.label: True for taskdef in pipeline.toExpandedPipeline()}
+            graph = pipeline.to_graph()
 
             # Verify the bounds are in the labels
-            if labelSpecifier.begin is not None:
-                if labelSpecifier.begin not in labels:
-                    raise ValueError(
-                        f"Beginning of range subset, {labelSpecifier.begin}, not found in pipeline definition"
-                    )
-            if labelSpecifier.end is not None:
-                if labelSpecifier.end not in labels:
-                    raise ValueError(
-                        f"End of range subset, {labelSpecifier.end}, not found in pipeline definition"
-                    )
+            if labelSpecifier.begin is not None and labelSpecifier.begin not in graph.tasks:
+                raise ValueError(
+                    f"Beginning of range subset, {labelSpecifier.begin}, not found in pipeline definition"
+                )
+            if labelSpecifier.end is not None and labelSpecifier.end not in graph.tasks:
+                raise ValueError(
+                    f"End of range subset, {labelSpecifier.end}, not found in pipeline definition"
+                )
 
-            labelSet = set()
-            for label in labels:
-                if labelSpecifier.begin is not None:
-                    if label != labelSpecifier.begin:
-                        continue
-                    else:
-                        labelSpecifier.begin = None
-                labelSet.add(label)
-                if labelSpecifier.end is not None and label == labelSpecifier.end:
-                    break
-        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet, subsetCtrl))
+            labelSet = set(graph.tasks.between(labelSpecifier.begin, labelSpecifier.end))
+        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
 
     @staticmethod
     def _parse_file_specifier(uri: ResourcePathExpression) -> tuple[ResourcePath, LabelSpecifier | None]:
@@ -600,6 +595,17 @@ class Pipeline:
             if label in subset.subset:
                 results.add(subset.label)
         return results
+
+    @property
+    def task_labels(self) -> Set[str]:
+        """Labels of all tasks in the pipelines.
+
+        For simple pipelines with no imports, iteration over this set will
+        match the order in which tasks are defined in the pipeline file.  In
+        all other cases the order is unspecified but deterministic.  It is not
+        dependency-ordered (use ``to_graph().tasks.keys()`` for that).
+        """
+        return self._pipelineIR.tasks.keys()
 
     @property
     def subsets(self) -> MappingProxyType[str, set]:
@@ -863,6 +869,12 @@ class Pipeline:
             graph.resolve(registry)
         return graph
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
+        category=FutureWarning,
+    )
     def toExpandedPipeline(self) -> Generator[TaskDef, None, None]:
         r"""Return a generator of `TaskDef`\s which can be used to create
         quantum graphs.
@@ -909,9 +921,21 @@ class Pipeline:
         )
         graph.add_task(label, taskClass, config)
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
+        category=FutureWarning,
+    )
     def __iter__(self) -> Generator[TaskDef, None, None]:
         return self.toExpandedPipeline()
 
+    # TODO: remove on DM-40443.
+    @deprecated(
+        reason="Deprecated in favor of to_graph; will be removed after v27.",
+        version="v27.0",
+        category=FutureWarning,
+    )
     def __getitem__(self, item: str) -> TaskDef:
         # Making a whole graph and then making a TaskDef from that is pretty
         # backwards, but I'm hoping to deprecate this method shortly in favor
@@ -932,17 +956,21 @@ class Pipeline:
             # the same as well.  But the converse is not true.
             return True
         else:
-            self_expanded = {td.label: (td.taskClass,) for td in self}
-            other_expanded = {td.label: (td.taskClass,) for td in other}
-            if self_expanded != other_expanded:
+            # Compare as much as we can (task classes and their edges).
+            if self.to_graph().diff_tasks(other.to_graph()):
                 return False
-        # After DM-27847, we should compare configuration here, or better,
-        # delegated to TaskDef.__eq__ after making that compare configurations.
+        # After DM-27847, we should compare configuration here.
         raise NotImplementedError(
             "Pipelines cannot be compared because config instances cannot be compared; see DM-27847."
         )
 
 
+# TODO: remove on DM-40443.
+@deprecated(
+    reason="TaskDatasetTypes has been replaced by PipelineGraph, and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 @dataclass(frozen=True)
 class TaskDatasetTypes:
     """An immutable struct that extracts and classifies the dataset types used
@@ -1247,6 +1275,12 @@ class TaskDatasetTypes:
         )
 
 
+# TODO: remove on DM-40443.
+@deprecated(
+    reason="PipelineDatasetTypes has been replaced by PipelineGraph, and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 @dataclass(frozen=True)
 class PipelineDatasetTypes:
     """An immutable struct that classifies the dataset types used in a

@@ -44,6 +44,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, final
 
+from deprecated.sphinx import deprecated
 from lsst.daf.butler import (
     Butler,
     CollectionType,
@@ -84,6 +85,13 @@ class QuantumGraphBuilderError(Exception):
     pass
 
 
+# TODO: remove class and switch downstream inheritance to just
+# QuantumGraphBuilderError on DM-40443.
+@deprecated(
+    "Deprecated in favor of QuantumGraphBuilderError and will be removed after v27.",
+    version="v27.0",
+    category=FutureWarning,
+)
 class GraphBuilderError(QuantumGraphBuilderError):
     """Backwards-compatibility near-alias for QuantumGraphBuilderError."""
 
@@ -321,13 +329,18 @@ class QuantumGraphBuilder(ABC):
 
     @final
     @timeMethod
-    def build(self, metadata: Mapping[str, Any] | None = None) -> QuantumGraph:
+    def build(
+        self, metadata: Mapping[str, Any] | None = None, attach_datastore_records: bool = True
+    ) -> QuantumGraph:
         """Build the quantum graph.
 
         Parameters
         ----------
         metadata : `~collections.abc.Mapping`, optional
             Flexible metadata to add to the quantum graph.
+        attach_datastore_records : `bool`, optional
+            Whether to include datastore records in the graph.  Required for
+            `lsst.daf.butler.QuantumBackedButler` execution.
 
         Returns
         -------
@@ -373,7 +386,8 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
-            self._attach_datastore_records(full_skeleton)
+            if attach_datastore_records:
+                self._attach_datastore_records(full_skeleton)
             # TODO initialize most metadata here instead of in ctrl_mpexec.
             if metadata is None:
                 metadata = {}
@@ -508,9 +522,7 @@ class QuantumGraphBuilder(ABC):
             # intended behavior.
             helper = AdjustQuantumHelper(inputs=adjusted_inputs, outputs=adjusted_outputs)
             try:
-                helper.adjust_in_place(
-                    task_node._get_imported_data().connections, task_node.label, quantum_data_id
-                )
+                helper.adjust_in_place(task_node.get_connections(), task_node.label, quantum_data_id)
             except NoWorkFound as err:
                 # Do not generate this quantum; it would not produce any
                 # outputs.  Remove it and all of the outputs it might have

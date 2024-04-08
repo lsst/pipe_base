@@ -41,6 +41,7 @@ from lsst.daf.butler import (
     DimensionUniverse,
     Registry,
 )
+from lsst.pex.config import FieldValidationError
 from lsst.utils.classes import immutable
 from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -147,12 +148,16 @@ class _TaskNodeImportedData:
             # validated yet.
             try:
                 config.validate()
+            except FieldValidationError as err:
+                err.fullname = f"{label}: {err.fullname}"
+                raise err
             except Exception as err:
                 raise ValueError(
                     f"Configuration validation failed for task {label!r} (see chained exception)."
                 ) from err
             config.freeze()
-            connections = task_class.ConfigClass.ConnectionsClass(config=config)
+            # MyPy doesn't see the metaclass attribute defined for this.
+            connections = config.ConnectionsClass(config=config)  # type: ignore
         connection_map = dict(connections.allConnections)
         connection_map[acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME] = InitOutput(
             acc.CONFIG_INIT_OUTPUT_TEMPLATE.format(label=label),
@@ -411,6 +416,35 @@ class TaskInitNode:
                 "(see PipelineGraph.import_and_configure)."
             ) from None
 
+    @staticmethod
+    def _unreduce(kwargs: dict[str, Any]) -> TaskInitNode:
+        """Unpickle a `TaskInitNode` instance."""
+        # Connections classes are not pickleable, so we can't use the
+        # dataclass-provided pickle implementation of _TaskNodeImportedData,
+        # and it's easier to just call its `configure` method than to fix it.
+        if (imported_data_args := kwargs.pop("imported_data_args", None)) is not None:
+            imported_data = _TaskNodeImportedData.configure(*imported_data_args)
+        else:
+            imported_data = None
+        return TaskInitNode(imported_data=imported_data, **kwargs)
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], TaskInitNode], tuple[dict[str, Any]]]:
+        kwargs = dict(
+            key=self.key,
+            inputs=self.inputs,
+            outputs=self.outputs,
+            config_output=self.config_output,
+            task_class_name=getattr(self, "_task_class_name", None),
+            config_str=getattr(self, "_config_str", None),
+        )
+        if hasattr(self, "_imported_data"):
+            kwargs["imported_data_args"] = (
+                self.label,
+                self.task_class,
+                self.config,
+            )
+        return (self._unreduce, (kwargs,))
+
 
 @immutable
 class TaskNode:
@@ -443,7 +477,7 @@ class TaskNode:
         The special runtime output that persists the task's logs.
     metadata_output : `WriteEdge`
         The special runtime output that persists the task's metadata.
-    dimensions : `lsst.daf.butler.DimensionGroup` or `frozenset`
+    dimensions : `lsst.daf.butler.DimensionGroup` or `frozenset` [ `str` ]
         Dimensions of the task.  If a `frozenset`, the dimensions have not been
         resolved by a `~lsst.daf.butler.DimensionUniverse` and cannot be safely
         compared to other sets of dimensions.
@@ -460,7 +494,7 @@ class TaskNode:
     - ``task_class_name``
     - ``bipartite`` (see `NodeType.bipartite`)
     - ``task_class`` (only if `is_imported` is `True`)
-    - ``config`` (only if `is_importd` is `True`)
+    - ``config`` (only if `is_imported` is `True`)
     """
 
     def __init__(
@@ -473,7 +507,7 @@ class TaskNode:
         outputs: Mapping[str, WriteEdge],
         log_output: WriteEdge | None,
         metadata_output: WriteEdge,
-        dimensions: DimensionGroup | frozenset,
+        dimensions: DimensionGroup | frozenset[str],
     ):
         self.key = key
         self.init = init
@@ -764,6 +798,17 @@ class TaskNode:
         """
         return getattr(self._get_imported_data().connection_map[connection_name], "lookupFunction", None)
 
+    def get_connections(self) -> PipelineTaskConnections:
+        """Return the connections class instance for this task.
+
+        Returns
+        -------
+        connections : `.PipelineTaskConnections`
+            Task-provided object that defines inputs and outputs from
+            configuration.
+        """
+        return self._get_imported_data().connections
+
     def get_spatial_bounds_connections(self) -> frozenset[str]:
         """Return the names of connections whose data IDs should be included
         in the calculation of the spatial bounds for this task's quanta.
@@ -926,6 +971,28 @@ class TaskNode:
             Raised if `is_imported` is `False`.
         """
         return self.init._get_imported_data()
+
+    @staticmethod
+    def _unreduce(kwargs: dict[str, Any]) -> TaskNode:
+        """Unpickle a `TaskNode` instance."""
+        return TaskNode(**kwargs)
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], TaskNode], tuple[dict[str, Any]]]:
+        return (
+            self._unreduce,
+            (
+                dict(
+                    key=self.key,
+                    init=self.init,
+                    prerequisite_inputs=self.prerequisite_inputs,
+                    inputs=self.inputs,
+                    outputs=self.outputs,
+                    log_output=self.log_output,
+                    metadata_output=self.metadata_output,
+                    dimensions=self._dimensions,
+                ),
+            ),
+        )
 
 
 def _diff_edge_mapping(

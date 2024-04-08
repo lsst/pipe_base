@@ -29,8 +29,8 @@ from __future__ import annotations
 __all__ = ("Edge", "ReadEdge", "WriteEdge")
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar, TypeVar
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, ClassVar, Self, TypeVar
 
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse
 from lsst.daf.butler.registry import MissingDatasetTypeError
@@ -194,25 +194,25 @@ class Edge(ABC):
         result = []
         if self.dataset_type_name != other.dataset_type_name:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has dataset type "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has dataset type "
                 f"{self.dataset_type_name!r} in A, but {other.dataset_type_name!r} in B."
             )
         if self.storage_class_name != other.storage_class_name:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has storage class "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has storage class "
                 f"{self.storage_class_name!r} in A, but {other.storage_class_name!r} in B."
             )
         if self.raw_dimensions != other.raw_dimensions:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} has raw dimensions "
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} has raw dimensions "
                 f"{set(self.raw_dimensions)} in A, but {set(other.raw_dimensions)} in B "
                 "(differences in raw dimensions may not lead to differences in resolved dimensions, "
                 "but this cannot be checked without re-resolving the dataset type)."
             )
         if self.is_calibration != other.is_calibration:
             result.append(
-                f"{connection_type.capitalize()} {self.connection_name!r} is marked as a calibration "
-                f"{'in A but not in B' if self.is_calibration else 'in B but not in A'}."
+                f"{connection_type.capitalize()} {self.task_label}.{self.connection_name} is marked as a "
+                f"calibration {'in A but not in B' if self.is_calibration else 'in B but not in A'}."
             )
         return result
 
@@ -260,6 +260,26 @@ class Edge(ABC):
             "storage_class_name": self.storage_class_name,
             "is_init": bool,
         }
+
+    @classmethod
+    def _unreduce(cls, kwargs: dict[str, Any]) -> Self:
+        """Unpickle an `Edge` instance."""
+        return cls(**kwargs)
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], Edge], tuple[dict[str, Any]]]:
+        return (
+            self._unreduce,
+            (
+                dict(
+                    task_key=self.task_key,
+                    dataset_type_key=self.dataset_type_key,
+                    storage_class_name=self.storage_class_name,
+                    connection_name=self.connection_name,
+                    is_calibration=self.is_calibration,
+                    raw_dimensions=self.raw_dimensions,
+                ),
+            ),
+        )
 
 
 class ReadEdge(Edge):
@@ -616,6 +636,24 @@ class ReadEdge(Edge):
         result["component"] = self.component
         result["is_prerequisite"] = self.is_prerequisite
         return result
+
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], Edge], tuple[dict[str, Any]]]:
+        return (
+            self._unreduce,
+            (
+                dict(
+                    dataset_type_key=self.dataset_type_key,
+                    task_key=self.task_key,
+                    storage_class_name=self.storage_class_name,
+                    connection_name=self.connection_name,
+                    is_calibration=self.is_calibration,
+                    raw_dimensions=self.raw_dimensions,
+                    is_prerequisite=self.is_prerequisite,
+                    component=self.component,
+                    defer_query_constraint=self.defer_query_constraint,
+                ),
+            ),
+        )
 
 
 class WriteEdge(Edge):

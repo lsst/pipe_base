@@ -25,8 +25,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Module Defining variants for valid values used to constrain datasets in a
-graph building query.
+"""Symbols defined in this package should be imported from
+`all_dimensions_quantum_graph_builder` instead; it only appears in the docs
+due to limitations in Sphinx.
 """
 
 from __future__ import annotations

@@ -104,3 +104,5 @@ QuantumGraph generation API reference
 .. automodapi:: lsst.pipe.base.quantum_graph_skeleton
 .. automodapi:: lsst.pipe.base.prerequisite_helpers
 .. automodapi:: lsst.pipe.base.all_dimensions_quantum_graph_builder
+   :skip: DatasetQueryConstraintVariant
+.. automodapi:: lsst.pipe.base._datasetQueryConstraints
