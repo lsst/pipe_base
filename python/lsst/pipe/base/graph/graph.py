@@ -65,6 +65,7 @@ from ..pipeline_graph import PipelineGraph
 from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
+from .graphSummary import QgraphSummary, QgraphTaskSummary
 from .quantumNode import BuildId, QuantumNode
 
 _T = TypeVar("_T", bound="QuantumGraph")
@@ -803,7 +804,7 @@ class QuantumGraph:
         path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
 
     @property
-    def metadata(self) -> MappingProxyType[str, Any] | None:
+    def metadata(self) -> MappingProxyType[str, Any]:
         """Extra data carried with the graph (mapping [`str`] or `None`).
 
         The mapping is a dynamic view of this object's metadata. Values should
@@ -1369,3 +1370,36 @@ class QuantumGraph:
         if set(self.allDatasetTypes) != set(other.allDatasetTypes):
             return False
         return set(self.taskGraph) == set(other.taskGraph)
+
+    def getSummary(self) -> QgraphSummary:
+        """Create summary of graph.
+
+        Returns
+        -------
+        summary: `QgraphSummary`
+           Summary of QuantumGraph.
+        """
+        inCollection = self.metadata.get("input", None)
+        if isinstance(inCollection, str):
+            inCollection = [inCollection]
+        summary = QgraphSummary(
+            graphID=self.graphID,
+            cmdLine=self.metadata.get("full_command", None),
+            creationUTC=self.metadata.get("time", None),
+            inputCollection=inCollection,
+            outputCollection=self.metadata.get("output", None),
+            outputRun=self.metadata.get("output_run", None),
+        )
+        for q in self:
+            qts = summary.qgraphTaskSummaries.setdefault(
+                q.taskDef.label, QgraphTaskSummary(taskLabel=q.taskDef.label)
+            )
+            qts.numQuanta += 1
+
+            for k in q.quantum.inputs.keys():
+                qts.numInputs[k.name] += 1
+
+            for k in q.quantum.outputs.keys():
+                qts.numOutputs[k.name] += 1
+
+        return summary
