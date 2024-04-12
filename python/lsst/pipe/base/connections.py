@@ -39,6 +39,7 @@ __all__ = [
     "ScalarError",
     "iterConnections",
     "ScalarError",
+    "QuantizedConnection",
 ]
 
 import dataclasses

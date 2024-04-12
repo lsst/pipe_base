@@ -25,7 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import json
+import math
 import unittest
 
 try:
@@ -183,6 +183,13 @@ class TaskMetadataTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             meta["mixed"] = [1, "one"]
 
+    def test_nan(self):
+        """Check that NaN round trips as a NaN."""
+        meta = TaskMetadata()
+        meta["nan"] = float("NaN")
+        new_meta = TaskMetadata.model_validate_json(meta.model_dump_json())
+        self.assertTrue(math.isnan(new_meta["nan"]))
+
     def testDict(self):
         """Construct a TaskMetadata from a dictionary."""
         d = {"a": "b", "c": 1, "d": [1, 2], "e": {"f": "g", "h": {"i": [3, 4]}}}
@@ -197,7 +204,7 @@ class TaskMetadataTestCase(unittest.TestCase):
         self.assertEqual(d2, d)
 
         j = meta.model_dump_json()
-        meta2 = TaskMetadata.model_validate(json.loads(j))
+        meta2 = TaskMetadata.model_validate_json(j)
         self.assertEqual(meta2, meta)
 
         # Round trip.

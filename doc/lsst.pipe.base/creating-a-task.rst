@@ -307,4 +307,4 @@ When there are (or are expected to be) different versions of a given task, those
 Star selectors (`lsst.meas.algorithms.BaseStarSelectorTask`) and PSF determiners (`lsst.meas.algorithms.BasePsfDeterminerTask`) are two examples of tasks with multiple variants.
 The abstract base class should be written using `abc.ABC` or `abc.ABCMeta`.
 The same module that defines the abstract base class should also define a registry, using `lsst.pex.config.RegistryField`, and all implementations should register themselves with that registry.
-Examples include `lsst.meas.algorithms.starSelectorRegistry` and `lsst.meas.algorithms.psfDeterminerRegistry`.
+Examples include :py:mod:`lsst.meas.algorithms.starSelectorRegistry` and :py:mod:`lsst.meas.algorithms.psfDeterminerRegistry`.
