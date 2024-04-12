@@ -26,6 +26,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
+import math
 import unittest
 
 try:
@@ -182,6 +183,13 @@ class TaskMetadataTestCase(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             meta["mixed"] = [1, "one"]
+
+    def test_nan(self):
+        """Check that NaN round trips as a NaN."""
+        meta = TaskMetadata()
+        meta["nan"] = float("NaN")
+        new_meta = TaskMetadata.model_validate_json(meta.model_dump_json())
+        self.assertTrue(math.isnan(new_meta["nan"]))
 
     def testDict(self):
         """Construct a TaskMetadata from a dictionary."""

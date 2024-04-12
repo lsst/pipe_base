@@ -39,7 +39,7 @@ import sys
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any, Protocol, TypeAlias, Union
 
-from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
@@ -122,6 +122,10 @@ class TaskMetadata(BaseModel):
     which serves as a separator in full metadata keys and turns
     the value into sub-dictionary. Arbitrary hierarchies are supported.
     """
+
+    # Pipelines regularly generate NaN and Inf so these need to be
+    # supported even though that's a JSON extension.
+    model_config = ConfigDict(ser_json_inf_nan="constants")
 
     scalars: dict[str, StrictFloat | StrictInt | StrictBool | StrictStr] = Field(default_factory=dict)
     arrays: dict[str, list[StrictFloat] | list[StrictInt] | list[StrictBool] | list[StrictStr]] = Field(
