@@ -215,6 +215,10 @@ class MockDataset(pydantic.BaseModel):
             """See `pydantic.BaseModel.model_dump`."""
             return super().model_dump(*args, **kwargs)
 
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
         def model_copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_copy`."""
             return super().model_copy(*args, **kwargs)
@@ -254,6 +258,10 @@ class MockDatasetQuantum(pydantic.BaseModel):
 
         def model_dump(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
             return super().model_dump(*args, **kwargs)
 
         def model_copy(self, *args: Any, **kwargs: Any) -> Any:
