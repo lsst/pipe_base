@@ -87,7 +87,6 @@ Python API reference
    :no-main-docstr:
 
 .. automodapi:: lsst.pipe.base.connectionTypes
-  :no-main-docstr:
 
 .. automodapi:: lsst.pipe.base.pipelineIR
   :no-main-docstr:

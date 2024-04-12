@@ -10,3 +10,8 @@ exclude_patterns = ["changes/*"]
 intersphinx_mapping["networkx"] = ("https://networkx.org/documentation/stable/", None)  # noqa: F405
 intersphinx_mapping["lsst"] = ("https://pipelines.lsst.io/v/weekly/", None)  # noqa: F405
 intersphinx_mapping["pydantic"] = ("https://docs.pydantic.dev/latest/", None)  # noqa: F405
+
+nitpick_ignore = [
+    ("py:mod", "lsst.meas.algorithms.starSelectorRegistry"),
+    ("py:mod", "lsst.meas.algorithms.psfDeterminerRegistry"),
+]
