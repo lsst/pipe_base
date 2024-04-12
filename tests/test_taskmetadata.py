@@ -25,7 +25,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import json
 import math
 import unittest
 
@@ -205,7 +204,7 @@ class TaskMetadataTestCase(unittest.TestCase):
         self.assertEqual(d2, d)
 
         j = meta.model_dump_json()
-        meta2 = TaskMetadata.model_validate(json.loads(j))
+        meta2 = TaskMetadata.model_validate_json(j)
         self.assertEqual(meta2, meta)
 
         # Round trip.
