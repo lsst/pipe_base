@@ -673,8 +673,8 @@ class _ConnectionTimespanBuilder(TimespanBuilder):
             if task_node.dimensions.temporal
             else Timespan.makeEmpty()
         )
-        self._begin_nsec = timespan._nsec[0]
-        self._end_nsec = timespan._nsec[1]
+        self._begin_nsec = timespan.nsec[0]
+        self._end_nsec = timespan.nsec[1]
         self._dataset_type_names = set()
         for connection_name in bounds_connections:
             if edge := task_node.inputs.get(connection_name):
@@ -687,7 +687,7 @@ class _ConnectionTimespanBuilder(TimespanBuilder):
 
     def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
         if parent_dataset_type_name in self._dataset_type_names:
-            nsec = cast(Timespan, data_id.timespan)._nsec
+            nsec = cast(Timespan, data_id.timespan).nsec
             self._begin_nsec = min(self._begin_nsec, nsec[0])
             self._end_nsec = max(self._end_nsec, nsec[1])
 
