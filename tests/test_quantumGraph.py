@@ -611,6 +611,12 @@ class QuantumGraphTestCase(unittest.TestCase):
             quanta = self.qGraph.get_task_quanta(task_label)
             self.assertCountEqual(quanta.values(), self.quanta_by_task_label[task_label])
 
+    def testGetSummary(self) -> None:
+        """Test for QuantumGraph.getSummary method."""
+        summary = self.qGraph.getSummary()
+        self.assertEqual(self.qGraph.graphID, summary.graphID)
+        self.assertEqual(len(summary.qgraphTaskSummaries), len(self.qGraph.taskGraph))
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     """Run file leak tests."""
