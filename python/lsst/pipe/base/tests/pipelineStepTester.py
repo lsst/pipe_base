@@ -157,7 +157,10 @@ class PipelineStepTester:
                 butler.registry.registerDatasetType(node.dataset_type)
 
         if not pure_inputs.keys() <= self.expected_inputs:
-            missing = [f"{k} ({pure_inputs[k]})" for k in pure_inputs.keys() - self.expected_inputs]
+            missing = []
+            for type_name in pure_inputs.keys() - self.expected_inputs:
+                suffix = pure_inputs[type_name]
+                missing.append(type_name + (f" ({suffix})" if suffix else ""))
             raise AssertionError(f"Got unexpected pure_inputs: {missing}")
 
         if not all_outputs.keys() >= self.expected_outputs:
