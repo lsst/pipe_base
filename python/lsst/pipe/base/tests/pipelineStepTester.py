@@ -61,8 +61,12 @@ class PipelineStepTester:
         The full path to the pipeline YAML.
     step_suffixes : `list` [`str`]
         A list, in the order of data reduction, of the step subsets to check.
+        Must include any initial "#".
     initial_dataset_types : `list` [`tuple`]
-        Dataset types which require initial registry by the butler.
+        Dataset types which require initial registry by the butler. Each
+        element must be a tuple of the type name, dimensions, storage class,
+        and calibration flag, as described in the constructor for
+        `~lsst.daf.butler.DatasetType`. All tuple elements are required.
     expected_inputs : `set` [`str`]
         Dataset types expected as an input into the pipeline.
     expected_outputs : `set` [`str`]
@@ -76,6 +80,16 @@ class PipelineStepTester:
     expected_outputs: set[str]
 
     def register_dataset_types(self, butler: Butler) -> None:
+        """Register any dataset types passed to the class constructor.
+
+        The types registered are those specified in
+        ``self.initial_dataset_types``.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The (test) butler in which to register the types.
+        """
         for name, dimensions, storageClass, isCalibration in self.initial_dataset_types:
             butler.registry.registerDatasetType(
                 DatasetType(
@@ -88,6 +102,23 @@ class PipelineStepTester:
             )
 
     def run(self, butler: Butler, test_case: unittest.TestCase) -> None:
+        """Run the test on all pipelines passed to the class constructor.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The butler in which to run the test. The butler must be writeable,
+            and its state will be modified as part of the test.
+        test_case : `unittest.TestCase`
+            The test case in which this test is run.
+
+        Raises
+        ------
+        AssertionError
+            Raised if the pipeline requires inputs that are not in
+            ``self.expected_inputs``, or fails to produce outputs that are in
+            ``self.expected_outputs``.
+        """
         self.register_dataset_types(butler)
 
         all_outputs: dict[str, DatasetType] = dict()
