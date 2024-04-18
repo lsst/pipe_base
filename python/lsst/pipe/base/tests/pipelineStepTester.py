@@ -32,6 +32,7 @@ __all__ = ["PipelineStepTester"]
 
 import dataclasses
 import unittest
+import warnings
 
 from lsst.daf.butler import Butler, DatasetType
 from lsst.pipe.base import Pipeline
@@ -71,6 +72,11 @@ class PipelineStepTester:
         Dataset types expected as an input into the pipeline.
     expected_outputs : `set` [`str`]
         Dataset types expected to be produced as an output by the pipeline.
+    pipeline_patches : `dict` [`str`, `str`], optional
+        Any config overrides to be applied to the pipeline before testing it.
+        This is rarely appropriate, and should be reserved for fields that
+        cannot have a file-level default. The key must have the form
+        "task:subtask.field".
     """
 
     filename: str
@@ -78,6 +84,7 @@ class PipelineStepTester:
     initial_dataset_types: list[tuple[str, set[str], str, bool]]
     expected_inputs: set[str]
     expected_outputs: set[str]
+    pipeline_patches: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def register_dataset_types(self, butler: Butler) -> None:
         """Register any dataset types passed to the class constructor.
@@ -125,7 +132,14 @@ class PipelineStepTester:
         pure_inputs: dict[str, str] = dict()
 
         for suffix in self.step_suffixes:
-            step_graph = Pipeline.from_uri(self.filename + suffix).to_graph()
+            step_pipe = Pipeline.from_uri(self.filename + suffix)
+            for fullkey, value in self.pipeline_patches.items():
+                label, key = fullkey.split(":", maxsplit=1)
+                try:
+                    step_pipe.addConfigOverride(label, key, value)
+                except LookupError as e:
+                    warnings.warn(f"{e}, skipping configuration {fullkey}={value}", UserWarning)
+            step_graph = step_pipe.to_graph()
             step_graph.resolve(butler.registry)
 
             pure_inputs.update(
