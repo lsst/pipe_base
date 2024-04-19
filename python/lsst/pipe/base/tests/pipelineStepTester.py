@@ -32,6 +32,7 @@ __all__ = ["PipelineStepTester"]
 
 import dataclasses
 import unittest
+import warnings
 
 from lsst.daf.butler import Butler, DatasetType
 from lsst.pipe.base import Pipeline
@@ -61,12 +62,21 @@ class PipelineStepTester:
         The full path to the pipeline YAML.
     step_suffixes : `list` [`str`]
         A list, in the order of data reduction, of the step subsets to check.
+        Must include any initial "#".
     initial_dataset_types : `list` [`tuple`]
-        Dataset types which require initial registry by the butler.
+        Dataset types which require initial registry by the butler. Each
+        element must be a tuple of the type name, dimensions, storage class,
+        and calibration flag, as described in the constructor for
+        `~lsst.daf.butler.DatasetType`. All tuple elements are required.
     expected_inputs : `set` [`str`]
         Dataset types expected as an input into the pipeline.
     expected_outputs : `set` [`str`]
         Dataset types expected to be produced as an output by the pipeline.
+    pipeline_patches : `dict` [`str`, `str`], optional
+        Any config overrides to be applied to the pipeline before testing it.
+        This is rarely appropriate, and should be reserved for fields that
+        cannot have a file-level default. The key must have the form
+        "task:subtask.field".
     """
 
     filename: str
@@ -74,8 +84,19 @@ class PipelineStepTester:
     initial_dataset_types: list[tuple[str, set[str], str, bool]]
     expected_inputs: set[str]
     expected_outputs: set[str]
+    pipeline_patches: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def register_dataset_types(self, butler: Butler) -> None:
+        """Register any dataset types passed to the class constructor.
+
+        The types registered are those specified in
+        ``self.initial_dataset_types``.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The (test) butler in which to register the types.
+        """
         for name, dimensions, storageClass, isCalibration in self.initial_dataset_types:
             butler.registry.registerDatasetType(
                 DatasetType(
@@ -88,13 +109,37 @@ class PipelineStepTester:
             )
 
     def run(self, butler: Butler, test_case: unittest.TestCase) -> None:
+        """Run the test on all pipelines passed to the class constructor.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The butler in which to run the test. The butler must be writeable,
+            and its state will be modified as part of the test.
+        test_case : `unittest.TestCase`
+            The test case in which this test is run.
+
+        Raises
+        ------
+        AssertionError
+            Raised if the pipeline requires inputs that are not in
+            ``self.expected_inputs``, or fails to produce outputs that are in
+            ``self.expected_outputs``.
+        """
         self.register_dataset_types(butler)
 
         all_outputs: dict[str, DatasetType] = dict()
         pure_inputs: dict[str, str] = dict()
 
         for suffix in self.step_suffixes:
-            step_graph = Pipeline.from_uri(self.filename + suffix).to_graph()
+            step_pipe = Pipeline.from_uri(self.filename + suffix)
+            for fullkey, value in self.pipeline_patches.items():
+                label, key = fullkey.split(":", maxsplit=1)
+                try:
+                    step_pipe.addConfigOverride(label, key, value)
+                except LookupError as e:
+                    warnings.warn(f"{e}, skipping configuration {fullkey}={value}", UserWarning)
+            step_graph = step_pipe.to_graph()
             step_graph.resolve(butler.registry)
 
             pure_inputs.update(
@@ -112,7 +157,10 @@ class PipelineStepTester:
                 butler.registry.registerDatasetType(node.dataset_type)
 
         if not pure_inputs.keys() <= self.expected_inputs:
-            missing = [f"{k} ({pure_inputs[k]})" for k in pure_inputs.keys() - self.expected_inputs]
+            missing = []
+            for type_name in pure_inputs.keys() - self.expected_inputs:
+                suffix = pure_inputs[type_name]
+                missing.append(type_name + (f" ({suffix})" if suffix else ""))
             raise AssertionError(f"Got unexpected pure_inputs: {missing}")
 
         if not all_outputs.keys() >= self.expected_outputs:

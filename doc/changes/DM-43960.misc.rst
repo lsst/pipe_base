@@ -1,0 +1,2 @@
+Add an optional parameter to PipelineStepTester that lets configs be tweaked before testing.
+This is needed for AP pipelines, whose APDB config cannot be defaulted, and is not intended for wide adoption.
