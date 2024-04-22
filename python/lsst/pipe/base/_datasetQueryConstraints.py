@@ -118,6 +118,7 @@ else:
 
     class MetaMeta(type(Protocol)):
         def __init__(cls, *args, **kwargs):
+            # Note: this prepends an *extra* cls to type's argument list
             return super().__init__(cls, *args, **kwargs)
 
 
