@@ -2,7 +2,7 @@
 # backwards compatibility.
 import warnings
 
-from . import automatic_connection_constants, connectionTypes, pipeline_graph, pipelineIR
+from . import automatic_connection_constants, connectionTypes, pipeline_graph, pipelineIR, utils
 from ._dataset_handle import *
 
 # Symbols from _datasetQueryConstraints are exported from

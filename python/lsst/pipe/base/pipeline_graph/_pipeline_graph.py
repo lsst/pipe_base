@@ -556,17 +556,18 @@ class PipelineGraph:
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
         """
-        get_registered: Callable[[str], DatasetType | None]
-        if registry is None:
-            if dimensions is None or dataset_types is None:
-                raise PipelineGraphError(
-                    "Either 'registry' or both 'dimensions' and 'dataset_types' "
-                    "must be passed to PipelineGraph.resolve."
-                )
+        if registry is None and (dimensions is None or dataset_types is None):
+            raise PipelineGraphError(
+                "Either 'registry' or both 'dimensions' and 'dataset_types' "
+                "must be passed to PipelineGraph.resolve."
+            )
 
+        get_registered: Callable[[str], DatasetType | None]
+        if dataset_types is not None:
+            # Ruff seems confused about whether this is used below; it is!
+            get_registered = dataset_types.get
         else:
-            if dimensions is None:
-                dimensions = registry.dimensions
+            assert registry is not None
 
             def get_registered(name: str) -> DatasetType | None:
                 try:
@@ -574,9 +575,10 @@ class PipelineGraph:
                 except MissingDatasetTypeError:
                     return None
 
-        if dataset_types is not None:
-            # Ruff seems confused about whether this is used below; it is!
-            get_registered = dataset_types.get
+        if dimensions is None:
+            assert registry is not None
+            dimensions = registry.dimensions
+
         node_key: NodeKey
         updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
         for node_key, node_state in self._xgraph.nodes.items():

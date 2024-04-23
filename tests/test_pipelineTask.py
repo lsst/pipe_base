@@ -121,7 +121,7 @@ class PipelineTaskTestCase(unittest.TestCase):
             physical_filter="a",
             band="b",
             instrument="TestInstrument",
-            graph=dstype.dimensions,
+            dimensions=dstype.dimensions,
         )
         run = "test"
         ref = DatasetRef(datasetType=dstype, dataId=dataId, run=run)
