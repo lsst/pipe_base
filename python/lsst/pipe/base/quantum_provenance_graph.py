@@ -485,6 +485,7 @@ class QuantumProvenanceGraph:
             for ref in butler.registry.queryDatasets(dataset_type_name, collections=output_run):
                 # find the datasets in the butler
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
+                dataset_info = self.get_dataset_info(dataset_key)
                 dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
                 # if the dataset is in the output run collection, we produced
                 # it!
@@ -663,11 +664,8 @@ class QuantumProvenanceGraph:
         return result
 
     def iter_outputs_of(self, quantum_key: QuantumKey) -> Iterator[DatasetKey]:
-        metadata_key = self._xgraph.nodes[quantum_key]["metadata"]
-        log_key = self._xgraph.nodes[quantum_key]["log"]
         for dataset_key in self._xgraph.successors(quantum_key):
-            if dataset_key != metadata_key and dataset_key != log_key:
-                yield dataset_key
+            yield dataset_key
 
     def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
         (result,) = self._xgraph.predecessors(dataset_key)
