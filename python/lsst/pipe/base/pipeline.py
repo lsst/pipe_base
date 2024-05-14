@@ -403,7 +403,7 @@ class Pipeline:
                 )
 
             labelSet = set(graph.tasks.between(labelSpecifier.begin, labelSpecifier.end))
-        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet))
+        return Pipeline.fromIR(self._pipelineIR.subset_from_labels(labelSet, subsetCtrl))
 
     @staticmethod
     def _parse_file_specifier(uri: ResourcePathExpression) -> tuple[ResourcePath, LabelSpecifier | None]:
