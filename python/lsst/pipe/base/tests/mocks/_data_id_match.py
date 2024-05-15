@@ -35,7 +35,7 @@ from typing import Any
 
 import astropy.time
 from lsst.daf.butler import DataId
-from lsst.daf.butler.registry.queries.expressions.parser import Node, ParserYacc, TreeVisitor  # type: ignore
+from lsst.daf.butler.registry.queries.expressions.parser import Node, ParserYacc, TreeVisitor
 
 
 class _DataIdMatchTreeVisitor(TreeVisitor):
