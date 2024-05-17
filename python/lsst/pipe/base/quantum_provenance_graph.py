@@ -839,7 +839,7 @@ class QuantumProvenanceGraph:
                         # a published dataset, that dataset is cursed. Set the
                         # status for the dataset to cursed and note the reason
                         # for labeling the dataset as cursed.
-                        case (_, "published"):
+                        case (_, "published") if not dataset_type_name.endswith("_log"):
                             dataset_info["status"] = "cursed"
                             dataset_info["messages"].append(
                                 "Published dataset is from an unsuccessful quantum."
