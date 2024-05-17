@@ -670,6 +670,7 @@ class QuantumProvenanceGraph:
                 else:
                     quantum_run.status = "logs_missing"
             # missing metadata means that the task did not finish.
+
             else:
                 # if we have logs and no metadata, the task not finishing is
                 # a failure in the task itself. This includes all payload
@@ -727,8 +728,12 @@ class QuantumProvenanceGraph:
                         f"Status went from successful in run {list(quantum_info['runs'].values())[-1]!r} "
                         f"to {quantum_run.status!r} in {output_run!r}."
                     )
+                # If a quantumm is not attempted and moves to blocked, we know
+                # for sure that it is a blocked quantum.
+                case ("not_attempted", "blocked"):
+                    new_status = "blocked"
                 # A transition into blocked does not change the overall quantum
-                # status.
+                # status for a failure.
                 case (_, "blocked"):
                     new_status = last_status
                 # If a quantum transitions from any state into missing
