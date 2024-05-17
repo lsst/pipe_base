@@ -275,6 +275,10 @@ class TaskSummary(pydantic.BaseModel):
     """A count of quanta for which processing was not attempted.
     """
 
+    n_expected: int = 0
+    """The number of quanta expected by the graph.
+    """
+
     @pydantic.computed_field  # type: ignore[misc]
     @property
     def n_wonky(self) -> int:
@@ -426,6 +430,9 @@ class DatasetTypeSummary(pydantic.BaseModel):
     ultimately not produced. Note that this does not indicate a failure,
     which are accounted for differently. This is commonly referred to as
     a `NoWorkFound` case.
+    """
+    n_expected: int = 0
+    """The number of datasets of this type expected by the graph.
     """
 
     @pydantic.computed_field  # type: ignore[misc]
@@ -852,6 +859,7 @@ class QuantumProvenanceGraph:
         result = Summary()
         for task_label, quanta in self._quanta.items():
             task_summary = TaskSummary()
+            task_summary.n_expected = len(quanta)
             for quantum_key in quanta:
                 quantum_info = self.get_quantum_info(quantum_key)
                 task_summary.add_quantum_info(quantum_info, butler, do_store_logs)
@@ -859,6 +867,7 @@ class QuantumProvenanceGraph:
 
         for dataset_type_name, datasets in self._datasets.items():
             dataset_type_summary = DatasetTypeSummary(producer="")
+            dataset_type_summary.n_expected = len(datasets)
             for dataset_key in datasets:
                 dataset_info = self.get_dataset_info(dataset_key)
                 producer_key = self.get_producer_of(dataset_key)
