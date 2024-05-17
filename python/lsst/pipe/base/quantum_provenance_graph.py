@@ -527,6 +527,9 @@ class QuantumProvenanceGraph:
         # The nodes representing datasets in `_xgraph` grouped by dataset type
         # name.
         self._datasets: dict[str, set[DatasetKey]] = {}
+        # Bool representing whether the graph has been finalized. This is set
+        # to True when resolve_duplicates is
+        self._finalized: bool = False
 
     def get_quantum_info(self, key: QuantumKey) -> QuantumInfo:
         """Get a `QuantumInfo` object from the `QuantumProvenanceGraph` using
@@ -775,6 +778,15 @@ class QuantumProvenanceGraph:
         where : `str`
             A "where" string to use to constrain the collections, if passed.
         """
+        # First thing: raise an error if resolve_duplicates has been run
+        # before on this qpg.
+        if self._finalized:
+            raise RuntimeError(
+                """resolve_duplicates may only be called on a
+                QuantumProvenanceGraph once. Call only after all graphs have
+                been added, or make a new graph with all constituent
+                attempts."""
+            )
         for dataset_type_name in self._datasets:
             # find datasets in a larger collection.
             for ref in butler.registry.queryDatasets(
@@ -827,7 +839,7 @@ class QuantumProvenanceGraph:
                         # a published dataset, that dataset is cursed. Set the
                         # status for the dataset to cursed and note the reason
                         # for labeling the dataset as cursed.
-                        case (_, "published"):
+                        case (_, "published") if not dataset_type_name.endswith("_log"):
                             dataset_info["status"] = "cursed"
                             dataset_info["messages"].append(
                                 "Published dataset is from an unsuccessful quantum."
@@ -842,6 +854,16 @@ class QuantumProvenanceGraph:
                     quantum_info["messages"].append(
                         f"Outputs from different runs of the same quanta were published: {published_runs}."
                     )
+                    for dataset_key in self.iter_outputs_of(quantum_key):
+                        dataset_info = self.get_dataset_info(dataset_key)
+                        quantum_info["messages"].append(
+                            f"{dataset_key.parent_dataset_type_name}"
+                            + f"from {str(dataset_info['runs'])};"
+                            + f"{str(dataset_info['status'])}"
+                        )
+        # If we make it all the way through resolve_duplicates, set
+        # self._finalized = True so that it cannot be run again.
+        self._finalized = True
 
     def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
         """Summarize the `QuantumProvenanceGraph`.
@@ -861,6 +883,11 @@ class QuantumProvenanceGraph:
             as well as diagnostic information and error messages for failed
             quanta and strange edge cases, and a list of recovered quanta.
         """
+        if not self._finalized:
+            raise RuntimeError(
+                """resolve_duplicates must be called to finalize the
+                QuantumProvenanceGraph before making a summary."""
+            )
         result = Summary()
         for task_label, quanta in self._quanta.items():
             task_summary = TaskSummary()
