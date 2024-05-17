@@ -235,9 +235,11 @@ class TaskExecutionReport:
               `failed_quanta` keyed by the quantum graph node id.
         """
         failed_quanta = {}
+        failed_data_ids = []
+        errors = []
         for node_id, log_ref in self.failed.items():
-            data_ids = dict(log_ref.dataId.required)
-            quantum_info: dict[str, Any] = {"data_id": data_ids}
+            data_id = dict(log_ref.dataId.required)
+            quantum_info: dict[str, Any] = {"data_id": data_id}
             if do_store_logs:
                 try:
                     log = butler.get(log_ref)
@@ -250,22 +252,23 @@ class TaskExecutionReport:
                         record.message for record in log if record.levelno >= logging.ERROR
                     ]
             if human_readable:
-                failed_quanta["data_id"] = data_ids
-                return {
-                    "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
-                    "failed_quanta": failed_quanta,
-                    "n_quanta_blocked": len(self.blocked),
-                    "n_succeeded": self.n_succeeded,
-                    "errors": quantum_info,
-                }
+                failed_data_ids.append(data_id)
+                if do_store_logs:
+                    errors.append(quantum_info)
+
             else:
                 failed_quanta[str(node_id)] = quantum_info
-        return {
+        result = {
             "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
-            "failed_quanta": failed_quanta,
             "n_quanta_blocked": len(self.blocked),
             "n_succeeded": self.n_succeeded,
         }
+        if human_readable:
+            result["failed_quanta"] = failed_data_ids
+            result["errors"] = errors
+        else:
+            result["failed_quanta"] = failed_quanta
+        return result
 
     def __str__(self) -> str:
         """Return a count of the failed and blocked tasks in the
