@@ -1,3 +1,95 @@
+lsst-pipe-base 27.0.0 (2024-05-29)
+==================================
+
+New Features
+------------
+
+- Added a manifest checker which walks an executed quantum graph to generate a
+  summary report containing information about produced dataset types, missing data, and failures. (`DM-37163 <https://rubinobs.atlassian.net/browse/DM-37163>`_)
+- Updated the open-source license to allow for the code to be distributed with either GPLv3 or BSD 3-clause license. (`DM-37231 <https://rubinobs.atlassian.net/browse/DM-37231>`_)
+- Rewrote quantum graph generation.
+
+  The new algorithm is much faster, more extensible, and easier to maintain (especially when storage-class conversions are present in a pipeline).
+  It also allows ``PipelineTasks`` to raise ``NoWorkFound`` or otherwise restrict their outputs during quantum-graph generation and immediately affect the downstream graph. (`DM-38498 <https://rubinobs.atlassian.net/browse/DM-38498>`_)
+- Added a new subpackage, ``lsst.pipe.base.pipeline_graph``, for text-art visualization of pipeline graphs. (`DM-39779 <https://rubinobs.atlassian.net/browse/DM-39779>`_)
+- Added an option to the interface for creating subsets of whole pipelines which allows control over how named subsets within the pipeline are modified when labels are missing from the new subsetted pipeline.
+  The previous behavior is the new default, that is to drop any named subsets within the pipeline that contain a task label for which there is no task with that label defined.
+  The new option is to to edit each named subset to remove the extra label from the named subset, but otherwise leaving it in the new subsetted pipeline.
+  The interface has been modified in ``Pipeline`` and also the lower level ``PipelineIR``, though the latter should rarely be used directly. The new argument is implemented as an enum option, and can be most easily accessed from the ``Pipeline`` class as ``Pipeline.PipelineSubsetCtrl.(DROP/EDIT)``.
+  This interface is available through YAML pipeline specification by specifying the ``labeledSubsetModifyMode`` key when writing YAML import defectives.
+
+  New Python interfaces were added for manipulating labeled subsets in a pipeline.
+  These include; ``Pipeline.subsets`` which is a property returning a `dict`` of subset labels to sets of task labels, ``Pipeline.addLabeledSubset`` to add a new labeled subset to a ``Pipeline``, and ``Pipeline.removeLabeledSubset`` to remove a labeled subset from a pipeline. (`DM-41203 <https://rubinobs.atlassian.net/browse/DM-41203>`_)
+- Added ``QuantumGraph`` summary. (`DM-41542 <https://rubinobs.atlassian.net/browse/DM-41542>`_)
+- Added human-readable option to report summary dictionaries. (`DM-41606 <https://rubinobs.atlassian.net/browse/DM-41606>`_)
+- Added a section to pipelines which allows the explicit declaration of which susbsets correspond to steps and the dimensions the step's quanta can be sharded with. (`DM-41650 <https://rubinobs.atlassian.net/browse/DM-41650>`_)
+- The ``butler transfer-from-graph`` command now supports a ``--dry-run`` option to allow the transfer to run without updating the target butler. (`DM-42306 <https://rubinobs.atlassian.net/browse/DM-42306>`_)
+- Added ``TaskMetadata.get_dict`` and ``set_dict`` methods.
+
+  These provide a consistent way to assign and extract nested dictionaries from ``TaskMetadata``, ``lsst.daf.base.PropertySet``, and ``lsst.daf.base.PropertyList``. (`DM-42928 <https://rubinobs.atlassian.net/browse/DM-42928>`_)
+- Added ``CachingLimitedButler`` as a new type of ``LimitedButler``.
+
+  A ``CachingLimitedButler`` caches on both ``.put()`` and ``.get()``, and holds a single instance of the most recently used dataset type for that put/get.
+
+  The dataset types which will be cached on put/get are controlled via the
+  ``cache_on_put`` and ``cache_on_get`` attributes, respectively.
+
+  By default, copies of the cached items are returned on ``get``, so that code is free to operate on data in-place.
+  A ``no_copy_on_cache`` attribute also exists to tell the ``CachingLimitedButler`` not to return copies when it is known that the
+  calling code can be trusted not to change values, e.g., when passing calibs to
+  ``isrTask``. (`DM-43060 <https://rubinobs.atlassian.net/browse/DM-43060>`_)
+- ``QuantumGraph`` generation now saves software stack versions in the graph's metadata. (`DM-43225 <https://rubinobs.atlassian.net/browse/DM-43225>`_)
+- Added support for testing transient error recovery logic to the ``PipelineTask`` mock system. (`DM-43484 <https://rubinobs.atlassian.net/browse/DM-43484>`_)
+- Added ``deferBinding`` attribute to ``Input`` connection, which allows us
+  to have an input connection with the same dataset type as an output. (`DM-43572 <https://rubinobs.atlassian.net/browse/DM-43572>`_)
+
+
+API Changes
+-----------
+
+- Deprecated various interfaces that have been obsoleted by ``PipelineGraph``.
+
+  The most prominent deprecations are:
+
+  - the ``Pipeline.toExpandedPipeline``, as well as iteration and task-label indexing for ``Pipeline``;
+  - the ``PipelineDatasetTypes`` and ``TaskDatasetTypes`` classes;
+  - the old ``GraphBuilder`` interface for building ``QuantumGraph`` objects. (`DM-40441 <https://rubinobs.atlassian.net/browse/DM-40441>`_)
+- Modified the ``Instrument`` constructors to be class methods rather than static methods.
+  This means that when you call ``Subclass.from_string()`` the returned instrument class is checked to make sure it is a subclass of ``Subclass`` and not just a subclass of ``Instrument``. (`DM-42636 <https://rubinobs.atlassian.net/browse/DM-42636>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed bug in pipeline mocking triggered by declaring a config as an input connection. (`DM-41191 <https://rubinobs.atlassian.net/browse/DM-41191>`_)
+- Fixed bug in ``QuantumGraph`` generation triggered by an ``adjustQuantum`` that modifies input edges when prerequisite input edges are present on that quantum. (`DM-41486 <https://rubinobs.atlassian.net/browse/DM-41486>`_)
+- Fixed bug in meta class compatibility between Python versions for ``DatasetQueryConstraints`` (`DM-41853 <https://rubinobs.atlassian.net/browse/DM-41853>`_)
+- Fixed bug in ``DatasetTypeExecutionReport`` in which extra steps led to miscategorization.
+  The "outputs" section of ``pipetask report`` should be correct now. (`DM-41898 <https://rubinobs.atlassian.net/browse/DM-41898>`_)
+- Fixed a QG generation bug involving unusual combinations of dimensions and calibration datasets. (`DM-42301 <https://rubinobs.atlassian.net/browse/DM-42301>`_)
+- Fixed an incorrect count of previously-successful quanta in ``QuantumGraphBuilder`` logging. (`DM-42737 <https://rubinobs.atlassian.net/browse/DM-42737>`_)
+- Fixed component-dataset query bug in execution reports. (`DM-42954 <https://rubinobs.atlassian.net/browse/DM-42954>`_)
+- Replaced failing ``QuantumGraph`` packages equality check with a weaker test. (`DM-43538 <https://rubinobs.atlassian.net/browse/DM-43538>`_)
+- Propagated ``subsetCtrl`` into ``subset_from_labels`` within the ``subsetFromLabels`` pipeline method. (`DM-44341 <https://rubinobs.atlassian.net/browse/DM-44341>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Added workarounds for mypy errors in ``lsst.pipe.base.Struct`` and ``lsst.pipe.base.PipelineTask``. (`DM-34696 <https://rubinobs.atlassian.net/browse/DM-34696>`_)
+- Dropped support for Pydantic 1.x. (`DM-42302 <https://rubinobs.atlassian.net/browse/DM-42302>`_)
+
+
+An API Removal or Deprecation
+-----------------------------
+
+* Removed ``topLevelOnly`` parameter from ``TaskMetadata.names()``.
+* Removed the ``saveMetadata`` configuration from ``PipelineTask``.
+* Removed ``lsst.pipe.base.cmdLineTask.profile`` (use ``lsst.utils.timer.profile`` instead).
+* Removed ``ButlerQuantumContext`` class. Use ``QuantumContext`` instead.
+* Removed ``recontitutedDimensions`` parameter from ``QuantumNode.from_simple()`` (`DM-40150 <https://rubinobs.atlassian.net/browse/DM-40150>`_)
+
+
 lsst-pipe-base v26.0.0 (2023-09-22)
 ===================================
 

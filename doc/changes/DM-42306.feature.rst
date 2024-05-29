@@ -1,1 +1,0 @@
-The ``butler transfer-from-graph`` command now supports a ``--dry-run`` option to allow the transfer to run without updating the target butler.
