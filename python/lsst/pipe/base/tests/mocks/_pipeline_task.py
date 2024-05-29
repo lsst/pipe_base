@@ -50,7 +50,6 @@ from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.iteration import ensure_iterable
 
-from ... import automatic_connection_constants as acc
 from ... import connectionTypes as cT
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
@@ -107,7 +106,8 @@ def mock_pipeline_graph(
         Original tasks and configuration to mock.
     unmocked_dataset_types : `~collections.abc.Iterable` [ `str` ], optional
         Names of overall-input dataset types that should not be replaced with
-        mocks.
+        mocks.  "Automatic" datasets written by the execution framework such
+        as configs, logs, and metadata are implicitly included.
     force_failures : `~collections.abc.Mapping` [ `str`, `ForcedFailure` ]
         Mapping from original task label to information about an exception one
         or more quanta for this task should raise.
@@ -118,10 +118,15 @@ def mock_pipeline_graph(
         Pipeline graph using `MockPipelineTask` configurations that target the
         original tasks.  Never resolved.
     """
-    unmocked_dataset_types = tuple(unmocked_dataset_types)
+    unmocked_dataset_types = list(unmocked_dataset_types)
     if force_failures is None:
         force_failures = {}
     result = PipelineGraph(description=original_graph.description)
+    for task_node in original_graph.tasks.values():
+        unmocked_dataset_types.append(task_node.init.config_output.dataset_type_name)
+        if task_node.log_output is not None:
+            unmocked_dataset_types.append(task_node.log_output.dataset_type_name)
+        unmocked_dataset_types.append(task_node.metadata_output.dataset_type_name)
     for original_task_node in original_graph.tasks.values():
         config = MockPipelineTaskConfig()
         config.original.retarget(original_task_node.task_class)
@@ -381,22 +386,12 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
         self.unmocked_dataset_types = frozenset(config.unmocked_dataset_types)
         for name, connection in self.original.allConnections.items():
             if connection.name not in self.unmocked_dataset_types:
-                if connection.storageClass in (
-                    acc.CONFIG_INIT_OUTPUT_STORAGE_CLASS,
-                    acc.METADATA_OUTPUT_STORAGE_CLASS,
-                    acc.LOG_OUTPUT_STORAGE_CLASS,
-                ):
-                    # We don't mock the automatic output connections, so if
-                    # they're used as an input in any other connection, we
-                    # can't mock them there either.
-                    storage_class_name = connection.storageClass
-                else:
-                    # We register the mock storage class with the global
-                    # singleton here, but can only put its name in the
-                    # connection. That means the same global singleton (or one
-                    # that also has these registrations) has to be available
-                    # whenever this dataset type is used.
-                    storage_class_name = MockStorageClass.get_or_register_mock(connection.storageClass).name
+                # We register the mock storage class with the global
+                # singleton here, but can only put its name in the
+                # connection. That means the same global singleton (or one
+                # that also has these registrations) has to be available
+                # whenever this dataset type is used.
+                storage_class_name = MockStorageClass.get_or_register_mock(connection.storageClass).name
                 kwargs: dict[str, Any] = {}
                 if hasattr(connection, "dimensions"):
                     connection_dimensions = set(connection.dimensions)
