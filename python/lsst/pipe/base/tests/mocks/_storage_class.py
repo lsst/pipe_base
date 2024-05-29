@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 __all__ = (
+    "ConvertedUnmockedDataset",
     "MockDataset",
     "MockStorageClass",
     "MockDatasetQuantum",
@@ -229,6 +230,15 @@ class MockDataset(pydantic.BaseModel):
             return super().model_json_schema(*args, **kwargs)
 
 
+class ConvertedUnmockedDataset(pydantic.BaseModel):
+    """A marker class that represents a conversion from a regular in-memory
+    dataset to a mock storage class.
+    """
+
+    original_type: str
+    """The full Python type of the original unmocked in-memory dataset."""
+
+
 class MockDatasetQuantum(pydantic.BaseModel):
     """Description of the quantum that produced a mock dataset.
 
@@ -242,7 +252,7 @@ class MockDatasetQuantum(pydantic.BaseModel):
     data_id: dict[str, DataIdValue]
     """Data ID for the quantum."""
 
-    inputs: dict[str, list[MockDataset]]
+    inputs: dict[str, list[MockDataset | ConvertedUnmockedDataset]]
     """Mock datasets provided as input to the quantum.
 
     Keys are task-internal connection names, not dataset type names.
@@ -410,16 +420,17 @@ class MockStorageClass(StorageClass):
     def can_convert(self, other: StorageClass) -> bool:
         # Docstring inherited.
         if not isinstance(other, MockStorageClass):
-            return False
+            # Allow conversions from an original type (and others compatible
+            # with it) to a mock, to allow for cases where an upstream task
+            # did not use a mock to write something but the downstream one is
+            # trying to us a mock to read it.
+            return self.original.can_convert(other)
         return self.original.can_convert(other.original)
 
     def coerce_type(self, incorrect: Any) -> Any:
         # Docstring inherited.
         if not isinstance(incorrect, MockDataset):
-            raise TypeError(
-                f"Mock storage class {self.name!r} can only convert in-memory datasets "
-                f"corresponding to other mock storage classes, not {incorrect!r}."
-            )
+            return ConvertedUnmockedDataset(original_type=get_full_type_name(incorrect))
         factory = StorageClassFactory()
         other_storage_class = factory.getStorageClass(incorrect.storage_class)
         assert isinstance(other_storage_class, MockStorageClass), "Should not get a MockDataset otherwise."

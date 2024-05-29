@@ -56,7 +56,13 @@ from ...connections import InputQuantizedConnection, OutputQuantizedConnection, 
 from ...pipeline_graph import PipelineGraph
 from ...pipelineTask import PipelineTask
 from ._data_id_match import DataIdMatch
-from ._storage_class import MockDataset, MockDatasetQuantum, MockStorageClass, get_mock_name
+from ._storage_class import (
+    ConvertedUnmockedDataset,
+    MockDataset,
+    MockDatasetQuantum,
+    MockStorageClass,
+    get_mock_name,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -311,14 +317,15 @@ class BaseTestPipelineTask(PipelineTask):
                     input_dataset = butlerQC.get(ref)
                     if isinstance(input_dataset, DeferredDatasetHandle):
                         input_dataset = input_dataset.get()
-                    if not isinstance(input_dataset, MockDataset):
+                    if isinstance(input_dataset, MockDataset):
+                        # To avoid very deep provenance we trim inputs to a
+                        # single level.
+                        input_dataset.quantum = None
+                    elif not isinstance(input_dataset, ConvertedUnmockedDataset):
                         raise TypeError(
-                            f"Expected MockDataset instance for {ref}; "
+                            f"Expected MockDataset or ConvertedUnmockedDataset instance for {ref}; "
                             f"got {input_dataset!r} of type {type(input_dataset)!r}."
                         )
-                    # To avoid very deep provenance we trim inputs to a single
-                    # level.
-                    input_dataset.quantum = None
                 else:
                     input_dataset = MockDataset(
                         dataset_id=ref.id,
