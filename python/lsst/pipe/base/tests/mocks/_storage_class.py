@@ -238,6 +238,31 @@ class ConvertedUnmockedDataset(pydantic.BaseModel):
     original_type: str
     """The full Python type of the original unmocked in-memory dataset."""
 
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
 
 class MockDatasetQuantum(pydantic.BaseModel):
     """Description of the quantum that produced a mock dataset.
