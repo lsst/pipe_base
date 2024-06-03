@@ -4,7 +4,7 @@ parameters:
   value3: valueC
 tasks:
   modA:
-    class: "test.moduleA"
+    class: "lsst.pipe.base.tests.pipelineIRTestClasses.ModuleA"
     config:
       value1: 1
 subsets:

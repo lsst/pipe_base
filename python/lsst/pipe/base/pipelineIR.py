@@ -45,12 +45,13 @@ import warnings
 from collections import Counter
 from collections.abc import Generator, Hashable, Iterable, MutableMapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import find_outside_stacklevel
+from lsst.utils import doImportType
 
 
 class PipelineSubsetCtrl(enum.Enum):
@@ -444,6 +445,34 @@ class TaskIR:
 
 
 @dataclass
+class _AmbigousTask:
+    """Representation of tasks which may have conflicting task classes."""
+
+    tasks: list[TaskIR]
+    """TaskIR objects that need to be compaired late."""
+
+    def resolve(self) -> TaskIR:
+        true_taskIR = self.tasks[0]
+        task_class = doImportType(true_taskIR.klass)
+        # need to find out if they are all actually the same
+        for tmp_taskIR in self.tasks[1:]:
+            tmp_task_class = doImportType(tmp_taskIR.klass)
+            if tmp_task_class is task_class:
+                if tmp_taskIR.config is None:
+                    continue
+                for config in tmp_taskIR.config:
+                    true_taskIR.add_or_update_config(config)
+            else:
+                true_taskIR = tmp_taskIR
+                task_class = tmp_task_class
+        return true_taskIR
+
+    def to_primitives(self) -> dict[str, str | list[dict]]:
+        true_task = self.resolve()
+        return true_task.to_primitives()
+
+
+@dataclass
 class ImportIR:
     """An intermediate representation of imported pipelines."""
 
@@ -778,7 +807,7 @@ class PipelineIR:
             existing in this object.
         """
         # integrate any imported pipelines
-        accumulate_tasks: dict[str, TaskIR] = {}
+        accumulate_tasks: dict[str, TaskIR | _AmbigousTask] = {}
         accumulate_labeled_subsets: dict[str, LabeledSubset] = {}
         accumulated_parameters = ParametersIR({})
         accumulated_steps: dict[str, StepIR] = {}
@@ -842,16 +871,38 @@ class PipelineIR:
         for label, task in self.tasks.items():
             if label not in accumulate_tasks:
                 accumulate_tasks[label] = task
-            elif accumulate_tasks[label].klass == task.klass:
-                if task.config is not None:
-                    for config in task.config:
-                        accumulate_tasks[label].add_or_update_config(config)
             else:
-                accumulate_tasks[label] = task
-        self.tasks: dict[str, TaskIR] = accumulate_tasks
+                match (accumulate_tasks[label], task):
+                    case (TaskIR() as taskir_obj, TaskIR() as ctask) if taskir_obj.klass == ctask.klass:
+                        if ctask.config is not None:
+                            for config in ctask.config:
+                                taskir_obj.add_or_update_config(config)
+                    case (TaskIR(klass=klass) as taskir_obj, TaskIR() as ctask) if klass != ctask.klass:
+                        accumulate_tasks[label] = _AmbigousTask([taskir_obj, ctask])
+                    case (_AmbigousTask(ambig_list), TaskIR() as ctask):
+                        ambig_list.append(ctask)
+                    case (TaskIR() as taskir_obj, _AmbigousTask(ambig_list)):
+                        accumulate_tasks[label] = _AmbigousTask([taskir_obj] + ambig_list)
+                    case (_AmbigousTask(existing_ambig_list), _AmbigousTask(new_ambig_list)):
+                        existing_ambig_list.extend(new_ambig_list)
+
+        self.tasks: MutableMapping[str, TaskIR | _AmbigousTask] = accumulate_tasks
         accumulated_parameters.update(self.parameters)
         self.parameters = accumulated_parameters
         self.steps = list(accumulated_steps.values())
+
+    def resolve_task_ambiguity(self) -> None:
+        new_tasks: dict[str, TaskIR] = {}
+        for label, task in self.tasks.items():
+            match task:
+                case TaskIR():
+                    new_tasks[label] = task
+                case _AmbigousTask():
+                    new_tasks[label] = task.resolve()
+        # Do a cast here, because within this function body we want the
+        # protection that all the tasks are TaskIR objects, but for the
+        # task level variable, it must stay the same mixed dictionary.
+        self.tasks = cast(dict[str, TaskIR | _AmbigousTask], new_tasks)
 
     def _read_tasks(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the tasks portion of the loaded yaml document
@@ -870,6 +921,7 @@ class PipelineIR:
         if "parameters" in tmp_tasks:
             raise ValueError("parameters is a reserved word and cannot be used as a task label")
 
+        definition: str | dict[str, Any]
         for label, definition in tmp_tasks.items():
             if isinstance(definition, str):
                 definition = {"class": definition}
