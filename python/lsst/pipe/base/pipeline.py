@@ -806,7 +806,11 @@ class Pipeline:
             return
         if label not in self._pipelineIR.tasks:
             raise LookupError(f"There are no tasks labeled '{label}' in the pipeline")
-        self._pipelineIR.tasks[label].add_or_update_config(newConfig)
+        match self._pipelineIR.tasks[label]:
+            case pipelineIR.TaskIR() as task:
+                task.add_or_update_config(newConfig)
+            case pipelineIR._AmbigousTask() as ambig_task:
+                ambig_task.tasks[-1].add_or_update_config(newConfig)
 
     def write_to_uri(self, uri: ResourcePathExpression) -> None:
         """Write the pipeline to a file or directory.
@@ -839,6 +843,7 @@ class Pipeline:
         graph : `pipeline_graph.PipelineGraph`
             Representation of the pipeline as a graph.
         """
+        self._pipelineIR.resolve_task_ambiguity()
         instrument_class_name = self._pipelineIR.instrument
         data_id = {}
         if instrument_class_name is not None:
@@ -906,7 +911,8 @@ class Pipeline:
         """
         if (taskIR := self._pipelineIR.tasks.get(label)) is None:
             raise NameError(f"Label {label} does not appear in this pipeline")
-        taskClass: type[PipelineTask] = doImportType(taskIR.klass)
+        # type ignore here because all ambiguity should be resolved
+        taskClass: type[PipelineTask] = doImportType(taskIR.klass)  # type: ignore
         config = taskClass.ConfigClass()
         instrument: PipeBaseInstrument | None = None
         if (instrumentName := self._pipelineIR.instrument) is not None:
@@ -915,7 +921,8 @@ class Pipeline:
         config.applyConfigOverrides(
             instrument,
             getattr(taskClass, "_DefaultName", ""),
-            taskIR.config,
+            # type ignore here because all ambiguity should be resolved
+            taskIR.config,  # type: ignore
             self._pipelineIR.parameters,
             label,
         )
@@ -940,6 +947,7 @@ class Pipeline:
         # Making a whole graph and then making a TaskDef from that is pretty
         # backwards, but I'm hoping to deprecate this method shortly in favor
         # of making the graph explicitly and working with its node objects.
+        self._pipelineIR.resolve_task_ambiguity()
         graph = pipeline_graph.PipelineGraph()
         self._add_task_to_graph(item, graph)
         (result,) = graph._iter_task_defs()
