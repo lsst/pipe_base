@@ -1,3 +1,0 @@
-Add a manifest checker which walks an executed quantum graph to generate a
-summary report containing information about produced DatasetTypes, missing data,
-and failures.

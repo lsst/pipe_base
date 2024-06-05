@@ -1,2 +1,0 @@
-Added ``deferBinding`` attribute to ``Input`` connection, which allows us
-to have an input connection with the same dataset type as an output.

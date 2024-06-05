@@ -1,2 +1,0 @@
-Modified the ``Instrument`` constructors to be class methods rather than static methods.
-This means that when you call ``Subclass.from_string()`` the returned instrument class is checked to make sure it is a subclass of ``Subclass`` and not just a subclass of ``Instrument``.
