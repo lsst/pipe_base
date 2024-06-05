@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("get_node_symbol", "GetNodeText")
+__all__ = ("get_node_symbol", "GetNodeText", "format_dimensions", "format_task_class")
 
 import textwrap
 from collections.abc import Iterator
@@ -137,28 +137,7 @@ class GetNodeText:
         formatted : `str`
             The formatted dimension string.
         """
-        match self.options.dimensions:
-            case "full":
-                return str(dimensions.names)
-            case "concise":
-                kept = set(dimensions.names)
-                done = False
-                while not done:
-                    for dimension in kept:
-                        if any(
-                            dimension != other and dimension in dimensions.universe[other].dimensions
-                            for other in kept
-                        ):
-                            kept.remove(dimension)
-                            break
-                    else:
-                        done = True
-                # We still iterate over dimensions instead of kept to preserve
-                # order.
-                return f"{{{', '.join(d for d in dimensions.names if d in kept)}}}"
-            case False:
-                return ""
-        raise ValueError(f"Invalid display option for dimensions: {self.options.dimensions!r}.")
+        return format_dimensions(self.options, dimensions)
 
     def format_task_class(self, task_class_name: str) -> str:
         """Format the type object for a task or task init node.
@@ -173,14 +152,7 @@ class GetNodeText:
         formatted : `str`
             The formatted string.
         """
-        match self.options.task_classes:
-            case "full":
-                return task_class_name
-            case "concise":
-                return task_class_name.split(".")[-1]
-            case False:
-                return ""
-        raise ValueError(f"Invalid display option for task_classes: {self.options.task_classes!r}.")
+        return format_task_class(self.options, task_class_name)
 
     def format_deferrals(self, width: int | None) -> Iterator[str]:
         """Iterate over all descriptions that were truncated earlier and
@@ -204,3 +176,67 @@ class GetNodeText:
                     yield from textwrap.wrap(term, width, initial_indent=indent, subsequent_indent=indent)
                 else:
                     yield term
+
+
+def format_dimensions(options: NodeAttributeOptions, dimensions: DimensionGroup) -> str:
+    """Format the dimensions of a task or dataset type node.
+
+    Parameters
+    ----------
+    options : `NodeAttributeOptions`
+        Options for how much information to display.
+    dimensions : `~lsst.daf.butler.DimensionGroup`
+        The dimensions to be formatted.
+
+    Returns
+    -------
+    formatted : `str`
+        The formatted dimension string.
+    """
+    match options.dimensions:
+        case "full":
+            return str(dimensions.names)
+        case "concise":
+            kept = set(dimensions.names)
+            done = False
+            while not done:
+                for dimension in kept:
+                    if any(
+                        dimension != other and dimension in dimensions.universe[other].dimensions
+                        for other in kept
+                    ):
+                        kept.remove(dimension)
+                        break
+                else:
+                    done = True
+            # We still iterate over dimensions instead of kept to preserve
+            # order.
+            return f"{{{', '.join(d for d in dimensions.names if d in kept)}}}"
+        case False:
+            return ""
+    raise ValueError(f"Invalid display option for dimensions: {options.dimensions!r}.")
+
+
+def format_task_class(options: NodeAttributeOptions, task_class_name: str) -> str:
+    """Format the type object for a task or task init node.
+
+    Parameters
+    ----------
+    options : `NodeAttributeOptions`
+        Options for how much information to display.
+    task_class_name : `str`
+        The name of the task class.
+
+    Returns
+    -------
+    formatted : `str`
+        The formatted string.
+    """
+    match options.task_classes:
+        case "full":
+            return task_class_name
+        case "concise":
+            return task_class_name.split(".")[-1]
+        case False:
+            return ""
+    raise ValueError(f"Invalid display option for task_classes: {options.task_classes!r}.")
