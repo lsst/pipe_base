@@ -109,10 +109,8 @@ class GetNodeText:
         terms: list[str] = [f"{node}:" if self.options else str(node)]
         if self.options.dimensions and node.node_type != NodeType.TASK_INIT:
             terms.append(self.format_dimensions(state["dimensions"]))
-        if (
-            self.options.task_classes
-            and node.node_type is NodeType.TASK
-            or node.node_type is NodeType.TASK_INIT
+        if self.options.task_classes and (
+            node.node_type is NodeType.TASK or node.node_type is NodeType.TASK_INIT
         ):
             terms.append(self.format_task_class(state["task_class_name"]))
         if self.options.storage_classes and node.node_type is NodeType.DATASET_TYPE:
