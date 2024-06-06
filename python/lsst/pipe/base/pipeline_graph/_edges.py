@@ -470,6 +470,7 @@ class ReadEdge(Edge):
         producer: str | None,
         consumers: Sequence[str],
         is_registered: bool,
+        visualization_only: bool,
     ) -> tuple[DatasetType, bool, bool]:
         """Participate in the construction of the `DatasetTypeNode` object
         associated with this edge.
@@ -499,6 +500,13 @@ class ReadEdge(Edge):
         is_registered : `bool`
             Whether a registration for this dataset type was found in the
             data repository.
+        visualization_only : `bool`
+            Resolve the graph as well as possible even when dimensions and
+            storage classes cannot really be determined.  This can include
+            using the ``universe.commonSkyPix`` as the assumed dimensions of
+            connections that use the "skypix" placeholder and using "<UNKNOWN>"
+            as a storage class name (which will fail if the storage class
+            itself is ever actually loaded).
 
         Returns
         -------
@@ -528,22 +536,28 @@ class ReadEdge(Edge):
         """
         if "skypix" in self.raw_dimensions:
             if current is None:
-                raise MissingDatasetTypeError(
-                    f"DatasetType '{self.dataset_type_name}' referenced by "
-                    f"{self.task_label!r} uses 'skypix' as a dimension "
-                    f"placeholder, but has not been registered with the data repository.  "
-                    f"Note that reference catalog names are now used as the dataset "
-                    f"type name instead of 'ref_cat'."
-                )
-            rest1 = set(universe.conform(self.raw_dimensions - {"skypix"}).names)
-            rest2 = current.dimensions.names - current.dimensions.skypix.names
-            if rest1 != rest2:
-                raise IncompatibleDatasetTypeError(
-                    f"Non-skypix dimensions for dataset type {self.dataset_type_name} declared in "
-                    f"connections ({rest1}) are inconsistent with those in "
-                    f"registry's version of this dataset ({rest2})."
-                )
-            dimensions = current.dimensions.as_group()
+                if visualization_only:
+                    dimensions = universe.conform(
+                        [d if d != "skypix" else universe.commonSkyPix.name for d in self.raw_dimensions]
+                    )
+                else:
+                    raise MissingDatasetTypeError(
+                        f"DatasetType '{self.dataset_type_name}' referenced by "
+                        f"{self.task_label!r} uses 'skypix' as a dimension "
+                        f"placeholder, but has not been registered with the data repository.  "
+                        f"Note that reference catalog names are now used as the dataset "
+                        f"type name instead of 'ref_cat'."
+                    )
+            else:
+                rest1 = set(universe.conform(self.raw_dimensions - {"skypix"}).names)
+                rest2 = current.dimensions.names - current.dimensions.skypix.names
+                if rest1 != rest2:
+                    raise IncompatibleDatasetTypeError(
+                        f"Non-skypix dimensions for dataset type {self.dataset_type_name} declared in "
+                        f"connections ({rest1}) are inconsistent with those in "
+                        f"registry's version of this dataset ({rest2})."
+                    )
+                dimensions = current.dimensions.as_group()
         else:
             dimensions = universe.conform(self.raw_dimensions)
         is_initial_query_constraint = is_initial_query_constraint and not self.defer_query_constraint
@@ -576,28 +590,37 @@ class ReadEdge(Edge):
 
         if self.component is not None:
             if current is None:
-                raise MissingDatasetTypeError(
-                    f"Dataset type {self.parent_dataset_type_name!r} is not registered and not produced by "
-                    f"this pipeline, but it used by task {self.task_label!r}, via component "
-                    f"{self.component!r}. This pipeline cannot be resolved until the parent dataset type is "
-                    "registered."
-                )
-            all_current_components = current.storageClass.allComponents()
-            if self.component not in all_current_components:
-                raise IncompatibleDatasetTypeError(
-                    f"Dataset type {self.parent_dataset_type_name!r} has storage class "
-                    f"{current.storageClass_name!r} (from {report_current_origin()}), "
-                    f"which does not include component {self.component!r} "
-                    f"as requested by task {self.task_label!r}."
-                )
-            if all_current_components[self.component].name != self.storage_class_name:
-                raise IncompatibleDatasetTypeError(
-                    f"Dataset type '{self.parent_dataset_type_name}.{self.component}' has storage class "
-                    f"{all_current_components[self.component].name!r} "
-                    f"(from {report_current_origin()}), which does not match "
-                    f"{self.storage_class_name!r}, as requested by task {self.task_label!r}. "
-                    "Note that storage class conversions of components are not supported."
-                )
+                if visualization_only:
+                    current = DatasetType(
+                        self.parent_dataset_type_name,
+                        dimensions,
+                        storageClass="<UNKNOWN>",
+                        isCalibration=self.is_calibration,
+                    )
+                else:
+                    raise MissingDatasetTypeError(
+                        f"Dataset type {self.parent_dataset_type_name!r} is not registered and not produced "
+                        f"by this pipeline, but it used by task {self.task_label!r}, via component "
+                        f"{self.component!r}. This pipeline cannot be resolved until the parent dataset "
+                        "type is registered."
+                    )
+            else:
+                all_current_components = current.storageClass.allComponents()
+                if self.component not in all_current_components:
+                    raise IncompatibleDatasetTypeError(
+                        f"Dataset type {self.parent_dataset_type_name!r} has storage class "
+                        f"{current.storageClass_name!r} (from {report_current_origin()}), "
+                        f"which does not include component {self.component!r} "
+                        f"as requested by task {self.task_label!r}."
+                    )
+                if all_current_components[self.component].name != self.storage_class_name:
+                    raise IncompatibleDatasetTypeError(
+                        f"Dataset type '{self.parent_dataset_type_name}.{self.component}' has storage class "
+                        f"{all_current_components[self.component].name!r} "
+                        f"(from {report_current_origin()}), which does not match "
+                        f"{self.storage_class_name!r}, as requested by task {self.task_label!r}. "
+                        "Note that storage class conversions of components are not supported."
+                    )
             return current, is_initial_query_constraint, is_prerequisite
         else:
             dataset_type = DatasetType(
