@@ -97,7 +97,7 @@ def main(argv: Sequence[str]) -> int:
                 init=args.display.init,
                 color=args.display.color,
                 dimensions=args.display.node_attributes.dimensions,
-                task_classes=args.display.node_attributes.task_classes,  # type: ignore
+                task_classes=args.display.node_attributes.task_classes,
                 storage_classes=args.display.node_attributes.storage_classes,
                 merge_input_trees=args.display.merge_input_trees,
                 merge_output_trees=args.display.merge_output_trees,
