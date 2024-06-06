@@ -65,7 +65,7 @@ version = { attr = "lsst_versions.get_lsst_version" }
     filename = "doc/lsst.pipe.base/CHANGES.rst"
     directory = "doc/changes"
     title_format = "lsst-pipe-base {version} ({project_date})"
-    issue_format = "`{issue} <https://jira.lsstcorp.org/browse/{issue}>`_"
+    issue_format = "`{issue} <https://rubinobs.atlassian.net/browse/{issue}>`_"
 
 
     [[tool.towncrier.type]]

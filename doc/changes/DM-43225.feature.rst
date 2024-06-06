@@ -1,1 +1,0 @@
-QuantumGraph generation now saves software stack versions in the graph's metadata.

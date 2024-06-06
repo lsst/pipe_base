@@ -35,7 +35,7 @@ from typing import Any
 
 import astropy.time
 from lsst.daf.butler import DataId
-from lsst.daf.butler.registry.queries.expressions.parser import Node, ParserYacc, TreeVisitor
+from lsst.daf.butler.registry.queries.expressions.parser import Node, TreeVisitor, parse_expression
 
 
 class _DataIdMatchTreeVisitor(TreeVisitor):
@@ -143,9 +143,8 @@ class DataIdMatch:
     """
 
     def __init__(self, expression: str):
-        parser = ParserYacc()
         self.expression = expression
-        self.tree = parser.parse(expression)
+        self.tree = parse_expression(expression)
 
     def match(self, dataId: DataId) -> bool:
         """Match DataId contents against the expression.

@@ -1,5 +1,0 @@
-* Removed ``topLevelOnly`` parameter from ``TaskMetadata.names()``.
-* Removed the ``saveMetadata`` configuration from ``PipelineTask``.
-* Removed ``lsst.pipe.base.cmdLineTask.profile`` (use ``lsst.utils.timer.profile`` instead).
-* Removed ``ButlerQuantumContext`` class. Use ``QuantumContext`` instead.
-* Removed ``recontitutedDimensions`` parameter from ``QuantumNode.from_simple()``
