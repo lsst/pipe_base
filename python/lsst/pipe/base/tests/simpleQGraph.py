@@ -188,6 +188,103 @@ class AddTaskFactoryMock(TaskFactory):
         return task
 
 
+class SubTaskConnections(
+    PipelineTaskConnections,
+    dimensions=("instrument", "detector"),
+    defaultTemplates={"in_tmpl": "_in", "out_tmpl": "_out"},
+):
+    """Connections for SubTask, has one input and two outputs,
+    plus one init output.
+    """
+
+    input = cT.Input(
+        name="add_dataset{in_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Input dataset type for this task",
+    )
+    output = cT.Output(
+        name="add_dataset{out_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Output dataset type for this task",
+    )
+    output2 = cT.Output(
+        name="add2_dataset{out_tmpl}",
+        dimensions=["instrument", "detector"],
+        storageClass="NumpyArray",
+        doc="Output dataset type for this task",
+    )
+    initout = cT.InitOutput(
+        name="add_init_output{out_tmpl}",
+        storageClass="NumpyArray",
+        doc="Init Output dataset type for this task",
+    )
+
+
+class SubTaskConfig(PipelineTaskConfig, pipelineConnections=SubTaskConnections):
+    """Config for SubTask."""
+
+    subtract = pexConfig.Field[int](doc="amount to subtract", default=3)
+
+
+class SubTask(PipelineTask):
+    """Trivial PipelineTask for testing, has some extras useful for specific
+    unit tests.
+    """
+
+    ConfigClass = SubTaskConfig
+    _DefaultName = "sub_task"
+
+    initout = numpy.array([999])
+    """InitOutputs for this task"""
+
+    taskFactory: SubTaskFactoryMock | None = None
+    """Factory that makes instances"""
+
+    def run(self, input: int) -> Struct:
+        if self.taskFactory:
+            # do some bookkeeping
+            if self.taskFactory.stopAt == self.taskFactory.countExec:
+                raise RuntimeError("pretend something bad happened")
+            self.taskFactory.countExec -= 1
+
+        self.config = cast(SubTaskConfig, self.config)
+        self.metadata.add("sub", self.config.subtract)
+        output = input - self.config.subtract
+        output2 = output + self.config.subtract
+        _LOG.info("input = %s, output = %s, output2 = %s", input, output, output2)
+        return Struct(output=output, output2=output2)
+
+
+class SubTaskFactoryMock(TaskFactory):
+    """Special task factory that instantiates AddTask.
+
+    It also defines some bookkeeping variables used by SubTask to report
+    progress to unit tests.
+
+    Parameters
+    ----------
+    stopAt : `int`, optional
+        Number of times to call `run` before stopping.
+    """
+
+    def __init__(self, stopAt: int = -1):
+        self.countExec = 100  # reduced by SubTask
+        self.stopAt = stopAt  # AddTask raises exception at this call to run()
+
+    def makeTask(
+        self,
+        task_node: TaskNode,
+        /,
+        butler: LimitedButler,
+        initInputRefs: Iterable[DatasetRef] | None,
+    ) -> PipelineTask:
+        task = task_node.task_class(config=task_node.config, initInputs=None, name=task_node.label)
+        task.taskFactory = self  # type: ignore
+        return task
+
+
 def registerDatasetTypes(registry: Registry, pipeline: Pipeline | PipelineGraph) -> None:
     """Register all dataset types used by tasks in a registry.
 

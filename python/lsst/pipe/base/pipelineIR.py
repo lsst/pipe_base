@@ -50,8 +50,8 @@ from typing import Any, Literal, cast
 import yaml
 
 from lsst.resources import ResourcePath, ResourcePathExpression
-from lsst.utils.introspection import find_outside_stacklevel
 from lsst.utils import doImportType
+from lsst.utils.introspection import find_outside_stacklevel
 
 
 class PipelineSubsetCtrl(enum.Enum):

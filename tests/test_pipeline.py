@@ -34,7 +34,7 @@ import unittest
 import lsst.utils.tests
 from lsst.pipe.base import LabelSpecifier, Pipeline, TaskDef
 from lsst.pipe.base.pipelineIR import LabeledSubset
-from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
+from lsst.pipe.base.tests.simpleQGraph import AddTask, SubTask, makeSimplePipeline
 
 
 class PipelineTestCase(unittest.TestCase):
@@ -129,6 +129,48 @@ class PipelineTestCase(unittest.TestCase):
 
         pipeline1.mergePipeline(pipeline2)
         self.assertEqual(pipeline1._pipelineIR.tasks.keys(), {"task0", "task1", "task2", "task3"})
+
+        # Test merging pipelines with ambiguous tasks
+        pipeline1 = makeSimplePipeline(2)
+        pipeline2 = makeSimplePipeline(2)
+        pipeline2.addTask(SubTask, "task1")
+        pipeline2.mergePipeline(pipeline1)
+
+        # Now merge in another pipeline with a config applied.
+        pipeline3 = makeSimplePipeline(2)
+        pipeline3.addTask(SubTask, "task1")
+        pipeline3.addConfigOverride("task1", "subtract", 10)
+        pipeline3.mergePipeline(pipeline2)
+        graph = pipeline3.to_graph()
+        # assert equality from the graph to trigger ambiquity resolution
+        self.assertEqual(graph.tasks["task1"].config.subtract, 10)
+
+        # Now change the order of the merging
+        pipeline1 = makeSimplePipeline(2)
+        pipeline2 = makeSimplePipeline(2)
+        pipeline2.addTask(SubTask, "task1")
+        pipeline3 = makeSimplePipeline(2)
+        pipeline3.mergePipeline(pipeline2)
+        pipeline3.mergePipeline(pipeline1)
+        graph = pipeline3.to_graph()
+        # assert equality from the graph to trigger ambiquity resolution
+        self.assertEqual(graph.tasks["task1"].config.addend, 3)
+
+        # Now do two ambiguous chains
+        pipeline1 = makeSimplePipeline(2)
+        pipeline2 = makeSimplePipeline(2)
+        pipeline2.addTask(SubTask, "task1")
+        pipeline2.addConfigOverride("task1", "subtract", 10)
+        pipeline2.mergePipeline(pipeline1)
+
+        pipeline3 = makeSimplePipeline(2)
+        pipeline4 = makeSimplePipeline(2)
+        pipeline4.addTask(SubTask, "task1")
+        pipeline4.addConfigOverride("task1", "subtract", 7)
+        pipeline4.mergePipeline(pipeline3)
+        graph = pipeline4.to_graph()
+        # assert equality from the graph to trigger ambiquity resolution
+        self.assertEqual(graph.tasks["task1"].config.subtract, 7)
 
     def testFindingSubset(self):
         pipeline = makeSimplePipeline(2)

@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Module defining PipelineIR test classes
-"""
+"""Module defining PipelineIR test classes."""
 
 from __future__ import annotations
 
@@ -34,7 +33,7 @@ __all__ = ("ModuleA", "ModuleAAlias", "ModuleAReplace")
 
 
 class ModuleA:
-    """PipelineIR test class for importing"""
+    """PipelineIR test class for importing."""
 
     pass
 
@@ -43,6 +42,6 @@ ModuleAAlias = ModuleA
 
 
 class ModuleAReplace:
-    """PipelineIR test class for importing"""
+    """PipelineIR test class for importing."""
 
     pass
