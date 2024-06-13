@@ -15,6 +15,7 @@ from ._status import *
 from ._task_metadata import *
 from .config import *
 from .connections import *
+from .dotTools import *
 from .executionButlerBuilder import *
 from .graph import *
 
