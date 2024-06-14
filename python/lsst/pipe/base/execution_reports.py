@@ -68,6 +68,10 @@ class DatasetTypeExecutionReport:
     """Count of datasets produced (`int`).
     """
 
+    n_expected: int = 0
+    """Count of datasets expected (`int`)
+    """
+
     def to_summary_dict(self) -> dict[str, Any]:
         r"""Summarize the DatasetTypeExecutionReport in a dictionary.
 
@@ -84,6 +88,7 @@ class DatasetTypeExecutionReport:
             "failed": len(self.failed),
             "not_produced": len(self.not_produced),
             "blocked": len(self.blocked),
+            "expected": self.n_expected,
         }
 
 
@@ -111,6 +116,10 @@ class TaskExecutionReport:
 
     This may include quanta that did not produce any datasets; ie, raised
     `NoWorkFound`.
+    """
+
+    n_expected: int = 0
+    """A count of expected quanta.
     """
 
     blocked: dict[uuid.UUID, DataCoordinate] = dataclasses.field(default_factory=dict)
@@ -197,6 +206,7 @@ class TaskExecutionReport:
                     dataset_type_report.not_produced.add(output_ref)
             else:
                 dataset_type_report.n_produced += 1
+            dataset_type_report.n_expected += 1
 
     def to_summary_dict(
         self, butler: Butler, do_store_logs: bool = True, human_readable: bool = False
@@ -262,6 +272,7 @@ class TaskExecutionReport:
             "outputs": {name: r.to_summary_dict() for name, r in self.output_datasets.items()},
             "n_quanta_blocked": len(self.blocked),
             "n_succeeded": self.n_succeeded,
+            "n_expected": self.n_expected,
         }
         if human_readable:
             result["failed_quanta"] = failed_data_ids
@@ -399,7 +410,6 @@ class QuantumGraphExecutionReport:
                     status_graph.add_edge(quantum_id, ref.id)
                 for ref in itertools.chain.from_iterable(quantum.inputs.values()):
                     status_graph.add_edge(ref.id, quantum_id)
-
         for task_node in qg.pipeline_graph.tasks.values():
             task_report = TaskExecutionReport()
             if task_node.log_output is None:
@@ -413,6 +423,7 @@ class QuantumGraphExecutionReport:
                     metadata_name=task_node.metadata_output.dataset_type_name,
                     log_name=task_node.log_output.dataset_type_name,
                 )
+                task_report.n_expected = len(qg.get_task_quanta(task_node.label).items())
             report.tasks[task_node.label] = task_report
         return report
 
