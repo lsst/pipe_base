@@ -34,7 +34,9 @@ __all__ = (
 )
 
 import dataclasses
+import hashlib
 from collections import defaultdict
+from functools import cached_property
 from typing import Any, Iterable, TypeVar
 
 import networkx
@@ -65,6 +67,14 @@ class MergedNodeKey(frozenset[NodeKey]):
         dataset type node.
         """
         return next(iter(self)).node_type
+
+    @cached_property
+    def node_id(self) -> str:
+        """A unique string representation of the merged node key."""
+        hasher = hashlib.blake2b(digest_size=4)
+        for member in sorted(self):
+            hasher.update(str(member).encode())
+        return f"{hasher.digest().hex()}:{self.node_type.value}"
 
 
 def merge_graph_input_trees(

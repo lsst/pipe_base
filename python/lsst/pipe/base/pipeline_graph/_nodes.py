@@ -89,3 +89,7 @@ class NodeKey(NamedTuple):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def node_id(self) -> str:
+        return f"{self.name}:{self.node_type.value}"
