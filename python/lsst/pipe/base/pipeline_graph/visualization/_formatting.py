@@ -28,6 +28,7 @@ from __future__ import annotations
 
 __all__ = ("get_node_symbol", "GetNodeText", "format_dimensions", "format_task_class")
 
+import itertools
 import textwrap
 from collections.abc import Iterator
 
@@ -195,21 +196,13 @@ def format_dimensions(options: NodeAttributeOptions, dimensions: DimensionGroup)
         case "full":
             return str(dimensions.names)
         case "concise":
-            kept = set(dimensions.names)
-            done = False
-            while not done:
-                for dimension in kept:
-                    if any(
-                        dimension != other and dimension in dimensions.universe[other].dimensions
-                        for other in kept
-                    ):
-                        kept.remove(dimension)
-                        break
-                else:
-                    done = True
-            # We still iterate over dimensions instead of kept to preserve
-            # order.
-            return f"{{{', '.join(d for d in dimensions.names if d in kept)}}}"
+            redundant: set[str] = set()
+            for a, b in itertools.permutations(dimensions.required, 2):
+                if a in dimensions.universe[b].required:
+                    redundant.add(a)
+            kept = [d for d in dimensions.required if d not in redundant]
+            assert dimensions.universe.conform(kept) == dimensions
+            return f"{{{', '.join(kept)}}}"
         case False:
             return ""
     raise ValueError(f"Invalid display option for dimensions: {options.dimensions!r}.")
