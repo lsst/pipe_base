@@ -49,7 +49,8 @@ _DEFAULT_GRAPH = dict(splines="ortho", nodesep="0.5", ranksep="0.75")
 _DEFAULT_NODE = dict(shape="box", fontname="Monospace", fontsize="14", margin="0.2,0.1", penwidth="3")
 _DEFAULT_EDGE = dict(color="black", arrowsize="1.5", penwidth="1.5", pad="10mm")
 _LABEL_POINT_SIZE = "18"
-_LABEL_MAX_LINES = 10
+_LABEL_MAX_LINES_SOFT = 10
+_LABEL_MAX_LINES_HARD = 15
 _OVERFLOW_MAX_LINES = 20
 
 
@@ -172,8 +173,10 @@ def _render_dataset_type_node(
     overflow_ids : str | None
         The ID of the overflow node, if any
     """
-    labels, label_extras, common_prefix = _format_label(str(node_key))
-
+    labels, label_extras, common_prefix = _format_label(str(node_key), _LABEL_MAX_LINES_SOFT)
+    if len(labels) + len(label_extras) <= _LABEL_MAX_LINES_HARD:
+        labels += label_extras
+        label_extras = []
     if common_prefix:
         labels.insert(0, common_prefix)
 
@@ -270,7 +273,7 @@ def _render_edge(from_node_id: str, to_node_id: str, stream: TextIO, **kwargs: A
 
 def _format_label(
     label: str,
-    max_lines: int = _LABEL_MAX_LINES,
+    max_lines: int = 10,
     min_common_prefix_len: int = 1000,
 ) -> tuple[list[str], list[str], str]:
     """Add HTML-style formatting to label text.
