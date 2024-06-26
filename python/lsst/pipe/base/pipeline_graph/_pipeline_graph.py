@@ -511,6 +511,7 @@ class PipelineGraph:
         registry: Registry | None = None,
         dimensions: DimensionUniverse | None = None,
         dataset_types: Mapping[str, DatasetType] | None = None,
+        visualization_only: bool = False,
     ) -> None:
         """Resolve all dimensions and dataset types and check them for
         consistency.
@@ -520,13 +521,23 @@ class PipelineGraph:
         Parameters
         ----------
         registry : `lsst.daf.butler.Registry`, optional
-            Client for the data repository to resolve against.  If not
-            provided, both ``dimensions`` and ``dataset_types`` must be.
+            Client for the data repository to resolve against.
         dimensions : `lsst.daf.butler.DimensionUniverse`, optional
-            Definitions for all dimensions.
+            Definitions for all dimensions.  Takes precedence over
+            ``registry.dimensions`` if both are provided.  If neither is
+            provided, defaults to the default dimension universe
+            (``lsst.daf.butler.DimensionUniverse()``).
         dataset_types : `~collection.abc.Mapping` [ `str`, \
                 `~lsst.daf.butler.DatasetType` ], optional
-            Mapping of dataset types to consider registered.
+            Mapping of dataset types to consider registered.  Takes precedence
+            over ``registry.getDatasetType()`` if both are provided.
+        visualization_only : `bool`, optional
+            Resolve the graph as well as possible even when dimensions and
+            storage classes cannot really be determined.  This can include
+            using the ``universe.commonSkyPix`` as the assumed dimensions of
+            connections that use the "skypix" placeholder and using "<UNKNOWN>"
+            as a storage class name (which will fail if the storage class
+            itself is ever actually loaded).
 
         Notes
         -----
@@ -556,18 +567,11 @@ class PipelineGraph:
             Raised if ``check_edges_unchanged=True`` and the edges of a task do
             change after import and reconfiguration.
         """
-        if registry is None and (dimensions is None or dataset_types is None):
-            raise PipelineGraphError(
-                "Either 'registry' or both 'dimensions' and 'dataset_types' "
-                "must be passed to PipelineGraph.resolve."
-            )
-
-        get_registered: Callable[[str], DatasetType | None]
+        get_registered: Callable[[str], DatasetType | None] | None = None
         if dataset_types is not None:
             # Ruff seems confused about whether this is used below; it is!
             get_registered = dataset_types.get
-        else:
-            assert registry is not None
+        elif registry is not None:
 
             def get_registered(name: str) -> DatasetType | None:
                 try:
@@ -575,9 +579,16 @@ class PipelineGraph:
                 except MissingDatasetTypeError:
                     return None
 
+        else:
+
+            def get_registered(name: str) -> None:
+                return None
+
         if dimensions is None:
-            assert registry is not None
-            dimensions = registry.dimensions
+            if registry is not None:
+                dimensions = registry.dimensions
+            else:
+                dimensions = DimensionUniverse()
 
         node_key: NodeKey
         updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
@@ -591,7 +602,12 @@ class PipelineGraph:
                 case NodeType.DATASET_TYPE:
                     dataset_type_node: DatasetTypeNode | None = node_state["instance"]
                     new_dataset_type_node = DatasetTypeNode._from_edges(
-                        node_key, self._xgraph, get_registered, dimensions, previous=dataset_type_node
+                        node_key,
+                        self._xgraph,
+                        get_registered,
+                        dimensions,
+                        previous=dataset_type_node,
+                        visualization_only=visualization_only,
                     )
                     # Usage of `is`` here is intentional; `_from_edges` returns
                     # `previous=dataset_type_node` if it can determine that it

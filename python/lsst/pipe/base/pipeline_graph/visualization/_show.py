@@ -26,12 +26,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("show",)
+__all__ = ("show", "parse_display_args")
 
 import sys
 from collections.abc import Sequence
 from shutil import get_terminal_size
-from typing import Literal, TextIO
+from typing import Any, Literal, TextIO
+
+import networkx
 
 from .._nodes import NodeKey
 from .._pipeline_graph import PipelineGraph
@@ -50,33 +52,25 @@ from ._printer import make_default_printer
 DisplayNodeKey = NodeKey | MergedNodeKey
 
 
-def show(
+def parse_display_args(
     pipeline_graph: PipelineGraph,
-    stream: TextIO = sys.stdout,
     *,
     dataset_types: bool = False,
     init: bool | None = False,
-    color: bool | Sequence[str] | None = None,
     dimensions: Literal["full"] | Literal["concise"] | Literal[False] | None = None,
     task_classes: Literal["full"] | Literal["concise"] | Literal[False] = False,
     storage_classes: bool | None = None,
     merge_input_trees: int = 4,
     merge_output_trees: int = 4,
     merge_intermediates: bool = True,
-    width: int = -1,
     include_automatic_connections: bool = False,
-    column_interior_penalty: int = 1,
-    column_crossing_penalty: int = 1,
-    column_insertion_penalty: int = 2,
-) -> None:
+) -> tuple[networkx.DiGraph | networkx.MultiDiGraph, NodeAttributeOptions]:
     """Print a text-based ~.PipelineGraph` visualization.
 
     Parameters
     ----------
     pipeline_graph : `PipelineGraph`
         Graph to display.
-    stream : `TextIO`, optional
-        Output stream.  Defaults to STDOUT.
     dataset_types : `bool`, optional
         Whether to include dataset type nodes (default is `False`).
     init : `bool`, optional
@@ -84,12 +78,6 @@ def show(
         init-input and init-output dataset types).  Default is `False`.  `None`
         will show both runtime and init nodes, while `True` will show only
         init nodes.
-    color : `bool` or `~collections.abc.Sequence` [ `str` ]
-        Whether to use tto add color to the graph. Default is to add colors
-        only if the `colorama` package can be imported. `False` disables colors
-        unconditionally, while `True` or a sequence of colors (see
-        `make_colorama_printer`) will result in `ImportError` being propagated
-        up if `colorama` is unavailable.
     dimensions : `str` or `False`, optional
         How to display the dimensions of tasks and dataset types.
 
@@ -135,22 +123,9 @@ def show(
         If `True` (default) merge interior parallel nodes with the same inputs,
         outputs, and other properties (dimensions, task classes, storage
         classes).
-    width : `int`, optional
-        Number of columns the full graph should occupy, including text
-        descriptions on the right.  If ``0``, there is no limit (and hence no
-        text-wrapping).  If negative (default) use the current terminal width.
     include_automatic_connections : `bool`, optional
         Whether to include automatically-added connections like the config,
         log, and metadata dataset types for each task.  Default is `False`.
-    column_interior_penalty : `int`
-        Penalty applied to a prospective column for a node when that column is
-        between two existing columns.
-    column_crossing_penalty : `int`
-        Penalty applied to a prospective column for a node for each ongoing
-        (vertical) edge that node's incoming edges would have to "hop".
-    column_insertion_penalty : `int`
-        Penalty applied to a prospective column for a node when considering a
-        new columns on the sides or between two existing columns.
     """
     if init is None:
         if not dataset_types:
@@ -187,6 +162,52 @@ def show(
         merge_graph_output_trees(xgraph, options, depth=merge_output_trees)
     if merge_intermediates:
         merge_graph_intermediates(xgraph, options)
+
+    return xgraph, options
+
+
+def show(
+    pipeline_graph: PipelineGraph,
+    stream: TextIO = sys.stdout,
+    *,
+    color: bool | Sequence[str] | None = None,
+    width: int = -1,
+    column_interior_penalty: int = 1,
+    column_crossing_penalty: int = 1,
+    column_insertion_penalty: int = 2,
+    **kwargs: Any,
+) -> None:
+    """Print a text-based ~.PipelineGraph` visualization.
+
+    Parameters
+    ----------
+    pipeline_graph : `PipelineGraph`
+        Graph to display.
+    stream : `TextIO`, optional
+        Output stream.  Defaults to STDOUT.
+    color : `bool` or `~collections.abc.Sequence` [ `str` ]
+        Whether to use tto add color to the graph. Default is to add colors
+        only if the `colorama` package can be imported. `False` disables colors
+        unconditionally, while `True` or a sequence of colors (see
+        `make_colorama_printer`) will result in `ImportError` being propagated
+        up if `colorama` is unavailable.
+    width : `int`, optional
+        Number of columns the full graph should occupy, including text
+        descriptions on the right.  If ``0``, there is no limit (and hence no
+        text-wrapping).  If negative (default) use the current terminal width.
+    column_interior_penalty : `int`
+        Penalty applied to a prospective column for a node when that column is
+        between two existing columns.
+    column_crossing_penalty : `int`
+        Penalty applied to a prospective column for a node for each ongoing
+        (vertical) edge that node's incoming edges would have to "hop".
+    column_insertion_penalty : `int`
+        Penalty applied to a prospective column for a node when considering a
+        new columns on the sides or between two existing columns.
+    **kwargs
+        Forwarded to parse_display_args.
+    """
+    xgraph, options = parse_display_args(pipeline_graph, **kwargs)
 
     column_selector = ColumnSelector(
         interior_penalty=column_interior_penalty,

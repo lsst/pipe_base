@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Module defining Pipeline class and related methods.
-"""
+"""Module defining Pipeline class and related methods."""
 
 from __future__ import annotations
 
@@ -820,7 +819,9 @@ class Pipeline:
         """
         self._pipelineIR.write_to_uri(uri)
 
-    def to_graph(self, registry: Registry | None = None) -> pipeline_graph.PipelineGraph:
+    def to_graph(
+        self, registry: Registry | None = None, visualization_only: bool = False
+    ) -> pipeline_graph.PipelineGraph:
         """Construct a pipeline graph from this pipeline.
 
         Constructing a graph applies all configuration overrides, freezes all
@@ -833,6 +834,13 @@ class Pipeline:
         registry : `lsst.daf.butler.Registry`, optional
             Data repository client.  If provided, the graph's dataset types
             and dimensions will be resolved (see `PipelineGraph.resolve`).
+        visualization_only : `bool`, optional
+            Resolve the graph as well as possible even when dimensions and
+            storage classes cannot really be determined.  This can include
+            using the ``universe.commonSkyPix`` as the assumed dimensions of
+            connections that use the "skypix" placeholder and using "<UNKNOWN>"
+            as a storage class name (which will fail if the storage class
+            itself is ever actually loaded).
 
         Returns
         -------
@@ -865,8 +873,8 @@ class Pipeline:
                 label, subset.subset, subset.description if subset.description is not None else ""
             )
         graph.sort()
-        if registry is not None:
-            graph.resolve(registry)
+        if registry is not None or visualization_only:
+            graph.resolve(registry=registry, visualization_only=visualization_only)
         return graph
 
     # TODO: remove on DM-40443.

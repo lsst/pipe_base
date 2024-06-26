@@ -89,6 +89,7 @@ class DatasetTypeNode:
         get_registered: Callable[[str], DatasetType | None],
         dimensions: DimensionUniverse,
         previous: DatasetTypeNode | None,
+        visualization_only: bool = False,
     ) -> DatasetTypeNode:
         """Construct a dataset type node from its edges.
 
@@ -99,7 +100,7 @@ class DatasetTypeNode:
             object in the internal networkx graph.
         xgraph : `networkx.MultiDiGraph`
             The internal networkx graph.
-        get_registered : `~collections.abc.Callable`
+        get_registered : `~collections.abc.Callable` or `None`
             Callable that takes a dataset type name and returns the
             `DatasetType` registered in the data repository, or `None` if it is
             not registered.
@@ -107,6 +108,13 @@ class DatasetTypeNode:
             Definitions of all dimensions.
         previous : `DatasetTypeNode` or `None`
             Previous node for this dataset type.
+        visualization_only : `bool`, optional
+            Resolve the graph as well as possible even when dimensions and
+            storage classes cannot really be determined.  This can include
+            using the ``universe.commonSkyPix`` as the assumed dimensions of
+            connections that use the "skypix" placeholder and using "<UNKNOWN>"
+            as a storage class name (which will fail if the storage class
+            itself is ever actually loaded).
 
         Returns
         -------
@@ -114,7 +122,7 @@ class DatasetTypeNode:
             Node consistent with all edges pointing to it and the data
             repository.
         """
-        dataset_type = get_registered(key.name)
+        dataset_type = get_registered(key.name) if get_registered is not None else None
         is_registered = dataset_type is not None
         if previous is not None and previous.dataset_type == dataset_type:
             # This node was already resolved (with exactly the same edges
@@ -160,6 +168,7 @@ class DatasetTypeNode:
                 is_registered=is_registered,
                 producer=producer,
                 consumers=consumers,
+                visualization_only=visualization_only,
             )
             consumers.append(consuming_edge.task_label)
         assert dataset_type is not None, "Graph structure guarantees at least one edge."
@@ -243,7 +252,7 @@ class DatasetTypeNode:
             "dataset_type": self.dataset_type,
             "is_initial_query_constraint": self.is_initial_query_constraint,
             "is_prerequisite": self.is_prerequisite,
-            "dimensions": self.dataset_type.dimensions,
+            "dimensions": self.dimensions,
             "storage_class_name": self.dataset_type.storageClass_name,
             "bipartite": NodeType.DATASET_TYPE.bipartite,
         }
