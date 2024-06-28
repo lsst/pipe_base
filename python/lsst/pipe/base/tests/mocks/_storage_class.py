@@ -51,6 +51,7 @@ from lsst.daf.butler import (
     DatasetType,
     Formatter,
     FormatterFactory,
+    FormatterV2,
     LookupKey,
     SerializedDatasetType,
     StorageClass,
@@ -606,7 +607,7 @@ def _monkeypatch_daf_butler() -> None:
 
     def new_get_formatter_class_with_match(
         self: FormatterFactory, entity: Any
-    ) -> tuple[LookupKey, type[Formatter], dict[str, Any]]:
+    ) -> tuple[LookupKey, type[Formatter | FormatterV2], dict[str, Any]]:
         try:
             return original_get_formatter_class_with_match(self, entity)
         except KeyError:
@@ -629,7 +630,7 @@ def _monkeypatch_daf_butler() -> None:
 
     def new_get_formatter_with_match(
         self: FormatterFactory, entity: Any, *args: Any, **kwargs: Any
-    ) -> tuple[LookupKey, Formatter]:
+    ) -> tuple[LookupKey, Formatter | FormatterV2]:
         try:
             return original_get_formatter_with_match(self, entity, *args, **kwargs)
         except KeyError:
