@@ -55,7 +55,7 @@ class ExecutionReportsTestCase(unittest.TestCase):
             self.assertDictEqual(exp_failures["task2"]["failed_quanta"], {})
             self.assertEqual(exp_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
             self.assertEqual(exp_failures["task4"]["n_quanta_blocked"], 1)
-
+            self.assertIsNotNone(exp_failures["task0"]["n_expected"])
             # now we'll make a human-readable summary dict and
             # repeat the tests:
             hr_exp_failures = report.to_summary_dict(butler, do_store_logs=False, human_readable=True)
@@ -64,3 +64,4 @@ class ExecutionReportsTestCase(unittest.TestCase):
             self.assertListEqual(hr_exp_failures["task2"]["failed_quanta"], [])
             self.assertEqual(hr_exp_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
             self.assertEqual(hr_exp_failures["task4"]["n_quanta_blocked"], 1)
+            self.assertIsNotNone(hr_exp_failures["task0"]["n_expected"])
