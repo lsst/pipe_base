@@ -1471,9 +1471,7 @@ class PipelineGraph:
                 raise UnresolvedGraphError(f"Dataset type {dataset_type_name!r} has not been resolved.")
             if not dataset_type_node.is_prerequisite or prerequisites:
                 if (
-                    group := result.setdefault(
-                        dataset_type_node.dataset_type.dimensions.as_group(), next_new_value
-                    )
+                    group := result.setdefault(dataset_type_node.dataset_type.dimensions, next_new_value)
                 ) is next_new_value:
                     next_new_value = ({}, {})  # make new lists for next time
                 group[1][dataset_type_node.name] = dataset_type_node

@@ -827,7 +827,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         visit_dims = self.dimensions.conform(["visit"])
         htm7_dims = self.dimensions.conform(["htm7"])
         expected = {
-            self.dimensions.empty.as_group(): (
+            self.dimensions.empty: (
                 {},
                 {
                     "schema": self.graph.dataset_types["schema"],

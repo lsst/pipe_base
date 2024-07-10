@@ -199,7 +199,7 @@ class DatasetTypeNode:
     @property
     def dimensions(self) -> DimensionGroup:
         """Dimensions of the dataset type."""
-        return self.dataset_type.dimensions.as_group()
+        return self.dataset_type.dimensions
 
     @property
     def storage_class_name(self) -> str:

@@ -444,7 +444,7 @@ class _AllDimensionsQuery:
         (
             result.empty_dimensions_tasks,
             result.empty_dimensions_dataset_types,
-        ) = result.grouped_by_dimensions.pop(builder.universe.empty.as_group())
+        ) = result.grouped_by_dimensions.pop(builder.universe.empty)
         result.overall_inputs = {
             name: node  # type: ignore
             for name, node in result.subgraph.iter_overall_inputs()

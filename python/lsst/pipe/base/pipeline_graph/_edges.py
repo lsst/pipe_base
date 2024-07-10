@@ -550,14 +550,14 @@ class ReadEdge(Edge):
                     )
             else:
                 rest1 = set(universe.conform(self.raw_dimensions - {"skypix"}).names)
-                rest2 = current.dimensions.names - current.dimensions.skypix.names
+                rest2 = current.dimensions.names - current.dimensions.skypix
                 if rest1 != rest2:
                     raise IncompatibleDatasetTypeError(
                         f"Non-skypix dimensions for dataset type {self.dataset_type_name} declared in "
                         f"connections ({rest1}) are inconsistent with those in "
                         f"registry's version of this dataset ({rest2})."
                     )
-                dimensions = current.dimensions.as_group()
+                dimensions = current.dimensions
         else:
             dimensions = universe.conform(self.raw_dimensions)
         is_initial_query_constraint = is_initial_query_constraint and not self.defer_query_constraint
