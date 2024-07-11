@@ -117,7 +117,7 @@ class NoDimensionsTestTask(PipelineTask):
         # Can change the return type via configuration.
         if "TaskMetadata" in cast(NoDimensionsTestConfig, self.config).outputSC:
             output = TaskMetadata.from_dict(output)  # type: ignore
-        elif type(output) == TaskMetadata:
+        elif type(output) is TaskMetadata:
             # Want the output to be a dict
             output = output.to_dict()
         self.log.info("Run method returns data of type: %s", get_full_type_name(output))

@@ -616,7 +616,7 @@ class TaskMetadata(BaseModel):
 
             type0 = type(value[0])
             for i in value:
-                if type(i) != type0:
+                if type(i) is not type0:
                     raise ValueError(
                         "Type mismatch in supplied list. TaskMetadata requires all"
                         f" elements have same type but see {type(i)} and {type0}."
