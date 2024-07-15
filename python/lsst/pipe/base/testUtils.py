@@ -212,8 +212,8 @@ def _checkDataIdMultiplicity(name: str, dataIds: DataId | Sequence[DataId], mult
         if not isinstance(dataIds, collections.abc.Sequence):
             raise ValueError(f"Expected multiple data IDs for {name}, got {dataIds}.")
     else:
-        # DataCoordinate is a Mapping
-        if not isinstance(dataIds, collections.abc.Mapping):
+        # DataCoordinate is not a Mapping
+        if not isinstance(dataIds, collections.abc.Mapping | DataCoordinate):
             raise ValueError(f"Expected single data ID for {name}, got {dataIds}.")
 
 
