@@ -42,7 +42,7 @@ __all__ = (
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Sequence, Iterable
 from typing import TYPE_CHECKING, ClassVar, Literal, NamedTuple, TypeAlias, TypedDict, cast
 
 import networkx
@@ -360,7 +360,19 @@ class TaskSummary(pydantic.BaseModel):
                 self.n_not_attempted += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
+    
+    def add_data_id_group(self, other: TaskSummary) -> None:
+        """Docstring.
+        """
+        self.n_successful += other.n_successful
+        self.n_blocked += other.n_blocked
+        self.n_not_attempted += other.n_not_attempted
+        self.n_expected += other.n_expected
 
+        self.wonky_quanta.append(other.wonky_quanta)
+        self.recovered_quanta.append(other.recovered_quanta)
+        self.failed_quanta.append(other.failed_quanta)
+        
 
 class CursedDatasetSummary(pydantic.BaseModel):
     """A summary of all the relevant information on a `cursed` dataset."""
@@ -488,6 +500,21 @@ class DatasetTypeSummary(pydantic.BaseModel):
                 self.n_predicted_only += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
+            
+    def add_data_id_group(self, other: DatasetTypeSummary) -> None:
+        """Docstring.
+        """
+        if self.producer != other.producer:
+            _LOG.warning("Producer for dataset type is not consistent: %r != %r.", self.producer, other.producer)
+            _LOG.warning("Ignoring %r.", other.producer)
+        
+        self.n_published += other.n_published
+        self.n_unpublished += other.n_unpublished
+        self.n_predicted_only += other.n_predicted_only
+        self.n_expected += other.n_expected
+
+        self.cursed_datasets.append(other.cursed_datasets)
+        self.unsuccessful_datasets.append(other.unsuccessful_datasets)
 
 
 class Summary(pydantic.BaseModel):
@@ -503,6 +530,22 @@ class Summary(pydantic.BaseModel):
     datasets: dict[str, DatasetTypeSummary] = pydantic.Field(default_factory=dict)
     """Summaries for the datasets.
     """
+
+    @classmethod
+    def aggregate(cls, summaries: Iterable[Summary]) -> Summary:
+        """Combine summaries from disjoint data id groups into an overall
+        summary of common tasks and datasets. Intended for use when the same
+        pipeline has been run over all groups.
+        """
+        result = cls()
+        for summary in summaries:
+            for label, task_summary in summary.tasks.items():
+                result_task_summary = result.tasks.setdefault(label, TaskSummary())
+                result_task_summary.add_data_id_group(task_summary)
+            for dataset_type, dataset_type_summary in summary.datasets.items():
+                result_dataset_summary = result.datasets.setdefault(dataset_type, DatasetTypeSummary())
+                result_dataset_summary.add_data_id_group(dataset_type_summary)
+        return result
 
 
 class QuantumProvenanceGraph:
