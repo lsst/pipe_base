@@ -87,9 +87,7 @@ def main(argv: Sequence[str]) -> int:
                 stream = sys.stdout
             else:
                 path = ResourcePath(args.show)
-                # ResourcePath.open doesn't have the kind of mode overloading
-                # necessary to make the return type clear enough for MyPy.
-                stream = stack.enter_context(path.open("r"))  # type: ignore
+                stream = stack.enter_context(path.open("r"))
             show(
                 pipeline_graph,
                 stream,
