@@ -942,7 +942,7 @@ class QuantumGraphBuilder(ABC):
 
         This includes but is not limited to init inputs and init outputs.
         """
-        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty.as_group()]
+        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty]
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
         for dataset_type in dataset_types:
