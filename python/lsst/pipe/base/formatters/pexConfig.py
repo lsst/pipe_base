@@ -51,4 +51,4 @@ class PexConfigFormatter(FormatterV2):
         return Config._fromPython(stream.read().decode())
 
     def write_local_file(self, in_memory_dataset: Any, uri: ResourcePath) -> None:
-        in_memory_dataset.save(uri.path)
+        in_memory_dataset.save(uri.ospath)
