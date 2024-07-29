@@ -487,6 +487,22 @@ As an example, this is an HSC override file (``obs_subaru/config/calibrateImage.
     colors["r-i"] = ColorLimit(primary="r_flux", secondary="i_flux", maximum=0.5)
     config.photometry.colorterms.load(os.path.join(config_dir, "colorterms.py"))
 
+.. _where-to-make-config-changes:
+
+Where to make configuration changes?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As understanding of our pipelines and algorithms evolve, it is natural to need to change the configuration options that were originally selected--possibly arbitrarily--as the defaults.
+There are several places where such a configuration change could be made: in the lowest-level ``~lsst.pipe.base.Task`` config class field; in the ``~lsst.pipe.base.PipelineTask`` config class ``~lsst.pex.config.Config.setDefaults`` method; in the instrument-specific ``obs_*``-package override file for that ``~lsst.pipe.base.PipelineTask``; in the pipeline-specific pipeline definition file; or in the instrument- and pipeline-specific pipeline definition file.
+When considering where to make a configuration change or opt-in algorithmic change, developers should apply these guidelines:
+
+- Prefer making changes directly in the lowest-level ``~lsst.pipe.base.Task`` defaults whenever possible, and updating tests that break as a result.  When the latter is a substantial scope increase or simply seems inappropriate, the old configs can be explicitly specified in the tests.
+- When multiple config changes generally need to be made together, consider making a helper method to do this, as part of the public interface in the lowest-level ``~lsst.pipe.base.Task`` file.
+- When making changes directly in the lowest-level Task is not possible, next consider putting config overrides for that ``~lsst.pipe.base.Task`` in the ``~lsst.pipe.base.PipelineTask`` config class's ``~lsst.pex.config.Config.setDefaults`` method. This will ensure that all pipelines using that PipelineTask will use the configuration, independent of instrument or pipeline definition.
+- If the configuration is needed for only one a production-specific pipeline (e.g. DRP or AP), put the override in an instrument-generic production-specific config override file in one of the ``*_pipe`` packages. Often this will involve calling a new helper method as in earlier previous bullet, and nothing more.
+- Put config options in one ore more obs-package only when they are appropriate for essentially all instances of the Task on that instrument (mostly ISR and other tasks that deal with the actual camera structure), and only that instrument. Be wary of putting filter-specific configs here, as the set of all filters being processed in a particular run is not a per-instrument constant, and often data-set-specific overrides are better.
+- Put config options in other Pipeline snippets or production+instrument-specific configs only when no other places are possible.
+
 .. _pipeline-running-intro:
 
 ------------------------------------------
