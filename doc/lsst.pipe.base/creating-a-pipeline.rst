@@ -451,15 +451,11 @@ class name of the python camera object.  For instance, for an ``obs_subaru``
 
   instrument: lsst.obs.subaru.HyperSuprimeCam
 
-The ``instrument`` key is available to all `Pipeline`\s, but by convention
-obs\_* packages typically will contain `Pipeline`\s that are customized for
-the instrument they represent, inside a directory named ''pipelines''.  This
-includes relevant configs, `PipelineTask` (re)declarations, instrument label,
-etc.  These pipelines can be found inside a directory named `Pipeline`\s that
-lives at the root of each obs\_ package.
-
-These `Pipeline`\ s enable you to run a `Pipeline` that is configured for the
-desired camera, or can serve as a base for further `Pipeline`\ s to import.
+The ``instrument`` key is available to all `Pipeline`\s, and by convention is
+used in instrument-specific ``pipelines`` sub-directories, for example
+``ap_pipe/pipelines/HSC`` for the instrument above. These `Pipeline`\ s enable
+you to run a `Pipeline` that is configured for the desired camera, or can
+serve as a base for further `Pipeline`\ s to import.
 
 .. _pipeline-running-intro:
 
@@ -544,8 +540,8 @@ consistency throughout the software stack.
   named as above.
 * `Pipeline`\ s should contain a useful description of what the `Pipeline` is
   intended to do.
-* `Pipeline`\ s should be placed in a directory called ``Pipelines`` at the top
+* `Pipeline`\ s should be placed in a directory called ``pipelines`` at the top
   level of a package.
-* Instrument packages should provide `Pipeline`\ s that override standard
+* High level pipeline packages (e.g. ``ap_pipe``, ``drp_pipe``) should provide `Pipeline`\ s that override standard
   `Pipeline`\ s and are specifically configured for that instrument (if
   applicable).
