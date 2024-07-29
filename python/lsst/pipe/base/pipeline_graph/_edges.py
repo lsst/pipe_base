@@ -366,6 +366,9 @@ class ReadEdge(Edge):
     defer_query_constraint: bool
     """If `True`, by default do not include this dataset type's existence as a
     constraint on the initial data ID query in QuantumGraph generation.
+
+    This can be `True` either because the connection class had
+    ``deferQueryConstraint=True`` or because it had ``minimum=0``.
     """
 
     @property
@@ -457,7 +460,9 @@ class ReadEdge(Edge):
             # PrerequisiteInput and InitInput connections don't have a
             # .deferGraphConstraint, because they never constrain the initial
             # data ID query.
-            defer_query_constraint=getattr(connection, "deferGraphConstraint", False),
+            defer_query_constraint=(
+                getattr(connection, "deferGraphConstraint", False) or getattr(connection, "minimum", 1) == 0
+            ),
         )
 
     def _resolve_dataset_type(
