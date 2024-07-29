@@ -457,6 +457,36 @@ used in instrument-specific ``pipelines`` sub-directories, for example
 you to run a `Pipeline` that is configured for the desired camera, or can
 serve as a base for further `Pipeline`\ s to import.
 
+"Obs packages" like ``obs_subaru`` also provide a place for instrument-specific ``~lsst.pipe.base.PipelineTask`` configuration overrides, in the ``config`` sub-directory.
+These python files are loaded with ``exec`` in the ``~lsst.pipe.base.Task`` context, with the ``config`` variable pointing to that Task's config class.
+The filename must match the task's :ref:`name <creating-a-task-class-variables>`, e.g. ``calibrateImage.py`` for ``~lsst.pipe.tasks.calibrateImage.CalibrateImage``.
+The file will be placed in either the obs-package's ``config`` sub-directory (for packages that are only define a single instrument) or a ``config`` sub-directory specific to that instrument (for packages that define multiple instruments), e.g. ``config/LATISS``.
+They should be used to specific configuration overrides that are specific to that instrument for any pipeline using that ``~lsst.pipe.base.PipelineTask``.
+As an example, this is an HSC override file (``obs_subaru/config/calibrateImage.py``) for the ``~lsst.pipe.tasks.calibrateImage.CalibrateImage`` task which specifies reference catalog and photometry overrides that all pipelines running on HSC data would need:
+
+.. code-block:: python
+
+    import os.path
+
+    from lsst.meas.algorithms import ColorLimit
+
+    config_dir = os.path.dirname(__file__)
+
+    # Use PS1 for both astrometry and photometry.
+    config.connections.astrometry_ref_cat = "ps1_pv3_3pi_20170110"
+    config.astrometry_ref_loader.load(os.path.join(config_dir, "filterMap.py"))
+    # Use the filterMap instead of the "any" filter (as is used for Gaia).
+    config.astrometry_ref_loader.anyFilterMapsToThis = None
+    config.photometry_ref_loader.load(os.path.join(config_dir, "filterMap.py"))
+
+    # Use colorterms for photometric calibration, with color limits on the refcat.
+    config.photometry.applyColorTerms = True
+    config.photometry.photoCatName = "ps1_pv3_3pi_20170110"
+    colors = config.photometry.match.referenceSelection.colorLimits
+    colors["g-r"] = ColorLimit(primary="g_flux", secondary="r_flux", minimum=0.0)
+    colors["r-i"] = ColorLimit(primary="r_flux", secondary="i_flux", maximum=0.5)
+    config.photometry.colorterms.load(os.path.join(config_dir, "colorterms.py"))
+
 .. _pipeline-running-intro:
 
 ------------------------------------------
