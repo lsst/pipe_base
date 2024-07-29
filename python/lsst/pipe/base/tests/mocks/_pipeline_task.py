@@ -537,12 +537,26 @@ class DynamicConnectionConfig(Config):
         dtype=bool,
         default=True,
     )
+    minimum = Field[int](
+        doc="Minimum number of datasets per quantum requried for this connection.  Ignored for non-inputs.",
+        dtype=int,
+        default=1,
+    )
 
     def make_connection(self, cls: type[_T]) -> _T:
         storage_class = self.storage_class
         if self.mock_storage_class:
             storage_class = MockStorageClass.get_or_register_mock(storage_class).name
-        if issubclass(cls, cT.DimensionedConnection):
+        if issubclass(cls, cT.BaseInput):
+            return cls(  # type: ignore
+                name=self.dataset_type_name,
+                storageClass=storage_class,
+                isCalibration=self.is_calibration,
+                multiple=self.multiple,
+                dimensions=frozenset(self.dimensions),
+                minimum=self.minimum,
+            )
+        elif issubclass(cls, cT.DimensionedConnection):
             return cls(  # type: ignore
                 name=self.dataset_type_name,
                 storageClass=storage_class,
