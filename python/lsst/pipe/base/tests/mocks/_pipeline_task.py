@@ -598,7 +598,7 @@ class DynamicTestPipelineTaskConnections(PipelineTaskConnections, dimensions=())
 
 
 class DynamicTestPipelineTaskConfig(
-    PipelineTaskConfig, pipelineConnections=DynamicTestPipelineTaskConnections
+    BaseTestPipelineTaskConfig, pipelineConnections=DynamicTestPipelineTaskConnections
 ):
     """Configuration for DynamicTestPipelineTask."""
 
