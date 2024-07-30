@@ -456,6 +456,8 @@ class MockStorageClass(StorageClass):
     def coerce_type(self, incorrect: Any) -> Any:
         # Docstring inherited.
         if not isinstance(incorrect, MockDataset):
+            if isinstance(incorrect, ConvertedUnmockedDataset):
+                return incorrect
             return ConvertedUnmockedDataset(original_type=get_full_type_name(incorrect))
         factory = StorageClassFactory()
         other_storage_class = factory.getStorageClass(incorrect.storage_class)
