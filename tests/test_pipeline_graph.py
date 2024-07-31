@@ -1442,6 +1442,15 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         self.assertEqual(b_ref, ref.makeComponentRef("schema"))
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 
+    def test_optional_input(self) -> None:
+        """Test that regular Input connections with minimum=0 result in
+        dataset type nodes that are no initial query constraints.
+        """
+        self.b_config.inputs["i"] = DynamicConnectionConfig(dataset_type_name="d", minimum=0)
+        graph = self.make_graph()
+        graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertFalse(graph.dataset_types["d"].is_initial_query_constraint)
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()

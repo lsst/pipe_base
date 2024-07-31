@@ -334,11 +334,6 @@ class Input(BaseInput):
 
     _connection_type_set: ClassVar[str] = "inputs"
 
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        if self.minimum == 0:
-            raise TypeError(f"Cannot set minimum={self.minimum} for regular input.")
-
 
 @dataclasses.dataclass(frozen=True)
 class PrerequisiteInput(BaseInput):
