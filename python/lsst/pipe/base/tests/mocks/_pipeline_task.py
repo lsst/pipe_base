@@ -425,6 +425,11 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
                 raise ValueError(
                     f"Unmocked dataset type {connection.name!r} cannot be used as an init-output."
                 )
+            elif connection.name.endswith("_metadata") and connection.storageClass == "TaskMetadata":
+                # Task metadata does not use a mock storage class, because it's
+                # written by the system, but it does end up with the _mock_*
+                # prefix because the task label does.
+                connection = dataclasses.replace(connection, name=get_mock_name(connection.name))
             setattr(self, name, connection)
 
     def getSpatialBoundsConnections(self) -> Iterable[str]:
