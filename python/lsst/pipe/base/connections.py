@@ -493,15 +493,8 @@ class DeferredDatasetRef:
 
     datasetRef: DatasetRef
 
-    @property
-    def datasetType(self) -> DatasetType:
-        """The dataset type for this dataset."""
-        return self.datasetRef.datasetType
-
-    @property
-    def dataId(self) -> DataCoordinate:
-        """The data ID for this dataset."""
-        return self.datasetRef.dataId
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.datasetRef, name)
 
 
 class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
