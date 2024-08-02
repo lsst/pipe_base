@@ -415,7 +415,8 @@ The dimensions of the task itself can also be modified in ``__init__``, where ``
                 self.inputs.remove("background")
 
     This still works, but it is more verbose and less intuitive than the now-recommended attribute-manipulation approach.
-    It is now no longer to delegate to `super` in either case, since the base class `super` does nothing (the first steps of initialization are instead handled by a metaclass).
+    It is now no longer recommended to delegate to `super` in either case,
+    since the base class `super` does nothing (the first steps of initialization are instead handled by a metaclass).
 
 
 The last step in modifying this task will be to update the ``run`` method to
@@ -472,8 +473,29 @@ passed on to the run method. The body of the run method checks if the background
 has been passed, and if so adds it back in and does a local background
 subtraction.
 
-To bring this all together, see :ref:`pipeline-appendix-c`
+To bring this all together, see :ref:`pipeline-appendix-c`.
 
+The same mechanism works for output connections:
+an output from a `PipelineTask` can be made optional (under config control)
+or a config switch can even be used to choose between different ways of
+providing output.
+
+Note that disabling a connection via this mechanism, during initialization,
+has the same effect on quantum graph generation and execution as if the
+connection had never existed.
+
+Run-time optional inputs
+------------------------
+
+A separate mechanism exists that allows an `Input` connection to be made
+run-time optional.
+If the `Input.minimum` attribute is initialized to zero for a connection,
+graph-building will still generate a quantum, and the `PipelineTask` will
+be run, even if no dataset for that input can be found.
+
+Output connections are run-time optional by definition; it is always possible
+for a `PipelineTask` to produce no output; that by itself is not treated as
+an error condition.
 
 ----------------------------------------
 Dataset name configuration and templates
