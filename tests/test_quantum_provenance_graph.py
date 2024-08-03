@@ -31,7 +31,7 @@
 
 import unittest
 
-from lsst.pipe.base.quantum_provenance_graph import DatasetTypeSummary, QuantumProvenanceGraph, TaskSummary
+from lsst.pipe.base.quantum_provenance_graph import QuantumProvenanceGraph, TaskSummary
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
 
@@ -42,7 +42,8 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
     Verify that the `QuantumProvenanceGraph` is able to extract correct
     information from `simpleQgraph`.
 
-    More tests are in lsst/ci_middleware/tests/test_prod_outputs.py
+    More tests are in lsst/ci_middleware/tests/test_prod_outputs.py and
+    lsst/ci_middleware/tests/test_rc2_outputs.py
     """
 
     def test_qpg_reports(self) -> None:
@@ -55,53 +56,27 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
             qpg = QuantumProvenanceGraph()
             qpg.add_new_graph(butler, qgraph)
             qpg.resolve_duplicates(butler)
-            d = qpg.to_summary(butler)
-            self.assertIsNotNone(d)
-            with open("testmodel.json", "w") as buffer:
-                buffer.write(d.model_dump_json(indent=2))
-            summary_dict = d.model_dump()
-            for task in d.tasks:
-                self.assertIsInstance(d.tasks[task], TaskSummary)
+            summary = qpg.to_summary(butler)
+
+            for task_summary in summary.tasks.values():
                 # We know that we have one expected task that was not run.
                 # As such, the following dictionary should describe all of
                 # the mock tasks.
-                self.assertDictEqual(
-                    summary_dict["tasks"][task],
-                    {
-                        "n_successful": 0,
-                        "n_blocked": 0,
-                        "n_not_attempted": 1,
-                        "n_expected": 1,
-                        "failed_quanta": [],
-                        "recovered_quanta": [],
-                        "wonky_quanta": [],
-                        "n_wonky": 0,
-                        "n_failed": 0,
-                    },
+                self.assertEqual(
+                    task_summary,
+                    TaskSummary(
+                        n_successful=0,
+                        n_blocked=0,
+                        n_not_attempted=1,
+                        n_expected=1,
+                        failed_quanta=[],
+                        recovered_quanta=[],
+                        wonky_quanta=[],
+                        n_wonky=0,
+                        n_failed=0,
+                    ),
                 )
-            for dataset in d.datasets:
-                self.assertIsInstance(d.datasets[dataset], DatasetTypeSummary)
-                self.assertListEqual(
-                    summary_dict["datasets"][dataset]["unsuccessful_datasets"],
-                    [{"instrument": "INSTR", "detector": 0}],
-                )
-                # Check dataset counts (can't be done all in one because
-                # datasets have different producers), but all the counts for
-                # each task should be the same.
-                self.assertEqual(summary_dict["datasets"][dataset]["n_published"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_unpublished"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_published"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_predicted_only"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_expected"], 1)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_published"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_cursed"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_published"], 0)
-                self.assertEqual(summary_dict["datasets"][dataset]["n_unsuccessful"], 1)
-                # Make sure the cursed dataset is an empty list
-                self.assertIsInstance(summary_dict["datasets"][dataset]["cursed_datasets"], list)
-                self.assertFalse(summary_dict["datasets"][dataset]["cursed_datasets"])
-            # Make sure we have the right datasets based on the mock we have
-            for task in [
+            expected_mock_datasets = [
                 "add_dataset1",
                 "add2_dataset1",
                 "task0_metadata",
@@ -122,36 +97,35 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 "add2_dataset5",
                 "task4_metadata",
                 "task4_log",
-            ]:
-                self.assertIn(task, list(summary_dict["datasets"].keys()))
-        # Make sure the expected datasets were produced by the expected tasks
-        for dataset in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-            self.assertEqual(summary_dict["datasets"][dataset]["producer"], "task0")
-        for dataset in [
-            "add_dataset2",
-            "add2_dataset2",
-            "task1_metadata",
-            "task1_log",
-        ]:
-            self.assertEqual(summary_dict["datasets"][dataset]["producer"], "task1")
-        for dataset in [
-            "add_dataset3",
-            "add2_dataset3",
-            "task2_metadata",
-            "task2_log",
-        ]:
-            self.assertEqual(summary_dict["datasets"][dataset]["producer"], "task2")
-        for dataset in [
-            "add_dataset4",
-            "add2_dataset4",
-            "task3_metadata",
-            "task3_log",
-        ]:
-            self.assertEqual(summary_dict["datasets"][dataset]["producer"], "task3")
-        for dataset in [
-            "add_dataset5",
-            "add2_dataset5",
-            "task4_metadata",
-            "task4_log",
-        ]:
-            self.assertEqual(summary_dict["datasets"][dataset]["producer"], "task4")
+            ]
+            for dataset_type_name, dataset_type_summary in summary.datasets.items():
+                self.assertListEqual(
+                    dataset_type_summary.unsuccessful_datasets,
+                    [{"instrument": "INSTR", "detector": 0}],
+                )
+                # Check dataset counts (can't be done all in one because
+                # datasets have different producers), but all the counts for
+                # each task should be the same.
+                self.assertEqual(dataset_type_summary.n_published, 0)
+                self.assertEqual(dataset_type_summary.n_unpublished, 0)
+                self.assertEqual(dataset_type_summary.n_predicted_only, 0)
+                self.assertEqual(dataset_type_summary.n_expected, 1)
+                self.assertEqual(dataset_type_summary.n_cursed, 0)
+                self.assertEqual(dataset_type_summary.n_unsuccessful, 1)
+                # Make sure the cursed dataset is an empty list
+                self.assertListEqual(dataset_type_summary.cursed_datasets, [])
+                # Make sure we have the right datasets based on our mock
+                self.assertIn(dataset_type_name, expected_mock_datasets)
+            # Make sure the expected datasets were produced by the expected
+            # tasks
+            match dataset_type_name:
+                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                    self.assertEqual(dataset_type_summary.producer, "task0")
+                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                    self.assertEqual(dataset_type_summary.producer, "task1")
+                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                    self.assertEqual(dataset_type_summary.producer, "task2")
+                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                    self.assertEqual(dataset_type_summary.producer, "task3")
+                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                    self.assertEqual(dataset_type_summary.producer, "task4")

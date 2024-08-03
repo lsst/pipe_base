@@ -60,7 +60,10 @@ _LOG = getLogger(__name__)
 
 
 class QuantumKey(NamedTuple):
-    """Identifier type for quantum keys in a `QuantumProvenanceGraph`."""
+    """Identifier type for quantum keys in a `QuantumProvenanceGraph`. These
+    keys correspond to a task label and data ID, but can refer to this over
+    multiple runs or datasets.
+    """
 
     task_label: str
     """Label of the task in the pipeline."""
@@ -92,8 +95,8 @@ class DatasetKey(NamedTuple):
     """
 
     is_task: ClassVar[Literal[False]] = False
-    """Whether this node represents a quantum rather
-    than a dataset (always `False`).
+    """Whether this node represents a quantum rather than a dataset (always
+    `False`).
     """
 
     is_prerequisite: ClassVar[Literal[False]] = False
@@ -141,6 +144,19 @@ class QuantumRun(pydantic.BaseModel):
 
     status: QuantumRunStatus = "metadata_missing"
     """The status of the quantum in that run.
+
+    Possible Statuses
+    -----------------
+    `failed`: Attempts to execute the quantum failed in this run.
+    `successful`: This quantum was executed successfully in this run.
+    `logs_missing`: Logs are missing for this quantum in this run. It was
+        attempted, but it is impossible to tell if it succeeded or failed due
+        to missing logs.
+    `blocked`: This run does not include an executed version of this quantum
+        because an upstream task failed.
+    `metadata_missing`: Metadata is missing for this quantum in this run. It is
+        impossible to tell whether execution of this quantum was attempted due
+        to missing metadata.
     """
 
 
@@ -148,7 +164,8 @@ QuantumInfoStatus: TypeAlias = Literal["successful", "wonky", "blocked", "not_at
 
 
 class QuantumInfo(TypedDict):
-    """Information about a quantum across all run collections.
+    """Information about a quantum (i.e., the combination of a task label and
+    data ID) across all attempted runs.
 
     Used to annotate the networkx node dictionary.
     """
@@ -164,6 +181,35 @@ class QuantumInfo(TypedDict):
     status: QuantumInfoStatus
     """The overall status of the quantum. Note that it is impossible to exit a
     wonky state.
+
+    Possible Statuses
+    -----------------
+    `successful`: Attempts at executing this quantum were successful.
+    `wonky`: The overall state of this quantum reflects inconsistencies or is
+        difficult to discern. There are a few specific ways to enter a wonky
+        state; it is impossible to exit and requires human intervention to
+        proceed with processing.
+        Currently, a quantum enters a wonky state for one of three reasons:
+        - Its `QuantumInfoStatus` exits a successful state. Something that
+          initially succeeded fails on
+        - A `QuantumRun` is missing logs.
+        - There are multiple runs associated with a dataset which comes up in a
+          findFirst search. This means that a dataset which will be used as an
+          input data product for further processing has heterogeneous inputs,
+          which may have had different inputs or a different data-query.
+    `blocked`: The quantum is not able to execute because its inputs are
+        missing due to an upstream failure. Blocked quanta are distinguished
+        from failed quanta by being successors of failed quanta in the graph.
+        All the successors of blocked quanta are also marked as blocked.
+    `not_attempted`: These are quanta which do not have any metadata associated
+        with processing, but for which it is impossible to tell the status due
+        to an additional absence of logs. Quanta which had not been processed
+        at all would reflect this state, as would quanta which were
+        conceptualized in the construction of the quantum graph but later
+        identified to be unneccesary or erroneous (deemed `NoWorkFound` by the
+        Science Pipelines).
+    `failed`: These quanta were attempted and failed. Failed quanta have logs
+        and no metadata.
     """
 
     recovered: bool
@@ -176,12 +222,12 @@ class QuantumInfo(TypedDict):
 
     log: DatasetKey
     """The `DatasetKey` which can be used to access the log associated with the
-    quantum.
+    quantum across runs.
     """
 
     metadata: DatasetKey
     """The `DatasetKey` which can be used to access the metadata for the
-    quantum.
+    quantum across runs.
     """
 
 
@@ -228,6 +274,26 @@ class DatasetInfo(TypedDict):
 
     status: DatasetInfoStatus
     """Overall status of the dataset.
+
+    Possible Statuses
+    -----------------
+    `published`: The dataset is queryable in a find_first search. This means
+        that it can be used as an input by subsequent tasks and processing.
+    `unpublished`: The dataset exists but is not queryable in a find_first
+        search. This could mean that the version of this dataset which is
+        passed as an input to further processing is not in the collections
+        given. An `unpublished` dataset will not be used as an input to further
+        processing.
+    `predicted_only`: The dataset was predicted, and was not published in any
+        run, but was the successor of a successful quantum. These datasets are
+        the result of pipelines `NoWorkFound` cases, in which a dataset is
+        predicted in the graph but found to not be necessary in processing.
+    `unsuccessful`: The dataset was not produced. These are the results of
+        failed or blocked quanta.
+    `cursed`: The dataset was the result of an unsuccessful quantum and was
+        published in the output collection anyway. These are flagged as
+        `cursed` so that they may be caught before they become inputs to
+        further processing.
     """
 
     messages: list[str]
@@ -236,7 +302,11 @@ class DatasetInfo(TypedDict):
 
 
 class UnsuccessfulQuantumSummary(pydantic.BaseModel):
-    """A summary of all relevant information on an unsuccessful quantum."""
+    """A summary of all relevant information on an unsuccessful quantum.
+
+    This summarizes all information on a task's output for a particular data ID
+    over all runs.
+    """
 
     data_id: dict[str, DataIdValue]
     """The data_id of the unsuccessful quantum.
@@ -268,7 +338,9 @@ class UnsuccessfulQuantumSummary(pydantic.BaseModel):
 
 
 class TaskSummary(pydantic.BaseModel):
-    """A summary of the status of all quanta for a single task."""
+    """A summary of the status of all quanta associated with a single task,
+    across all runs.
+    """
 
     n_successful: int = 0
     """A count of successful quanta.
@@ -298,7 +370,7 @@ class TaskSummary(pydantic.BaseModel):
 
     failed_quanta: list[UnsuccessfulQuantumSummary] = pydantic.Field(default_factory=list)
     """A list of all `UnsuccessfulQuantumSummary` objects associated with the
-    `failed` quanta. This is a report containing their data_ids, the status
+    `failed` quanta. This is a report containing their data IDs, the status
     of each run associated with each `failed` quantum, and the error messages
     associated with the failures when applicable.
     """
@@ -415,7 +487,9 @@ class CursedDatasetSummary(pydantic.BaseModel):
 
 
 class DatasetTypeSummary(pydantic.BaseModel):
-    """A summary of the status of all datasets of a particular type."""
+    """A summary of the status of all datasets of a particular type across all
+    runs.
+    """
 
     producer: str
     """The name of the task which produced this dataset.
@@ -813,7 +887,12 @@ class QuantumProvenanceGraph:
                 where=where,
             ):
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
-                dataset_info = self.get_dataset_info(dataset_key)
+                try:
+                    dataset_info = self.get_dataset_info(dataset_key)
+                # Ignore if we don't actually have the dataset in any of the
+                # graphs given.
+                except KeyError:
+                    continue
                 # queryable datasets are `published`.
                 dataset_info["runs"][ref.run].published = True
 
