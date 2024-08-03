@@ -417,7 +417,7 @@ class CursedDatasetSummary(pydantic.BaseModel):
 class DatasetTypeSummary(pydantic.BaseModel):
     """A summary of the status of all datasets of a particular type."""
 
-    producer: str
+    producer: str = ""
     """The name of the task which produced this dataset.
     """
 
