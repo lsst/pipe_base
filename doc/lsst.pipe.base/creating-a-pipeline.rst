@@ -451,15 +451,57 @@ class name of the python camera object.  For instance, for an ``obs_subaru``
 
   instrument: lsst.obs.subaru.HyperSuprimeCam
 
-The ``instrument`` key is available to all `Pipeline`\s, but by convention
-obs\_* packages typically will contain `Pipeline`\s that are customized for
-the instrument they represent, inside a directory named ''pipelines''.  This
-includes relevant configs, `PipelineTask` (re)declarations, instrument label,
-etc.  These pipelines can be found inside a directory named `Pipeline`\s that
-lives at the root of each obs\_ package.
+The ``instrument`` key is available to all `Pipeline`\s, and by convention is
+used in instrument-specific ``pipelines`` sub-directories, for example
+``ap_pipe/pipelines/HSC`` for the instrument above. These `Pipeline`\ s enable
+you to run a `Pipeline` that is configured for the desired camera, or can
+serve as a base for further `Pipeline`\ s to import.
 
-These `Pipeline`\ s enable you to run a `Pipeline` that is configured for the
-desired camera, or can serve as a base for further `Pipeline`\ s to import.
+"Obs packages" like ``obs_subaru`` also provide a place for instrument-specific ``~lsst.pipe.base.PipelineTask`` configuration overrides, in the ``config`` sub-directory.
+These python files are loaded with ``exec`` in the ``~lsst.pipe.base.Task`` context, with the ``config`` variable pointing to that Task's config class.
+The filename must match the task's :ref:`name <creating-a-task-class-variables>`, e.g. ``calibrateImage.py`` for ``~lsst.pipe.tasks.calibrateImage.CalibrateImage``.
+The file will be placed in either the obs-package's ``config`` sub-directory (for packages that are only define a single instrument) or a ``config`` sub-directory specific to that instrument (for packages that define multiple instruments), e.g. ``config/LATISS``.
+They should be used to specific configuration overrides that are specific to that instrument for any pipeline using that ``~lsst.pipe.base.PipelineTask``.
+As an example, this is an HSC override file (``obs_subaru/config/calibrateImage.py``) for the ``~lsst.pipe.tasks.calibrateImage.CalibrateImage`` task which specifies reference catalog and photometry overrides that all pipelines running on HSC data would need:
+
+.. code-block:: python
+
+    import os.path
+
+    from lsst.meas.algorithms import ColorLimit
+
+    config_dir = os.path.dirname(__file__)
+
+    # Use PS1 for both astrometry and photometry.
+    config.connections.astrometry_ref_cat = "ps1_pv3_3pi_20170110"
+    config.astrometry_ref_loader.load(os.path.join(config_dir, "filterMap.py"))
+    # Use the filterMap instead of the "any" filter (as is used for Gaia).
+    config.astrometry_ref_loader.anyFilterMapsToThis = None
+    config.photometry_ref_loader.load(os.path.join(config_dir, "filterMap.py"))
+
+    # Use colorterms for photometric calibration, with color limits on the refcat.
+    config.photometry.applyColorTerms = True
+    config.photometry.photoCatName = "ps1_pv3_3pi_20170110"
+    colors = config.photometry.match.referenceSelection.colorLimits
+    colors["g-r"] = ColorLimit(primary="g_flux", secondary="r_flux", minimum=0.0)
+    colors["r-i"] = ColorLimit(primary="r_flux", secondary="i_flux", maximum=0.5)
+    config.photometry.colorterms.load(os.path.join(config_dir, "colorterms.py"))
+
+.. _where-to-make-config-changes:
+
+Where to make configuration changes?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As understanding of our pipelines and algorithms evolve, it is natural to need to change the configuration options that were originally selected--possibly arbitrarily--as the defaults.
+There are several places where such a configuration change could be made: in the lowest-level ``~lsst.pipe.base.Task`` config class field; in the ``~lsst.pipe.base.PipelineTask`` config class ``~lsst.pex.config.Config.setDefaults`` method; in the instrument-specific ``obs_*``-package override file for that ``~lsst.pipe.base.PipelineTask``; in the pipeline-specific pipeline definition file; or in the instrument- and pipeline-specific pipeline definition file.
+When considering where to make a configuration change or opt-in algorithmic change, developers should apply these guidelines:
+
+- Prefer making changes directly in the lowest-level ``~lsst.pipe.base.Task`` defaults whenever possible, and updating tests that break as a result.  When the latter is a substantial scope increase or simply seems inappropriate, the old configs can be explicitly specified in the tests.
+- When multiple config changes generally need to be made together, consider making a helper method to do this, as part of the public interface in the lowest-level ``~lsst.pipe.base.Task`` file.
+- When making changes directly in the lowest-level Task is not possible, next consider putting config overrides for that ``~lsst.pipe.base.Task`` in the ``~lsst.pipe.base.PipelineTask`` config class's ``~lsst.pex.config.Config.setDefaults`` method. This will ensure that all pipelines using that PipelineTask will use the configuration, independent of instrument or pipeline definition.
+- If the configuration is needed for only one a production-specific pipeline (e.g. DRP or AP), put the override in an instrument-generic production-specific config override file in one of the ``*_pipe`` packages. Often this will involve calling a new helper method as in earlier previous bullet, and nothing more.
+- Put config options in one ore more obs-package only when they are appropriate for essentially all instances of the Task on that instrument (mostly ISR and other tasks that deal with the actual camera structure), and only that instrument. Be wary of putting filter-specific configs here, as the set of all filters being processed in a particular run is not a per-instrument constant, and often data-set-specific overrides are better.
+- Put config options in other Pipeline snippets or production+instrument-specific configs only when no other places are possible.
 
 .. _pipeline-running-intro:
 
@@ -544,8 +586,8 @@ consistency throughout the software stack.
   named as above.
 * `Pipeline`\ s should contain a useful description of what the `Pipeline` is
   intended to do.
-* `Pipeline`\ s should be placed in a directory called ``Pipelines`` at the top
+* `Pipeline`\ s should be placed in a directory called ``pipelines`` at the top
   level of a package.
-* Instrument packages should provide `Pipeline`\ s that override standard
+* High level pipeline packages (e.g. ``ap_pipe``, ``drp_pipe``) should provide `Pipeline`\ s that override standard
   `Pipeline`\ s and are specifically configured for that instrument (if
   applicable).
