@@ -1,0 +1,1 @@
+Relocated the "dot tools" from ``lsst.ctrl.mpexec.dotTools`` to ``lsst.pipe.base.dot_tools`` unchanged.
