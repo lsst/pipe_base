@@ -1,7 +1,3 @@
-# The graphBuilder module is deprecated, but we still export its symbols for
-# backwards compatibility.
-import warnings
-
 from . import automatic_connection_constants, connectionTypes, pipeline_graph, pipelineIR, utils
 from ._dataset_handle import *
 
@@ -17,12 +13,6 @@ from .config import *
 from .connections import *
 from .executionButlerBuilder import *
 from .graph import *
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", FutureWarning)
-    from .graphBuilder import *
-del warnings
-
 from .pipeline import *
 
 # We import the main PipelineGraph type and the module (above), but we don't
