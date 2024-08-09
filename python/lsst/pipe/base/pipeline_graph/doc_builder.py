@@ -433,8 +433,7 @@ class PipelineDocBuilder(_DocPaths):
             self.tasks[task_def.label].write_dot(task_def)
 
     def write_rst(self, pipeline_graph: PipelineGraph) -> None:
-        """Write the reStructuredText files for the pipeline and its tasks.
-        """
+        """Write the reStructuredText files for the pipeline and its tasks."""
         with self._mkdir_and_open(self.rst_path) as buffer:
             buffer.write(
                 textwrap.dedent(
@@ -455,9 +454,7 @@ class PipelineDocBuilder(_DocPaths):
                 )
             )
             for label in pipeline_graph.tasks:
-                buffer.write(
-                    f"   {label} <{self._relative_to_rst(self.tasks[label].rst_path)}>\n"
-                )
+                buffer.write(f"   {label} <{self._relative_to_rst(self.tasks[label].rst_path)}>\n")
             buffer.write("\n")
             buffer.write(
                 textwrap.dedent(
@@ -481,8 +478,7 @@ class PipelineDocBuilder(_DocPaths):
             self.tasks[task_node.label].write_rst(self.name, task_node)
 
     def write_configs(self, pipeline_graph: PipelineGraph) -> None:
-        """Write the config file for all tasks.
-        """
+        """Write the config file for all tasks."""
         for task_node in pipeline_graph.tasks.values():
             self.tasks[task_node.label].write_config(self.name, task_node)
 
