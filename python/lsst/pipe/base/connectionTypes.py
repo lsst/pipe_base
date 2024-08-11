@@ -35,8 +35,7 @@ import dataclasses
 from collections.abc import Callable, Iterable, Sequence
 from typing import ClassVar
 
-from deprecated.sphinx import deprecated as deprecated_sphinx  # avoid clash with BaseConnection.deprecated
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Registry, StorageClass
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Registry
 from lsst.utils.introspection import find_outside_stacklevel
 
 
@@ -106,35 +105,6 @@ class BaseConnection:
                 f"Connection {self.varName!r} of {klass.__name__} has been removed."
             ) from None
 
-    # TODO: remove on DM-40443.
-    @deprecated_sphinx(
-        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
-        version="27.0",
-        category=FutureWarning,
-    )
-    def makeDatasetType(
-        self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
-    ) -> DatasetType:
-        """Construct a true `~lsst.daf.butler.DatasetType` instance with
-        normalized dimensions.
-
-        Parameters
-        ----------
-        universe : `lsst.daf.butler.DimensionUniverse`
-            Set of all known dimensions to be used to normalize the dimension
-            names specified in config.
-        parentStorageClass : `lsst.daf.butler.StorageClass` or `str`, optional
-            Parent storage class for component datasets; `None` otherwise.
-
-        Returns
-        -------
-        datasetType : `~lsst.daf.butler.DatasetType`
-            The `~lsst.daf.butler.DatasetType` defined by this connection.
-        """
-        return DatasetType(
-            self.name, universe.empty, self.storageClass, parentStorageClass=parentStorageClass
-        )
-
 
 @dataclasses.dataclass(frozen=True)
 class DimensionedConnection(BaseConnection):
@@ -175,39 +145,6 @@ class DimensionedConnection(BaseConnection):
             )
         if not isinstance(self.dimensions, Iterable):
             raise TypeError("Dimensions must be iterable of dimensions")
-
-    # TODO: remove on DM-40443.
-    @deprecated_sphinx(
-        reason="Deprecated in favor of PipelineGraph, and will be removed after v27.",
-        version="27.0",
-        category=FutureWarning,
-    )
-    def makeDatasetType(
-        self, universe: DimensionUniverse, parentStorageClass: StorageClass | str | None = None
-    ) -> DatasetType:
-        """Construct a true `~lsst.daf.butler.DatasetType` instance with
-        normalized dimensions.
-
-        Parameters
-        ----------
-        universe : `lsst.daf.butler.DimensionUniverse`
-            Set of all known dimensions to be used to normalize the dimension
-            names specified in config.
-        parentStorageClass : `lsst.daf.butler.StorageClass` or `str`, optional
-            Parent storage class for component datasets; `None` otherwise.
-
-        Returns
-        -------
-        datasetType : `~lsst.daf.butler.DatasetType`
-            The `~lsst.daf.butler.DatasetType` defined by this connection.
-        """
-        return DatasetType(
-            self.name,
-            universe.conform(self.dimensions),
-            self.storageClass,
-            isCalibration=self.isCalibration,
-            parentStorageClass=parentStorageClass,
-        )
 
 
 @dataclasses.dataclass(frozen=True)
