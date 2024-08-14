@@ -493,12 +493,9 @@ class TaskSummary(pydantic.BaseModel):
         self.n_not_attempted += other.n_not_attempted
         self.n_expected += other.n_expected
 
-        if self.wonky_quanta:
-            self.wonky_quanta.append(other.wonky_quanta)
-        if self.recovered_quanta:
-            self.recovered_quanta.append(other.recovered_quanta)
-        if self.failed_quanta:
-            self.failed_quanta.append(other.failed_quanta)
+        self.wonky_quanta.extend(other.wonky_quanta)
+        self.recovered_quanta.extend(other.recovered_quanta)
+        self.failed_quanta.extend(other.failed_quanta)
         
 
 class CursedDatasetSummary(pydantic.BaseModel):
@@ -657,10 +654,8 @@ class DatasetTypeSummary(pydantic.BaseModel):
         self.n_predicted_only += other.n_predicted_only
         self.n_expected += other.n_expected
 
-        if self.cursed_datasets:
-            self.cursed_datasets.append(other.cursed_datasets)
-        if self.unsuccessful_datasets:
-            self.unsuccessful_datasets.append(other.unsuccessful_datasets)
+        self.cursed_datasets.extend(other.cursed_datasets)
+        self.unsuccessful_datasets.extend(other.unsuccessful_datasets)
 
 
 class Summary(pydantic.BaseModel):
