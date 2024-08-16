@@ -31,6 +31,7 @@
 
 import unittest
 
+import lsst.utils.logging
 from lsst.pipe.base.quantum_provenance_graph import (
     DatasetTypeSummary,
     QuantumProvenanceGraph,
@@ -39,7 +40,6 @@ from lsst.pipe.base.quantum_provenance_graph import (
 )
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
-import lsst.utils.logging
 
 expected_mock_datasets = [
     "add_dataset1",
