@@ -486,7 +486,13 @@ class TaskSummary(pydantic.BaseModel):
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
     
     def add_data_id_group(self, other: TaskSummary) -> None:
-        """Docstring.
+        """Add information from a `TaskSummary` over one dataquery-identified
+        group to another, as part of aggregating `Summary` reports. 
+
+        Parameters
+        ----------
+        other : `TaskSummary`
+            `TaskSummary` to aggregate.
         """
         self.n_successful += other.n_successful
         self.n_blocked += other.n_blocked
@@ -639,7 +645,14 @@ class DatasetTypeSummary(pydantic.BaseModel):
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
             
     def add_data_id_group(self, other: DatasetTypeSummary) -> None:
-        """Docstring.
+        """Add information from a `DatasetTypeSummary` over one
+        dataquery-identified group to another, as part of aggregating `Summary`
+        reports. 
+
+        Parameters
+        ----------
+        other : `DatasetTypeSummary`
+            `DatasetTypeSummary` to aggregate.
         """
         if self.producer:
             # Guard against empty string
@@ -677,6 +690,11 @@ class Summary(pydantic.BaseModel):
         """Combine summaries from disjoint data id groups into an overall
         summary of common tasks and datasets. Intended for use when the same
         pipeline has been run over all groups.
+
+        Parameters
+        ----------
+        summaries : `Iterable[Summary]`
+            Iterable of all `Summary` objects to aggregate.
         """
         result = cls()
         for summary in summaries:
