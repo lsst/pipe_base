@@ -82,6 +82,11 @@ class GraphBuilderTestCase(unittest.TestCase):
             )
             self.assertEqual(len(qgraph3), 5)
 
+    # Inconsistent governor dimensions are no longer an error, so this test
+    # fails with the new query system. We should probably check instead that
+    # logging includes an explanation for the empty QG, but it might not
+    # because explain_no_results isn't good enough yet.
+    @unittest.expectedFailure
     def testAddInstrumentMismatch(self):
         """Verify that a RuntimeError is raised if the instrument in the user
         query does not match the instrument in the pipeline.
