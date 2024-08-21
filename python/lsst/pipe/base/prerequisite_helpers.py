@@ -347,15 +347,13 @@ class PrerequisiteFinder:
                         pixels.extend(range(begin, end))
                     bind[f"{name}_pixels"] = pixels
                 try:
-                    return list(
-                        butler.registry.queryDatasets(
-                            self.dataset_type_node.dataset_type,
-                            collections=input_collections,
-                            dataId=data_id.subset(self.constraint_dimensions),
-                            where=" AND ".join(where_terms),
-                            bind=bind,
-                            findFirst=True,
-                        ).expanded()
+                    return butler.query_datasets(
+                        self.dataset_type_node.dataset_type,
+                        collections=input_collections,
+                        data_id=data_id.subset(self.constraint_dimensions),
+                        where=" AND ".join(where_terms),
+                        bind=bind,
+                        with_dimension_records=True,
                     )
                 except MissingDatasetTypeError:
                     return []
@@ -373,7 +371,7 @@ class PrerequisiteFinder:
                 "Please create a feature-request ticket and use a lookup function in the meantime."
             )
         # If the spatial/temporal bounds are not customized, and the dataset
-        # doesn't have any skypix dimensions, a vanilla queryDatasets call
+        # doesn't have any skypix dimensions, a vanilla query_datasets call
         # should work.  This case should always be optimized by
         # AllDimensionsQuantumGraphBuilder as well.  Note that we use the
         # original quantum data ID here, not those with constraint_dimensions
@@ -381,13 +379,11 @@ class PrerequisiteFinder:
         # butler query system to handle the spatial/temporal stuff like it
         # normally would.
         try:
-            return list(
-                butler.registry.queryDatasets(
-                    self.dataset_type_node.dataset_type,
-                    collections=input_collections,
-                    dataId=data_id,
-                    findFirst=True,
-                ).expanded()
+            return butler.query_datasets(
+                self.dataset_type_node.dataset_type,
+                collections=input_collections,
+                data_id=data_id,
+                with_dimension_records=True,
             )
         except MissingDatasetTypeError:
             return []

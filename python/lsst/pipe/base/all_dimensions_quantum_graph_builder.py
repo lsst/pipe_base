@@ -36,10 +36,11 @@ __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 import dataclasses
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from io import StringIO
 from typing import TYPE_CHECKING, Any, final
 
-from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.daf.butler import MissingDatasetTypeError
+from lsst.daf.butler.queries import Query
+from lsst.utils.logging import LsstLogAdapter
 from lsst.utils.timer import timeMethod
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
@@ -54,8 +55,6 @@ from .quantum_graph_builder import (
 
 if TYPE_CHECKING:
     from lsst.daf.butler import Butler, DimensionGroup
-    from lsst.daf.butler.registry.queries import DataCoordinateQueryResults
-    from lsst.utils.logging import LsstLogAdapter
 
     from .pipeline_graph import DatasetTypeNode, PipelineGraph, TaskNode
 
@@ -167,7 +166,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # overall, so inside this loop is where it's really critical to avoid
         # expensive things, especially in the nested loops.
         n_rows = 0
-        for common_data_id in query.common_data_ids:
+        for common_data_id in query.butler_query.data_ids().with_dimension_records():
             # Create a data ID for each set of dimensions used by one or more
             # tasks or dataset types, and use that to record all quanta and
             # dataset data IDs for this row.
@@ -222,7 +221,6 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Object representing the full-pipeline data ID query.
         """
         for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
-            data_ids = query.common_data_ids.subset(dimensions, unique=True)
             # Iterate over regular input/output dataset type nodes with these
             # dimensions to find those datasets using straightforward followup
             # queries.
@@ -232,7 +230,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # to find these.
                     count = 0
                     try:
-                        for ref in data_ids.findDatasets(dataset_type_node.name, self.input_collections):
+                        for ref in query.butler_query.datasets(
+                            dataset_type_node.name, self.input_collections
+                        ).with_dimension_records():
                             self.existing_datasets.inputs[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
@@ -249,7 +249,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # that we might skip...
                     count = 0
                     try:
-                        for ref in data_ids.findDatasets(dataset_type_node.name, self.skip_existing_in):
+                        for ref in query.butler_query.datasets(
+                            dataset_type_node.name, self.skip_existing_in
+                        ).with_dimension_records():
                             key = DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             self.existing_datasets.outputs_for_skip[key] = ref
                             count += 1
@@ -269,7 +271,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # previous block).
                     count = 0
                     try:
-                        for ref in data_ids.findDatasets(dataset_type_node.name, [self.output_run]):
+                        for ref in query.butler_query.datasets(
+                            dataset_type_node.name, [self.output_run]
+                        ).with_dimension_records():
                             self.existing_datasets.outputs_in_the_way[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
@@ -285,8 +289,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             del dataset_type_node
             # Iterate over tasks with these dimensions to perform follow-up
             # queries for prerequisite inputs, which may have dimensions that
-            # were not in ``common_data_ids`` and/or require temporal joins to
-            # calibration validity ranges.
+            # were not in ``query.butler_query.dimensions`` and/or require
+            # temporal joins to calibration validity ranges.
             for task_node in tasks_in_group.values():
                 task_prerequisite_info = self.prerequisite_info[task_node.label]
                 for connection_name, finder in list(task_prerequisite_info.finders.items()):
@@ -339,27 +343,31 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # IDs to the datasets we're looking for.
                     count = 0
                     try:
-                        query_results = data_ids.findRelatedDatasets(
-                            finder.dataset_type_node.dataset_type, self.input_collections
+                        query_results = list(
+                            # TODO[DM-46042]: We materialize here as a way to
+                            # to a SELECT DISTINCT on the main query with a
+                            # subset of its dimensions columns.  It'd be better
+                            # to have a way to do this that just makes a
+                            # subquery or a CTE rather than a temporary table.
+                            query.butler_query.materialize(dimensions=dimensions, datasets=())
+                            .join_dataset_search(
+                                finder.dataset_type_node.dataset_type, self.input_collections
+                            )
+                            .general(
+                                dimensions | finder.dataset_type_node.dataset_type.dimensions,
+                                dataset_fields={finder.dataset_type_node.name: ...},
+                                find_first=True,
+                            )
+                            .iter_tuples(finder.dataset_type_node.dataset_type)
                         )
                     except MissingDatasetTypeError:
                         query_results = []
-                    for data_id, ref in query_results:
+                    for data_id, refs, _ in query_results:
+                        ref = refs[0]
                         dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id.bytes)
-                        quantum_key = QuantumKey(task_node.label, data_id.required_values)
-                        # The column-subset operation used to make `data_ids`
-                        # from `common_data_ids` can strip away post-query
-                        # filtering; e.g. if we starts with a {visit, patch}
-                        # query but subset down to just {visit}, we can't keep
-                        # the patch.region column we need for that filtering.
-                        # This means we can get some data IDs that weren't in
-                        # the original query (e.g. visits that don't overlap
-                        # the same patch, but do overlap the some common skypix
-                        # ID).  We don't want to add quanta with those data ID
-                        # here, which is why we pass
-                        # ignore_unrecognized_quanta=True here.
-                        if skeleton.add_input_edge(quantum_key, dataset_key, ignore_unrecognized_quanta=True):
-                            self.existing_datasets.inputs[dataset_key] = ref
+                        quantum_key = QuantumKey(task_node.label, data_id.subset(dimensions).required_values)
+                        skeleton.add_input_edge(quantum_key, dataset_key)
+                        self.existing_datasets.inputs[dataset_key] = ref
                         count += 1
                     # Remove this finder from the mapping so the base class
                     # knows it doesn't have to look for these prerequisites.
@@ -411,11 +419,12 @@ class _AllDimensionsQuery:
     dataset types for this subset of the pipeline.
     """
 
-    query_args: dict[str, Any] = dataclasses.field(default_factory=dict)
-    """All keyword arguments passed to `lsst.daf.butler.Registry.queryDataIds`.
+    query_cmd: list[str] = dataclasses.field(default_factory=list)
+    """Python code (split across lines) that could be used to reproduce the
+    initial query.
     """
 
-    common_data_ids: DataCoordinateQueryResults = dataclasses.field(init=False)
+    butler_query: Query = dataclasses.field(init=False)
     """Results of the materialized initial data ID query."""
 
     @classmethod
@@ -455,16 +464,11 @@ class _AllDimensionsQuery:
         for dimensions_for_group in result.grouped_by_dimensions.keys():
             dimension_names.update(dimensions_for_group.names)
         dimensions = builder.universe.conform(dimension_names)
+        datasets: set[str] = set()
         builder.log.debug("Building query for data IDs.")
-        result.query_args = {
-            "dimensions": dimensions,
-            "where": builder.where,
-            "dataId": result.subgraph.data_id,
-            "bind": builder.bind,
-        }
         if builder.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
             builder.log.debug("Constraining graph query using all datasets not marked as deferred.")
-            result.query_args["datasets"] = {
+            datasets = {
                 name
                 for name, dataset_type_node in result.overall_inputs.items()
                 if (
@@ -472,7 +476,6 @@ class _AllDimensionsQuery:
                     and name not in result.empty_dimensions_dataset_types
                 )
             }
-            result.query_args["collections"] = builder.input_collections
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
             builder.log.debug("Not using dataset existence to constrain query.")
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
@@ -485,26 +488,42 @@ class _AllDimensionsQuery:
                     remainder,
                 )
             builder.log.debug(f"Constraining graph query using {constraint}")
-            result.query_args["datasets"] = constraint
-            result.query_args["collections"] = builder.input_collections
+            datasets = constraint
         else:
             raise QuantumGraphBuilderError(
                 f"Unable to handle type {builder.dataset_query_constraint} given as datasetQueryConstraint."
             )
-        builder.log.verbose("Querying for data IDs with arguments:")
-        builder.log.verbose("  dimensions=%s,", list(result.query_args["dimensions"].names))
-        builder.log.verbose("  dataId=%s,", dict(result.query_args["dataId"].required))
-        if result.query_args["where"]:
-            builder.log.verbose("  where=%s,", repr(result.query_args["where"]))
-        if "datasets" in result.query_args:
-            builder.log.verbose("  datasets=%s,", list(result.query_args["datasets"]))
-        if "collections" in result.query_args:
-            builder.log.verbose("  collections=%s,", list(result.query_args["collections"]))
-        with builder.butler.registry.caching_context():
-            with builder.butler.registry.queryDataIds(**result.query_args).materialize() as common_data_ids:
-                builder.log.debug("Expanding data IDs.")
-                result.common_data_ids = common_data_ids.expanded()
-                yield result
+        with builder.butler.query() as query:
+            result.query_cmd.append("with butler.query() as query:")
+            result.query_cmd.append(f"    query = query.join_dimensions({list(dimensions.names)})")
+            query = query.join_dimensions(dimensions)
+            if datasets:
+                result.query_cmd.append(f"    collections = {list(builder.input_collections)}")
+            for dataset_type_name in datasets:
+                result.query_cmd.append(
+                    f"    query = query.join_dataset_search({dataset_type_name!r}, collections)"
+                )
+                query = query.join_dataset_search(dataset_type_name, builder.input_collections)
+            result.query_cmd.append(
+                f"    query = query.where({dict(result.subgraph.data_id.mapping)}, "
+                f"{builder.where!r}, bind={builder.bind!r})"
+            )
+            query = query.where(result.subgraph.data_id, builder.where, bind=builder.bind)
+            builder.log.verbose(result.format_query_cmd("Querying for data IDs via:"))
+            result.butler_query = query.materialize()
+            yield result
+
+    def format_query_cmd(self, *header: str) -> str:
+        """Format the butler query call used as a multi-line string.
+
+        Parameters
+        ----------
+        *header : `str`
+            Initial lines the of the returned string, not including newlines.
+        """
+        lines = list(header)
+        lines.extend(self.query_cmd)
+        return "\n".join(lines)
 
     def log_failure(self, log: LsstLogAdapter) -> None:
         """Emit an ERROR-level log message that attempts to explain
@@ -516,30 +535,10 @@ class _AllDimensionsQuery:
             The logger to use to emit log messages.
         """
         # A single multiline log plays better with log aggregators like Loki.
-        buffer = StringIO()
+        header = ["Initial data ID query returned no rows, so QuantumGraph will be empty."]
         try:
-            buffer.write("Initial data ID query returned no rows, so QuantumGraph will be empty.\n")
-            for message in self.common_data_ids.explain_no_results():
-                buffer.write(message)
-                buffer.write("\n")
-            buffer.write(
-                "To reproduce this query for debugging purposes, run "
-                "Registry.queryDataIds with these arguments:\n"
-            )
-            # We could just repr() the queryArgs dict to get something
-            # the user could make sense of, but it's friendlier to
-            # put these args in an easier-to-reconstruct equivalent form
-            # so they can read it more easily and copy and paste into
-            # a Python terminal.
-            buffer.write(f"  dimensions={list(self.query_args['dimensions'].names)},\n")
-            buffer.write(f"  dataId={dict(self.query_args['dataId'].required)},\n")
-            if self.query_args["where"]:
-                buffer.write(f"  where={repr(self.query_args['where'])},\n")
-            if "datasets" in self.query_args:
-                buffer.write(f"  datasets={list(self.query_args['datasets'])},\n")
-            if "collections" in self.query_args:
-                buffer.write(f"  collections={list(self.query_args['collections'])},\n")
+            header.extend(self.butler_query.explain_no_results())
+            header.append("To reproduce this query for debugging purposes, run:")
         finally:
             # If an exception was raised, write a partial.
-            log.error(buffer.getvalue())
-            buffer.close()
+            log.error(self.format_query_cmd(*header))
