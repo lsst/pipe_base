@@ -201,9 +201,7 @@ class QuantumGraphBuilder(ABC):
         # starts with the output run collection, as an optimization to avoid
         # queries later.
         try:
-            skip_existing_in_flat = self.butler.registry.queryCollections(
-                self.skip_existing_in, flattenChains=True
-            )
+            skip_existing_in_flat = self.butler.collections.query(self.skip_existing_in, flatten_chains=True)
         except MissingCollectionError:
             skip_existing_in_flat = []
         if not skip_existing_in_flat:
