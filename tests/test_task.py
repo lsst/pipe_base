@@ -326,7 +326,7 @@ class TaskTestCase(unittest.TestCase):
         task = AddMultTask()
         msg = "something failed!"
         error = ValueError(msg)
-        with self.assertLogs("addMult", level="ERROR") as cm:
+        with self.assertLogs("addMult", level="DEBUG") as cm:
             pipeBase.AnnotatedPartialOutputsError.annotate(error, task, log=task.log)
         self.assertIn(msg, "\n".join(cm.output))
         self.assertEqual(task.metadata["failure"]["message"], msg)
@@ -346,7 +346,7 @@ class TaskTestCase(unittest.TestCase):
         task = AddMultTask()
         msg = "something failed!"
         error = TestError(msg)
-        with self.assertLogs("addMult", level="ERROR") as cm:
+        with self.assertLogs("addMult", level="DEBUG") as cm:
             pipeBase.AnnotatedPartialOutputsError.annotate(error, task, log=task.log)
         self.assertIn(msg, "\n".join(cm.output))
         self.assertEqual(task.metadata["failure"]["message"], msg)
