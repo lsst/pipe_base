@@ -171,6 +171,8 @@ class DataIdMatch:
             Raised when expression includes valid but unsupported syntax, e.g.
             function call.
         """
+        if self.tree is None:
+            return True
         visitor = _DataIdMatchTreeVisitor(dataId)
         result = self.tree.visit(visitor)
         if not isinstance(result, bool):
