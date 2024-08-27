@@ -46,7 +46,6 @@ from lsst.utils.timer import timeMethod
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .quantum_graph_builder import (
     DatasetKey,
-    PrerequisiteDatasetKey,
     QuantumGraphBuilder,
     QuantumGraphBuilderError,
     QuantumGraphSkeleton,
@@ -153,9 +152,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         skeleton = QuantumGraphSkeleton(query.subgraph.tasks)
         empty_dimensions_dataset_keys = {}
         for dataset_type_name in query.empty_dimensions_dataset_types.keys():
-            empty_dimensions_dataset_keys[dataset_type_name] = skeleton.add_dataset_node(
-                dataset_type_name, self.empty_data_id
-            )
+            dataset_key = skeleton.add_dataset_node(dataset_type_name, self.empty_data_id)
+            empty_dimensions_dataset_keys[dataset_type_name] = dataset_key
+            if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
+                skeleton.set_dataset_ref(ref, dataset_key)
+            if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
+                skeleton.set_output_for_skip(ref)
+            if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
+                skeleton.set_output_in_the_way(ref)
         empty_dimensions_quantum_keys = []
         for task_label in query.empty_dimensions_tasks.keys():
             empty_dimensions_quantum_keys.append(skeleton.add_quantum_node(task_label, self.empty_data_id))
@@ -233,9 +237,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         for ref in query.butler_query.datasets(
                             dataset_type_node.name, self.input_collections
                         ).with_dimension_records():
-                            self.existing_datasets.inputs[
-                                DatasetKey(dataset_type_node.name, ref.dataId.required_values)
-                            ] = ref
+                            skeleton.set_dataset_ref(ref)
                             count += 1
                     except MissingDatasetTypeError:
                         pass
@@ -252,11 +254,10 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         for ref in query.butler_query.datasets(
                             dataset_type_node.name, self.skip_existing_in
                         ).with_dimension_records():
-                            key = DatasetKey(dataset_type_node.name, ref.dataId.required_values)
-                            self.existing_datasets.outputs_for_skip[key] = ref
+                            skeleton.set_output_for_skip(ref)
                             count += 1
                             if ref.run == self.output_run:
-                                self.existing_datasets.outputs_in_the_way[key] = ref
+                                skeleton.set_output_in_the_way(ref)
                     except MissingDatasetTypeError:
                         pass
                     self.log.verbose(
@@ -274,9 +275,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         for ref in query.butler_query.datasets(
                             dataset_type_node.name, [self.output_run]
                         ).with_dimension_records():
-                            self.existing_datasets.outputs_in_the_way[
-                                DatasetKey(dataset_type_node.name, ref.dataId.required_values)
-                            ] = ref
+                            skeleton.set_output_in_the_way(ref)
                             count += 1
                     except MissingDatasetTypeError:
                         pass
@@ -364,10 +363,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         query_results = []
                     for data_id, refs, _ in query_results:
                         ref = refs[0]
-                        dataset_key = PrerequisiteDatasetKey(finder.dataset_type_node.name, ref.id.bytes)
+                        dataset_key = skeleton.add_prerequisite_node(ref)
                         quantum_key = QuantumKey(task_node.label, data_id.subset(dimensions).required_values)
                         skeleton.add_input_edge(quantum_key, dataset_key)
-                        self.existing_datasets.inputs[dataset_key] = ref
                         count += 1
                     # Remove this finder from the mapping so the base class
                     # knows it doesn't have to look for these prerequisites.
