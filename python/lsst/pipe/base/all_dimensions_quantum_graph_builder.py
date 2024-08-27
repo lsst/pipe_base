@@ -507,7 +507,7 @@ class _AllDimensionsQuery:
                 yield result
 
     def log_failure(self, log: LsstLogAdapter) -> None:
-        """Emit a series of CRITICAL-level log message that attempts to explain
+        """Emit a series of ERROR-level log message that attempts to explain
         why the initial data ID query returned no rows.
 
         Parameters
@@ -515,10 +515,10 @@ class _AllDimensionsQuery:
         log : `logging.Logger`
             The logger to use to emit log messages.
         """
-        log.critical("Initial data ID query returned no rows, so QuantumGraph will be empty.")
+        log.error("Initial data ID query returned no rows, so QuantumGraph will be empty.")
         for message in self.common_data_ids.explain_no_results():
-            log.critical(message)
-        log.critical(
+            log.error(message)
+        log.error(
             "To reproduce this query for debugging purposes, run "
             "Registry.queryDataIds with these arguments:"
         )
@@ -527,11 +527,11 @@ class _AllDimensionsQuery:
         # put these args in an easier-to-reconstruct equivalent form
         # so they can read it more easily and copy and paste into
         # a Python terminal.
-        log.critical("  dimensions=%s,", list(self.query_args["dimensions"].names))
-        log.critical("  dataId=%s,", dict(self.query_args["dataId"].required))
+        log.error("  dimensions=%s,", list(self.query_args["dimensions"].names))
+        log.error("  dataId=%s,", dict(self.query_args["dataId"].required))
         if self.query_args["where"]:
-            log.critical("  where=%s,", repr(self.query_args["where"]))
+            log.error("  where=%s,", repr(self.query_args["where"]))
         if "datasets" in self.query_args:
-            log.critical("  datasets=%s,", list(self.query_args["datasets"]))
+            log.error("  datasets=%s,", list(self.query_args["datasets"]))
         if "collections" in self.query_args:
-            log.critical("  collections=%s,", list(self.query_args["collections"]))
+            log.error("  collections=%s,", list(self.query_args["collections"]))
