@@ -202,7 +202,7 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
                 continue
             item.metadata.set_dict("failure", failure_info)  # type: ignore
 
-        log.exception(
+        log.debug(
             "Task failed with only partial outputs; see exception message for details.",
             exc_info=error,
         )
