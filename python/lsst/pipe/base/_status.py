@@ -134,6 +134,10 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
     written contain information about their own incompleteness or degraded
     quality.
 
+    Clients should construct this exception by calling `annotate` instead of
+    calling the constructor directly. However, `annotate` does not chain the
+    exception; this must still be done by the client.
+
     This exception should always chain the original error. When the
     executor catches this exception, it will report the original exception. In
     contrast, other exceptions raised from ``runQuantum`` are considered to
