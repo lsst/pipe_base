@@ -37,10 +37,11 @@ __all__ = (
     "TaskInitKey",
     "DatasetKey",
     "PrerequisiteDatasetKey",
+    "Key",
 )
 
 from collections.abc import Iterable, Iterator, MutableMapping, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeAlias
 
 import networkx
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
@@ -129,6 +130,9 @@ class PrerequisiteDatasetKey(NamedTuple):
     is_prerequisite: ClassVar[Literal[True]] = True
 
 
+Key: TypeAlias = QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
+
+
 class QuantumGraphSkeleton:
     """An under-construction quantum graph.
 
@@ -166,13 +170,14 @@ class QuantumGraphSkeleton:
             self._tasks[task_label] = (task_init_key, set())
             self._xgraph.add_node(task_init_key)
 
-    def __contains__(self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey) -> bool:
+    def __contains__(self, key: Key) -> bool:
         return key in self._xgraph.nodes
 
-    def __getitem__(
-        self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
-    ) -> MutableMapping[str, Any]:
+    def __getitem__(self, key: Key) -> MutableMapping[str, Any]:
         return self._xgraph.nodes[key]
+
+    def __iter__(self) -> Iterator[Key]:
+        return iter(self._xgraph.nodes)
 
     @property
     def n_nodes(self) -> int:
@@ -632,3 +637,30 @@ class QuantumGraphSkeleton:
             Identifier for the graph node.
         """
         return self._xgraph.nodes[key].pop("output_in_the_way", None)
+
+    def set_data_id(self, key: Key, data_id: DataCoordinate) -> None:
+        """Set the data ID associated with a node.
+
+        This updates the data ID in any `DatasetRef` objects associated with
+        the node via `set_ref`, `set_output_for_skip`, or
+        `set_output_in_the_way` as well, assuming it is an expanded version
+        of the original data ID.
+
+        Parameters
+        ----------
+        key : `Key`
+            Identifier for the graph node.
+        data_id : `DataCoordinate`
+            Data ID for the node.
+        """
+        state: MutableMapping[str, Any] = self._xgraph.nodes[key]
+        state["data_id"] = data_id
+        ref: DatasetRef | None
+        if (ref := state.get("ref")) is not None:
+            state["ref"] = ref.expanded(data_id)
+        output_for_skip: DatasetRef | None
+        if (output_for_skip := state.get("output_for_skip")) is not None:
+            state["output_for_skip"] = output_for_skip.expanded(data_id)
+        output_in_the_way: DatasetRef | None
+        if (output_in_the_way := state.get("output_in_the_way")) is not None:
+            state["output_in_the_way"] = output_in_the_way.expanded(data_id)
