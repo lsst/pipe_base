@@ -37,10 +37,11 @@ __all__ = (
     "TaskInitKey",
     "DatasetKey",
     "PrerequisiteDatasetKey",
+    "Key",
 )
 
 from collections.abc import Iterable, Iterator, MutableMapping, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeAlias
 
 import networkx
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
@@ -129,6 +130,9 @@ class PrerequisiteDatasetKey(NamedTuple):
     is_prerequisite: ClassVar[Literal[True]] = True
 
 
+Key: TypeAlias = QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
+
+
 class QuantumGraphSkeleton:
     """An under-construction quantum graph.
 
@@ -166,13 +170,14 @@ class QuantumGraphSkeleton:
             self._tasks[task_label] = (task_init_key, set())
             self._xgraph.add_node(task_init_key)
 
-    def __contains__(self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey) -> bool:
+    def __contains__(self, key: Key) -> bool:
         return key in self._xgraph.nodes
 
-    def __getitem__(
-        self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
-    ) -> MutableMapping[str, Any]:
+    def __getitem__(self, key: Key) -> MutableMapping[str, Any]:
         return self._xgraph.nodes[key]
+
+    def __iter__(self) -> Iterator[Key]:
+        return iter(self._xgraph.nodes)
 
     @property
     def n_nodes(self) -> int:
