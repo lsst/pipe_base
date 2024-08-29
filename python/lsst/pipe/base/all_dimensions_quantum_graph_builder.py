@@ -532,14 +532,14 @@ class _AllDimensionsQuery:
             # put these args in an easier-to-reconstruct equivalent form
             # so they can read it more easily and copy and paste into
             # a Python terminal.
-            buffer.write(f"  dimensions={list(self.query_args['dimensions'].names)},")
-            buffer.write(f"  dataId={dict(self.query_args['dataId'].required)},")
+            buffer.write(f"  dimensions={list(self.query_args['dimensions'].names)},\n")
+            buffer.write(f"  dataId={dict(self.query_args['dataId'].required)},\n")
             if self.query_args["where"]:
-                buffer.write(f"  where={repr(self.query_args['where'])},")
+                buffer.write(f"  where={repr(self.query_args['where'])},\n")
             if "datasets" in self.query_args:
-                buffer.write(f"  datasets={list(self.query_args['datasets'])},")
+                buffer.write(f"  datasets={list(self.query_args['datasets'])},\n")
             if "collections" in self.query_args:
-                buffer.write(f"  collections={list(self.query_args['collections'])},")
+                buffer.write(f"  collections={list(self.query_args['collections'])},\n")
         finally:
             # If an exception was raised, write a partial.
             log.error(buffer.getvalue())
