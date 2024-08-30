@@ -1930,7 +1930,7 @@ class PipelineGraph:
             have a single ``instance`` attribute that holds a `TaskNode`,
             `TaskInitNode`, `DatasetTypeNode` (or `None`), `ReadEdge`, or
             `WriteEdge` instance.
-        sorted_keys : `Sequence` [ `NodeKey` ] or `None`
+        sorted_keys : `~collections.abc.Sequence` [ `NodeKey` ] or `None`
             Topologically sorted sequence of node keys, or `None` if the graph
             is not sorted.
         task_subsets : `dict` [ `str`, `TaskSubset` ]
