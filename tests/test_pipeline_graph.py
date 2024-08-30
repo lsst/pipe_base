@@ -1022,11 +1022,11 @@ def _have_example_storage_classes() -> bool:
     """Check whether some storage classes work as expected.
 
     Given that these have registered converters, it shouldn't actually be
-    necessary to import be able to those types in order to determine that
-    they're convertible, but the storage class machinery is implemented such
-    that types that can't be imported can't be converted, and while that's
-    inconvenient here it's totally fine in non-testing scenarios where you only
-    care about a storage class if you can actually use it.
+    necessary to import those types in order to determine that they're
+    convertible, but the storage class machinery is implemented such that types
+    that can't be imported can't be converted, and while that's inconvenient
+    here it's totally fine in non-testing scenarios where you only care about a
+    storage class if you can actually use it.
     """
     getter = StorageClassFactory().getStorageClass
     return (
@@ -1413,6 +1413,42 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         b_ref = b_i.adapt_dataset_ref(ref)
         self.assertEqual(a_ref, ref)
         self.assertEqual(b_ref, ref.makeComponentRef("schema"))
+        self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
+        self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
+
+    @unittest.skipUnless(
+        _have_example_storage_classes(), "Arrow/Astropy/Pandas storage classes are not available."
+    )
+    def test_component_storage_class_converted(self) -> None:
+        """Test successful resolution of a component dataset type due to
+        an output connection referencing the parent dataset type, but with a
+        different (convertible) storage class.
+        """
+        self.a_config.outputs["o"] = DynamicConnectionConfig(dataset_type_name="d", storage_class="DataFrame")
+        self.b_config.inputs["i"] = DynamicConnectionConfig(
+            dataset_type_name="d.schema", storage_class="ArrowSchema"
+        )
+        graph = self.make_graph()
+        output_parent_dataset_type = DatasetType("d", self.dimensions.empty, get_mock_name("DataFrame"))
+        graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(graph.dataset_types["d"].dataset_type, output_parent_dataset_type)
+        a_o = graph.tasks["a"].outputs["o"]
+        b_i = graph.tasks["b"].inputs["i"]
+        self.assertEqual(b_i.dataset_type_name, "d.schema")
+        self.assertEqual(a_o.adapt_dataset_type(output_parent_dataset_type), output_parent_dataset_type)
+        self.assertEqual(
+            # We don't really want to compare the full dataset type here,
+            # because that's going to include a parentStorageClass that may or
+            # may not make sense.
+            b_i.adapt_dataset_type(output_parent_dataset_type).storageClass_name,
+            get_mock_name("ArrowSchema"),
+        )
+        data_id = DataCoordinate.make_empty(self.dimensions)
+        ref = DatasetRef(output_parent_dataset_type, data_id, run="r")
+        a_ref = a_o.adapt_dataset_ref(ref)
+        b_ref = b_i.adapt_dataset_ref(ref)
+        self.assertEqual(a_ref, ref)
+        self.assertEqual(b_ref.datasetType.storageClass_name, get_mock_name("ArrowSchema"))
         self.assertEqual(graph.dataset_types["d"].generalize_ref(a_ref), ref)
         self.assertEqual(graph.dataset_types["d"].generalize_ref(b_ref), ref)
 

@@ -32,7 +32,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, ClassVar, Self, TypeVar
 
-from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse
+from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse, StorageClassFactory
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.utils.classes import immutable
 
@@ -396,10 +396,7 @@ class ReadEdge(Edge):
     def adapt_dataset_type(self, dataset_type: DatasetType) -> DatasetType:
         # Docstring inherited.
         if self.component is not None:
-            assert (
-                self.storage_class_name == dataset_type.storageClass.allComponents()[self.component].name
-            ), "components with storage class overrides are not supported"
-            return dataset_type.makeComponentDatasetType(self.component)
+            dataset_type = dataset_type.makeComponentDatasetType(self.component)
         if self.storage_class_name != dataset_type.storageClass_name:
             return dataset_type.overrideStorageClass(self.storage_class_name)
         return dataset_type
@@ -407,10 +404,7 @@ class ReadEdge(Edge):
     def adapt_dataset_ref(self, ref: DatasetRef) -> DatasetRef:
         # Docstring inherited.
         if self.component is not None:
-            assert (
-                self.storage_class_name == ref.datasetType.storageClass.allComponents()[self.component].name
-            ), "components with storage class overrides are not supported"
-            return ref.makeComponentRef(self.component)
+            ref = ref.makeComponentRef(self.component)
         if self.storage_class_name != ref.datasetType.storageClass_name:
             return ref.overrideStorageClass(self.storage_class_name)
         return ref
@@ -618,13 +612,21 @@ class ReadEdge(Edge):
                         f"which does not include component {self.component!r} "
                         f"as requested by task {self.task_label!r}."
                     )
-                if all_current_components[self.component].name != self.storage_class_name:
+                # Note that we can't actually make a fully-correct DatasetType
+                # for the component the task wants, because we don't have the
+                # parent storage class.
+                current_component = all_current_components[self.component]
+                if (
+                    current_component.name != self.storage_class_name
+                    and not StorageClassFactory()
+                    .getStorageClass(self.storage_class_name)
+                    .can_convert(current_component)
+                ):
                     raise IncompatibleDatasetTypeError(
                         f"Dataset type '{self.parent_dataset_type_name}.{self.component}' has storage class "
                         f"{all_current_components[self.component].name!r} "
-                        f"(from {report_current_origin()}), which does not match "
-                        f"{self.storage_class_name!r}, as requested by task {self.task_label!r}. "
-                        "Note that storage class conversions of components are not supported."
+                        f"(from {report_current_origin()}), which cannot be converted to "
+                        f"{self.storage_class_name!r}, as requested by task {self.task_label!r}."
                     )
             return current, is_initial_query_constraint, is_prerequisite
         else:
