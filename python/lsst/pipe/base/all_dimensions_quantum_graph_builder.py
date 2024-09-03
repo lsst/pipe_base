@@ -291,7 +291,6 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         dataset_type_node.name,
                         self.output_run,
                     )
-            del dataset_type_node
             # Iterate over tasks with these dimensions to perform follow-up
             # queries for prerequisite inputs, which may have dimensions that
             # were not in ``query.butler_query.dimensions`` and/or require
