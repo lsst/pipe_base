@@ -60,6 +60,7 @@ from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import (
     DuplicateOutputError,
     EdgesChangedError,
+    InvalidStepsError,
     PipelineDataCycleError,
     PipelineGraphError,
     PipelineGraphExceptionSafetyError,
@@ -67,7 +68,7 @@ from ._exceptions import (
 )
 from ._mapping_views import DatasetTypeMappingView, TaskMappingView
 from ._nodes import NodeKey, NodeType
-from ._task_subsets import TaskSubset
+from ._task_subsets import StepDefinitions, TaskSubset
 from ._tasks import TaskImportMode, TaskInitNode, TaskNode, _TaskNodeImportedData
 
 if TYPE_CHECKING:
@@ -130,6 +131,7 @@ class PipelineGraph:
             description=description,
             universe=universe,
             data_id=data_id,
+            step_definitions=StepDefinitions(universe),
         )
 
     def __repr__(self) -> str:
@@ -193,30 +195,61 @@ class PipelineGraph:
         return self._task_subsets
 
     @property
-    def is_fully_resolved(self) -> bool:
-        """Whether all of this graph's nodes are resolved."""
-        return self._universe is not None and all(
-            self.dataset_types.is_resolved(k) for k in self.dataset_types
-        )
+    def steps(self) -> StepDefinitions:
+        """An ordered mapping of the labels of task subsets that must be
+        executed separately.
+
+        Steps are intended to be partition of the full pipeline graph - the
+        steps together include all tasks, and each task belongs to exactly one
+        step - but this is only checked when the graph is resolved.
+        """
+        return self._step_definitions
+
+    @steps.setter
+    def steps(self, labels: Iterable[str]) -> None:
+        # Docstring on getter.
+        self._step_definitions.reset(labels)
+
+    def get_task_step(self, task_label: str) -> str:
+        """Return the step that the given task belongs to.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label of the task to look up.
+
+        Returns
+        -------
+        step_label : `str`
+            Step the task belongs to.
+
+        Raises
+        ------
+        InvalidStepsError
+            Raised if the pipeline has no steps defined.
+        UnresolvedGraphError
+            Raised if the pipeline has been modified since the steps were
+            last verified.
+        """
+        if not self._step_definitions:
+            raise InvalidStepsError("No steps have been defined for this pipeline.")
+        elif self._step_definitions.verified:
+            return self._xgraph.nodes[NodeKey(NodeType.TASK, task_label)]["step"]
+        raise UnresolvedGraphError("Steps have not been verified since the last modification.")
 
     @property
-    def is_sorted(self) -> bool:
-        """Whether this graph's tasks and dataset types are topologically
-        sorted with the exact same deterministic tiebreakers that `sort` would
-        apply.
+    def is_fully_resolved(self) -> bool:
+        """Whether all of this graph's nodes are resolved and any all have
+        been checked for correctness.
 
-        This may perform (and then discard) a full sort if `has_been_sorted` is
-        `False`.  If the goal is to obtain a sorted graph, it is better to just
-        call `sort` without guarding that with an ``if not graph.is_sorted``
-        check.
+        A fully-resolved graph is always sorted as well, and a fully-resolved
+        graph with sorted
         """
-        if self._sorted_keys is not None:
-            return True
-        return all(
-            sorted == unsorted
-            for sorted, unsorted in zip(
-                networkx.lexicographical_topological_sort(self._xgraph), self._xgraph, strict=True
-            )
+        return (
+            self._universe is not None
+            and self._step_definitions.verified
+            and self._sorted_keys is not None
+            and all(self.dataset_types.is_resolved(k) for k in self.dataset_types)
         )
 
     @property
@@ -225,10 +258,11 @@ class PipelineGraph:
         topologically sorted (with unspecified but deterministic tiebreakers)
         since the last modification to the graph.
 
+        If the pipeline graph has step definitions, the sort order is
+        consistent with the step order.
+
         This may return `False` if the graph *happens* to be sorted but `sort`
-        was never called, but it is potentially much faster than `is_sorted`,
-        which may attempt (and then discard) a full sort if `has_been_sorted`
-        is `False`.
+        was never called,.
         """
         return self._sorted_keys is not None
 
@@ -253,17 +287,19 @@ class PipelineGraph:
     def copy(self) -> PipelineGraph:
         """Return a copy of this graph that copies all mutable state."""
         xgraph = self._xgraph.copy()
+        step_definitions = self._step_definitions.copy()
         result = PipelineGraph.__new__(PipelineGraph)
         result._init_from_args(
             xgraph,
             self._sorted_keys,
             task_subsets={
-                k: TaskSubset(xgraph, v.label, set(v._members), v.description)
+                k: TaskSubset(xgraph, v.label, set(v._members), v.description, step_definitions)
                 for k, v in self._task_subsets.items()
             },
             description=self._description,
             universe=self.universe,
             data_id=self._raw_data_id,
+            step_definitions=step_definitions,
         )
         return result
 
@@ -606,6 +642,8 @@ class PipelineGraph:
             else:
                 dimensions = DimensionUniverse()
 
+        sort_keys_from_steps = self._resolve_step_flow()
+
         node_key: NodeKey
         updates: dict[NodeKey, TaskNode | DatasetTypeNode] = {}
         for node_key, node_state in self._xgraph.nodes.items():
@@ -639,7 +677,17 @@ class PipelineGraph:
             raise PipelineGraphExceptionSafetyError(
                 "Error during dataset type resolution has left the graph in an inconsistent state."
             ) from err
-        self.sort()
+
+        # If we get an error here, many graph nodes will have been resolved but
+        # the steps will still be marked as unverified and unsorted.  That's
+        # still an acceptable state for the pipeline to be in.
+        self._resolve_step_dimensions(dimensions)
+        self._step_definitions._verified = True
+
+        if sort_keys_from_steps is not None:
+            self._reorder(sort_keys_from_steps)
+        else:
+            self.sort()
         self._universe = dimensions
 
     ###########################################################################
@@ -706,7 +754,7 @@ class PipelineGraph:
         state of the data repository and all contributing tasks.
 
         Adding new tasks removes any existing resolutions of all dataset types
-        it references and marks the graph as unsorted.  It is most effiecient
+        it references and marks the graph as unsorted.  It is most efficient
         to add all tasks up front and only then resolve and/or sort the graph.
         """
         if label is None:
@@ -976,7 +1024,7 @@ class PipelineGraph:
         description : `str`, optional
             String description to associate with this label.
         """
-        subset = TaskSubset(self._xgraph, subset_label, set(task_labels), description)
+        subset = TaskSubset(self._xgraph, subset_label, set(task_labels), description, self._step_definitions)
         self._task_subsets[subset_label] = subset
 
     def remove_task_subset(self, subset_label: str) -> None:
@@ -986,7 +1034,15 @@ class PipelineGraph:
         ----------
         subset_label : `str`
             Label for this set of tasks.
+
+        Notes
+        -----
+        If this subset is a step, it is also removed from the step definitions.
         """
+        try:
+            self._step_definitions.remove(subset_label)
+        except KeyError:
+            pass
         del self._task_subsets[subset_label]
 
     ###########################################################################
@@ -1918,6 +1974,7 @@ class PipelineGraph:
         description: str,
         universe: DimensionUniverse | None,
         data_id: DataId | None,
+        step_definitions: StepDefinitions,
     ) -> None:
         """Initialize the graph with possibly-nontrivial arguments.
 
@@ -1943,6 +2000,8 @@ class PipelineGraph:
         data_id : `lsst.daf.butler.DataCoordinate` or other data ID mapping.
             Data ID that represents a constraint on all quanta generated from
             this pipeline.
+        step_definitions : `StepDefinitions`
+            Struct holding information about steps.
 
         Notes
         -----
@@ -1972,6 +2031,7 @@ class PipelineGraph:
         self._universe = universe
         if sorted_keys is not None:
             self._reorder(sorted_keys)
+        self._step_definitions = step_definitions
 
     def _make_bipartite_xgraph_internal(self, init: bool) -> networkx.MultiDiGraph:
         """Make a bipartite init-only or runtime-only internal subgraph.
@@ -2157,16 +2217,125 @@ class PipelineGraph:
         self._dataset_types._reorder(sorted_keys)
 
     def _reset(self) -> None:
-        """Reset the all views of this graph following a modification that
-        might invalidate them.
+        """Reset all views of this graph following a modification that might
+        invalidate them.
         """
         self._sorted_keys = None
         self._tasks._reset()
         self._dataset_types._reset()
 
+    def _resolve_step_flow(self) -> Sequence[NodeKey] | None:
+        """Check that step definitions are consistent with the ordering of
+        the graph's nodes and that they partition the task graph.
+
+        Returns
+        -------
+        sort_keys : `~collections.abc.Sequence` [ `NodeKey` ] or `None`
+            Sort order for the pipeline graph that is consistent with the
+            step order, or `None` if there were no steps defined for this
+            pipeline.
+        """
+        if not self._step_definitions:
+            return None
+        task_labels_so_far: set[str] = set()
+        # Inputs we've already seen, and the tasks that wanted them:
+        inputs_so_far: dict[str, set[str]] = {}
+        sort_keys: list[NodeKey] = []
+        keys_sorted: set[NodeKey] = set()
+        for step_label in self.steps:
+            try:
+                task_subset = self.task_subsets[step_label]
+            except KeyError:
+                raise InvalidStepsError(f"Step {step_label!r} is not a task subset.") from None
+            if not task_labels_so_far.isdisjoint(task_subset):
+                raise InvalidStepsError(
+                    f"Step {step_label!r} repeats task(s) {task_labels_so_far & task_subset}."
+                )
+            # Check that none of the outputs of the tasks in this step were
+            # expected as outputs of a previous step's tasks, and gather node
+            # keys to make a networkx subgraph of the step to do a topological
+            # sort of just the step.
+            task_labels_so_far.update(task_subset)
+            step_inputs: dict[str, set[str]] = {}
+            new_step_keys: set[NodeKey] = set()
+            for task_label in task_subset:
+                for input_name in self.inputs_of(task_label):
+                    step_inputs.setdefault(input_name, set()).add(task_label)
+                task_outputs = self.outputs_of(task_label)
+                if not inputs_so_far.keys().isdisjoint(task_outputs.keys()):
+                    msg: list[str] = []
+                    for input_name in inputs_so_far.keys() & task_outputs.keys():
+                        msg.append(f"{input_name} (used by {inputs_so_far[input_name]})")
+                    raise InvalidStepsError(
+                        f"Task {task_label} in step {step_label!r} produces dataset types "
+                        f"[{', '.join(msg)}], but these are consumed by tasks in earlier "
+                        "steps.  Either steps are out of order or the graph is cyclic."
+                    )
+                task_init_key = NodeKey(NodeType.TASK_INIT, task_label)
+                task_key = NodeKey(NodeType.TASK, task_label)
+                new_step_keys.add(task_init_key)
+                new_step_keys.add(task_key)
+                new_step_keys.update(self._xgraph.predecessors(task_init_key))
+                new_step_keys.update(self._xgraph.predecessors(task_key))
+                new_step_keys.update(self._xgraph.successors(task_init_key))
+                new_step_keys.update(self._xgraph.successors(task_key))
+                # Also record the step the task is in as a private xgraph
+                # attribute so we can look up the step given a task (or,
+                # indirectly, dataset type); this has to be used with care
+                # because if the steps haven't been verified it can be wrong.
+                self._xgraph.nodes[task_init_key]["step"] = step_label
+                self._xgraph.nodes[task_key]["step"] = step_label
+            # Drop step input keys that were already either inputs or outputs
+            # of a previous step, since they'll have already been added to
+            # sort_keys.
+            new_step_keys.difference_update(keys_sorted)
+            # Make the step subgraph, sort it, and extend the overall sort_keys
+            # with result.
+            step_xgraph = self._xgraph.subgraph(new_step_keys)
+            sort_keys.extend(networkx.dag.lexicographical_topological_sort(step_xgraph))
+            keys_sorted.update(new_step_keys)
+            for input_name, consuming_tasks in step_inputs.items():
+                inputs_so_far.setdefault(input_name, set()).update(consuming_tasks)
+        if not task_labels_so_far.issuperset(self.tasks.keys()):
+            # Note that the converse issubset test effectively happens when we
+            # look up inputs and outputs of each task.
+            raise InvalidStepsError(f"No step contains task(s) {self.tasks.keys() - task_labels_so_far}.")
+        return sort_keys
+
+    def _resolve_step_dimensions(self, universe: DimensionUniverse) -> None:
+        """Check that step sharding dimensions are consistent with task and
+        output dataset dimensions.
+
+        Parameters
+        ----------
+        universe : `~lsst.daf.butler.DimensionUniverse`
+            Definitions for all dimensions.  Will be attached to the step
+            definitions by this method.
+        """
+        self._step_definitions._universe = universe
+        for step_label in self.steps:
+            dimensions = self.steps.get_dimensions(step_label)
+            for task_label in self.task_subsets[step_label]:
+                task_node = self.tasks[task_label]
+                if not _dimensions_compatible(dimensions, task_node.dimensions):
+                    raise InvalidStepsError(
+                        f"Dimensions {task_node.dimensions} of task {task_label!r} are not compatible with "
+                        f"the sharding dimensions {dimensions} of step {step_label!r}."
+                    )
+                for dataset_type_node in self.outputs_of(task_label).values():
+                    assert dataset_type_node is not None, "dataset types should be resolved first"
+                    if not _dimensions_compatible(dimensions, dataset_type_node.dimensions):
+                        raise InvalidStepsError(
+                            f"Dimensions {dataset_type_node.dimensions} of dataset type "
+                            f"{dataset_type_node.name!r} (produced by task {task_label!r}) are not "
+                            f"compatible with the sharding dimensions {dimensions} of step "
+                            f"{step_label!r}."
+                        )
+
     _xgraph: networkx.MultiDiGraph
     _sorted_keys: Sequence[NodeKey] | None
     _task_subsets: dict[str, TaskSubset]
+    _step_definitions: StepDefinitions
     _description: str
     _tasks: TaskMappingView
     _dataset_types: DatasetTypeMappingView
@@ -2219,4 +2388,27 @@ def compare_packages(packages: Packages, new_packages: Packages) -> bool:
         _LOG.debug("extra packages: %s", extra)
         packages.update(new_packages)
         return True
+    return False
+
+
+def _dimensions_compatible(dimensions: DimensionGroup, object_dimensions: DimensionGroup) -> bool:
+    if dimensions.issubset(object_dimensions):
+        # Easy typical case.
+        return True
+    # Hard case: if any sharding dimensions that are not in the object
+    # dimensions are related to something in the object dimensions by a
+    # many-to-many join table, this is okay too.  The main use case here is to
+    # let {exposure, [detector]} satisfy sharding dimensions of
+    # {visit, [detector]}.
+    universe = dimensions.universe
+    unmatched_sharding = dimensions.required - object_dimensions.required
+    unmatched_object = object_dimensions.required - dimensions.required
+    unmatched_union_group = dimensions.union(object_dimensions)
+    for element_name in unmatched_union_group.elements:
+        if (
+            (element := universe[element_name]).defines_relationships
+            and not element.dimensions.isdisjoint(unmatched_sharding)
+            and not element.dimensions.isdisjoint(unmatched_object)
+        ):
+            return True
     return False

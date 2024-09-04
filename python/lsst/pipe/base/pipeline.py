@@ -870,9 +870,12 @@ class Pipeline:
             graph.add_task_subset(
                 label, subset.subset, subset.description if subset.description is not None else ""
             )
-        graph.sort()
+        for step_ir in self._pipelineIR.steps:
+            graph.steps.append(step_ir.label, step_ir.dimensions)
         if registry is not None or visualization_only:
             graph.resolve(registry=registry, visualization_only=visualization_only)
+        else:
+            graph.sort()
         return graph
 
     def _add_task_to_graph(self, label: str, graph: pipeline_graph.PipelineGraph) -> None:
