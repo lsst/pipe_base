@@ -129,7 +129,6 @@ class PipelineGraphTestCase(unittest.TestCase):
     def test_sorting(self) -> None:
         """Test sort methods on PipelineGraph."""
         self.assertFalse(self.graph.has_been_sorted)
-        self.assertFalse(self.graph.is_sorted)
         self.graph.sort()
         self.check_sorted(self.graph)
 
@@ -432,7 +431,6 @@ class PipelineGraphTestCase(unittest.TestCase):
         other than sorting.
         """
         self.assertTrue(graph.has_been_sorted)
-        self.assertTrue(graph.is_sorted)
         self.assertEqual(
             [(node_type, name) for node_type, name, _ in graph.iter_nodes()],
             [

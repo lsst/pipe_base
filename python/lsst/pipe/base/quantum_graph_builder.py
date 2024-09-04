@@ -168,6 +168,8 @@ class QuantumGraphBuilder(ABC):
         skip_existing_in: Sequence[str] = (),
         clobber: bool = False,
     ):
+        if len(pipeline_graph.steps) > 1:
+            raise ValueError("QuantumGraphs can only be built from single-step pipelines.")
         self.log = getLogger(__name__)
         self.metadata = TaskMetadata()
         self._pipeline_graph = pipeline_graph
