@@ -73,6 +73,11 @@ class DatasetTypeNode:
     is_prerequisite: bool
     """Whether this dataset type is a prerequisite input that must exist in
     the Registry before graph creation.
+
+    This will be `False` in multi-step pipeline graphs if some tasks declare
+    this dataset as a regular input or output.  Tasks are only required to be
+    consistent about whether a dataset type is a prerequisite within each
+    step.
     """
 
     producing_edge: WriteEdge | None
@@ -89,6 +94,7 @@ class DatasetTypeNode:
         get_registered: Callable[[str], DatasetType | None],
         dimensions: DimensionUniverse,
         previous: DatasetTypeNode | None,
+        have_steps: bool,
         visualization_only: bool = False,
     ) -> DatasetTypeNode:
         """Construct a dataset type node from its edges.
@@ -108,6 +114,9 @@ class DatasetTypeNode:
             Definitions of all dimensions.
         previous : `DatasetTypeNode` or `None`
             Previous node for this dataset type.
+        have_steps : `bool`
+            Whether this pipeline has step definitions (which must be verified
+            as of the time this method is called).
         visualization_only : `bool`, optional
             Resolve the graph as well as possible even when dimensions and
             storage classes cannot really be determined.  This can include
@@ -134,6 +143,7 @@ class DatasetTypeNode:
         is_prerequisite: bool | None = None
         producer: str | None = None
         producing_edge: WriteEdge | None = None
+        steps: dict[str, str] | None = {} if have_steps else None
         # Iterate over the incoming edges to this node, which represent the
         # output connections of tasks that write this dataset type; these take
         # precedence over the inputs in determining the graph-wide dataset type
@@ -149,6 +159,8 @@ class DatasetTypeNode:
                     f"and {producer!r}."
                 )
             producer = producing_edge.task_label
+            if steps is not None:
+                steps["producer"] = xgraph.nodes[producing_edge.task_key]["step"]
             dataset_type = producing_edge._resolve_dataset_type(dataset_type, universe=dimensions)
             is_prerequisite = False
             is_initial_query_constraint = False
@@ -160,6 +172,11 @@ class DatasetTypeNode:
         # Put edges that are not component datasets before any edges that are.
         consuming_edges.sort(key=lambda consuming_edge: consuming_edge.component is not None)
         for consuming_edge in consuming_edges:
+            if steps is not None:
+                try:
+                    steps[consuming_edge.task_label] = xgraph.nodes[consuming_edge.task_key]["step"]
+                except KeyError:
+                    raise
             dataset_type, is_initial_query_constraint, is_prerequisite = consuming_edge._resolve_dataset_type(
                 current=dataset_type,
                 universe=dimensions,
@@ -168,6 +185,7 @@ class DatasetTypeNode:
                 is_registered=is_registered,
                 producer=producer,
                 consumers=consumers,
+                steps=steps,
                 visualization_only=visualization_only,
             )
             consumers.append(consuming_edge.task_label)

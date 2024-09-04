@@ -469,6 +469,7 @@ class ReadEdge(Edge):
         producer: str | None,
         consumers: Sequence[str],
         is_registered: bool,
+        steps: Mapping[str, str] | None,
         visualization_only: bool,
     ) -> tuple[DatasetType, bool, bool]:
         """Participate in the construction of the `DatasetTypeNode` object
@@ -499,6 +500,11 @@ class ReadEdge(Edge):
         is_registered : `bool`
             Whether a registration for this dataset type was found in the
             data repository.
+        steps : `~collections.abc.Mapping`
+            Mapping from task label to the label of the step that it is in,
+            or `None` if there are no step definitions.  Guaranteed to include
+            at least ``self.task_label``, ``producer``, and all elements of
+            ``consumers``.
         visualization_only : `bool`
             Resolve the graph as well as possible even when dimensions and
             storage classes cannot really be determined.  This can include
@@ -563,21 +569,53 @@ class ReadEdge(Edge):
         if is_prerequisite is None:
             is_prerequisite = self.is_prerequisite
         elif is_prerequisite and not self.is_prerequisite:
-            raise ConnectionTypeConsistencyError(
-                f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to {consumers}, "
-                f"but it is not a prerequisite to {self.task_label!r}."
-            )
-        elif not is_prerequisite and self.is_prerequisite:
-            if producer is not None:
+            if steps is None:
                 raise ConnectionTypeConsistencyError(
-                    f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
-                    f"{self.task_label}, but it is produced by {producer!r}."
+                    f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to {consumers}, "
+                    f"but it is not a prerequisite to {self.task_label!r}."
                 )
             else:
-                raise ConnectionTypeConsistencyError(
-                    f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
-                    f"{self.task_label}, but it is a regular input to {consumers!r}."
-                )
+                for consumer in consumers:
+                    if steps[consumer] == steps[self.task_label]:
+                        raise ConnectionTypeConsistencyError(
+                            f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
+                            f"{consumer}, but it is not a prerequisite to {self.task_label!r}, and both are "
+                            f"in step {steps[self.task_label]!r}."
+                        )
+            # `is_prerequisite` is only `True` if all edges say it is a
+            # prerequisite and *in different steps* they're permitted to
+            # disagree.  That makes `is_prerequisite only really useful for
+            # single-step pipelines, but that's okay, since that's what QG
+            # generation requires.
+            is_prerequisite = False
+        elif not is_prerequisite and self.is_prerequisite:
+            if producer is not None:
+                if steps is None:
+                    raise ConnectionTypeConsistencyError(
+                        f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
+                        f"{self.task_label}, but it is produced by {producer!r}."
+                    )
+                else:
+                    if steps[producer] == steps[self.task_label]:
+                        raise ConnectionTypeConsistencyError(
+                            f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
+                            f"{self.task_label}, but it is produced by {producer!r}, and both are "
+                            f"in step {steps[self.task_label]!r}."
+                        )
+            else:
+                if steps is None:
+                    raise ConnectionTypeConsistencyError(
+                        f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
+                        f"{self.task_label}, but it is a regular input to {consumers!r}."
+                    )
+                else:
+                    for consumer in consumers:
+                        if steps[consumer] == steps[self.task_label]:
+                            raise ConnectionTypeConsistencyError(
+                                f"Dataset type {self.parent_dataset_type_name!r} is a prerequisite input to "
+                                f"{self.task_label}, but it is a regular input to {consumers!r}, and both "
+                                f"are in step {steps[self.task_label]!r}."
+                            )
 
         def report_current_origin() -> str:
             if is_registered:
@@ -599,7 +637,7 @@ class ReadEdge(Edge):
                 else:
                     raise MissingDatasetTypeError(
                         f"Dataset type {self.parent_dataset_type_name!r} is not registered and not produced "
-                        f"by this pipeline, but it used by task {self.task_label!r}, via component "
+                        f"by this pipeline, but it is used by task {self.task_label!r}, via component "
                         f"{self.component!r}. This pipeline cannot be resolved until the parent dataset "
                         "type is registered."
                     )
