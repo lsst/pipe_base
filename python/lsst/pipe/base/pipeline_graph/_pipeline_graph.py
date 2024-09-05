@@ -39,17 +39,18 @@ import networkx.algorithms.bipartite
 import networkx.algorithms.dag
 from lsst.daf.butler import (
     Butler,
-    ConflictingDefinitionError,
     DataCoordinate,
     DataId,
+    DatasetRef,
     DatasetType,
     DimensionGroup,
     DimensionUniverse,
     MissingDatasetTypeError,
-    Registry,
 )
+from lsst.daf.butler.registry import ConflictingDefinitionError, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 
+from .._dataset_handle import InMemoryDatasetHandle
 from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
 from ._dataset_types import DatasetTypeNode
 from ._edges import Edge, ReadEdge, WriteEdge
@@ -1548,7 +1549,7 @@ class PipelineGraph:
         not considered part of the pipeline graph in other respects, but it
         does get written with other provenance datasets.
         """
-        if self.universe is not None:
+        if self.universe is None:
             raise UnresolvedGraphError(
                 "PipelineGraph must be resolved in order to get the packages dataset type."
             )
@@ -1642,6 +1643,138 @@ class PipelineGraph:
                 "Dataset types have to be registered in advance (on the command-line, either via "
                 "`butler register-dataset-type` or the `--register-dataset-types` option to `pipetask run`."
             )
+
+    def instantiate_tasks(
+        self,
+        get_init_input: Callable[[DatasetType], Any] | None = None,
+        init_outputs: list[tuple[Any, DatasetType]] | None = None,
+    ) -> list[PipelineTask]:
+        """Instantiate all tasks in the pipeline.
+
+        Parameters
+        ----------
+        get_init_input : `~collections.abc.Callable`, optional
+            Callable that accepts a single `~lsst.daf.butler.DatasetType`
+            parameter and returns the init-input dataset associated with that
+            dataset type.  Must respect the storage class embedded in the type.
+            This is optional if the pipeline does not have any overall init
+            inputs.  When a full butler is available,
+            `lsst.daf.butler.Butler.get` can be used directly here.
+        init_outputs : `list`, optional
+            A list of ``(obj, dataset type)`` init-output dataset pairs, to be
+            appended to in-place.  Both the object and the dataset type will
+            correspond to the storage class of the output connection, which
+            may not be the same as the storage class on the graph's dataset
+            type node.
+
+        Returns
+        -------
+        tasks : `list`
+            Constructed `PipelineTask` instances.
+        """
+        if not self.is_fully_resolved:
+            raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
+        empty_data_id = DataCoordinate.make_empty(cast(DimensionUniverse, self.universe))
+        handles: dict[str, InMemoryDatasetHandle] = {}
+        tasks: list[PipelineTask] = []
+        for task_node in self.tasks.values():
+            task_init_inputs: dict[str, Any] = {}
+            for read_edge in task_node.init.inputs.values():
+                if (handle := handles.get(read_edge.dataset_type_name)) is not None:
+                    obj = handle.get(storageClass=read_edge.storage_class_name)
+                elif (
+                    read_edge.component is not None
+                    and (parent_handle := handles.get(read_edge.parent_dataset_type_name)) is not None
+                ):
+                    obj = parent_handle.get(
+                        storageClass=read_edge.storage_class_name, component=read_edge.component
+                    )
+                else:
+                    dataset_type_node = self.dataset_types[read_edge.parent_dataset_type_name]
+                    if get_init_input is None:
+                        raise ValueError(
+                            f"Task {task_node.label!r} requires init-input "
+                            f"{read_edge.dataset_type_name} but no 'get_init_input' callback was provided."
+                        )
+                    obj = get_init_input(read_edge.adapt_dataset_type(dataset_type_node.dataset_type))
+                    n_consumers = len(self.consumers_of(dataset_type_node.name))
+                    if (
+                        n_consumers > 1
+                        and read_edge.component is None
+                        and read_edge.storage_class_name == dataset_type_node.storage_class_name
+                    ):
+                        # Caching what we just got is safe in general only
+                        # if there was no storage class conversion, since
+                        # a->b and a->c does not imply b->c.
+                        handles[read_edge.dataset_type_name] = InMemoryDatasetHandle(
+                            obj,
+                            storageClass=dataset_type_node.storage_class,
+                            dataId=empty_data_id,
+                            copy=True,
+                        )
+                task_init_inputs[read_edge.connection_name] = obj
+            task = task_node.task_class(
+                config=task_node.config, initInputs=task_init_inputs, name=task_node.label
+            )
+            tasks.append(task)
+            for write_edge in task_node.init.outputs.values():
+                dataset_type_node = self.dataset_types[write_edge.parent_dataset_type_name]
+                obj = getattr(task, write_edge.connection_name)
+                # We don't immediately coerce obj to the dataset_type_node
+                # storage class (which should be the repo storage class) when
+                # appending to `init_outputs` because a formatter might be able
+                # to do a better job of that later; instead we pair it with
+                # a dataset type that's consistent with the in-memory type.
+                # We do coerce when populating `handles`, though, because going
+                # through the dataset_type_node storage class is the conversion
+                # path we checked when we resolved the pipeline graph.
+                if init_outputs is not None:
+                    init_outputs.append((obj, write_edge.adapt_dataset_type(dataset_type_node.dataset_type)))
+                n_consumers = len(self.consumers_of(dataset_type_node.name))
+                if n_consumers > 0:
+                    handles[dataset_type_node.name] = InMemoryDatasetHandle(
+                        dataset_type_node.storage_class.coerce_type(obj),
+                        dataId=empty_data_id,
+                        storageClass=dataset_type_node.storage_class,
+                        copy=(n_consumers > 1),
+                    )
+        return tasks
+
+    def write_init_outputs(self, butler: Butler) -> None:
+        """Write the init-output datasets for all tasks in the pipeline graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        Datasets that already exist in the butler's output run collection will
+        not be written.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.
+        """
+        init_outputs: list[tuple[Any, DatasetType]] = []
+        self.instantiate_tasks(butler.get, init_outputs)
+        found_refs: dict[str, DatasetRef] = {}
+        to_put: list[tuple[Any, DatasetType]] = []
+        for obj, dataset_type in init_outputs:
+            if (ref := butler.find_dataset(dataset_type, collections=butler.run)) is not None:
+                found_refs[dataset_type.name] = ref
+            else:
+                to_put.append((obj, dataset_type))
+        for ref, stored in butler.stored_many(found_refs.values()).items():
+            if not stored:
+                raise FileNotFoundError(
+                    f"Init-output dataset {ref.datasetType.name!r} was found in RUN {ref.run!r} "
+                    f"but had not actually been stored (or was stored and later deleted)."
+                )
+        for obj, dataset_type in to_put:
+            butler.put(obj, dataset_type)
 
     ###########################################################################
     #
