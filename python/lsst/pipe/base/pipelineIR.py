@@ -613,6 +613,8 @@ class PipelineIR:
         # verify steps, must be done after inheriting
         self._verify_steps()
 
+        self._trim_tasks_not_in_steps()
+
     def _read_contracts(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the contracts portion of the loaded yaml document
 
@@ -693,8 +695,8 @@ class PipelineIR:
         for labeled_subset in self.labeled_subsets.values():
             if not labeled_subset.subset.issubset(self.tasks.keys()):
                 raise ValueError(
-                    f"Labels {labeled_subset.subset - self.tasks.keys()} were not found in the "
-                    "declared pipeline"
+                    f"Labels {labeled_subset.subset - self.tasks.keys()} in subset {labeled_subset.label!r} "
+                    "were not found in the declared pipeline"
                 )
         # Verify subset labels are not already task labels
         label_intersection = self.labeled_subsets.keys() & self.tasks.keys()
@@ -710,6 +712,25 @@ class PipelineIR:
                 raise ValueError(
                     f"{step.label} was declared to be a step, but was not declared to be a labeled subset"
                 )
+
+    def _trim_tasks_not_in_steps(self) -> None:
+        """If there is at least one step defined, drop any tasks that are not
+        included in any subset.
+
+        This maintains the invariant that all tasks in a pipeline must be in
+        a step in order to be run, without requiring all pipelines that import
+        more than they need to explicitly delete the tasks they don't need.
+        """
+        if not self.steps:
+            return
+        tasks_in_steps: set[str] = set()
+        for step in self.steps:
+            tasks_in_steps.update(self.labeled_subsets[step.label].subset)
+        for task_label in self.tasks.keys() - tasks_in_steps:
+            del self.tasks[task_label]
+            self._remove_contracts(task_label)
+        for labeled_subset in self.labeled_subsets.values():
+            labeled_subset.subset.intersection_update(tasks_in_steps)
 
     def _read_imports(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the inherits portion of the loaded yaml document
