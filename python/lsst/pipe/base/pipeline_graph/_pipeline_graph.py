@@ -37,10 +37,20 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
-from lsst.daf.butler import DataCoordinate, DataId, DatasetType, DimensionGroup, DimensionUniverse, Registry
-from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.daf.butler import (
+    Butler,
+    ConflictingDefinitionError,
+    DataCoordinate,
+    DataId,
+    DatasetType,
+    DimensionGroup,
+    DimensionUniverse,
+    MissingDatasetTypeError,
+    Registry,
+)
 from lsst.resources import ResourcePath, ResourcePathExpression
 
+from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
 from ._dataset_types import DatasetTypeNode
 from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import (
@@ -1523,6 +1533,115 @@ class PipelineGraph:
                 if self.has_been_sorted:
                     component_subgraph.sort()
                 yield component_subgraph
+
+    ###########################################################################
+    #
+    # Data repository/collection initialization
+    #
+    ###########################################################################
+
+    @property
+    def packages_dataset_type(self) -> DatasetType:
+        """The special "packages" dataset type that records software versions.
+
+        This is not associated with a task and hence is
+        not considered part of the pipeline graph in other respects, but it
+        does get written with other provenance datasets.
+        """
+        if self.universe is not None:
+            raise UnresolvedGraphError(
+                "PipelineGraph must be resolved in order to get the packages dataset type."
+            )
+        return DatasetType(PACKAGES_INIT_OUTPUT_NAME, self.universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS)
+
+    def register_dataset_types(self, butler: Butler, include_packages: bool = True) -> None:
+        """Register all dataset types in a data repository.
+
+        Parameters
+        ----------
+        butler : `~lsst.daf.butler.Butler`
+            Data repository client.
+        include_packages : `bool`, optional
+            Whether to include the special "packages" dataset type that records
+            software versions (this is not associated with a task and hence is
+            not considered part of the pipeline graph in other respects, but it
+            does get written with other provenance datasets).
+        """
+        dataset_types = [node.dataset_type for node in self.dataset_types.values()]
+        if include_packages:
+            dataset_types.append(self.packages_dataset_type)
+        for dataset_type in dataset_types:
+            butler.registry.registerDatasetType(dataset_type)
+
+    def check_dataset_type_registrations(self, butler: Butler, include_packages: bool = True) -> None:
+        """Check that dataset type registrations in a data repository match
+        the definitions in this pipeline graph.
+
+        Parameters
+        ----------
+        butler : `~lsst.daf.butler.Butler`
+            Data repository client.
+        include_packages : `bool`, optional
+            Whether to include the special "packages" dataset type that records
+            software versions (this is not associated with a task and hence is
+            not considered part of the pipeline graph in other respects, but it
+            does get written with other provenance datasets).
+
+        Raises
+        ------
+        lsst.daf.butler.MissingDatasetTypeError
+            Raised if one or more non-optional-input or output dataset types in
+            the pipeline is not registered at all.
+        lsst.daf.butler.ConflictingDefinitionError
+            Raised if the definition in the data repository is not identical
+            to the definition in the pipeline graph.
+
+        Notes
+        -----
+        Note that dataset type definitions that are storage-class-conversion
+        compatible but not identical are not permitted by these checks, because
+        the expectation is that these differences are handled by `resolve`,
+        which makes the pipeline graph use the data repository definitions.
+        This method is intended to check that none of those definitions have
+        changed.
+        """
+        dataset_types = [node.dataset_type for node in self.dataset_types.values()]
+        if include_packages:
+            dataset_types.append(self.packages_dataset_type)
+        missing_dataset_types: list[str] = []
+        for dataset_type in dataset_types:
+            try:
+                expected = butler.registry.getDatasetType(dataset_type.name)
+            except MissingDatasetTypeError:
+                expected = None
+            if expected is None:
+                # The user probably forgot to register dataset types
+                # at least once (which should be an error),
+                # but we could also get here if this is an optional input for
+                # which no datasets were found in this repo (not an error).
+                if (
+                    not (
+                        self.producer_of(dataset_type.name) is None
+                        and all(
+                            self.tasks[input_edge.task_label].is_optional(input_edge.connection_name)
+                            for input_edge in self.consuming_edges_of(dataset_type.name)
+                        )
+                    )
+                    or dataset_type.name == PACKAGES_INIT_OUTPUT_NAME
+                ):
+                    missing_dataset_types.append(dataset_type.name)
+            elif expected != dataset_type:
+                raise ConflictingDefinitionError(
+                    f"DatasetType definition in registry has changed since the pipeline graph was resolved: "
+                    f"{dataset_type} (graph) != {expected} (registry)."
+                )
+        if missing_dataset_types:
+            plural = "s" if len(missing_dataset_types) != 1 else ""
+            raise MissingDatasetTypeError(
+                f"Missing dataset type definition{plural}: {', '.join(missing_dataset_types)}. "
+                "Dataset types have to be registered in advance (on the command-line, either via "
+                "`butler register-dataset-type` or the `--register-dataset-types` option to `pipetask run`."
+            )
 
     ###########################################################################
     #
