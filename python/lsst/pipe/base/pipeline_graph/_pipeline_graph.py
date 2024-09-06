@@ -26,11 +26,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("PipelineGraph",)
+__all__ = ("PipelineGraph", "log_config_mismatch")
 
 import gzip
 import itertools
 import json
+import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 
@@ -75,6 +76,8 @@ if TYPE_CHECKING:
 
 
 _G = TypeVar("_G", bound=networkx.DiGraph | networkx.MultiDiGraph)
+
+_LOG = logging.getLogger("lsst.pipe.base.pipeline_graph")
 
 
 class PipelineGraph:
@@ -1777,6 +1780,47 @@ class PipelineGraph:
         for obj, dataset_type in to_put:
             butler.put(obj, dataset_type)
 
+    def write_configs(self, butler: Butler) -> None:
+        """Write the config datasets for all tasks in the pipeline graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        Config datasets that already exist in the butler's output run
+        collection will be checked for consistency.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if a config dataset already exists and is not consistent
+            with the config in the pipeline graph.
+        """
+        to_put: list[tuple[PipelineTaskConfig, str]] = []
+        for task_node in self.tasks.values():
+            dataset_type_name = task_node.init.config_output.dataset_type_name
+            if (ref := butler.find_dataset(dataset_type_name, collections=butler.run)) is not None:
+                old_config = butler.get(ref)
+                if not task_node.config.compare(old_config, shortcut=False, output=log_config_mismatch):
+                    raise ConflictingDefinitionError(
+                        f"Config does not match existing task config {dataset_type_name!r} in "
+                        "butler; tasks configurations must be consistent within the same run collection"
+                    )
+            else:
+                to_put.append((task_node.config, dataset_type_name))
+        # We do writes at the end to minimize the mess we leave behind when we
+        # raise an exception.
+        for config, dataset_type_name in to_put:
+            butler.put(config, dataset_type_name)
+
     ###########################################################################
     #
     # Class- and Package-Private Methods.
@@ -2071,3 +2115,14 @@ class PipelineGraph:
     _dataset_types: DatasetTypeMappingView
     _raw_data_id: dict[str, Any]
     _universe: DimensionUniverse | None
+
+
+def log_config_mismatch(msg: str) -> None:
+    """Log messages about configuration mismatch.
+
+    Parameters
+    ----------
+    msg : `str`
+        Log message to use.
+    """
+    _LOG.fatal("Comparing configuration: %s", msg)
