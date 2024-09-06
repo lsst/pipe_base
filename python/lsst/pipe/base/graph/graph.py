@@ -64,9 +64,10 @@ from lsst.utils.introspection import get_full_type_name
 from lsst.utils.packages import Packages
 from networkx.drawing.nx_agraph import write_dot
 
+from ..config import PipelineTaskConfig
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-from ..pipeline_graph import PipelineGraph
+from ..pipeline_graph import PipelineGraph, log_config_mismatch
 from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
@@ -1552,3 +1553,48 @@ class QuantumGraph:
                     new_ref.datasetType.storageClass_name == dataset_type.storageClass_name
                 ), "QG init refs should use task connection storage classes."
                 butler.put(obj, new_ref)
+
+    def write_configs(self, butler: LimitedButler, compare_existing: bool = True) -> None:
+        """Write the config datasets for all tasks in the quantum graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        compare_existing : `bool`, optional
+            If `True` check configs that already exist for consistency.  If
+            `False`, always raise if configs already exist.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if an config dataset already exists and
+            ``compare_existing=False``, or if the existing config is not
+            consistent with the config in the quantum graph.
+        """
+        to_put: list[tuple[PipelineTaskConfig, DatasetRef]] = []
+        for task_node in self.pipeline_graph.tasks.values():
+            dataset_type_name = task_node.init.config_output.dataset_type_name
+            (ref,) = [
+                ref
+                for ref in self.get_init_output_refs(task_node.label)
+                if ref.datasetType.name == dataset_type_name
+            ]
+            try:
+                old_config = butler.get(ref)
+            except (LookupError, FileNotFoundError):
+                old_config = None
+            if old_config is not None:
+                if not compare_existing:
+                    raise ConflictingDefinitionError(f"Config dataset {ref} already exists.")
+                if not task_node.config.compare(old_config, shortcut=False, output=log_config_mismatch):
+                    raise ConflictingDefinitionError(
+                        f"Config does not match existing task config {dataset_type_name!r} in "
+                        "butler; tasks configurations must be consistent within the same run collection."
+                    )
+            else:
+                to_put.append((task_node.config, ref))
+        # We do writes at the end to minimize the mess we leave behind when we
+        # raise an exception.
+        for config, ref in to_put:
+            butler.put(config, ref)
