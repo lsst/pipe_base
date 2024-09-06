@@ -812,6 +812,38 @@ class QuantumGraph:
         """
         return MappingProxyType(self._metadata)
 
+    def get_init_input_refs(self, task_label: str) -> list[DatasetRef]:
+        """Return the DatasetRefs for the given task's init inputs.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label of the task.
+
+        Returns
+        -------
+        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            Dataset references.  Guaranteed to be a new list, not internal
+            state.
+        """
+        return list(self._initInputRefs.get(task_label, ()))
+
+    def get_init_output_refs(self, task_label: str) -> list[DatasetRef]:
+        """Return the DatasetRefs for the given task's init outputs.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label of the task.
+
+        Returns
+        -------
+        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            Dataset references.  Guaranteed to be a new list, not internal
+            state.
+        """
+        return list(self._initOutputRefs.get(task_label, ()))
+
     def initInputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitInputs.
 
