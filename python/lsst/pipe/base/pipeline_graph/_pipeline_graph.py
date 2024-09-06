@@ -1861,6 +1861,20 @@ class PipelineGraph:
         else:
             butler.put(new_packages, self.packages_dataset_type)
 
+    def init_output_run(self, butler: Butler) -> None:
+        """Initialize a new output RUN collection by writing init-output
+        datasets (including configs and packages).
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+        """
+        self.write_configs(butler)
+        self.write_packages(butler)
+        self.write_init_outputs(butler)
+
     ###########################################################################
     #
     # Class- and Package-Private Methods.

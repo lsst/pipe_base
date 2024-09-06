@@ -1633,3 +1633,26 @@ class QuantumGraph:
                 butler.put(packages, ref)
         else:
             butler.put(new_packages, ref)
+
+    def init_output_run(self, butler: LimitedButler, existing: bool = True) -> None:
+        """Initialize a new output RUN collection by writing init-output
+        datasets (including configs and packages).
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        existing : `bool`, optional
+            If `True` check or ignore outputs that already exist.  If
+            `False`, always raise if an output dataset already exists.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if there are existing init output datasets, and either
+            ``existing=False`` or their contents are not compatible with this
+            graph.
+        """
+        self.write_configs(butler, compare_existing=existing)
+        self.write_packages(butler, compare_existing=existing)
+        self.write_init_outputs(butler, skip_existing=existing)
