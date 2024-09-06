@@ -41,6 +41,7 @@ jobs:
         run: |
           uv pip install -r requirements.txt
           uv pip install moto
+          uv pip install astropy pandas pyarrow
 
       # We have two cores so we can speed up the testing with xdist
       - name: Install pytest packages
