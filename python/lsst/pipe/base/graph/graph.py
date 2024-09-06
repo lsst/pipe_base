@@ -46,13 +46,16 @@ from typing import Any, BinaryIO, TypeVar
 
 import networkx as nx
 from lsst.daf.butler import (
+    Config,
     DatasetId,
     DatasetRef,
     DatasetType,
     DimensionRecordsAccumulator,
     DimensionUniverse,
     Quantum,
+    QuantumBackedButler,
 )
+from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
@@ -1435,3 +1438,61 @@ class QuantumGraph:
                 qts.numOutputs[k.name] += 1
 
         return summary
+
+    def make_init_qbb(
+        self,
+        butler_config: Config | ResourcePathExpression,
+        *,
+        config_search_paths: Iterable[str] | None = None,
+    ) -> QuantumBackedButler:
+        """Construct an quantum-backed butler suitable for reading and writing
+        init input and init output datasets, respectively.
+
+        This requires the full graph to have been loaded.
+
+        Parameters
+        ----------
+        butler_config : `~lsst.daf.butler.Config` or \
+                `~lsst.resources.ResourcePathExpression`
+            A butler repository root, configuration filename, or configuration
+            instance.
+        config_search_paths : `~collections.abc.Iterable` [ `str` ], optional
+            Additional search paths for butler configuration.
+
+        Returns
+        -------
+        qbb : `~lsst.daf.butler.QuantumBackedButler`
+            A limited butler that can ``get`` init-input datasets and ``put``
+            init-output datasets.
+        """
+        universe = self.universe
+        # Collect all init input/output dataset IDs.
+        predicted_inputs: set[DatasetId] = set()
+        predicted_outputs: set[DatasetId] = set()
+        pipeline_graph = self.pipeline_graph
+        for task_label in pipeline_graph.tasks:
+            predicted_inputs.update(ref.id for ref in self.get_init_input_refs(task_label))
+            predicted_outputs.update(ref.id for ref in self.get_init_output_refs(task_label))
+        predicted_outputs.update(ref.id for ref in self.globalInitOutputRefs())
+        # remove intermediates from inputs
+        predicted_inputs -= predicted_outputs
+        # Very inefficient way to extract datastore records from quantum graph,
+        # we have to scan all quanta and look at their datastore records.
+        datastore_records: dict[str, DatastoreRecordData] = {}
+        for quantum_node in self:
+            for store_name, records in quantum_node.quantum.datastore_records.items():
+                subset = records.subset(predicted_inputs)
+                if subset is not None:
+                    datastore_records.setdefault(store_name, DatastoreRecordData()).update(subset)
+
+        dataset_types = {dstype.name: dstype for dstype in self.registryDatasetTypes()}
+        # Make butler from everything.
+        return QuantumBackedButler.from_predicted(
+            config=butler_config,
+            predicted_inputs=predicted_inputs,
+            predicted_outputs=predicted_outputs,
+            dimensions=universe,
+            datastore_records=datastore_records,
+            search_paths=list(config_search_paths) if config_search_paths is not None else None,
+            dataset_types=dataset_types,
+        )
