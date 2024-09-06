@@ -670,6 +670,11 @@ class TaskMetadata(BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
         def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
