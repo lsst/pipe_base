@@ -286,14 +286,14 @@ class QuantumGraph:
         # insertion
         self._taskToQuantumNode = dict(self._taskToQuantumNode.items())
 
-        self._initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
-        self._initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        self._initInputRefs: dict[str, list[DatasetRef]] = {}
+        self._initOutputRefs: dict[str, list[DatasetRef]] = {}
         self._globalInitOutputRefs: list[DatasetRef] = []
         self._registryDatasetTypes: list[DatasetType] = []
         if initInputs is not None:
-            self._initInputRefs = {taskDef: list(refs) for taskDef, refs in initInputs.items()}
+            self._initInputRefs = {taskDef.label: list(refs) for taskDef, refs in initInputs.items()}
         if initOutputs is not None:
-            self._initOutputRefs = {taskDef: list(refs) for taskDef, refs in initOutputs.items()}
+            self._initOutputRefs = {taskDef.label: list(refs) for taskDef, refs in initOutputs.items()}
         if globalInitOutputs is not None:
             self._globalInitOutputRefs = list(globalInitOutputs)
         if registryDatasetTypes is not None:
@@ -826,7 +826,7 @@ class QuantumGraph:
             DatasetRef for the task InitInput, can be `None`. This can return
             either resolved or non-resolved reference.
         """
-        return self._initInputRefs.get(taskDef)
+        return self._initInputRefs.get(taskDef.label)
 
     def initOutputRefs(self, taskDef: TaskDef) -> list[DatasetRef] | None:
         """Return DatasetRefs for a given task InitOutputs.
@@ -843,7 +843,7 @@ class QuantumGraph:
             either resolved or non-resolved reference. Resolved reference will
             match Quantum's initInputs if this is an intermediate dataset type.
         """
-        return self._initOutputRefs.get(taskDef)
+        return self._initOutputRefs.get(taskDef.label)
 
     def globalInitOutputRefs(self) -> list[DatasetRef]:
         """Return DatasetRefs for global InitOutputs.
@@ -1027,9 +1027,9 @@ class QuantumGraph:
             taskDef.config.saveToStream(stream)
             taskDescription["config"] = stream.getvalue()
             taskDescription["label"] = taskDef.label
-            if (refs := self._initInputRefs.get(taskDef)) is not None:
+            if (refs := self._initInputRefs.get(taskDef.label)) is not None:
                 taskDescription["initInputRefs"] = [ref.to_json() for ref in refs]
-            if (refs := self._initOutputRefs.get(taskDef)) is not None:
+            if (refs := self._initOutputRefs.get(taskDef.label)) is not None:
                 taskDescription["initOutputRefs"] = [ref.to_json() for ref in refs]
 
             inputs = []

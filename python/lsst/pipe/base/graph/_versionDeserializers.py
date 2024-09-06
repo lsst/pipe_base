@@ -545,8 +545,8 @@ class DeserializerV3(DeserializerBase):
         container = {}
         datasetDict = _DatasetTracker(createInverse=True)
         taskToQuantumNode: defaultdict[TaskDef, set[QuantumNode]] = defaultdict(set)
-        initInputRefs: dict[TaskDef, list[DatasetRef]] = {}
-        initOutputRefs: dict[TaskDef, list[DatasetRef]] = {}
+        initInputRefs: dict[str, list[DatasetRef]] = {}
+        initOutputRefs: dict[str, list[DatasetRef]] = {}
 
         if universe is not None:
             if not universe.isCompatibleWith(self.infoMappings.universe):
@@ -597,11 +597,11 @@ class DeserializerV3(DeserializerBase):
 
                 # initInputRefs and initOutputRefs are optional
                 if (refs := taskDefDump.get("initInputRefs")) is not None:
-                    initInputRefs[recreatedTaskDef] = [
+                    initInputRefs[recreatedTaskDef.label] = [
                         cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
                     ]
                 if (refs := taskDefDump.get("initOutputRefs")) is not None:
-                    initOutputRefs[recreatedTaskDef] = [
+                    initOutputRefs[recreatedTaskDef.label] = [
                         cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
                     ]
 
