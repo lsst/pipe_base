@@ -67,7 +67,7 @@ from networkx.drawing.nx_agraph import write_dot
 from ..config import PipelineTaskConfig
 from ..connections import iterConnections
 from ..pipeline import TaskDef
-from ..pipeline_graph import PipelineGraph, log_config_mismatch
+from ..pipeline_graph import PipelineGraph, compare_packages, log_config_mismatch
 from ._implDetails import DatasetTypeName, _DatasetTracker
 from ._loadHelpers import LoadHelper
 from ._versionDeserializers import DESERIALIZER_MAP
@@ -1598,3 +1598,38 @@ class QuantumGraph:
         # raise an exception.
         for config, ref in to_put:
             butler.put(config, ref)
+
+    def write_packages(self, butler: LimitedButler, compare_existing: bool = True) -> None:
+        """Write the 'packages' dataset for the currently-active software
+        versions.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        compare_existing : `bool`, optional
+            If `True` check packages that already exist for consistency.  If
+            `False`, always raise if the packages dataset already exists.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if the packages dataset already exists and is not consistent
+            with the current packages.
+        """
+        new_packages = Packages.fromSystem()
+        (ref,) = self.globalInitOutputRefs()
+        try:
+            packages = butler.get(ref)
+        except (LookupError, FileNotFoundError):
+            packages = None
+        if packages is not None:
+            if not compare_existing:
+                raise ConflictingDefinitionError(f"Packages dataset {ref} already exists.")
+            if compare_packages(packages, new_packages):
+                # have to remove existing dataset first; butler has no
+                # replace option.
+                butler.pruneDatasets([ref], unstore=True, purge=True)
+                butler.put(packages, ref)
+        else:
+            butler.put(new_packages, ref)

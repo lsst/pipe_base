@@ -1841,7 +1841,8 @@ class PipelineGraph:
 
         This method writes outputs with new random dataset IDs and should
         hence only be used when writing init-outputs prior to building a
-        `QuantumGraph`.
+        `QuantumGraph`.  Use `QuantumGraph.write_packages` if a quantum graph
+        has already been built.
 
         Raises
         ------
