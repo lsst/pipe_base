@@ -52,11 +52,13 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionRecordsAccumulator,
     DimensionUniverse,
+    LimitedButler,
     Quantum,
     QuantumBackedButler,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.persistence_context import PersistenceContextVars
+from lsst.daf.butler.registry import ConflictingDefinitionError
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.packages import Packages
@@ -1496,3 +1498,57 @@ class QuantumGraph:
             search_paths=list(config_search_paths) if config_search_paths is not None else None,
             dataset_types=dataset_types,
         )
+
+    def write_init_outputs(self, butler: LimitedButler, skip_existing: bool = True) -> None:
+        """Write the init-output datasets for all tasks in the quantum graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        skip_existing : `bool`, optional
+            If `True` (default) ignore init-outputs that already exist.  If
+            `False`, raise.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if an init-output dataset already exists and
+            ``skip_existing=False``.
+        """
+        # Extract init-input and init-output refs from the QG.
+        input_refs: dict[str, DatasetRef] = {}
+        output_refs: dict[str, DatasetRef] = {}
+        for task_node in self.pipeline_graph.tasks.values():
+            input_refs.update(
+                {ref.datasetType.name: ref for ref in self.get_init_input_refs(task_node.label)}
+            )
+            output_refs.update(
+                {
+                    ref.datasetType.name: ref
+                    for ref in self.get_init_output_refs(task_node.label)
+                    if ref.datasetType.name != task_node.init.config_output.dataset_type_name
+                }
+            )
+        for ref, is_stored in butler.stored_many(output_refs.values()).items():
+            if is_stored:
+                if not skip_existing:
+                    raise ConflictingDefinitionError(f"Init-output dataset {ref} already exists.")
+                # We'll `put` whatever's left in output_refs at the end.
+                del output_refs[ref.datasetType.name]
+        # Instantiate tasks, reading overall init-inputs and gathering
+        # init-output in-memory objects.
+        init_outputs: list[tuple[Any, DatasetType]] = []
+        self.pipeline_graph.instantiate_tasks(
+            get_init_input=lambda dataset_type: butler.get(
+                input_refs[dataset_type.name].overrideStorageClass(dataset_type.storageClass)
+            ),
+            init_outputs=init_outputs,
+        )
+        # Write init-outputs that weren't already present.
+        for obj, dataset_type in init_outputs:
+            if new_ref := output_refs.get(dataset_type.name):
+                assert (
+                    new_ref.datasetType.storageClass_name == dataset_type.storageClass_name
+                ), "QG init refs should use task connection storage classes."
+                butler.put(obj, new_ref)
