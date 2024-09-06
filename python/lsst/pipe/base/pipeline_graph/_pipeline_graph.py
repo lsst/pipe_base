@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("PipelineGraph", "log_config_mismatch")
+__all__ = ("PipelineGraph", "log_config_mismatch", "compare_packages")
 
 import gzip
 import itertools
@@ -50,6 +50,7 @@ from lsst.daf.butler import (
 )
 from lsst.daf.butler.registry import ConflictingDefinitionError, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.packages import Packages
 
 from .._dataset_handle import InMemoryDatasetHandle
 from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
@@ -1822,6 +1823,43 @@ class PipelineGraph:
         for config, dataset_type_name in to_put:
             butler.put(config, dataset_type_name)
 
+    def write_packages(self, butler: Butler) -> None:
+        """Write the 'packages' dataset for the currently-active software
+        versions.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        If the packages dataset already exists, it will be compared to the
+        versions in the current packages.  New packages that weren't present
+        before are not considered an inconsistency.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if the packages dataset already exists and is not consistent
+            with the current packages.
+        """
+        new_packages = Packages.fromSystem()
+        if (ref := butler.find_dataset(self.packages_dataset_type)) is not None:
+            packages = butler.get(ref)
+            if compare_packages(packages, new_packages):
+                # have to remove existing dataset first; butler has no
+                # replace option.
+                butler.pruneDatasets([ref], unstore=True, purge=True)
+                butler.put(packages, ref)
+        else:
+            butler.put(new_packages, self.packages_dataset_type)
+
     ###########################################################################
     #
     # Class- and Package-Private Methods.
@@ -2127,3 +2165,40 @@ def log_config_mismatch(msg: str) -> None:
         Log message to use.
     """
     _LOG.fatal("Comparing configuration: %s", msg)
+
+
+def compare_packages(packages: Packages, new_packages: Packages) -> bool:
+    """Compare two versions of Packages.
+
+    Parameters
+    ----------
+    packages : `Packages`
+        Previously recorded package versions.  Updated in place to include
+        any new packages that weren't present before.
+    new_packages : `Packages`
+        New set of package versions.
+
+    Returns
+    -------
+    updated : `bool`
+        `True` if ``packages`` was updated, `False` if not.
+
+    Raises
+    ------
+    ConflictingDefinitionError
+        Raised if versions are inconsistent.
+    """
+    diff = new_packages.difference(packages)
+    if diff:
+        versions_str = "; ".join(f"{pkg}: {diff[pkg][1]} vs {diff[pkg][0]}" for pkg in diff)
+        raise ConflictingDefinitionError(f"Package versions mismatch: ({versions_str})")
+    else:
+        _LOG.debug("new packages are consistent with old")
+    # Update the old set of packages in case we have more packages
+    # that haven't been persisted.
+    extra = new_packages.extra(packages)
+    if extra:
+        _LOG.debug("extra packages: %s", extra)
+        packages.update(new_packages)
+        return True
+    return False
