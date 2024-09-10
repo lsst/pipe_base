@@ -563,7 +563,7 @@ class DynamicConnectionConfig(Config):
         default=True,
     )
     minimum = Field[int](
-        doc="Minimum number of datasets per quantum requried for this connection.  Ignored for non-inputs.",
+        doc="Minimum number of datasets per quantum required for this connection.  Ignored for non-inputs.",
         dtype=int,
         default=1,
     )
