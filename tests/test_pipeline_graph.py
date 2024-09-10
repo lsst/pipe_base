@@ -121,6 +121,10 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(
             repr(self.graph.tasks["a"]), "a (lsst.pipe.base.tests.mocks.DynamicTestPipelineTask)"
         )
+        with self.assertRaises(UnresolvedGraphError):
+            self.graph.packages_dataset_type
+        with self.assertRaises(UnresolvedGraphError):
+            self.graph.instantiate_tasks()
 
     def test_sorting(self) -> None:
         """Test sort methods on PipelineGraph."""
@@ -198,6 +202,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(self.graph.dataset_types["input_1"].dimensions, self.dimensions.empty)
         self.assertEqual(self.graph.dataset_types["input_1"].storage_class_name, "_mock_StructuredDataDict")
         self.assertEqual(self.graph.dataset_types["input_1"].storage_class.name, "_mock_StructuredDataDict")
+        self.assertEqual(self.graph.packages_dataset_type.name, acc.PACKAGES_INIT_OUTPUT_NAME)
 
     def test_resolved_xgraph_export(self) -> None:
         """Test exporting a resolved PipelineGraph to networkx in various
