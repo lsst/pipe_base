@@ -154,10 +154,7 @@ class PrerequisiteFinder:
         self.constraint_dimensions = self.task_node.dimensions
         if self.lookup_function is None:
             for family in self.dataset_type_node.dimensions.spatial - self.task_node.dimensions.spatial:
-                best_spatial_element = family.choose(
-                    self.dataset_type_node.dimensions.elements,
-                    self.dataset_type_node.dimensions.universe,
-                )
+                best_spatial_element = family.choose(self.dataset_type_node.dimensions)
                 if isinstance(best_spatial_element, SkyPixDimension):
                     self.dataset_skypix[best_spatial_element.name] = best_spatial_element
                 else:
