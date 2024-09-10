@@ -160,7 +160,7 @@ class QuantumRun(pydantic.BaseModel):
     """
 
 
-QuantumInfoStatus: TypeAlias = Literal["successful", "wonky", "blocked", "not_attempted", "failed"]
+QuantumInfoStatus: TypeAlias = Literal["successful", "wonky", "blocked", "unknown", "failed"]
 
 
 class QuantumInfo(TypedDict):
@@ -201,7 +201,7 @@ class QuantumInfo(TypedDict):
         missing due to an upstream failure. Blocked quanta are distinguished
         from failed quanta by being successors of failed quanta in the graph.
         All the successors of blocked quanta are also marked as blocked.
-    `not_attempted`: These are quanta which do not have any metadata associated
+    `unknown`: These are quanta which do not have any metadata associated
         with processing, but for which it is impossible to tell the status due
         to an additional absence of logs. Quanta which had not been processed
         at all would reflect this state, as would quanta which were
@@ -348,8 +348,8 @@ class TaskSummary(pydantic.BaseModel):
     n_blocked: int = 0
     """A count of blocked quanta.
     """
-    n_not_attempted: int = 0
-    """A count of quanta for which processing was not attempted.
+    n_unknown: int = 0
+    """A count of quanta for which there are no metadata or logs.
     """
 
     n_expected: int = 0
@@ -433,8 +433,8 @@ class TaskSummary(pydantic.BaseModel):
                                 [record.message for record in log if record.levelno >= logging.ERROR]
                             )
                 self.failed_quanta.append(failed_quantum_summary)
-            case "not_attempted":
-                self.n_not_attempted += 1
+            case "unknown":
+                self.n_unknown += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
 
@@ -681,7 +681,7 @@ class QuantumProvenanceGraph:
             quantum_info.setdefault("messages", [])
             quantum_info.setdefault("runs", {})
             quantum_info.setdefault("data_id", cast(DataCoordinate, node.quantum.dataId))
-            quantum_info.setdefault("status", "not_attempted")
+            quantum_info.setdefault("status", "unknown")
             quantum_info.setdefault("recovered", False)
             new_quanta.append(quantum_key)
             self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
@@ -789,7 +789,7 @@ class QuantumProvenanceGraph:
                 # recovery.
                 case (_, "successful"):
                     new_status = "successful"
-                    if last_status != "successful" and last_status != "not_attempted":
+                    if last_status != "successful" and last_status != "unknown":
                         quantum_info["recovered"] = True
                 # Missing logs are one of the categories of wonky quanta. They
                 # interfere with our ability to discern quantum status and are
@@ -810,18 +810,19 @@ class QuantumProvenanceGraph:
                         f"Status went from successful in run {list(quantum_info['runs'].values())[-1]!r} "
                         f"to {quantum_run.status!r} in {output_run!r}."
                     )
-                # If a quantumm is not attempted and moves to blocked, we know
-                # for sure that it is a blocked quantum.
-                case ("not_attempted", "blocked"):
+                # If a quantum status is unknown and it moves to blocked, we
+                # know for sure that it is a blocked quantum.
+                case ("unknown", "blocked"):
                     new_status = "blocked"
                 # A transition into blocked does not change the overall quantum
                 # status for a failure.
                 case (_, "blocked"):
                     new_status = last_status
                 # If a quantum transitions from any state into missing
-                # metadata, it was probably not attempted.
+                # metadata, we don't have enough information to diagnose its
+                # state.
                 case (_, "metadata_missing"):
-                    new_status = "not_attempted"
+                    new_status = "unknown"
                 # Any transition into failure is a failed state.
                 case (_, "failed"):
                     new_status = "failed"
