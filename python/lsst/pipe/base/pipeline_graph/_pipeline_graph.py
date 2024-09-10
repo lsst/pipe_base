@@ -1725,13 +1725,14 @@ class PipelineGraph:
                 dataset_type_node = self.dataset_types[write_edge.parent_dataset_type_name]
                 obj = getattr(task, write_edge.connection_name)
                 # We don't immediately coerce obj to the dataset_type_node
-                # storage class (which should be the repo storage class) when
-                # appending to `init_outputs` because a formatter might be able
-                # to do a better job of that later; instead we pair it with
-                # a dataset type that's consistent with the in-memory type.
-                # We do coerce when populating `handles`, though, because going
-                # through the dataset_type_node storage class is the conversion
-                # path we checked when we resolved the pipeline graph.
+                # storage class (which should be the repo storage class, if
+                # there is one) when appending to `init_outputs` because a
+                # formatter might be able to do a better job of that later;
+                # instead we pair it with a dataset type that's consistent with
+                # the in-memory type. We do coerce when populating `handles`,
+                # though, because going through the dataset_type_node storage
+                # class is the conversion path we checked when we resolved the
+                # pipeline graph.
                 if init_outputs is not None:
                     init_outputs.append((obj, write_edge.adapt_dataset_type(dataset_type_node.dataset_type)))
                 n_consumers = len(self.consumers_of(dataset_type_node.name))
