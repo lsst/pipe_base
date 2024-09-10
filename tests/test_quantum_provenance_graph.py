@@ -67,7 +67,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     TaskSummary(
                         n_successful=0,
                         n_blocked=0,
-                        n_not_attempted=1,
+                        n_unknown=1,
                         n_expected=1,
                         failed_quanta=[],
                         recovered_quanta=[],
@@ -106,8 +106,8 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 # Check dataset counts (can't be done all in one because
                 # datasets have different producers), but all the counts for
                 # each task should be the same.
-                self.assertEqual(dataset_type_summary.n_published, 0)
-                self.assertEqual(dataset_type_summary.n_unpublished, 0)
+                self.assertEqual(dataset_type_summary.n_visible, 0)
+                self.assertEqual(dataset_type_summary.n_shadowed, 0)
                 self.assertEqual(dataset_type_summary.n_predicted_only, 0)
                 self.assertEqual(dataset_type_summary.n_expected, 1)
                 self.assertEqual(dataset_type_summary.n_cursed, 0)
