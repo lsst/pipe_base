@@ -48,7 +48,7 @@ from lsst.utils.introspection import get_full_type_name
 
 from .. import automatic_connection_constants as acc
 from ..connections import PipelineTaskConnections
-from ..connectionTypes import BaseConnection, InitOutput, Output
+from ..connectionTypes import BaseConnection, BaseInput, InitOutput, Output
 from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import TaskNotImportedError, UnresolvedGraphError
 from ._nodes import NodeKey, NodeType
@@ -216,7 +216,7 @@ class TaskInitNode:
     - ``task_class_name``
     - ``bipartite`` (see `NodeType.bipartite`)
     - ``task_class`` (only if `is_imported` is `True`)
-    - ``config`` (only if `is_importd` is `True`)
+    - ``config`` (only if `is_imported` is `True`)
     """
 
     def __init__(
@@ -797,6 +797,23 @@ class TaskNode:
             `~lsst.daf.butler.DatasetRef`.
         """
         return getattr(self._get_imported_data().connection_map[connection_name], "lookupFunction", None)
+
+    def is_optional(self, connection_name: str) -> bool:
+        """Check whether the given connection has ``minimum==0``.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        optional : `bool`
+            Whether this task can run without any datasets for the given
+            connection.
+        """
+        connection = getattr(self.get_connections(), connection_name)
+        return isinstance(connection, BaseInput) and connection.minimum == 0
 
     def get_connections(self) -> PipelineTaskConnections:
         """Return the connections class instance for this task.

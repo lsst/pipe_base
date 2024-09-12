@@ -26,21 +26,34 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("PipelineGraph",)
+__all__ = ("PipelineGraph", "log_config_mismatch", "compare_packages")
 
 import gzip
 import itertools
 import json
+import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
-from lsst.daf.butler import DataCoordinate, DataId, DatasetType, DimensionGroup, DimensionUniverse, Registry
-from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.daf.butler import (
+    Butler,
+    DataCoordinate,
+    DataId,
+    DatasetRef,
+    DatasetType,
+    DimensionGroup,
+    DimensionUniverse,
+    MissingDatasetTypeError,
+)
+from lsst.daf.butler.registry import ConflictingDefinitionError, Registry
 from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.packages import Packages
 
+from .._dataset_handle import InMemoryDatasetHandle
+from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
 from ._dataset_types import DatasetTypeNode
 from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import (
@@ -64,6 +77,8 @@ if TYPE_CHECKING:
 
 
 _G = TypeVar("_G", bound=networkx.DiGraph | networkx.MultiDiGraph)
+
+_LOG = logging.getLogger("lsst.pipe.base.pipeline_graph")
 
 
 class PipelineGraph:
@@ -1526,6 +1541,343 @@ class PipelineGraph:
 
     ###########################################################################
     #
+    # Data repository/collection initialization
+    #
+    ###########################################################################
+
+    @property
+    def packages_dataset_type(self) -> DatasetType:
+        """The special "packages" dataset type that records software versions.
+
+        This is not associated with a task and hence is
+        not considered part of the pipeline graph in other respects, but it
+        does get written with other provenance datasets.
+        """
+        if self.universe is None:
+            raise UnresolvedGraphError(
+                "PipelineGraph must be resolved in order to get the packages dataset type."
+            )
+        return DatasetType(PACKAGES_INIT_OUTPUT_NAME, self.universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS)
+
+    def register_dataset_types(self, butler: Butler, include_packages: bool = True) -> None:
+        """Register all dataset types in a data repository.
+
+        Parameters
+        ----------
+        butler : `~lsst.daf.butler.Butler`
+            Data repository client.
+        include_packages : `bool`, optional
+            Whether to include the special "packages" dataset type that records
+            software versions (this is not associated with a task and hence is
+            not considered part of the pipeline graph in other respects, but it
+            does get written with other provenance datasets).
+        """
+        dataset_types = [node.dataset_type for node in self.dataset_types.values()]
+        if include_packages:
+            dataset_types.append(self.packages_dataset_type)
+        for dataset_type in dataset_types:
+            butler.registry.registerDatasetType(dataset_type)
+
+    def check_dataset_type_registrations(self, butler: Butler, include_packages: bool = True) -> None:
+        """Check that dataset type registrations in a data repository match
+        the definitions in this pipeline graph.
+
+        Parameters
+        ----------
+        butler : `~lsst.daf.butler.Butler`
+            Data repository client.
+        include_packages : `bool`, optional
+            Whether to include the special "packages" dataset type that records
+            software versions (this is not associated with a task and hence is
+            not considered part of the pipeline graph in other respects, but it
+            does get written with other provenance datasets).
+
+        Raises
+        ------
+        lsst.daf.butler.MissingDatasetTypeError
+            Raised if one or more non-optional-input or output dataset types in
+            the pipeline is not registered at all.
+        lsst.daf.butler.ConflictingDefinitionError
+            Raised if the definition in the data repository is not identical
+            to the definition in the pipeline graph.
+
+        Notes
+        -----
+        Note that dataset type definitions that are storage-class-conversion
+        compatible but not identical are not permitted by these checks, because
+        the expectation is that these differences are handled by `resolve`,
+        which makes the pipeline graph use the data repository definitions.
+        This method is intended to check that none of those definitions have
+        changed.
+        """
+        dataset_types = [node.dataset_type for node in self.dataset_types.values()]
+        if include_packages:
+            dataset_types.append(self.packages_dataset_type)
+        missing_dataset_types: list[str] = []
+        for dataset_type in dataset_types:
+            try:
+                expected = butler.registry.getDatasetType(dataset_type.name)
+            except MissingDatasetTypeError:
+                expected = None
+            if expected is None:
+                # The user probably forgot to register dataset types
+                # at least once (which should be an error),
+                # but we could also get here if this is an optional input for
+                # which no datasets were found in this repo (not an error).
+                if (
+                    not (
+                        self.producer_of(dataset_type.name) is None
+                        and all(
+                            self.tasks[input_edge.task_label].is_optional(input_edge.connection_name)
+                            for input_edge in self.consuming_edges_of(dataset_type.name)
+                        )
+                    )
+                    or dataset_type.name == PACKAGES_INIT_OUTPUT_NAME
+                ):
+                    missing_dataset_types.append(dataset_type.name)
+            elif expected != dataset_type:
+                raise ConflictingDefinitionError(
+                    f"DatasetType definition in registry has changed since the pipeline graph was resolved: "
+                    f"{dataset_type} (graph) != {expected} (registry)."
+                )
+        if missing_dataset_types:
+            plural = "s" if len(missing_dataset_types) != 1 else ""
+            raise MissingDatasetTypeError(
+                f"Missing dataset type definition{plural}: {', '.join(missing_dataset_types)}. "
+                "Dataset types have to be registered in advance (on the command-line, either via "
+                "`butler register-dataset-type` or the `--register-dataset-types` option to `pipetask run`."
+            )
+
+    def instantiate_tasks(
+        self,
+        get_init_input: Callable[[DatasetType], Any] | None = None,
+        init_outputs: list[tuple[Any, DatasetType]] | None = None,
+    ) -> list[PipelineTask]:
+        """Instantiate all tasks in the pipeline.
+
+        Parameters
+        ----------
+        get_init_input : `~collections.abc.Callable`, optional
+            Callable that accepts a single `~lsst.daf.butler.DatasetType`
+            parameter and returns the init-input dataset associated with that
+            dataset type.  Must respect the storage class embedded in the type.
+            This is optional if the pipeline does not have any overall init
+            inputs.  When a full butler is available,
+            `lsst.daf.butler.Butler.get` can be used directly here.
+        init_outputs : `list`, optional
+            A list of ``(obj, dataset type)`` init-output dataset pairs, to be
+            appended to in-place.  Both the object and the dataset type will
+            correspond to the storage class of the output connection, which
+            may not be the same as the storage class on the graph's dataset
+            type node.
+
+        Returns
+        -------
+        tasks : `list`
+            Constructed `PipelineTask` instances.
+        """
+        if not self.is_fully_resolved:
+            raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
+        empty_data_id = DataCoordinate.make_empty(cast(DimensionUniverse, self.universe))
+        handles: dict[str, InMemoryDatasetHandle] = {}
+        tasks: list[PipelineTask] = []
+        for task_node in self.tasks.values():
+            task_init_inputs: dict[str, Any] = {}
+            for read_edge in task_node.init.inputs.values():
+                if (handle := handles.get(read_edge.dataset_type_name)) is not None:
+                    obj = handle.get(storageClass=read_edge.storage_class_name)
+                elif (
+                    read_edge.component is not None
+                    and (parent_handle := handles.get(read_edge.parent_dataset_type_name)) is not None
+                ):
+                    obj = parent_handle.get(
+                        storageClass=read_edge.storage_class_name, component=read_edge.component
+                    )
+                else:
+                    dataset_type_node = self.dataset_types[read_edge.parent_dataset_type_name]
+                    if get_init_input is None:
+                        raise ValueError(
+                            f"Task {task_node.label!r} requires init-input "
+                            f"{read_edge.dataset_type_name} but no 'get_init_input' callback was provided."
+                        )
+                    obj = get_init_input(read_edge.adapt_dataset_type(dataset_type_node.dataset_type))
+                    n_consumers = len(self.consumers_of(dataset_type_node.name))
+                    if (
+                        n_consumers > 1
+                        and read_edge.component is None
+                        and read_edge.storage_class_name == dataset_type_node.storage_class_name
+                    ):
+                        # Caching what we just got is safe in general only
+                        # if there was no storage class conversion, since
+                        # a->b and a->c does not imply b->c.
+                        handles[read_edge.dataset_type_name] = InMemoryDatasetHandle(
+                            obj,
+                            storageClass=dataset_type_node.storage_class,
+                            dataId=empty_data_id,
+                            copy=True,
+                        )
+                task_init_inputs[read_edge.connection_name] = obj
+            task = task_node.task_class(
+                config=task_node.config, initInputs=task_init_inputs, name=task_node.label
+            )
+            tasks.append(task)
+            for write_edge in task_node.init.outputs.values():
+                dataset_type_node = self.dataset_types[write_edge.parent_dataset_type_name]
+                obj = getattr(task, write_edge.connection_name)
+                # We don't immediately coerce obj to the dataset_type_node
+                # storage class (which should be the repo storage class, if
+                # there is one) when appending to `init_outputs` because a
+                # formatter might be able to do a better job of that later;
+                # instead we pair it with a dataset type that's consistent with
+                # the in-memory type. We do coerce when populating `handles`,
+                # though, because going through the dataset_type_node storage
+                # class is the conversion path we checked when we resolved the
+                # pipeline graph.
+                if init_outputs is not None:
+                    init_outputs.append((obj, write_edge.adapt_dataset_type(dataset_type_node.dataset_type)))
+                n_consumers = len(self.consumers_of(dataset_type_node.name))
+                if n_consumers > 0:
+                    handles[dataset_type_node.name] = InMemoryDatasetHandle(
+                        dataset_type_node.storage_class.coerce_type(obj),
+                        dataId=empty_data_id,
+                        storageClass=dataset_type_node.storage_class,
+                        copy=(n_consumers > 1),
+                    )
+        return tasks
+
+    def write_init_outputs(self, butler: Butler) -> None:
+        """Write the init-output datasets for all tasks in the pipeline graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        Datasets that already exist in the butler's output run collection will
+        not be written.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.  Use `QuantumGraph.write_init_outputs` if a quantum
+        graph has already been built.
+        """
+        init_outputs: list[tuple[Any, DatasetType]] = []
+        self.instantiate_tasks(butler.get, init_outputs)
+        found_refs: dict[str, DatasetRef] = {}
+        to_put: list[tuple[Any, DatasetType]] = []
+        for obj, dataset_type in init_outputs:
+            if (ref := butler.find_dataset(dataset_type, collections=butler.run)) is not None:
+                found_refs[dataset_type.name] = ref
+            else:
+                to_put.append((obj, dataset_type))
+        for ref, stored in butler.stored_many(found_refs.values()).items():
+            if not stored:
+                raise FileNotFoundError(
+                    f"Init-output dataset {ref.datasetType.name!r} was found in RUN {ref.run!r} "
+                    f"but had not actually been stored (or was stored and later deleted)."
+                )
+        for obj, dataset_type in to_put:
+            butler.put(obj, dataset_type)
+
+    def write_configs(self, butler: Butler) -> None:
+        """Write the config datasets for all tasks in the pipeline graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        Config datasets that already exist in the butler's output run
+        collection will be checked for consistency.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.  Use `QuantumGraph.write_configs` if a quantum graph
+        has already been built.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if a config dataset already exists and is not consistent
+            with the config in the pipeline graph.
+        """
+        to_put: list[tuple[PipelineTaskConfig, str]] = []
+        for task_node in self.tasks.values():
+            dataset_type_name = task_node.init.config_output.dataset_type_name
+            if (ref := butler.find_dataset(dataset_type_name, collections=butler.run)) is not None:
+                old_config = butler.get(ref)
+                if not task_node.config.compare(old_config, shortcut=False, output=log_config_mismatch):
+                    raise ConflictingDefinitionError(
+                        f"Config does not match existing task config {dataset_type_name!r} in "
+                        "butler; tasks configurations must be consistent within the same run collection"
+                    )
+            else:
+                to_put.append((task_node.config, dataset_type_name))
+        # We do writes at the end to minimize the mess we leave behind when we
+        # raise an exception.
+        for config, dataset_type_name in to_put:
+            butler.put(config, dataset_type_name)
+
+    def write_packages(self, butler: Butler) -> None:
+        """Write the 'packages' dataset for the currently-active software
+        versions.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+
+        Notes
+        -----
+        If the packages dataset already exists, it will be compared to the
+        versions in the current packages.  New packages that weren't present
+        before are not considered an inconsistency.
+
+        This method writes outputs with new random dataset IDs and should
+        hence only be used when writing init-outputs prior to building a
+        `QuantumGraph`.  Use `QuantumGraph.write_packages` if a quantum graph
+        has already been built.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if the packages dataset already exists and is not consistent
+            with the current packages.
+        """
+        new_packages = Packages.fromSystem()
+        if (ref := butler.find_dataset(self.packages_dataset_type)) is not None:
+            packages = butler.get(ref)
+            if compare_packages(packages, new_packages):
+                # have to remove existing dataset first; butler has no
+                # replace option.
+                butler.pruneDatasets([ref], unstore=True, purge=True)
+                butler.put(packages, ref)
+        else:
+            butler.put(new_packages, self.packages_dataset_type)
+
+    def init_output_run(self, butler: Butler) -> None:
+        """Initialize a new output RUN collection by writing init-output
+        datasets (including configs and packages).
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            A full butler data repository client with its default run set
+            to the collection where datasets should be written.
+        """
+        self.write_configs(butler)
+        self.write_packages(butler)
+        self.write_init_outputs(butler)
+
+    ###########################################################################
+    #
     # Class- and Package-Private Methods.
     #
     ###########################################################################
@@ -1818,3 +2170,51 @@ class PipelineGraph:
     _dataset_types: DatasetTypeMappingView
     _raw_data_id: dict[str, Any]
     _universe: DimensionUniverse | None
+
+
+def log_config_mismatch(msg: str) -> None:
+    """Log messages about configuration mismatch.
+
+    Parameters
+    ----------
+    msg : `str`
+        Log message to use.
+    """
+    _LOG.fatal("Comparing configuration: %s", msg)
+
+
+def compare_packages(packages: Packages, new_packages: Packages) -> bool:
+    """Compare two versions of Packages.
+
+    Parameters
+    ----------
+    packages : `Packages`
+        Previously recorded package versions.  Updated in place to include
+        any new packages that weren't present before.
+    new_packages : `Packages`
+        New set of package versions.
+
+    Returns
+    -------
+    updated : `bool`
+        `True` if ``packages`` was updated, `False` if not.
+
+    Raises
+    ------
+    ConflictingDefinitionError
+        Raised if versions are inconsistent.
+    """
+    diff = new_packages.difference(packages)
+    if diff:
+        versions_str = "; ".join(f"{pkg}: {diff[pkg][1]} vs {diff[pkg][0]}" for pkg in diff)
+        raise ConflictingDefinitionError(f"Package versions mismatch: ({versions_str})")
+    else:
+        _LOG.debug("new packages are consistent with old")
+    # Update the old set of packages in case we have more packages
+    # that haven't been persisted.
+    extra = new_packages.extra(packages)
+    if extra:
+        _LOG.debug("extra packages: %s", extra)
+        packages.update(new_packages)
+        return True
+    return False
