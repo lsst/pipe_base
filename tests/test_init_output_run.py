@@ -205,7 +205,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         using the former to actually write init-outputs (with later attempts
         correctly failing or doing nothing, depending on parameters).
         """
-        butler = butler._clone(run=run, collections=[self.INPUT_COLLECTION, run])
+        butler = butler.clone(run=run, collections=[self.INPUT_COLLECTION, run])
         pipeline_graph.init_output_run(butler)
         init_output_refs = self.find_init_output_refs(pipeline_graph, butler)
         # Build a QG with the init outputs already in place.
@@ -264,7 +264,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         using the latter to actually write init-outputs (with later attempts
         correctly failing or doing nothing, depending on parameters).
         """
-        butler = butler._clone(run=run, collections=[self.INPUT_COLLECTION, run])
+        butler = butler.clone(run=run, collections=[self.INPUT_COLLECTION, run])
         # Build a QG.
         quantum_graph_builder = AllDimensionsQuantumGraphBuilder(
             pipeline_graph,
@@ -316,7 +316,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         (with later attempts correctly failing or doing nothing, depending on
         parameters).
         """
-        butler = butler._clone(run=run, collections=[self.INPUT_COLLECTION, run])
+        butler = butler.clone(run=run, collections=[self.INPUT_COLLECTION, run])
         # Build a QG.
         quantum_graph_builder = AllDimensionsQuantumGraphBuilder(
             pipeline_graph,
@@ -512,7 +512,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             butler.put(DynamicTestPipelineTaskConfig(), "a_config", run="run1")
             with self.assertRaises(ConflictingDefinitionError):
                 pipeline_graph.init_output_run(
-                    butler._clone(run="run1", collections=[self.INPUT_COLLECTION, "run1"])
+                    butler.clone(run="run1", collections=[self.INPUT_COLLECTION, "run1"])
                 )
             quantum_graph_builder = AllDimensionsQuantumGraphBuilder(
                 pipeline_graph,
@@ -526,7 +526,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             )
             with self.assertRaises(ConflictingDefinitionError):
                 quantum_graph.init_output_run(
-                    butler._clone(run="run1", collections=[self.INPUT_COLLECTION, "run1"])
+                    butler.clone(run="run1", collections=[self.INPUT_COLLECTION, "run1"])
                 )
 
 
