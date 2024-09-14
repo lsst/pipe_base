@@ -54,8 +54,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
             qpg = QuantumProvenanceGraph()
-            qpg.add_new_graph(butler, qgraph)
-            qpg.resolve_duplicates(butler)
+            qpg.assemble_quantum_provenance_graph(butler, [qgraph])
             summary = qpg.to_summary(butler)
 
             for task_summary in summary.tasks.values():

@@ -634,7 +634,7 @@ class QuantumProvenanceGraph:
         """
         return self._xgraph.nodes[key]
 
-    def add_new_graph(self, butler: Butler, qgraph: QuantumGraph | ResourcePathExpression) -> None:
+    def __add_new_graph(self, butler: Butler, qgraph: QuantumGraph | ResourcePathExpression) -> None:
         """Add a new quantum graph to the `QuantumProvenanceGraph`.
 
         Step through the quantum graph. Annotate a `networkx.DiGraph`
@@ -831,7 +831,7 @@ class QuantumProvenanceGraph:
             # Update `QuantumInfo.status` for this quantum.
             quantum_info["status"] = new_status
 
-    def resolve_duplicates(
+    def __resolve_duplicates(
         self,
         butler: Butler,
         collections: Sequence[str] | None = None,
@@ -970,6 +970,41 @@ class QuantumProvenanceGraph:
         # If we make it all the way through resolve_duplicates, set
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
+
+    def assemble_quantum_provenance_graph(
+        self,
+        butler: Butler,
+        qgraphs: Sequence[QuantumGraph | ResourcePathExpression],
+        collections: Sequence[str] | None = None,
+        where: str = "",
+        curse_failed_logs: bool = False,
+    ) -> None:
+        output_runs = []
+        for count, graph in enumerate(qgraphs):
+            qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
+            assert qgraph.metadata is not None, "Saved QGs always have metadata."
+            # If the most recent graph's timestamp was earlier than any of the
+            # previous graphs, raise a RuntimeError.
+            if len(qgraphs) > 1:
+                for previous_graph in qgraphs[: count - 1]:
+                    previous_graph = (
+                        previous_graph
+                        if isinstance(previous_graph, QuantumGraph)
+                        else QuantumGraph.loadUri(previous_graph)
+                    )
+                    if qgraph.metadata["time"] < previous_graph.metadata["time"]:
+                        raise RuntimeError(
+                            """add_new_graph may only be called on graphs
+                            which are passed in the order they were
+                            created. Please call again, passing your
+                            graphs in order."""
+                        )
+            self.__add_new_graph(butler, qgraph)
+            output_runs.append(qgraph.metadata["output_run"])
+        # If the user has not passed a `collections` variable
+        if not collections:
+            collections = list(reversed(output_runs))
+        self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
 
     def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
         """Summarize the `QuantumProvenanceGraph`.
