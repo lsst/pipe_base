@@ -712,6 +712,7 @@ class PipelineGraph:
             label = task_class._DefaultName
         if config is None:
             config = task_class.ConfigClass()
+        _LOG.debug("Task: %s %s", label, task_class)
         task_node = TaskNode._from_imported_data(
             key=NodeKey(NodeType.TASK, label),
             init_key=NodeKey(NodeType.TASK_INIT, label),
