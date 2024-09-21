@@ -31,7 +31,7 @@
 
 import unittest
 
-from lsst.pipe.base.quantum_provenance_graph import QuantumProvenanceGraph, TaskSummary
+from lsst.pipe.base.quantum_provenance_graph import QuantumProvenanceGraph
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
 
@@ -61,20 +61,15 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 # We know that we have one expected task that was not run.
                 # As such, the following dictionary should describe all of
                 # the mock tasks.
-                self.assertEqual(
-                    task_summary,
-                    TaskSummary(
-                        n_successful=0,
-                        n_blocked=0,
-                        n_unknown=1,
-                        n_expected=1,
-                        failed_quanta=[],
-                        recovered_quanta=[],
-                        wonky_quanta=[],
-                        n_wonky=0,
-                        n_failed=0,
-                    ),
-                )
+                self.assertEqual(task_summary.n_successful, 0)
+                self.assertEqual(task_summary.n_blocked, 0)
+                self.assertEqual(task_summary.n_unknown, 1)
+                self.assertEqual(task_summary.n_expected, 1)
+                self.assertListEqual(task_summary.failed_quanta, [])
+                self.assertListEqual(task_summary.recovered_quanta, [])
+                self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertEqual(task_summary.n_wonky, 0)
+                self.assertEqual(task_summary.n_failed, 0)
             expected_mock_datasets = [
                 "add_dataset1",
                 "add2_dataset1",
@@ -115,16 +110,16 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(dataset_type_summary.cursed_datasets, [])
                 # Make sure we have the right datasets based on our mock
                 self.assertIn(dataset_type_name, expected_mock_datasets)
-            # Make sure the expected datasets were produced by the expected
-            # tasks
-            match dataset_type_name:
-                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task0")
-                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task1")
-                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task2")
-                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task3")
-                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task4")
+                # Make sure the expected datasets were produced by the expected
+                # tasks
+                match dataset_type_name:
+                    case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task0")
+                    case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task1")
+                    case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task2")
+                    case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task3")
+                    case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task4")
