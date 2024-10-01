@@ -27,7 +27,7 @@ jobs:
           channels: conda-forge,defaults
           channel-priority: strict
           show-channel-urls: true
-          miniforge-variant: Mambaforge
+          miniforge-variant: Miniforge3
           use-mamba: true
 
       - name: Update pip/wheel infrastructure
