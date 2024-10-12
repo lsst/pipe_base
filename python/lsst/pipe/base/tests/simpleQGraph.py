@@ -488,7 +488,7 @@ def makeSimpleQGraph(
         "Instantiating QuantumGraphBuilder, "
         "skip_existing_in=%s, input_collections=%r, output_run=%r, where=%r, bind=%s.",
         skipExistingIn,
-        butler.collections,
+        butler.collections.defaults,
         run,
         userQuery,
         bind,
@@ -500,7 +500,7 @@ def makeSimpleQGraph(
         pipeline_graph,
         butler,
         skip_existing_in=skipExistingIn if skipExistingIn is not None else [],
-        input_collections=butler.collections if butler.collections is not None else [run],
+        input_collections=butler.collections.defaults if butler.collections.defaults is not None else [run],
         output_run=run,
         where=userQuery,
         bind=bind,
