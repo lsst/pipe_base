@@ -42,7 +42,7 @@ __all__ = (
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator, Iterable, Sequence
+from collections.abc import Iterator, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Literal, NamedTuple, TypedDict, cast
 
@@ -484,25 +484,25 @@ class TaskSummary(pydantic.BaseModel):
                 self.n_unknown += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
-    
-    def add_data_id_group(self, other: TaskSummary) -> None:
+
+    def add_data_id_group(self, other_summary: TaskSummary) -> None:
         """Add information from a `TaskSummary` over one dataquery-identified
-        group to another, as part of aggregating `Summary` reports. 
+        group to another, as part of aggregating `Summary` reports.
 
         Parameters
         ----------
-        other : `TaskSummary`
+        other_summary : `TaskSummary`
             `TaskSummary` to aggregate.
         """
-        self.n_successful += other.n_successful
-        self.n_blocked += other.n_blocked
-        self.n_not_attempted += other.n_not_attempted
-        self.n_expected += other.n_expected
+        self.n_successful += other_summary.n_successful
+        self.n_blocked += other_summary.n_blocked
+        self.n_unknown += other_summary.n_unknown
+        self.n_expected += other_summary.n_expected
 
-        self.wonky_quanta.extend(other.wonky_quanta)
-        self.recovered_quanta.extend(other.recovered_quanta)
-        self.failed_quanta.extend(other.failed_quanta)
-        
+        self.wonky_quanta.extend(other_summary.wonky_quanta)
+        self.recovered_quanta.extend(other_summary.recovered_quanta)
+        self.failed_quanta.extend(other_summary.failed_quanta)
+
 
 class CursedDatasetSummary(pydantic.BaseModel):
     """A summary of all the relevant information on a cursed dataset."""
@@ -567,7 +567,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
     runs.
     """
 
-    producer: str
+    producer: str = ""
     """The name of the task which produced this dataset.
     """
 
@@ -643,32 +643,37 @@ class DatasetTypeSummary(pydantic.BaseModel):
                 self.n_predicted_only += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
-            
-    def add_data_id_group(self, other: DatasetTypeSummary) -> None:
+
+    def add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
         """Add information from a `DatasetTypeSummary` over one
         dataquery-identified group to another, as part of aggregating `Summary`
-        reports. 
+        reports.
 
         Parameters
         ----------
-        other : `DatasetTypeSummary`
+        other_summary : `DatasetTypeSummary`
             `DatasetTypeSummary` to aggregate.
         """
-        if self.producer:
+        if self.producer and other_summary.producer:
             # Guard against empty string
-            if self.producer != other.producer:
-                _LOG.warning("Producer for dataset type is not consistent: %r != %r.", self.producer, other.producer)
-                _LOG.warning("Ignoring %r.", other.producer)
+            if self.producer != other_summary.producer:
+                _LOG.warning(
+                    "Producer for dataset type is not consistent: %r != %r.",
+                    self.producer,
+                    other_summary.producer,
+                )
+                _LOG.warning("Ignoring %r.", other_summary.producer)
         else:
-            self.producer = other.producer
+            if other_summary.producer and not self.producer:
+                self.producer = other_summary.producer
 
-        self.n_published += other.n_published
-        self.n_unpublished += other.n_unpublished
-        self.n_predicted_only += other.n_predicted_only
-        self.n_expected += other.n_expected
+        self.n_visible += other_summary.n_visible
+        self.n_shadowed += other_summary.n_shadowed
+        self.n_predicted_only += other_summary.n_predicted_only
+        self.n_expected += other_summary.n_expected
 
-        self.cursed_datasets.extend(other.cursed_datasets)
-        self.unsuccessful_datasets.extend(other.unsuccessful_datasets)
+        self.cursed_datasets.extend(other_summary.cursed_datasets)
+        self.unsuccessful_datasets.extend(other_summary.unsuccessful_datasets)
 
 
 class Summary(pydantic.BaseModel):
@@ -686,15 +691,15 @@ class Summary(pydantic.BaseModel):
     """
 
     @classmethod
-    def aggregate(cls, summaries: Iterable[Summary]) -> Summary:
+    def aggregate(cls, summaries: Sequence[Summary]) -> Summary:
         """Combine summaries from disjoint data id groups into an overall
         summary of common tasks and datasets. Intended for use when the same
         pipeline has been run over all groups.
 
         Parameters
         ----------
-        summaries : `Iterable[Summary]`
-            Iterable of all `Summary` objects to aggregate.
+        summaries : `Sequence[Summary]`
+            Sequence of all `Summary` objects to aggregate.
         """
         result = cls()
         for summary in summaries:
