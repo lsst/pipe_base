@@ -500,7 +500,7 @@ def makeSimpleQGraph(
         pipeline_graph,
         butler,
         skip_existing_in=skipExistingIn if skipExistingIn is not None else [],
-        input_collections=butler.collections.defaults if butler.collections.defaults is not None else [run],
+        input_collections=butler.collections.defaults,
         output_run=run,
         where=userQuery,
         bind=bind,
