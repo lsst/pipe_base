@@ -99,13 +99,13 @@ def get_original_name(mock: str) -> str:
     return mock.removeprefix(_NAME_PREFIX)
 
 
-def is_mock_name(name: str) -> bool:
+def is_mock_name(name: str | None) -> bool:
     """Return whether the given name is that of a mock storage class, dataset
     type, or task label.
 
     Parameters
     ----------
-    name : `str`
+    name : `str` or `None`
         The given name to check.
 
     Returns
@@ -113,7 +113,7 @@ def is_mock_name(name: str) -> bool:
     is_mock : `bool`
         Whether the name is for a mock or not.
     """
-    return name.startswith(_NAME_PREFIX)
+    return name is not None and name.startswith(_NAME_PREFIX)
 
 
 # Tests for this module are in the ci_middleware package, where we have easy
