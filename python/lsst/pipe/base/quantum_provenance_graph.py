@@ -485,6 +485,24 @@ class TaskSummary(pydantic.BaseModel):
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
 
+    def add_data_id_group(self, other_summary: TaskSummary) -> None:
+        """Add information from a `TaskSummary` over one dataquery-identified
+        group to another, as part of aggregating `Summary` reports.
+
+        Parameters
+        ----------
+        other_summary : `TaskSummary`
+            `TaskSummary` to aggregate.
+        """
+        self.n_successful += other_summary.n_successful
+        self.n_blocked += other_summary.n_blocked
+        self.n_unknown += other_summary.n_unknown
+        self.n_expected += other_summary.n_expected
+
+        self.wonky_quanta.extend(other_summary.wonky_quanta)
+        self.recovered_quanta.extend(other_summary.recovered_quanta)
+        self.failed_quanta.extend(other_summary.failed_quanta)
+
 
 class CursedDatasetSummary(pydantic.BaseModel):
     """A summary of all the relevant information on a cursed dataset."""
@@ -549,7 +567,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
     runs.
     """
 
-    producer: str
+    producer: str = ""
     """The name of the task which produced this dataset.
     """
 
@@ -626,6 +644,37 @@ class DatasetTypeSummary(pydantic.BaseModel):
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
 
+    def add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
+        """Add information from a `DatasetTypeSummary` over one
+        dataquery-identified group to another, as part of aggregating `Summary`
+        reports.
+
+        Parameters
+        ----------
+        other_summary : `DatasetTypeSummary`
+            `DatasetTypeSummary` to aggregate.
+        """
+        if self.producer and other_summary.producer:
+            # Guard against empty string
+            if self.producer != other_summary.producer:
+                _LOG.warning(
+                    "Producer for dataset type is not consistent: %r != %r.",
+                    self.producer,
+                    other_summary.producer,
+                )
+                _LOG.warning("Ignoring %r.", other_summary.producer)
+        else:
+            if other_summary.producer and not self.producer:
+                self.producer = other_summary.producer
+
+        self.n_visible += other_summary.n_visible
+        self.n_shadowed += other_summary.n_shadowed
+        self.n_predicted_only += other_summary.n_predicted_only
+        self.n_expected += other_summary.n_expected
+
+        self.cursed_datasets.extend(other_summary.cursed_datasets)
+        self.unsuccessful_datasets.extend(other_summary.unsuccessful_datasets)
+
 
 class Summary(pydantic.BaseModel):
     """A summary of the contents of the QuantumProvenanceGraph, including
@@ -640,6 +689,27 @@ class Summary(pydantic.BaseModel):
     datasets: dict[str, DatasetTypeSummary] = pydantic.Field(default_factory=dict)
     """Summaries for the datasets.
     """
+
+    @classmethod
+    def aggregate(cls, summaries: Sequence[Summary]) -> Summary:
+        """Combine summaries from disjoint data id groups into an overall
+        summary of common tasks and datasets. Intended for use when the same
+        pipeline has been run over all groups.
+
+        Parameters
+        ----------
+        summaries : `Sequence[Summary]`
+            Sequence of all `Summary` objects to aggregate.
+        """
+        result = cls()
+        for summary in summaries:
+            for label, task_summary in summary.tasks.items():
+                result_task_summary = result.tasks.setdefault(label, TaskSummary())
+                result_task_summary.add_data_id_group(task_summary)
+            for dataset_type, dataset_type_summary in summary.datasets.items():
+                result_dataset_summary = result.datasets.setdefault(dataset_type, DatasetTypeSummary())
+                result_dataset_summary.add_data_id_group(dataset_type_summary)
+        return result
 
 
 class QuantumProvenanceGraph:
