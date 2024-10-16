@@ -173,7 +173,7 @@ class QuantumGraphBuilder(ABC):
         self._pipeline_graph = pipeline_graph
         self.butler = butler
         if input_collections is None:
-            input_collections = butler.collections
+            input_collections = butler.collections.defaults
         if not input_collections:
             raise ValueError("No input collections provided.")
         self.input_collections = input_collections
