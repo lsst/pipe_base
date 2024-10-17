@@ -39,6 +39,7 @@ __all__ = (
     "UnprocessableDataError",
     "AnnotatedPartialOutputsError",
     "NoWorkFound",
+    "UpstreamFailureNoWorkFound",
     "RepeatableQuantumError",
     "AlgorithmError",
     "InvalidQuantumError",
@@ -64,6 +65,13 @@ class NoWorkFound(BaseException):
     This inherits from BaseException because it is used to signal a case that
     we don't consider a real error, even though we often want to use try/except
     logic to trap it.
+    """
+
+
+class UpstreamFailureNoWorkFound(NoWorkFound):
+    """A specialization of `NoWorkFound` that indicates that an upstream task
+    had a problem that was ignored (e.g. to prevent a single-detector failure
+    from bringing down an entire visit).
     """
 
 
