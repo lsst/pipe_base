@@ -29,6 +29,7 @@ from typing import Any
 
 import click
 from lsst.daf.butler.cli.opt import (
+    dataset_type_option,
     options_file_option,
     register_dataset_types_option,
     repo_argument,
@@ -62,10 +63,32 @@ def register_instrument(*args: Any, **kwargs: Any) -> None:
 def transfer_from_graph(**kwargs: Any) -> None:
     """Transfer datasets from a quantum graph to a destination butler.
 
-    SOURCE is a URI to the Butler repository containing the RUN dataset.
+    GRAPH is a URI to the source quantum graph file.
 
     DEST is a URI to the Butler repository that will receive copies of the
     datasets.
     """
     number = script.transfer_from_graph(**kwargs)
     print(f"Number of datasets transferred: {number}")
+
+
+@click.command(short_help="Make Zip archive from output files using graph.", cls=ButlerCommand)
+@click.argument("graph", required=True)
+@repo_argument(
+    required=True,
+    help="REPO is a URI to a butler configuration that is used to configure "
+    "the datastore of the quantum-backed butler.",
+)
+@click.argument("dest", required=True)
+@dataset_type_option(help="Dataset types to include in Zip archive.")
+@options_file_option()
+def zip_from_graph(**kwargs: Any) -> None:
+    """Transfer datasets from a quantum graph to a Zip archive.
+
+    GRAPH is a URI to the source quantum graph file to use when building the
+    Zip archive.
+
+    DEST is a directory to write the Zip archive.
+    """
+    zip = script.zip_from_graph(**kwargs)
+    print(f"Zip archive written to {zip}")
