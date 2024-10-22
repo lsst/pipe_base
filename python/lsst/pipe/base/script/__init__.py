@@ -27,3 +27,4 @@
 
 from .register_instrument import register_instrument
 from .transfer_from_graph import transfer_from_graph
+from .zip_from_graph import zip_from_graph

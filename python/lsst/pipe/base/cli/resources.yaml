@@ -3,3 +3,4 @@ cmd:
   commands:
     - register-instrument
     - transfer-from-graph
+    - zip-from-graph
