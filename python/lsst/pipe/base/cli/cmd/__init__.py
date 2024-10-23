@@ -27,4 +27,4 @@
 
 __all__ = ["register_instrument"]
 
-from .commands import register_instrument, transfer_from_graph
+from .commands import register_instrument, transfer_from_graph, zip_from_graph
