@@ -31,6 +31,8 @@ __all__ = ("NodeAttributeOptions",)
 import dataclasses
 from typing import Literal
 
+from .._nodes import NodeType
+
 
 @dataclasses.dataclass
 class NodeAttributeOptions:
@@ -71,6 +73,25 @@ class NodeAttributeOptions:
 
     def __bool__(self) -> bool:
         return bool(self.dimensions or self.storage_classes or self.task_classes)
+
+    def has_details(self, node_type: NodeType) -> bool:
+        """Check whether there is any information beyond the node name for a
+        node of the given type.
+
+        Parameters
+        ----------
+        node_type : `NodeType`
+            Type of node.
+
+        Returns
+        -------
+        has_details : `bool`
+            Whether a node of this type should display more than its name.
+        """
+        if node_type is NodeType.DATASET_TYPE:
+            return bool(self.dimensions or self.storage_classes)
+        else:
+            return bool(self.dimensions or self.task_classes)
 
     def checked(self, is_resolved: bool) -> NodeAttributeOptions:
         """Check these options against a pipeline graph's resolution status and
