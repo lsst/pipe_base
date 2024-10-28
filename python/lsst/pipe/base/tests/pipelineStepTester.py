@@ -142,9 +142,10 @@ class PipelineStepTester:
             step_graph = step_pipe.to_graph()
             step_graph.resolve(butler.registry)
 
-            pure_inputs.update(
-                {name: suffix for name, _ in step_graph.iter_overall_inputs() if name not in all_outputs}
-            )
+            for name, _ in step_graph.iter_overall_inputs():
+                if name not in all_outputs:
+                    tasks = step_graph.consumers_of(name)
+                    pure_inputs[name] = f"{suffix}: {', '.join(task.label for task in tasks)}"
             all_outputs.update(
                 {
                     name: node.dataset_type
