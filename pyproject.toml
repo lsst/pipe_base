@@ -36,6 +36,9 @@ dependencies = [
 
 dynamic = ["version"]
 
+[project.entry-points.'butler.cli']
+pipe_base = "lsst.pipe.base.cli:get_cli_subcommands"
+
 [project.urls]
 "Homepage" = "https://github.com/lsst/pipe_base"
 
