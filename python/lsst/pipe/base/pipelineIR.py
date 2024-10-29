@@ -481,6 +481,10 @@ class ImportIR:
     declared with will not be modified. setting this value to None will drop
     any declared instrument prior to import.
     """
+    label: str | None = None
+    """A label used for a new subset that will include all tasks imported by
+    this directive.
+    """
 
     def toPipelineIR(self) -> "PipelineIR":
         """Load in the Pipeline specified by this object, and turn it into a
@@ -528,6 +532,13 @@ class ImportIR:
 
         if not self.importContracts:
             tmp_pipeline.contracts = []
+
+        if self.label is not None:
+            tmp_pipeline.labeled_subsets[self.label] = LabeledSubset(
+                self.label,
+                subset=set(tmp_pipeline.tasks.keys()),
+                description=f"Tasks imported from {self.location}.",
+            )
 
         return tmp_pipeline
 
