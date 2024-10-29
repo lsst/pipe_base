@@ -1,0 +1,2 @@
+Plugin discovery is now automated through Python entry points when using ``pip``.
+It is now an error if the ``DAF_BUTLER_PLUGINS`` environment variable is set for this package.
