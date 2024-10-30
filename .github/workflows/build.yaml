@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -21,45 +21,38 @@ jobs:
           # Need to clone everything for the git tags.
           fetch-depth: 0
 
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          channels: conda-forge,defaults
-          channel-priority: strict
-          show-channel-urls: true
-          miniforge-variant: Miniforge3
-          use-mamba: true
 
       - name: Update pip/wheel infrastructure
-        shell: bash -l {0}
         run: |
-          mamba install -y -q pip wheel
+          pip install --upgrade pip wheel
           pip install uv
 
       - name: Install dependencies
         shell: bash -l {0}
         run: |
-          uv pip install -r requirements.txt
-          uv pip install moto
-          uv pip install astropy pandas pyarrow
+          uv pip install --system -r requirements.txt
+          uv pip install --system pandas pyarrow astropy
 
       # We have two cores so we can speed up the testing with xdist
       - name: Install pytest packages
         shell: bash -l {0}
         run: |
-          mamba install -y -q \
+          uv pip install --system \
             pytest pytest-xdist pytest-cov
 
       - name: List installed packages
         shell: bash -l {0}
         run: |
-          mamba list
-          pip list -v
+          uv pip list -v
 
       - name: Build and install
         shell: bash -l {0}
         run: |
-          uv pip install -v --no-deps -e .
+          uv pip install --system -v --no-deps -e .
 
       - name: Run tests
         shell: bash -l {0}

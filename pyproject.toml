@@ -18,6 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 keywords=["lsst"]
@@ -110,8 +111,6 @@ line_length = 110
 write_to = "python/lsst/pipe/base/version.py"
 
 [tool.pytest.ini_options]
-# Some unit tests open registry database and don't close it.
-open_files_ignore = ["gen3.sqlite3"]
 
 [tool.coverage.report]
 show_missing = true

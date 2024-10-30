@@ -25,6 +25,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["register_instrument", "transfer_from_graph"]
+__all__ = ["register_instrument", "transfer_from_graph", "zip_from_graph"]
 
-from .commands import register_instrument, transfer_from_graph
+from .commands import register_instrument, transfer_from_graph, zip_from_graph
