@@ -130,6 +130,12 @@ class PipelineStepTester:
 
         all_outputs: dict[str, DatasetType] = dict()
         pure_inputs: dict[str, str] = dict()
+        orphaned_tasks: set[str] = set()
+        if "" not in self.step_suffixes:
+            full_pipe = Pipeline.from_uri(self.filename)
+            orphaned_tasks.update(full_pipe.task_labels)
+        else:
+            full_pipe = None
 
         for suffix in self.step_suffixes:
             step_pipe = Pipeline.from_uri(self.filename + suffix)
@@ -139,6 +145,7 @@ class PipelineStepTester:
                     step_pipe.addConfigOverride(label, key, value)
                 except LookupError as e:
                     warnings.warn(f"{e}, skipping configuration {fullkey}={value}", UserWarning)
+            orphaned_tasks -= step_pipe.task_labels
             step_graph = step_pipe.to_graph()
             step_graph.resolve(butler.registry)
 
@@ -167,3 +174,14 @@ class PipelineStepTester:
         if not all_outputs.keys() >= self.expected_outputs:
             missing = list(self.expected_outputs - all_outputs.keys())
             raise AssertionError(f"Missing expected_outputs: {missing}")
+
+        if orphaned_tasks:
+            assert full_pipe is not None
+            messages: list[str] = []
+            for task_label in sorted(orphaned_tasks):
+                subsets = full_pipe.findSubsetsWithLabel(task_label)
+                if subsets:
+                    messages.append(f"{task_label} (in {', '.join(sorted(subsets))})")
+                else:
+                    messages.append(task_label)
+            raise AssertionError(f"Found tasks not in any step: {', '.join(messages)}")
