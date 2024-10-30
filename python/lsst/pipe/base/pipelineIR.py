@@ -993,6 +993,8 @@ class PipelineIR:
                     case PipelineSubsetCtrl.EDIT:
                         for extra in extraTaskLabels:
                             labeled_subset.subset.discard(extra)
+                        if not labeled_subset.subset:
+                            pipeline.labeled_subsets.pop(label)
 
         # remove any steps that correspond to removed subsets
         new_steps = []
