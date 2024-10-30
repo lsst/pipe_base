@@ -42,6 +42,7 @@ from ..pipeline import Pipeline
 from ._pipeline_graph import PipelineGraph, TaskImportMode
 from .visualization._options import NodeAttributeOptions
 from .visualization._show import show
+from .dump import dump_pipeline_graph
 
 
 def main(argv: Sequence[str]) -> int:
@@ -79,6 +80,8 @@ def main(argv: Sequence[str]) -> int:
     if args.resolve:
         butler = Butler.from_config(args.resolve, writeable=False)
         pipeline_graph.resolve(butler.registry)
+    else:
+        pipeline_graph.resolve(visualization_only=True)
     if args.save:
         pipeline_graph._write_uri(ResourcePath(args.save))
     if args.show:
@@ -106,6 +109,8 @@ def main(argv: Sequence[str]) -> int:
                 column_insertion_penalty=args.display.column_insertion_penalty,
                 column_interior_penalty=args.display.column_interior_penalty,
             )
+    if args.dump:
+        dump_pipeline_graph(pipeline_graph, args.dump)
     return 0
 
 
@@ -149,6 +154,10 @@ class Arguments:
     for no visualization.
     """
 
+    dump: str | None
+    """Directory to dump a human-readable complete description to, or `None`.
+    """
+
     resolve: str | None
     """Butler repository URI to use to resolve the graph."""
 
@@ -174,6 +183,7 @@ class Arguments:
             input_pipeline=args.input_pipeline,
             save=args.save,
             show=args.show,
+            dump=args.dump,
             resolve=args.resolve,
             display=DisplayArguments.from_parsed_args(args),
         )
@@ -218,6 +228,16 @@ class Arguments:
             """,
             default=None,
             const="-",
+        )
+        parser.add_argument(
+            "--dump",
+            type=str,
+            metavar="DIR",
+            help="""
+                Dump a human-readable description of the expanded pipeline to
+                this directory.
+            """,
+            default=None,
         )
         parser.add_argument(
             "--resolve",
@@ -325,7 +345,7 @@ class DisplayArguments:
             Intepreted arguments struct.
         """
         return cls(
-            dataset_types=args.dataset_types or args.dataset_types_only,
+            dataset_types=args.dataset_types,
             init=args.init,
             color=args.color,
             node_attributes=NodeAttributeOptions(
