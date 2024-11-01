@@ -843,7 +843,17 @@ class PipelineIR:
                 "Labeled subset names must be unique amongst imports in both labels and  named Subsets"
             )
         # merge in the named subsets for self so this document can override any
-        # that have been delcared
+        # that have been declared.  Subsets in this pipeline that start with a
+        # '+' but otherwise match an imported subset will have their contents
+        # merged.  In all other cases a subset in this pipeline fully overrides
+        # an imported subset.
+        for subset_label in list(self.labeled_subsets.keys()):
+            if subset_label.startswith("+"):
+                if (target_label := subset_label.removeprefix("+")) in accumulate_labeled_subsets:
+                    subset_from_self = self.labeled_subsets.pop(subset_label)
+                    accumulate_labeled_subsets[target_label].subset.update(subset_from_self.subset)
+                    if subset_from_self.description:
+                        accumulate_labeled_subsets[target_label].description = subset_from_self.description
         accumulate_labeled_subsets.update(self.labeled_subsets)
         self.labeled_subsets = accumulate_labeled_subsets
 
