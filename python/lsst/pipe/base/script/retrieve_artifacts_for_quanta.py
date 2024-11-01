@@ -29,8 +29,7 @@ __all__ = ["retrieve_artifacts_for_quanta"]
 
 import logging
 
-from lsst.daf.butler import DatasetRef, QuantumBackedButler
-from lsst.daf.butler.datastore.record_data import DatastoreRecordData
+from lsst.daf.butler import QuantumBackedButler
 from lsst.pipe.base import QuantumGraph
 from lsst.resources import ResourcePath
 
@@ -48,7 +47,7 @@ def retrieve_artifacts_for_quanta(
     include_inputs: bool,
     include_outputs: bool,
 ) -> list[ResourcePath]:
-    """Retrieve artifacts from a graph and store locally.
+    """Retrieve artifacts referenced in a graph and store locally.
 
     Parameters
     ----------
@@ -81,47 +80,17 @@ def retrieve_artifacts_for_quanta(
     nodes = qgraph_node_id or None
     qgraph = QuantumGraph.loadUri(graph, nodes=nodes)
 
+    refs, datastore_records = qgraph.get_refs(
+        include_inputs=include_inputs,
+        include_init_inputs=include_inputs,
+        include_outputs=include_outputs,
+        include_init_outputs=include_outputs,
+        conform_outputs=True,  # Need to look for predicted outputs with correct storage class.
+    )
+
     # Get data repository definitions from the QuantumGraph; these can have
     # different storage classes than those in the quanta.
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
-
-    datastore_records: dict[str, DatastoreRecordData] = {}
-    refs: set[DatasetRef] = set()
-    if include_inputs:
-        # Collect input refs used by this graph.
-        for task_def in qgraph.iterTaskGraph():
-            if in_refs := qgraph.initInputRefs(task_def):
-                refs.update(in_refs)
-        for qnode in qgraph:
-            for otherRefs in qnode.quantum.inputs.values():
-                refs.update(otherRefs)
-            for store_name, records in qnode.quantum.datastore_records.items():
-                datastore_records.setdefault(store_name, DatastoreRecordData()).update(records)
-    n_inputs = len(refs)
-    if n_inputs:
-        _LOG.info("Found %d input dataset%s.", n_inputs, "" if n_inputs == 1 else "s")
-
-    if include_outputs:
-        # Collect output refs that could be created by this graph.
-        original_output_refs: set[DatasetRef] = set(qgraph.globalInitOutputRefs())
-        for task_def in qgraph.iterTaskGraph():
-            if out_refs := qgraph.initOutputRefs(task_def):
-                original_output_refs.update(out_refs)
-        for qnode in qgraph:
-            for otherRefs in qnode.quantum.outputs.values():
-                original_output_refs.update(otherRefs)
-
-        # Convert output_refs to the data repository storage classes, too.
-        for ref in original_output_refs:
-            internal_dataset_type = dataset_types.get(ref.datasetType.name, ref.datasetType)
-            if internal_dataset_type.storageClass_name != ref.datasetType.storageClass_name:
-                refs.add(ref.overrideStorageClass(internal_dataset_type.storageClass_name))
-            else:
-                refs.add(ref)
-
-    n_outputs = len(refs) - n_inputs
-    if n_outputs:
-        _LOG.info("Found %d output dataset%s.", n_outputs, "" if n_outputs == 1 else "s")
 
     # Make QBB, its config is the same as output Butler.
     qbb = QuantumBackedButler.from_predicted(

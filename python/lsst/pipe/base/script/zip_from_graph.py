@@ -30,7 +30,7 @@ __all__ = ["zip_from_graph"]
 import logging
 import re
 
-from lsst.daf.butler import DatasetRef, QuantumBackedButler
+from lsst.daf.butler import QuantumBackedButler
 from lsst.daf.butler.utils import globToRegex
 from lsst.pipe.base import QuantumGraph
 from lsst.resources import ResourcePath
@@ -67,27 +67,10 @@ def zip_from_graph(
     # Read whole graph into memory
     qgraph = QuantumGraph.loadUri(graph)
 
-    # Collect output refs that could be created by this graph.
-    original_output_refs: set[DatasetRef] = set(qgraph.globalInitOutputRefs())
-    for task_def in qgraph.iterTaskGraph():
-        if refs := qgraph.initOutputRefs(task_def):
-            original_output_refs.update(refs)
-    for qnode in qgraph:
-        for otherRefs in qnode.quantum.outputs.values():
-            original_output_refs.update(otherRefs)
+    output_refs, _ = qgraph.get_refs(include_outputs=True, include_init_outputs=True, conform_outputs=True)
 
-    # Get data repository definitions from the QuantumGraph; these can have
-    # different storage classes than those in the quanta.
+    # Get data repository dataset type definitions from the QuantumGraph.
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
-
-    # Convert output_refs to the data repository storage classes, too.
-    output_refs = set()
-    for ref in original_output_refs:
-        internal_dataset_type = dataset_types.get(ref.datasetType.name, ref.datasetType)
-        if internal_dataset_type.storageClass_name != ref.datasetType.storageClass_name:
-            output_refs.add(ref.overrideStorageClass(internal_dataset_type.storageClass_name))
-        else:
-            output_refs.add(ref)
 
     # Make QBB, its config is the same as output Butler.
     qbb = QuantumBackedButler.from_predicted(

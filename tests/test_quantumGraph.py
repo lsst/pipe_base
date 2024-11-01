@@ -617,6 +617,29 @@ class QuantumGraphTestCase(unittest.TestCase):
         self.assertEqual(self.qGraph.graphID, summary.graphID)
         self.assertEqual(len(summary.qgraphTaskSummaries), len(self.qGraph.taskGraph))
 
+    def test_get_refs(self) -> None:
+        """Test that dataset refs can be retrieved from graph."""
+        refs, _ = self.qGraph.get_refs(include_inputs=True)
+        self.assertEqual(len(refs), 8, str(refs))
+        refs, _ = self.qGraph.get_refs(include_init_inputs=True)
+        self.assertEqual(len(refs), 2, str(refs))
+        refs, _ = self.qGraph.get_refs(include_init_outputs=True)
+        self.assertEqual(len(refs), 4, str(refs))
+        refs, _ = self.qGraph.get_refs(include_outputs=True)
+        self.assertEqual(len(refs), 8, str(refs))
+        refs, _ = self.qGraph.get_refs(include_inputs=True, include_outputs=True)
+        self.assertEqual(len(refs), 12, str(refs))
+        refs, _ = self.qGraph.get_refs(
+            include_inputs=True, include_outputs=True, include_init_inputs=True, include_init_outputs=True
+        )
+        self.assertEqual(len(refs), 16, str(refs))
+        refs, _ = self.qGraph.get_refs(include_intermediates=True)
+        self.assertEqual(len(refs), 6, str(refs))
+        refs, _ = self.qGraph.get_refs(include_intermediates=False)
+        self.assertEqual(len(refs), 0, str(refs))
+        refs, _ = self.qGraph.get_refs(include_intermediates=False, include_inputs=True, include_outputs=True)
+        self.assertEqual(len(refs), 8, str(refs))
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     """Run file leak tests."""
