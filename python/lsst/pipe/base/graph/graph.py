@@ -909,7 +909,7 @@ class QuantumGraph:
         cls,
         uri: ResourcePathExpression,
         universe: DimensionUniverse | None = None,
-        nodes: Iterable[uuid.UUID] | None = None,
+        nodes: Iterable[uuid.UUID | str] | None = None,
         graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
@@ -924,7 +924,7 @@ class QuantumGraph:
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of `uuid.UUID` or `None`
+        nodes : iterable of [ `uuid.UUID` | `str` ] or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
