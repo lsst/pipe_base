@@ -34,8 +34,9 @@ from lsst.daf.butler.cli.opt import (
     register_dataset_types_option,
     repo_argument,
     transfer_dimensions_option,
+    transfer_option,
 )
-from lsst.daf.butler.cli.utils import ButlerCommand
+from lsst.daf.butler.cli.utils import ButlerCommand, split_commas, unwrap
 
 from ... import script
 from ..opt import instrument_argument, update_output_chain_option
@@ -92,3 +93,61 @@ def zip_from_graph(**kwargs: Any) -> None:
     """
     zip = script.zip_from_graph(**kwargs)
     print(f"Zip archive written to {zip}")
+
+
+@click.command(short_help="Retrieve artifacts from subset of graph.", cls=ButlerCommand)
+@click.argument("graph", required=True)
+@repo_argument(
+    required=True,
+    help="REPO is a URI to a butler configuration that is used to configure "
+    "the datastore of the quantum-backed butler.",
+)
+@click.argument("dest", required=True)
+@transfer_option()
+@click.option(
+    "--preserve-path/--no-preserve-path",
+    is_flag=True,
+    default=True,
+    help="Preserve the datastore path to the artifact at the destination.",
+)
+@click.option(
+    "--clobber/--no-clobber",
+    is_flag=True,
+    default=False,
+    help="If clobber, overwrite files if they exist locally.",
+)
+@click.option(
+    "--qgraph-node-id",
+    callback=split_commas,
+    multiple=True,
+    help=unwrap(
+        """Only load a specified set of nodes when graph is
+        loaded from a file, nodes are identified by UUID
+        values. One or more comma-separated strings are
+        accepted. By default all nodes are loaded. Ignored if
+        graph is not loaded from a file."""
+    ),
+)
+@click.option(
+    "--include-inputs/--no-include-inputs",
+    is_flag=True,
+    default=True,
+    help="Whether to include input datasets in retrieval.",
+)
+@click.option(
+    "--include-outputs/--no-include-outputs",
+    is_flag=True,
+    default=True,
+    help="Whether to include outut datasets in retrieval.",
+)
+@options_file_option()
+def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
+    """Retrieve artifacts from given quanta defined in quantum graph.
+
+    GRAPH is a URI to the source quantum graph file to use when building the
+    Zip archive.
+
+    DEST is a directory to write the Zip archive.
+    """
+    artifacts = script.retrieve_artifacts_for_quanta(**kwargs)
+    print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")

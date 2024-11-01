@@ -26,5 +26,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .register_instrument import register_instrument
+from .retrieve_artifacts_for_quanta import retrieve_artifacts_for_quanta
 from .transfer_from_graph import transfer_from_graph
 from .zip_from_graph import zip_from_graph
