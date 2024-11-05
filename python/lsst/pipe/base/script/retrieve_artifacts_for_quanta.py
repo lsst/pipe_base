@@ -25,80 +25,84 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ["zip_from_graph"]
+__all__ = ["retrieve_artifacts_for_quanta"]
 
 import logging
-import re
 
 from lsst.daf.butler import QuantumBackedButler
-from lsst.daf.butler.utils import globToRegex
 from lsst.pipe.base import QuantumGraph
 from lsst.resources import ResourcePath
 
 _LOG = logging.getLogger(__name__)
 
 
-def zip_from_graph(
+def retrieve_artifacts_for_quanta(
     graph: str,
     repo: str,
     dest: str,
-    dataset_type: tuple[str, ...],
-) -> ResourcePath:
-    """Create Zip export file from graph outputs.
+    transfer: str,
+    preserve_path: bool,
+    clobber: bool,
+    qgraph_node_id: list[str],
+    include_inputs: bool,
+    include_outputs: bool,
+) -> list[ResourcePath]:
+    """Retrieve artifacts referenced in a graph and store locally.
 
     Parameters
     ----------
     graph : `str`
         URI string of the quantum graph.
     repo : `str`
-        URI to a butler configuration used to define the datastore associated
-        with the graph.
+        URI string of the Butler repo to use.
     dest : `str`
-        Path to the destination directory for the Zip file.
-    dataset_type : `tuple` of `str`
-        Dataset type names. An empty tuple implies all dataset types.
-        Can include globs.
+        URI string of the directory to write the artifacts.
+    transfer : `str`
+        Transfer mode to use when placing artifacts in the destination.
+    preserve_path : `bool`
+        If `True` the full datastore path will be retained within the
+        destination directory, else only the filename will be used.
+    clobber : `bool`
+        If `True` allow transfers to overwrite files at the destination.
+    qgraph_node_id : `tuple` [ `str` ]
+        Quanta to extract.
+    include_inputs : `bool`
+        Whether to include input datasets in retrieval.
+    include_outputs : `bool`
+        Whether to include output datasets in retrieval.
 
     Returns
     -------
-    zip_path : `lsst.resources.ResourcePath`
-        Path to the Zip file.
+    paths : `list` [ `lsst.resources.ResourcePath` ]
+        The paths to the artifacts that were written.
     """
-    # Read whole graph into memory
-    qgraph = QuantumGraph.loadUri(graph)
+    # Read graph into memory.
+    nodes = qgraph_node_id or None
+    qgraph = QuantumGraph.loadUri(graph, nodes=nodes)
 
-    output_refs, _ = qgraph.get_refs(include_outputs=True, include_init_outputs=True, conform_outputs=True)
+    refs, datastore_records = qgraph.get_refs(
+        include_inputs=include_inputs,
+        include_init_inputs=include_inputs,
+        include_outputs=include_outputs,
+        include_init_outputs=include_outputs,
+        conform_outputs=True,  # Need to look for predicted outputs with correct storage class.
+    )
 
-    # Get data repository dataset type definitions from the QuantumGraph.
+    # Get data repository definitions from the QuantumGraph; these can have
+    # different storage classes than those in the quanta.
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
 
     # Make QBB, its config is the same as output Butler.
     qbb = QuantumBackedButler.from_predicted(
         config=repo,
-        predicted_inputs=[ref.id for ref in output_refs],
+        predicted_inputs=[ref.id for ref in refs],
         predicted_outputs=[],
         dimensions=qgraph.universe,
-        datastore_records={},
+        datastore_records=datastore_records,
         dataset_types=dataset_types,
     )
 
-    # Filter the refs based on requested dataset types.
-    regexes = globToRegex(dataset_type)
-    if regexes is ...:
-        filtered_refs = output_refs
-    else:
-
-        def _matches(dataset_type_name: str, regexes: list[str | re.Pattern]) -> bool:
-            for regex in regexes:
-                if isinstance(regex, str):
-                    if dataset_type_name == regex:
-                        return True
-                elif regex.search(dataset_type_name):
-                    return True
-            return False
-
-        filtered_refs = {ref for ref in output_refs if _matches(ref.datasetType.name, regexes)}
-
-    _LOG.info("Retrieving artifacts for %d datasets and storing in Zip file.", len(output_refs))
-    zip = qbb.retrieve_artifacts_zip(filtered_refs, dest)
-    return zip
+    paths = qbb.retrieve_artifacts(
+        refs, dest, transfer=transfer, overwrite=clobber, preserve_path=preserve_path
+    )
+    return paths

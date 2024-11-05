@@ -4,3 +4,4 @@ cmd:
     - register-instrument
     - transfer-from-graph
     - zip-from-graph
+    - retrieve-artifacts-for-quanta

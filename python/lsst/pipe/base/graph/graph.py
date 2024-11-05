@@ -44,6 +44,7 @@ from itertools import chain
 from types import MappingProxyType
 from typing import Any, BinaryIO, TypeVar
 
+import lsst.utils.logging
 import networkx as nx
 from lsst.daf.butler import (
     Config,
@@ -75,6 +76,7 @@ from .graphSummary import QgraphSummary, QgraphTaskSummary
 from .quantumNode import BuildId, QuantumNode
 
 _T = TypeVar("_T", bound="QuantumGraph")
+_LOG = lsst.utils.logging.getLogger(__name__)
 
 # modify this constant any time the on disk representation of the save file
 # changes, and update the load helpers to behave properly for each version.
@@ -909,7 +911,7 @@ class QuantumGraph:
         cls,
         uri: ResourcePathExpression,
         universe: DimensionUniverse | None = None,
-        nodes: Iterable[uuid.UUID] | None = None,
+        nodes: Iterable[uuid.UUID | str] | None = None,
         graphID: BuildId | None = None,
         minimumVersion: int = 3,
     ) -> QuantumGraph:
@@ -924,7 +926,7 @@ class QuantumGraph:
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of `uuid.UUID` or `None`
+        nodes : iterable of [ `uuid.UUID` | `str` ] or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
@@ -1656,3 +1658,153 @@ class QuantumGraph:
         self.write_configs(butler, compare_existing=existing)
         self.write_packages(butler, compare_existing=existing)
         self.write_init_outputs(butler, skip_existing=existing)
+
+    def get_refs(
+        self,
+        *,
+        include_init_inputs: bool = False,
+        include_inputs: bool = False,
+        include_intermediates: bool | None = None,
+        include_init_outputs: bool = False,
+        include_outputs: bool = False,
+        conform_outputs: bool = True,
+    ) -> tuple[set[DatasetRef], dict[str, DatastoreRecordData]]:
+        """Get the requested dataset refs from the graph.
+
+        Parameters
+        ----------
+        include_init_inputs : `bool`, optional
+            Include init inputs.
+        include_inputs : `bool`, optional
+            Include inputs.
+        include_intermediates : `bool` or `None`, optional
+            If `None`, no special handling for intermediates is performed.
+            If `True` intermediates are calculated even if other flags
+            do not request datasets. If `False` intermediates will be removed
+            from any results.
+        include_init_outputs : `bool`, optional
+            Include init outpus.
+        include_outputs : `bool`, optional
+            Include outputs.
+        conform_outputs : `bool`, optional
+            Whether any outputs found should have their dataset types conformed
+            with the registry dataset types.
+
+        Returns
+        -------
+        refs : `set` [ `lsst.daf.butler.DatasetRef` ]
+            The requested dataset refs found in the graph.
+        datastore_records : `dict` [ `str`, \
+                `lsst.daf.butler.datastore.record_data.DatastoreRecordData` ]
+            Any datastore records found.
+
+        Notes
+        -----
+        Conforming and requesting inputs and outputs can result in the same
+        dataset appearing in the results twice with differing storage classes.
+        """
+        datastore_records: dict[str, DatastoreRecordData] = {}
+        init_input_refs: set[DatasetRef] = set()
+        init_output_refs: set[DatasetRef] = set(self.globalInitOutputRefs())
+
+        if include_intermediates is True:
+            # Need to enable inputs and outputs even if not explicitly
+            # requested.
+            request_include_init_inputs = True
+            request_include_inputs = True
+            request_include_init_outputs = True
+            request_include_outputs = True
+        else:
+            request_include_init_inputs = include_init_inputs
+            request_include_inputs = include_inputs
+            request_include_init_outputs = include_init_outputs
+            request_include_outputs = include_outputs
+
+        if request_include_init_inputs or request_include_init_outputs:
+            for task_def in self.iterTaskGraph():
+                if request_include_init_inputs:
+                    if in_refs := self.initInputRefs(task_def):
+                        init_input_refs.update(in_refs)
+                if request_include_init_outputs:
+                    if out_refs := self.initOutputRefs(task_def):
+                        init_output_refs.update(out_refs)
+
+        input_refs: set[DatasetRef] = set()
+        output_refs: set[DatasetRef] = set()
+
+        for qnode in self:
+            if request_include_inputs:
+                for other_refs in qnode.quantum.inputs.values():
+                    input_refs.update(other_refs)
+                # Inputs can come with datastore records.
+                for store_name, records in qnode.quantum.datastore_records.items():
+                    datastore_records.setdefault(store_name, DatastoreRecordData()).update(records)
+            if request_include_outputs:
+                for other_refs in qnode.quantum.outputs.values():
+                    output_refs.update(other_refs)
+
+        # Intermediates are the intersection of inputs and outputs. Must do
+        # this analysis before conforming since dataset type changes will
+        # change set membership.
+        inter_msg = ""
+        intermediates = set()
+        if include_intermediates is not None:
+            intermediates = (input_refs | init_input_refs) & (output_refs | init_output_refs)
+
+        if include_intermediates is False:
+            # Remove intermediates from results.
+            init_input_refs -= intermediates
+            input_refs -= intermediates
+            init_output_refs -= intermediates
+            output_refs -= intermediates
+            inter_msg = f"; Intermediates removed: {len(intermediates)}"
+            intermediates = set()
+        elif include_intermediates is True:
+            # Do not mention intermediates if all the input/output flags
+            # would have resulted in them anyhow.
+            if (
+                (request_include_init_inputs is not include_init_inputs)
+                or (request_include_inputs is not include_inputs)
+                or (request_include_init_outputs is not include_init_outputs)
+                or (request_include_outputs is not include_outputs)
+            ):
+                inter_msg = f"; including intermediates: {len(intermediates)}"
+
+        # Assign intermediates to the relevant category.
+        if not include_init_inputs:
+            init_input_refs &= intermediates
+        if not include_inputs:
+            input_refs &= intermediates
+        if not include_init_outputs:
+            init_output_refs &= intermediates
+        if not include_outputs:
+            output_refs &= intermediates
+
+        # Conforming can result in an input ref and an output ref appearing
+        # in the returned results that are identical apart from storage class.
+        if conform_outputs:
+            # Get data repository definitions from the QuantumGraph; these can
+            # have different storage classes than those in the quanta.
+            dataset_types = {dstype.name: dstype for dstype in self.registryDatasetTypes()}
+
+            def _update_ref(ref: DatasetRef) -> DatasetRef:
+                internal_dataset_type = dataset_types.get(ref.datasetType.name, ref.datasetType)
+                if internal_dataset_type.storageClass_name != ref.datasetType.storageClass_name:
+                    ref = ref.replace(storage_class=internal_dataset_type.storageClass_name)
+                return ref
+
+            # Convert output_refs to the data repository storage classes, too.
+            output_refs = {_update_ref(ref) for ref in output_refs}
+            init_output_refs = {_update_ref(ref) for ref in init_output_refs}
+
+        _LOG.verbose(
+            "Found the following datasets. InitInputs: %d; Inputs: %d; InitOutputs: %s; Outputs: %d%s",
+            len(init_input_refs),
+            len(input_refs),
+            len(init_output_refs),
+            len(output_refs),
+            inter_msg,
+        )
+
+        refs = input_refs | init_input_refs | init_output_refs | output_refs
+        return refs, datastore_records
