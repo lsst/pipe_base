@@ -79,6 +79,8 @@ def main(argv: Sequence[str]) -> int:
     if args.resolve:
         butler = Butler.from_config(args.resolve, writeable=False)
         pipeline_graph.resolve(butler.registry)
+    else:
+        pipeline_graph.resolve(visualization_only=True)
     if args.save:
         pipeline_graph._write_uri(ResourcePath(args.save))
     if args.show:
