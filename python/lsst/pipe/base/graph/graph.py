@@ -1790,7 +1790,7 @@ class QuantumGraph:
             def _update_ref(ref: DatasetRef) -> DatasetRef:
                 internal_dataset_type = dataset_types.get(ref.datasetType.name, ref.datasetType)
                 if internal_dataset_type.storageClass_name != ref.datasetType.storageClass_name:
-                    ref = ref.overrideStorageClass(internal_dataset_type.storageClass_name)
+                    ref = ref.replace(storage_class=internal_dataset_type.storageClass_name)
                 return ref
 
             # Convert output_refs to the data repository storage classes, too.
