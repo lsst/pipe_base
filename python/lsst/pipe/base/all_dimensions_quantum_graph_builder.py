@@ -479,10 +479,10 @@ class _AllDimensionsQuery:
             constraint = set(builder.dataset_query_constraint)
             inputs = result.overall_inputs - result.empty_dimensions_dataset_types.keys()
             if remainder := constraint.difference(inputs):
-                raise QuantumGraphBuilderError(
-                    f"{remainder} dataset type(s) specified as a graph constraint, but"
-                    f" do not appear as an overall input to the specified pipeline: {inputs}."
-                    " Note that component datasets are not permitted as constraints."
+                builder.log.debug(
+                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
+                    "subgraph, on the assumption that they are relevant for a different subraph.",
+                    remainder,
                 )
             builder.log.debug(f"Constraining graph query using {constraint}")
             result.query_args["datasets"] = constraint
