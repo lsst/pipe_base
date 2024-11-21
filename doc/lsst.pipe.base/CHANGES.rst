@@ -1,3 +1,77 @@
+lsst-pipe-base v28.0.0 (2024-11-21)
+===================================
+
+New Features
+------------
+
+- Added support for initializing processing output runs with just a pipeline graph, not a quantum graph.
+
+  This also moves much of the logic for initializing output runs from ``lsst.ctrl.mpexec.PreExecInit`` to ``PipelineGraph`` and ``QuantumGraph`` methods. (`DM-38041 <https://rubinobs.atlassian.net/browse/DM-38041>`_)
+- Added functionality to aggregate multiple ``QuantumProvenanceGraph.Summary`` objects into one ``Summary`` for a holistic report.
+
+  While the ``QuantumProvenanceGraph`` was designed to resolve processing over dataquery-identified groups, ``QuantumProvenanceGraph.aggregate`` is designed to combine multiple group-level reports into one which totals the successes,issues, and failures over the same section of pipeline. (`DM-41605 <https://rubinobs.atlassian.net/browse/DM-41605>`_)
+- Created a ``QuantumProvenanceGraph`` class, which details the status of every quantum and dataset over multiple attempts at executing graphs, noting when quanta have been recovered.
+
+  Steps through all the quantum graphs associated with certain tasks or
+  processing steps.
+  For each graph/attempt, the status of each quantum and dataset is recorded in ``QuantumProvenanceGraph.add_new_graph`` and outcomes of quanta over multiple runs are resolved in ``QuantumProvenanceGraph.resolve_duplicates``.
+  At the end of this process, we can combine all attempts into a summary.
+  This serves to answer the question "What happened to this data ID?" in a holistic sense. (`DM-41711 <https://rubinobs.atlassian.net/browse/DM-41711>`_)
+- Included the number of expected instances in ``pipetask report`` task-level summary for the `QuantumGraphExecutionReport`. (`DM-44368 <https://rubinobs.atlassian.net/browse/DM-44368>`_)
+- Added mocking support for tasks that write regular datasets with config, log, or metadata storage classes. (`DM-44583 <https://rubinobs.atlassian.net/browse/DM-44583>`_)
+- Added new ``show_dot`` functionality.
+
+  Refactored the existing pipeline graph ``show`` function, implementing a new ``parse_display_args`` function to handle the parsing of the ``--dot`` argument.
+  The ``show_dot`` function is then implemented to display the pipeline graph as a dot file.
+  A notable user-visible change is that output dataset types with common dimensions and storage classes will now be grouped together in dot files.
+  This change was implemented in order to save space for otherwise very large dot files. (`DM-44647 <https://rubinobs.atlassian.net/browse/DM-44647>`_)
+- Removed the prohibition on optional regular (i.e., non-prerequisite) input connections.
+
+  Optional inputs can be declared by passing ``minimum=0`` in the connection definition. (`DM-45457 <https://rubinobs.atlassian.net/browse/DM-45457>`_)
+- Storage class conversions of component dataset types are now supported in pipelines. (`DM-46064 <https://rubinobs.atlassian.net/browse/DM-46064>`_)
+
+
+API Changes
+-----------
+
+- Relocated the "dot tools" from ``lsst.ctrl.mpexec.dotTools`` to ``lsst.pipe.base.dot_tools`` unchanged. (`DM-45701 <https://rubinobs.atlassian.net/browse/DM-45701>`_)
+
+
+Bug Fixes
+---------
+
+- Appended failed quanta to a list and then return for ``pipetask report``.
+  The previous version of the human-readable report only reported the first failed quantum by exiting the loop upon finding it. (`DM-44091 <https://rubinobs.atlassian.net/browse/DM-44091>`_)
+- Fixed support for task metadata as inputs in the ``PipelineTask`` mocking system. (`DM-45536 <https://rubinobs.atlassian.net/browse/DM-45536>`_)
+- Explanatory logs for "initial data ID query returned no rows" now appear as a single log message instead of one entry per line.
+  This improves display in log aggregators, but there is no change to console behavior. (`DM-45722 <https://rubinobs.atlassian.net/browse/DM-45722>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Added ``pipe.base.utils.RegionTimeInfo``, a container for serializing pairs of sky region and timespan.
+  It's intended for several specific applications when running the AP pipeline. (`DM-43020 <https://rubinobs.atlassian.net/browse/DM-43020>`_)
+- Added an optional parameter to ``PipelineStepTester`` that lets configs be tweaked before testing.
+  This is needed for AP pipelines, whose APDB config cannot be defaulted, and is not intended for wide adoption. (`DM-43960 <https://rubinobs.atlassian.net/browse/DM-43960>`_)
+- Explanatory logs for "initial data ID query returned no rows" are now reported at ``ERROR``, not ``CRITICAL``, level. (`DM-45722 <https://rubinobs.atlassian.net/browse/DM-45722>`_)
+- Added a DEBUG-level log message into ``_pipeline_graph.py`` to signify which task is being run. (`DM-46351 <https://rubinobs.atlassian.net/browse/DM-46351>`_)
+
+
+An API Removal or Deprecation
+-----------------------------
+
+- Removed deprecated code scheduled to be removed after v27:
+
+  * Removed ``lsst.pipe.base.graphBuilder``.
+  * Removed ``lsst.pipe.base.pipeTools``.
+  * Removed ``lsst.pipe.base.BaseConnection.makeDatasetType``
+  * Removed ``Pipeline.toExpandedPipeline`` (replaced by ``to_graph``).
+  * Removed ``PipelineDatasetTypes`` and ``TaskDatasetTypes``.
+  * Removed ``QuantumGraphBuilderError``.
+  * APIs no longer accept ``TaskDef``. (`DM-40443 <https://rubinobs.atlassian.net/browse/DM-40443>`_)
+
+
 lsst-pipe-base 27.0.0 (2024-05-29)
 ==================================
 

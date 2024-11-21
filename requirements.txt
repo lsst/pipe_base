@@ -4,8 +4,8 @@ numpy >= 1.17
 networkx
 frozendict
 astropy
-lsst-daf-butler @ git+https://github.com/lsst/daf_butler@main
-lsst-utils @ git+https://github.com/lsst/utils@main
-lsst-resources @ git+https://github.com/lsst/resources@main
-lsst-pex-config @ git+https://github.com/lsst/pex_config@main
-lsst-daf-relation @ git+https://github.com/lsst/daf_relation@main
+lsst-daf-butler @ git+https://github.com/lsst/daf_butler@v28.0.x
+lsst-utils @ git+https://github.com/lsst/utils@v28.0.x
+lsst-resources @ git+https://github.com/lsst/resources@v28.0.x
+lsst-pex-config @ git+https://github.com/lsst/pex_config@v28.0.x
+lsst-daf-relation @ git+https://github.com/lsst/daf_relation@v28.0.x
