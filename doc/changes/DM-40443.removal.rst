@@ -1,9 +1,0 @@
-Removed deprecated code scheduled to be removed after v27:
-
-* Removed ``lsst.pipe.base.graphBuilder``.
-* Removed ``lsst.pipe.base.pipeTools``.
-* Removed ``lsst.pipe.base.BaseConnection.makeDatasetType``
-* Removed ``Pipeline.toExpandedPipeline`` (replaced by ``to_graph``).
-* Removed ``PipelineDatasetTypes`` and ``TaskDatasetTypes``.
-* Removed ``QuantumGraphBuilderError``.
-* APIs no longer accept ``TaskDef``.
