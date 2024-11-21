@@ -1,2 +1,0 @@
-Add ``pipe.base.utils.RegionTimeInfo``, a container for serializing pairs of sky region and timespan.
-It's intended for several specific applications when running the AP pipeline.
