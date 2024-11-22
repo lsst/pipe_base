@@ -366,7 +366,7 @@ These bits of information allow campaign management / batch production software 
       sharding_dimensions: visit, detector
     - label: step2
       sharding_dimensions: tract, patch, skymap
-      
+
 
 .. _pipeline_creating_imports:
 
