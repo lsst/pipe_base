@@ -1,7 +1,0 @@
-cmd:
-  import: lsst.pipe.base.cli.cmd
-  commands:
-    - register-instrument
-    - transfer-from-graph
-    - zip-from-graph
-    - retrieve-artifacts-for-quanta
