@@ -48,6 +48,7 @@ from ._merge import (
 )
 from ._options import NodeAttributeOptions
 from ._printer import make_default_printer
+from ._status import StatusAnnotator, NodeStatusOptions
 
 DisplayNodeKey = NodeKey | MergedNodeKey
 
@@ -64,6 +65,8 @@ def parse_display_args(
     merge_output_trees: int = 4,
     merge_intermediates: bool = True,
     include_automatic_connections: bool = False,
+    status_annotator: StatusAnnotator | None = None,
+    status_options: NodeStatusOptions | None = None,
 ) -> tuple[networkx.DiGraph | networkx.MultiDiGraph, NodeAttributeOptions]:
     """Print a text-based ~.PipelineGraph` visualization.
 
@@ -126,21 +129,31 @@ def parse_display_args(
     include_automatic_connections : `bool`, optional
         Whether to include automatically-added connections like the config,
         log, and metadata dataset types for each task.  Default is `False`.
+    status_annotator : `StatusAnnotator`, optional
+        Annotator to add status information to the graph.  Default is `None`.
+    status_options : `NodeStatusOptions`, optional
+        Options for displaying execution status.  Default is `None`.
     """
     if init is None:
         if not dataset_types:
             raise ValueError("Cannot show init and runtime graphs unless dataset types are shown.")
         xgraph = pipeline_graph.make_xgraph()
+        if status_annotator is not None:
+            raise ValueError("Cannot show status with both init and runtime graphs.")
     elif dataset_types:
         xgraph = pipeline_graph.make_bipartite_xgraph(init)
+        if status_annotator is not None:
+            status_annotator(xgraph, dataset_types=True)
     else:
         xgraph = pipeline_graph.make_task_xgraph(init)
         storage_classes = False
+        if status_annotator is not None:
+            status_annotator(xgraph, dataset_types=False)
 
     options = NodeAttributeOptions(
-        dimensions=dimensions, storage_classes=storage_classes, task_classes=task_classes
+        dimensions=dimensions, storage_classes=storage_classes, task_classes=task_classes, status=status_options
     )
-    options = options.checked(pipeline_graph.is_fully_resolved)
+    options = options.checked(pipeline_graph.is_fully_resolved, has_status=status_annotator is not None)
 
     if dataset_types and not include_automatic_connections:
         taskish_nodes: list[TaskNode | TaskInitNode] = []
