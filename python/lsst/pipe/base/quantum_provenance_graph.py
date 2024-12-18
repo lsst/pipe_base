@@ -2106,6 +2106,12 @@ class _QuantumBackedButlerFactory:
 def _cli() -> None:
     import argparse
 
+    from .pipeline_graph.visualization import (
+        QuantumProvenanceGraphStatusAnnotator,
+        QuantumProvenanceGraphStatusOptions,
+        show,
+    )
+
     parser = argparse.ArgumentParser(
         "QuantumProvenanceGraph command-line utilities.",
         description=(
@@ -2114,6 +2120,7 @@ def _cli() -> None:
         ),
     )
     subparsers = parser.add_subparsers(dest="cmd")
+
     pprint_parser = subparsers.add_parser("pprint", help="Print a saved summary as a series of tables.")
     pprint_parser.add_argument("file", type=argparse.FileType("r"), help="Saved summary JSON file.")
     pprint_parser.add_argument(
@@ -2127,12 +2134,33 @@ def _cli() -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+
+    xgraph_parser = subparsers.add_parser("xgraph", help="Print a visual representation of a saved xgraph.")
+    xgraph_parser.add_argument("file", type=argparse.FileType("r"), help="Saved summary JSON file.")
+    xgraph_parser.add_argument("qgraph", type=str, help="Saved quantum graph file.")
+
     args = parser.parse_args()
+
     match args.cmd:
         case "pprint":
             summary = Summary.model_validate_json(args.file.read())
             args.file.close()
             summary.pprint(brief=args.brief, datasets=args.datasets)
+        case "xgraph":
+            summary = Summary.model_validate_json(args.file.read())
+            args.file.close()
+            status_annotator = QuantumProvenanceGraphStatusAnnotator(summary)
+            status_options = QuantumProvenanceGraphStatusOptions(
+                display_percent=True, display_counts=True, abbreviate=True, visualize=True
+            )
+            qgraph = QuantumGraph.loadUri(args.qgraph)
+            pipeline_graph = qgraph.pipeline_graph
+            show(
+                pipeline_graph,
+                dataset_types=True,
+                status_annotator=status_annotator,
+                status_options=status_options,
+            )
         case _:
             raise AssertionError(f"Unhandled subcommand {args.dest}.")
 

@@ -334,6 +334,7 @@ class DisplayArguments:
                 dimensions=args.dimensions,
                 task_classes=args.task_classes,
                 storage_classes=args.storage_classes,
+                status=None,
             ),
             merge_input_trees=args.merge_input_trees,
             merge_output_trees=args.merge_output_trees,
