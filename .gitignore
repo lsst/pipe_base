@@ -22,3 +22,4 @@ ups/*.cfgc
 .pytest_cache
 pytest_session.txt
 .coverage
+python/*.dist-info/

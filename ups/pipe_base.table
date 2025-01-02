@@ -4,4 +4,3 @@ setupRequired(utils)
 setupRequired(resources)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
-envPrepend(DAF_BUTLER_PLUGINS, ${PRODUCT_DIR}/python/lsst/pipe/base/cli/resources.yaml)

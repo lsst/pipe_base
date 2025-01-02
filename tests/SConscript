@@ -4,6 +4,3 @@ import os
 from lsst.sconsUtils import env, scripts
 
 scripts.BasicSConscript.tests(pyList=[])
-
-if "DAF_BUTLER_PLUGINS" in os.environ:
-    env["ENV"]["DAF_BUTLER_PLUGINS"] = os.environ["DAF_BUTLER_PLUGINS"]
