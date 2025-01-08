@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, final
 
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.utils.timer import timeMethod
+from pyspark.sql import DataFrame, SparkSession
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .quantum_graph_builder import (
@@ -418,6 +419,14 @@ class _AllDimensionsQuery:
     common_data_ids: DataCoordinateQueryResults = dataclasses.field(init=False)
     """Results of the materialized initial data ID query."""
 
+    common_data_id_dataframe: DataFrame = dataclasses.field(init=False)
+    """Results of the materialized initial data ID query, as a Spark
+    DataFrame.
+    """
+
+    spark: SparkSession = dataclasses.field(init=False)
+    """Spark session used to resolve queries."""
+
     @classmethod
     @contextmanager
     def from_builder(
@@ -505,7 +514,15 @@ class _AllDimensionsQuery:
             with builder.butler.registry.queryDataIds(**result.query_args).materialize() as common_data_ids:
                 builder.log.debug("Expanding data IDs.")
                 result.common_data_ids = common_data_ids.expanded()
-                yield result
+                spark: SparkSession = SparkSession.builder.getOrCreate()
+                try:
+                    result.common_data_id_dataframe = _convert_query_to_dataframe(
+                        spark, common_data_ids._query
+                    )
+                    result.common_data_id_dataframe.show()
+                    yield result
+                finally:
+                    spark.stop()
 
     def log_failure(self, log: LsstLogAdapter) -> None:
         """Emit an ERROR-level log message that attempts to explain
@@ -544,3 +561,11 @@ class _AllDimensionsQuery:
             # If an exception was raised, write a partial.
             log.error(buffer.getvalue())
             buffer.close()
+
+
+def _convert_query_to_dataframe(spark: SparkSession, query: Query) -> DataFrame:
+    rows = []
+    for row in query:
+        rows.append({k.qualified_name: v for k, v in row.items()})
+
+    return spark.createDataFrame(rows)
