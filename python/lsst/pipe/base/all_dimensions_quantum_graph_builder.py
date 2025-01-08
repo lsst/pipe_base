@@ -44,6 +44,7 @@ from lsst.utils.timer import timeMethod
 from pyspark.sql import DataFrame, SparkSession
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
+from .builder_spark_context import BuilderSparkContext, create_spark_context
 from .quantum_graph_builder import (
     DatasetKey,
     PrerequisiteDatasetKey,
@@ -424,7 +425,7 @@ class _AllDimensionsQuery:
     DataFrame.
     """
 
-    spark: SparkSession = dataclasses.field(init=False)
+    spark: BuilderSparkContext = dataclasses.field(init=False)
     """Spark session used to resolve queries."""
 
     @classmethod
@@ -514,15 +515,13 @@ class _AllDimensionsQuery:
             with builder.butler.registry.queryDataIds(**result.query_args).materialize() as common_data_ids:
                 builder.log.debug("Expanding data IDs.")
                 result.common_data_ids = common_data_ids.expanded()
-                spark: SparkSession = SparkSession.builder.getOrCreate()
-                try:
+                with create_spark_context() as spark:
+                    result.spark = spark
                     result.common_data_id_dataframe = _convert_query_to_dataframe(
-                        spark, common_data_ids._query
+                        result.spark.session, common_data_ids
                     )
                     result.common_data_id_dataframe.show()
                     yield result
-                finally:
-                    spark.stop()
 
     def log_failure(self, log: LsstLogAdapter) -> None:
         """Emit an ERROR-level log message that attempts to explain
@@ -563,9 +562,9 @@ class _AllDimensionsQuery:
             buffer.close()
 
 
-def _convert_query_to_dataframe(spark: SparkSession, query: Query) -> DataFrame:
+def _convert_query_to_dataframe(spark: SparkSession, query: DataCoordinateQueryResults) -> DataFrame:
     rows = []
-    for row in query:
+    for row in query._query:
         rows.append({k.qualified_name: v for k, v in row.items()})
 
     return spark.createDataFrame(rows)
