@@ -234,6 +234,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # to find these.
                     count = 0
                     try:
+                        query.spark.get_datasets(dataset_type_node.name, self.input_collections).show()
                         for ref in data_ids.findDatasets(dataset_type_node.name, self.input_collections):
                             self.existing_datasets.inputs[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
@@ -515,7 +516,7 @@ class _AllDimensionsQuery:
             with builder.butler.registry.queryDataIds(**result.query_args).materialize() as common_data_ids:
                 builder.log.debug("Expanding data IDs.")
                 result.common_data_ids = common_data_ids.expanded()
-                with create_spark_context() as spark:
+                with create_spark_context(builder.butler) as spark:
                     result.spark = spark
                     result.common_data_id_dataframe = _convert_query_to_dataframe(
                         result.spark.session, common_data_ids

@@ -27,21 +27,49 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
-from pyspark.sql import SparkSession
+from lsst.daf.butler import Butler
+from pyspark.sql import DataFrame, SparkSession
 
 
 @contextmanager
-def create_spark_context() -> Iterator[BuilderSparkContext]:
+def create_spark_context(butler: Butler) -> Iterator[BuilderSparkContext]:
     session = SparkSession.builder.getOrCreate()
     try:
-        yield BuilderSparkContext(session)
+        yield BuilderSparkContext(session, butler)
     finally:
         session.stop()
 
 
 class BuilderSparkContext:
-    def __init__(self, session: SparkSession):
+    def __init__(self, session: SparkSession, butler: Butler):
         self.session = session
+        self._butler = butler
+
+    def get_datasets(self, dataset_type_name: str, collections: Sequence[str]) -> DataFrame:
+        with self._butler.query() as query:
+            result = query.join_dataset_search(dataset_type_name, collections).general(
+                [],
+                dataset_fields={dataset_type_name: ["dataset_id", "run", "collection", "timespan"]},
+                find_first=False,
+            )
+            columns = result._spec.get_result_columns()
+            rows = []
+            for input_row in result:
+                output_row = {}
+                for col in columns:
+                    name = col.logical_table if col.field is None else col.field
+                    input_value = input_row[str(col)]
+                    if name == "timespan":
+                        if input_value is not None:
+                            output_row["timespan_begin"] = input_value.nsec[0]
+                            output_row["timespan_end"] = input_value.nsec[1]
+                    elif name == "dataset_id":
+                        output_row[name] = input_value.bytes
+                    else:
+                        output_row[name] = input_value
+                rows.append(output_row)
+
+        return self.session.createDataFrame(rows)
