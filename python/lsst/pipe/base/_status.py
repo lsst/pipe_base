@@ -122,18 +122,27 @@ class AlgorithmError(RepeatableQuantumError, abc.ABC):
         raise NotImplementedError
 
 
-class UnprocessableDataError(RepeatableQuantumError):
-    """Exception that will be subclassed and raised by Tasks to indicate a
-    failure to process their inputs for some reason that is non-recoverable.
+class UnprocessableDataError(NoWorkFound):
+    """A specialization of `NoWorkFound` that will be [subclassed and] raised
+    by Tasks to indicate a failure to process their inputs for some reason that
+    is non-recoverable.
 
     Notes
     -----
     An example is a known bright star that causes PSF measurement to fail, and
-    that makes that detector entirely non-recoverable.
+    that makes that detector entirely non-recoverable. Another example is an
+    image with an oddly shaped PSF (e.g. due to a failure to achieve focus)
+    that warrants the image being flagged as "poor quality" which should not
+    have further processing attempted.
 
-    Do not raise this unless we are convinced that the data cannot be
-    processed, even by a better algorithm. Most instances where this error
-    would be raised likely require an RFC to explicitly define the situation.
+    The `NoWorkFound` inheritance ensures the job will not be considered a
+    failure (i.e. such that no human time will inadvertently be spent chasing
+    it down).
+
+    Do not raise this unless we are convinced that the data cannot (or should
+    not) be processed, even by a better algorithm. Most instances where this
+    error would be raised likely require an RFC to explicitly define the
+    situation.
     """
 
 
