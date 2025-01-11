@@ -1053,6 +1053,7 @@ class QuantumProvenanceGraph:
                 # Loop over each dataset in the outputs of a single quantum.
                 for dataset_key in self.iter_outputs_of(quantum_key):
                     dataset_info = self.get_dataset_info(dataset_key)
+                    dataset_type_name = dataset_key.dataset_type_name
                     visible_runs.update(
                         run for run, dataset_run in dataset_info["runs"].items() if dataset_run.visible
                     )
