@@ -139,7 +139,7 @@ class ExecutionResources:
             kwargs["max_mem"] = int(self.max_mem.value)
         return kwargs
 
-    @staticmethod
+    @classmethod
     def _unpickle_via_factory(
         cls: type[ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
     ) -> ExecutionResources:
@@ -153,11 +153,11 @@ class ExecutionResources:
     def __reduce__(
         self,
     ) -> tuple[
-        Callable[[type[ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
-        tuple[type[ExecutionResources], Sequence[Any], dict[str, Any]],
+        Callable[[Sequence[Any], dict[str, Any]], ExecutionResources],
+        tuple[Sequence[Any], dict[str, Any]],
     ]:
         """Pickler."""
-        return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())
+        return self._unpickle_via_factory, ([], self._reduce_kwargs())
 
 
 class QuantumContext:
