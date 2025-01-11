@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
-from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
@@ -205,6 +205,7 @@ class QuantumContext:
         for refs in quantum.outputs.values():
             for ref in refs:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
+        self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
         self.__butler = butler
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
@@ -223,6 +224,7 @@ class QuantumContext:
         """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
         self.__butler.put(value, ref)
+        self.outputsPut.add((ref.datasetType, ref.dataId))
 
     def get(
         self,
