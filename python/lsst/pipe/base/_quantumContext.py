@@ -43,6 +43,7 @@ from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUn
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
+from .automatic_connection_constants import LOG_OUTPUT_CONNECTION_NAME, METADATA_OUTPUT_CONNECTION_NAME
 from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
 from .struct import Struct
 
@@ -202,7 +203,14 @@ class QuantumContext:
         for refs in quantum.inputs.values():
             for ref in refs:
                 self.allInputs.add((ref.datasetType, ref.dataId))
-        for refs in quantum.outputs.values():
+        for dataset_type, refs in quantum.outputs.items():
+            if dataset_type.name.endswith(METADATA_OUTPUT_CONNECTION_NAME) or dataset_type.name.endswith(
+                LOG_OUTPUT_CONNECTION_NAME
+            ):
+                # Don't consider log and metadata datasets to be outputs in
+                # this context, because we don't want the task to be able to
+                # write them itself; that's for the execution system to do.
+                continue
             for ref in refs:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
