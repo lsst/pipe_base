@@ -30,6 +30,7 @@ from ._dot import *
 from ._formatting import *
 from ._layout import *
 from ._merge import *
+from ._mermaid import *
 from ._options import *
 from ._printer import *
 from ._show import *
