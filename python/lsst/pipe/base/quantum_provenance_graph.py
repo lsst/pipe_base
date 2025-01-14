@@ -42,7 +42,7 @@ __all__ = (
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence, Set
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Literal, NamedTuple, TypedDict, cast
 
@@ -779,6 +779,16 @@ class QuantumProvenanceGraph:
         # Bool representing whether the graph has been finalized. This is set
         # to True when resolve_duplicates completes.
         self._finalized: bool = False
+
+    @property
+    def quanta(self) -> Mapping[str, Set[QuantumKey]]:
+        """A mapping from task label to a set of keys for its quanta."""
+        return self._quanta
+
+    @property
+    def datasets(self) -> Mapping[str, Set[DatasetKey]]:
+        """A mapping from dataset type name to a set of keys for datasets."""
+        return self._datasets
 
     def get_quantum_info(self, key: QuantumKey) -> QuantumInfo:
         """Get a `QuantumInfo` object from the `QuantumProvenanceGraph` using
