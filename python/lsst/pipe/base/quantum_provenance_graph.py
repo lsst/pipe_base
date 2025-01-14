@@ -1340,3 +1340,23 @@ class QuantumProvenanceGraph:
         """
         (result,) = self._xgraph.predecessors(dataset_key)
         return result
+
+    def iter_downstream(
+        self, key: QuantumKey | DatasetKey
+    ) -> Iterator[tuple[QuantumKey, QuantumInfo] | tuple[DatasetKey, DatasetInfo]]:
+        """Iterate over the quanta and datasets that are downstream of a
+        quantum or dataset.
+
+        Parameters
+        ----------
+        key : `QuantumKey` or `DatasetKey`
+            Starting node.
+
+        Returns
+        -------
+        iter : `~collections.abc.Iterator` [ `tuple` ]
+            An iterator over pairs of (`QuantumKey`, `QuantumInfo`) or
+            (`DatasetKey`, `DatasetInfo`).
+        """
+        for key in networkx.dag.descendants(self._xgraph, key):
+            yield (key, self._xgraph.nodes[key])  # type: ignore
