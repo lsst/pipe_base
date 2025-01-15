@@ -225,6 +225,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         """
         for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
             data_ids = query.common_data_ids.subset(dimensions, unique=True)
+            spark_data_ids = (
+                query.common_data_id_dataframe.select(list(dimensions.required)).distinct().cache()
+            )
             # Iterate over regular input/output dataset type nodes with these
             # dimensions to find those datasets using straightforward followup
             # queries.
@@ -234,8 +237,13 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # to find these.
                     count = 0
                     try:
-                        query.spark.get_datasets(dataset_type_node.name, self.input_collections).show()
-                        for ref in data_ids.findDatasets(dataset_type_node.name, self.input_collections):
+                        datasets = query.spark.get_datasets(
+                            dataset_type_node.name, self.input_collections
+                        ).join(spark_data_ids, on=list(dimensions.required))
+                        datasets.explain()
+                        for ref in query.spark.convert_datasets_to_refs(
+                            dataset_type_node.dataset_type, datasets
+                        ):
                             self.existing_datasets.inputs[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref

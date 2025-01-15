@@ -30,7 +30,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
-from lsst.daf.butler import Butler
+from lsst.daf.butler import Butler, DatasetId, DatasetRef, DatasetType
 from pyspark.sql import DataFrame, SparkSession
 
 
@@ -73,3 +73,11 @@ class BuilderSparkContext:
                 rows.append(output_row)
 
         return self.session.createDataFrame(rows)
+
+    def convert_datasets_to_refs(
+        self, dataset_type: DatasetType, datasets: DataFrame
+    ) -> Iterator[DatasetRef]:
+        for row in datasets.toLocalIterator():
+            yield DatasetRef(
+                dataset_type, row.asDict(), row["run"], id=DatasetId(bytes=bytes(row["dataset_id"]))
+            )
