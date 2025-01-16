@@ -970,7 +970,10 @@ class QuantumProvenanceGraph:
                 ):
                     md = butler.get(quantum_run.metadata_ref)
                     try:
-                        quantum_run.caveats = QuantumSuccessCaveats(md["quantum"]["caveats"])
+                        # Int conversion guards against spurious conversion to
+                        # float that can apparently sometimes happen in
+                        # TaskMetadata.
+                        quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
                     except LookupError:
                         pass
             # missing metadata means that the task did not finish.
