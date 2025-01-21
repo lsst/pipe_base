@@ -80,6 +80,8 @@ def _makeDatasetNode(dsRef: DatasetRef, allDatasetRefs: dict[str, str], file: An
 def graph2mermaid(qgraph: QuantumGraph, file: Any) -> None:
     """Convert QuantumGraph into a Mermaid flowchart (top-down).
 
+    This method is mostly for documentation/presentation purposes.
+
     Parameters
     ----------
     qgraph : `~lsst.pipe.base.QuantumGraph`
@@ -300,6 +302,8 @@ def pipeline2mermaid(
 
     This function produces a Mermaid flowchart, representing tasks and their
     inputs/outputs as dataset nodes. It uses a top-down layout.
+
+    This method is mostly for documentation/presentation purposes.
 
     Parameters
     ----------
