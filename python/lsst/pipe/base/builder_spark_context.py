@@ -30,8 +30,9 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
-from lsst.daf.butler import Butler, DatasetId, DatasetRef, DatasetType
-from pyspark.sql import DataFrame, SparkSession
+from lsst.daf.butler import Butler, DataCoordinate, DatasetId, DatasetRef, DatasetType, DimensionGroup
+from pyspark.sql import DataFrame, Row, SparkSession
+from pyspark.sql.types import BinaryType, LongType, StringType, StructField, StructType
 
 
 @contextmanager
@@ -56,6 +57,23 @@ class BuilderSparkContext:
                 find_first=False,
             )
             columns = result._spec.get_result_columns()
+
+            schema = []
+            for col in columns:
+                spec = columns.get_column_spec(col.logical_table, col.field)
+                name = col.logical_table if col.field is None else col.field
+                if spec.type == "int":
+                    schema.append(StructField(name, LongType(), False))
+                elif spec.type == "string":
+                    schema.append(StructField(name, StringType(), False))
+                elif spec.type == "uuid":
+                    schema.append(StructField(name, BinaryType(), False))
+                elif spec.type == "timespan":
+                    schema.append(StructField("timespan_begin", LongType(), True))
+                    schema.append(StructField("timespan_end", LongType(), True))
+                else:
+                    raise TypeError(f"Unhandled Butler data type {spec.type}")
+
             rows = []
             for input_row in result:
                 output_row = {}
@@ -72,12 +90,24 @@ class BuilderSparkContext:
                         output_row[name] = input_value
                 rows.append(output_row)
 
-        return self.session.createDataFrame(rows)
+        return self.session.createDataFrame(rows, schema=StructType(schema))
 
     def convert_datasets_to_refs(
         self, dataset_type: DatasetType, datasets: DataFrame
     ) -> Iterator[DatasetRef]:
         for row in datasets.toLocalIterator():
-            yield DatasetRef(
-                dataset_type, row.asDict(), row["run"], id=DatasetId(bytes=bytes(row["dataset_id"]))
-            )
+            yield _to_ref(dataset_type, row)
+
+    def convert_datasets_to_coordinate_and_refs(
+        self, dimensions: DimensionGroup, dataset_type: DatasetType, datasets: DataFrame
+    ) -> Iterator[tuple[DataCoordinate, DatasetRef]]:
+        for row in datasets.toLocalIterator():
+            yield _to_data_coordinate(dimensions, row), _to_ref(dataset_type, row)
+
+
+def _to_ref(dataset_type: DatasetType, row: Row) -> DatasetRef:
+    return DatasetRef(dataset_type, row.asDict(), row["run"], id=DatasetId(bytes=bytes(row["dataset_id"])))
+
+
+def _to_data_coordinate(dimensions: DimensionGroup, row: Row) -> DataCoordinate:
+    return DataCoordinate.standardize(row.asDict(), dimensions=dimensions)

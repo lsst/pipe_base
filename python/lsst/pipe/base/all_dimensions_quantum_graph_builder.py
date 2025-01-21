@@ -34,11 +34,12 @@ from __future__ import annotations
 __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from io import StringIO
 from typing import TYPE_CHECKING, Any, final
 
+from lsst.daf.butler import DatasetRef, DatasetType
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.utils.timer import timeMethod
 from pyspark.sql import DataFrame, SparkSession
@@ -225,9 +226,21 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         """
         for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
             data_ids = query.common_data_ids.subset(dimensions, unique=True)
-            spark_data_ids = (
-                query.common_data_id_dataframe.select(list(dimensions.required)).distinct().cache()
-            )
+            spark_data_ids = query.common_data_id_dataframe.select(list(dimensions.names)).distinct().cache()
+
+            def find_datasets(dataset_type: DatasetType, collections: Sequence[str]) -> DataFrame:
+                join_columns = list(dimensions.intersection(dataset_type.dimensions).required)
+                print(f"{dataset_type=} {dimensions=} {dimensions.required=} {join_columns=}")
+                return query.spark.get_datasets(dataset_type.name, collections).join(
+                    spark_data_ids, on=join_columns
+                )
+
+            def find_dataset_refs(
+                dataset_type: DatasetType, collections: Sequence[str]
+            ) -> Iterator[DatasetRef]:
+                datasets = find_datasets(dataset_type, collections)
+                return query.spark.convert_datasets_to_refs(dataset_type, datasets)
+
             # Iterate over regular input/output dataset type nodes with these
             # dimensions to find those datasets using straightforward followup
             # queries.
@@ -237,13 +250,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # to find these.
                     count = 0
                     try:
-                        datasets = query.spark.get_datasets(
-                            dataset_type_node.name, self.input_collections
-                        ).join(spark_data_ids, on=list(dimensions.required))
-                        datasets.explain()
-                        for ref in query.spark.convert_datasets_to_refs(
-                            dataset_type_node.dataset_type, datasets
-                        ):
+                        for ref in find_dataset_refs(dataset_type_node.dataset_type, self.input_collections):
                             self.existing_datasets.inputs[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
@@ -260,7 +267,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # that we might skip...
                     count = 0
                     try:
-                        for ref in data_ids.findDatasets(dataset_type_node.name, self.skip_existing_in):
+                        for ref in find_dataset_refs(dataset_type_node.dataset_type, self.skip_existing_in):
                             key = DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             self.existing_datasets.outputs_for_skip[key] = ref
                             count += 1
@@ -280,7 +287,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # previous block).
                     count = 0
                     try:
-                        for ref in data_ids.findDatasets(dataset_type_node.name, [self.output_run]):
+                        for ref in find_dataset_refs(dataset_type_node.dataset_type, [self.output_run]):
                             self.existing_datasets.outputs_in_the_way[
                                 DatasetKey(dataset_type_node.name, ref.dataId.required_values)
                             ] = ref
@@ -353,6 +360,12 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                         query_results = data_ids.findRelatedDatasets(
                             finder.dataset_type_node.dataset_type, self.input_collections
                         )
+
+                        # dt = finder.dataset_type_node.dataset_type
+                        # datasets = find_datasets(dt, self.input_collections)
+                        # query_results = list(
+                        #    query.spark.convert_datasets_to_coordinate_and_refs(dimensions, dt, datasets)
+                        # )
                     except MissingDatasetTypeError:
                         query_results = []
                     for data_id, ref in query_results:
