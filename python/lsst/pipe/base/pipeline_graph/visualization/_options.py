@@ -30,7 +30,7 @@ __all__ = ("NodeAttributeOptions",)
 
 import dataclasses
 from typing import Literal
-
+from ._status import NodeStatusOptions
 
 @dataclasses.dataclass
 class NodeAttributeOptions:
@@ -69,10 +69,13 @@ class NodeAttributeOptions:
     - `None`: context-dependent default behavior.
     """
 
-    def __bool__(self) -> bool:
-        return bool(self.dimensions or self.storage_classes or self.task_classes)
+    status: NodeStatusOptions | None = None
+    """Options for displaying execution status."""
 
-    def checked(self, is_resolved: bool) -> NodeAttributeOptions:
+    def __bool__(self) -> bool:
+        return bool(self.dimensions or self.storage_classes or self.task_classes or self.status)
+
+    def checked(self, is_resolved: bool, has_status: bool = False) -> NodeAttributeOptions:
         """Check these options against a pipeline graph's resolution status and
         fill in defaults.
 
@@ -81,6 +84,9 @@ class NodeAttributeOptions:
         is_resolved : `bool`
             Whether the pipeline graph to be displayed is resolved
             (`PipelineGraph.is_fully_resolved`).
+        has_status : `bool`
+            Whether the pipeline graph to be displayed has status information.
+            Defaults to `False`.
 
         Returns
         -------
@@ -106,4 +112,5 @@ class NodeAttributeOptions:
                 self.task_classes if self.task_classes is not None else ("concise" if is_resolved else False)
             ),
             storage_classes=(self.storage_classes if self.storage_classes is not None else is_resolved),
+            status=self.status if has_status else None,
         )
