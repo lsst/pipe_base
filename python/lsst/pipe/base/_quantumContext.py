@@ -39,10 +39,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
-from lsst.daf.butler import DatasetRef, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, LimitedButler, Quantum
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
+from .automatic_connection_constants import LOG_OUTPUT_CONNECTION_NAME, METADATA_OUTPUT_CONNECTION_NAME
 from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
 from .struct import Struct
 
@@ -139,7 +140,7 @@ class ExecutionResources:
             kwargs["max_mem"] = int(self.max_mem.value)
         return kwargs
 
-    @staticmethod
+    @classmethod
     def _unpickle_via_factory(
         cls: type[ExecutionResources], args: Sequence[Any], kwargs: dict[str, Any]
     ) -> ExecutionResources:
@@ -153,11 +154,11 @@ class ExecutionResources:
     def __reduce__(
         self,
     ) -> tuple[
-        Callable[[type[ExecutionResources], Sequence[Any], dict[str, Any]], ExecutionResources],
-        tuple[type[ExecutionResources], Sequence[Any], dict[str, Any]],
+        Callable[[Sequence[Any], dict[str, Any]], ExecutionResources],
+        tuple[Sequence[Any], dict[str, Any]],
     ]:
         """Pickler."""
-        return self._unpickle_via_factory, (self.__class__, [], self._reduce_kwargs())
+        return self._unpickle_via_factory, ([], self._reduce_kwargs())
 
 
 class QuantumContext:
@@ -202,9 +203,17 @@ class QuantumContext:
         for refs in quantum.inputs.values():
             for ref in refs:
                 self.allInputs.add((ref.datasetType, ref.dataId))
-        for refs in quantum.outputs.values():
+        for dataset_type, refs in quantum.outputs.items():
+            if dataset_type.name.endswith(METADATA_OUTPUT_CONNECTION_NAME) or dataset_type.name.endswith(
+                LOG_OUTPUT_CONNECTION_NAME
+            ):
+                # Don't consider log and metadata datasets to be outputs in
+                # this context, because we don't want the task to be able to
+                # write them itself; that's for the execution system to do.
+                continue
             for ref in refs:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
+        self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
         self.__butler = butler
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
@@ -223,6 +232,7 @@ class QuantumContext:
         """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
         self.__butler.put(value, ref)
+        self.outputsPut.add((ref.datasetType, ref.dataId))
 
     def get(
         self,

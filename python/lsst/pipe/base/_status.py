@@ -28,14 +28,16 @@
 from __future__ import annotations
 
 import abc
+import enum
 import logging
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from lsst.utils import introspection
 
 from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
 
 __all__ = (
+    "QuantumSuccessCaveats",
     "UnprocessableDataError",
     "AnnotatedPartialOutputsError",
     "NoWorkFound",
@@ -44,6 +46,130 @@ __all__ = (
     "AlgorithmError",
     "InvalidQuantumError",
 )
+
+
+class QuantumSuccessCaveats(enum.Flag):
+    """Flags that add caveats to a "successful" quantum.
+
+    Quanta can be considered successful even if they do not produce some of
+    their expected outputs (and even if they do not produce all of their
+    expected outputs), as long as the condition is sufficiently well understood
+    that downstream processing should succeed.
+    """
+
+    NO_CAVEATS = 0
+    """All outputs were produced and no exceptions were raised."""
+
+    ANY_OUTPUTS_MISSING = enum.auto()
+    """At least one predicted output was not produced."""
+
+    ALL_OUTPUTS_MISSING = enum.auto()
+    """No predicted outputs (except logs and metadata) were produced.
+
+    `ANY_OUTPUTS_MISSING` is also set whenever this flag it set.
+    """
+
+    NO_WORK = enum.auto()
+    """A subclass of `NoWorkFound` was raised.
+
+    This does not necessarily imply that `ANY_OUTPUTS_MISSING` is not set,
+    since a `PipelineTask.runQuantum` implementation could raise it after
+    directly writing all of its predicted outputs.
+    """
+
+    ADJUST_QUANTUM_RAISED = enum.auto()
+    """`NoWorkFound` was raised by `PipelineTaskConnnections.adjustQuantum`.
+
+    This indicates that if a new `QuantumGraph` had been generated immediately
+    before running this quantum, that quantum would not have even been
+    included, because required inputs that were expected to exist by the time
+    it was run (in the original `QuantumGraph`) were not actually produced.
+
+    `NO_WORK` and `ALL_OUTPUTS_MISSING` are also set whenever this flag is set.
+    """
+
+    UPSTREAM_FAILURE_NO_WORK = enum.auto()
+    """`UpstreamFailureNoWorkFound` was raised by `PipelineTask.runQuantum`.
+
+    This exception is raised by downstream tasks when an upstream task's
+    outputs were incomplete in a way that blocks it from running, often
+    because the upstream task raised `AnnotatedPartialOutputsError`.
+
+    `NO_WORK` is also set whenever this flag is set.
+    """
+
+    UNPROCESSABLE_DATA = enum.auto()
+    """`UnprocessableDataError` was raised by `PipelineTask.runQuantum`.
+
+    `NO_WORK` is also set whenever this flag is set.
+    """
+
+    PARTIAL_OUTPUTS_ERROR = enum.auto()
+    """`AnnotatedPartialOutputsError` was raised by `PipelineTask.runQuantum`
+    and the execution system was instructed to consider this a qualified
+    success.
+    """
+
+    @classmethod
+    def from_adjust_quantum_no_work(cls) -> QuantumSuccessCaveats:
+        """Return the set of flags appropriate for a quantum for which
+        `PipelineTaskConnections.adjustdQuantum` raised `NoWorkFound`.
+        """
+        return cls.NO_WORK | cls.ADJUST_QUANTUM_RAISED | cls.ANY_OUTPUTS_MISSING | cls.ALL_OUTPUTS_MISSING
+
+    def concise(self) -> str:
+        """Return a concise string representation of the flags.
+
+        Returns
+        -------
+        s : `str`
+            Two-character string representation, with the first character
+            indicating whether any predicted outputs were missing and the
+            second representing any exceptions raised.  This representation is
+            not always complete; some rare combinations of flags are displayed
+            as if only one of the flags was set.
+
+        Notes
+        -----
+        The `legend` method returns a description of the returned codes.
+        """
+        char1 = ""
+        if self & QuantumSuccessCaveats.ALL_OUTPUTS_MISSING:
+            char1 = "*"
+        elif self & QuantumSuccessCaveats.ANY_OUTPUTS_MISSING:
+            char1 = "+"
+        char2 = ""
+        if self & QuantumSuccessCaveats.ADJUST_QUANTUM_RAISED:
+            char2 = "A"
+        elif self & QuantumSuccessCaveats.UNPROCESSABLE_DATA:
+            char2 = "D"
+        elif self & QuantumSuccessCaveats.UPSTREAM_FAILURE_NO_WORK:
+            char2 = "U"
+        elif self & QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR:
+            char2 = "P"
+        elif self & QuantumSuccessCaveats.NO_WORK:
+            char2 = "N"
+        return char1 + char2
+
+    @staticmethod
+    def legend() -> dict[str, str]:
+        """Return a `dict` with human-readable descriptions of the characters
+        used in `concise`.
+
+        Returns
+        -------
+        legend : `dict` [ `str`, `str` ]
+            Mapping from character code to description.
+        """
+        return {
+            "+": "at least one predicted output is missing, but not all",
+            "*": "all predicated outputs were missing (besides logs and metadata)",
+            "A": "adjustQuantum raised NoWorkFound; an updated QG would not include this quantum",
+            "D": "algorithm considers data too bad to be processable",
+            "U": "one or more input dataset as incomplete due to an upstream failure",
+            "P": "task failed but wrote partial outputs; considered a partial success",
+            "N": "runQuantum raised NoWorkFound",
+        }
 
 
 class GetSetDictMetadataHolder(Protocol):
@@ -67,12 +193,16 @@ class NoWorkFound(BaseException):
     logic to trap it.
     """
 
+    FLAGS: ClassVar = QuantumSuccessCaveats.NO_WORK
+
 
 class UpstreamFailureNoWorkFound(NoWorkFound):
     """A specialization of `NoWorkFound` that indicates that an upstream task
     had a problem that was ignored (e.g. to prevent a single-detector failure
     from bringing down an entire visit).
     """
+
+    FLAGS: ClassVar = QuantumSuccessCaveats.NO_WORK | QuantumSuccessCaveats.UPSTREAM_FAILURE_NO_WORK
 
 
 class RepeatableQuantumError(RuntimeError):
@@ -145,6 +275,8 @@ class UnprocessableDataError(NoWorkFound):
     situation.
     """
 
+    FLAGS: ClassVar = QuantumSuccessCaveats.NO_WORK | QuantumSuccessCaveats.UNPROCESSABLE_DATA
+
 
 class AnnotatedPartialOutputsError(RepeatableQuantumError):
     """Exception that runQuantum raises when the (partial) outputs it has
@@ -160,6 +292,8 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
     contrast, other exceptions raised from ``runQuantum`` are considered to
     invalidate any outputs that are already written.
     """
+
+    FLAGS: ClassVar = QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR
 
     @classmethod
     def annotate(
