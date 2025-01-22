@@ -225,15 +225,12 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Object representing the full-pipeline data ID query.
         """
         for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
-            data_ids = query.common_data_ids.subset(dimensions, unique=True)
             spark_data_ids = query.common_data_id_dataframe.select(list(dimensions.names)).distinct().cache()
 
             def find_datasets(dataset_type: DatasetType, collections: Sequence[str]) -> DataFrame:
-                join_columns = list(dimensions.intersection(dataset_type.dimensions).required)
-                print(f"{dataset_type=} {dimensions=} {dimensions.required=} {join_columns=}")
-                return query.spark.get_datasets(dataset_type.name, collections).join(
-                    spark_data_ids, on=join_columns
-                )
+                datasets = query.spark.get_datasets(dataset_type.name, collections)
+                print(f"{dataset_type=} {dataset_type.dimensions=} {dimensions=}")
+                return query.spark.join(datasets, dataset_type.dimensions, spark_data_ids, dimensions)
 
             def find_dataset_refs(
                 dataset_type: DatasetType, collections: Sequence[str]
@@ -357,15 +354,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # IDs to the datasets we're looking for.
                     count = 0
                     try:
-                        query_results = data_ids.findRelatedDatasets(
-                            finder.dataset_type_node.dataset_type, self.input_collections
+                        dt = finder.dataset_type_node.dataset_type
+                        datasets = find_datasets(dt, self.input_collections)
+                        query_results = list(
+                            query.spark.convert_datasets_to_coordinate_and_refs(dimensions, dt, datasets)
                         )
-
-                        # dt = finder.dataset_type_node.dataset_type
-                        # datasets = find_datasets(dt, self.input_collections)
-                        # query_results = list(
-                        #    query.spark.convert_datasets_to_coordinate_and_refs(dimensions, dt, datasets)
-                        # )
                     except MissingDatasetTypeError:
                         query_results = []
                     for data_id, ref in query_results:
