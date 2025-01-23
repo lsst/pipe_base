@@ -168,7 +168,7 @@ class ExceptionInfo(pydantic.BaseModel):
     message: str
     """String message included in the exception."""
 
-    metadata: dict[str, float | int | str | bool] = pydantic.Field(defualt_factory=dict)
+    metadata: dict[str, float | int | str | bool]
     """Additional metadata included in the exception."""
 
     @classmethod
@@ -186,10 +186,7 @@ class ExceptionInfo(pydantic.BaseModel):
         info : `ExceptionInfo`
             Information about the exception.
         """
-        result = cls(
-            type_name=md["type"],
-            message=md["message"],
-        )
+        result = cls(type_name=md["type"], message=md["message"], metadata={})
         if "metadata" in md:
             raw_err_metadata = md["metadata"].to_dict()
             for k, v in raw_err_metadata.items():
@@ -346,13 +343,6 @@ class QuantumInfo(TypedDict):
     wonky state.
     """
 
-    caveats: QuantumSuccessCaveats | None
-    """Flags that describe possibly-qualified successes.
-
-    This is `None` when `status` is not `SUCCESSFUL`.  It may also be `None`
-    if metadata was not loaded or had no success flags.
-    """
-
     recovered: bool
     """The quantum was originally not successful but was ultimately successful.
     """
@@ -507,6 +497,25 @@ class UnsuccessfulQuantumSummary(pydantic.BaseModel):
         )
 
 
+class ExceptionInfoSummary(pydantic.BaseModel):
+    """A summary of an exception raised by a quantum."""
+
+    quantum_id: uuid.UUID
+    """Unique identifier for this quantum in this run."""
+
+    data_id: dict[str, DataIdValue]
+    """The data ID of the quantum."""
+
+    run: str
+    """Name of the RUN collection in which this exception was (last) raised."""
+
+    exception: ExceptionInfo
+    """Information about an exception chained to
+    `AnnotatedPartialOutputsError`, if that was raised by this quantum in this
+    run.
+    """
+
+
 class TaskSummary(pydantic.BaseModel):
     """A summary of the status of all quanta associated with a single task,
     across all runs.
@@ -549,6 +558,20 @@ class TaskSummary(pydantic.BaseModel):
     included.
     """
 
+    exceptions: dict[str, list[ExceptionInfoSummary]] = pydantic.Field(default_factory=dict)
+    """Exceptions raised by partially-successful quanta.
+
+    Keys are fully-qualified exception type names and values are lists of
+    extra exception information, with each entry corresponding to different
+    data ID.  Only the final RUN for each data ID is represented here.
+
+    Every entry in this data structure corresponds to one in `ceveats` with
+    the "P" code (for `QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR`).
+
+    In the future, this may be expanded to include exceptions for failed quanta
+    as well (at present that information is not retained during execution).
+    """
+
     failed_quanta: list[UnsuccessfulQuantumSummary] = pydantic.Field(default_factory=list)
     """A list of all `UnsuccessfulQuantumSummary` objects associated with the
     FAILED quanta. This is a report containing their data IDs, the status
@@ -585,14 +608,30 @@ class TaskSummary(pydantic.BaseModel):
             Store error messages from Butler logs associated with failed quanta
             if `True`.
         """
+        try:
+            final_run, final_quantum_run = QuantumRun.find_final(info)
+        except ValueError:
+            final_run = None
+            final_quantum_run = None
         match info["status"]:
             case QuantumInfoStatus.SUCCESSFUL:
                 self.n_successful += 1
                 if info["recovered"]:
                     self.recovered_quanta.append(dict(info["data_id"].required))
-                if caveats := info["caveats"]:
-                    code = caveats.concise()
+                if final_quantum_run is not None and final_quantum_run.caveats:
+                    code = final_quantum_run.caveats.concise()
                     self.caveats.setdefault(code, []).append(dict(info["data_id"].required))
+                    if final_quantum_run.caveats & QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR:
+                        if final_quantum_run.exception is not None:
+                            self.exceptions.setdefault(final_quantum_run.exception.type_name, []).append(
+                                ExceptionInfoSummary(
+                                    quantum_id=final_quantum_run.id,
+                                    data_id=dict(info["data_id"].required),
+                                    run=final_run,
+                                    caveats=final_quantum_run.caveats,
+                                    exception=final_quantum_run.exception,
+                                )
+                            )
             case QuantumInfoStatus.WONKY:
                 self.wonky_quanta.append(UnsuccessfulQuantumSummary.from_info(info))
             case QuantumInfoStatus.BLOCKED:
@@ -1197,7 +1236,6 @@ class QuantumProvenanceGraph:
                 # A quantum can never escape a WONKY state.
                 case (QuantumInfoStatus.WONKY, _):
                     new_status = QuantumInfoStatus.WONKY
-                    quantum_info["caveats"] = None
                 # Any transition to a success (excluding from WONKY) is
                 # a success; any transition from a failed state is also a
                 # recovery.
@@ -1245,10 +1283,6 @@ class QuantumProvenanceGraph:
                     new_status = QuantumInfoStatus.FAILED
             # Update `QuantumInfo.status` for this quantum.
             quantum_info["status"] = new_status
-            if new_status is QuantumInfoStatus.SUCCESSFUL:
-                quantum_info["caveats"] = quantum_run.caveats
-            else:
-                quantum_info["caveats"] = None
 
     def __resolve_duplicates(
         self,
@@ -1380,7 +1414,6 @@ class QuantumProvenanceGraph:
                     quantum_info["messages"].append(
                         f"Outputs from different runs of the same quanta were visible: {visible_runs}."
                     )
-                    quantum_info["caveats"] = None
                     for dataset_key in self.iter_outputs_of(quantum_key):
                         dataset_info = self.get_dataset_info(dataset_key)
                         quantum_info["messages"].append(
