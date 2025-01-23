@@ -554,70 +554,72 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
 
         # Next up, we're going to try to aggregate summary with a dictionary
         # and then with some garbage. Neither of these should work!
-        with self.assertRaises(TypeError):
+        with self.assertRaises(AttributeError):
             Summary.aggregate(
-                summary,
-                {
-                    "tasks": {
-                        "task0": {
-                            "n_successful": 0,
-                            "n_blocked": 0,
-                            "n_unknown": 1,
-                            "n_expected": 1,
-                            "failed_quanta": [],
-                            "recovered_quanta": [],
-                            "wonky_quanta": [],
-                            "n_wonky": 0,
-                            "n_failed": 0,
-                        },
-                        "datasets": {
-                            "add_dataset1": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
+                [
+                    summary,
+                    {
+                        "tasks": {
+                            "task0": {
+                                "n_successful": 0,
+                                "n_blocked": 0,
+                                "n_unknown": 1,
                                 "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
+                                "failed_quanta": [],
+                                "recovered_quanta": [],
+                                "wonky_quanta": [],
+                                "n_wonky": 0,
+                                "n_failed": 0,
                             },
-                            "add2_dataset1": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
+                            "datasets": {
+                                "add_dataset1": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "add2_dataset1": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "task0_metadata": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "task0_log": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
                             },
-                            "task0_metadata": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
-                            },
-                            "task0_log": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
-                            },
-                        },
-                    }
-                },
+                        }
+                    },
+                ]
             )
             Summary.aggregate([summary, []])
             Summary.aggregate([summary, "some_garbage"])
