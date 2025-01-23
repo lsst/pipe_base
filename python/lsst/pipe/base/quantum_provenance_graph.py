@@ -47,6 +47,7 @@ from collections.abc import Iterator, Mapping, Sequence, Set
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
+import astropy.table
 import networkx
 import pydantic
 
@@ -755,6 +756,90 @@ class Summary(pydantic.BaseModel):
                 result_dataset_summary = result.datasets.setdefault(dataset_type, DatasetTypeSummary())
                 result_dataset_summary.add_data_id_group(dataset_type_summary)
         return result
+
+    def make_quantum_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with a tabular summary of the
+        quanta.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table view of the quantum information.  This only includes
+            counts of status categories and caveats, not any per-data-ID
+            detail.
+
+        Notes
+        -----
+        Success caveats in the table are represented by their
+        `~QuantumSuccessCaveats.concise` form, so when pretty-printing this
+        table for users, the `~QuantumSuccessCaveats.legend` should generally
+        be printed as well.
+        """
+        rows = []
+        for label, task_summary in self.tasks.items():
+            if len(task_summary.caveats) > 1:
+                caveats = "(multiple)"
+            elif len(task_summary.caveats) == 1:
+                ((code, data_ids),) = task_summary.caveats.items()
+                caveats = f"{code}({len(data_ids)})"
+            else:
+                caveats = ""
+            rows.append(
+                {
+                    "Task": label,
+                    "Unknown": task_summary.n_unknown,
+                    "Successful": task_summary.n_successful,
+                    "Caveats": caveats,
+                    "Blocked": task_summary.n_blocked,
+                    "Failed": task_summary.n_failed,
+                    "Wonky": task_summary.n_wonky,
+                    "TOTAL": sum(
+                        [
+                            task_summary.n_successful,
+                            task_summary.n_unknown,
+                            task_summary.n_blocked,
+                            task_summary.n_failed,
+                            task_summary.n_wonky,
+                        ]
+                    ),
+                    "EXPECTED": task_summary.n_expected,
+                }
+            )
+        return astropy.table.Table(rows)
+
+    def make_dataset_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with a tabular summary of the
+        datasets.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table view of the dataset information.  This only includes
+            counts of status categories, not any per-data-ID detail.
+        """
+        rows = []
+        for dataset_type_name, dataset_type_summary in self.datasets.items():
+            rows.append(
+                {
+                    "Dataset": dataset_type_name,
+                    "Visible": dataset_type_summary.n_visible,
+                    "Shadowed": dataset_type_summary.n_shadowed,
+                    "Predicted Only": dataset_type_summary.n_predicted_only,
+                    "Unsuccessful": dataset_type_summary.n_unsuccessful,
+                    "Cursed": dataset_type_summary.n_cursed,
+                    "TOTAL": sum(
+                        [
+                            dataset_type_summary.n_visible,
+                            dataset_type_summary.n_shadowed,
+                            dataset_type_summary.n_predicted_only,
+                            dataset_type_summary.n_unsuccessful,
+                            dataset_type_summary.n_cursed,
+                        ]
+                    ),
+                    "EXPECTED": dataset_type_summary.n_expected,
+                }
+            )
+        return astropy.table.Table(rows)
 
 
 class QuantumProvenanceGraph:
