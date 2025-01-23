@@ -59,7 +59,7 @@ from ._status import QuantumSuccessCaveats
 from .graph import QuantumGraph
 
 if TYPE_CHECKING:
-    pass
+    from ._task_metadata import TaskMetadata
 
 _LOG = getLogger(__name__)
 
@@ -164,6 +164,48 @@ class QuantumRunStatus(Enum):
     SUCCESSFUL = 1
 
 
+class ExceptionInfo(pydantic.BaseModel):
+    """Information about an exception that was raised."""
+
+    type_name: str
+    """Fully-qualified Python type name for the exception raised."""
+
+    message: str
+    """String message included in the exception."""
+
+    metadata: dict[str, float | int | str | bool] = pydantic.Field(defualt_factory=dict)
+    """Additional metadata included in the exception."""
+
+    @classmethod
+    def from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
+        """Construct from task metadata.
+
+        Parameters
+        ----------
+        md : `TaskMetadata`
+            Metadata about the error, as written by
+            `AnnotatedPartialOutputsError`.
+
+        Returns
+        -------
+        info : `ExceptionInfo`
+            Information about the exception.
+        """
+        result = cls(
+            type_name=md["type"],
+            message=md["message"],
+        )
+        if "metadata" in md:
+            raw_err_metadata = md["metadata"].to_dict()
+            for k, v in raw_err_metadata.items():
+                # Guard against error metadata we couldn't serialize later
+                # via Pydantic; don't want one weird value bringing down our
+                # ability to report on an entire run.
+                if isinstance(v, float | int | str | bool):
+                    result.metadata[k] = v
+        return result
+
+
 class QuantumRun(pydantic.BaseModel):
     """Information about a quantum in a given run collection."""
 
@@ -182,6 +224,23 @@ class QuantumRun(pydantic.BaseModel):
 
     This is `None` when `status` is not `SUCCESSFUL` or `LOGS_MISSING`.  It
     may also be `None` if metadata was not loaded or had no success flags.
+    """
+
+    exception: ExceptionInfo | None = None
+    """Information about an exception that that was raised during the quantum's
+    execution.
+
+    Exception information for failed quanta is not currently stored, so this
+    field is actually only populated for quanta that raise
+    `AnnotatedPartialOutputsError`, and only when the execution system is
+    configured not to consider these partial successes a failure (i.e. when
+    `status` is `~QuantumRunStatus.SUCCESSFUL` and `caveats` has
+    `~QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR` set.  The error whose
+    information is reported here is the exception chained from the
+    `AnnotatedPartialOutputsError`.
+
+    In the future, exception information from failures may be available as
+    well.
     """
 
     metadata_ref: DatasetRef
@@ -963,7 +1022,7 @@ class QuantumProvenanceGraph:
             qgraph = QuantumGraph.loadUri(qgraph)
         assert qgraph.metadata is not None, "Saved QGs always have metadata."
         output_run = qgraph.metadata["output_run"]
-        new_quanta = []
+        new_quanta: list[QuantumKey] = []
         for node in qgraph:
             # make a key to refer to the quantum and add it to the quantum
             # provenance graph.
@@ -1059,12 +1118,18 @@ class QuantumProvenanceGraph:
                         for dataset_key in self._xgraph.successors(quantum_key)
                     )
                 ):
-                    md = butler.get(quantum_run.metadata_ref)
+                    md = butler.get(quantum_run.metadata_ref, storageClass="TaskMetadata")
                     try:
                         # Int conversion guards against spurious conversion to
                         # float that can apparently sometimes happen in
                         # TaskMetadata.
                         quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
+                    except LookupError:
+                        pass
+                    try:
+                        quantum_run.exception = ExceptionInfo.from_metadata(
+                            md[quantum_key.task_label]["failure"]
+                        )
                     except LookupError:
                         pass
             # missing metadata means that the task did not finish.
