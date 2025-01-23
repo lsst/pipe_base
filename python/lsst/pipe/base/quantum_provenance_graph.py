@@ -249,6 +249,44 @@ class QuantumRun(pydantic.BaseModel):
     log_ref: DatasetRef
     """Predicted DatasetRef for the log dataset."""
 
+    @staticmethod
+    def find_final(info: QuantumInfo) -> tuple[str, QuantumRun]:
+        """Return the final RUN collection name and `QuantumRun` structure from
+        a `QuantumInfo` dictionary.
+
+        The "final run" is the last RUN collection in the sequence of quantum
+        graphs that:
+
+        - actually had a quantum for that task label and data ID;
+        - execution seems to have at least been attempted (at least one of
+          metadata or logs were produced).
+
+        Parameters
+        ----------
+        info : `QuantumInfo`
+            Quantum information that includes all runs.
+
+        Returns
+        -------
+        run : `str`
+            RUN collection name.
+        quantum_run : `QuantumRun`
+            Information about a quantum in a RUN collection.
+
+        Raises
+        ------
+        ValueError
+            Raised if this quantum never had a status that suggested execution
+            in any run.
+        """
+        for run, quantum_run in reversed(info["runs"].items()):
+            if (
+                quantum_run.status is not QuantumRunStatus.METADATA_MISSING
+                and quantum_run.status is not QuantumRunStatus.BLOCKED
+            ):
+                return run, quantum_run
+        raise ValueError("Quantum was never executed.")
+
 
 class QuantumInfoStatus(Enum):
     """The status of a quantum (a particular task run on a particular dataID)
