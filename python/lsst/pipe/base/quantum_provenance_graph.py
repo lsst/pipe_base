@@ -564,7 +564,8 @@ class CursedDatasetSummary(pydantic.BaseModel):
     the `bool` is true if the dataset was produced in the associated run.
     """
     run_visible: str | None
-    """A dictionary of all `visible` runs containing the cursed dataset.
+    """The run collection that holds the dataset that is visible in the final
+    output collection.
     """
     messages: list[str]
     """Any diagnostic messages (dictated in this module) which might help in
