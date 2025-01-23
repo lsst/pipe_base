@@ -29,11 +29,14 @@
 """Simple unit test for quantum_provenance_graph."""
 
 import unittest
+import uuid
 
 import lsst.utils.logging
 from lsst.pipe.base.quantum_provenance_graph import (
     CursedDatasetSummary,
     DatasetTypeSummary,
+    ExceptionInfo,
+    ExceptionInfoSummary,
     QuantumProvenanceGraph,
     Summary,
     TaskSummary,
@@ -98,6 +101,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
 
@@ -155,6 +159,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
             for dataset_type_name, dataset_type_summary in one_graph_only_sum.datasets.items():
@@ -194,6 +199,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
             for dataset_type_name, dataset_type_summary in two_identical_graph_sum.datasets.items():
@@ -224,6 +230,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
             # Let's see if we can change lots of counts and info for a task
             # which exists in summary 1 and append to the overall summary
             # effectively. This summary has a lot of valid variations.
+            uuid_a = uuid.uuid4()
             summary3 = summary.model_copy(deep=True)
             summary3.tasks["task4"] = TaskSummary.model_validate(
                 {
@@ -260,6 +267,23 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                             "messages": ["This one is wonky because it moved from successful to failed."],
                         }
                     ],
+                    "caveats": {
+                        "+A": [{"instrument": "INSTR", "detector": 10}],
+                    },
+                    "exceptions": {
+                        "lsst.pipe.base.tests.mocks.MockAlgorithmError": [
+                            {
+                                "quantum_id": str(uuid_a),
+                                "data_id": {"instrument": "INSTR", "detector": 10},
+                                "run": "run2",
+                                "exception": {
+                                    "type_name": "lsst.pipe.base.tests.mocks.MockAlgorithmError",
+                                    "message": "message A",
+                                    "metadata": {"badness": 11},
+                                },
+                            }
+                        ],
+                    },
                     "n_wonky": 1,
                     "n_failed": 3,
                 }
@@ -357,6 +381,27 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                                 messages=["This one is wonky because it moved from successful to failed."],
                             )
                         ],
+                    )
+                    self.assertDictEqual(
+                        task_summary.caveats,
+                        {"+A": [{"instrument": "INSTR", "detector": 10}]},
+                    )
+                    self.assertDictEqual(
+                        task_summary.exceptions,
+                        {
+                            "lsst.pipe.base.tests.mocks.MockAlgorithmError": [
+                                ExceptionInfoSummary(
+                                    quantum_id=uuid_a,
+                                    data_id={"instrument": "INSTR", "detector": 10},
+                                    run="run2",
+                                    exception=ExceptionInfo(
+                                        type_name="lsst.pipe.base.tests.mocks.MockAlgorithmError",
+                                        message="message A",
+                                        metadata={"badness": 11},
+                                    ),
+                                )
+                            ],
+                        },
                     )
                     self.assertEqual(task_summary.n_wonky, 1)
                     self.assertEqual(task_summary.n_failed, 3)
