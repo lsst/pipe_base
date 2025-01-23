@@ -66,7 +66,7 @@ class QuantumSuccessCaveats(enum.Flag):
     ALL_OUTPUTS_MISSING = enum.auto()
     """No predicted outputs (except logs and metadata) were produced.
 
-    `ANY_OUTPUTS_MISSING` is also set whenever this flag it set.
+    `ANY_OUTPUTS_MISSING` is also set whenever this flag is set.
     """
 
     NO_WORK = enum.auto()
