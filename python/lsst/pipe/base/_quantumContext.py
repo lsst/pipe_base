@@ -242,7 +242,7 @@ class QuantumContext:
     def _put(self, value: Any, ref: DatasetRef) -> None:
         """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
-        self.__butler.put(value, ref)
+        self.__butler.put(value, ref, provenance=self.dataset_provenance)
         self.outputsPut.add((ref.datasetType, ref.dataId))
 
     def get(

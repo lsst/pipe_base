@@ -38,7 +38,14 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.logging
 import lsst.utils.tests
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, Quantum
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetProvenance,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    Quantum,
+)
 
 
 class ButlerMock:
@@ -54,7 +61,13 @@ class ButlerMock:
             return dsdata.get(ref.dataId)
         return None
 
-    def put(self, inMemoryDataset: Any, dsRef: DatasetRef, producer: Any = None):
+    def put(
+        self,
+        inMemoryDataset: Any,
+        dsRef: DatasetRef,
+        provenance: DatasetProvenance | None = None,
+        producer: Any = None,
+    ):
         key = dsRef.dataId
         name = dsRef.datasetType.name
         dsdata = self.datasets.setdefault(name, {})
