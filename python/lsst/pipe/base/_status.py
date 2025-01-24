@@ -165,11 +165,11 @@ class QuantumSuccessCaveats(enum.Flag):
             Mapping from character code to description.
         """
         return {
-            "+": "at least one predicted output is missing, but not all",
+            "+": "at least one predicted output was missing, but not all were",
             "*": "all predicated outputs were missing (besides logs and metadata)",
-            "A": "adjustQuantum raised NoWorkFound; an updated QG would not include this quantum",
+            "A": "adjustQuantum raised NoWorkFound; a regenerated QG would not include this quantum",
             "D": "algorithm considers data too bad to be processable",
-            "U": "one or more input dataset as incomplete due to an upstream failure",
+            "U": "one or more input dataset was incomplete due to an upstream failure",
             "P": "task failed but wrote partial outputs; considered a partial success",
             "N": "runQuantum raised NoWorkFound",
         }
