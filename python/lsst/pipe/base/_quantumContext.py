@@ -39,7 +39,15 @@ from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetProvenance,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    LimitedButler,
+    Quantum,
+)
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
@@ -215,17 +223,20 @@ class QuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
         self.__butler = butler
+        self.dataset_provenance = DatasetProvenance()
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
             self._checkMembership(ref.datasetRef, self.allInputs)
+            self.dataset_provenance.add_input(ref.datasetRef)
             return self.__butler.getDeferred(ref.datasetRef)
         elif ref is None:
             return None
         else:
             self._checkMembership(ref, self.allInputs)
+            self.dataset_provenance.add_input(ref)
             return self.__butler.get(ref)
 
     def _put(self, value: Any, ref: DatasetRef) -> None:
