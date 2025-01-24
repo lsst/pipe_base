@@ -978,6 +978,89 @@ class Summary(pydantic.BaseModel):
             )
         return astropy.table.Table(rows)
 
+    def make_exception_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with counts for each exception
+        type raised by each task.
+
+        At present this only includes information from partial-outputs-error
+        successes, since exception information for failures is not tracked.
+        This may change in the future.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table with columns for task label, exception type, and counts.
+        """
+        rows = []
+        for task_label, task_summary in self.tasks.items():
+            for type_name, exception_summaries in task_summary.exceptions.items():
+                rows.append({"Task": task_label, "Exception": type_name, "Count": len(exception_summaries)})
+        return astropy.table.Table(rows)
+
+    def make_bad_quantum_tables(self) -> dict[str, astropy.table.Table]:
+        """Construct an `astropy.table.Table` with per-data-ID information
+        about failed, wonky, and partial-outputs-error quanta.
+
+        Returns
+        -------
+        tables : `dict` [ `str`, `astropy.table.Table` ]
+            A table for each task with status, data IDs, and log messages for
+            each unsuccessful quantum.  Keys are task labels.  Only task with
+            unsuccessful quanta or partial outputs errors are included.
+        """
+        result = {}
+        for task_label, task_summary in self.tasks.items():
+            rows = []
+            for status, unsuccessful_quantum_summary in itertools.chain(
+                zip(itertools.repeat("FAILED"), task_summary.failed_quanta),
+                zip(itertools.repeat("WONKY"), task_summary.wonky_quanta),
+            ):
+                row = {"Status": status, "Exception": "", **unsuccessful_quantum_summary.data_id}
+                row["Message"] = (
+                    unsuccessful_quantum_summary.messages[-1] if unsuccessful_quantum_summary.messages else ""
+                )
+                rows.append(row)
+            for exception_summary in itertools.chain.from_iterable(task_summary.exceptions.values()):
+                # Trim off the package name from the exception type for
+                # brevity.
+                short_name: str = exception_summary.exception.type_name.rsplit(".", maxsplit=1)[-1]
+                row = {
+                    "Status": "SUCCESSFUL",
+                    "Exception": short_name,
+                    **exception_summary.data_id,
+                    "Message": exception_summary.exception.message,
+                }
+                rows.append(row)
+            if rows:
+                result[task_label] = astropy.table.Table(rows)
+        return result
+
+    def make_bad_dataset_tables(self) -> dict[str, astropy.table.Table]:
+        """Construct an `astropy.table.Table` with per-data-ID information
+        about unsuccessful and cursed datasets.
+
+        Returns
+        -------
+        tables : `dict` [ `str`, `astropy.table.Table` ]
+            A table for each task with status, data IDs, and log messages for
+            each unsuccessful quantum.  Keys are task labels.  Only task with
+            unsuccessful quanta are included.
+        """
+        result = {}
+        for dataset_type_name, dataset_type_summary in self.datasets.items():
+            rows = []
+            for data_id in dataset_type_summary.unsuccessful_datasets:
+                row = {"Status": "UNSUCCESSFUL", **data_id, "Message": ""}
+            for cursed_dataset_summary in dataset_type_summary.cursed_datasets:
+                row = {"Status": "CURSED", **cursed_dataset_summary.data_id}
+                row["Message"] = (
+                    cursed_dataset_summary.messages[-1] if cursed_dataset_summary.messages else ""
+                )
+                rows.append(row)
+            if rows:
+                result[dataset_type_name] = astropy.table.Table(rows)
+        return result
+
 
 class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
