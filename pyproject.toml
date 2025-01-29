@@ -139,6 +139,9 @@ target-version = "py311"
 exclude = [
     "__init__.py",
 ]
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 79
 
 [tool.ruff.lint]
 ignore = [
