@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Utility to facilitate testing of pipelines consisting of multiple steps.
-"""
+"""Utility to facilitate testing of pipelines consisting of multiple steps."""
 
 __all__ = ["PipelineStepTester"]
 

@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Tests of the Instrument class.
-"""
+"""Tests of the Instrument class."""
 
 import datetime
 import math

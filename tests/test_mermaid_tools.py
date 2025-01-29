@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Simple unit test for Pipeline visualization.
-"""
+"""Simple unit test for Pipeline visualization."""
 
 import io
 import unittest

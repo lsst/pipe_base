@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Define `PipelineTask` class and related methods.
-"""
+"""Define `PipelineTask` class and related methods."""
 
 from __future__ import annotations
 
