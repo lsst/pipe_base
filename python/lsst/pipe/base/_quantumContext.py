@@ -34,6 +34,7 @@ from __future__ import annotations
 __all__ = ("ExecutionResources", "QuantumContext")
 
 import numbers
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -182,6 +183,8 @@ class QuantumContext:
         single execution of this node in the pipeline graph.
     resources : `ExecutionResources`, optional
         The resources allocated for executing quanta.
+    quantum_id : `uuid.UUID` or `None`, optional
+        The ID of the quantum being executed. Used for provenance.
 
     Notes
     -----
@@ -199,7 +202,12 @@ class QuantumContext:
     resources: ExecutionResources
 
     def __init__(
-        self, butler: LimitedButler, quantum: Quantum, *, resources: ExecutionResources | None = None
+        self,
+        butler: LimitedButler,
+        quantum: Quantum,
+        *,
+        resources: ExecutionResources | None = None,
+        quantum_id: uuid.UUID | None = None,
     ):
         self.quantum = quantum
         if resources is None:
@@ -223,7 +231,7 @@ class QuantumContext:
                 self.allOutputs.add((ref.datasetType, ref.dataId))
         self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
         self.__butler = butler
-        self.dataset_provenance = DatasetProvenance()
+        self.dataset_provenance = DatasetProvenance(quantum_id=quantum_id)
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
