@@ -25,8 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Module defining connection classes for PipelineTask.
-"""
+"""Module defining connection classes for PipelineTask."""
 
 from __future__ import annotations
 
@@ -590,26 +589,33 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
     >>> from lsst.pipe.base import connectionTypes as cT
     >>> from lsst.pipe.base import PipelineTaskConnections
     >>> from lsst.pipe.base import PipelineTaskConfig
-    >>> class ExampleConnections(PipelineTaskConnections,
-    ...                          dimensions=("A", "B"),
-    ...                          defaultTemplates={"foo": "Example"}):
-    ...     inputConnection = cT.Input(doc="Example input",
-    ...                                dimensions=("A", "B"),
-    ...                                storageClass=Exposure,
-    ...                                name="{foo}Dataset")
-    ...     outputConnection = cT.Output(doc="Example output",
-    ...                                  dimensions=("A", "B"),
-    ...                                  storageClass=Exposure,
-    ...                                  name="{foo}output")
-    >>> class ExampleConfig(PipelineTaskConfig,
-    ...                     pipelineConnections=ExampleConnections):
-    ...    pass
+    >>> class ExampleConnections(
+    ...     PipelineTaskConnections,
+    ...     dimensions=("A", "B"),
+    ...     defaultTemplates={"foo": "Example"},
+    ... ):
+    ...     inputConnection = cT.Input(
+    ...         doc="Example input",
+    ...         dimensions=("A", "B"),
+    ...         storageClass=Exposure,
+    ...         name="{foo}Dataset",
+    ...     )
+    ...     outputConnection = cT.Output(
+    ...         doc="Example output",
+    ...         dimensions=("A", "B"),
+    ...         storageClass=Exposure,
+    ...         name="{foo}output",
+    ...     )
+    >>> class ExampleConfig(
+    ...     PipelineTaskConfig, pipelineConnections=ExampleConnections
+    ... ):
+    ...     pass
     >>> config = ExampleConfig()
     >>> config.connections.foo = Modified
     >>> config.connections.outputConnection = "TotallyDifferent"
     >>> connections = ExampleConnections(config=config)
-    >>> assert(connections.inputConnection.name == "ModifiedDataset")
-    >>> assert(connections.outputConnection.name == "TotallyDifferent")
+    >>> assert connections.inputConnection.name == "ModifiedDataset"
+    >>> assert connections.outputConnection.name == "TotallyDifferent"
     """
 
     # We annotate these attributes as mutable sets because that's what they are
