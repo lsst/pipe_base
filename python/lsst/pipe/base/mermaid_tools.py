@@ -363,11 +363,33 @@ def pipeline2mermaid(
     edges: list[tuple[str, str, bool]] = []
 
     def get_task_id(idx: int) -> str:
-        """Generate a safe Mermaid node ID for a task."""
+        """Generate a safe Mermaid node ID for a task.
+
+        Parameters
+        ----------
+        idx : `int`
+            Task index.
+
+        Returns
+        -------
+        id : `str`
+            Node ID for a task.
+        """
         return f"TASK_{idx}"
 
     def get_dataset_id(name: str) -> str:
-        """Generate a safe Mermaid node ID for a dataset."""
+        """Generate a safe Mermaid node ID for a dataset.
+
+        Parameters
+        ----------
+        name : `str`
+            Dataset name.
+
+        Returns
+        -------
+        id : `str`
+            Node ID for the dataset.
+        """
         # Replace non-alphanumerics with underscores.
         return "DATASET_" + re.sub(r"[^0-9A-Za-z_]", "_", name)
 
