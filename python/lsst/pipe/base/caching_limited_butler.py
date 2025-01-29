@@ -35,6 +35,7 @@ from typing import Any, Iterable
 
 from lsst.daf.butler import (
     DatasetId,
+    DatasetProvenance,
     DatasetRef,
     DeferredDatasetHandle,
     DimensionUniverse,
@@ -155,7 +156,7 @@ class CachingLimitedButler(LimitedButler):
     def isWriteable(self) -> bool:
         return self._wrapped.isWriteable()
 
-    def put(self, obj: Any, ref: DatasetRef) -> DatasetRef:
+    def put(self, obj: Any, ref: DatasetRef, /, *, provenance: DatasetProvenance | None = None) -> DatasetRef:
         if ref.datasetType.name in self._cache_on_put:
             self._cache[ref.datasetType.name] = (
                 ref.id,
@@ -167,7 +168,7 @@ class CachingLimitedButler(LimitedButler):
                 ),
             )
             _LOG.debug("Cached dataset %s on put", ref)
-        return self._wrapped.put(obj, ref)
+        return self._wrapped.put(obj, ref, provenance=provenance)
 
     def pruneDatasets(
         self,
