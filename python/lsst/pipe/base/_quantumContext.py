@@ -453,3 +453,17 @@ class QuantumContext:
         repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions
+
+    def add_additional_provenance(self, ref: DatasetRef, extra: dict[str, int | float | str | bool]) -> None:
+        """Add additional provenance information to the dataset provenance.
+
+        Parameters
+        ----------
+        ref : `DatasetRef`
+            The dataset to attach provenance to. This dataset must have been
+            retrieved by this quantum context.
+        extra : `dict` [ `str`, `int` | `float` | `str` | `bool` ]
+            Additional information to attach as provenance information. Keys
+            must be strings and values must be simple scalars.
+        """
+        self.dataset_provenance.add_extra_provenance(ref.id, extra)
