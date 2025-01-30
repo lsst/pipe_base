@@ -218,7 +218,7 @@ class QuantumContext:
         self.allOutputs = set()
         for refs in quantum.inputs.values():
             for ref in refs:
-                self.allInputs.add((ref.datasetType, ref.dataId))
+                self.allInputs.add((ref.datasetType, ref.dataId, ref.id))
         for dataset_type, refs in quantum.outputs.items():
             if dataset_type.name.endswith(METADATA_OUTPUT_CONNECTION_NAME) or dataset_type.name.endswith(
                 LOG_OUTPUT_CONNECTION_NAME
@@ -228,8 +228,8 @@ class QuantumContext:
                 # write them itself; that's for the execution system to do.
                 continue
             for ref in refs:
-                self.allOutputs.add((ref.datasetType, ref.dataId))
-        self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
+                self.allOutputs.add((ref.datasetType, ref.dataId, ref.id))
+        self.outputsPut: set[tuple[DatasetType, DataCoordinate, uuid.UUID]] = set()
         self.__butler = butler
         self.dataset_provenance = DatasetProvenance(quantum_id=quantum_id)
 
@@ -251,7 +251,7 @@ class QuantumContext:
         """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
         self.__butler.put(value, ref, provenance=self.dataset_provenance)
-        self.outputsPut.add((ref.datasetType, ref.dataId))
+        self.outputsPut.add((ref.datasetType, ref.dataId, ref.id))
 
     def get(
         self,
@@ -444,7 +444,7 @@ class QuantumContext:
         if not isinstance(ref, list | tuple):
             ref = [ref]
         for r in ref:
-            if (r.datasetType, r.dataId) not in inout:
+            if (r.datasetType, r.dataId, r.id) not in inout:
                 raise ValueError("DatasetRef is not part of the Quantum being processed")
 
     @property
