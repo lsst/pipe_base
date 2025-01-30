@@ -261,7 +261,7 @@ class QuantumContext:
         Returns
         -------
         return : `object`
-            This function returns arbitrary objects fetched from the bulter.
+            This function returns arbitrary objects fetched from the butler.
             The structure these objects are returned in depends on the type of
             the input argument. If the input dataset argument is a
             `InputQuantizedConnection`, then the return type will be a
