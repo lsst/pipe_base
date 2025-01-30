@@ -1,0 +1,3 @@
+* Modified ``QuantumContext`` such that it now tracks all datasets that are retrieved and records them in ``dataset_provenance``.
+  This provenance is then passed to Butler on ``put()``.
+* Added ``QuantumContext.add_additional_provenance()`` to allow a pipeline task author to attach additional provenance information to be recorded and associated with a particular input dataset.

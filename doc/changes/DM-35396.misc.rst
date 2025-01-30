@@ -1,0 +1,2 @@
+Modified ``TaskMetadata`` such that it can now be assigned an empty list.
+This list can be retrieved with ``getArray`` but if an attempt is made to get a scalar `KeyError` will be raised.
