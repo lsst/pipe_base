@@ -165,9 +165,6 @@ select = [
     "W",  # pycodestyle
     "D",  # pydocstyle
 ]
-extend-select = [
-    "RUF100", # Warn about unused noqa
-]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 79
