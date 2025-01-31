@@ -33,6 +33,7 @@ __all__ = (
     "DynamicTestPipelineTask",
     "DynamicTestPipelineTaskConfig",
     "ForcedFailure",
+    "MockAlgorithmError",
     "MockPipelineTask",
     "MockPipelineTaskConfig",
     "mock_pipeline_graph",
@@ -52,7 +53,7 @@ from lsst.utils.introspection import get_full_type_name
 from lsst.utils.iteration import ensure_iterable
 
 from ... import connectionTypes as cT
-from ..._status import AnnotatedPartialOutputsError, RepeatableQuantumError
+from ..._status import AlgorithmError, AnnotatedPartialOutputsError
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
 from ...pipeline_graph import PipelineGraph
@@ -99,6 +100,17 @@ class ForcedFailure:
         if self.exception_type:
             config.fail_exception = get_full_type_name(self.exception_type)
         config.memory_required = self.memory_required
+
+
+class MockAlgorithmError(AlgorithmError):
+    """A subclass of `..AlgorithmError` chained to
+    `..AnnotatedPartialOutputsError` when the latter is configured to be raised
+    by `MockPipelineTask`.
+    """
+
+    @property
+    def metadata(self) -> dict[str, int]:
+        return {"badness": 12}
 
 
 def mock_pipeline_graph(
@@ -365,9 +377,10 @@ class BaseTestPipelineTask(PipelineTask):
         if self.fail_exception is AnnotatedPartialOutputsError:
             # This exception is expected to always chain another.
             try:
-                raise RepeatableQuantumError(message)
-            except RepeatableQuantumError as err:
-                raise AnnotatedPartialOutputsError() from err
+                raise MockAlgorithmError(message)
+            except AlgorithmError as original:
+                error = AnnotatedPartialOutputsError.annotate(original, self, log=self.log)
+                raise error from original
         else:
             assert self.fail_exception is not None, "Method should not be called."
             raise self.fail_exception(message)

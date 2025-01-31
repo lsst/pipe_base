@@ -30,11 +30,14 @@ from __future__ import annotations
 import abc
 import enum
 import logging
-from typing import ClassVar, Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from lsst.utils import introspection
 
 from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
+
+if TYPE_CHECKING:
+    from lsst.utils.logging import LsstLogAdapter
 
 __all__ = (
     "AlgorithmError",
@@ -177,7 +180,9 @@ class GetSetDictMetadataHolder(Protocol):
     `GetSetDictMetadata`.
     """
 
-    metadata: GetSetDictMetadata | None
+    @property
+    def metadata(self) -> GetSetDictMetadata | None:
+        pass
 
 
 class NoWorkFound(BaseException):
@@ -297,7 +302,7 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
 
     @classmethod
     def annotate(
-        cls, error: Exception, *args: GetSetDictMetadataHolder | None, log: logging.Logger
+        cls, error: Exception, *args: GetSetDictMetadataHolder | None, log: logging.Logger | LsstLogAdapter
     ) -> AnnotatedPartialOutputsError:
         """Set metadata on outputs to explain the nature of the failure.
 
