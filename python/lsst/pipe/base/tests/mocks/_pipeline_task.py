@@ -86,7 +86,7 @@ class ForcedFailure:
     raise.
     """
 
-    exception_type: type[Exception] | None = None
+    exception_type: type[BaseException] | None = None
     """The type of exception to raise."""
 
     memory_required: Quantity | None = None
