@@ -662,6 +662,9 @@ class _AllDimensionsQuery:
             )
             query = query.where(result.subgraph.data_id, builder.where, bind=builder.bind)
             builder.log.verbose(result.format_query_cmd("Querying for data IDs via:"))
+            # Allow duplicates from common skypix overlaps to make some queries
+            # run faster.
+            query._allow_duplicate_overlaps = True
             result.butler_query = query.materialize()
             yield result
 
