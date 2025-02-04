@@ -34,12 +34,21 @@ from __future__ import annotations
 __all__ = ("ExecutionResources", "QuantumContext")
 
 import numbers
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, LimitedButler, Quantum
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetProvenance,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    LimitedButler,
+    Quantum,
+)
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
 
@@ -174,6 +183,8 @@ class QuantumContext:
         single execution of this node in the pipeline graph.
     resources : `ExecutionResources`, optional
         The resources allocated for executing quanta.
+    quantum_id : `uuid.UUID` or `None`, optional
+        The ID of the quantum being executed. Used for provenance.
 
     Notes
     -----
@@ -191,7 +202,12 @@ class QuantumContext:
     resources: ExecutionResources
 
     def __init__(
-        self, butler: LimitedButler, quantum: Quantum, *, resources: ExecutionResources | None = None
+        self,
+        butler: LimitedButler,
+        quantum: Quantum,
+        *,
+        resources: ExecutionResources | None = None,
+        quantum_id: uuid.UUID | None = None,
     ):
         self.quantum = quantum
         if resources is None:
@@ -202,7 +218,7 @@ class QuantumContext:
         self.allOutputs = set()
         for refs in quantum.inputs.values():
             for ref in refs:
-                self.allInputs.add((ref.datasetType, ref.dataId))
+                self.allInputs.add((ref.datasetType, ref.dataId, ref.id))
         for dataset_type, refs in quantum.outputs.items():
             if dataset_type.name.endswith(METADATA_OUTPUT_CONNECTION_NAME) or dataset_type.name.endswith(
                 LOG_OUTPUT_CONNECTION_NAME
@@ -212,27 +228,30 @@ class QuantumContext:
                 # write them itself; that's for the execution system to do.
                 continue
             for ref in refs:
-                self.allOutputs.add((ref.datasetType, ref.dataId))
-        self.outputsPut: set[tuple[DatasetType, DataCoordinate]] = set()
+                self.allOutputs.add((ref.datasetType, ref.dataId, ref.id))
+        self.outputsPut: set[tuple[DatasetType, DataCoordinate, uuid.UUID]] = set()
         self.__butler = butler
+        self.dataset_provenance = DatasetProvenance(quantum_id=quantum_id)
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
         # raise appropriately, so no need for us to do that here.
         if isinstance(ref, DeferredDatasetRef):
             self._checkMembership(ref.datasetRef, self.allInputs)
+            self.dataset_provenance.add_input(ref.datasetRef)
             return self.__butler.getDeferred(ref.datasetRef)
         elif ref is None:
             return None
         else:
             self._checkMembership(ref, self.allInputs)
+            self.dataset_provenance.add_input(ref)
             return self.__butler.get(ref)
 
     def _put(self, value: Any, ref: DatasetRef) -> None:
         """Store data in butler."""
         self._checkMembership(ref, self.allOutputs)
-        self.__butler.put(value, ref)
-        self.outputsPut.add((ref.datasetType, ref.dataId))
+        self.__butler.put(value, ref, provenance=self.dataset_provenance)
+        self.outputsPut.add((ref.datasetType, ref.dataId, ref.id))
 
     def get(
         self,
@@ -261,7 +280,7 @@ class QuantumContext:
         Returns
         -------
         return : `object`
-            This function returns arbitrary objects fetched from the bulter.
+            This function returns arbitrary objects fetched from the butler.
             The structure these objects are returned in depends on the type of
             the input argument. If the input dataset argument is a
             `InputQuantizedConnection`, then the return type will be a
@@ -425,7 +444,7 @@ class QuantumContext:
         if not isinstance(ref, list | tuple):
             ref = [ref]
         for r in ref:
-            if (r.datasetType, r.dataId) not in inout:
+            if (r.datasetType, r.dataId, r.id) not in inout:
                 raise ValueError("DatasetRef is not part of the Quantum being processed")
 
     @property
@@ -434,3 +453,17 @@ class QuantumContext:
         repository (`~lsst.daf.butler.DimensionUniverse`).
         """
         return self.__butler.dimensions
+
+    def add_additional_provenance(self, ref: DatasetRef, extra: dict[str, int | float | str | bool]) -> None:
+        """Add additional provenance information to the dataset provenance.
+
+        Parameters
+        ----------
+        ref : `DatasetRef`
+            The dataset to attach provenance to. This dataset must have been
+            retrieved by this quantum context.
+        extra : `dict` [ `str`, `int` | `float` | `str` | `bool` ]
+            Additional information to attach as provenance information. Keys
+            must be strings and values must be simple scalars.
+        """
+        self.dataset_provenance.add_extra_provenance(ref.id, extra)

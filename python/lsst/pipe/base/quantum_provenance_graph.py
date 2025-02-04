@@ -1249,8 +1249,7 @@ class QuantumProvenanceGraph:
         """
         if read_caveats not in ("lazy", "exhaustive", None):
             raise TypeError(
-                f"Invalid option {read_caveats!r} for read_caveats; "
-                "should be 'lazy', 'exhaustive', or None."
+                f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
             )
         output_runs = []
         for graph in qgraphs:

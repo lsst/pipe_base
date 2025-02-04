@@ -489,8 +489,7 @@ class _AllDimensionsQuery:
             result.query_args["collections"] = builder.input_collections
         else:
             raise QuantumGraphBuilderError(
-                f"Unable to handle type {builder.dataset_query_constraint} "
-                "given as datasetQueryConstraint."
+                f"Unable to handle type {builder.dataset_query_constraint} given as datasetQueryConstraint."
             )
         builder.log.verbose("Querying for data IDs with arguments:")
         builder.log.verbose("  dimensions=%s,", list(result.query_args["dimensions"].names))

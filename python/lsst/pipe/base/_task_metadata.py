@@ -432,7 +432,12 @@ class TaskMetadata(BaseModel):
             if key0 in self.metadata:
                 return self.metadata[key0]
             if key0 in self.arrays:
-                return self.arrays[key0][-1]
+                arr = self.arrays[key0]
+                if not arr:
+                    # If there are no elements then returning a scalar
+                    # is an error.
+                    raise KeyError(f"'{key}' not found")
+                return arr[-1]
             raise KeyError(f"'{key}' not found")
         # Hierarchical lookup so the top key can only be in the metadata
         # property. Trap KeyError and reraise so that the correct key
@@ -613,6 +618,8 @@ class TaskMetadata(BaseModel):
             # For model consistency, need to check that every item in the
             # list has the same type.
             value = list(value)
+            if not value:
+                return "array", value
 
             type0 = type(value[0])
             for i in value:

@@ -91,6 +91,10 @@ class TaskMetadataTestCase(unittest.TestCase):
         self.assertEqual(meta.getArray("new_array"), ["a", "b", "c"])
         meta["new_array"] = [1, 2, 3]
         self.assertEqual(meta.getArray("new_array"), [1, 2, 3])
+        meta["empty_array"] = []
+        self.assertEqual(meta.getArray("empty_array"), [])
+        with self.assertRaises(KeyError):
+            meta["empty_array"]
 
         meta["meta"] = 5
         meta["meta"] = TaskMetadata()

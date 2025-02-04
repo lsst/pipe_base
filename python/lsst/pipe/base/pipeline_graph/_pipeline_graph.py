@@ -311,7 +311,7 @@ class PipelineGraph:
             b = other.tasks[label]
             if a.task_class != b.task_class:
                 messages.append(
-                    f"Task {label!r} has class {a.task_class_name} in A, " f"but {b.task_class_name} in B."
+                    f"Task {label!r} has class {a.task_class_name} in A, but {b.task_class_name} in B."
                 )
             messages.extend(a.diff_edges(b))
         return messages
