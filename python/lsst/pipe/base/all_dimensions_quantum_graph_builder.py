@@ -484,8 +484,6 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
         Parameters
         ----------
-        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
-            In-progress quantum graph to modify in place.
         leftovers : `DataIdExpansionLeftovers`
             Struct recording data IDs in ``skeleton`` that were not expanded.
         dimension_records : `dict`
@@ -515,6 +513,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
         Parameters
         ----------
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
+            In-progress quantum graph to modify in place.
         leftovers : `DataIdExpansionLeftovers`
             Struct recording data IDs in ``skeleton`` that were not expanded
             and the data IDs of the dimension records that need to be fetched

@@ -393,23 +393,23 @@ class QuantumGraphBuilder(ABC):
         Notes
         -----
         The `quantum_graph_skeleton.QuantumGraphSkeleton` should associate
-        `DatasetRef` objects with nodes for existing datasets datasets.  In
+        `DatasetRef` objects with nodes for existing datasets.  In
         particular:
 
-        - `quantum_graph_skeleton.QuantumGraphSkeleton.add_dataset_ref` must be
+        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_dataset_ref` must be
           used to associate existing datasets with all overall-input dataset
           nodes in the skeleton by querying `input_collections`.  This includes
           all standard input nodes and any prerequisite nodes added by the
           method (prerequisite nodes may also be left out entirely, as the base
           class can add them later, albeit possibly less efficiently).
-        - `quantum_graph_skeleton.QuantumGraphSkeleton.add_output_for_skip`
+        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_output_for_skip`
           must be used to associate existing datasets with output dataset nodes
-          by querying `skip_existing_in`;.
+          by querying `skip_existing_in`.
         - `quantum_graph_skeleton.QuantumGraphSkeleton.add_output_in_the_way`
-          must be used to associated exsting outputs with output dataset nodes
-          by querying `output_run` if `output_run_exists` is `True`. `False`).
+          must be used to associated existing outputs with output dataset nodes
+          by querying `output_run` if `output_run_exists` is `True`.
           Note that the presence of such datasets is not automatically an
-          error, even if `clobber is `False`, as these may be quanta that will
+          error, even if `clobber` is `False`, as these may be quanta that will
           be skipped.
 
         `DatasetRef` objects for existing datasets with empty data IDs in all
@@ -601,8 +601,8 @@ class QuantumGraphBuilder(ABC):
         If the metadata dataset for this quantum exists in the
         `skip_existing_in` collections, the quantum will be skipped. This
         causes the quantum node to be removed from the graph.  Dataset nodes
-        that were previously the outputs of this quantum be associated with
-        `DatasetRef` objects that were found in ``skip_existing_in``, or
+        that were previously the outputs of this quantum will be associated
+        with `DatasetRef` objects that were found in ``skip_existing_in``, or
         will be removed if there is no such dataset there.  Any output dataset
         in `output_run` will be removed from the "output in the way" category.
         """
@@ -678,7 +678,7 @@ class QuantumGraphBuilder(ABC):
         the original there).  If `clobber` is `False`, `RuntimeError` is
         raised.  If there is no output already present, a new one with a random
         UUID is generated.  In all cases the dataset node in the skeleton is
-        associate with a `DatasetRef`.
+        associated with a `DatasetRef`.
         """
         outputs_by_type: dict[str, list[DatasetRef]] = {}
         dataset_key: DatasetKey
@@ -1103,7 +1103,7 @@ class EmptyDimensionsDatasets:
     outputs_for_skip: Mapping[DatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
     """Output datasets found in `QuantumGraphBuilder.skip_existing_in`.
 
-    It is unspecified whether this contains include init-outputs; there is
+    It is unspecified whether this contains init-outputs; there is
     no concept of skipping at the init stage, so this is not expected to
     matter.
     """
