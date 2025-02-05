@@ -39,12 +39,13 @@ __all__ = (
     "PrerequisiteDatasetKey",
 )
 
+import dataclasses
 import itertools
 import logging
 import uuid
 from collections.abc import Iterator, Mapping, Sequence, Set
 from enum import Enum
-from typing import TYPE_CHECKING, ClassVar, Literal, NamedTuple, TypedDict, cast
+from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
 import networkx
 import pydantic
@@ -61,7 +62,8 @@ if TYPE_CHECKING:
 _LOG = getLogger(__name__)
 
 
-class QuantumKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class QuantumKey:
     """Identifier type for quantum keys in a `QuantumProvenanceGraph`. These
     keys correspond to a task label and data ID, but can refer to this over
     multiple runs or datasets.
@@ -83,7 +85,8 @@ class QuantumKey(NamedTuple):
     """
 
 
-class DatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class DatasetKey:
     """Identifier type for dataset keys in a `QuantumProvenanceGraph`."""
 
     dataset_type_name: str
@@ -107,7 +110,8 @@ class DatasetKey(NamedTuple):
     """
 
 
-class PrerequisiteDatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class PrerequisiteDatasetKey:
     """Identifier type for prerequisite dataset keys in a
     `QuantumProvenanceGraph`.
 

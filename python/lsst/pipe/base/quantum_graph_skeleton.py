@@ -37,11 +37,11 @@ __all__ = (
     "TaskInitKey",
     "DatasetKey",
     "PrerequisiteDatasetKey",
-    "Key",
 )
 
+import dataclasses
 from collections.abc import Iterable, Iterator, MutableMapping, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 import networkx
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
@@ -53,7 +53,8 @@ if TYPE_CHECKING:
 _LOG = getLogger(__name__)
 
 
-class QuantumKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class QuantumKey:
     """Identifier type for quantum keys in a `QuantumGraphSkeleton`."""
 
     task_label: str
@@ -72,7 +73,8 @@ class QuantumKey(NamedTuple):
     """
 
 
-class TaskInitKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class TaskInitKey:
     """Identifier type for task init keys in a `QuantumGraphSkeleton`."""
 
     task_label: str
@@ -84,7 +86,8 @@ class TaskInitKey(NamedTuple):
     """
 
 
-class DatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class DatasetKey:
     """Identifier type for dataset keys in a `QuantumGraphSkeleton`."""
 
     parent_dataset_type_name: str
@@ -105,7 +108,8 @@ class DatasetKey(NamedTuple):
     is_prerequisite: ClassVar[Literal[False]] = False
 
 
-class PrerequisiteDatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class PrerequisiteDatasetKey:
     """Identifier type for prerequisite dataset keys in a
     `QuantumGraphSkeleton`.
 
