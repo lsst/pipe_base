@@ -895,6 +895,44 @@ class Summary(pydantic.BaseModel):
                 result_dataset_summary.add_data_id_group(dataset_type_summary)
         return result
 
+    def pprint(self, brief: bool = False, datasets: bool = True) -> None:
+        """Print this summary to stdout, as a series of tables.
+
+        Parameters
+        ----------
+        brief : `bool`, optional
+            If `True`, only display short (counts-only) tables.  By default,
+            per-data ID information for exceptions and failures are printed as
+            well.
+        datasets : `bool`, optional
+            Whether to include tables of datasets as well as quanta.  This
+            includes a summary table of dataset counts for various status and
+            (if ``brief`` is `True`) a table with per-data ID information for
+            each unsuccessful or cursed dataset.
+        """
+        self.make_quantum_table().pprint_all()
+        print("")
+        print("Caveat codes:")
+        for k, v in QuantumSuccessCaveats.legend().items():
+            print(f"{k}: {v}")
+        print("")
+        if exception_table := self.make_exception_table():
+            exception_table.pprint_all()
+            print("")
+        if datasets:
+            self.make_dataset_table().pprint_all()
+            print("")
+        if not brief:
+            for task_label, bad_quantum_table in self.make_bad_quantum_tables().items():
+                print(f"{task_label} failures:")
+                bad_quantum_table.pprint_all()
+                print("")
+            if datasets:
+                for dataset_type_name, bad_dataset_table in self.make_bad_dataset_tables().items():
+                    print(f"{dataset_type_name} failures:")
+                    bad_dataset_table.pprint_all()
+                    print("")
+
     def make_quantum_table(self) -> astropy.table.Table:
         """Construct an `astropy.table.Table` with a tabular summary of the
         quanta.
