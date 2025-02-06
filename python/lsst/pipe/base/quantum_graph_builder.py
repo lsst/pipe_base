@@ -33,7 +33,7 @@ from __future__ import annotations
 
 __all__ = (
     "QuantumGraphBuilder",
-    "ExistingDatasets",
+    "EmptyDimensionsDatasets",
     "QuantumGraphBuilderError",
     "OutputExistsError",
     "PrerequisiteMissingError",
@@ -139,9 +139,8 @@ class QuantumGraphBuilder(ABC):
     The `build` method splits the pipeline graph into independent subgraphs,
     then calls the abstract method `process_subgraph` on each, to allow
     concrete implementations to populate the rough graph structure (the
-    `~quantum_graph_skeleton.QuantumGraphSkeleton` class) and search for
-    existing datasets (further populating the builder's `existing_datasets`
-    struct).  The `build` method then:
+    `~quantum_graph_skeleton.QuantumGraphSkeleton` class), including searching
+    for existing datasets.  The `build` method then:
 
     - assembles `lsst.daf.butler.Quantum` instances from all data IDs in the
       skeleton;
@@ -201,9 +200,7 @@ class QuantumGraphBuilder(ABC):
         # starts with the output run collection, as an optimization to avoid
         # queries later.
         try:
-            skip_existing_in_flat = self.butler.registry.queryCollections(
-                self.skip_existing_in, flattenChains=True
-            )
+            skip_existing_in_flat = self.butler.collections.query(self.skip_existing_in, flatten_chains=True)
         except MissingCollectionError:
             skip_existing_in_flat = []
         if not skip_existing_in_flat:
@@ -212,7 +209,6 @@ class QuantumGraphBuilder(ABC):
             self.skip_existing_starts_with_output_run = self.output_run == skip_existing_in_flat[0]
         else:
             self.skip_existing_starts_with_output_run = False
-        self.existing_datasets = ExistingDatasets()
         try:
             packages_storage_class = butler.get_dataset_type(acc.PACKAGES_INIT_OUTPUT_NAME).storageClass_name
         except MissingDatasetTypeError:
@@ -226,7 +222,7 @@ class QuantumGraphBuilder(ABC):
         }
         with self.butler.registry.caching_context():
             self._pipeline_graph.resolve(self.butler.registry)
-            self._find_empty_dimension_datasets()
+            self.empty_dimensions_datasets = self._find_empty_dimension_datasets()
             self.prerequisite_info = {
                 task_node.label: PrerequisiteInfo(task_node, self._pipeline_graph)
                 for task_node in pipeline_graph.tasks.values()
@@ -290,12 +286,9 @@ class QuantumGraphBuilder(ABC):
     short-circuit queries in `skip_existing_in`.
     """
 
-    existing_datasets: ExistingDatasets
-    """Struct holding datasets that have already been found in the data
-    repository.
-
-    This is updated in-place as the `QuantumGraph` generation algorithm
-    proceeds.
+    empty_dimensions_datasets: EmptyDimensionsDatasets
+    """Struct holding datasets with empty dimensions that have already been
+    found in the data repository.
     """
 
     prerequisite_info: Mapping[str, PrerequisiteInfo]
@@ -360,10 +353,10 @@ class QuantumGraphBuilder(ABC):
                 dataset_key = full_skeleton.add_dataset_node(
                     dataset_type.name, self.empty_data_id, is_global_init_output=True
                 )
-                ref = self.existing_datasets.outputs_in_the_way.get(dataset_key)
+                ref = self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key)
                 if ref is None:
                     ref = DatasetRef(dataset_type, self.empty_data_id, run=self.output_run)
-                full_skeleton[dataset_key]["ref"] = ref
+                full_skeleton.set_dataset_ref(ref, dataset_key)
             # Remove dataset nodes with no edges that are not global init
             # outputs, which are generally overall-inputs whose original quanta
             # end up skipped or with no work to do (we can't remove these along
@@ -399,30 +392,31 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        In addition to returning a
-        `quantum_graph_skeleton.QuantumGraphSkeleton`, this method should
-        populate the `existing_datasets` structure by querying for all relevant
-        datasets with non-empty data IDs (those with empty data IDs will
-        already be present).  In particular:
+        The `quantum_graph_skeleton.QuantumGraphSkeleton` should associate
+        `DatasetRef` objects with nodes for existing datasets.  In
+        particular:
 
-        - `~ExistingDatasets.inputs` must always be populated with all
-          overall-input datasets (but not prerequisites), by querying
-          `input_collections`;
-        - `~ExistingDatasets.outputs_for_skip` must be populated with any
-          intermediate our output datasets present in `skip_existing_in` (it
-          can be ignored if `skip_existing_in` is empty);
-        - `~ExistingDatasets.outputs_in_the_way` must be populated with any
-          intermediate or output datasets present in `output_run`, if
-          `output_run_exists` (it can be ignored if `output_run_exists` is
-          `False`).  Note that the presence of such datasets is not
-          automatically an error, even if `clobber is `False`, as these may be
-          quanta that will be skipped.
-        - `~ExistingDatasets.inputs` must be populated with all
-          prerequisite-input datasets that were included in the skeleton, by
-          querying `input_collections` (not all prerequisite inputs need to be
-          included in the skeleton, but the base class can only use per-quantum
-          queries to find them, and that can be slow when there are many
-          quanta).
+        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_dataset_ref` must be
+          used to associate existing datasets with all overall-input dataset
+          nodes in the skeleton by querying `input_collections`.  This includes
+          all standard input nodes and any prerequisite nodes added by the
+          method (prerequisite nodes may also be left out entirely, as the base
+          class can add them later, albeit possibly less efficiently).
+        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_output_for_skip`
+          must be used to associate existing datasets with output dataset nodes
+          by querying `skip_existing_in`.
+        - `quantum_graph_skeleton.QuantumGraphSkeleton.add_output_in_the_way`
+          must be used to associated existing outputs with output dataset nodes
+          by querying `output_run` if `output_run_exists` is `True`.
+          Note that the presence of such datasets is not automatically an
+          error, even if `clobber` is `False`, as these may be quanta that will
+          be skipped.
+
+        `DatasetRef` objects for existing datasets with empty data IDs in all
+        of the above categories may be found in the `empty_dimensions_datasets`
+        attribute, as these are queried for prior to this call by the base
+        class, but associating them with graph nodes is still this method's
+        responsibility.
 
         Dataset types should never be components and should always use the
         "common" storage class definition in `pipeline_graph.DatasetTypeNode`
@@ -448,15 +442,15 @@ class QuantumGraphBuilder(ABC):
         -----
         This method modifies ``skeleton`` in-place in several ways:
 
-        - It adds a "ref" attribute to dataset nodes, using the contents of
-          `existing_datasets`.  This ensures producing and consuming tasks
-          start from the same `DatasetRef`.
+        - It associates a `DatasetRef` with all output datasets and drops input
+          dataset nodes that do not have a `DatasetRef` already.  This ensures
+          producing and consuming tasks start from the same `DatasetRef`.
         - It adds "inputs", "outputs", and "init_inputs" attributes to the
           quantum nodes, holding the same `NamedValueMapping` objects needed to
           construct an actual `Quantum` instances.
         - It removes quantum nodes that are to be skipped because their outputs
-          already exist in `skip_existing_in`.  It also removes their outputs
-          from `ExistingDatasets.outputs_in_the_way`.
+          already exist in `skip_existing_in`.  It also marks their outputs
+          as no longer in the way.
         - It adds prerequisite dataset nodes and edges that connect them to the
           quanta that consume them.
         - It removes quantum nodes whose
@@ -604,30 +598,28 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        If the metadata dataset for this quantum exists in
-        `ExistingDatasets.outputs_for_skip`, the quantum will be skipped. This
+        If the metadata dataset for this quantum exists in the
+        `skip_existing_in` collections, the quantum will be skipped. This
         causes the quantum node to be removed from the graph.  Dataset nodes
-        that were previously the outputs of this quantum will have their "ref"
-        attribute set from `ExistingDatasets.outputs_for_skip`, or will be
-        removed if there is no such dataset there.  Any output dataset in
-        `ExistingDatasets.outputs_in_the_way` will be removed.
+        that were previously the outputs of this quantum will be associated
+        with `DatasetRef` objects that were found in ``skip_existing_in``, or
+        will be removed if there is no such dataset there.  Any output dataset
+        in `output_run` will be removed from the "output in the way" category.
         """
         metadata_dataset_key = DatasetKey(
             task_node.metadata_output.parent_dataset_type_name, quantum_key.data_id_values
         )
-        if metadata_dataset_key in self.existing_datasets.outputs_for_skip:
+        if skeleton.get_output_for_skip(metadata_dataset_key):
             # This quantum's metadata is already present in the the
             # skip_existing_in collections; we'll skip it.  But the presence of
             # the metadata dataset doesn't guarantee that all of the other
             # outputs we predicted are present; we have to check.
             for output_dataset_key in list(skeleton.iter_outputs_of(quantum_key)):
-                if (
-                    output_ref := self.existing_datasets.outputs_for_skip.get(output_dataset_key)
-                ) is not None:
+                if (output_ref := skeleton.get_output_for_skip(output_dataset_key)) is not None:
                     # Populate the skeleton graph's node attributes
                     # with the existing DatasetRef, just like a
                     # predicted output of a non-skipped quantum.
-                    skeleton[output_dataset_key]["ref"] = output_ref
+                    skeleton.set_dataset_ref(output_ref, output_dataset_key)
                 else:
                     # Remove this dataset from the skeleton graph,
                     # because the quantum that would have produced it
@@ -635,7 +627,7 @@ class QuantumGraphBuilder(ABC):
                     skeleton.remove_dataset_nodes([output_dataset_key])
                 # If this dataset was "in the way" (i.e. already in the
                 # output run), it isn't anymore.
-                self.existing_datasets.outputs_in_the_way.pop(output_dataset_key, None)
+                skeleton.discard_output_in_the_way(output_dataset_key)
             # Removing the quantum node from the graph will happen outside this
             # function.
             return True
@@ -678,22 +670,22 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        This first looks for outputs already present in the `output_run` by
-        looking in `ExistingDatasets.outputs_in_the_way`; if it finds something
-        and `clobber` is `True`, it uses that ref (it's not ideal that both the
-        original dataset and its replacement will have the same UUID, but we
-        don't have space in the quantum graph for two UUIDs, and we need the
-        datastore records of the original there).  If `clobber` is `False`,
-        `RuntimeError` is raised.  If there is no output already present, a new
-        one with a random UUID is generated.  In all cases the "ref" attribute
-        of the dataset node in the skeleton is set.
+        This first looks for outputs already present in the `output_run` (i.e.
+        "in the way" in the skeleton); if it finds something and `clobber` is
+        `True`, it uses that ref (it's not ideal that both the original dataset
+        and its replacement will have the same UUID, but we don't have space in
+        the quantum graph for two UUIDs, and we need the datastore records of
+        the original there).  If `clobber` is `False`, `RuntimeError` is
+        raised.  If there is no output already present, a new one with a random
+        UUID is generated.  In all cases the dataset node in the skeleton is
+        associated with a `DatasetRef`.
         """
         outputs_by_type: dict[str, list[DatasetRef]] = {}
         dataset_key: DatasetKey
         for dataset_key in skeleton.iter_outputs_of(quantum_key):
             dataset_data_id = skeleton[dataset_key]["data_id"]
             dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
-            if (ref := self.existing_datasets.outputs_in_the_way.get(dataset_key)) is None:
+            if (ref := skeleton.get_output_in_the_way(dataset_key)) is None:
                 ref = DatasetRef(dataset_type_node.dataset_type, dataset_data_id, run=self.output_run)
             elif not self.clobber:
                 # We intentionally raise here, before running adjustQuantum,
@@ -706,7 +698,7 @@ class QuantumGraphBuilder(ABC):
                 )
             skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
-            skeleton[dataset_key]["ref"] = ref
+            skeleton.set_dataset_ref(ref, dataset_key)
             outputs_by_type.setdefault(dataset_key.parent_dataset_type_name, []).append(ref)
         adapted_outputs: NamedKeyDict[DatasetType, list[DatasetRef]] = NamedKeyDict()
         for write_edge in task_node.iter_all_outputs():
@@ -756,19 +748,9 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        On return, the dataset nodes that represent inputs to this quantum will
-        either have their "ref" attribute set (using the common dataset type,
-        not the task-specific one) or will be removed from the graph.
-
-        For regular inputs, usually an existing "ref" (corresponding to an
-        output of another quantum) will be found and left unchanged.  When
-        there is no existing "ref" attribute, `ExistingDatasets.inputs` is
-        searched next; if there is nothing there, the input will be removed.
-
-        Prerequisite inputs are always queried for directly here (delegating to
-        `_find_prerequisite_inputs`).  They are never produced by other tasks,
-        and cannot in general be queried for in advance when
-        `ExistingDatasets.inputs` is populated.
+        This method trims input dataset nodes that are not already associated
+        with a `DatasetRef`, and queries for prerequisite input nodes that do
+        not exist.
         """
         quantum_data_id = skeleton[quantum_key]["data_id"]
         inputs_by_type: dict[str, set[DatasetRef]] = {}
@@ -777,18 +759,12 @@ class QuantumGraphBuilder(ABC):
         # all regular inputs (including intermediates) and may include some
         # prerequisites.
         for dataset_key in list(skeleton.iter_inputs_of(quantum_key)):
-            if (ref := skeleton[dataset_key].get("ref")) is None:
-                # This dataset is an overall input - if it was an intermediate,
-                # we would have already either removed the node or set the
-                # "ref" attribute when processing its producing quantum - and
-                # this is the first time we're trying to resolve it.
-                if (ref := self.existing_datasets.inputs.get(dataset_key)) is None:
-                    # It also doesn't exist in the input collections, so we
-                    # remove its node in the skeleton graph (so other consumers
-                    # won't have to check for it).
-                    skeleton.remove_dataset_nodes([dataset_key])
-                    continue
-                skeleton[dataset_key]["ref"] = ref
+            if (ref := skeleton.get_dataset_ref(dataset_key)) is None:
+                # If the dataset ref hasn't been set either as an existing
+                # input or as an output of an already-processed upstream
+                # quantum, it's not going to be produced; remove it.
+                skeleton.remove_dataset_nodes([dataset_key])
+                continue
             inputs_by_type.setdefault(dataset_key.parent_dataset_type_name, set()).add(ref)
             skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
             timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
@@ -803,7 +779,7 @@ class QuantumGraphBuilder(ABC):
             for ref in finder.find(
                 self.butler, self.input_collections, quantum_data_id, skypix_bounds, timespan
             ):
-                dataset_key = skeleton.add_prerequisite_node(ref.datasetType.name, ref=ref)
+                dataset_key = skeleton.add_prerequisite_node(ref)
                 dataset_keys.append(dataset_key)
                 inputs_for_type.add(ref)
             skeleton.add_input_edges(quantum_key, dataset_keys)
@@ -855,16 +831,16 @@ class QuantumGraphBuilder(ABC):
                     read_edge.parent_dataset_type_name, self.empty_data_id
                 )
                 skeleton.add_input_edge(task_init_key, dataset_key)
-                if (ref := skeleton[dataset_key].get("ref")) is None:
+                if (ref := skeleton.get_dataset_ref(dataset_key)) is None:
                     try:
-                        ref = self.existing_datasets.inputs[dataset_key]
+                        ref = self.empty_dimensions_datasets.inputs[dataset_key]
                     except KeyError:
                         raise InitInputMissingError(
                             f"Overall init-input dataset {read_edge.parent_dataset_type_name!r} "
                             f"needed by task {task_node.label!r} not found in input collection(s) "
                             f"{self.input_collections}."
                         ) from None
-                    skeleton[dataset_key]["ref"] = ref
+                    skeleton.set_dataset_ref(ref, dataset_key)
                 for quantum_key in skeleton.get_quanta(task_node.label):
                     skeleton.add_input_edge(quantum_key, dataset_key)
                 input_keys.append(dataset_key)
@@ -880,13 +856,13 @@ class QuantumGraphBuilder(ABC):
                 dataset_key = skeleton.add_dataset_node(
                     write_edge.parent_dataset_type_name, self.empty_data_id
                 )
-                if (ref := self.existing_datasets.outputs_in_the_way.get(dataset_key)) is None:
+                if (ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key)) is None:
                     ref = DatasetRef(
                         self._pipeline_graph.dataset_types[write_edge.parent_dataset_type_name].dataset_type,
                         self.empty_data_id,
                         run=self.output_run,
                     )
-                skeleton[dataset_key]["ref"] = ref
+                skeleton.set_dataset_ref(ref, dataset_key)
                 skeleton.add_output_edge(task_init_key, dataset_key)
                 adapted_ref = write_edge.adapt_dataset_ref(ref)
                 adapted_outputs[adapted_ref.datasetType] = adapted_ref
@@ -902,16 +878,16 @@ class QuantumGraphBuilder(ABC):
                 dataset_key = skeleton.add_dataset_node(
                     write_edge.parent_dataset_type_name, self.empty_data_id
                 )
-                if (ref := self.existing_datasets.outputs_for_skip.get(dataset_key)) is None:
+                if (ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key)) is None:
                     raise InitInputMissingError(
                         f"Init-output dataset {write_edge.parent_dataset_type_name!r} of skipped task "
                         f"{task_node.label!r} not found in skip-existing-in collection(s) "
                         f"{self.skip_existing_in}."
                     ) from None
-                skeleton[dataset_key]["ref"] = ref
+                skeleton.set_dataset_ref(ref, dataset_key)
                 # If this dataset was "in the way" (i.e. already in the output
                 # run), it isn't anymore.
-                self.existing_datasets.outputs_in_the_way.pop(dataset_key, None)
+                skeleton.discard_output_in_the_way(dataset_key)
         # No quanta remain in this task, but none were skipped; this means
         # they all got pruned because of NoWorkFound conditions.  This
         # dooms all downstream quanta to the same fate, so we don't bother
@@ -920,12 +896,15 @@ class QuantumGraphBuilder(ABC):
 
     @final
     @timeMethod
-    def _find_empty_dimension_datasets(self) -> None:
+    def _find_empty_dimension_datasets(self) -> EmptyDimensionsDatasets:
         """Query for all dataset types with no dimensions, updating
-        `existing_datasets` in-place.
+        `empty_dimensions_datasets` in-place.
 
         This includes but is not limited to init inputs and init outputs.
         """
+        inputs: dict[DatasetKey | PrerequisiteDatasetKey, DatasetRef] = {}
+        outputs_for_skip: dict[DatasetKey, DatasetRef] = {}
+        outputs_in_the_way: dict[DatasetKey, DatasetRef] = {}
         _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty]
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
@@ -942,7 +921,7 @@ class QuantumGraphBuilder(ABC):
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:
-                    self.existing_datasets.inputs[key] = ref
+                    inputs[key] = ref
             elif self.skip_existing_in:
                 # Dataset type is an intermediate or output; need to find these
                 # if only they're from previously executed quanta that we might
@@ -952,9 +931,9 @@ class QuantumGraphBuilder(ABC):
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:
-                    self.existing_datasets.outputs_for_skip[key] = ref
+                    outputs_for_skip[key] = ref
                     if ref.run == self.output_run:
-                        self.existing_datasets.outputs_in_the_way[key] = ref
+                        outputs_in_the_way[key] = ref
             if self.output_run_exists and not self.skip_existing_starts_with_output_run:
                 # ...or if they're in the way and would need to be clobbered
                 # (and we haven't already found them in the previous block).
@@ -963,7 +942,10 @@ class QuantumGraphBuilder(ABC):
                 except MissingDatasetTypeError:
                     ref = None
                 if ref is not None:
-                    self.existing_datasets.outputs_in_the_way[key] = ref
+                    outputs_in_the_way[key] = ref
+        return EmptyDimensionsDatasets(
+            inputs=inputs, outputs_for_skip=outputs_for_skip, outputs_in_the_way=outputs_in_the_way
+        )
 
     @final
     @timeMethod
@@ -1054,13 +1036,18 @@ class QuantumGraphBuilder(ABC):
 
         all_metadata = self.metadata.to_dict()
         all_metadata.update(metadata)
+        global_init_outputs: list[DatasetRef] = []
+        for dataset_key in skeleton.global_init_outputs:
+            ref = skeleton.get_dataset_ref(dataset_key)
+            assert ref is not None, "Global init input refs should be resolved already."
+            global_init_outputs.append(ref)
         return QuantumGraph(
             quanta,
             metadata=all_metadata,
             universe=self.universe,
             initInputs=init_inputs,
             initOutputs=init_outputs,
-            globalInitOutputs=[skeleton[key]["ref"] for key in skeleton.global_init_outputs],
+            globalInitOutputs=global_init_outputs,
             registryDatasetTypes=registry_dataset_types,
         )
 
@@ -1101,27 +1088,27 @@ class QuantumGraphBuilder(ABC):
 
 
 @dataclasses.dataclass(eq=False, order=False)
-class ExistingDatasets:
-    """Struct that holds the results of dataset queries for
+class EmptyDimensionsDatasets:
+    """Struct that holds the results of empty-dimensions dataset queries for
     `QuantumGraphBuilder`.
     """
 
-    inputs: dict[DatasetKey | PrerequisiteDatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
+    inputs: Mapping[DatasetKey | PrerequisiteDatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
     """Overall-input datasets found in `QuantumGraphBuilder.input_collections`.
 
     This may include prerequisite inputs.  It does include init-inputs.
     It does not include intermediates.
     """
 
-    outputs_for_skip: dict[DatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
+    outputs_for_skip: Mapping[DatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
     """Output datasets found in `QuantumGraphBuilder.skip_existing_in`.
 
-    It is unspecified whether this contains include init-outputs; there is
+    It is unspecified whether this contains init-outputs; there is
     no concept of skipping at the init stage, so this is not expected to
     matter.
     """
 
-    outputs_in_the_way: dict[DatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
+    outputs_in_the_way: Mapping[DatasetKey, DatasetRef] = dataclasses.field(default_factory=dict)
     """Output datasets found in `QuantumGraphBuilder.output_run`.
 
     This includes regular outputs and init-outputs.

@@ -39,8 +39,9 @@ __all__ = (
     "PrerequisiteDatasetKey",
 )
 
+import dataclasses
 from collections.abc import Iterable, Iterator, MutableMapping, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 import networkx
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
@@ -52,7 +53,8 @@ if TYPE_CHECKING:
 _LOG = getLogger(__name__)
 
 
-class QuantumKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class QuantumKey:
     """Identifier type for quantum keys in a `QuantumGraphSkeleton`."""
 
     task_label: str
@@ -71,7 +73,8 @@ class QuantumKey(NamedTuple):
     """
 
 
-class TaskInitKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class TaskInitKey:
     """Identifier type for task init keys in a `QuantumGraphSkeleton`."""
 
     task_label: str
@@ -83,7 +86,8 @@ class TaskInitKey(NamedTuple):
     """
 
 
-class DatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class DatasetKey:
     """Identifier type for dataset keys in a `QuantumGraphSkeleton`."""
 
     parent_dataset_type_name: str
@@ -104,7 +108,8 @@ class DatasetKey(NamedTuple):
     is_prerequisite: ClassVar[Literal[False]] = False
 
 
-class PrerequisiteDatasetKey(NamedTuple):
+@dataclasses.dataclass(slots=True, eq=True, frozen=True)
+class PrerequisiteDatasetKey:
     """Identifier type for prerequisite dataset keys in a
     `QuantumGraphSkeleton`.
 
@@ -127,6 +132,9 @@ class PrerequisiteDatasetKey(NamedTuple):
     """
 
     is_prerequisite: ClassVar[Literal[True]] = True
+
+
+Key: TypeAlias = QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
 
 
 class QuantumGraphSkeleton:
@@ -166,13 +174,14 @@ class QuantumGraphSkeleton:
             self._tasks[task_label] = (task_init_key, set())
             self._xgraph.add_node(task_init_key)
 
-    def __contains__(self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey) -> bool:
+    def __contains__(self, key: Key) -> bool:
         return key in self._xgraph.nodes
 
-    def __getitem__(
-        self, key: QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
-    ) -> MutableMapping[str, Any]:
+    def __getitem__(self, key: Key) -> MutableMapping[str, Any]:
         return self._xgraph.nodes[key]
+
+    def __iter__(self) -> Iterator[Key]:
+        return iter(self._xgraph.nodes)
 
     @property
     def n_nodes(self) -> int:
@@ -340,7 +349,6 @@ class QuantumGraphSkeleton:
 
     def add_prerequisite_node(
         self,
-        parent_dataset_type_name: str,
         ref: DatasetRef,
         **attrs: Any,
     ) -> PrerequisiteDatasetKey:
@@ -348,14 +356,18 @@ class QuantumGraphSkeleton:
 
         Parameters
         ----------
-        parent_dataset_type_name : `str`
-            Name of the parent dataset type.
         ref : `~lsst.daf.butler.DatasetRef`
-            The dataset ref of the pre-requisite.
+            The dataset ref of the prerequisite.
         **attrs : `~typing.Any`
             Additional attributes for the node.
+
+        Notes
+        -----
+        This automatically sets the 'existing_input' ref attribute (see
+        `set_existing_input_ref`), since prerequisites are always overall
+        inputs.
         """
-        key = PrerequisiteDatasetKey(parent_dataset_type_name, ref.id.bytes)
+        key = PrerequisiteDatasetKey(ref.datasetType.name, ref.id.bytes)
         self._xgraph.add_node(key, data_id=ref.dataId, ref=ref, **attrs)
         return key
 
@@ -517,11 +529,142 @@ class QuantumGraphSkeleton:
             for dataset_key in generation:
                 if dataset_key.is_task:
                     continue
-                try:
-                    result[dataset_key] = self[dataset_key]["ref"]
-                except KeyError:
+                if (ref := self.get_dataset_ref(dataset_key)) is None:
                     raise AssertionError(
                         f"Logic bug in QG generation: dataset {dataset_key} was never resolved."
                     )
+                result[dataset_key] = ref
             break
         return result
+
+    def set_dataset_ref(
+        self, ref: DatasetRef, key: DatasetKey | PrerequisiteDatasetKey | None = None
+    ) -> None:
+        """Associate a dataset node with a `DatasetRef` instance.
+
+        Parameters
+        ----------
+        ref : `DatasetRef`
+            `DatasetRef` to associate with the node.
+        key : `DatasetKey` or `PrerequisiteDatasetKey`, optional
+            Identifier for the graph node.  If not provided, a `DatasetKey`
+            is constructed from the dataset type name and data ID of ``ref``.
+        """
+        if key is None:
+            key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
+        self._xgraph.nodes[key]["ref"] = ref
+
+    def set_output_for_skip(self, ref: DatasetRef) -> None:
+        """Associate a dataset node with a `DatasetRef` that represents an
+        existing output in a collection where such outputs can cause a quantum
+        to be skipped.
+
+        Parameters
+        ----------
+        ref : `DatasetRef`
+            `DatasetRef` to associate with the node.
+        """
+        key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
+        self._xgraph.nodes[key]["output_for_skip"] = ref
+
+    def set_output_in_the_way(self, ref: DatasetRef) -> None:
+        """Associate a dataset node with a `DatasetRef` that represents an
+        existing output in the output RUN collectoin.
+
+        Parameters
+        ----------
+        ref : `DatasetRef`
+            `DatasetRef` to associate with the node.
+        """
+        key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
+        self._xgraph.nodes[key]["output_in_the_way"] = ref
+
+    def get_dataset_ref(self, key: DatasetKey | PrerequisiteDatasetKey) -> DatasetRef | None:
+        """Return the `DatasetRef` associated with the given node.
+
+        This does not return "output for skip" and "output in the way"
+        datasets.
+
+        Parameters
+        ----------
+        key : `DatasetKey` or `PrerequisiteDatasetKey`
+            Identifier for the graph node.
+
+        Returns
+        -------
+        ref : `DatasetRef` or `None`
+            Dataset reference associated with the node.
+        """
+        return self._xgraph.nodes[key].get("ref")
+
+    def get_output_for_skip(self, key: DatasetKey) -> DatasetRef | None:
+        """Return the `DatasetRef` associated with the given node in a
+        collection where it could lead to a quantum being skipped.
+
+        Parameters
+        ----------
+        key : `DatasetKey`
+            Identifier for the graph node.
+
+        Returns
+        -------
+        ref : `DatasetRef` or `None`
+            Dataset reference associated with the node.
+        """
+        return self._xgraph.nodes[key].get("output_for_skip")
+
+    def get_output_in_the_way(self, key: DatasetKey) -> DatasetRef | None:
+        """Return the `DatasetRef` associated with the given node in the
+        output RUN collection.
+
+        Parameters
+        ----------
+        key : `DatasetKey`
+            Identifier for the graph node.
+
+        Returns
+        -------
+        ref : `DatasetRef` or `None`
+            Dataset reference associated with the node.
+        """
+        return self._xgraph.nodes[key].get("output_in_the_way")
+
+    def discard_output_in_the_way(self, key: DatasetKey) -> None:
+        """Drop any `DatasetRef` associated with this node in the output RUN
+        collection.
+
+        Does nothing if there is no such `DatasetRef`.
+
+        Parameters
+        ----------
+        key : `DatasetKey`
+            Identifier for the graph node.
+        """
+        self._xgraph.nodes[key].pop("output_in_the_way", None)
+
+    def set_data_id(self, key: Key, data_id: DataCoordinate) -> None:
+        """Set the data ID associated with a node.
+
+        This updates the data ID in any `DatasetRef` objects associated with
+        the node via `set_ref`, `set_output_for_skip`, or
+        `set_output_in_the_way` as well, assuming it is an expanded version
+        of the original data ID.
+
+        Parameters
+        ----------
+        key : `Key`
+            Identifier for the graph node.
+        data_id : `DataCoordinate`
+            Data ID for the node.
+        """
+        state: MutableMapping[str, Any] = self._xgraph.nodes[key]
+        state["data_id"] = data_id
+        ref: DatasetRef | None
+        if (ref := state.get("ref")) is not None:
+            state["ref"] = ref.expanded(data_id)
+        output_for_skip: DatasetRef | None
+        if (output_for_skip := state.get("output_for_skip")) is not None:
+            state["output_for_skip"] = output_for_skip.expanded(data_id)
+        output_in_the_way: DatasetRef | None
+        if (output_in_the_way := state.get("output_in_the_way")) is not None:
+            state["output_in_the_way"] = output_in_the_way.expanded(data_id)
