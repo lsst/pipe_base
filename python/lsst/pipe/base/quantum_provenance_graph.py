@@ -1732,3 +1732,41 @@ class QuantumProvenanceGraph:
         """
         for key in networkx.dag.descendants(self._xgraph, key):
             yield (key, self._xgraph.nodes[key])  # type: ignore
+
+
+def _cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        "QuantumProvenanceGraph command-line utilities.",
+        description=(
+            "This is a small, low-effort debugging utility.  "
+            "It may disappear at any time in favor of a public 'pipetask' interface."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="cmd")
+    pprint_parser = subparsers.add_parser("pprint", help="Print a saved summary as a series of tables.")
+    pprint_parser.add_argument("file", type=argparse.FileType("r"), help="Saved summary JSON file.")
+    pprint_parser.add_argument(
+        "--brief",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether to print per-data ID information.",
+    )
+    pprint_parser.add_argument(
+        "--datasets",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    args = parser.parse_args()
+    match args.cmd:
+        case "pprint":
+            summary = Summary.model_validate_json(args.file.read())
+            args.file.close()
+            summary.pprint(brief=args.brief, datasets=args.datasets)
+        case _:
+            raise AssertionError(f"Unhandled subcommand {args.dest}.")
+
+
+if __name__ == "__main__":
+    _cli()
