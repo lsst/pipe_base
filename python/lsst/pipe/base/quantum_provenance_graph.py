@@ -173,7 +173,7 @@ class ExceptionInfo(pydantic.BaseModel):
     message: str
     """String message included in the exception."""
 
-    metadata: dict[str, float | int | str | bool]
+    metadata: dict[str, float | int | str | bool | None]
     """Additional metadata included in the exception."""
 
     @classmethod
