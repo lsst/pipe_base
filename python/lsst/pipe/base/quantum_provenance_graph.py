@@ -42,6 +42,7 @@ __all__ = (
 import dataclasses
 import itertools
 import logging
+import textwrap
 import uuid
 from collections.abc import Iterator, Mapping, Sequence, Set
 from enum import Enum
@@ -997,9 +998,15 @@ class Summary(pydantic.BaseModel):
                 rows.append({"Task": task_label, "Exception": type_name, "Count": len(exception_summaries)})
         return astropy.table.Table(rows)
 
-    def make_bad_quantum_tables(self) -> dict[str, astropy.table.Table]:
+    def make_bad_quantum_tables(self, max_message_width: int = 80) -> dict[str, astropy.table.Table]:
         """Construct an `astropy.table.Table` with per-data-ID information
         about failed, wonky, and partial-outputs-error quanta.
+
+        Parameters
+        ----------
+        max_message_width : `int`, optional
+            Maximum width for the Message column.  Longer messages are
+            truncated.
 
         Returns
         -------
@@ -1017,7 +1024,9 @@ class Summary(pydantic.BaseModel):
             ):
                 row = {"Status": status, "Exception": "", **unsuccessful_quantum_summary.data_id}
                 row["Message"] = (
-                    unsuccessful_quantum_summary.messages[-1] if unsuccessful_quantum_summary.messages else ""
+                    textwrap.shorten(unsuccessful_quantum_summary.messages[-1], max_message_width)
+                    if unsuccessful_quantum_summary.messages
+                    else ""
                 )
                 rows.append(row)
             for exception_summary in itertools.chain.from_iterable(task_summary.exceptions.values()):
@@ -1028,16 +1037,25 @@ class Summary(pydantic.BaseModel):
                     "Status": "SUCCESSFUL",
                     "Exception": short_name,
                     **exception_summary.data_id,
-                    "Message": exception_summary.exception.message,
+                    "Message": textwrap.shorten(exception_summary.exception.message, max_message_width),
                 }
                 rows.append(row)
             if rows:
-                result[task_label] = astropy.table.Table(rows)
+                table = astropy.table.Table(rows)
+                table.columns["Exception"].format = "<"
+                table.columns["Message"].format = "<"
+                result[task_label] = table
         return result
 
-    def make_bad_dataset_tables(self) -> dict[str, astropy.table.Table]:
+    def make_bad_dataset_tables(self, max_message_width: int = 80) -> dict[str, astropy.table.Table]:
         """Construct an `astropy.table.Table` with per-data-ID information
         about unsuccessful and cursed datasets.
+
+        Parameters
+        ----------
+        max_message_width : `int`, optional
+            Maximum width for the Message column.  Longer messages are
+            truncated.
 
         Returns
         -------
@@ -1054,11 +1072,15 @@ class Summary(pydantic.BaseModel):
             for cursed_dataset_summary in dataset_type_summary.cursed_datasets:
                 row = {"Status": "CURSED", **cursed_dataset_summary.data_id}
                 row["Message"] = (
-                    cursed_dataset_summary.messages[-1] if cursed_dataset_summary.messages else ""
+                    textwrap.shorten(cursed_dataset_summary.messages[-1], max_message_width)
+                    if cursed_dataset_summary.messages
+                    else ""
                 )
                 rows.append(row)
             if rows:
-                result[dataset_type_name] = astropy.table.Table(rows)
+                table = astropy.table.Table(rows)
+                table.columns["Message"].format = "<"
+                result[dataset_type_name] = table
         return result
 
 
