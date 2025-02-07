@@ -37,14 +37,14 @@ from lsst.utils import introspection
 from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
 
 __all__ = (
-    "QuantumSuccessCaveats",
-    "UnprocessableDataError",
-    "AnnotatedPartialOutputsError",
-    "NoWorkFound",
-    "UpstreamFailureNoWorkFound",
-    "RepeatableQuantumError",
     "AlgorithmError",
+    "AnnotatedPartialOutputsError",
     "InvalidQuantumError",
+    "NoWorkFound",
+    "QuantumSuccessCaveats",
+    "RepeatableQuantumError",
+    "UnprocessableDataError",
+    "UpstreamFailureNoWorkFound",
 )
 
 

@@ -32,11 +32,11 @@ classes.
 from __future__ import annotations
 
 __all__ = (
+    "DatasetKey",
+    "PrerequisiteDatasetKey",
     "QuantumGraphSkeleton",
     "QuantumKey",
     "TaskInitKey",
-    "DatasetKey",
-    "PrerequisiteDatasetKey",
 )
 
 import dataclasses

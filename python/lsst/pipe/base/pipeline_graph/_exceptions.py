@@ -29,14 +29,14 @@ from __future__ import annotations
 __all__ = (
     "ConnectionTypeConsistencyError",
     "DuplicateOutputError",
+    "EdgesChangedError",
     "IncompatibleDatasetTypeError",
-    "PipelineGraphExceptionSafetyError",
     "PipelineDataCycleError",
     "PipelineGraphError",
+    "PipelineGraphExceptionSafetyError",
     "PipelineGraphReadError",
-    "EdgesChangedError",
-    "UnresolvedGraphError",
     "TaskNotImportedError",
+    "UnresolvedGraphError",
 )
 
 

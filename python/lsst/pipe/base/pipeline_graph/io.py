@@ -27,13 +27,13 @@
 from __future__ import annotations
 
 __all__ = (
-    "expect_not_none",
+    "SerializedDatasetTypeNode",
     "SerializedEdge",
+    "SerializedPipelineGraph",
     "SerializedTaskInitNode",
     "SerializedTaskNode",
-    "SerializedDatasetTypeNode",
     "SerializedTaskSubset",
-    "SerializedPipelineGraph",
+    "expect_not_none",
 )
 
 from collections.abc import Mapping

@@ -32,11 +32,11 @@ helper classes.
 from __future__ import annotations
 
 __all__ = (
-    "QuantumGraphBuilder",
     "EmptyDimensionsDatasets",
-    "QuantumGraphBuilderError",
     "OutputExistsError",
     "PrerequisiteMissingError",
+    "QuantumGraphBuilder",
+    "QuantumGraphBuilderError",
 )
 
 import dataclasses

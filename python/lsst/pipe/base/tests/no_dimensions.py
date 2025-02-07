@@ -28,8 +28,8 @@
 from __future__ import annotations
 
 __all__ = (
-    "NoDimensionsTestConnections",
     "NoDimensionsTestConfig",
+    "NoDimensionsTestConnections",
     "NoDimensionsTestTask",
 )
 

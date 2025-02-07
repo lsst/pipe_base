@@ -29,8 +29,8 @@ from __future__ import annotations
 __all__ = (
     "MergedNodeKey",
     "merge_graph_input_trees",
-    "merge_graph_output_trees",
     "merge_graph_intermediates",
+    "merge_graph_output_trees",
 )
 
 import dataclasses

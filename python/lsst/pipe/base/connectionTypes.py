@@ -29,7 +29,7 @@
 `PipelineTaskConnections` class.
 """
 
-__all__ = ["InitInput", "InitOutput", "Input", "PrerequisiteInput", "Output", "BaseConnection"]
+__all__ = ["BaseConnection", "InitInput", "InitOutput", "Input", "Output", "PrerequisiteInput"]
 
 import dataclasses
 from collections.abc import Callable, Iterable, Sequence

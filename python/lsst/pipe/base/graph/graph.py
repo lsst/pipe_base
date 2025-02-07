@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("QuantumGraph", "IncompatibleGraphError")
+__all__ = ("IncompatibleGraphError", "QuantumGraph")
 
 import datetime
 import getpass

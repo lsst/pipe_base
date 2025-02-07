@@ -169,6 +169,7 @@ select = [
     "W",  # pycodestyle
     "D",  # pydocstyle
     "I",  # isort
+    "RUF022",  # sort __all__
 ]
 
 [tool.ruff.lint.isort]

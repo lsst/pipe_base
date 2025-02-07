@@ -35,10 +35,10 @@ __all__ = [
     "InputQuantizedConnection",
     "OutputQuantizedConnection",
     "PipelineTaskConnections",
+    "QuantizedConnection",
+    "ScalarError",
     "ScalarError",
     "iterConnections",
-    "ScalarError",
-    "QuantizedConnection",
 ]
 
 import dataclasses

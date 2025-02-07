@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("PipelineGraph", "log_config_mismatch", "compare_packages")
+__all__ = ("PipelineGraph", "compare_packages", "log_config_mismatch")
 
 import gzip
 import itertools

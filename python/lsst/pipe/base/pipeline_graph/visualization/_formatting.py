@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("get_node_symbol", "GetNodeText", "format_dimensions", "format_task_class")
+__all__ = ("GetNodeText", "format_dimensions", "format_task_class", "get_node_symbol")
 
 import itertools
 import textwrap

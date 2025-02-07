@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("QuantumNode", "NodeId", "BuildId")
+__all__ = ("BuildId", "NodeId", "QuantumNode")
 
 import uuid
 from dataclasses import dataclass

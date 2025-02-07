@@ -30,8 +30,8 @@ from __future__ import annotations
 __all__ = (
     "ConvertedUnmockedDataset",
     "MockDataset",
-    "MockStorageClass",
     "MockDatasetQuantum",
+    "MockStorageClass",
     "MockStorageClassDelegate",
     "get_mock_name",
     "get_original_name",

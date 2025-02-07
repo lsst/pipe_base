@@ -21,9 +21,9 @@
 from __future__ import annotations
 
 __all__ = (
+    "DatasetTypeExecutionReport",
     "QuantumGraphExecutionReport",
     "TaskExecutionReport",
-    "DatasetTypeExecutionReport",
     "lookup_quantum_data_id",
 )
 

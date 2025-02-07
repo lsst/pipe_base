@@ -33,10 +33,10 @@ processing.
 from __future__ import annotations
 
 __all__ = (
-    "QuantumProvenanceGraph",
-    "QuantumKey",
     "DatasetKey",
     "PrerequisiteDatasetKey",
+    "QuantumKey",
+    "QuantumProvenanceGraph",
 )
 
 import dataclasses

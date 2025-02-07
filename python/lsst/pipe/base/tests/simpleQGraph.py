@@ -28,7 +28,7 @@
 """Bunch of common classes and methods for use in unit tests."""
 from __future__ import annotations
 
-__all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
+__all__ = ["AddTask", "AddTaskConfig", "AddTaskFactoryMock"]
 
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
