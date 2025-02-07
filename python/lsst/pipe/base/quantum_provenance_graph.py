@@ -1328,8 +1328,7 @@ class QuantumProvenanceGraph:
         quantum_key : `QuantumKey`
             The key for the quantum whose outputs are needed.
         """
-        for dataset_key in self._xgraph.successors(quantum_key):
-            yield dataset_key
+        yield from self._xgraph.successors(quantum_key)
 
     def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
         """Unpack the predecessor (producer quantum) of a given dataset key
