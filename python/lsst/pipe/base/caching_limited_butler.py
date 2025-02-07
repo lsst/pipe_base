@@ -30,8 +30,8 @@ from __future__ import annotations
 __all__ = ["CachingLimitedButler"]
 
 import logging
-from collections.abc import Set
-from typing import Any, Iterable
+from collections.abc import Iterable, Set
+from typing import Any
 
 from lsst.daf.butler import (
     DatasetId,

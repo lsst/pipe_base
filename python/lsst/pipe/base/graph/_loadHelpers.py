@@ -258,7 +258,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
         self._resourceHandle.seek(start)
         return self._resourceHandle.read(stop - start)
 
-    def __enter__(self) -> "LoadHelper":
+    def __enter__(self) -> LoadHelper:
         if isinstance(self.uri, BinaryIO | BytesIO | BufferedRandom):
             self._resourceHandle = self.uri
         else:

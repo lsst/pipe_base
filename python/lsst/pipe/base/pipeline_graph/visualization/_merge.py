@@ -36,8 +36,9 @@ __all__ = (
 import dataclasses
 import hashlib
 from collections import defaultdict
+from collections.abc import Iterable
 from functools import cached_property
-from typing import Any, Iterable, TypeVar
+from typing import Any, TypeVar
 
 import networkx
 import networkx.algorithms.dag
