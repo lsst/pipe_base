@@ -35,10 +35,10 @@ __all__ = [
     "InputQuantizedConnection",
     "OutputQuantizedConnection",
     "PipelineTaskConnections",
+    "QuantizedConnection",
+    "ScalarError",
     "ScalarError",
     "iterConnections",
-    "ScalarError",
-    "QuantizedConnection",
 ]
 
 import dataclasses
@@ -334,7 +334,8 @@ class PipelineTaskConnectionsMetaclass(type):
         # by looping over the keys of the defaultTemplates dict specified at
         # class declaration time.
         templateValues = {
-            name: getattr(config.connections, name) for name in cls.defaultTemplates  # type: ignore
+            name: getattr(config.connections, name)
+            for name in cls.defaultTemplates  # type: ignore
         }
 
         # We now assemble a mapping of all connection instances keyed by

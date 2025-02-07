@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("QuantumGraph", "IncompatibleGraphError")
+__all__ = ("IncompatibleGraphError", "QuantumGraph")
 
 import datetime
 import getpass
@@ -44,8 +44,10 @@ from itertools import chain
 from types import MappingProxyType
 from typing import Any, BinaryIO, TypeVar
 
-import lsst.utils.logging
 import networkx as nx
+from networkx.drawing.nx_agraph import write_dot
+
+import lsst.utils.logging
 from lsst.daf.butler import (
     Config,
     DatasetId,
@@ -63,7 +65,6 @@ from lsst.daf.butler.registry import ConflictingDefinitionError
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.packages import Packages
-from networkx.drawing.nx_agraph import write_dot
 
 from ..config import PipelineTaskConfig
 from ..connections import iterConnections
@@ -1551,9 +1552,9 @@ class QuantumGraph:
         # Write init-outputs that weren't already present.
         for obj, dataset_type in init_outputs:
             if new_ref := output_refs.get(dataset_type.name):
-                assert (
-                    new_ref.datasetType.storageClass_name == dataset_type.storageClass_name
-                ), "QG init refs should use task connection storage classes."
+                assert new_ref.datasetType.storageClass_name == dataset_type.storageClass_name, (
+                    "QG init refs should use task connection storage classes."
+                )
                 butler.put(obj, new_ref)
 
     def write_configs(self, butler: LimitedButler, compare_existing: bool = True) -> None:
@@ -1577,7 +1578,7 @@ class QuantumGraph:
         to_put: list[tuple[PipelineTaskConfig, DatasetRef]] = []
         for task_node in self.pipeline_graph.tasks.values():
             dataset_type_name = task_node.init.config_output.dataset_type_name
-            (ref,) = [
+            (ref,) = [  # noqa: UP027
                 ref
                 for ref in self.get_init_output_refs(task_node.label)
                 if ref.datasetType.name == dataset_type_name

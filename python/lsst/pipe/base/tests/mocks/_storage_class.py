@@ -30,8 +30,8 @@ from __future__ import annotations
 __all__ = (
     "ConvertedUnmockedDataset",
     "MockDataset",
-    "MockStorageClass",
     "MockDatasetQuantum",
+    "MockStorageClass",
     "MockStorageClassDelegate",
     "get_mock_name",
     "get_original_name",
@@ -44,6 +44,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
 import pydantic
+
 from lsst.daf.butler import (
     DataIdValue,
     DatasetComponent,
@@ -342,9 +343,9 @@ class MockStorageClassDelegate(StorageClassDelegate):
 
     def getComponent(self, composite: Any, componentName: str) -> Any:
         # Docstring inherited.
-        assert isinstance(
-            composite, MockDataset
-        ), f"MockStorageClassDelegate given a non-mock dataset {composite!r}."
+        assert isinstance(composite, MockDataset), (
+            f"MockStorageClassDelegate given a non-mock dataset {composite!r}."
+        )
         return composite.make_derived(
             name=f"{composite.dataset_type.name}.{componentName}",
             storageClass=self.storageClass.allComponents()[componentName].name,
@@ -360,9 +361,9 @@ class MockStorageClassDelegate(StorageClassDelegate):
 
     def handleParameters(self, inMemoryDataset: Any, parameters: Mapping[str, Any] | None = None) -> Any:
         # Docstring inherited.
-        assert isinstance(
-            inMemoryDataset, MockDataset
-        ), f"MockStorageClassDelegate given a non-mock dataset {inMemoryDataset!r}."
+        assert isinstance(inMemoryDataset, MockDataset), (
+            f"MockStorageClassDelegate given a non-mock dataset {inMemoryDataset!r}."
+        )
         if not parameters:
             return inMemoryDataset
         return inMemoryDataset.make_derived(parameters={k: repr(v) for k, v in parameters.items()})

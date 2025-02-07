@@ -232,7 +232,7 @@ class InstrumentTestCase(unittest.TestCase):
         formattedNow = Instrument.makeCollectionTimestamp()
         self.assertIsInstance(formattedNow, str)
         datetimeThen1 = datetime.datetime.strptime(formattedNow, "%Y%m%dT%H%M%S%z")
-        self.assertEqual(datetimeThen1.tzinfo, datetime.timezone.utc)
+        self.assertEqual(datetimeThen1.tzinfo, datetime.UTC)
 
         with self.assertRaises(TypeError):
             Instrument.formatCollectionTimestamp(0)

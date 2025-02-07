@@ -29,7 +29,7 @@
 
 from __future__ import annotations
 
-__all__ = ["Pipeline", "TaskDef", "LabelSpecifier"]
+__all__ = ["LabelSpecifier", "Pipeline", "TaskDef"]
 
 import copy
 import logging

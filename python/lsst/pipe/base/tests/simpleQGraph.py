@@ -26,17 +26,19 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Bunch of common classes and methods for use in unit tests."""
+
 from __future__ import annotations
 
-__all__ = ["AddTaskConfig", "AddTask", "AddTaskFactoryMock"]
+__all__ = ["AddTask", "AddTaskConfig", "AddTaskFactoryMock"]
 
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy
+
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
-import numpy
 from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, Formatter, LimitedButler
 from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.resources import ResourcePath

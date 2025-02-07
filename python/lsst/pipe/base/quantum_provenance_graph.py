@@ -33,10 +33,10 @@ processing.
 from __future__ import annotations
 
 __all__ = (
-    "QuantumProvenanceGraph",
-    "QuantumKey",
     "DatasetKey",
     "PrerequisiteDatasetKey",
+    "QuantumKey",
+    "QuantumProvenanceGraph",
 )
 
 import dataclasses
@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
 import networkx
 import pydantic
+
 from lsst.daf.butler import Butler, DataCoordinate, DataIdValue, DatasetRef
 from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import getLogger
@@ -1266,9 +1267,9 @@ class QuantumProvenanceGraph:
             # We reverse the order of the associated output runs because the
             # query in __resolve_duplicates must be done most recent-first.
             collections = list(reversed(output_runs))
-            assert (
-                not curse_failed_logs
-            ), "curse_failed_logs option must be used with one campaign-level collection."
+            assert not curse_failed_logs, (
+                "curse_failed_logs option must be used with one campaign-level collection."
+            )
         self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
 
     def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
@@ -1327,8 +1328,7 @@ class QuantumProvenanceGraph:
         quantum_key : `QuantumKey`
             The key for the quantum whose outputs are needed.
         """
-        for dataset_key in self._xgraph.successors(quantum_key):
-            yield dataset_key
+        yield from self._xgraph.successors(quantum_key)
 
     def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
         """Unpack the predecessor (producer quantum) of a given dataset key

@@ -21,9 +21,9 @@
 from __future__ import annotations
 
 __all__ = (
+    "DatasetTypeExecutionReport",
     "QuantumGraphExecutionReport",
     "TaskExecutionReport",
-    "DatasetTypeExecutionReport",
     "lookup_quantum_data_id",
 )
 
@@ -36,6 +36,7 @@ from typing import Any
 
 import networkx
 import yaml
+
 from lsst.daf.butler import Butler, DataCoordinate, DatasetRef, Quantum
 from lsst.resources import ResourcePathExpression
 

@@ -402,7 +402,7 @@ class Instrument(metaclass=ABCMeta):
         if not isinstance(timestamp, datetime.datetime):
             raise TypeError(f"Unexpected date/time object: {timestamp!r}.")
         if timestamp.tzinfo is not None:
-            timestamp = timestamp.astimezone(datetime.timezone.utc)
+            timestamp = timestamp.astimezone(datetime.UTC)
         return f"{timestamp:%Y%m%dT%H%M%S}Z"
 
     @staticmethod
@@ -415,7 +415,7 @@ class Instrument(metaclass=ABCMeta):
         formatted : `str`
             Standardized string form of the current time.
         """
-        return Instrument.formatCollectionTimestamp(datetime.datetime.now(tz=datetime.timezone.utc))
+        return Instrument.formatCollectionTimestamp(datetime.datetime.now(tz=datetime.UTC))
 
     def makeDefaultRawIngestRunName(self) -> str:
         """Make the default instrument-specific run collection string for raw

@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("show", "parse_display_args")
+__all__ = ("parse_display_args", "show")
 
 import sys
 from collections.abc import Sequence

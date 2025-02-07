@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import annotations
 
-__all__ = ("get_node_symbol", "GetNodeText", "format_dimensions", "format_task_class")
+__all__ = ("GetNodeText", "format_dimensions", "format_task_class", "get_node_symbol")
 
 import itertools
 import textwrap
@@ -34,6 +34,7 @@ from collections.abc import Iterator
 
 import networkx
 import networkx.algorithms.community
+
 from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType
@@ -120,7 +121,7 @@ class GetNodeText:
         if self.width and len(description) > self.width:
             index = f"[{len(self.deferred) + 1}]"
             self.deferred.append((index, style, terms))
-            return f"{description[:self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
+            return f"{description[: self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
         return description
 
     def format_dimensions(self, dimensions: DimensionGroup) -> str:

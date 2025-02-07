@@ -32,6 +32,7 @@ import dataclasses
 from typing import Any, cast
 
 from frozendict import frozendict
+
 from lsst.daf.butler import (
     DataCoordinate,
     DataId,

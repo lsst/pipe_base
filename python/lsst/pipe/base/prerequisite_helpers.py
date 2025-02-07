@@ -32,11 +32,11 @@ QuantumGraph generation.
 from __future__ import annotations
 
 __all__ = (
-    "SkyPixBoundsBuilder",
-    "PrerequisiteFinder",
     "PrerequisiteBounds",
-    "TimespanBuilder",
+    "PrerequisiteFinder",
     "PrerequisiteInfo",
+    "SkyPixBoundsBuilder",
+    "TimespanBuilder",
 )
 
 import dataclasses
@@ -165,8 +165,7 @@ class PrerequisiteFinder:
                 # If the task dimensions has a temporal family that isn't in
                 # the dataset type (i.e. "observation_timespans", like visit
                 # or exposure)...
-                self.task_node.dimensions.temporal
-                - self.dataset_type_node.dimensions.temporal
+                self.task_node.dimensions.temporal - self.dataset_type_node.dimensions.temporal
             ) and (
                 # ...and the dataset type has a temporal family that isn't in
                 # the task dimensions, or is a calibration, the prerequisite

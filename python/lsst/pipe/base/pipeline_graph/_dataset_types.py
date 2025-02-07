@@ -33,6 +33,7 @@ from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any
 
 import networkx
+
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionGroup, DimensionUniverse, StorageClass
 
 from ._exceptions import DuplicateOutputError

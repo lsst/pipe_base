@@ -41,6 +41,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, ClassVar, cast
 
 import networkx as nx
+
 from lsst.daf.butler import (
     DatasetRef,
     DatasetType,

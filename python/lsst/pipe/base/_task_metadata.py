@@ -26,11 +26,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 __all__ = [
-    "TaskMetadata",
-    "SetDictMetadata",
     "GetDictMetadata",
     "GetSetDictMetadata",
     "NestedMetadataDict",
+    "SetDictMetadata",
+    "TaskMetadata",
 ]
 
 import itertools

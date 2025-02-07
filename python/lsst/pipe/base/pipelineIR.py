@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import yaml
+
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import find_outside_stacklevel
 
@@ -342,7 +343,7 @@ class ConfigIR:
                 )
         return new_config
 
-    def maybe_merge(self, other_config: "ConfigIR") -> Generator["ConfigIR", None, None]:
+    def maybe_merge(self, other_config: ConfigIR) -> Generator[ConfigIR, None, None]:
         """Merge another instance of a `ConfigIR` into this instance if
         possible. This function returns a generator that is either self
         if the configs were merged, or self, and other_config if that could
@@ -482,7 +483,7 @@ class ImportIR:
     any declared instrument prior to import.
     """
 
-    def toPipelineIR(self) -> "PipelineIR":
+    def toPipelineIR(self) -> PipelineIR:
         """Load in the Pipeline specified by this object, and turn it into a
         PipelineIR instance.
 

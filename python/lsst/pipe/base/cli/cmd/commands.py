@@ -28,6 +28,7 @@
 from typing import Any
 
 import click
+
 from lsst.daf.butler.cli.opt import (
     dataset_type_option,
     options_file_option,

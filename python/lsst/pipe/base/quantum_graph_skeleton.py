@@ -32,11 +32,11 @@ classes.
 from __future__ import annotations
 
 __all__ = (
+    "DatasetKey",
+    "PrerequisiteDatasetKey",
     "QuantumGraphSkeleton",
     "QuantumKey",
     "TaskInitKey",
-    "DatasetKey",
-    "PrerequisiteDatasetKey",
 )
 
 import dataclasses
@@ -44,6 +44,7 @@ from collections.abc import Iterable, Iterator, MutableMapping, Set
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 import networkx
+
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
 from lsst.utils.logging import getLogger
 

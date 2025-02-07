@@ -66,9 +66,9 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
     `fromExpression` class method given a valid string.
     """
 
-    ALL: "type[_ALL]"
-    OFF: "type[_OFF]"
-    LIST: "type[_LIST]"
+    ALL: type[_ALL]
+    OFF: type[_OFF]
+    LIST: type[_LIST]
 
     @classmethod
     def __subclasshook__(cls, subclass):
@@ -77,7 +77,7 @@ class DatasetQueryConstraintVariant(Iterable, Protocol):
         return False
 
     @classmethod
-    def fromExpression(cls, expression: str) -> "DatasetQueryConstraintVariant":
+    def fromExpression(cls, expression: str) -> DatasetQueryConstraintVariant:
         """Select and return the correct Variant that corresponds to the input
         expression.
 

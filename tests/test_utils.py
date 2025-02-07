@@ -24,11 +24,12 @@
 import unittest
 
 import astropy
+import pydantic
+
 import lsst.daf.butler as dafButler
 import lsst.pipe.base as pipeBase
 import lsst.sphgeom as sphgeom
 import lsst.utils.tests
-import pydantic
 
 
 class RegionTimeInfoTestCase(unittest.TestCase):

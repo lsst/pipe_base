@@ -29,19 +29,21 @@ from __future__ import annotations
 __all__ = (
     "MergedNodeKey",
     "merge_graph_input_trees",
-    "merge_graph_output_trees",
     "merge_graph_intermediates",
+    "merge_graph_output_trees",
 )
 
 import dataclasses
 import hashlib
 from collections import defaultdict
+from collections.abc import Iterable
 from functools import cached_property
-from typing import Any, Iterable, TypeVar
+from typing import Any, TypeVar
 
 import networkx
 import networkx.algorithms.dag
 import networkx.algorithms.tree
+
 from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType

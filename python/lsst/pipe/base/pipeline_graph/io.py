@@ -27,13 +27,13 @@
 from __future__ import annotations
 
 __all__ = (
-    "expect_not_none",
+    "SerializedDatasetTypeNode",
     "SerializedEdge",
+    "SerializedPipelineGraph",
     "SerializedTaskInitNode",
     "SerializedTaskNode",
-    "SerializedDatasetTypeNode",
     "SerializedTaskSubset",
-    "SerializedPipelineGraph",
+    "expect_not_none",
 )
 
 from collections.abc import Mapping
@@ -41,6 +41,7 @@ from typing import Any, TypeVar
 
 import networkx
 import pydantic
+
 from lsst.daf.butler import DatasetType, DimensionConfig, DimensionGroup, DimensionUniverse
 
 from .. import automatic_connection_constants as acc

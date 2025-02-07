@@ -33,6 +33,7 @@ import unittest
 from typing import Any
 
 import astropy.units as u
+
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.logging
