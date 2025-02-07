@@ -1578,7 +1578,7 @@ class QuantumGraph:
         to_put: list[tuple[PipelineTaskConfig, DatasetRef]] = []
         for task_node in self.pipeline_graph.tasks.values():
             dataset_type_name = task_node.init.config_output.dataset_type_name
-            (ref,) = [
+            (ref,) = [  # noqa: UP027
                 ref
                 for ref in self.get_init_output_refs(task_node.label)
                 if ref.datasetType.name == dataset_type_name
