@@ -170,6 +170,7 @@ select = [
     "D",  # pydocstyle
     "I",  # isort
     "RUF022",  # sort __all__
+    "UP",  # pyupgrade
 ]
 
 [tool.ruff.lint.isort]
