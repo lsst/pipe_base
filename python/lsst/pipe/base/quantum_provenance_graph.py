@@ -924,12 +924,12 @@ class Summary(pydantic.BaseModel):
             print("")
         if not brief:
             for task_label, bad_quantum_table in self.make_bad_quantum_tables().items():
-                print(f"{task_label} failures:")
+                print(f"{task_label} errors:")
                 bad_quantum_table.pprint_all()
                 print("")
             if datasets:
                 for dataset_type_name, bad_dataset_table in self.make_bad_dataset_tables().items():
-                    print(f"{dataset_type_name} failures:")
+                    print(f"{dataset_type_name} errors:")
                     bad_dataset_table.pprint_all()
                     print("")
 
@@ -1060,7 +1060,7 @@ class Summary(pydantic.BaseModel):
                 zip(itertools.repeat("FAILED"), task_summary.failed_quanta),
                 zip(itertools.repeat("WONKY"), task_summary.wonky_quanta),
             ):
-                row = {"Status": status, "Exception": "", **unsuccessful_quantum_summary.data_id}
+                row = {"Status(Caveats)": status, "Exception": "", **unsuccessful_quantum_summary.data_id}
                 row["Message"] = (
                     textwrap.shorten(unsuccessful_quantum_summary.messages[-1], max_message_width)
                     if unsuccessful_quantum_summary.messages
@@ -1072,7 +1072,7 @@ class Summary(pydantic.BaseModel):
                 # brevity.
                 short_name: str = exception_summary.exception.type_name.rsplit(".", maxsplit=1)[-1]
                 row = {
-                    "Status": "SUCCESSFUL",
+                    "Status(Caveats)": "SUCCESSFUL(P)",  # we only get exception info for partial outputs
                     "Exception": short_name,
                     **exception_summary.data_id,
                     "Message": textwrap.shorten(exception_summary.exception.message, max_message_width),
