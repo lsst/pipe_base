@@ -121,7 +121,7 @@ class GetNodeText:
         if self.width and len(description) > self.width:
             index = f"[{len(self.deferred) + 1}]"
             self.deferred.append((index, style, terms))
-            return f"{description[:self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
+            return f"{description[: self.width - len(index) - 6]}...{style[0]}{index}{style[1]} "
         return description
 
     def format_dimensions(self, dimensions: DimensionGroup) -> str:

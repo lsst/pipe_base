@@ -1267,9 +1267,9 @@ class QuantumProvenanceGraph:
             # We reverse the order of the associated output runs because the
             # query in __resolve_duplicates must be done most recent-first.
             collections = list(reversed(output_runs))
-            assert (
-                not curse_failed_logs
-            ), "curse_failed_logs option must be used with one campaign-level collection."
+            assert not curse_failed_logs, (
+                "curse_failed_logs option must be used with one campaign-level collection."
+            )
         self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
 
     def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:

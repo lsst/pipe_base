@@ -26,6 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Module which defines ConfigOverrides class and related methods."""
+
 from __future__ import annotations
 
 __all__ = ["ConfigOverrides"]

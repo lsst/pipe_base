@@ -244,9 +244,9 @@ class TaskInitNode:
         if imported_data is not None:
             self._imported_data = imported_data
         else:
-            assert (
-                self._task_class_name is not None and self._config_str is not None
-            ), "If imported_data is not present, task_class_name and config_str must be."
+            assert self._task_class_name is not None and self._config_str is not None, (
+                "If imported_data is not present, task_class_name and config_str must be."
+            )
 
     key: NodeKey
     """Key that identifies this node in internal and exported networkx graphs.

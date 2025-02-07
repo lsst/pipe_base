@@ -26,6 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Bunch of common classes and methods for use in unit tests."""
+
 from __future__ import annotations
 
 __all__ = ["AddTask", "AddTaskConfig", "AddTaskFactoryMock"]

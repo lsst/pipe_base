@@ -1552,9 +1552,9 @@ class QuantumGraph:
         # Write init-outputs that weren't already present.
         for obj, dataset_type in init_outputs:
             if new_ref := output_refs.get(dataset_type.name):
-                assert (
-                    new_ref.datasetType.storageClass_name == dataset_type.storageClass_name
-                ), "QG init refs should use task connection storage classes."
+                assert new_ref.datasetType.storageClass_name == dataset_type.storageClass_name, (
+                    "QG init refs should use task connection storage classes."
+                )
                 butler.put(obj, new_ref)
 
     def write_configs(self, butler: LimitedButler, compare_existing: bool = True) -> None:
