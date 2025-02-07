@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import yaml
+
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import find_outside_stacklevel
 

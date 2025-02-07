@@ -34,6 +34,7 @@ from collections.abc import Iterator
 
 import networkx
 import networkx.algorithms.community
+
 from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType

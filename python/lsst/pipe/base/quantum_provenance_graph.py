@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
 import networkx
 import pydantic
+
 from lsst.daf.butler import Butler, DataCoordinate, DataIdValue, DatasetRef
 from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import getLogger

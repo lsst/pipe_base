@@ -30,9 +30,10 @@
 import unittest
 import warnings
 
+import pytest
+
 import lsst.pipe.base as pipeBase
 import lsst.utils.tests
-import pytest
 from lsst.pex.config import Field
 
 

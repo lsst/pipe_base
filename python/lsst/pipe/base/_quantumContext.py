@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import astropy.units as u
+
 from lsst.daf.butler import (
     DataCoordinate,
     DatasetProvenance,

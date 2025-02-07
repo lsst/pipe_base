@@ -41,6 +41,7 @@ from typing import Any, TypeVar
 
 import networkx
 import pydantic
+
 from lsst.daf.butler import DatasetType, DimensionConfig, DimensionGroup, DimensionUniverse
 
 from .. import automatic_connection_constants as acc

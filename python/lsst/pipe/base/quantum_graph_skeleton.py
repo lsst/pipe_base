@@ -44,6 +44,7 @@ from collections.abc import Iterable, Iterator, MutableMapping, Set
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 import networkx
+
 from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
 from lsst.utils.logging import getLogger
 

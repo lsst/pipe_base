@@ -42,6 +42,7 @@ from typing import Any, Iterable, TypeVar
 import networkx
 import networkx.algorithms.dag
 import networkx.algorithms.tree
+
 from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType

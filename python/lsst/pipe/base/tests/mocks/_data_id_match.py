@@ -34,6 +34,7 @@ from collections.abc import Callable
 from typing import Any
 
 import astropy.time
+
 from lsst.daf.butler import DataId
 from lsst.daf.butler.registry.queries.expressions.parser import Node, TreeVisitor, parse_expression
 

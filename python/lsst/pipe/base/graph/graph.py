@@ -44,8 +44,10 @@ from itertools import chain
 from types import MappingProxyType
 from typing import Any, BinaryIO, TypeVar
 
-import lsst.utils.logging
 import networkx as nx
+from networkx.drawing.nx_agraph import write_dot
+
+import lsst.utils.logging
 from lsst.daf.butler import (
     Config,
     DatasetId,
@@ -63,7 +65,6 @@ from lsst.daf.butler.registry import ConflictingDefinitionError
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.packages import Packages
-from networkx.drawing.nx_agraph import write_dot
 
 from ..config import PipelineTaskConfig
 from ..connections import iterConnections

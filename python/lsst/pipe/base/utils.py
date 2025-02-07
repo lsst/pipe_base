@@ -33,8 +33,9 @@ __all__ = [
 ]
 
 
-import lsst.daf.butler
 import pydantic
+
+import lsst.daf.butler
 
 
 class RegionTimeInfo(pydantic.BaseModel):

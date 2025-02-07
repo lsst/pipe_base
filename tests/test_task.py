@@ -25,10 +25,11 @@ import numbers
 import time
 import unittest
 
+import yaml
+
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.utils.tests
-import yaml
 
 # Whilst in transition the test can't tell which type is
 # going to be used for metadata.

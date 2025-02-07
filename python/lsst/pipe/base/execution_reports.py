@@ -36,6 +36,7 @@ from typing import Any
 
 import networkx
 import yaml
+
 from lsst.daf.butler import Butler, DataCoordinate, DatasetRef, Quantum
 from lsst.resources import ResourcePathExpression
 

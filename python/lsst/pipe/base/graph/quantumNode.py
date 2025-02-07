@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Any, NewType
 
 import pydantic
+
 from lsst.daf.butler import (
     DatasetRef,
     DimensionRecordsAccumulator,

@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
 import networkx
 import networkx.algorithms.bipartite
 import networkx.algorithms.dag
+
 from lsst.daf.butler import (
     Butler,
     DataCoordinate,
