@@ -30,11 +30,14 @@ from __future__ import annotations
 import abc
 import enum
 import logging
-from typing import ClassVar, Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from lsst.utils import introspection
 
 from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
+
+if TYPE_CHECKING:
+    from lsst.utils.logging import LsstLogAdapter
 
 __all__ = (
     "AlgorithmError",
@@ -66,7 +69,7 @@ class QuantumSuccessCaveats(enum.Flag):
     ALL_OUTPUTS_MISSING = enum.auto()
     """No predicted outputs (except logs and metadata) were produced.
 
-    `ANY_OUTPUTS_MISSING` is also set whenever this flag it set.
+    `ANY_OUTPUTS_MISSING` is also set whenever this flag is set.
     """
 
     NO_WORK = enum.auto()
@@ -162,11 +165,11 @@ class QuantumSuccessCaveats(enum.Flag):
             Mapping from character code to description.
         """
         return {
-            "+": "at least one predicted output is missing, but not all",
+            "+": "at least one predicted output was missing, but not all were",
             "*": "all predicated outputs were missing (besides logs and metadata)",
-            "A": "adjustQuantum raised NoWorkFound; an updated QG would not include this quantum",
+            "A": "adjustQuantum raised NoWorkFound; a regenerated QG would not include this quantum",
             "D": "algorithm considers data too bad to be processable",
-            "U": "one or more input dataset as incomplete due to an upstream failure",
+            "U": "one or more input dataset was incomplete due to an upstream failure",
             "P": "task failed but wrote partial outputs; considered a partial success",
             "N": "runQuantum raised NoWorkFound",
         }
@@ -177,7 +180,9 @@ class GetSetDictMetadataHolder(Protocol):
     `GetSetDictMetadata`.
     """
 
-    metadata: GetSetDictMetadata | None
+    @property
+    def metadata(self) -> GetSetDictMetadata | None:
+        pass
 
 
 class NoWorkFound(BaseException):
@@ -297,7 +302,7 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
 
     @classmethod
     def annotate(
-        cls, error: Exception, *args: GetSetDictMetadataHolder | None, log: logging.Logger
+        cls, error: Exception, *args: GetSetDictMetadataHolder | None, log: logging.Logger | LsstLogAdapter
     ) -> AnnotatedPartialOutputsError:
         """Set metadata on outputs to explain the nature of the failure.
 
