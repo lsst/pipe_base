@@ -1674,6 +1674,30 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertFalse(graph.dataset_types["d"].is_initial_query_constraint)
 
+    def test_invalid_dimensions(self) -> None:
+        """Test that a connection with an invalid dimensions raises an
+        exception (from butler) with the connection name information included.
+        """
+        self.a_config.outputs["o"] = DynamicConnectionConfig(
+            dataset_type_name="d", dimensions=["frog"], storage_class="StructuredDataList"
+        )
+        graph = self.make_graph()
+        with self.assertRaises(Exception) as error:
+            graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
+
+    def test_invalid_dataset_type_name(self) -> None:
+        """Test that a connection with an invalid dataset type name raises an
+        exception (from butler) with the connection name information included.
+        """
+        self.a_config.outputs["o"] = DynamicConnectionConfig(
+            dataset_type_name=":?", storage_class="StructuredDataList"
+        )
+        graph = self.make_graph()
+        with self.assertRaises(Exception) as error:
+            graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()
