@@ -29,13 +29,18 @@
 """Simple unit test for quantum_provenance_graph."""
 
 import unittest
+import uuid
 
 import lsst.utils.logging
 from lsst.pipe.base.quantum_provenance_graph import (
+    CursedDatasetSummary,
     DatasetTypeSummary,
+    ExceptionInfo,
+    ExceptionInfoSummary,
     QuantumProvenanceGraph,
     Summary,
     TaskSummary,
+    UnsuccessfulQuantumSummary,
 )
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.utils.tests import temporaryDirectory
@@ -96,6 +101,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
 
@@ -153,6 +159,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
             for dataset_type_name, dataset_type_summary in one_graph_only_sum.datasets.items():
@@ -167,17 +174,17 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertEqual(dataset_type_summary.n_unsuccessful, 1)
                 self.assertListEqual(dataset_type_summary.cursed_datasets, [])
                 self.assertIn(dataset_type_name, expected_mock_datasets)
-            match dataset_type_name:
-                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task0")
-                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task1")
-                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task2")
-                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task3")
-                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task4")
+                match dataset_type_name:
+                    case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task0")
+                    case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task1")
+                    case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task2")
+                    case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task3")
+                    case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task4")
 
             # Now we test aggregating multiple summaries. First, we try
             # aggregating with an exact copy and make sure we just have double
@@ -192,6 +199,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertListEqual(task_summary.failed_quanta, [])
                 self.assertListEqual(task_summary.recovered_quanta, [])
                 self.assertListEqual(task_summary.wonky_quanta, [])
+                self.assertDictEqual(task_summary.exceptions, {})
                 self.assertEqual(task_summary.n_wonky, 0)
                 self.assertEqual(task_summary.n_failed, 0)
             for dataset_type_name, dataset_type_summary in two_identical_graph_sum.datasets.items():
@@ -207,25 +215,25 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 self.assertEqual(dataset_type_summary.n_unsuccessful, 2)
                 self.assertListEqual(dataset_type_summary.cursed_datasets, [])
                 self.assertIn(dataset_type_name, expected_mock_datasets)
-            match dataset_type_name:
-                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task0")
-                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task1")
-                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task2")
-                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task3")
-                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task4")
+                match dataset_type_name:
+                    case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task0")
+                    case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task1")
+                    case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task2")
+                    case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task3")
+                    case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task4")
 
             # Let's see if we can change lots of counts and info for a task
             # which exists in summary 1 and append to the overall summary
             # effectively. This summary has a lot of valid variations.
+            uuid_a = uuid.uuid4()
             summary3 = summary.model_copy(deep=True)
-            summary3.tasks["task4"] = summary.tasks["task4"].model_copy(
-                deep=True,
-                update={
+            summary3.tasks["task4"] = TaskSummary.model_validate(
+                {
                     "n_successful": 10,
                     "n_blocked": 20,
                     "n_unknown": 4,
@@ -259,37 +267,42 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                             "messages": ["This one is wonky because it moved from successful to failed."],
                         }
                     ],
+                    "caveats": {
+                        "+A": [{"instrument": "INSTR", "detector": 10}],
+                    },
+                    "exceptions": {
+                        "lsst.pipe.base.tests.mocks.MockAlgorithmError": [
+                            {
+                                "quantum_id": str(uuid_a),
+                                "data_id": {"instrument": "INSTR", "detector": 10},
+                                "run": "run2",
+                                "exception": {
+                                    "type_name": "lsst.pipe.base.tests.mocks.MockAlgorithmError",
+                                    "message": "message A",
+                                    "metadata": {"badness": 11},
+                                },
+                            }
+                        ],
+                    },
                     "n_wonky": 1,
                     "n_failed": 3,
-                },
+                }
             )
-            summary3.datasets["add_dataset5"] = summary.model_copy(
-                deep=True,
-                update={
-                    "producer": "task4",
-                    "n_visible": 0,
-                    "n_shadowed": 0,
-                    "n_predicted_only": 0,
-                    "n_expected": 47,
-                    "cursed_datasets": [{"instrument": "INSTR", "detector": 7}],
-                    "unsuccessful_datasets": [
-                        {"instrument": "INSTR", "detector": 0},
-                        {"instrument": "INSTR", "detector": 1},
-                        {"instrument": "INSTR", "detector": 2},
-                        {"instrument": "INSTR", "detector": 3},
-                    ],
-                },
-            )
-            summary3.datasets["add2_dataset5"] = summary.model_copy(
-                deep=True,
-                update={
+            summary3.datasets["add_dataset5"] = DatasetTypeSummary.model_validate(
+                {
                     "producer": "task4",
                     "n_visible": 0,
                     "n_shadowed": 0,
                     "n_predicted_only": 0,
                     "n_expected": 47,
                     "cursed_datasets": [
-                        {"instrument": "INSTR", "detector": 7},
+                        {
+                            "producer_data_id": {"instrument": "INSTR", "detector": 7},
+                            "data_id": {"instrument": "INSTR", "detector": 7},
+                            "runs_produced": {"run1": True, "run2": False},
+                            "run_visible": None,
+                            "messages": ["Some kind of cursed dataset."],
+                        }
                     ],
                     "unsuccessful_datasets": [
                         {"instrument": "INSTR", "detector": 0},
@@ -297,7 +310,31 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                         {"instrument": "INSTR", "detector": 2},
                         {"instrument": "INSTR", "detector": 3},
                     ],
-                },
+                }
+            )
+            summary3.datasets["add2_dataset5"] = DatasetTypeSummary.model_validate(
+                {
+                    "producer": "task4",
+                    "n_visible": 0,
+                    "n_shadowed": 0,
+                    "n_predicted_only": 0,
+                    "n_expected": 47,
+                    "cursed_datasets": [
+                        {
+                            "producer_data_id": {"instrument": "INSTR", "detector": 7},
+                            "data_id": {"instrument": "INSTR", "detector": 7},
+                            "runs_produced": {"run1": True, "run2": False},
+                            "run_visible": None,
+                            "messages": ["Some kind of cursed dataset."],
+                        }
+                    ],
+                    "unsuccessful_datasets": [
+                        {"instrument": "INSTR", "detector": 0},
+                        {"instrument": "INSTR", "detector": 1},
+                        {"instrument": "INSTR", "detector": 2},
+                        {"instrument": "INSTR", "detector": 3},
+                    ],
+                }
             )
             # Test that aggregate with this file works
             two_graphs_different_numbers = Summary.aggregate([summary, summary3])
@@ -310,21 +347,21 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     self.assertListEqual(
                         task_summary.failed_quanta,
                         [
-                            {
-                                "data_id": {"instrument": "INSTR", "detector": 1},
-                                "runs": {"run1": "failed"},
-                                "messages": ["Error on detector 1", "Second error on detector 1"],
-                            },
-                            {
-                                "data_id": {"instrument": "INSTR", "detector": 2},
-                                "runs": {"run1": "failed", "run2": "failed"},
-                                "messages": [],
-                            },
-                            {
-                                "data_id": {"instrument": "INSTR", "detector": 3},
-                                "runs": {"run1": "failed"},
-                                "messages": ["Error on detector 3"],
-                            },
+                            UnsuccessfulQuantumSummary(
+                                data_id={"instrument": "INSTR", "detector": 1},
+                                runs={"run1": "failed"},
+                                messages=["Error on detector 1", "Second error on detector 1"],
+                            ),
+                            UnsuccessfulQuantumSummary(
+                                data_id={"instrument": "INSTR", "detector": 2},
+                                runs={"run1": "failed", "run2": "failed"},
+                                messages=[],
+                            ),
+                            UnsuccessfulQuantumSummary(
+                                data_id={"instrument": "INSTR", "detector": 3},
+                                runs={"run1": "failed"},
+                                messages=["Error on detector 3"],
+                            ),
                         ],
                     )
                     self.assertListEqual(
@@ -338,12 +375,33 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     self.assertListEqual(
                         task_summary.wonky_quanta,
                         [
-                            {
-                                "data_id": {"instrument": "INSTR", "detector": 7},
-                                "runs": {"run1": "successful", "run2": "failed"},
-                                "messages": ["This one is wonky because it moved from successful to failed."],
-                            }
+                            UnsuccessfulQuantumSummary(
+                                data_id={"instrument": "INSTR", "detector": 7},
+                                runs={"run1": "successful", "run2": "failed"},
+                                messages=["This one is wonky because it moved from successful to failed."],
+                            )
                         ],
+                    )
+                    self.assertDictEqual(
+                        task_summary.caveats,
+                        {"+A": [{"instrument": "INSTR", "detector": 10}]},
+                    )
+                    self.assertDictEqual(
+                        task_summary.exceptions,
+                        {
+                            "lsst.pipe.base.tests.mocks.MockAlgorithmError": [
+                                ExceptionInfoSummary(
+                                    quantum_id=uuid_a,
+                                    data_id={"instrument": "INSTR", "detector": 10},
+                                    run="run2",
+                                    exception=ExceptionInfo(
+                                        type_name="lsst.pipe.base.tests.mocks.MockAlgorithmError",
+                                        message="message A",
+                                        metadata={"badness": 11},
+                                    ),
+                                )
+                            ],
+                        },
                     )
                     self.assertEqual(task_summary.n_wonky, 1)
                     self.assertEqual(task_summary.n_failed, 3)
@@ -376,7 +434,16 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     self.assertEqual(dataset_type_summary.n_cursed, 1)
                     self.assertEqual(dataset_type_summary.n_unsuccessful, 5)
                     self.assertListEqual(
-                        dataset_type_summary.cursed_datasets, [{"instrument": "INSTR", "detector": 7}]
+                        dataset_type_summary.cursed_datasets,
+                        [
+                            CursedDatasetSummary(
+                                producer_data_id={"instrument": "INSTR", "detector": 7},
+                                data_id={"instrument": "INSTR", "detector": 7},
+                                runs_produced={"run1": True, "run2": False},
+                                run_visible=None,
+                                messages=["Some kind of cursed dataset."],
+                            )
+                        ],
                     )
                 else:
                     self.assertListEqual(
@@ -391,17 +458,17 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     self.assertEqual(dataset_type_summary.n_unsuccessful, 2)
                     self.assertListEqual(dataset_type_summary.cursed_datasets, [])
                     self.assertIn(dataset_type_name, expected_mock_datasets)
-            match dataset_type_name:
-                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task0")
-                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task1")
-                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task2")
-                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task3")
-                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task4")
+                match dataset_type_name:
+                    case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task0")
+                    case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task1")
+                    case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task2")
+                    case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task3")
+                    case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task4")
 
             # Now, let's add a task to one model and see if aggregate still
             # works
@@ -414,8 +481,6 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 failed_quanta=[],
                 recovered_quanta=[],
                 wonky_quanta=[],
-                n_wonky=0,
-                n_failed=0,
             )
             summary4.datasets["add_dataset6"] = DatasetTypeSummary(
                 producer="task5",
@@ -425,8 +490,6 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 n_expected=1,
                 cursed_datasets=[],
                 unsuccessful_datasets=[{"instrument": "INSTR", "detector": 0}],
-                n_cursed=0,
-                n_unsuccessful=1,
             )
             summary4.datasets["task5_log"] = DatasetTypeSummary(
                 producer="task5",
@@ -436,8 +499,6 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 n_expected=1,
                 cursed_datasets=[],
                 unsuccessful_datasets=[{"instrument": "INSTR", "detector": 0}],
-                n_cursed=0,
-                n_unsuccessful=1,
             )
             summary4.datasets["task5_metadata"] = DatasetTypeSummary(
                 producer="task5",
@@ -447,8 +508,6 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                 n_expected=1,
                 cursed_datasets=[],
                 unsuccessful_datasets=[{"instrument": "INSTR", "detector": 0}],
-                n_cursed=0,
-                n_unsuccessful=1,
             )
             two_graphs_extra_task = Summary.aggregate([summary4, summary])
             # Make sure the extra task is in there
@@ -492,19 +551,19 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
                     dataset_type_name,
                     expected_mock_datasets + ["add_dataset6", "task5_metadata", "task5_log"],
                 )
-            match dataset_type_name:
-                case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task0")
-                case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task1")
-                case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task2")
-                case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task3")
-                case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task4")
-                case name if name in ["add_dataset6", "task5_metadata", "task5_log"]:
-                    self.assertEqual(dataset_type_summary.producer, "task5")
+                match dataset_type_name:
+                    case name if name in ["add_dataset1", "add2_dataset1", "task0_metadata", "task0_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task0")
+                    case name if name in ["add_dataset2", "add2_dataset2", "task1_metadata", "task1_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task1")
+                    case name if name in ["add_dataset3", "add2_dataset3", "task2_metadata", "task2_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task2")
+                    case name if name in ["add_dataset4", "add2_dataset4", "task3_metadata", "task3_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task3")
+                    case name if name in ["add_dataset5", "add2_dataset5", "task4_metadata", "task4_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task4")
+                    case name if name in ["add_dataset6", "task5_metadata", "task5_log"]:
+                        self.assertEqual(dataset_type_summary.producer, "task5")
 
         # Now we test that we properly catch task-dataset mismatches in
         # aggregated graphs. This is a problem because if task 1 produced
@@ -540,70 +599,72 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
 
         # Next up, we're going to try to aggregate summary with a dictionary
         # and then with some garbage. Neither of these should work!
-        with self.assertRaises(TypeError):
+        with self.assertRaises(AttributeError):
             Summary.aggregate(
-                summary,
-                {
-                    "tasks": {
-                        "task0": {
-                            "n_successful": 0,
-                            "n_blocked": 0,
-                            "n_unknown": 1,
-                            "n_expected": 1,
-                            "failed_quanta": [],
-                            "recovered_quanta": [],
-                            "wonky_quanta": [],
-                            "n_wonky": 0,
-                            "n_failed": 0,
-                        },
-                        "datasets": {
-                            "add_dataset1": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
+                [
+                    summary,
+                    {
+                        "tasks": {
+                            "task0": {
+                                "n_successful": 0,
+                                "n_blocked": 0,
+                                "n_unknown": 1,
                                 "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
+                                "failed_quanta": [],
+                                "recovered_quanta": [],
+                                "wonky_quanta": [],
+                                "n_wonky": 0,
+                                "n_failed": 0,
                             },
-                            "add2_dataset1": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
+                            "datasets": {
+                                "add_dataset1": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "add2_dataset1": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "task0_metadata": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
+                                "task0_log": {
+                                    "producer": "task0",
+                                    "n_visible": 0,
+                                    "n_shadowed": 0,
+                                    "n_predicted_only": 0,
+                                    "n_expected": 1,
+                                    "cursed_datasets": [],
+                                    "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
+                                    "n_cursed": 0,
+                                    "n_unsuccessful": 1,
+                                },
                             },
-                            "task0_metadata": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
-                            },
-                            "task0_log": {
-                                "producer": "task0",
-                                "n_visible": 0,
-                                "n_shadowed": 0,
-                                "n_predicted_only": 0,
-                                "n_expected": 1,
-                                "cursed_datasets": [],
-                                "unsuccessful_datasets": [{"instrument": "INSTR", "detector": 0}],
-                                "n_cursed": 0,
-                                "n_unsuccessful": 1,
-                            },
-                        },
-                    }
-                },
+                        }
+                    },
+                ]
             )
             Summary.aggregate([summary, []])
             Summary.aggregate([summary, "some_garbage"])

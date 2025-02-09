@@ -42,11 +42,13 @@ __all__ = (
 import dataclasses
 import itertools
 import logging
+import textwrap
 import uuid
 from collections.abc import Iterator, Mapping, Sequence, Set
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
+import astropy.table
 import networkx
 import pydantic
 
@@ -58,7 +60,7 @@ from ._status import QuantumSuccessCaveats
 from .graph import QuantumGraph
 
 if TYPE_CHECKING:
-    pass
+    from ._task_metadata import TaskMetadata
 
 _LOG = getLogger(__name__)
 
@@ -163,6 +165,45 @@ class QuantumRunStatus(Enum):
     SUCCESSFUL = 1
 
 
+class ExceptionInfo(pydantic.BaseModel):
+    """Information about an exception that was raised."""
+
+    type_name: str
+    """Fully-qualified Python type name for the exception raised."""
+
+    message: str
+    """String message included in the exception."""
+
+    metadata: dict[str, float | int | str | bool | None]
+    """Additional metadata included in the exception."""
+
+    @classmethod
+    def from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
+        """Construct from task metadata.
+
+        Parameters
+        ----------
+        md : `TaskMetadata`
+            Metadata about the error, as written by
+            `AnnotatedPartialOutputsError`.
+
+        Returns
+        -------
+        info : `ExceptionInfo`
+            Information about the exception.
+        """
+        result = cls(type_name=md["type"], message=md["message"], metadata={})
+        if "metadata" in md:
+            raw_err_metadata = md["metadata"].to_dict()
+            for k, v in raw_err_metadata.items():
+                # Guard against error metadata we couldn't serialize later
+                # via Pydantic; don't want one weird value bringing down our
+                # ability to report on an entire run.
+                if isinstance(v, float | int | str | bool):
+                    result.metadata[k] = v
+        return result
+
+
 class QuantumRun(pydantic.BaseModel):
     """Information about a quantum in a given run collection."""
 
@@ -183,11 +224,66 @@ class QuantumRun(pydantic.BaseModel):
     may also be `None` if metadata was not loaded or had no success flags.
     """
 
+    exception: ExceptionInfo | None = None
+    """Information about an exception that that was raised during the quantum's
+    execution.
+
+    Exception information for failed quanta is not currently stored, so this
+    field is actually only populated for quanta that raise
+    `AnnotatedPartialOutputsError`, and only when the execution system is
+    configured not to consider these partial successes a failure (i.e. when
+    `status` is `~QuantumRunStatus.SUCCESSFUL` and `caveats` has
+    `~QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR` set.  The error whose
+    information is reported here is the exception chained from the
+    `AnnotatedPartialOutputsError`.
+
+    In the future, exception information from failures may be available as
+    well.
+    """
+
     metadata_ref: DatasetRef
     """Predicted DatasetRef for the metadata dataset."""
 
     log_ref: DatasetRef
     """Predicted DatasetRef for the log dataset."""
+
+    @staticmethod
+    def find_final(info: QuantumInfo) -> tuple[str, QuantumRun]:
+        """Return the final RUN collection name and `QuantumRun` structure from
+        a `QuantumInfo` dictionary.
+
+        The "final run" is the last RUN collection in the sequence of quantum
+        graphs that:
+
+        - actually had a quantum for that task label and data ID;
+        - execution seems to have at least been attempted (at least one of
+          metadata or logs were produced).
+
+        Parameters
+        ----------
+        info : `QuantumInfo`
+            Quantum information that includes all runs.
+
+        Returns
+        -------
+        run : `str`
+            RUN collection name.
+        quantum_run : `QuantumRun`
+            Information about a quantum in a RUN collection.
+
+        Raises
+        ------
+        ValueError
+            Raised if this quantum never had a status that suggested execution
+            in any run.
+        """
+        for run, quantum_run in reversed(info["runs"].items()):
+            if (
+                quantum_run.status is not QuantumRunStatus.METADATA_MISSING
+                and quantum_run.status is not QuantumRunStatus.BLOCKED
+            ):
+                return run, quantum_run
+        raise ValueError("Quantum was never executed.")
 
 
 class QuantumInfoStatus(Enum):
@@ -251,13 +347,6 @@ class QuantumInfo(TypedDict):
     status: QuantumInfoStatus
     """The overall status of the quantum. Note that it is impossible to exit a
     wonky state.
-    """
-
-    caveats: QuantumSuccessCaveats | None
-    """Flags that describe possibly-qualified successes.
-
-    This is `None` when `status` is not `SUCCESSFUL`.  It may also be `None`
-    if metadata was not loaded or had no success flags.
     """
 
     recovered: bool
@@ -414,6 +503,25 @@ class UnsuccessfulQuantumSummary(pydantic.BaseModel):
         )
 
 
+class ExceptionInfoSummary(pydantic.BaseModel):
+    """A summary of an exception raised by a quantum."""
+
+    quantum_id: uuid.UUID
+    """Unique identifier for this quantum in this run."""
+
+    data_id: dict[str, DataIdValue]
+    """The data ID of the quantum."""
+
+    run: str
+    """Name of the RUN collection in which this exception was (last) raised."""
+
+    exception: ExceptionInfo
+    """Information about an exception chained to
+    `AnnotatedPartialOutputsError`, if that was raised by this quantum in this
+    run.
+    """
+
+
 class TaskSummary(pydantic.BaseModel):
     """A summary of the status of all quanta associated with a single task,
     across all runs.
@@ -456,6 +564,20 @@ class TaskSummary(pydantic.BaseModel):
     included.
     """
 
+    exceptions: dict[str, list[ExceptionInfoSummary]] = pydantic.Field(default_factory=dict)
+    """Exceptions raised by partially-successful quanta.
+
+    Keys are fully-qualified exception type names and values are lists of
+    extra exception information, with each entry corresponding to different
+    data ID.  Only the final RUN for each data ID is represented here.
+
+    Every entry in this data structure corresponds to one in `ceveats` with
+    the "P" code (for `QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR`).
+
+    In the future, this may be expanded to include exceptions for failed quanta
+    as well (at present that information is not retained during execution).
+    """
+
     failed_quanta: list[UnsuccessfulQuantumSummary] = pydantic.Field(default_factory=list)
     """A list of all `UnsuccessfulQuantumSummary` objects associated with the
     FAILED quanta. This is a report containing their data IDs, the status
@@ -492,14 +614,29 @@ class TaskSummary(pydantic.BaseModel):
             Store error messages from Butler logs associated with failed quanta
             if `True`.
         """
+        try:
+            final_run, final_quantum_run = QuantumRun.find_final(info)
+        except ValueError:
+            final_run = None
+            final_quantum_run = None
         match info["status"]:
             case QuantumInfoStatus.SUCCESSFUL:
                 self.n_successful += 1
                 if info["recovered"]:
                     self.recovered_quanta.append(dict(info["data_id"].required))
-                if caveats := info["caveats"]:
-                    code = caveats.concise()
+                if final_quantum_run is not None and final_quantum_run.caveats:
+                    code = final_quantum_run.caveats.concise()
                     self.caveats.setdefault(code, []).append(dict(info["data_id"].required))
+                    if final_quantum_run.caveats & QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR:
+                        if final_quantum_run.exception is not None:
+                            self.exceptions.setdefault(final_quantum_run.exception.type_name, []).append(
+                                ExceptionInfoSummary(
+                                    quantum_id=final_quantum_run.id,
+                                    data_id=dict(info["data_id"].required),
+                                    run=final_run,
+                                    exception=final_quantum_run.exception,
+                                )
+                            )
             case QuantumInfoStatus.WONKY:
                 self.wonky_quanta.append(UnsuccessfulQuantumSummary.from_info(info))
             case QuantumInfoStatus.BLOCKED:
@@ -543,6 +680,8 @@ class TaskSummary(pydantic.BaseModel):
         self.n_expected += other_summary.n_expected
         for code in self.caveats.keys() | other_summary.caveats.keys():
             self.caveats.setdefault(code, []).extend(other_summary.caveats.get(code, []))
+        for type_name in self.exceptions.keys() | other_summary.exceptions.keys():
+            self.exceptions.setdefault(type_name, []).extend(other_summary.exceptions.get(type_name, []))
         self.wonky_quanta.extend(other_summary.wonky_quanta)
         self.recovered_quanta.extend(other_summary.recovered_quanta)
         self.failed_quanta.extend(other_summary.failed_quanta)
@@ -564,7 +703,8 @@ class CursedDatasetSummary(pydantic.BaseModel):
     the `bool` is true if the dataset was produced in the associated run.
     """
     run_visible: str | None
-    """A dictionary of all `visible` runs containing the cursed dataset.
+    """The run collection that holds the dataset that is visible in the final
+    output collection.
     """
     messages: list[str]
     """Any diagnostic messages (dictated in this module) which might help in
@@ -755,6 +895,232 @@ class Summary(pydantic.BaseModel):
                 result_dataset_summary.add_data_id_group(dataset_type_summary)
         return result
 
+    def pprint(self, brief: bool = False, datasets: bool = True) -> None:
+        """Print this summary to stdout, as a series of tables.
+
+        Parameters
+        ----------
+        brief : `bool`, optional
+            If `True`, only display short (counts-only) tables.  By default,
+            per-data ID information for exceptions and failures are printed as
+            well.
+        datasets : `bool`, optional
+            Whether to include tables of datasets as well as quanta.  This
+            includes a summary table of dataset counts for various status and
+            (if ``brief`` is `True`) a table with per-data ID information for
+            each unsuccessful or cursed dataset.
+        """
+        self.make_quantum_table().pprint_all()
+        print("")
+        print("Caveat codes:")
+        for k, v in QuantumSuccessCaveats.legend().items():
+            print(f"{k}: {v}")
+        print("")
+        if exception_table := self.make_exception_table():
+            exception_table.pprint_all()
+            print("")
+        if datasets:
+            self.make_dataset_table().pprint_all()
+            print("")
+        if not brief:
+            for task_label, bad_quantum_table in self.make_bad_quantum_tables().items():
+                print(f"{task_label} errors:")
+                bad_quantum_table.pprint_all()
+                print("")
+            if datasets:
+                for dataset_type_name, bad_dataset_table in self.make_bad_dataset_tables().items():
+                    print(f"{dataset_type_name} errors:")
+                    bad_dataset_table.pprint_all()
+                    print("")
+
+    def make_quantum_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with a tabular summary of the
+        quanta.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table view of the quantum information.  This only includes
+            counts of status categories and caveats, not any per-data-ID
+            detail.
+
+        Notes
+        -----
+        Success caveats in the table are represented by their
+        `~QuantumSuccessCaveats.concise` form, so when pretty-printing this
+        table for users, the `~QuantumSuccessCaveats.legend` should generally
+        be printed as well.
+        """
+        rows = []
+        for label, task_summary in self.tasks.items():
+            if len(task_summary.caveats) > 1:
+                caveats = "(multiple)"
+            elif len(task_summary.caveats) == 1:
+                ((code, data_ids),) = task_summary.caveats.items()
+                caveats = f"{code}({len(data_ids)})"
+            else:
+                caveats = ""
+            rows.append(
+                {
+                    "Task": label,
+                    "Unknown": task_summary.n_unknown,
+                    "Successful": task_summary.n_successful,
+                    "Caveats": caveats,
+                    "Blocked": task_summary.n_blocked,
+                    "Failed": task_summary.n_failed,
+                    "Wonky": task_summary.n_wonky,
+                    "TOTAL": sum(
+                        [
+                            task_summary.n_successful,
+                            task_summary.n_unknown,
+                            task_summary.n_blocked,
+                            task_summary.n_failed,
+                            task_summary.n_wonky,
+                        ]
+                    ),
+                    "EXPECTED": task_summary.n_expected,
+                }
+            )
+        return astropy.table.Table(rows)
+
+    def make_dataset_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with a tabular summary of the
+        datasets.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table view of the dataset information.  This only includes
+            counts of status categories, not any per-data-ID detail.
+        """
+        rows = []
+        for dataset_type_name, dataset_type_summary in self.datasets.items():
+            rows.append(
+                {
+                    "Dataset": dataset_type_name,
+                    "Visible": dataset_type_summary.n_visible,
+                    "Shadowed": dataset_type_summary.n_shadowed,
+                    "Predicted Only": dataset_type_summary.n_predicted_only,
+                    "Unsuccessful": dataset_type_summary.n_unsuccessful,
+                    "Cursed": dataset_type_summary.n_cursed,
+                    "TOTAL": sum(
+                        [
+                            dataset_type_summary.n_visible,
+                            dataset_type_summary.n_shadowed,
+                            dataset_type_summary.n_predicted_only,
+                            dataset_type_summary.n_unsuccessful,
+                            dataset_type_summary.n_cursed,
+                        ]
+                    ),
+                    "EXPECTED": dataset_type_summary.n_expected,
+                }
+            )
+        return astropy.table.Table(rows)
+
+    def make_exception_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with counts for each exception
+        type raised by each task.
+
+        At present this only includes information from partial-outputs-error
+        successes, since exception information for failures is not tracked.
+        This may change in the future.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table with columns for task label, exception type, and counts.
+        """
+        rows = []
+        for task_label, task_summary in self.tasks.items():
+            for type_name, exception_summaries in task_summary.exceptions.items():
+                rows.append({"Task": task_label, "Exception": type_name, "Count": len(exception_summaries)})
+        return astropy.table.Table(rows)
+
+    def make_bad_quantum_tables(self, max_message_width: int = 80) -> dict[str, astropy.table.Table]:
+        """Construct an `astropy.table.Table` with per-data-ID information
+        about failed, wonky, and partial-outputs-error quanta.
+
+        Parameters
+        ----------
+        max_message_width : `int`, optional
+            Maximum width for the Message column.  Longer messages are
+            truncated.
+
+        Returns
+        -------
+        tables : `dict` [ `str`, `astropy.table.Table` ]
+            A table for each task with status, data IDs, and log messages for
+            each unsuccessful quantum.  Keys are task labels.  Only task with
+            unsuccessful quanta or partial outputs errors are included.
+        """
+        result = {}
+        for task_label, task_summary in self.tasks.items():
+            rows = []
+            for status, unsuccessful_quantum_summary in itertools.chain(
+                zip(itertools.repeat("FAILED"), task_summary.failed_quanta),
+                zip(itertools.repeat("WONKY"), task_summary.wonky_quanta),
+            ):
+                row = {"Status(Caveats)": status, "Exception": "", **unsuccessful_quantum_summary.data_id}
+                row["Message"] = (
+                    textwrap.shorten(unsuccessful_quantum_summary.messages[-1], max_message_width)
+                    if unsuccessful_quantum_summary.messages
+                    else ""
+                )
+                rows.append(row)
+            for exception_summary in itertools.chain.from_iterable(task_summary.exceptions.values()):
+                # Trim off the package name from the exception type for
+                # brevity.
+                short_name: str = exception_summary.exception.type_name.rsplit(".", maxsplit=1)[-1]
+                row = {
+                    "Status(Caveats)": "SUCCESSFUL(P)",  # we only get exception info for partial outputs
+                    "Exception": short_name,
+                    **exception_summary.data_id,
+                    "Message": textwrap.shorten(exception_summary.exception.message, max_message_width),
+                }
+                rows.append(row)
+            if rows:
+                table = astropy.table.Table(rows)
+                table.columns["Exception"].format = "<"
+                table.columns["Message"].format = "<"
+                result[task_label] = table
+        return result
+
+    def make_bad_dataset_tables(self, max_message_width: int = 80) -> dict[str, astropy.table.Table]:
+        """Construct an `astropy.table.Table` with per-data-ID information
+        about unsuccessful and cursed datasets.
+
+        Parameters
+        ----------
+        max_message_width : `int`, optional
+            Maximum width for the Message column.  Longer messages are
+            truncated.
+
+        Returns
+        -------
+        tables : `dict` [ `str`, `astropy.table.Table` ]
+            A table for each task with status, data IDs, and log messages for
+            each unsuccessful quantum.  Keys are task labels.  Only task with
+            unsuccessful quanta are included.
+        """
+        result = {}
+        for dataset_type_name, dataset_type_summary in self.datasets.items():
+            rows = []
+            for data_id in dataset_type_summary.unsuccessful_datasets:
+                row = {"Status": "UNSUCCESSFUL", **data_id, "Message": ""}
+            for cursed_dataset_summary in dataset_type_summary.cursed_datasets:
+                row = {"Status": "CURSED", **cursed_dataset_summary.data_id}
+                row["Message"] = (
+                    textwrap.shorten(cursed_dataset_summary.messages[-1], max_message_width)
+                    if cursed_dataset_summary.messages
+                    else ""
+                )
+                rows.append(row)
+            if rows:
+                table = astropy.table.Table(rows)
+                table.columns["Message"].format = "<"
+                result[dataset_type_name] = table
+        return result
+
 
 class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
@@ -877,7 +1243,7 @@ class QuantumProvenanceGraph:
             qgraph = QuantumGraph.loadUri(qgraph)
         assert qgraph.metadata is not None, "Saved QGs always have metadata."
         output_run = qgraph.metadata["output_run"]
-        new_quanta = []
+        new_quanta: list[QuantumKey] = []
         for node in qgraph:
             # make a key to refer to the quantum and add it to the quantum
             # provenance graph.
@@ -973,12 +1339,18 @@ class QuantumProvenanceGraph:
                         for dataset_key in self._xgraph.successors(quantum_key)
                     )
                 ):
-                    md = butler.get(quantum_run.metadata_ref)
+                    md = butler.get(quantum_run.metadata_ref, storageClass="TaskMetadata")
                     try:
                         # Int conversion guards against spurious conversion to
                         # float that can apparently sometimes happen in
                         # TaskMetadata.
                         quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
+                    except LookupError:
+                        pass
+                    try:
+                        quantum_run.exception = ExceptionInfo.from_metadata(
+                            md[quantum_key.task_label]["failure"]
+                        )
                     except LookupError:
                         pass
             # missing metadata means that the task did not finish.
@@ -1013,7 +1385,6 @@ class QuantumProvenanceGraph:
                 # A quantum can never escape a WONKY state.
                 case (QuantumInfoStatus.WONKY, _):
                     new_status = QuantumInfoStatus.WONKY
-                    quantum_info["caveats"] = None
                 # Any transition to a success (excluding from WONKY) is
                 # a success; any transition from a failed state is also a
                 # recovery.
@@ -1061,10 +1432,6 @@ class QuantumProvenanceGraph:
                     new_status = QuantumInfoStatus.FAILED
             # Update `QuantumInfo.status` for this quantum.
             quantum_info["status"] = new_status
-            if new_status is QuantumInfoStatus.SUCCESSFUL:
-                quantum_info["caveats"] = quantum_run.caveats
-            else:
-                quantum_info["caveats"] = None
 
     def __resolve_duplicates(
         self,
@@ -1196,7 +1563,6 @@ class QuantumProvenanceGraph:
                     quantum_info["messages"].append(
                         f"Outputs from different runs of the same quanta were visible: {visible_runs}."
                     )
-                    quantum_info["caveats"] = None
                     for dataset_key in self.iter_outputs_of(quantum_key):
                         dataset_info = self.get_dataset_info(dataset_key)
                         quantum_info["messages"].append(
@@ -1366,3 +1732,41 @@ class QuantumProvenanceGraph:
         """
         for key in networkx.dag.descendants(self._xgraph, key):
             yield (key, self._xgraph.nodes[key])  # type: ignore
+
+
+def _cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        "QuantumProvenanceGraph command-line utilities.",
+        description=(
+            "This is a small, low-effort debugging utility.  "
+            "It may disappear at any time in favor of a public 'pipetask' interface."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="cmd")
+    pprint_parser = subparsers.add_parser("pprint", help="Print a saved summary as a series of tables.")
+    pprint_parser.add_argument("file", type=argparse.FileType("r"), help="Saved summary JSON file.")
+    pprint_parser.add_argument(
+        "--brief",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether to print per-data ID information.",
+    )
+    pprint_parser.add_argument(
+        "--datasets",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    args = parser.parse_args()
+    match args.cmd:
+        case "pprint":
+            summary = Summary.model_validate_json(args.file.read())
+            args.file.close()
+            summary.pprint(brief=args.brief, datasets=args.datasets)
+        case _:
+            raise AssertionError(f"Unhandled subcommand {args.dest}.")
+
+
+if __name__ == "__main__":
+    _cli()
