@@ -1149,16 +1149,7 @@ class PipelineGraph:
         See `TaskNode` and `TaskInitNode` for the descriptive node and
         attributes added.
         """
-        bipartite_xgraph = self._make_bipartite_xgraph_internal(init)
-        task_keys = [
-            key
-            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
-            if bipartite == NodeType.TASK.bipartite
-        ]
-        return self._transform_xgraph_state(
-            networkx.algorithms.bipartite.projected_graph(networkx.DiGraph(bipartite_xgraph), task_keys),
-            skip_edges=True,
-        )
+        return self._transform_xgraph_state(self._make_task_xgraph_internal(init), skip_edges=True)
 
     def make_dataset_type_xgraph(self, init: bool = False) -> networkx.DiGraph:
         """Return a networkx representation of just the dataset types in the
@@ -2052,6 +2043,26 @@ class PipelineGraph:
         returning it to the user.
         """
         return self._xgraph.edge_subgraph([edge.key for edge in self.iter_edges(init)])
+
+    def _make_task_xgraph_internal(self, init: bool) -> networkx.DiGraph:
+        """Make a init-only or runtime-only internal task subgraph.
+
+        See `make_task_xgraph` for parameters and return values.
+
+        Notes
+        -----
+        This method returns a view of the `PipelineGraph` object's internal
+        backing graph, and hence should only be called in methods that copy the
+        result either explicitly or by running a copying algorithm before
+        returning it to the user.
+        """
+        bipartite_xgraph = self._make_bipartite_xgraph_internal(init=init)
+        task_keys = [
+            key
+            for key, bipartite in bipartite_xgraph.nodes(data="bipartite")
+            if bipartite == NodeType.TASK.bipartite
+        ]
+        return networkx.algorithms.bipartite.projected_graph(networkx.DiGraph(bipartite_xgraph), task_keys)
 
     def _transform_xgraph_state(self, xgraph: _G, skip_edges: bool) -> _G:
         """Transform networkx graph attributes in-place from the internal
