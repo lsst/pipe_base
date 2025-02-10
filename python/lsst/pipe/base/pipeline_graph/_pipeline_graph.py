@@ -55,11 +55,13 @@ from lsst.utils.packages import Packages
 
 from .._dataset_handle import InMemoryDatasetHandle
 from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
+from . import expressions
 from ._dataset_types import DatasetTypeNode
 from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import (
     DuplicateOutputError,
     EdgesChangedError,
+    InvalidExpressionError,
     InvalidStepsError,
     PipelineDataCycleError,
     PipelineGraphError,
@@ -1187,6 +1189,62 @@ class PipelineGraph:
             ),
             skip_edges=True,
         )
+
+    ###########################################################################
+    #
+    # Expression-based Selection Interface.
+    #
+    ###########################################################################
+
+    def select_tasks(self, expression: str) -> set[str]:
+        """Return the tasks that match an expression.
+
+        Parameters
+        ----------
+        expression : `str`
+            String expression to evaluate.  See
+            :ref:`pipeline-graph-subset-expressions`.
+
+        Returns
+        -------
+        task_labels : `set` [ `str` ]
+            Set of matching task labels.
+        """
+        task_xgraph = self._make_task_xgraph_internal(init=False)
+        expr_tree = expressions.parse(expression)
+        matching_task_keys = self._select_expression(expr_tree, task_xgraph)
+        return {key.name for key in matching_task_keys}
+
+    def select(self, expression: str) -> PipelineGraph:
+        """Return a new pipeline graph with the tasks that match an expression.
+
+        Parameters
+        ----------
+        expression : `str`
+            String expression to evaluate.  See
+            :ref:`pipeline-graph-subset-expressions`.
+
+        Returns
+        -------
+        new_graph : `PipelineGraph`
+            New pipeline graph with just the matching tasks.
+
+        Notes
+        -----
+        All resolved dataset type nodes will be preserved.
+
+        If `has_been_sorted`, the new graph will be sorted as well.
+
+        Task subsets will not be included in the returned graph.
+        """
+        selected_tasks = self.select_tasks(expression)
+        new_pipeline_graph = PipelineGraph(universe=self._universe, data_id=self._raw_data_id)
+        new_pipeline_graph.add_task_nodes(
+            [self.tasks[task_label] for task_label in selected_tasks], parent=self
+        )
+        if self.has_been_sorted:
+            new_pipeline_graph.sort()
+        return new_pipeline_graph
 
     ###########################################################################
     #
@@ -2354,6 +2412,284 @@ class PipelineGraph:
                             f"compatible with the sharding dimensions {dimensions} of step "
                             f"{step_label!r}."
                         )
+
+    def _select_expression(self, expr_tree: expressions.Node, task_xgraph: networkx.DiGraph) -> set[NodeKey]:
+        """Select tasks from a pipeline based on a string expression.
+
+        This is the primary implementation method for `select` and
+        `select_tasks`.
+
+        Parameters
+        ----------
+        expr_tree : `expressions.Node`
+            Expression [sub]tree to process (recursively).
+        task_xgraph : `networkx.DiGraph`
+            NetworkX graph of all tasks (runtime nodes only) in the pipeline.
+
+        Returns
+        -------
+        selected : `set` [ `NodeKey` ]
+            Set of `NodeKey` objects for matching tasks (only; no dataset type
+            or task-init nodes).
+        """
+        match expr_tree:
+            case expressions.IdentifierNode(qualifier=qualifier, label=label):
+                match self._select_identifier(qualifier, label):
+                    case NodeKey(node_type=NodeType.TASK) as task_key:
+                        return {task_key}
+                    case NodeKey(node_type=NodeType.DATASET_TYPE) as dataset_type_key:
+                        # Since a dataset type can have only one producer, this
+                        # yields 0- (for overall inputs) or 1-element sets.
+                        for producer_key, _ in self._xgraph.in_edges(dataset_type_key):
+                            if producer_key.node_type is NodeType.TASK_INIT:
+                                raise InvalidExpressionError(
+                                    f"Init-output dataset type {label!r} cannot be used directly in an "
+                                    "expression."
+                                )
+                            return {producer_key}
+                        return set()
+                    case TaskSubset() as task_subset:
+                        return {NodeKey(NodeType.TASK, label) for label in task_subset}
+                    case _:  # pragma: no cover
+                        raise AssertionError("Identifier type inconsistent with grammar.")
+            case expressions.DirectionNode(operator=operator, start=start):
+                match self._select_identifier(start.qualifier, start.label):
+                    case NodeKey(node_type=NodeType.TASK) as task_key:
+                        if operator.startswith("<"):
+                            return self._select_task_ancestors(
+                                task_key, task_xgraph, inclusive=operator.endswith("=")
+                            )
+                        else:
+                            assert operator.startswith(">"), "Guaranteed by grammar."
+                            return self._select_task_descendants(
+                                task_key, task_xgraph, inclusive=operator.endswith("=")
+                            )
+                    case NodeKey(node_type=NodeType.DATASET_TYPE) as dataset_type_key:
+                        if operator.startswith("<"):
+                            return self._select_dataset_type_ancestors(
+                                dataset_type_key, task_xgraph, inclusive=operator.endswith("=")
+                            )
+                        else:
+                            assert operator.startswith(">"), "Guaranteed by grammar."
+                            return self._select_dataset_type_descendants(
+                                dataset_type_key, task_xgraph, inclusive=operator.endswith("=")
+                            )
+                    case TaskSubset():
+                        raise InvalidExpressionError(
+                            f"Task subset identifier {start!r} cannot be used as the start of an "
+                            "ancestor/descendant search."
+                        )
+                    case _:  # pragma: no cover
+                        raise AssertionError("Unexpected parsed identifier result type.")
+            case expressions.NotNode(operand=operand):
+                operand_result = self._select_expression(operand, task_xgraph)
+                return set(task_xgraph.nodes.keys() - operand_result)
+            case expressions.UnionNode(lhs=lhs, rhs=rhs):
+                lhs_result = self._select_expression(lhs, task_xgraph)
+                rhs_result = self._select_expression(rhs, task_xgraph)
+                return lhs_result.union(rhs_result)
+            case expressions.IntersectionNode(lhs=lhs, rhs=rhs):
+                lhs_result = self._select_expression(lhs, task_xgraph)
+                rhs_result = self._select_expression(rhs, task_xgraph)
+                return lhs_result.intersection(rhs_result)
+            case _:  # pragma: no cover
+                raise AssertionError("Expression parse node inconsistent with grammar.")
+
+    def _select_task_ancestors(
+        self, start: NodeKey, task_xgraph: networkx.DiGraph, inclusive: bool
+    ) -> set[NodeKey]:
+        """Return all task-node ancestors of the given task node, as defined by
+        the `select` expression language.
+
+        Parameters
+        ----------
+        start : `NodeKey`
+            A runtime task node key.
+        task_xgraph : `networkx.DiGraph`
+            NetworkX graph of all tasks (runtime nodes only) in the pipeline.
+        inclusive : `bool`
+            Whether to include the ``start`` node in the results.
+
+        Returns
+        -------
+        selected : `set` [ `NodeKey` ]
+            Set of `NodeKey` objects for matching tasks (only; no dataset type
+            or task-init nodes).
+        """
+        result = set(networkx.dag.ancestors(task_xgraph, start))
+        if inclusive:
+            result.add(start)
+        return result
+
+    def _select_task_descendants(
+        self, start: NodeKey, task_xgraph: networkx.DiGraph, inclusive: bool
+    ) -> set[NodeKey]:
+        """Return all task-node descendants of the given task node, as defined
+        by the `select` expression language.
+
+        Parameters
+        ----------
+        start : `NodeKey`
+            A runtime task node key.
+        task_xgraph : `networkx.DiGraph`
+            NetworkX graph of all tasks (runtime nodes only) in the pipeline.
+        inclusive : `bool`
+            Whether to include the ``start`` node in the results.
+
+        Returns
+        -------
+        selected : `set` [ `NodeKey` ]
+            Set of `NodeKey` objects for matching tasks (only; no dataset type
+            or task-init nodes).
+        """
+        result = set(networkx.dag.descendants(task_xgraph, start))
+        if inclusive:
+            result.add(start)
+        return result
+
+    def _select_dataset_type_ancestors(
+        self, start: NodeKey, task_xgraph: networkx.DiGraph, inclusive: bool
+    ) -> set[NodeKey]:
+        """Return all task-node ancestors of the given dataset type node, as
+        defined by the `select` expression language.
+
+        Parameters
+        ----------
+        start : `NodeKey`
+            A dataset type node key.  May not be an init-output.
+        task_xgraph : `networkx.DiGraph`
+            NetworkX graph of all tasks (runtime nodes only) in the pipeline.
+        inclusive : `bool`
+            Whether to include the producer of the ``start`` node in the
+            results.
+
+        Returns
+        -------
+        selected : `set` [ `NodeKey` ]
+            Set of `NodeKey` objects for matching tasks (only; no dataset type
+            or task-init nodes).
+        """
+        result: set[NodeKey] = set()
+        for producer_key, _ in self._xgraph.in_edges(start):
+            if producer_key.node_type is NodeType.TASK_INIT:
+                raise InvalidExpressionError(
+                    f"Init-output dataset type {start.name!r} cannot be used as the "
+                    "starting point for an ancestor ('<' or '<=') search."
+                )
+            result.update(networkx.dag.ancestors(task_xgraph, producer_key))
+            if inclusive:
+                result.add(producer_key)
+        return result
+
+    def _select_dataset_type_descendants(
+        self, start: NodeKey, task_xgraph: networkx.DiGraph, inclusive: bool
+    ) -> set[NodeKey]:
+        """Return all task-node descendatns of the given dataset type node, as
+        defined by the `select` expression language.
+
+        Parameters
+        ----------
+        start : `NodeKey`
+            A dataset type node key.  May not be an init-output if
+            ``inclusive=True``.
+        task_xgraph : `networkx.DiGraph`
+            NetworkX graph of all tasks (runtime nodes only) in the pipeline.
+        inclusive : `bool`
+            Whether to include the producer of the ``start`` node in the
+            results.
+
+        Returns
+        -------
+        selected : `set` [ `NodeKey` ]
+            Set of `NodeKey` objects for matching tasks (only; no dataset type
+            or task-init nodes).
+        """
+        result: set[NodeKey] = set()
+        if inclusive:
+            for producer_key, _ in self._xgraph.in_edges(start):
+                if producer_key.node_type is NodeType.TASK_INIT:
+                    raise InvalidExpressionError(
+                        f"Init-output dataset type {start.name!r} cannot be used as the "
+                        "starting point for an includsive descendant ('>=') search."
+                    )
+                result.add(producer_key)
+        # We also include tasks that consume a dataset type as an init-input,
+        # since that can affect their runtime behavior.
+        consumer_keys: set[NodeKey] = {
+            (
+                consumer_key
+                if consumer_key.node_type is NodeType.TASK
+                else NodeKey(NodeType.TASK, consumer_key.name)
+            )
+            for _, consumer_key in self._xgraph.out_edges(start)
+        }
+        for consumer_key in consumer_keys:
+            result.add(consumer_key)
+            result.update(networkx.dag.descendants(task_xgraph, consumer_key))
+        return result
+
+    def _select_identifier(
+        self, qualifier: Literal["T", "D", "S"] | None, label: str
+    ) -> NodeKey | TaskSubset:
+        """Return the node key or task subset that corresponds to a `select`
+        expression identifier.
+
+        Parameters
+        ----------
+        qualifier : `str` or `None`
+            Task, dataset type, or task subset qualifier included in the
+            identifier, if any.
+        label : `str`
+            Task label, dataset type name, or task subset label.
+
+        Returns
+        -------
+        key_or_subset : `NodeKey` or `TaskSubset`
+            A `NodeKey` for a task or dataset type, or a `TaskSubset` for a
+            task subset.
+        """
+        match qualifier:
+            case None:
+                task_key = NodeKey(NodeType.TASK, label)
+                dataset_type_key = NodeKey(NodeType.DATASET_TYPE, label)
+                if task_key in self._xgraph.nodes:
+                    if dataset_type_key in self._xgraph.nodes:
+                        raise InvalidExpressionError(
+                            f"{label!r} is both a task label and a dataset type name; "
+                            "prefix with 'T:' or 'D:' (respectively) to specify which."
+                        )
+                    assert label not in self._task_subsets, "Should be prohibited at construction."
+                    return task_key
+                elif dataset_type_key in self._xgraph.nodes:
+                    if label in self._task_subsets:
+                        raise InvalidExpressionError(
+                            f"{label!r} is both a subset label and a dataset type name; "
+                            "prefix with 'S:' or 'D:' (respectively) to specify which."
+                        )
+                    return dataset_type_key
+                elif label in self._task_subsets:
+                    return self._task_subsets[label]
+                else:
+                    raise InvalidExpressionError(
+                        f"{label!r} is not a task label, task subset label, or dataset type name."
+                    )
+            case "T":
+                task_key = NodeKey(NodeType.TASK, label)
+                if task_key not in self._xgraph.nodes:
+                    raise InvalidExpressionError(f"Task with label {label!r} does not exist.")
+                return task_key
+            case "D":
+                dataset_type_key = NodeKey(NodeType.DATASET_TYPE, label)
+                if dataset_type_key not in self._xgraph.nodes:
+                    raise InvalidExpressionError(f"Dataset type with name {label!r} does not exist.")
+                return dataset_type_key
+            case "S":
+                try:
+                    return self._task_subsets[label]
+                except KeyError:
+                    raise InvalidExpressionError(f"Task subset with label {label!r} does not exist.")
+            case _:  # pragma: no cover
+                raise AssertionError("Unexpected identifier qualifier in expression.")
 
     _xgraph: networkx.MultiDiGraph
     _sorted_keys: Sequence[NodeKey] | None
