@@ -639,6 +639,7 @@ class _AllDimensionsQuery:
                     "subgraph, on the assumption that they are relevant for a different subraph.",
                     remainder,
                 )
+            constraint.intersection_update(inputs)
             builder.log.debug(f"Constraining graph query using {constraint}")
             datasets = constraint
         else:
