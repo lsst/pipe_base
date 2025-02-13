@@ -571,16 +571,28 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modC
                 - modD
               description: "A test named subset"
+            subset3: ">test.modB"
+            subset4:
+              expression: "test.modA | test.modC"
+              description: "An expression."
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(pipeline.labeled_subsets.keys(), {"subset1", "subset2"})
 
         self.assertEqual(pipeline.labeled_subsets["subset1"].subset, {"modA", "modB"})
-        self.assertEqual(pipeline.labeled_subsets["subset1"].description, None)
+        self.assertEqual(pipeline.labeled_subsets["subset1"].description, "")
 
         self.assertEqual(pipeline.labeled_subsets["subset2"].subset, {"modC", "modD"})
         self.assertEqual(pipeline.labeled_subsets["subset2"].description, "A test named subset")
+
+        self.assertEqual(pipeline.labeled_expression_subsets.keys(), {"subset3", "subset4"})
+
+        self.assertEqual(pipeline.labeled_expression_subsets["subset3"].expression, ">test.modB")
+        self.assertEqual(pipeline.labeled_expression_subsets["subset3"].description, "")
+
+        self.assertEqual(pipeline.labeled_expression_subsets["subset4"].expression, "test.modA | test.modC")
+        self.assertEqual(pipeline.labeled_expression_subsets["subset4"].description, "An expression.")
 
         # verify that forgetting a subset key is an error
         pipeline_str = textwrap.dedent(

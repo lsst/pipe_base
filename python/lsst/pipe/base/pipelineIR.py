@@ -151,69 +151,110 @@ class ContractIR:
 
 
 @dataclass
-class LabeledSubset:
-    """Intermediate representation of named subset of task labels read from
-    a pipeline yaml file.
-    """
+class BaseLabeledSubset:
+    """A named subset of the tasks in a pipeline."""
 
     label: str
-    """The label used to identify the subset of task labels.
-    """
-    subset: set[str]
-    """A set of task labels contained in this subset.
-    """
-    description: str | None
-    """A description of what this subset of tasks is intended to do
-    """
+    """Label associated with the subset itself."""
+
+    description: str = field(kw_only=True, default="")
+    """Extend description of this subset's contents and/or role."""
 
     @staticmethod
-    def from_primitives(label: str, value: list[str] | dict) -> LabeledSubset:
-        """Generate `LabeledSubset` objects given a properly formatted object
-        that as been created by a yaml loader.
+    def from_primitives(label: str, value: list[str] | dict | str) -> tuple[Any, bool]:
+        """Construct a `LabeledSubset` or a `LabeledExtensionSubset` from the
+        raw Python form of the YAML representation of one of these objects.
 
         Parameters
         ----------
         label : `str`
             The label that will be used to identify this labeled subset.
-        value : `list` of `str` or `dict`
+        value : `list` of `str`, or `str`, or `dict`
             Object returned from loading a labeled subset section from a yaml
             document.
 
         Returns
         -------
-        labeledSubset : `LabeledSubset`
+        labeled_subset : `LabeledSubset` or `LabeledExtensionSubset`
             A `LabeledSubset` object build from the inputs.
+        is_expression : `bool`
+            `True` if this is an expression-based subset, `False` if it is an
+            explicit set of task labels.
 
         Raises
         ------
         ValueError
-            Raised if the value input is not properly formatted for parsing
+            Raised if the value input is not properly formatted for parsing.
         """
-        if isinstance(value, MutableMapping):
-            subset = value.pop("subset", None)
-            if subset is None:
-                raise ValueError(
-                    "If a labeled subset is specified as a mapping, it must contain the key 'subset'"
+        match value:
+            case list():
+                return LabeledSubset(label, set(value)), False
+            case str():
+                return LabeledExpressionSubset(label, value), True
+            case {"subset": list() as subset}:
+                return (
+                    LabeledSubset(label, set(subset), description=value.pop("description", "")),
+                    False,
                 )
-            description = value.pop("description", None)
-        elif isinstance(value, Iterable):
-            subset = value
-            description = None
-        else:
-            raise ValueError(
-                f"There was a problem parsing the labeled subset {label}, make sure the "
-                "definition is either a valid yaml list, or a mapping with keys "
-                "(subset, description) where subset points to a yaml list, and description is "
-                "associated with a string"
-            )
-        return LabeledSubset(label, set(subset), description)
+            case {"expression": str() as expression}:
+                return (
+                    LabeledExpressionSubset(label, expression, description=value.pop("description", "")),
+                    True,
+                )
+            case _:
+                raise ValueError(
+                    f"Invalid input for labeled subset: {value!r}; valid keys are "
+                    "'description' (str, optional) and either 'subset' (list) or 'expression' (str)."
+                )
+
+
+@dataclass
+class LabeledSubset(BaseLabeledSubset):
+    """A named subset of task labels defined by an explicit set of task
+    labels.
+    """
+
+    subset: set[str]
+    """The set of task labels contained in this subset."""
 
     def to_primitives(self) -> dict[str, list[str] | str]:
-        """Convert to a representation used in yaml serialization."""
+        """Return the raw Python form of the YAML representation of this
+        object.
+
+        Returns
+        -------
+        primitives : `dict`
+            Dictionary form of this object.
+        """
         accumulate: dict[str, list[str] | str] = {"subset": list(self.subset)}
         if self.description is not None:
             accumulate["description"] = self.description
         return accumulate
+
+
+@dataclass
+class LabeledExpressionSubset(BaseLabeledSubset):
+    """A named expression that resolves to a set of tasks in a pipeline."""
+
+    expression: str
+    """The expression itself.
+
+    See :ref:`pipeline-graph-subset-expressions` for details.
+    """
+
+    def to_primitives(self) -> dict[str, str]:
+        """Return the raw Python form of the YAML representation of this
+        object.
+
+        Returns
+        -------
+        primitives : `dict`
+            Dictionary form of this object.
+        """
+        result = {"expression": self.expression}
+        if self.description:
+            result["description"] = self.description
+        return result
 
 
 @dataclass
@@ -658,10 +699,15 @@ class PipelineIR:
         """
         loaded_subsets = loaded_yaml.pop("subsets", {})
         self.labeled_subsets: dict[str, LabeledSubset] = {}
+        self.labeled_expression_subsets: dict[str, LabeledExpressionSubset] = {}
         if not loaded_subsets and "subset" in loaded_yaml:
             raise ValueError("Top level key should be subsets and not subset, add an s")
         for key, value in loaded_subsets.items():
-            self.labeled_subsets[key] = LabeledSubset.from_primitives(key, value)
+            subset, is_expression = LabeledSubset.from_primitives(key, value)
+            if is_expression:
+                self.labeled_expression_subsets[key] = subset
+            else:
+                self.labeled_subsets[key] = subset
 
     def _read_step_declaration(self, loaded_yaml: dict[str, Any]) -> None:
         """Process the steps portion of the loaded yaml document
@@ -698,7 +744,9 @@ class PipelineIR:
                     "declared pipeline"
                 )
         # Verify subset labels are not already task labels
-        label_intersection = self.labeled_subsets.keys() & self.tasks.keys()
+        label_intersection = (
+            self.labeled_subsets.keys() | self.labeled_expression_subsets.keys()
+        ) & self.tasks.keys()
         if label_intersection:
             raise ValueError(f"Labeled subsets can not use the same label as a task: {label_intersection}")
 

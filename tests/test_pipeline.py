@@ -74,7 +74,7 @@ class PipelineTestCase(unittest.TestCase):
         # Test adding labels.
         with self.assertRaises(ValueError):
             pipeline.addLabelToSubset("test", "new_label")
-        pipeline._pipelineIR.labeled_subsets["test"] = LabeledSubset("test", set(), None)
+        pipeline._pipelineIR.labeled_subsets["test"] = LabeledSubset("test", set(), description="")
         with self.assertRaises(ValueError):
             pipeline.addLabelToSubset("test", "missing_label")
         pipeline.addLabelToSubset("test", "task0")
@@ -95,12 +95,20 @@ class PipelineTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             # duplicate labeled subset
             pipeline.addLabeledSubset("test", "test description", {"missing_task_label"})
+        with self.assertRaises(ValueError):
+            # duplicate labeled subset (new one is an expression)
+            pipeline.addLabeledSubset("test", "test description", ">task0")
 
         taskLabels = {"task0", "task1"}
         pipeline.addLabeledSubset("newSubset", "test description", taskLabels)
 
+        pipeline.addLabeledSubset("newSubset2", "test description", ">task0")
+
         # verify using the subset property interface
         self.assertEqual(pipeline.subsets["newSubset"], taskLabels)
+
+        # verify using the subset property interface
+        self.assertEqual(pipeline.expression_subsets["newSubset2"], ">task0")
 
         # Test removing labeled subsets
         with self.assertRaises(ValueError):
@@ -108,6 +116,9 @@ class PipelineTestCase(unittest.TestCase):
 
         pipeline.removeLabeledSubset("newSubset")
         self.assertNotIn("newSubset", pipeline.subsets.keys())
+
+        pipeline.removeLabeledSubset("newSubset2")
+        self.assertNotIn("newSubset2", pipeline.expression_subsets.keys())
 
         pipeline.addLabeledSubset("testSubset", "Test subset description", taskLabels)
         taskSubset = {"task0"}
@@ -132,9 +143,9 @@ class PipelineTestCase(unittest.TestCase):
 
     def testFindingSubset(self):
         pipeline = makeSimplePipeline(2)
-        pipeline._pipelineIR.labeled_subsets["test1"] = LabeledSubset("test1", set(), None)
-        pipeline._pipelineIR.labeled_subsets["test2"] = LabeledSubset("test2", set(), None)
-        pipeline._pipelineIR.labeled_subsets["test3"] = LabeledSubset("test3", set(), None)
+        pipeline._pipelineIR.labeled_subsets["test1"] = LabeledSubset("test1", set(), description="")
+        pipeline._pipelineIR.labeled_subsets["test2"] = LabeledSubset("test2", set(), description="")
+        pipeline._pipelineIR.labeled_subsets["test3"] = LabeledSubset("test3", set(), description="")
 
         pipeline.addLabelToSubset("test1", "task0")
         pipeline.addLabelToSubset("test3", "task0")
