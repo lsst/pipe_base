@@ -895,9 +895,10 @@ class Pipeline:
                     )
         for label, subset in self._pipelineIR.labeled_subsets.items():
             graph.add_task_subset(label, subset.subset, subset.description)
-        graph.sort()
         if registry is not None or visualization_only:
             graph.resolve(registry=registry, visualization_only=visualization_only)
+        else:
+            graph.sort()
         return graph
 
     def _add_task_to_graph(self, label: str, graph: pipeline_graph.PipelineGraph) -> None:
