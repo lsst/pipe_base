@@ -133,28 +133,30 @@ class _ParserYacc:
         ("right", "NOT", "LT", "LE", "GT", "GE"),
     )
 
+    # Ruff wants 'noqa' on the doc line, pydocstyle wants it on the function.
+
     @classmethod
-    def p_expr_union(cls, p: YaccProduction) -> None:
+    def p_expr_union(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : expr UNION expr"""  # noqa: D403
         p[0] = UnionNode(lhs=p[1], rhs=p[3])
 
     @classmethod
-    def p_expr_intersection(cls, p: YaccProduction) -> None:
+    def p_expr_intersection(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : expr INTERSECTION expr"""  # noqa: D403
         p[0] = IntersectionNode(lhs=p[1], rhs=p[3])
 
     @classmethod
-    def p_expr_not(cls, p: YaccProduction) -> None:
+    def p_expr_not(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : NOT expr"""  # noqa: D403
         p[0] = NotNode(operand=p[2])
 
     @classmethod
-    def p_expr_parens(cls, p: YaccProduction) -> None:
+    def p_expr_parens(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : LPAREN expr RPAREN"""  # noqa: D403
         p[0] = p[2]
 
     @classmethod
-    def p_expr_inequality(cls, p: YaccProduction) -> None:
+    def p_expr_inequality(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : LT identifier
         | LE identifier
         | GT identifier
@@ -163,12 +165,12 @@ class _ParserYacc:
         p[0] = DirectionNode(operator=p[1], start=p[2])
 
     @classmethod
-    def p_expr_identifier(cls, p: YaccProduction) -> None:
+    def p_expr_identifier(cls, p: YaccProduction) -> None:  # noqa: D403
         """expr : identifier"""  # noqa: D403
         p[0] = p[1]
 
     @classmethod
-    def p_identifier_qualified(cls, p: YaccProduction) -> None:
+    def p_identifier_qualified(cls, p: YaccProduction) -> None:  # noqa: D403, D401
         """identifier : IDENTIFIER"""  # noqa: D403, D401
         match p[1].split(":"):
             case [qualifier, label]:
