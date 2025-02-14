@@ -31,6 +31,7 @@ __all__ = (
     "DuplicateOutputError",
     "EdgesChangedError",
     "IncompatibleDatasetTypeError",
+    "InvalidExpressionError",
     "PipelineDataCycleError",
     "PipelineGraphError",
     "PipelineGraphExceptionSafetyError",
@@ -98,4 +99,10 @@ class PipelineGraphExceptionSafetyError(PipelineGraphError):
     state.
 
     The originating exception is always chained when this exception is raised.
+    """
+
+
+class InvalidExpressionError(PipelineGraphError):
+    """Exception raised when a pipeline subset expression could not be parsed
+    or applied.
     """

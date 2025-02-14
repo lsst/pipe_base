@@ -108,7 +108,7 @@ class GetNodeText:
 
     def __call__(self, node: DisplayNodeKey, x: int, style: tuple[str, str]) -> str:
         state = self.xgraph.nodes[node]
-        terms: list[str] = [f"{node}:" if self.options else str(node)]
+        terms: list[str] = [f"{node}:" if self.options.has_details(node.node_type) else str(node)]
         if self.options.dimensions and node.node_type != NodeType.TASK_INIT:
             terms.append(self.format_dimensions(state["dimensions"]))
         if self.options.task_classes and (
