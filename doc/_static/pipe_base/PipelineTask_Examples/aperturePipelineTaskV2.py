@@ -23,16 +23,6 @@ class ApertureTaskConnections(pipeBase.PipelineTaskConnections, dimensions=("vis
         storageClass="SourceCatalog",
         name="src",
     )
-    inputCatalog = connectionTypes.Input(
-        doc="Input catalog with existing measurements",
-        dimensions=(
-            "visit",
-            "detector",
-            "band",
-        ),
-        storageClass="SourceCatalog",
-        name="src",
-    )
     outputCatalog = connectionTypes.Output(
         doc="Aperture measurements",
         dimensions=("visit", "detector", "band"),
