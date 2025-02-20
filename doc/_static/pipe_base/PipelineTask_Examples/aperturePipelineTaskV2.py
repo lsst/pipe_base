@@ -65,7 +65,7 @@ class ApertureTask(pipeBase.PipelineTask):
         # matches an initOut so will be persisted
         self.outputSchema = afwTable.SourceCatalog(self.schema)
 
-    def run(self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
+    def run(self, *, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
         # create the catalog in which new measurements will be stored
         outputCatalog = afwTable.SourceCatalog(self.schema)
         # Add in all the records from the input catalog into what will be the

@@ -225,7 +225,7 @@ There is currently no test framework for the use of init-inputs in task construc
    class OrTask(PipelineTask):
        ConfigClass = OrConfig
 
-       def run(exp=None, cat=None):
+       def run(self, *, exp=None, cat=None):
            ...
 
 

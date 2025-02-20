@@ -44,7 +44,7 @@ class ApertureTask(pipeBase.PipelineTask):
         self.outputSchema = afwTable.SourceTable.makeMinimalSchema()
         self.apKey = self.outputSchema.addField("apFlux", type=np.float64, doc="Ap flux measured")
 
-    def run(self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
+    def run(self, *, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
         # set dimension cutouts to 3 times the apRad times 2 (for diameter)
         dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 

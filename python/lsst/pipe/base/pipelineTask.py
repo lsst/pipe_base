@@ -120,14 +120,14 @@ class PipelineTask(Task):
         """Run task algorithm on in-memory data.
 
         This method should be implemented in a subclass. This method will
-        receive keyword arguments whose names will be the same as names of
+        receive keyword-only arguments whose names will be the same as names of
         connection fields describing input dataset types. Argument values will
         be data objects retrieved from data butler. If a dataset type is
         configured with ``multiple`` field set to ``True`` then the argument
         value will be a list of objects, otherwise it will be a single object.
 
-        If the task needs to know its input or output DataIds then it has to
-        override `runQuantum` method instead.
+        If the task needs to know its input or output DataIds then it also has
+        to override the `runQuantum` method.
 
         This method should return a `Struct` whose attributes share the same
         name as the connection fields describing output dataset types.
@@ -149,9 +149,9 @@ class PipelineTask(Task):
 
         .. code-block:: python
 
-            def run(self, input, calib):
-                # "input", "calib", and "output" are the names of the config
-                # fields
+            def run(self, *, input, calib):
+                # "input", "calib", and "output" are the names of the
+                # connection fields.
 
                 # Assuming that input/calib datasets are `scalar` they are
                 # simple objects, do something with inputs and calibs, produce

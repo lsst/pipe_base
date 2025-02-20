@@ -94,6 +94,7 @@ class ApertureTask(pipeBase.PipelineTask):
 
     def run(
         self,
+        *,
         exposure: afwImage.Exposure,
         inputCatalog: afwTable.SourceCatalog,
         areaMask: afwImage.Mask,
