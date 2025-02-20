@@ -23,14 +23,15 @@ class ApertureTask(pipeBase.Task):
         self.outputSchema = afwTable.SourceTable.makeMinimalSchema()
         self.apKey = self.outputSchema.addField("apFlux", type=np.float64, doc="Ap flux measured")
 
-        self.outputCatalog = afwTable.SourceCatalog(self.outputSchema)
-
     def run(self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
         # set dimension cutouts to 3 times the apRad times 2 (for diameter)
         dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 
         # Get indexes for each pixel
         indy, indx = np.indices(dimensions)
+
+        outputCatalog = afwTable.SourceCatalog(self.outputSchema)
+        outputCatalog.reserve(len(inputCatalog))
 
         # Loop over each record in the catalog
         for source in inputCatalog:
@@ -46,7 +47,7 @@ class ApertureTask(pipeBase.Task):
             flux = np.sum(stamp * mask)
 
             # Add a record to the output catalog
-            tmpRecord = self.outputCatalog.addNew()
+            tmpRecord = outputCatalog.addNew()
             tmpRecord.set(self.apKey, flux)
 
-        return self.outputCatalog
+        return pipeBase.Struct(outputCatalog)

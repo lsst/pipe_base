@@ -71,17 +71,16 @@ class ApertureTask(pipeBase.PipelineTask):
         # Get the output schema
         self.schema = self.mapper.getOutputSchema()
 
-        # create the catalog in which new measurements will be stored
-        self.outputCatalog = afwTable.SourceCatalog(self.schema)
-
         # Put the outputSchema into a SourceCatalog container. This var name
         # matches an initOut so will be persisted
         self.outputSchema = afwTable.SourceCatalog(self.schema)
 
     def run(self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog) -> pipeBase.Struct:
+        # create the catalog in which new measurements will be stored
+        outputCatalog = afwTable.SourceCatalog(self.schema)
         # Add in all the records from the input catalog into what will be the
         # output catalog
-        self.outputCatalog.extend(inputCatalog, mapper=self.mapper)
+        outputCatalog.extend(inputCatalog, mapper=self.mapper)
 
         # set dimension cutouts to 3 times the apRad times 2 (for diameter)
         dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
@@ -105,4 +104,4 @@ class ApertureTask(pipeBase.PipelineTask):
             # Set the flux field of this source
             source.set(self.apKey, flux)
 
-        return pipeBase.Struct(outputCatalog=self.outputCatalog)
+        return pipeBase.Struct(outputCatalog=outputCatalog)

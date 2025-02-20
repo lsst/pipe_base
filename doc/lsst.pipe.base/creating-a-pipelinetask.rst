@@ -47,8 +47,6 @@ Next, create a |Task| class that performs the measurements:
                 "apFlux", type=np.float64, doc="Ap flux measured"
             )
 
-            self.outputCatalog = afwTable.SourceCatalog(self.outputSchema)
-
         def run(
             self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
         ) -> pipeBase.Struct:
@@ -57,6 +55,9 @@ Next, create a |Task| class that performs the measurements:
 
             # Get indexes for each pixel
             indy, indx = np.indices(dimensions)
+
+            outputCatalog = afwTable.SourceCatalog(self.outputSchema)
+            outputCatalog.reserve(len(inputCatalog))
 
             # Loop over each record in the catalog
             for source in inputCatalog:
@@ -74,10 +75,10 @@ Next, create a |Task| class that performs the measurements:
                 flux = np.sum(stamp * mask)
 
                 # Add a record to the output catalog
-                tmpRecord = self.outputCatalog.addNew()
+                tmpRecord = outputCatalog.addNew()
                 tmpRecord.set(self.apKey, flux)
 
-            return self.outputCatalog
+            return pipeBase.Struct(outputCatalog=outputCatalog)
 
 So now you have a task that takes an exposure and inputCatalog in its run
 method and returns a new output catalog with apertures measured. As with all
@@ -246,15 +247,15 @@ is executed. Take a look what the connection class looks like.
             # Get the output schema
             self.schema = self.mapper.getOutputSchema()
 
-            # create the catalog in which new measurements will be stored
-            self.outputCatalog = afwTable.SourceCatalog(self.schema)
-
         def run(
             self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
         ) -> pipeBase.Struct:
+            # create the catalog in which new measurements will be stored
+            outputCatalog = afwTable.SourceCatalog(self.schema)
+
             # Add in all the records from the input catalog into what will be the
             # output catalog
-            self.outputCatalog.extend(inputCatalog, mapper=self.mapper)
+            outputCatalog.extend(inputCatalog, mapper=self.mapper)
 
             # set dimension cutouts to 3 times the apRad times 2 (for diameter)
             dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
@@ -280,7 +281,7 @@ is executed. Take a look what the connection class looks like.
                 # Set the flux field of this source
                 source.set(self.apKey, flux)
 
-            return pipeBase.Struct(outputCatalog=self.outputCatalog)
+            return pipeBase.Struct(outputCatalog=outputCatalog)
 
 These changes allow you to load in and use schemas to initialize your task before
 any actual data is loaded to be passed to the algorithm code located in the
@@ -323,9 +324,6 @@ class.
             ...
             # Get the output schema
             self.schema = mapper.getOutputSchema()
-
-            # Create the output catalog
-            self.outputCatalog = afwTable.SourceCatalog(self.schema)
 
             # Put the outputSchema into a SourceCatalog container. This var name
             # matches an initOut so will be persisted
@@ -463,7 +461,7 @@ take into account that a background may or may not be supplied.
 
                 ...
 
-            return pipeBase.Struct(outputCatalog=self.outputCatalogs)
+            return pipeBase.Struct(outputCatalog=outputCatalogs)
 
 The ``run`` method now takes an argument named ``background``, which defaults to
 a value of `None`. If the connection is removed from the connection class, there
