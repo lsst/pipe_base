@@ -304,7 +304,7 @@ class ConfigIR:
         """Convert to a representation used in yaml serialization."""
         accumulate = {}
         for name in ("python", "dataId", "file"):
-            # if this attribute is thruthy add it to the accumulation
+            # if this attribute is truthy add it to the accumulation
             # dictionary
             if getattr(self, name):
                 accumulate[name] = getattr(self, name)
@@ -834,7 +834,7 @@ class PipelineIR:
                 "Labeled subset names must be unique amongst imports in both labels and  named Subsets"
             )
         # merge in the named subsets for self so this document can override any
-        # that have been delcared
+        # that have been declared
         accumulate_labeled_subsets.update(self.labeled_subsets)
         self.labeled_subsets = accumulate_labeled_subsets
 
