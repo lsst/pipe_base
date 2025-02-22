@@ -547,7 +547,8 @@ class StepIR:
 
     label: str
     """The label associated with this step."""
-    sharding_dimensions: list[str]
+
+    dimensions: list[str]
     """The dimensions to use when sharding this step."""
 
 

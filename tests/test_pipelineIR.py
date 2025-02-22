@@ -331,7 +331,7 @@ class PipelineIRTestCase(unittest.TestCase):
             - $TESTDIR/testPipeline5.yaml
         steps:
             - label: sub1
-              sharding_dimensions: ['a', 'e']
+              dimensions: ['a', 'e']
         """
         )
         with self.assertRaises(ValueError):
@@ -346,7 +346,7 @@ class PipelineIRTestCase(unittest.TestCase):
               importSteps: false
         steps:
             - label: sub1
-              sharding_dimensions: ['a', 'e']
+              dimensions: ['a', 'e']
         """
         )
         PipelineIR.from_string(pipeline_str)
@@ -380,9 +380,9 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modA
         steps:
             - label: sub1
-              sharding_dimensions: ['a', 'b']
+              dimensions: ['a', 'b']
             - label: sub2
-              sharding_dimensions: ['a', 'b']
+              dimensions: ['a', 'b']
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -405,9 +405,9 @@ class PipelineIRTestCase(unittest.TestCase):
                 - modA
         steps:
             - label: sub1
-              sharding_dimensions: ['a', 'b']
+              dimensions: ['a', 'b']
             - label: sub1
-              sharding_dimensions: ['a', 'b']
+              dimensions: ['a', 'b']
         """
         )
         with self.assertRaises(ValueError):
