@@ -190,11 +190,13 @@ Task execution methods
 
 For a detailed overview of creating a `~lsst.pipe.base.PipelineTask` see :doc:`creating-a-pipelinetask`.
 
+.. _task-run-method:
+
 The run method
 ^^^^^^^^^^^^^^
 
 All tasks are required to have a ``run`` method which acts as their primary point of entry.
-This method takes, as explicit arguments, everything that the task needs to perform one unit of execution (for example, processing a single image), and returns the result to the caller.
+This method takes, as `keyword-only arguments <https://peps.python.org/pep-3102/>`_, everything that the task needs to perform one unit of execution (for example, processing a single image), and returns the result to the caller.
 The ``run`` method should not perform I/O, and, in particular, should not be expected to have access to the Data Butler for storing and retrieving data.
 Instead, results are returned as an `lsst.pipe.base.struct.Struct` object, with a named field for each item of data.
 This is safer than returning a tuple of items, and allows adding fields without affecting existing code.

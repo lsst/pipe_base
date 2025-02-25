@@ -97,15 +97,13 @@ class ApertureTask(pipeBase.PipelineTask):
         # Get the output schema
         self.schema = self.mapper.getOutputSchema()
 
-        # create the catalog in which new measurements will be stored
-        self.outputCatalog = afwTable.SourceCatalog(self.schema)
-
         # Put the outputSchema into a SourceCatalog container. This var name
         # matches an initOut so will be persisted
         self.outputSchema = afwTable.SourceCatalog(self.schema)
 
     def run(
         self,
+        *,
         exposures: list[afwImage.Exposure],
         inputCatalogs: list[afwTable.SourceCatalog],
         areaMasks: list[afwImage.Mask],
@@ -116,9 +114,11 @@ class ApertureTask(pipeBase.PipelineTask):
         cumulativeLength = 0
         lengths = []
 
+        # create the catalog in which new measurements will be stored
+        outputCatalog = afwTable.SourceCatalog(self.schema)
         # Add in all the input catalogs into the output catalog
         for inCat in inputCatalogs:
-            self.outputCatalog.extend(inCat, mapper=self.mapper)
+            outputCatalog.extend(inCat, mapper=self.mapper)
             lengths.append(len(inCat) + cumulativeLength)
             cumulativeLength += len(inCat)
 
@@ -134,7 +134,7 @@ class ApertureTask(pipeBase.PipelineTask):
         areaMask = areaMasks[imageIndex]
         background = areaMasks[imageIndex]
         # Loop over each record in the catalog
-        for i, source in enumerate(self.outputCatalog):
+        for i, source in enumerate(outputCatalog):
             # get the associated exposure
             if i >= lengths[imageIndex]:
                 # only update if this is not the last index
@@ -177,4 +177,4 @@ class ApertureTask(pipeBase.PipelineTask):
             # Set the flux field of this source
             source.set(self.apKey, flux)
 
-        return pipeBase.Struct(outputCatalog=self.outputCatalog)
+        return pipeBase.Struct(outputCatalog=outputCatalog)

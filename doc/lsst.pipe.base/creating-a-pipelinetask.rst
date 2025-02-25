@@ -47,16 +47,17 @@ Next, create a |Task| class that performs the measurements:
                 "apFlux", type=np.float64, doc="Ap flux measured"
             )
 
-            self.outputCatalog = afwTable.SourceCatalog(self.outputSchema)
-
         def run(
-            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
+            self, *, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
         ) -> pipeBase.Struct:
             # set dimension cutouts to 3 times the apRad times 2 (for diameter)
             dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
 
             # Get indexes for each pixel
             indy, indx = np.indices(dimensions)
+
+            outputCatalog = afwTable.SourceCatalog(self.outputSchema)
+            outputCatalog.reserve(len(inputCatalog))
 
             # Loop over each record in the catalog
             for source in inputCatalog:
@@ -74,10 +75,10 @@ Next, create a |Task| class that performs the measurements:
                 flux = np.sum(stamp * mask)
 
                 # Add a record to the output catalog
-                tmpRecord = self.outputCatalog.addNew()
+                tmpRecord = outputCatalog.addNew()
                 tmpRecord.set(self.apKey, flux)
 
-            return self.outputCatalog
+            return pipeBase.Struct(outputCatalog=outputCatalog)
 
 So now you have a task that takes an exposure and inputCatalog in its run
 method and returns a new output catalog with apertures measured. As with all
@@ -176,26 +177,12 @@ look at what changes when you turn a Task into a PipelineTask.
     class ApertureTask(pipeBase.PipelineTask):
         ...
 
-        def run(
-            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
-        ) -> pipeBase.Struct:
-            ...
-            return pipeBase.Struct(outputCatalog=self.outputCatalog)
-
 In a simple PipelineTask like this, these are all the changes that need to be
-made. Firstly the base class to is changed to `PipelineTask`. This inheritance
+made. The base class is changed to `PipelineTask`. This inheritance
 provides all the base machinery that the middleware will need to run
-this task. The second change you need to make a task into a `PipelineTask` is
-to change the signature of the run method. A run method in a PipelineTask must
-return a `lsst.pipe.base.Struct` object whose field names correspond to the
-names of the outputs defined in the connection class. In our connection class
-we defined the output collection with the identifier ``outputCatalog``, so in
-our returned `~lsst.pipe.base.Struct` has a field with that name as well.
-Another thing worth highlighting, though it was not a change that was made, is
-the names of the arguments to the run method. These names also must (and do)
-correspond to the identifiers used for the input connections. The names of the
-variables of the inputs and outputs are how the |PipelineTask| activator maps
-connections into the in-memory data products that the algorithm requires.
+this task.
+Note that the ``run`` method already takes two `keyword-only arguments <https://peps.python.org/pep-3102/>`_ that match the input connections given above, and that it returns a `~lsst.pipe.base.Struct` containing a field matching the name of the output connection.
+As noted in the :ref:`Task run documentation<task-run-method>`, returning a `~lsst.pipe.base.Struct` is good practice for any `~lsst.pipe.base.Task`, whether it is a `PipelineTask` or not.
 
 The complete source integrating these changes can be used in :ref:`pipeline-appendix-a`.
 
@@ -246,15 +233,15 @@ is executed. Take a look what the connection class looks like.
             # Get the output schema
             self.schema = self.mapper.getOutputSchema()
 
-            # create the catalog in which new measurements will be stored
-            self.outputCatalog = afwTable.SourceCatalog(self.schema)
-
         def run(
-            self, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
+            self, *, exposure: afwImage.Exposure, inputCatalog: afwTable.SourceCatalog
         ) -> pipeBase.Struct:
+            # create the catalog in which new measurements will be stored
+            outputCatalog = afwTable.SourceCatalog(self.schema)
+
             # Add in all the records from the input catalog into what will be the
             # output catalog
-            self.outputCatalog.extend(inputCatalog, mapper=self.mapper)
+            outputCatalog.extend(inputCatalog, mapper=self.mapper)
 
             # set dimension cutouts to 3 times the apRad times 2 (for diameter)
             dimensions = (3 * self.apRad * 2, 3 * self.apRad * 2)
@@ -280,7 +267,7 @@ is executed. Take a look what the connection class looks like.
                 # Set the flux field of this source
                 source.set(self.apKey, flux)
 
-            return pipeBase.Struct(outputCatalog=self.outputCatalog)
+            return pipeBase.Struct(outputCatalog=outputCatalog)
 
 These changes allow you to load in and use schemas to initialize your task before
 any actual data is loaded to be passed to the algorithm code located in the
@@ -323,9 +310,6 @@ class.
             ...
             # Get the output schema
             self.schema = mapper.getOutputSchema()
-
-            # Create the output catalog
-            self.outputCatalog = afwTable.SourceCatalog(self.schema)
 
             # Put the outputSchema into a SourceCatalog container. This var name
             # matches an initOut so will be persisted
@@ -434,7 +418,7 @@ take into account that a background may or may not be supplied.
         ...
 
         def run(
-            self,
+            self, *,
             exposure: afwImage.Exposure,
             inputCatalog: afwTable.SourceCatalog,
             background: afwMath.BackgroundList | None = None,
@@ -463,7 +447,7 @@ take into account that a background may or may not be supplied.
 
                 ...
 
-            return pipeBase.Struct(outputCatalog=self.outputCatalogs)
+            return pipeBase.Struct(outputCatalog=outputCatalogs)
 
 The ``run`` method now takes an argument named ``background``, which defaults to
 a value of `None`. If the connection is removed from the connection class, there
@@ -727,7 +711,7 @@ code this behavior, but are done to demonstrate how to make use of the
         ...
 
         def run(
-            self,
+            self, *,
             exposures: List[afwImage.Exposure],
             inputCatalogs: List[afwTable.SourceCatalog],
             areaMasks: List[afwImage.Mask],
@@ -865,7 +849,7 @@ Take a look at how the ``run`` method changes to make use of this.
         ...
 
         def run(
-            self,
+            self, *,
             exposures: List[afwImage.Exposure],
             inputCatalogs: List[afwTable.SourceCatalog],
             areaMasks: List[afwImage.Mask],
@@ -1044,10 +1028,11 @@ with that single `lsst.daf.butler.DatasetRef`.
             inputRefs: pipeBase.InputQuantizedConnection,
             outputRefs: pipeBase.OutputQuantizedConnection,
         ):
-            inputs = {}
-            for name, refs in inputRefs:
-                inputs[name] = butlerQC.get(refs)
-            output = self.run(**inputs)
+            inputs = butlerQC.get(inputRefs)
+            exposure = inputs.pop("exposure")
+            inputCatalog = inputs.pop("inputCatalog")
+            assert not inputs, "runQuantum got more inputs than expected"
+            output = self.run(exposure=exposure, inputCatalog=inputCatalog)
             butlerQC.put(output, outputRefs.OutputCatalog)
 
 Overriding ``runQuantum`` also provides the opportunity to do a transformation
@@ -1055,6 +1040,10 @@ on input data, or some other related calculation. This allows the ``run``
 method to have a convenient interface for user interaction within a notebook
 or shell, but still match the types of input `PipelineTask`\ s will get when
 run by the middleware system.
+
+.. note::
+    The below examples are for educational purposes only; they violate the "stateless" convention for Tasks.
+    We are planning to redo this documentation with more realistic examples.
 
 To demonstrate this, modify the ``runQuantum`` and ``run`` methods in such a
 way that the output catalog of the task is already pre-populated with all of
@@ -1099,7 +1088,7 @@ demoing the concepts here.
 
 
         def run(
-            self,
+            self, *,
             exposures: List[afwImage.Exposure],
             lengths: List[int],
             areaMasks: List[afwImage.Mask],
