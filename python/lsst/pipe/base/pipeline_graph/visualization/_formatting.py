@@ -40,6 +40,7 @@ from lsst.daf.butler import DimensionGroup
 from .._nodes import NodeKey, NodeType
 from ._merge import MergedNodeKey
 from ._options import NodeAttributeOptions
+from ._status import NodeStatusOptions, TaskStatusInfo, DatasetTypeStatusInfo
 
 DisplayNodeKey = NodeKey | MergedNodeKey
 """Type alias for graph keys that may be original task, task init, or dataset
@@ -78,6 +79,10 @@ def get_node_symbol(node: DisplayNodeKey, x: int | None = None) -> str:
             return "▤"
     raise ValueError(f"Unexpected node key: {node} of type {type(node)}.")
 
+# The text based one may only ever have the numbers, but we definitely want
+# to have the colors for dot and mermaid.
+def get_node_color(node: DisplayNodeKey, x: int | None = None) -> str:
+    pass
 
 class GetNodeText:
     """A callback for the `Printer` class's `get_text` callback that
@@ -232,3 +237,9 @@ def format_task_class(options: NodeAttributeOptions, task_class_name: str) -> st
         case False:
             return ""
     raise ValueError(f"Invalid display option for task_classes: {options.task_classes!r}.")
+
+def format_task_status(options: NodeStatusOptions, task_status: TaskStatusInfo) -> str:
+    return ""
+
+def format_dataset_type_status(options: NodeStatusOptions, dataset_type_status: DatasetTypeStatusInfo) -> str:
+    return ""
