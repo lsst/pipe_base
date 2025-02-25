@@ -156,6 +156,13 @@ class TaskSubset(MutableSet[str]):
         with self._step_definitions._unverified_on_success():
             self._members.discard(value)
 
+    @classmethod
+    def _from_iterable(cls, iterable: Iterable[str]) -> set[str]:
+        # This is the hook used by collections.abc.Set when implementing
+        # operators that return new sets.  In this case, we want those to be
+        # regular `set` (builtin) objects, not `TaskSubset` instances.
+        return set(iterable)
+
 
 class StepDefinitions:
     """A collection of the 'steps' defined in a pipeline graph.

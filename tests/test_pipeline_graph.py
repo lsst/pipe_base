@@ -1061,6 +1061,14 @@ class PipelineGraphTestCase(unittest.TestCase):
         # Add the subset back in.
         self.graph.add_task_subset("only_b", {"b"})
         self.assertEqual(self.graph.task_subsets.keys(), {"only_b"})
+        # Add a task to the subset and then remove it.
+        self.graph.task_subsets["only_b"].add("a")
+        self.assertEqual(self.graph.task_subsets["only_b"], {"a", "b"})
+        self.assertEqual(self.graph.task_subsets["only_b"] & {"b"}, {"b"})
+        self.graph.task_subsets["only_b"].remove("a")
+        self.assertEqual(self.graph.task_subsets["only_b"], {"b"})
+        with self.assertRaises(PipelineGraphError):
+            self.graph.task_subsets["only_b"].add("c")
         # Resolve the graph's dataset types and task dimensions.
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertTrue(self.graph.dataset_types.is_resolved("input_1"))

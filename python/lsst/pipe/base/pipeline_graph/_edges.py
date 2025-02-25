@@ -599,7 +599,7 @@ class ReadEdge(Edge):
                 else:
                     raise MissingDatasetTypeError(
                         f"Dataset type {self.parent_dataset_type_name!r} is not registered and not produced "
-                        f"by this pipeline, but it used by task {self.task_label!r}, via component "
+                        f"by this pipeline, but it is used by task {self.task_label!r}, via component "
                         f"{self.component!r}. This pipeline cannot be resolved until the parent dataset "
                         "type is registered."
                     )
