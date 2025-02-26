@@ -2257,16 +2257,20 @@ class PipelineGraph:
                 raise InvalidStepsError(
                     f"Step {step_label!r} repeats task(s) {task_labels_so_far & task_subset}."
                 )
-            # Check that none of the outputs of the tasks in this step were
-            # expected as outputs of a previous step's tasks, and gather node
-            # keys to make a networkx subgraph of the step to do a topological
-            # sort of just the step.
             task_labels_so_far.update(task_subset)
+            # We need a temporary data structure for tracking the inputs of
+            # just this step to avoid complaining about input-output
+            # relationships within the step. We'll merge this into the
+            # cumulative one later.
             step_inputs: dict[str, set[str]] = {}
+            # We'll also gather all task, task-init and dataset type networkx
+            # graph keys for the step so we can make and sort a step sub-graph.
             new_step_keys: set[NodeKey] = set()
             for task_label in task_subset:
                 for input_name in self.inputs_of(task_label):
                     step_inputs.setdefault(input_name, set()).add(task_label)
+                # Check that none of the outputs of the tasks in this step were
+                # expected as inputs of a previous step's tasks.
                 task_outputs = self.outputs_of(task_label)
                 if not inputs_so_far.keys().isdisjoint(task_outputs.keys()):
                     msg: list[str] = []
