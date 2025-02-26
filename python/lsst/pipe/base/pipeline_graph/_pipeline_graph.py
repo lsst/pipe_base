@@ -196,12 +196,18 @@ class PipelineGraph:
 
     @property
     def steps(self) -> StepDefinitions:
-        """An ordered mapping of the labels of task subsets that must be
+        """An ordered iterable of the labels of task subsets that must be
         executed separately.
 
         Steps are intended to be partition of the full pipeline graph - the
         steps together include all tasks, and each task belongs to exactly one
         step - but this is only checked when the graph is resolved.
+
+        The order of the steps is required to be consistent with the graph's
+        topological ordering, and when sorting a graph with steps, that sort
+        order is guaranteed to be consistent with the order of the steps.  But
+        there may be other orderings of the steps that are still valid for
+        execution (e.g. two steps could be runnable in parallel).
         """
         return self._step_definitions
 
