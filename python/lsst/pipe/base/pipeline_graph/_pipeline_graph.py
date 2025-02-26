@@ -214,7 +214,7 @@ class PipelineGraph:
     @steps.setter
     def steps(self, labels: Iterable[str]) -> None:
         # Docstring on getter.
-        self._step_definitions.reset(labels)
+        self._step_definitions.assign(labels)
 
     def get_task_step(self, task_label: str) -> str:
         """Return the step that the given task belongs to.

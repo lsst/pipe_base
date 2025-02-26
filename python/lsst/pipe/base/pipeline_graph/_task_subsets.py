@@ -275,7 +275,7 @@ class StepDefinitions:
         with self._unverified_on_success():
             del self._dimensions_by_label[label]
 
-    def reset(self, labels: Iterable[str] = ()) -> None:
+    def assign(self, labels: Iterable[str]) -> None:
         """Set all step definitions to the given labels.
 
         Parameters
@@ -297,6 +297,10 @@ class StepDefinitions:
                 self._dimensions_by_label = {
                     label: self._dimensions_by_label.get(label, frozenset()) for label in labels
                 }
+
+    def clear(self) -> None:
+        """Remove all step definitions."""
+        self.assign(())
 
     def get_dimensions(self, label: str) -> DimensionGroup:
         """Return the dimensions that can be used to split up a step's quanta
