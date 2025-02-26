@@ -2247,7 +2247,7 @@ class PipelineGraph:
         # Inputs we've already seen, and the tasks that wanted them:
         inputs_so_far: dict[str, set[str]] = {}
         sort_keys: list[NodeKey] = []
-        keys_sorted: set[NodeKey] = set()
+        keys_already_sorted: set[NodeKey] = set()
         for step_label in self.steps:
             try:
                 task_subset = self.task_subsets[step_label]
@@ -2294,12 +2294,12 @@ class PipelineGraph:
             # Drop step input keys that were already either inputs or outputs
             # of a previous step, since they'll have already been added to
             # sort_keys.
-            new_step_keys.difference_update(keys_sorted)
+            new_step_keys.difference_update(keys_already_sorted)
             # Make the step subgraph, sort it, and extend the overall sort_keys
             # with result.
             step_xgraph = self._xgraph.subgraph(new_step_keys)
             sort_keys.extend(networkx.dag.lexicographical_topological_sort(step_xgraph))
-            keys_sorted.update(new_step_keys)
+            keys_already_sorted.update(new_step_keys)
             for input_name, consuming_tasks in step_inputs.items():
                 inputs_so_far.setdefault(input_name, set()).update(consuming_tasks)
         if not task_labels_so_far.issuperset(self.tasks.keys()):
