@@ -25,7 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests of things related to the GraphBuilder class."""
+"""Tests of things related to the PipelineGraph class."""
 
 import copy
 import io
@@ -45,6 +45,7 @@ from lsst.pipe.base.pipeline_graph import (
     Edge,
     EdgesChangedError,
     IncompatibleDatasetTypeError,
+    InvalidStepsError,
     NodeKey,
     NodeType,
     PipelineGraph,
@@ -129,7 +130,6 @@ class PipelineGraphTestCase(unittest.TestCase):
     def test_sorting(self) -> None:
         """Test sort methods on PipelineGraph."""
         self.assertFalse(self.graph.has_been_sorted)
-        self.assertFalse(self.graph.is_sorted)
         self.graph.sort()
         self.check_sorted(self.graph)
 
@@ -218,12 +218,17 @@ class PipelineGraphTestCase(unittest.TestCase):
         """Test round-tripping a resolved PipelineGraph through in-memory
         serialization.
         """
+        # Add some steps to make sure those round-trip, too.
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"b"})
+        self.graph.steps = ["step1", "step2"]
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         stream = io.BytesIO()
         self.graph._write_stream(stream)
         stream.seek(0)
         roundtripped = PipelineGraph._read_stream(stream)
         self.check_make_xgraph(roundtripped, resolved=True)
+        self.assertEqual(roundtripped.steps, self.graph.steps)
 
     def test_resolved_file_io(self) -> None:
         """Test round-tripping a resolved PipelineGraph through file
@@ -280,6 +285,176 @@ class PipelineGraphTestCase(unittest.TestCase):
         copy3 = copy.deepcopy(self.graph)
         self.assertIsNot(copy3, self.graph)
         self.check_make_xgraph(copy3, resolved=True)
+
+    def test_valid_steps(self) -> None:
+        """Test step definitions that are valid."""
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"b"})
+        with self.assertRaises(InvalidStepsError):
+            # Can't call this yet; no steps.
+            self.graph.get_task_step("step1")
+        with self.assertRaises(InvalidStepsError):
+            # Can't call this yet either.
+            self.graph.steps.get_dimensions("step1")
+        self.graph.steps = ["step1", "step2"]
+        with self.assertRaises(UnresolvedGraphError):
+            # Still can't call it yet; steps not verified.
+            self.graph.get_task_step("step1")
+        with self.assertRaises(UnresolvedGraphError):
+            # Can't call this yet either.
+            self.graph.steps.get_dimensions("step1")
+        self.assertEqual(list(self.graph.steps), ["step1", "step2"])
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(str(self.graph.steps), "['step1', 'step2']")
+        self.assertEqual(list(self.graph.steps), ["step1", "step2"])
+        self.assertTrue(self.graph.task_subsets["step1"].is_step)
+        self.assertTrue(self.graph.task_subsets["step2"].is_step)
+        self.assertEqual(self.graph.task_subsets["step1"].dimensions, self.dimensions.empty)
+        self.assertEqual(self.graph.task_subsets["step2"].dimensions, self.dimensions.empty)
+        self.assertEqual(self.graph.get_task_step("a"), "step1")
+        self.assertEqual(self.graph.get_task_step("b"), "step2")
+
+    def test_valid_steps_resolved_graph(self) -> None:
+        """Test step definitions that are valid, adding them to a graph that
+        has already been resolved.
+        """
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"b"})
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        # Can't call these yet; no steps.
+        with self.assertRaises(InvalidStepsError):
+            self.graph.get_task_step("a")
+        self.graph.steps = ["step1"]
+        self.graph.steps.append("step2", dimensions=self.dimensions.empty)
+        with self.assertRaises(UnresolvedGraphError):
+            # Still can't call it yet; steps not verified.
+            self.graph.get_task_step("a")
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        # After we resolve again everything works.
+        self.assertEqual(list(self.graph.steps), ["step1", "step2"])
+        self.assertEqual(list(self.graph.steps), ["step1", "step2"])
+        self.assertTrue(self.graph.task_subsets["step1"].is_step)
+        self.assertTrue(self.graph.task_subsets["step2"].is_step)
+        self.assertEqual(self.graph.task_subsets["step1"].dimensions, self.dimensions.empty)
+        self.assertEqual(self.graph.task_subsets["step2"].dimensions, self.dimensions.empty)
+        self.assertEqual(self.graph.get_task_step("a"), "step1")
+        self.assertEqual(self.graph.get_task_step("b"), "step2")
+
+    def test_valid_step_exposure_visit_substitution(self) -> None:
+        """Test that step sharding dimensions permit an 'exposure'-based task
+        in a 'visit'-sharded step.
+        """
+        c_config = DynamicTestPipelineTaskConfig()
+        c_config.inputs["input1"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
+        c_config.outputs["output2"] = DynamicConnectionConfig(
+            dataset_type_name="output_2", dimensions=["exposure", "detector"]
+        )
+        c_config.dimensions = ["exposure"]
+        self.graph.add_task("c", DynamicTestPipelineTask, c_config)
+        self.graph.add_task_subset("step1", {"a", "b"})
+        self.graph.add_task_subset("step2", {"c"})
+        self.graph.steps = ["step1", "step2"]
+        self.graph.task_subsets["step2"].dimensions = {"visit"}
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(list(self.graph.steps), ["step1", "step2"])
+        self.assertEqual(self.graph.get_task_step("a"), "step1")
+        self.assertEqual(self.graph.get_task_step("b"), "step1")
+        self.assertEqual(self.graph.get_task_step("c"), "step2")
+
+    def test_reset_steps(self) -> None:
+        """Test that assigning steps from one graph to another transfers the
+        sharding dimensions.
+        """
+        new_graph = PipelineGraph()
+        new_graph.add_task_nodes(self.graph.tasks.values(), parent=self.graph)
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"b"})
+        self.graph.steps = ["step1"]
+        # These dimensions are not valid for the task dimensions we have, but
+        # that shouldn't be a problem until we try to resolve them.
+        self.graph.steps.append("step2", dimensions=self.dimensions.conform(["visit"]))
+        new_graph.steps = self.graph.steps
+        with self.assertRaises(InvalidStepsError):
+            new_graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_repeated_task(self) -> None:
+        """Test step definitions that are invalid because a task appears in
+        more than one step.
+        """
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"a", "b"})
+        self.graph.steps = ["step1", "step2"]
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_missing_task(self) -> None:
+        """Test step definitions that are invalid because a task appears in
+        more than one step.
+        """
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.steps = ["step1"]
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_bad_order(self) -> None:
+        """Test step definitions that are invalid because they are inconsistent
+        with the task flow.
+        """
+        self.graph.add_task_subset("step1", {"b"})
+        self.graph.add_task_subset("step2", {"a"})
+        self.graph.steps = ["step1", "step2"]
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_not_a_subset(self) -> None:
+        """Test step definitions that are invalid because they reference a
+        label that is not a task subset.
+        """
+        self.graph.add_task_subset("step1", {"b"})
+        self.graph.add_task_subset("step2", {"a"})
+        self.graph.steps = ["step1", "step2", "step3"]
+        with self.assertRaises(PipelineGraphError):
+            self.graph.steps.get_dimensions("step3")
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_bad_task_dimensions(self) -> None:
+        """Test step definitions that are invalid because the step dimensions
+        (for sharding) are incompatible with task dimensions.
+        """
+        # Resolve up-front so methods below have a DimensionUniverse; this
+        # triggers additional code to check dimensions as early as possible.
+        self.graph.resolve(MockRegistry(self.dimensions, {}))
+        self.graph.add_task_subset("step1", {"a"})
+        self.graph.add_task_subset("step2", {"b"})
+        with self.assertRaises(PipelineGraphError):
+            # Only steps can have dimensions, and this isn't a step yet.
+            self.graph.steps.set_dimensions("step2", {"visit"})
+        self.graph.steps = ["step1", "step2"]
+        self.graph.task_subsets["step2"].dimensions = {"visit"}
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
+
+    def test_invalid_steps_bad_dataset_type_dimensions(self) -> None:
+        """Test step definitions that are invalid because the step dimensions
+        (for sharding) are incompatible with output dataset type dimensions.
+        """
+        # This task includes an output that does not have all of the dimensions
+        # of the task itself, which is probably a malformed task and may be
+        # banned earlier in the future.  At present it is not banned, so the
+        # step validation needs to check for consistency on these output
+        # dataset types as well, and we need to test that.
+        c_config = DynamicTestPipelineTaskConfig()
+        c_config.inputs["input1"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
+        c_config.outputs["output2"] = DynamicConnectionConfig(dataset_type_name="output_2")
+        c_config.dimensions = ["detector"]
+        self.graph.add_task("c", DynamicTestPipelineTask, c_config)
+        self.graph.add_task_subset("step1", {"a", "b"})
+        self.graph.add_task_subset("step2", {"c"})
+        self.graph.steps = ["step1", "step2"]
+        self.graph.task_subsets["step2"].dimensions = {"detector"}
+        with self.assertRaises(InvalidStepsError):
+            self.graph.resolve(MockRegistry(self.dimensions, {}))
 
     def check_base_accessors(self, graph: PipelineGraph) -> None:
         """Run parameterized tests that check attribute access, iteration, and
@@ -432,7 +607,6 @@ class PipelineGraphTestCase(unittest.TestCase):
         other than sorting.
         """
         self.assertTrue(graph.has_been_sorted)
-        self.assertTrue(graph.is_sorted)
         self.assertEqual(
             [(node_type, name) for node_type, name, _ in graph.iter_nodes()],
             [
@@ -887,6 +1061,14 @@ class PipelineGraphTestCase(unittest.TestCase):
         # Add the subset back in.
         self.graph.add_task_subset("only_b", {"b"})
         self.assertEqual(self.graph.task_subsets.keys(), {"only_b"})
+        # Add a task to the subset and then remove it.
+        self.graph.task_subsets["only_b"].add("a")
+        self.assertEqual(self.graph.task_subsets["only_b"], {"a", "b"})
+        self.assertEqual(self.graph.task_subsets["only_b"] & {"b"}, {"b"})
+        self.graph.task_subsets["only_b"].remove("a")
+        self.assertEqual(self.graph.task_subsets["only_b"], {"b"})
+        with self.assertRaises(PipelineGraphError):
+            self.graph.task_subsets["only_b"].add("c")
         # Resolve the graph's dataset types and task dimensions.
         self.graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertTrue(self.graph.dataset_types.is_resolved("input_1"))
@@ -1491,6 +1673,30 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         graph = self.make_graph()
         graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertFalse(graph.dataset_types["d"].is_initial_query_constraint)
+
+    def test_invalid_dimensions(self) -> None:
+        """Test that a connection with an invalid dimensions raises an
+        exception (from butler) with the connection name information included.
+        """
+        self.a_config.outputs["o"] = DynamicConnectionConfig(
+            dataset_type_name="d", dimensions=["frog"], storage_class="StructuredDataList"
+        )
+        graph = self.make_graph()
+        with self.assertRaises(Exception) as error:
+            graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
+
+    def test_invalid_dataset_type_name(self) -> None:
+        """Test that a connection with an invalid dataset type name raises an
+        exception (from butler) with the connection name information included.
+        """
+        self.a_config.outputs["o"] = DynamicConnectionConfig(
+            dataset_type_name=":?", storage_class="StructuredDataList"
+        )
+        graph = self.make_graph()
+        with self.assertRaises(Exception) as error:
+            graph.resolve(MockRegistry(self.dimensions, {}))
+        self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
 
 
 if __name__ == "__main__":

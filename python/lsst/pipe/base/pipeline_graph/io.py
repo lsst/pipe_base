@@ -50,7 +50,7 @@ from ._edges import Edge, ReadEdge, WriteEdge
 from ._exceptions import PipelineGraphReadError
 from ._nodes import NodeKey, NodeType
 from ._pipeline_graph import PipelineGraph
-from ._task_subsets import TaskSubset
+from ._task_subsets import StepDefinitions, TaskSubset
 from ._tasks import TaskImportMode, TaskInitNode, TaskNode
 
 _U = TypeVar("_U")
@@ -361,13 +361,15 @@ class SerializedTaskNode(pydantic.BaseModel):
         Returns
         -------
         `SerializedTaskNode`
-            Object tha can be serialized.
+            Object that can be serialized.
         """
+        dimensions = list(target.raw_dimensions)
+        dimensions.sort()
         return cls.model_construct(
             task_class=target.task_class_name,
             init=SerializedTaskInitNode.serialize(target.init),
             config_str=target.get_config_str(),
-            dimensions=list(target.raw_dimensions),
+            dimensions=dimensions,
             prerequisite_inputs={
                 connection_name: SerializedEdge.serialize(edge)
                 for connection_name, edge in sorted(target.prerequisite_inputs.items())
@@ -586,7 +588,7 @@ class SerializedDatasetTypeNode(pydantic.BaseModel):
 class SerializedTaskSubset(pydantic.BaseModel):
     """Struct used to represent a serialized `TaskSubset` in a `PipelineGraph`.
 
-    The subsetlabel is serialized by the context in which a
+    The subset label is serialized by the context in which a
     `SerializedDatasetTypeNode` appears (e.g. the keys of the nested dictionary
     in which it serves as the value type).
     """
@@ -597,6 +599,11 @@ class SerializedTaskSubset(pydantic.BaseModel):
     tasks: list[str]
     """Labels of tasks in the subset, sorted lexicographically for
     determinism.
+    """
+
+    dimensions: list[str]
+    """Dimensions that can be used to divide this step's quanta into
+    independent groups.
     """
 
     @classmethod
@@ -613,9 +620,16 @@ class SerializedTaskSubset(pydantic.BaseModel):
         `SerializedTaskSubset`
             Object in serializable form.
         """
-        return cls.model_construct(description=target._description, tasks=list(sorted(target)))
+        dimensions = sorted(target._step_definitions._dimensions_by_label.get(target.label, ()))
+        return cls.model_construct(
+            description=target._description,
+            tasks=sorted(target),
+            dimensions=dimensions,
+        )
 
-    def deserialize_task_subset(self, label: str, xgraph: networkx.MultiDiGraph) -> TaskSubset:
+    def deserialize_task_subset(
+        self, label: str, xgraph: networkx.MultiDiGraph, steps: StepDefinitions
+    ) -> TaskSubset:
         """Transform a `SerializedTaskSubset` into a `TaskSubset`.
 
         Parameters
@@ -623,7 +637,11 @@ class SerializedTaskSubset(pydantic.BaseModel):
         label : `str`
             Subset label.
         xgraph : `networkx.MultiDiGraph`
-            <unknown>.
+            The under-construction networkx graph that backs the pipeline
+            graph.
+        steps : `StepDefinitions`
+            Step definitions for the pipeline graph.  Modified in-place to
+            set sharding dimension if this is a step.
 
         Returns
         -------
@@ -631,7 +649,9 @@ class SerializedTaskSubset(pydantic.BaseModel):
             Deserialized object.
         """
         members = set(self.tasks)
-        return TaskSubset(xgraph, label, members, self.description)
+        if label in steps:
+            steps.set_dimensions(label, self.dimensions)
+        return TaskSubset(xgraph, label, members, self.description, steps)
 
 
 class SerializedPipelineGraph(pydantic.BaseModel):
@@ -659,6 +679,14 @@ class SerializedPipelineGraph(pydantic.BaseModel):
     data_id: dict[str, Any] = pydantic.Field(default_factory=dict)
     """Data ID that constrains all quanta generated from this pipeline."""
 
+    step_labels: list[str] = pydantic.Field(default_factory=list)
+    """List of task subset labels that are steps."""
+
+    steps_verified: bool
+    """Whether the step definitions in this pipeline were checked for
+    consistency with the task and subset definitions.
+    """
+
     @classmethod
     def serialize(cls, target: PipelineGraph) -> SerializedPipelineGraph:
         """Transform a `PipelineGraph` into a `SerializedPipelineGraph`.
@@ -683,6 +711,8 @@ class SerializedPipelineGraph(pydantic.BaseModel):
             task_subsets={
                 label: SerializedTaskSubset.serialize(subset) for label, subset in target.task_subsets.items()
             },
+            step_labels=list(target.steps),
+            steps_verified=target.steps.verified,
             dimensions=target.universe.dimensionConfig.toDict() if target.universe is not None else None,
             data_id=target._raw_data_id,
         )
@@ -784,15 +814,21 @@ class SerializedPipelineGraph(pydantic.BaseModel):
             xgraph.nodes[dataset_type_key]["instance"] = serialized_dataset_type.deserialize(
                 dataset_type_key, xgraph, universe
             )
+        steps = StepDefinitions(
+            universe,
+            dimensions_by_label=dict.fromkeys(self.step_labels, frozenset()),
+            verified=self.steps_verified,
+        )
         result = PipelineGraph.__new__(PipelineGraph)
         result._init_from_args(
             xgraph,
             sorted_keys=[sort_index_map[i] for i in range(len(xgraph))] if sort_index_map else None,
             task_subsets={
-                subset_label: serialized_subset.deserialize_task_subset(subset_label, xgraph)
+                subset_label: serialized_subset.deserialize_task_subset(subset_label, xgraph, steps)
                 for subset_label, serialized_subset in self.task_subsets.items()
             },
             description=self.description,
+            step_definitions=steps,
             universe=universe,
             data_id=self.data_id,
         )

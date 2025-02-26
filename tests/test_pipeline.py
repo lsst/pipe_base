@@ -180,6 +180,27 @@ class PipelineTestCase(unittest.TestCase):
         load = Pipeline.fromString(dump)
         self.assertEqual(pipeline, load)
 
+    def testStepDefinition(self):
+        """Test that step definitions propagate from Pipeline YAML definitions
+        to PipelineGraph.
+        """
+        pipeline_str = textwrap.dedent(
+            """
+            description: Test Pipeline
+            tasks:
+              add: test_pipeline.AddTask
+            subsets:
+              step1: ["add"]
+            steps:
+              - label: "step1"
+                dimensions: []
+        """
+        )
+        # verify that parameters are used in expanding a pipeline
+        pipeline = Pipeline.fromString(pipeline_str)
+        pipeline_graph = pipeline.to_graph()
+        self.assertEqual(list(pipeline_graph.steps), ["step1"])
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     """Run file leak tests."""

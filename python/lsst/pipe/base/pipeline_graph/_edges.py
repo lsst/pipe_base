@@ -599,7 +599,7 @@ class ReadEdge(Edge):
                 else:
                     raise MissingDatasetTypeError(
                         f"Dataset type {self.parent_dataset_type_name!r} is not registered and not produced "
-                        f"by this pipeline, but it used by task {self.task_label!r}, via component "
+                        f"by this pipeline, but it is used by task {self.task_label!r}, via component "
                         f"{self.component!r}. This pipeline cannot be resolved until the parent dataset "
                         "type is registered."
                     )
@@ -790,13 +790,17 @@ class WriteEdge(Edge):
             Raised if ``current is not None`` and this edge's definition is not
             compatible with it.
         """
-        dimensions = universe.conform(self.raw_dimensions)
-        dataset_type = DatasetType(
-            self.parent_dataset_type_name,
-            dimensions,
-            storageClass=self.storage_class_name,
-            isCalibration=self.is_calibration,
-        )
+        try:
+            dimensions = universe.conform(self.raw_dimensions)
+            dataset_type = DatasetType(
+                self.parent_dataset_type_name,
+                dimensions,
+                storageClass=self.storage_class_name,
+                isCalibration=self.is_calibration,
+            )
+        except Exception as err:
+            err.add_note(f"In connection {self.connection_name!r} of task {self.task_label!r}.")
+            raise
         if current is not None:
             if not current.is_compatible_with(dataset_type):
                 raise IncompatibleDatasetTypeError(

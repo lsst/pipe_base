@@ -15,6 +15,6 @@ subsets:
       - modA
 steps:
   - label: sub1
-    sharding_dimensions: ['a', 'b']
+    dimensions: ['a', 'b']
   - label: sub2
-    sharding_dimensions: ['a', 'c']
+    dimensions: ['a', 'c']

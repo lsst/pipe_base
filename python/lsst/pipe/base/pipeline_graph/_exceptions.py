@@ -31,6 +31,7 @@ __all__ = (
     "DuplicateOutputError",
     "EdgesChangedError",
     "IncompatibleDatasetTypeError",
+    "InvalidStepsError",
     "PipelineDataCycleError",
     "PipelineGraphError",
     "PipelineGraphExceptionSafetyError",
@@ -99,3 +100,7 @@ class PipelineGraphExceptionSafetyError(PipelineGraphError):
 
     The originating exception is always chained when this exception is raised.
     """
+
+
+class InvalidStepsError(PipelineGraphError):
+    """Exception raised when the step definitions are invalid."""

@@ -34,7 +34,7 @@ import unittest
 import warnings
 
 from lsst.daf.butler import Butler, DatasetType
-from lsst.pipe.base import Pipeline
+from lsst.pipe.base import Pipeline, PipelineGraph
 
 
 @dataclasses.dataclass
@@ -131,19 +131,13 @@ class PipelineStepTester:
         pure_inputs: dict[str, str] = dict()
 
         for suffix in self.step_suffixes:
-            step_pipe = Pipeline.from_uri(self.filename + suffix)
-            for fullkey, value in self.pipeline_patches.items():
-                label, key = fullkey.split(":", maxsplit=1)
-                try:
-                    step_pipe.addConfigOverride(label, key, value)
-                except LookupError as e:
-                    warnings.warn(f"{e}, skipping configuration {fullkey}={value}", UserWarning)
-            step_graph = step_pipe.to_graph()
+            step_graph = self.load_pipeline_graph(self.filename + suffix)
             step_graph.resolve(butler.registry)
 
-            pure_inputs.update(
-                {name: suffix for name, _ in step_graph.iter_overall_inputs() if name not in all_outputs}
-            )
+            for name, _ in step_graph.iter_overall_inputs():
+                if name not in all_outputs:
+                    tasks = step_graph.consumers_of(name)
+                    pure_inputs[name] = f"{suffix}: {', '.join(task.label for task in tasks)}"
             all_outputs.update(
                 {
                     name: node.dataset_type
@@ -165,3 +159,13 @@ class PipelineStepTester:
         if not all_outputs.keys() >= self.expected_outputs:
             missing = list(self.expected_outputs - all_outputs.keys())
             raise AssertionError(f"Missing expected_outputs: {missing}")
+
+    def load_pipeline_graph(self, uri: str) -> PipelineGraph:
+        pipeline = Pipeline.from_uri(uri)
+        for fullkey, value in self.pipeline_patches.items():
+            label, key = fullkey.split(":", maxsplit=1)
+            try:
+                pipeline.addConfigOverride(label, key, value)
+            except LookupError as e:
+                warnings.warn(f"{e}, skipping configuration {fullkey}={value}", UserWarning)
+        return pipeline.to_graph()

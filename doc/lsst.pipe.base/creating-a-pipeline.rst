@@ -363,9 +363,9 @@ These bits of information allow campaign management / batch production software 
     # the label corresponding to a declared subset, and the dimensions
     # the processing of that subset is expected to take
     - label: step1
-      sharding_dimensions: visit, detector
+      dimensions: visit, detector
     - label: step2
-      sharding_dimensions: tract, patch, skymap
+      dimensions: tract, patch, skymap
 
 
 .. _pipeline_creating_imports:
