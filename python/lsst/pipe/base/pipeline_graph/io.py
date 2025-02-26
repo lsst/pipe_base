@@ -588,7 +588,7 @@ class SerializedDatasetTypeNode(pydantic.BaseModel):
 class SerializedTaskSubset(pydantic.BaseModel):
     """Struct used to represent a serialized `TaskSubset` in a `PipelineGraph`.
 
-    The subsetlabel is serialized by the context in which a
+    The subset label is serialized by the context in which a
     `SerializedDatasetTypeNode` appears (e.g. the keys of the nested dictionary
     in which it serves as the value type).
     """
@@ -607,26 +607,23 @@ class SerializedTaskSubset(pydantic.BaseModel):
     """
 
     @classmethod
-    def serialize(cls, target: TaskSubset, steps: StepDefinitions) -> SerializedTaskSubset:
+    def serialize(cls, target: TaskSubset) -> SerializedTaskSubset:
         """Transform a `TaskSubset` into a `SerializedTaskSubset`.
 
         Parameters
         ----------
         target : `TaskSubset`
             Object to serialize.
-        steps : `StepDefinitions`
-            Step definitions for the pipeline graph.
 
         Returns
         -------
         `SerializedTaskSubset`
             Object in serializable form.
         """
-        dimensions = list(steps._dimensions_by_label.get(target.label, ()))
-        dimensions.sort()
+        dimensions = sorted(target._step_definitions._dimensions_by_label.get(target.label, ()))
         return cls.model_construct(
             description=target._description,
-            tasks=list(sorted(target)),
+            tasks=sorted(target),
             dimensions=dimensions,
         )
 
@@ -640,7 +637,7 @@ class SerializedTaskSubset(pydantic.BaseModel):
         label : `str`
             Subset label.
         xgraph : `networkx.MultiDiGraph`
-            The under-unconstruction networkx graph that backs the pipeline
+            The under-construction networkx graph that backs the pipeline
             graph.
         steps : `StepDefinitions`
             Step definitions for the pipeline graph.  Modified in-place to
@@ -712,8 +709,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
                 for name in target.dataset_types
             },
             task_subsets={
-                label: SerializedTaskSubset.serialize(subset, target.steps)
-                for label, subset in target.task_subsets.items()
+                label: SerializedTaskSubset.serialize(subset) for label, subset in target.task_subsets.items()
             },
             step_labels=list(target.steps),
             steps_verified=target.steps.verified,
