@@ -29,9 +29,11 @@ from __future__ import annotations
 __all__ = ("show_mermaid",)
 
 import html
+import importlib.util
 import os
 import sys
 from collections.abc import Mapping
+from io import BufferedIOBase, BytesIO, StringIO, TextIOBase
 from typing import Any, TextIO
 
 from .._nodes import NodeType
@@ -39,6 +41,12 @@ from .._pipeline_graph import PipelineGraph
 from ._formatting import NodeKey, format_dimensions, format_task_class
 from ._options import NodeAttributeOptions
 from ._show import parse_display_args
+
+MERMAID_AVAILABLE = importlib.util.find_spec("mermaid") is not None
+
+if MERMAID_AVAILABLE:
+    from mermaid import Mermaid  # type: ignore
+    from mermaid.graph import Graph  # type: ignore
 
 # Configuration constants for label formatting and overflow handling.
 _LABEL_PX_SIZE = 18
@@ -49,7 +57,11 @@ _OVERFLOW_MAX_LINES = 20
 
 def show_mermaid(
     pipeline_graph: PipelineGraph,
-    stream: TextIO = sys.stdout,
+    stream: TextIO | BytesIO = sys.stdout,
+    output_format: str = "mmd",
+    width: int | None = None,
+    height: int | None = None,
+    scale: float | None = None,
     **kwargs: Any,
 ) -> None:
     """Write a Mermaid flowchart representation of the pipeline graph to a
@@ -65,9 +77,20 @@ def show_mermaid(
     ----------
     pipeline_graph : `PipelineGraph`
         The pipeline graph to visualize.
-    stream : `TextIO`, optional
+    stream : `TextIO` or `BytesIO`, optional
         The output stream where Mermaid code is written. Defaults to
         `sys.stdout`.
+    output_format : str, optional
+        Defines the output format. 'mmd' (default) generates a Mermaid
+        definition text file, while 'svg' and 'png' produce rendered images as
+        binary streams.
+    width : int, optional
+        The width of the rendered image in pixels.
+    height : int, optional
+        The height of the rendered image in pixels.
+    scale : float, optional
+        The scale factor for the rendered image. Must be an float between 1
+        and 3, and one of height or width must be provided.
     **kwargs : Any
         Additional arguments passed to `parse_display_args` to control aspects
         such as displaying dimensions, storage classes, or full task class
@@ -85,27 +108,61 @@ def show_mermaid(
     - If a node's label is too long, overflow nodes are created to hold extra
       lines.
     """
+    # Generate Mermaid source code in-memory.
+    mermaid_source = _generate_mermaid_source(pipeline_graph, **kwargs)
+
+    if output_format == "mmd":
+        if isinstance(stream, TextIOBase):
+            # Write Mermaid source as a string.
+            stream.write(mermaid_source)
+        else:
+            raise TypeError(f"Expected a text stream, but got {type(stream)}.")
+    else:
+        if isinstance(stream, BufferedIOBase):
+            # Render Mermaid source as an image and write to binary stream.
+            _render_mermaid_image(
+                mermaid_source, stream, output_format, width=width, height=height, scale=scale
+            )
+        else:
+            raise ValueError(f"Expected a binary stream, but got {type(stream)}.")
+
+
+def _generate_mermaid_source(pipeline_graph: PipelineGraph, **kwargs: Any) -> str:
+    """Generate the Mermaid source code from the pipeline graph.
+
+    Parameters
+    ----------
+    pipeline_graph : `PipelineGraph`
+        The pipeline graph to visualize.
+    **kwargs : Any
+        Additional arguments passed to `parse_display_args` for rendering.
+
+    Returns
+    -------
+    str
+        The Mermaid source code as a string.
+    """
+    # A buffer to collect Mermaid source code.
+    buffer = StringIO()
+
     # Parse display arguments to determine what to show.
     xgraph, options = parse_display_args(pipeline_graph, **kwargs)
 
     # Begin the Mermaid code block.
-    print("flowchart TD", file=stream)
+    buffer.write("flowchart TD\n")
 
     # Define Mermaid classes for node styling.
-    print(
+    buffer.write(
         f"classDef task fill:#B1F2EF,color:#000,stroke:#000,stroke-width:3px,"
-        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left;",
-        file=stream,
+        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left;\n"
     )
-    print(
+    buffer.write(
         f"classDef dsType fill:#F5F5F5,color:#000,stroke:#00BABC,stroke-width:3px,"
-        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left,rx:8,ry:8;",
-        file=stream,
+        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left,rx:8,ry:8;\n"
     )
-    print(
+    buffer.write(
         f"classDef taskInit fill:#F4DEFA,color:#000,stroke:#000,stroke-width:3px,"
-        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left;",
-        file=stream,
+        f"font-family:Monospace,font-size:{_LABEL_PX_SIZE}px,text-align:left;\n"
     )
 
     # `overflow_ref` tracks the reference numbers for overflow nodes.
@@ -116,30 +173,27 @@ def show_mermaid(
     for node_key, node_data in xgraph.nodes.items():
         match node_key.node_type:
             case NodeType.TASK | NodeType.TASK_INIT:
-                # Render a task or task-init node.
-                _render_task_node(node_key, node_data, options, stream)
+                _render_task_node(node_key, node_data, options, buffer)
             case NodeType.DATASET_TYPE:
-                # Render a dataset-type node with possible overflow handling.
                 overflow_ref, node_overflow_ids = _render_dataset_type_node(
-                    node_key, node_data, options, stream, overflow_ref
+                    node_key, node_data, options, buffer, overflow_ref
                 )
-                if node_overflow_ids:
-                    overflow_ids += node_overflow_ids
+                overflow_ids += node_overflow_ids if node_overflow_ids else []
             case _:
                 raise AssertionError(f"Unexpected node type: {node_key.node_type}")
 
-    # Collect edges for printing and track which ones are prerequisite
-    # so we can apply dashed styling after printing them.
+    # Collect edges for adding to the Mermaid code and track which ones are
+    # prerequisite so we can apply dashed styling to them later.
     edges = []
     for _, (from_node, to_node, *_rest) in enumerate(xgraph.edges):
         is_prereq = xgraph.nodes[from_node].get("is_prerequisite", False)
         edges.append((from_node.node_id, to_node.node_id, is_prereq))
 
-    # Print all edges
+    # Render all edges.
     for _, (f, t, p) in enumerate(edges):
-        _render_edge(f, t, p, stream)
+        _render_edge(f, t, p, buffer)
 
-    # After printing all edges, apply linkStyle to prerequisite edges to make
+    # After rendering all edges, apply linkStyle to prerequisite edges to make
     # them dashed:
 
     # First, gather indices of prerequisite edges.
@@ -147,7 +201,80 @@ def show_mermaid(
 
     # Then apply dashed styling to all prerequisite edges in one line.
     if prereq_indices:
-        print(f"linkStyle {','.join(prereq_indices)} stroke-dasharray:5;", file=stream)
+        buffer.write(f"linkStyle {','.join(prereq_indices)} stroke-dasharray:5;\n")
+
+    # Return Mermaid source as string.
+    return buffer.getvalue()
+
+
+def _render_mermaid_image(
+    mermaid_source: str,
+    binary_stream: BytesIO,
+    output_format: str,
+    width: int | None = None,
+    height: int | None = None,
+    scale: float | None = None,
+) -> None:
+    """Render a Mermaid diagram as an image and write the output to a binary
+    stream.
+
+    Parameters
+    ----------
+    mermaid_source : str
+        The Mermaid diagram source code.
+    binary_stream : `BytesIO`
+        The binary stream where the output content will be written.
+    output_format : str
+        The desired output format for the image. Supported image formats are
+        'svg' and 'png'.
+    width : int, optional
+        The width of the rendered image in pixels.
+    height : int, optional
+        The height of the rendered image in pixels.
+    scale : float, optional
+        The scale factor for the rendered image. Must be a float between 1 and
+        3, and one of height or width must be provided.
+
+    Raises
+    ------
+    ValueError
+        If the requested ``output_format`` is not supported.
+    RuntimeError
+        If the rendering process fails.
+    """
+    if output_format.lower() not in {"svg", "png"}:
+        raise ValueError(f"Unsupported format: {output_format}. Use 'svg' or 'png'.")
+
+    # Generate Mermaid graph object.
+    graph = Graph(title="Mermaid Diagram", script=mermaid_source)
+    diagram = Mermaid(graph, width=width, height=height, scale=scale)
+
+    # Determine the response type based on the output format.
+    if output_format.lower() == "svg":
+        response_type = "svg_response"
+    else:
+        response_type = "img_response"
+
+    # Select the appropriate output format and write the content to the stream.
+    try:
+        content = getattr(diagram, response_type).content
+
+        # Check if the response is actually an image.
+        if content.startswith(b"<!DOCTYPE html>") or b"<title>" in content[:200]:
+            error_msg = content.decode(errors="ignore")[:1000]
+            if "524" in error_msg or "timeout" in error_msg.lower():
+                raise RuntimeError(
+                    f"Mermaid rendering service (mermaid.ink) timed out while generating {response_type}. "
+                    "This may be due to server overload. Try again later or use a local rendering option."
+                )
+            raise RuntimeError(
+                f"Unexpected error from Mermaid API while generating {response_type}. Response:\n{error_msg}"
+            )
+
+        # Write the content to the binary stream if it's a valid image.
+        binary_stream.write(content)
+    except AttributeError as exc:
+        raise RuntimeError(f"Failed to generate {response_type} content") from exc
 
 
 def _render_task_node(
