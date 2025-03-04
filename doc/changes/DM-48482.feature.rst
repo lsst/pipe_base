@@ -1,0 +1,1 @@
+Integrated `mermaid-py` for rendering pipeline visualizations as SVG/PNG images.
