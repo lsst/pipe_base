@@ -615,6 +615,9 @@ class QuantumGraphBuilder(ABC):
             # the metadata dataset doesn't guarantee that all of the other
             # outputs we predicted are present; we have to check.
             for output_dataset_key in list(skeleton.iter_outputs_of(quantum_key)):
+                # If this dataset was "in the way" (i.e. already in the
+                # output run), it isn't anymore.
+                skeleton.discard_output_in_the_way(output_dataset_key)
                 if (output_ref := skeleton.get_output_for_skip(output_dataset_key)) is not None:
                     # Populate the skeleton graph's node attributes
                     # with the existing DatasetRef, just like a
@@ -625,9 +628,6 @@ class QuantumGraphBuilder(ABC):
                     # because the quantum that would have produced it
                     # is being skipped and it doesn't already exist.
                     skeleton.remove_dataset_nodes([output_dataset_key])
-                # If this dataset was "in the way" (i.e. already in the
-                # output run), it isn't anymore.
-                skeleton.discard_output_in_the_way(output_dataset_key)
             # Removing the quantum node from the graph will happen outside this
             # function.
             return True
