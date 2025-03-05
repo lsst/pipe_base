@@ -38,7 +38,7 @@ import itertools
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, TypeAlias, final
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias, final
 
 from lsst.daf.butler import (
     Butler,
@@ -180,7 +180,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # overall, so inside this loop is where it's really critical to avoid
         # expensive things, especially in the nested loops.
         n_rows = 0
-        for common_data_id in query.butler_query.data_ids():
+        for common_data_id in query.full_butler_query.data_ids():
             # Create a data ID for each set of dimensions used by one or more
             # tasks or dataset types, and use that to record all quanta and
             # dataset data IDs for this row.
@@ -194,6 +194,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     )
                 for task_label in per_dimensions_state.tasks.keys():
                     quantum_keys_for_row.append(skeleton.add_quantum_node(task_label, data_id))
+                per_dimensions_state.data_ids.add(data_id)
             # Whether these quanta are new or existing, we can now associate
             # the dataset data IDs for this row with them.  The fact that a
             # quantum data ID and a dataset data ID both came from the same
@@ -236,17 +237,18 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         """
         for dimensions, per_dimensions_state in query.grouped_by_dimensions.items():
             # Iterate over regular input/output dataset type nodes with these
-            # dimensions to find those datasets using straightforward followup
-            # queries.
+            # dimensions to find those datasets using followup queries. When
+            # there are a small number of data IDs involved, we upload and join
+            # against them directly.  When there is a large number of data IDs
+            # involved, we down-project from the temporary table again.
+            butler_query = query.get_butler_query(dimensions)
             for dataset_type_node in per_dimensions_state.dataset_types.values():
                 if dataset_type_node.name in query.overall_inputs:
                     # Dataset type is an overall input; we always need to try
                     # to find these.
                     count = 0
                     try:
-                        for ref in query.butler_query.datasets(
-                            dataset_type_node.name, self.input_collections
-                        ):
+                        for ref in butler_query.datasets(dataset_type_node.name, self.input_collections):
                             skeleton.set_dataset_ref(ref)
                             count += 1
                     except MissingDatasetTypeError:
@@ -261,7 +263,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # that we might skip...
                     count = 0
                     try:
-                        for ref in query.butler_query.datasets(dataset_type_node.name, self.skip_existing_in):
+                        for ref in butler_query.datasets(dataset_type_node.name, self.skip_existing_in):
                             skeleton.set_output_for_skip(ref)
                             count += 1
                             if ref.run == self.output_run:
@@ -280,7 +282,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # previous block).
                     count = 0
                     try:
-                        for ref in query.butler_query.datasets(dataset_type_node.name, [self.output_run]):
+                        for ref in butler_query.datasets(dataset_type_node.name, [self.output_run]):
                             skeleton.set_output_in_the_way(ref)
                             count += 1
                     except MissingDatasetTypeError:
@@ -293,7 +295,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     )
             # Iterate over tasks with these dimensions to perform follow-up
             # queries for prerequisite inputs, which may have dimensions that
-            # were not in ``query.butler_query.dimensions`` and/or require
+            # were not in ``butler_query.dimensions`` and/or require
             # temporal joins to calibration validity ranges.
             for task_node in per_dimensions_state.tasks.values():
                 task_prerequisite_info = self.prerequisite_info[task_node.label]
@@ -347,14 +349,19 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # IDs to the datasets we're looking for.
                     count = 0
                     try:
-                        query_results = list(
+                        if butler_query.constraint_dimensions >= dimensions:
                             # TODO[DM-46042]: We materialize here as a way to
                             # to a SELECT DISTINCT on the main query with a
                             # subset of its dimensions columns.  It'd be better
                             # to have a way to do this that just makes a
                             # subquery or a CTE rather than a temporary table.
-                            query.butler_query.materialize(dimensions=dimensions, datasets=())
-                            .join_dataset_search(
+                            followup_butler_query = butler_query.materialize(
+                                dimensions=dimensions, datasets=()
+                            )
+                        else:
+                            followup_butler_query = butler_query
+                        query_results = list(
+                            followup_butler_query.join_dataset_search(
                                 finder.dataset_type_node.dataset_type, self.input_collections
                             )
                             .general(
@@ -407,13 +414,13 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         """
         self.log.verbose("Performing follow-up queries for dimension records.")
         result: dict[str, dict[tuple[DataIdValue, ...], DimensionRecord]] = {}
-        for dimensions in query.grouped_by_dimensions.keys():
-            for element in dimensions.elements:
-                if element not in result:
-                    result[element] = {
-                        record.dataId.required_values: record
-                        for record in query.butler_query.dimension_records(element)
-                    }
+        for dimensions, per_dimensions_state in query.grouped_by_dimensions.items():
+            butler_query = query.get_butler_query(dimensions)
+            for element in per_dimensions_state.record_elements:
+                result[element] = {
+                    record.dataId.required_values: record
+                    for record in butler_query.dimension_records(element)
+                }
         return result
 
     @timeMethod
@@ -547,6 +554,39 @@ class _PerDimensionGroupState:
     dataset type name.
     """
 
+    record_elements: list[str] = dataclasses.field(default_factory=list)
+    """The names of dimension elements whose records should be looked up via
+    these dimensions.
+    """
+
+    data_ids: set[DataCoordinate] = dataclasses.field(default_factory=set)
+    """All data IDs with these dimensions seen in the QuantumGraph."""
+
+    @staticmethod
+    def add_record_elements(
+        all_dimensions: DimensionGroup, state_map: dict[DimensionGroup, _PerDimensionGroupState]
+    ) -> None:
+        """Populate `record_elements` attributes given the set of all
+        dimensions relevant for the graph.
+
+        Parameters
+        ----------
+        all_dimensions : `~lsst.daf.butler.DimensionGroup`
+            All dimensions relevant for the quantum graph.
+        state_map : `dict` [ `~lsst.daf.butler.DimensionGroup`, \
+                `_PerDimensionGroupState` ]
+            Dictionary that groups QG builder state by dimension group.  Will
+            be modified in place, with a new entry added for any element whose
+            `~lsst.daf.butler.DimensionElement.minimal_group` is not already
+            present.
+        """
+        for element_name in all_dimensions.elements:
+            element = all_dimensions.universe[element_name]
+            if element.minimal_group in state_map:
+                state_map[element.minimal_group].record_elements.append(element_name)
+            else:
+                state_map[element.minimal_group] = _PerDimensionGroupState(record_elements=[element_name])
+
 
 @dataclasses.dataclass(eq=False, repr=False)
 class _AllDimensionsQuery:
@@ -591,8 +631,11 @@ class _AllDimensionsQuery:
     initial query.
     """
 
-    butler_query: Query = dataclasses.field(init=False)
-    """Results of the materialized initial data ID query."""
+    full_butler_query: Query = dataclasses.field(init=False)
+    """A query against the materialized initial data ID query."""
+
+    base_butler_query: Query = dataclasses.field(init=False)
+    """The original butler query object with no constraints applied."""
 
     @classmethod
     @contextmanager
@@ -631,6 +674,7 @@ class _AllDimensionsQuery:
         for dimensions_for_group in result.grouped_by_dimensions.keys():
             dimension_names.update(dimensions_for_group.names)
         dimensions = builder.universe.conform(dimension_names)
+        _PerDimensionGroupState.add_record_elements(dimensions, result.grouped_by_dimensions)
         datasets: set[str] = set()
         builder.log.debug("Building query for data IDs.")
         if builder.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
@@ -662,6 +706,7 @@ class _AllDimensionsQuery:
                 f"Unable to handle type {builder.dataset_query_constraint} given as datasetQueryConstraint."
             )
         with builder.butler.query() as query:
+            result.base_butler_query = query
             result.query_cmd.append("with butler.query() as query:")
             result.query_cmd.append(f"    query = query.join_dimensions({list(dimensions.names)})")
             query = query.join_dimensions(dimensions)
@@ -681,8 +726,45 @@ class _AllDimensionsQuery:
             # Allow duplicates from common skypix overlaps to make some queries
             # run faster.
             query._allow_duplicate_overlaps = True
-            result.butler_query = query.materialize()
+            result.full_butler_query = query.materialize()
             yield result
+
+    # When performing follow-up queries for DatasetRefs or DimensionRecords, if
+    # the number of data IDs for that DimensionGroup is below this threshold,
+    # we make a new query with Query.join_data_coordinates to upload the
+    # already-deduplicated, region-filtered client-side list and join against
+    # that.  If the number of data IDs is above this threshold, we join against
+    # the original temporary table to let SQL project down to the set of
+    # dimensions we want, which requires region-filtering to be done again.
+    #
+    # This is currently a private configuration option because we're hoping
+    # DM-47810 will make it unnecessary to ever use the original temporary
+    # table.
+    _DATA_ID_UPLOAD_COUNT_MAX: ClassVar[int] = 1024
+
+    def get_butler_query(self, dimensions: DimensionGroup) -> Query:
+        """Return a butler query appropriate for performing follow-up queries
+        with the given dimensions.
+
+        Parameters
+        ----------
+        dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the dataset type or dimension record being queried
+            for.
+
+        Returns
+        -------
+        butler_query : `lsst.daf.butler.queries.Query`
+            A butler query object.  This will have at least the given
+            dimensions joined in, but may have more (which will normally be
+            projected down to the result type dimensions, once that is
+            method-chained on to the returned object).
+        """
+        per_dimensions_state = self.grouped_by_dimensions[dimensions]
+        if len(per_dimensions_state.data_ids) < self._DATA_ID_UPLOAD_COUNT_MAX:
+            return self.base_butler_query.join_data_coordinates(per_dimensions_state.data_ids)
+        else:
+            return self.full_butler_query
 
     def format_query_cmd(self, *header: str) -> str:
         """Format the butler query call used as a multi-line string.
@@ -708,7 +790,7 @@ class _AllDimensionsQuery:
         # A single multiline log plays better with log aggregators like Loki.
         header = ["Initial data ID query returned no rows, so QuantumGraph will be empty."]
         try:
-            header.extend(self.butler_query.explain_no_results())
+            header.extend(self.full_butler_query.explain_no_results())
             header.append("To reproduce this query for debugging purposes, run:")
         finally:
             # If an exception was raised, write a partial.
