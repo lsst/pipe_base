@@ -161,7 +161,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # don't want to add nodes for init datasets here.
         skeleton = QuantumGraphSkeleton(query.subgraph.tasks)
         empty_dimensions_dataset_keys = {}
-        for dataset_type_name in query.empty_dimensions_dataset_types.keys():
+        for dataset_type_name in query.empty_dimensions_state.dataset_types.keys():
             dataset_key = skeleton.add_dataset_node(dataset_type_name, self.empty_data_id)
             empty_dimensions_dataset_keys[dataset_type_name] = dataset_key
             if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
@@ -171,7 +171,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
                 skeleton.set_output_in_the_way(ref)
         empty_dimensions_quantum_keys = []
-        for task_label in query.empty_dimensions_tasks.keys():
+        for task_label in query.empty_dimensions_state.tasks.keys():
             empty_dimensions_quantum_keys.append(skeleton.add_quantum_node(task_label, self.empty_data_id))
         self.log.info("Iterating over query results to associate quanta with datasets.")
         # Iterate over query results, populating data IDs for datasets and
@@ -186,13 +186,13 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # dataset data IDs for this row.
             dataset_keys_for_row: dict[str, DatasetKey] = empty_dimensions_dataset_keys.copy()
             quantum_keys_for_row: list[QuantumKey] = empty_dimensions_quantum_keys.copy()
-            for dimensions, (task_nodes, dataset_type_nodes) in query.grouped_by_dimensions.items():
+            for dimensions, per_dimensions_state in query.grouped_by_dimensions.items():
                 data_id = common_data_id.subset(dimensions)
-                for dataset_type_name in dataset_type_nodes.keys():
+                for dataset_type_name in per_dimensions_state.dataset_types.keys():
                     dataset_keys_for_row[dataset_type_name] = skeleton.add_dataset_node(
                         dataset_type_name, data_id
                     )
-                for task_label in task_nodes.keys():
+                for task_label in per_dimensions_state.tasks.keys():
                     quantum_keys_for_row.append(skeleton.add_quantum_node(task_label, data_id))
             # Whether these quanta are new or existing, we can now associate
             # the dataset data IDs for this row with them.  The fact that a
@@ -234,11 +234,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         query : `_AllDimensionsQuery`
             Object representing the full-pipeline data ID query.
         """
-        for dimensions, (tasks_in_group, dataset_types_in_group) in query.grouped_by_dimensions.items():
+        for dimensions, per_dimensions_state in query.grouped_by_dimensions.items():
             # Iterate over regular input/output dataset type nodes with these
             # dimensions to find those datasets using straightforward followup
             # queries.
-            for dataset_type_node in dataset_types_in_group.values():
+            for dataset_type_node in per_dimensions_state.dataset_types.values():
                 if dataset_type_node.name in query.overall_inputs:
                     # Dataset type is an overall input; we always need to try
                     # to find these.
@@ -295,7 +295,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # queries for prerequisite inputs, which may have dimensions that
             # were not in ``query.butler_query.dimensions`` and/or require
             # temporal joins to calibration validity ranges.
-            for task_node in tasks_in_group.values():
+            for task_node in per_dimensions_state.tasks.values():
                 task_prerequisite_info = self.prerequisite_info[task_node.label]
                 for connection_name, finder in list(task_prerequisite_info.finders.items()):
                     if finder.lookup_function is not None:
@@ -533,6 +533,22 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
 
 @dataclasses.dataclass(eq=False, repr=False)
+class _PerDimensionGroupState:
+    """A struct holding state associated with a particular `DimensionGroup` in
+    the quantum graph builder.
+    """
+
+    tasks: dict[str, TaskNode] = dataclasses.field(default_factory=dict)
+    """The task nodes whose quanta have these dimensions, keyed by task label.
+    """
+
+    dataset_types: dict[str, DatasetTypeNode] = dataclasses.field(default_factory=dict)
+    """The dataset type nodes whose datasets have these dimensions, keyed by
+    dataset type name.
+    """
+
+
+@dataclasses.dataclass(eq=False, repr=False)
 class _AllDimensionsQuery:
     """A helper class for `AllDimensionsQuantumGraphBuilder` that holds all
     per-subgraph state.
@@ -545,8 +561,8 @@ class _AllDimensionsQuery:
     subgraph: PipelineGraph
     """Graph of this subset of the pipeline."""
 
-    grouped_by_dimensions: dict[DimensionGroup, tuple[dict[str, TaskNode], dict[str, DatasetTypeNode]]] = (
-        dataclasses.field(default_factory=dict)
+    grouped_by_dimensions: dict[DimensionGroup, _PerDimensionGroupState] = dataclasses.field(
+        default_factory=dict
     )
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
@@ -556,12 +572,11 @@ class _AllDimensionsQuery:
     dataset types are also not included.
     """
 
-    empty_dimensions_tasks: dict[str, TaskNode] = dataclasses.field(default_factory=dict)
-    """The tasks of this subset of this pipeline that have empty dimensions."""
-
-    empty_dimensions_dataset_types: dict[str, DatasetTypeNode] = dataclasses.field(default_factory=dict)
-    """The dataset types of this subset of this pipeline that have empty
-    dimensions.
+    empty_dimensions_state: _PerDimensionGroupState = dataclasses.field(
+        default_factory=_PerDimensionGroupState
+    )
+    """The tasks and dataset types of this subset of this pipeline that have
+    empty dimensions.
 
     Prerequisite dataset types are not included.
     """
@@ -602,11 +617,11 @@ class _AllDimensionsQuery:
         """
         result = cls(subgraph)
         builder.log.debug("Analyzing subgraph dimensions and overall-inputs.")
-        result.grouped_by_dimensions = result.subgraph.group_by_dimensions()
-        (
-            result.empty_dimensions_tasks,
-            result.empty_dimensions_dataset_types,
-        ) = result.grouped_by_dimensions.pop(builder.universe.empty)
+        result.grouped_by_dimensions = {
+            dimensions: _PerDimensionGroupState(tasks, dataset_types)
+            for dimensions, (tasks, dataset_types) in result.subgraph.group_by_dimensions().items()
+        }
+        result.empty_dimensions_state = result.grouped_by_dimensions.pop(builder.universe.empty)
         result.overall_inputs = {
             name: node  # type: ignore
             for name, node in result.subgraph.iter_overall_inputs()
@@ -625,18 +640,18 @@ class _AllDimensionsQuery:
                 for name, dataset_type_node in result.overall_inputs.items()
                 if (
                     dataset_type_node.is_initial_query_constraint
-                    and name not in result.empty_dimensions_dataset_types
+                    and name not in result.empty_dimensions_state.dataset_types
                 )
             }
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
             builder.log.debug("Not using dataset existence to constrain query.")
         elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(builder.dataset_query_constraint)
-            inputs = result.overall_inputs - result.empty_dimensions_dataset_types.keys()
+            inputs = result.overall_inputs - result.empty_dimensions_state.dataset_types.keys()
             if remainder := constraint.difference(inputs):
                 builder.log.debug(
                     "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
-                    "subgraph, on the assumption that they are relevant for a different subraph.",
+                    "subgraph, on the assumption that they are relevant for a different subgraph.",
                     remainder,
                 )
             constraint.intersection_update(inputs)
