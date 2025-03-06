@@ -36,9 +36,8 @@ __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 import dataclasses
 import itertools
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias, final
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, TypeAlias, final
 
 from lsst.daf.butler import (
     Butler,
@@ -49,7 +48,6 @@ from lsst.daf.butler import (
     DimensionUniverse,
     MissingDatasetTypeError,
 )
-from lsst.daf.butler.queries import Query
 from lsst.utils.logging import LsstLogAdapter
 from lsst.utils.timer import timeMethod
 
@@ -129,251 +127,314 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # There is some chance that the dimension query for one subgraph would
         # be the same as or a dimension-subset of another.  This is an
         # optimization opportunity we're not currently taking advantage of.
-        with _AllDimensionsQuery.from_builder(self, subgraph) as query:
-            skeleton = self._make_subgraph_skeleton(query)
-            self._find_followup_datasets(query, skeleton)
-            dimension_records = self._fetch_most_dimension_records(query)
+        tree = _DimensionGroupTree(subgraph)
+        self._query_for_data_ids(tree)
+        skeleton = self._make_subgraph_skeleton(tree)
+        self._find_followup_datasets(tree, skeleton)
+        dimension_records = self._fetch_most_dimension_records(tree)
         leftovers = self._attach_most_dimension_records(skeleton, dimension_records)
         self._fetch_leftover_dimension_records(leftovers, dimension_records)
         self._attach_leftover_dimension_records(skeleton, leftovers, dimension_records)
         return skeleton
 
-    @timeMethod
-    def _make_subgraph_skeleton(self, query: _AllDimensionsQuery) -> QuantumGraphSkeleton:
-        """Build a `QuantumGraphSkeleton` by iterating over the result rows
-        of the initial data ID query.
+    def _query_for_data_ids(self, tree: _DimensionGroupTree) -> None:
+        """Query for data IDs and use the result to populate the dimension
+        group tree.
 
         Parameters
         ----------
-        query : `_AllDimensionsQuery`
-            Object representing the full-pipeline data ID query.
+        tree : `_DimensionGroupTree`
+            Tree with dimension group branches that holds subgraph-specific
+            state for this builder, to be modified in place.
+        """
+        self.log.debug("Analyzing subgraph dimensions and overall-inputs.")
+        constraint_datasets: set[str] = set()
+        self.log.debug("Building query for data IDs.")
+        if self.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
+            self.log.debug("Constraining graph query using all datasets not marked as deferred.")
+            constraint_datasets = {
+                name
+                for name, dataset_type_node in tree.overall_inputs.items()
+                if (
+                    dataset_type_node.is_initial_query_constraint
+                    and name not in tree.empty_dimensions_branch.dataset_types
+                )
+            }
+        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
+            self.log.debug("Not using dataset existence to constrain query.")
+        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
+            constraint = set(self.dataset_query_constraint)
+            inputs = tree.overall_inputs - tree.empty_dimensions_branch.dataset_types.keys()
+            if remainder := constraint.difference(inputs):
+                self.log.debug(
+                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
+                    "subgraph, on the assumption that they are relevant for a different subgraph.",
+                    remainder,
+                )
+            constraint.intersection_update(inputs)
+            self.log.debug(f"Constraining graph query using {constraint}")
+            constraint_datasets = constraint
+        else:
+            raise QuantumGraphBuilderError(
+                f"Unable to handle type {self.dataset_query_constraint} given as datasetQueryConstraint."
+            )
+        query_cmd: list[str] = []
+        with self.butler.query() as query:
+            query_cmd.append("with butler.query() as query:")
+            query_cmd.append(f"    query = query.join_dimensions({list(tree.all_dimensions.names)})")
+            query = query.join_dimensions(tree.all_dimensions)
+            if constraint_datasets:
+                query_cmd.append(f"    collections = {list(self.input_collections)}")
+            for dataset_type_name in constraint_datasets:
+                query_cmd.append(f"    query = query.join_dataset_search({dataset_type_name!r}, collections)")
+                query = query.join_dataset_search(dataset_type_name, self.input_collections)
+            query_cmd.append(
+                f"    query = query.where({dict(tree.subgraph.data_id.mapping)}, "
+                f"{self.where!r}, bind={self.bind!r})"
+            )
+            query = query.where(tree.subgraph.data_id, self.where, bind=self.bind)
+            self.log.verbose("Querying for data IDs via: %s", "\n".join(query_cmd))
+            # Allow duplicates from common skypix overlaps to make some queries
+            # run faster.
+            query._allow_duplicate_overlaps = True
+            self.log.info("Iterating over query results to associate quanta with datasets.")
+            # Iterate over query results, populating data IDs for datasets,
+            # quanta, and edges.  We populate only the first level of the tree
+            # in the first pass, so we can be done with the query results as
+            # quickly as possible in case that holds a connection/cursor open.
+            n_rows = 0
+            for common_data_id in query.data_ids(tree.all_dimensions):
+                for branch_dimensions, branch in tree.trunk_branches.items():
+                    data_id = common_data_id.subset(branch_dimensions)
+                    branch.data_ids.add(data_id)
+                n_rows += 1
+            if n_rows == 0:
+                # A single multiline log plays better with log aggregators like
+                # Loki.
+                lines = ["Initial data ID query returned no rows, so QuantumGraph will be empty."]
+                try:
+                    lines.extend(query.explain_no_results())
+                finally:
+                    lines.append("To reproduce this query for debugging purposes, run:")
+                    lines.extend(query_cmd)
+                    # If an exception was raised, write a partial.
+                    self.log.error("\n".join(lines))
+                return
+        self.log.verbose("Processed %s initial data ID query rows.", n_rows)
+        # We now recursively populate the data IDs of the rest of the
+        # tree.
+        for branch_dimensions, branch in tree.trunk_branches.items():
+            self.log.debug("Projecting query data IDs to %s.", branch_dimensions)
+            branch.project_data_ids(self.log)
+
+    @timeMethod
+    def _make_subgraph_skeleton(self, tree: _DimensionGroupTree) -> QuantumGraphSkeleton:
+        """Build a `QuantumGraphSkeleton` by processing the data IDs in the
+        dimension group tree.
+
+        Parameters
+        ----------
+        tree : `_DimensionGroupTree`
+            Tree with dimension group branches that holds subgraph-specific
+            state for this builder.
 
         Returns
         -------
         skeleton : `QuantumGraphSkeleton`
             Preliminary quantum graph.
         """
-        # First we make containers of empty-dimensions quantum and dataset
-        # keys, and add those to the skelton, since empty data IDs are
-        # logically subsets of any data ID. We'll copy those to initialize the
-        # containers of keys for each result row.  We don't ever explicitly add
-        # nodes to the skeleton for these, and that's okay because networkx
-        # adds nodes implicitly when an edge to that node is added, and we
-        # don't want to add nodes for init datasets here.
-        skeleton = QuantumGraphSkeleton(query.subgraph.tasks)
-        empty_dimensions_dataset_keys = {}
-        for dataset_type_name in query.empty_dimensions_branch.dataset_types.keys():
-            dataset_key = skeleton.add_dataset_node(dataset_type_name, self.empty_data_id)
-            empty_dimensions_dataset_keys[dataset_type_name] = dataset_key
+        skeleton = QuantumGraphSkeleton(tree.subgraph.tasks)
+        for branch_dimensions, branch in tree.trunk_branches.items():
+            self.log.verbose(
+                "Adding nodes and edges for %s %s data ID(s).",
+                len(branch.data_ids),
+                branch_dimensions,
+            )
+            branch.update_skeleton(skeleton, self.log)
+        n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in tree.subgraph.tasks)
+        self.log.info(
+            "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges.",
+            n_quanta,
+            skeleton.n_nodes - n_quanta,
+            skeleton.n_edges,
+        )
+        return skeleton
+
+    @timeMethod
+    def _find_followup_datasets(self, tree: _DimensionGroupTree, skeleton: QuantumGraphSkeleton) -> None:
+        """Populate `existing_datasets` by performing follow-up queries with
+        the data IDs in the dimension group tree.
+
+        Parameters
+        ----------
+        tree : `_DimensionGroupTree`
+            Tree with dimension group branches that holds subgraph-specific
+            state for this builder.
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
+            In-progress quantum graph to modify in place.
+        """
+        dataset_key: DatasetKey | PrerequisiteDatasetKey
+        for dataset_type_name in tree.empty_dimensions_branch.dataset_types.keys():
+            dataset_key = DatasetKey(dataset_type_name, self.empty_data_id.required_values)
             if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
                 skeleton.set_dataset_ref(ref, dataset_key)
             if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
                 skeleton.set_output_for_skip(ref)
             if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
                 skeleton.set_output_in_the_way(ref)
-        empty_dimensions_quantum_keys = []
-        for task_label in query.empty_dimensions_branch.tasks.keys():
-            empty_dimensions_quantum_keys.append(skeleton.add_quantum_node(task_label, self.empty_data_id))
-        self.log.info("Iterating over query results to associate quanta with datasets.")
-        # Iterate over query results, populating data IDs for datasets and
-        # quanta and then connecting them to each other. This is the slowest
-        # client-side part of QG generation, and it's often the slowest part
-        # overall, so inside this loop is where it's really critical to avoid
-        # expensive things, especially in the nested loops.
-        n_rows = 0
-        for common_data_id in query.full_butler_query.data_ids():
-            for branch_dimensions, branch in query.trunk_branches.items():
-                data_id = common_data_id.subset(branch_dimensions)
-                branch.data_ids.add(data_id)
-            n_rows += 1
-        for branch_dimensions, branch in query.trunk_branches.items():
-            self.log.debug("Projecting query data IDs to %s.", branch_dimensions)
-            branch.project_data_ids(self.log)
-            self.log.verbose(
-                "Adding nodes and edges for %s %s data IDs.",
-                len(branch.data_ids),
-                branch_dimensions,
-            )
-            branch.update_skeleton(skeleton, self.log)
-        if n_rows == 0:
-            query.log_failure(self.log)
-        else:
-            n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in query.subgraph.tasks)
-            self.log.info(
-                "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges from %d query row(s).",
-                n_quanta,
-                skeleton.n_nodes - n_quanta,
-                skeleton.n_edges,
-                n_rows,
-            )
-        return skeleton
-
-    @timeMethod
-    def _find_followup_datasets(self, query: _AllDimensionsQuery, skeleton: QuantumGraphSkeleton) -> None:
-        """Populate `existing_datasets` by performing follow-up queries joined
-        to column-subsets of the initial data ID query.
-
-        Parameters
-        ----------
-        query : `_AllDimensionsQuery`
-            Object representing the full-pipeline data ID query.
-        """
-        for dimensions, branch in query.branches_by_dimensions.items():
+        for dimensions, branch in tree.branches_by_dimensions.items():
+            if not branch.has_followup_queries:
+                continue
+            if not branch.data_ids:
+                continue
             # Iterate over regular input/output dataset type nodes with these
-            # dimensions to find those datasets using followup queries. When
-            # there are a small number of data IDs involved, we upload and join
-            # against them directly.  When there is a large number of data IDs
-            # involved, we down-project from the temporary table again.
-            butler_query = query.get_butler_query(dimensions)
-            for dataset_type_node in branch.dataset_types.values():
-                if dataset_type_node.name in query.overall_inputs:
-                    # Dataset type is an overall input; we always need to try
-                    # to find these.
-                    count = 0
-                    try:
-                        for ref in butler_query.datasets(dataset_type_node.name, self.input_collections):
-                            skeleton.set_dataset_ref(ref)
-                            count += 1
-                    except MissingDatasetTypeError:
-                        pass
-                    self.log.verbose(
-                        "Found %d overall-input dataset(s) of type %r.", count, dataset_type_node.name
-                    )
-                    continue
-                if self.skip_existing_in:
-                    # Dataset type is an intermediate or output; need to find
-                    # these if only they're from previously executed quanta
-                    # that we might skip...
-                    count = 0
-                    try:
-                        for ref in butler_query.datasets(dataset_type_node.name, self.skip_existing_in):
-                            skeleton.set_output_for_skip(ref)
-                            count += 1
-                            if ref.run == self.output_run:
-                                skeleton.set_output_in_the_way(ref)
-                    except MissingDatasetTypeError:
-                        pass
-                    self.log.verbose(
-                        "Found %d output dataset(s) of type %r in %s.",
-                        count,
-                        dataset_type_node.name,
-                        self.skip_existing_in,
-                    )
-                if self.output_run_exists and not self.skip_existing_starts_with_output_run:
-                    # ...or if they're in the way and would need to be
-                    # clobbered (and we haven't already found them in the
-                    # previous block).
-                    count = 0
-                    try:
-                        for ref in butler_query.datasets(dataset_type_node.name, [self.output_run]):
-                            skeleton.set_output_in_the_way(ref)
-                            count += 1
-                    except MissingDatasetTypeError:
-                        pass
-                    self.log.verbose(
-                        "Found %d output dataset(s) of type %r in %s.",
-                        count,
-                        dataset_type_node.name,
-                        self.output_run,
-                    )
-            # Iterate over tasks with these dimensions to perform follow-up
-            # queries for prerequisite inputs, which may have dimensions that
-            # were not in ``butler_query.dimensions`` and/or require
-            # temporal joins to calibration validity ranges.
-            for task_node in branch.tasks.values():
-                task_prerequisite_info = self.prerequisite_info[task_node.label]
-                for connection_name, finder in list(task_prerequisite_info.finders.items()):
-                    if finder.lookup_function is not None:
+            # dimensions to find those datasets using followup queries.
+            with self.butler.query() as butler_query:
+                butler_query = butler_query.join_data_coordinates(branch.data_ids)
+                for dataset_type_node in branch.dataset_types.values():
+                    if dataset_type_node.name in tree.overall_inputs:
+                        # Dataset type is an overall input; we always need to
+                        # try to find these.
+                        count = 0
+                        try:
+                            for ref in butler_query.datasets(dataset_type_node.name, self.input_collections):
+                                skeleton.set_dataset_ref(ref)
+                                count += 1
+                        except MissingDatasetTypeError:
+                            pass
                         self.log.verbose(
-                            "Deferring prerequisite input %r of task %r to per-quantum processing "
-                            "(lookup function provided).",
+                            "Found %d overall-input dataset(s) of type %r.", count, dataset_type_node.name
+                        )
+                        continue
+                    if self.skip_existing_in:
+                        # Dataset type is an intermediate or output; need to
+                        # find these if only they're from previously executed
+                        # quanta that we might skip...
+                        count = 0
+                        try:
+                            for ref in butler_query.datasets(dataset_type_node.name, self.skip_existing_in):
+                                skeleton.set_output_for_skip(ref)
+                                count += 1
+                                if ref.run == self.output_run:
+                                    skeleton.set_output_in_the_way(ref)
+                        except MissingDatasetTypeError:
+                            pass
+                        self.log.verbose(
+                            "Found %d output dataset(s) of type %r in %s.",
+                            count,
+                            dataset_type_node.name,
+                            self.skip_existing_in,
+                        )
+                    if self.output_run_exists and not self.skip_existing_starts_with_output_run:
+                        # ...or if they're in the way and would need to be
+                        # clobbered (and we haven't already found them in the
+                        # previous block).
+                        count = 0
+                        try:
+                            for ref in butler_query.datasets(dataset_type_node.name, [self.output_run]):
+                                skeleton.set_output_in_the_way(ref)
+                                count += 1
+                        except MissingDatasetTypeError:
+                            pass
+                        self.log.verbose(
+                            "Found %d output dataset(s) of type %r in %s.",
+                            count,
+                            dataset_type_node.name,
+                            self.output_run,
+                        )
+                # Iterate over tasks with these dimensions to perform follow-up
+                # queries for prerequisite inputs, which may have dimensions
+                # that were not in ``tree.all_dimensions`` and/or require
+                # temporal joins to calibration validity ranges.
+                for task_node in branch.tasks.values():
+                    task_prerequisite_info = self.prerequisite_info[task_node.label]
+                    for connection_name, finder in list(task_prerequisite_info.finders.items()):
+                        if finder.lookup_function is not None:
+                            self.log.verbose(
+                                "Deferring prerequisite input %r of task %r to per-quantum processing "
+                                "(lookup function provided).",
+                                finder.dataset_type_node.name,
+                                task_node.label,
+                            )
+                            continue
+                        # We also fall back to the base class if there is a
+                        # nontrivial spatial or temporal join in the lookup.
+                        if finder.dataset_skypix or finder.dataset_other_spatial:
+                            if task_prerequisite_info.bounds.spatial_connections:
+                                self.log.verbose(
+                                    "Deferring prerequisite input %r of task %r to per-quantum processing "
+                                    "(for spatial-bounds-connections handling).",
+                                    finder.dataset_type_node.name,
+                                    task_node.label,
+                                )
+                                continue
+                            if not task_node.dimensions.spatial:
+                                self.log.verbose(
+                                    "Deferring prerequisite input %r of task %r to per-quantum processing "
+                                    "(dataset has spatial data IDs, but task does not).",
+                                    finder.dataset_type_node.name,
+                                    task_node.label,
+                                )
+                                continue
+                        if finder.dataset_has_timespan:
+                            if task_prerequisite_info.bounds.spatial_connections:
+                                self.log.verbose(
+                                    "Deferring prerequisite input %r of task %r to per-quantum processing "
+                                    "(for temporal-bounds-connections handling).",
+                                    finder.dataset_type_node.name,
+                                    task_node.label,
+                                )
+                                continue
+                            if not task_node.dimensions.temporal:
+                                self.log.verbose(
+                                    "Deferring prerequisite input %r of task %r to per-quantum processing "
+                                    "(dataset has temporal data IDs, but task does not).",
+                                    finder.dataset_type_node.name,
+                                    task_node.label,
+                                )
+                                continue
+                        # We have a simple case where we can do a single query
+                        # that joins the query we already have for the task
+                        # data IDs to the datasets we're looking for.
+                        count = 0
+                        try:
+                            query_results = list(
+                                butler_query.join_dataset_search(
+                                    finder.dataset_type_node.dataset_type, self.input_collections
+                                )
+                                .general(
+                                    dimensions | finder.dataset_type_node.dataset_type.dimensions,
+                                    dataset_fields={finder.dataset_type_node.name: ...},
+                                    find_first=True,
+                                )
+                                .iter_tuples(finder.dataset_type_node.dataset_type)
+                            )
+                        except MissingDatasetTypeError:
+                            query_results = []
+                        for data_id, refs, _ in query_results:
+                            ref = refs[0]
+                            dataset_key = skeleton.add_prerequisite_node(ref)
+                            quantum_key = QuantumKey(
+                                task_node.label, data_id.subset(dimensions).required_values
+                            )
+                            skeleton.add_input_edge(quantum_key, dataset_key)
+                            count += 1
+                        # Remove this finder from the mapping so the base class
+                        # knows it doesn't have to look for these
+                        # prerequisites.
+                        del task_prerequisite_info.finders[connection_name]
+                        self.log.verbose(
+                            "Added %d prerequisite input edge(s) from dataset type %r to task %r.",
+                            count,
                             finder.dataset_type_node.name,
                             task_node.label,
                         )
-                        continue
-                    # We also fall back to the base class if there is a
-                    # nontrivial spatial or temporal join in the lookup.
-                    if finder.dataset_skypix or finder.dataset_other_spatial:
-                        if task_prerequisite_info.bounds.spatial_connections:
-                            self.log.verbose(
-                                "Deferring prerequisite input %r of task %r to per-quantum processing "
-                                "(for spatial-bounds-connections handling).",
-                                finder.dataset_type_node.name,
-                                task_node.label,
-                            )
-                            continue
-                        if not task_node.dimensions.spatial:
-                            self.log.verbose(
-                                "Deferring prerequisite input %r of task %r to per-quantum processing "
-                                "(dataset has spatial data IDs, but task does not).",
-                                finder.dataset_type_node.name,
-                                task_node.label,
-                            )
-                            continue
-                    if finder.dataset_has_timespan:
-                        if task_prerequisite_info.bounds.spatial_connections:
-                            self.log.verbose(
-                                "Deferring prerequisite input %r of task %r to per-quantum processing "
-                                "(for temporal-bounds-connections handling).",
-                                finder.dataset_type_node.name,
-                                task_node.label,
-                            )
-                            continue
-                        if not task_node.dimensions.temporal:
-                            self.log.verbose(
-                                "Deferring prerequisite input %r of task %r to per-quantum processing "
-                                "(dataset has temporal data IDs, but task does not).",
-                                finder.dataset_type_node.name,
-                                task_node.label,
-                            )
-                            continue
-                    # We have a simple case where we can do a single query
-                    # that joins the query we already have for the task data
-                    # IDs to the datasets we're looking for.
-                    count = 0
-                    try:
-                        if butler_query.constraint_dimensions >= dimensions:
-                            # TODO[DM-46042]: We materialize here as a way to
-                            # to a SELECT DISTINCT on the main query with a
-                            # subset of its dimensions columns.  It'd be better
-                            # to have a way to do this that just makes a
-                            # subquery or a CTE rather than a temporary table.
-                            followup_butler_query = butler_query.materialize(
-                                dimensions=dimensions, datasets=()
-                            )
-                        else:
-                            followup_butler_query = butler_query
-                        query_results = list(
-                            followup_butler_query.join_dataset_search(
-                                finder.dataset_type_node.dataset_type, self.input_collections
-                            )
-                            .general(
-                                dimensions | finder.dataset_type_node.dataset_type.dimensions,
-                                dataset_fields={finder.dataset_type_node.name: ...},
-                                find_first=True,
-                            )
-                            .iter_tuples(finder.dataset_type_node.dataset_type)
-                        )
-                    except MissingDatasetTypeError:
-                        query_results = []
-                    for data_id, refs, _ in query_results:
-                        ref = refs[0]
-                        dataset_key = skeleton.add_prerequisite_node(ref)
-                        quantum_key = QuantumKey(task_node.label, data_id.subset(dimensions).required_values)
-                        skeleton.add_input_edge(quantum_key, dataset_key)
-                        count += 1
-                    # Remove this finder from the mapping so the base class
-                    # knows it doesn't have to look for these prerequisites.
-                    del task_prerequisite_info.finders[connection_name]
-                    self.log.verbose(
-                        "Added %d prerequisite input edge(s) from dataset type %r to task %r.",
-                        count,
-                        finder.dataset_type_node.name,
-                        task_node.label,
-                    )
+                if not branch.record_elements:
+                    # Delete data ID sets we don't need anymore.
+                    del branch.data_ids
 
     @timeMethod
-    def _fetch_most_dimension_records(self, query: _AllDimensionsQuery) -> DimensionRecordsMap:
+    def _fetch_most_dimension_records(self, tree: _DimensionGroupTree) -> DimensionRecordsMap:
         """Query for dimension records for all non-prerequisite data IDs (and
         possibly some prerequisite data IDs).
 
@@ -397,13 +458,18 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         """
         self.log.verbose("Performing follow-up queries for dimension records.")
         result: dict[str, dict[tuple[DataIdValue, ...], DimensionRecord]] = {}
-        for dimensions, branch in query.branches_by_dimensions.items():
-            butler_query = query.get_butler_query(dimensions)
-            for element in branch.record_elements:
-                result[element] = {
-                    record.dataId.required_values: record
-                    for record in butler_query.dimension_records(element)
-                }
+        for branch in tree.branches_by_dimensions.values():
+            if not branch.record_elements:
+                continue
+            if not branch.data_ids:
+                continue
+            with self.butler.query() as butler_query:
+                butler_query = butler_query.join_data_coordinates(branch.data_ids)
+                for element in branch.record_elements:
+                    result[element] = {
+                        record.dataId.required_values: record
+                        for record in butler_query.dimension_records(element)
+                    }
         return result
 
     @timeMethod
@@ -528,7 +594,7 @@ class _DimensionGroupTwig:
     tasks and dataset types with a particular set of dimensions that appear in
     the edges populated by its parent branch.
 
-    See `_DimensionGroupBranch` for more details.
+    See `_DimensionGroupTree` for more details.
     """
 
     parent_edge_tasks: set[str] = dataclasses.field(default_factory=set)
@@ -548,37 +614,6 @@ class _DimensionGroupTwig:
 class _DimensionGroupBranch:
     """A node in the tree of dimension groups that are used to recursively
     process query data IDs into a quantum graph.
-
-    Notes
-    -----
-    The full set of dimensions referenced by any task or dataset type (except
-    prerequisite inputs) forms is the conceptual "trunk" of this tree.  Each
-    branch has a subset of the dimensions of its parent branch, and each set
-    of dimensions appears exactly once in a tree (so there is some flexibility
-    in where certain dimension subsets may appear; right now this is resolved
-    somewhat arbitrarily).
-    We do not add branches for every possible dimension subset; a branch is
-    created for a `~lsst.daf.butler.DimensionGroup` if:
-
-     - if there is a task whose quanta have those dimensions;
-     - if there is a non-prerequisite dataset type with those dimensions;
-     - if there is an edge for which the union of the task and dataset type
-       dimensions are those dimensions;
-     - if there is a dimension element whose
-       `~lsst.daf.butler.DimensionElement.minimal_group` with those dimensions.
-
-    We process the initial data query by recursing through this tree structure
-    to populate a data ID set for each branch (`project_data_ids`), and then
-    processing those sets recursively (`update_skeleton`)  This can be far
-    faster than the non-recursive processing the QG builder used to use because
-    the set of data IDs is smaller (sometimes dramatically smaller) as we move
-    to smaller sets of dimensions.
-
-    In addition to their child branches, a branch that is used to defined graph
-    edges also has "twigs", which are a flatter set of dimension subsets for
-    each of the tasks and dataset types that appear in that branch's edges.
-    The same twig dimensions can appear in multiple branches, and twig
-    dimensions can be the same as their parent branch's (but not a superset).
     """
 
     tasks: dict[str, TaskNode] = dataclasses.field(default_factory=dict)
@@ -623,6 +658,13 @@ class _DimensionGroupBranch:
     """Small branches for all of the dimensions that appear on one side of any
     edge in `input_edges` or `output_edges`.
     """
+
+    @property
+    def has_followup_queries(self) -> bool:
+        """Whether we will need to perform follow-up queries with these
+        dimensions.
+        """
+        return bool(self.tasks or self.dataset_types or self.record_elements)
 
     @staticmethod
     def populate_record_elements(
@@ -797,7 +839,7 @@ class _DimensionGroupBranch:
         """
         for branch_dimensions, branch in self.branches.items():
             log.verbose(
-                "%sAdding nodes and edges for %s %s data IDs.",
+                "%sAdding nodes and edges for %s %s data ID(s).",
                 log_indent,
                 len(branch.data_ids),
                 branch_dimensions,
@@ -822,32 +864,58 @@ class _DimensionGroupBranch:
                 skeleton.add_input_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
             for task_label, dataset_type_name in self.output_edges:
                 skeleton.add_output_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
+        if not self.has_followup_queries:
+            # Delete data IDs we don't need anymore to save memory.
+            del self.data_ids
 
 
 @dataclasses.dataclass(eq=False, repr=False)
-class _AllDimensionsQuery:
-    """A helper class for `AllDimensionsQuantumGraphBuilder` that holds all
-    per-subgraph state.
+class _DimensionGroupTree:
+    """A tree of dimension groups in which branches are subsets of their
+    parents.
 
-    This object should always be constructed by `from_builder`, which returns
-    an instance wrapped with a context manager. This controls the lifetime of
-    the temporary table referenced by `common_data_ids`.
+    This class holds all of the per-subgraph state for this QG builder
+    subclass.
+
+    Notes
+    -----
+    The full set of dimensions referenced by any task or dataset type (except
+    prerequisite inputs) forms is the conceptual "trunk" of this tree.  Each
+    branch has a subset of the dimensions of its parent branch, and each set
+    of dimensions appears exactly once in a tree (so there is some flexibility
+    in where certain dimension subsets may appear; right now this is resolved
+    somewhat arbitrarily).
+    We do not add branches for every possible dimension subset; a branch is
+    created for a `~lsst.daf.butler.DimensionGroup` if:
+
+     - if there is a task whose quanta have those dimensions;
+     - if there is a non-prerequisite dataset type with those dimensions;
+     - if there is an edge for which the union of the task and dataset type
+       dimensions are those dimensions;
+     - if there is a dimension element whose
+       `~lsst.daf.butler.DimensionElement.minimal_group` with those dimensions.
+
+    We process the initial data query by recursing through this tree structure
+    to populate a data ID set for each branch
+    (`_DimensionGroupBranch.project_data_ids`), and then process those sets
+    recursively (`_DimensionGroupBranch.update_skeleton`). This can be far
+    faster than the non-recursive processing the QG builder used to use because
+    the set of data IDs is smaller (sometimes dramatically smaller) as we move
+    to smaller sets of dimensions.
+
+    In addition to their child branches, a branch that is used to defined graph
+    edges also has "twigs", which are a flatter set of dimension subsets for
+    each of the tasks and dataset types that appear in that branch's edges.
+    The same twig dimensions can appear in multiple branches, and twig
+    dimensions can be the same as their parent branch's (but not a superset).
     """
 
     subgraph: PipelineGraph
     """Graph of this subset of the pipeline."""
 
-    branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(
-        default_factory=dict
-    )
-    """The tasks and dataset types of this subset of the pipeline, grouped
-    by their dimensions.
-
-    The tasks and dataset types with empty dimensions are not included; they're
-    in `empty_dimensions_tree` since they are usually used differently.
-    Prerequisite dataset types are also not included.
-
-    This is a flatter view of the objects in `trunk_branches`.
+    all_dimensions: DimensionGroup = dataclasses.field(init=False)
+    """The union of all dimensions that appear in any task or
+    (non-prerequisite) dataset type in this subgraph.
     """
 
     empty_dimensions_branch: _DimensionGroupBranch = dataclasses.field(init=False)
@@ -861,181 +929,41 @@ class _AllDimensionsQuery:
     """The top-level branches in the tree of dimension groups.
     """
 
-    overall_inputs: dict[str, DatasetTypeNode] = dataclasses.field(default_factory=dict)
+    branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
+    """The tasks and dataset types of this subset of the pipeline, grouped
+    by their dimensions.
+
+    The tasks and dataset types with empty dimensions are not included; they're
+    in `empty_dimensions_tree` since they are usually used differently.
+    Prerequisite dataset types are also not included.
+
+    This is a flatter view of the objects in `trunk_branches`.
+    """
+
+    overall_inputs: dict[str, DatasetTypeNode] = dataclasses.field(init=False)
     """Pipeline graph nodes for all non-prerequisite, non-init overall-input
     dataset types for this subset of the pipeline.
     """
 
-    query_cmd: list[str] = dataclasses.field(default_factory=list)
-    """Python code (split across lines) that could be used to reproduce the
-    initial query.
-    """
-
-    full_butler_query: Query = dataclasses.field(init=False)
-    """A query against the materialized initial data ID query."""
-
-    base_butler_query: Query = dataclasses.field(init=False)
-    """The original butler query object with no constraints applied."""
-
-    @classmethod
-    @contextmanager
-    def from_builder(
-        cls, builder: AllDimensionsQuantumGraphBuilder, subgraph: PipelineGraph
-    ) -> Iterator[_AllDimensionsQuery]:
-        """Construct and run the query, returning an instance guarded by
-        a context manager.
-
-        Parameters
-        ----------
-        builder : `AllDimensionsQuantumGraphBuilder`
-            Builder object this helper is associated with.
-        subgraph : `pipeline_graph.PipelineGraph`
-            Subset of the pipeline being processed.
-
-        Returns
-        -------
-        context : `AbstractContextManager` [ `_AllDimensionsQuery` ]
-            An instance of this class, inside a context manager that manages
-            the lifetime of its temporary database table.
-        """
-        result = cls(subgraph)
-        builder.log.debug("Analyzing subgraph dimensions and overall-inputs.")
-        result.branches_by_dimensions = {
+    def __post_init__(self) -> None:
+        universe = self.subgraph.universe
+        assert universe is not None, "Pipeline graph is resolved."
+        self.branches_by_dimensions = {
             dimensions: _DimensionGroupBranch(tasks, dataset_types)
-            for dimensions, (tasks, dataset_types) in result.subgraph.group_by_dimensions().items()
+            for dimensions, (tasks, dataset_types) in self.subgraph.group_by_dimensions().items()
         }
-        dimensions = _union_dimensions(result.branches_by_dimensions.keys(), builder.universe)
-        _DimensionGroupBranch.populate_record_elements(dimensions, result.branches_by_dimensions)
-        _DimensionGroupBranch.populate_edges(subgraph, result.branches_by_dimensions)
-        result.trunk_branches = _DimensionGroupBranch.populate_branches(
-            None, result.branches_by_dimensions.copy()
+        self.all_dimensions = _union_dimensions(self.branches_by_dimensions.keys(), universe)
+        _DimensionGroupBranch.populate_record_elements(self.all_dimensions, self.branches_by_dimensions)
+        _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
+        self.trunk_branches = _DimensionGroupBranch.populate_branches(
+            None, self.branches_by_dimensions.copy()
         )
-        result.empty_dimensions_branch = result.branches_by_dimensions.pop(builder.universe.empty)
-        result.overall_inputs = {
+        self.empty_dimensions_branch = self.branches_by_dimensions.pop(universe.empty)
+        self.overall_inputs = {
             name: node  # type: ignore
-            for name, node in result.subgraph.iter_overall_inputs()
+            for name, node in self.subgraph.iter_overall_inputs()
             if not node.is_prerequisite  # type: ignore
         }
-        datasets: set[str] = set()
-        builder.log.debug("Building query for data IDs.")
-        if builder.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
-            builder.log.debug("Constraining graph query using all datasets not marked as deferred.")
-            datasets = {
-                name
-                for name, dataset_type_node in result.overall_inputs.items()
-                if (
-                    dataset_type_node.is_initial_query_constraint
-                    and name not in result.empty_dimensions_branch.dataset_types
-                )
-            }
-        elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
-            builder.log.debug("Not using dataset existence to constrain query.")
-        elif builder.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
-            constraint = set(builder.dataset_query_constraint)
-            inputs = result.overall_inputs - result.empty_dimensions_branch.dataset_types.keys()
-            if remainder := constraint.difference(inputs):
-                builder.log.debug(
-                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
-                    "subgraph, on the assumption that they are relevant for a different subgraph.",
-                    remainder,
-                )
-            constraint.intersection_update(inputs)
-            builder.log.debug(f"Constraining graph query using {constraint}")
-            datasets = constraint
-        else:
-            raise QuantumGraphBuilderError(
-                f"Unable to handle type {builder.dataset_query_constraint} given as datasetQueryConstraint."
-            )
-        with builder.butler.query() as query:
-            result.base_butler_query = query
-            result.query_cmd.append("with butler.query() as query:")
-            result.query_cmd.append(f"    query = query.join_dimensions({list(dimensions.names)})")
-            query = query.join_dimensions(dimensions)
-            if datasets:
-                result.query_cmd.append(f"    collections = {list(builder.input_collections)}")
-            for dataset_type_name in datasets:
-                result.query_cmd.append(
-                    f"    query = query.join_dataset_search({dataset_type_name!r}, collections)"
-                )
-                query = query.join_dataset_search(dataset_type_name, builder.input_collections)
-            result.query_cmd.append(
-                f"    query = query.where({dict(result.subgraph.data_id.mapping)}, "
-                f"{builder.where!r}, bind={builder.bind!r})"
-            )
-            query = query.where(result.subgraph.data_id, builder.where, bind=builder.bind)
-            builder.log.verbose(result.format_query_cmd("Querying for data IDs via:"))
-            # Allow duplicates from common skypix overlaps to make some queries
-            # run faster.
-            query._allow_duplicate_overlaps = True
-            result.full_butler_query = query.materialize()
-            yield result
-
-    # When performing follow-up queries for DatasetRefs or DimensionRecords, if
-    # the number of data IDs for that DimensionGroup is below this threshold,
-    # we make a new query with Query.join_data_coordinates to upload the
-    # already-deduplicated, region-filtered client-side list and join against
-    # that.  If the number of data IDs is above this threshold, we join against
-    # the original temporary table to let SQL project down to the set of
-    # dimensions we want, which requires region-filtering to be done again.
-    #
-    # This is currently a private configuration option because we're hoping
-    # DM-47810 will make it unnecessary to ever use the original temporary
-    # table.
-    _DATA_ID_UPLOAD_COUNT_MAX: ClassVar[int] = 1024
-
-    def get_butler_query(self, dimensions: DimensionGroup) -> Query:
-        """Return a butler query appropriate for performing follow-up queries
-        with the given dimensions.
-
-        Parameters
-        ----------
-        dimensions : `lsst.daf.butler.DimensionGroup`
-            Dimensions of the dataset type or dimension record being queried
-            for.
-
-        Returns
-        -------
-        butler_query : `lsst.daf.butler.queries.Query`
-            A butler query object.  This will have at least the given
-            dimensions joined in, but may have more (which will normally be
-            projected down to the result type dimensions, once that is
-            method-chained on to the returned object).
-        """
-        branch = self.branches_by_dimensions[dimensions]
-        if len(branch.data_ids) < self._DATA_ID_UPLOAD_COUNT_MAX:
-            return self.base_butler_query.join_data_coordinates(branch.data_ids)
-        else:
-            return self.full_butler_query
-
-    def format_query_cmd(self, *header: str) -> str:
-        """Format the butler query call used as a multi-line string.
-
-        Parameters
-        ----------
-        *header : `str`
-            Initial lines the of the returned string, not including newlines.
-        """
-        lines = list(header)
-        lines.extend(self.query_cmd)
-        return "\n".join(lines)
-
-    def log_failure(self, log: LsstLogAdapter) -> None:
-        """Emit an ERROR-level log message that attempts to explain
-        why the initial data ID query returned no rows.
-
-        Parameters
-        ----------
-        log : `logging.Logger`
-            The logger to use to emit log messages.
-        """
-        # A single multiline log plays better with log aggregators like Loki.
-        header = ["Initial data ID query returned no rows, so QuantumGraph will be empty."]
-        try:
-            header.extend(self.full_butler_query.explain_no_results())
-            header.append("To reproduce this query for debugging purposes, run:")
-        finally:
-            # If an exception was raised, write a partial.
-            log.error(self.format_query_cmd(*header))
 
 
 class DimensionRecordAttacher:
