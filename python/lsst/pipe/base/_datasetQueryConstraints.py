@@ -117,7 +117,7 @@ if sys.version_info.minor < 12:
 else:
 
     class MetaMeta(type(Protocol)):
-        def __init__(cls, *args, **kwargs):
+        def __init__(cls, *args, **kwargs):  # noqa: N805
             # Note: this prepends an *extra* cls to type's argument list
             return super().__init__(cls, *args, **kwargs)
 
