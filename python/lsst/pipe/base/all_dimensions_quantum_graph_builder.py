@@ -218,11 +218,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     self.log.error("\n".join(lines))
                 return
         self.log.verbose("Processed %s initial data ID query rows.", n_rows)
-        # We now recursively populate the data IDs of the rest of the
-        # tree.
-        for branch_dimensions, branch in tree.trunk_branches.items():
-            self.log.debug("Projecting query data IDs to %s.", branch_dimensions)
-            branch.project_data_ids(self.log)
+        # We now recursively populate the data IDs of the rest of the tree.
+        tree.project_data_ids(self.log)
 
     @timeMethod
     def _make_subgraph_skeleton(self, tree: _DimensionGroupTree) -> QuantumGraphSkeleton:
@@ -964,6 +961,19 @@ class _DimensionGroupTree:
             for name, node in self.subgraph.iter_overall_inputs()
             if not node.is_prerequisite  # type: ignore
         }
+
+    def project_data_ids(self, log: LsstLogAdapter) -> None:
+        """Recursively populate the data ID sets of the dimension group tree
+        from the data ID sets of the trunk branches.
+
+        Parameters
+        ----------
+        log : `lsst.logging.LsstLogAdapter`
+            Logger to use for status reporting.
+        """
+        for branch_dimensions, branch in self.trunk_branches.items():
+            log.debug("Projecting query data IDs to %s.", branch_dimensions)
+            branch.project_data_ids(log)
 
 
 class DimensionRecordAttacher:
