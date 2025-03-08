@@ -880,7 +880,7 @@ class _DimensionGroupTree:
     Notes
     -----
     The full set of dimensions referenced by any task or dataset type (except
-    prerequisite inputs) forms is the conceptual "trunk" of this tree.  Each
+    prerequisite inputs) forms the conceptual "trunk" of this tree.  Each
     branch has a subset of the dimensions of its parent branch, and each set
     of dimensions appears exactly once in a tree (so there is some flexibility
     in where certain dimension subsets may appear; right now this is resolved
@@ -892,8 +892,9 @@ class _DimensionGroupTree:
      - if there is a non-prerequisite dataset type with those dimensions;
      - if there is an edge for which the union of the task and dataset type
        dimensions are those dimensions;
-     - if there is a dimension element whose
-       `~lsst.daf.butler.DimensionElement.minimal_group` with those dimensions.
+     - if there is a dimension element in any task or non-prerequisite dataset
+       type dimensions whose `~lsst.daf.butler.DimensionElement.minimal_group`
+       is those dimensions.
 
     We process the initial data query by recursing through this tree structure
     to populate a data ID set for each branch
@@ -903,7 +904,7 @@ class _DimensionGroupTree:
     the set of data IDs is smaller (sometimes dramatically smaller) as we move
     to smaller sets of dimensions.
 
-    In addition to their child branches, a branch that is used to defined graph
+    In addition to their child branches, a branch that is used to define graph
     edges also has "twigs", which are a flatter set of dimension subsets for
     each of the tasks and dataset types that appear in that branch's edges.
     The same twig dimensions can appear in multiple branches, and twig
