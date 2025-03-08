@@ -959,7 +959,9 @@ class _DimensionGroupTree:
         self.trunk_branches = _DimensionGroupBranch.populate_branches(
             None, self.branches_by_dimensions.copy()
         )
-        self.empty_dimensions_branch = self.branches_by_dimensions.pop(universe.empty)
+        self.empty_dimensions_branch = self.branches_by_dimensions.pop(
+            universe.empty, _DimensionGroupBranch()
+        )
         self.overall_inputs = {
             name: node  # type: ignore
             for name, node in self.subgraph.iter_overall_inputs()
