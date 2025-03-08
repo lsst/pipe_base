@@ -155,10 +155,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             constraint_datasets = {
                 name
                 for name, dataset_type_node in tree.overall_inputs.items()
-                if (
-                    dataset_type_node.is_initial_query_constraint
-                    and name not in tree.empty_dimensions_branch.dataset_types
-                )
+                if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
             }
         elif self.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
             self.log.debug("Not using dataset existence to constrain query.")
