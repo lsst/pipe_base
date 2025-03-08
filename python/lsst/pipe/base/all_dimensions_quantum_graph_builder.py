@@ -700,31 +700,29 @@ class _DimensionGroupBranch:
             be added and existing branches may have their `input_edges`,
             `output_edges`, and `twigs` attributes updated.
         """
+
+        def update_edge_branch(
+            task_node: TaskNode, dataset_type_node: DatasetTypeNode
+        ) -> _DimensionGroupBranch:
+            union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
+            if (branch := branches.get(union_dimensions)) is None:
+                branch = _DimensionGroupBranch()
+                branches[union_dimensions] = branch
+            branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(dataset_type_node.name)
+            branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
+            return branch
+
         for task_node in pipeline_graph.tasks.values():
             for dataset_type_node in pipeline_graph.inputs_of(task_node.label).values():
                 assert dataset_type_node is not None, "Pipeline graph is resolved."
                 if dataset_type_node.is_prerequisite:
                     continue
-                union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
-                if (branch := branches.get(union_dimensions)) is None:
-                    branch = _DimensionGroupBranch()
-                    branches[union_dimensions] = branch
+                branch = update_edge_branch(task_node, dataset_type_node)
                 branch.input_edges.append((dataset_type_node.name, task_node.label))
-                branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(
-                    dataset_type_node.name
-                )
-                branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
             for dataset_type_node in pipeline_graph.outputs_of(task_node.label).values():
                 assert dataset_type_node is not None, "Pipeline graph is resolved."
-                union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
-                if (branch := branches.get(union_dimensions)) is None:
-                    branch = _DimensionGroupBranch()
-                    branches[union_dimensions] = branch
+                branch = update_edge_branch(task_node, dataset_type_node)
                 branch.output_edges.append((task_node.label, dataset_type_node.name))
-                branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
-                branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(
-                    dataset_type_node.name
-                )
 
     @staticmethod
     def find_next_uncontained_dimensions(
