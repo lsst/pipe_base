@@ -42,11 +42,17 @@ from ._formatting import NodeKey, format_dimensions, format_task_class
 from ._options import NodeAttributeOptions
 from ._show import parse_display_args
 
+__all__ = ["show_mermaid"]
+
 MERMAID_AVAILABLE = importlib.util.find_spec("mermaid") is not None
 
 if MERMAID_AVAILABLE:
     from mermaid import Mermaid  # type: ignore
     from mermaid.graph import Graph  # type: ignore
+
+    # Expose Mermaid publicly so it can be patched in unit tests.
+    __all__ += ["Mermaid"]
+
 
 # Configuration constants for label formatting and overflow handling.
 _LABEL_PX_SIZE = 18
