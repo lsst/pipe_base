@@ -54,14 +54,17 @@ jobs:
         run: |
           uv pip install --system -v --no-deps -e .
 
+      - name: Check CLI commands
+        shell: bash -l {0}
+        run: |
+          butler register-instrument -h && \
+          butler transfer-from-graph -h && \
+          butler retrieve-artifacts-for-quanta -h
       - name: Run tests
         shell: bash -l {0}
         run: |
           pytest -r a -v -n 3 --cov=lsst.pipe.base --cov=tests --cov-report=xml --cov-report=term --cov-branch \
             --junitxml=junit.xml -o junit_family=legacy
-          butler register-instrument -h
-          butler transfer-from-graph -h
-          butler retrieve-artifacts-for-quanta -h
       - name: Upload coverage to codecov
         uses: codecov/codecov-action@v4
         with:
