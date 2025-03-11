@@ -73,6 +73,10 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         # docstring is inherited from base class
         return self.dataId[name]
 
+    def visitBind(self, name: str, node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
     def visitUnaryOp(self, operator_name: str, operand: Any, node: Node) -> Any:
         # docstring is inherited from base class
         operators: dict[str, Callable[[Any], Any]] = {
