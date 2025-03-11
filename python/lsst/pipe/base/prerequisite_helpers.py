@@ -340,7 +340,7 @@ class PrerequisiteFinder:
                 where_terms: list[str] = []
                 bind: dict[str, list[int]] = {}
                 for name in self.dataset_skypix:
-                    where_terms.append(f"{name} IN ({name}_pixels)")
+                    where_terms.append(f"{name} IN (:{name}_pixels)")
                     pixels: list[int] = []
                     for begin, end in skypix_bounds[name]:
                         pixels.extend(range(begin, end))
