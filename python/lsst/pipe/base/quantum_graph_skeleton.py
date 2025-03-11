@@ -669,3 +669,23 @@ class QuantumGraphSkeleton:
         output_in_the_way: DatasetRef | None
         if (output_in_the_way := state.get("output_in_the_way")) is not None:
             state["output_in_the_way"] = output_in_the_way.expanded(data_id)
+
+    def get_data_id(self, key: Key) -> DataCoordinate:
+        """Return the full data ID for a quantum or dataset, if available.
+
+        Parameters
+        ----------
+        key : `Key`
+            Identifier for the graph node.
+
+        Returns
+        -------
+        data_id : `DataCoordinate`
+            Expanded data ID for the node, if one is available.
+
+        Raises
+        ------
+        KeyError
+            Raised if this node does not have an expanded data ID.
+        """
+        return self._xgraph.nodes[key]["data_id"]

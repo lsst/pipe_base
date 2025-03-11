@@ -62,7 +62,7 @@ from lsst.utils.timer import timeMethod
 from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
 from ._task_metadata import TaskMetadata
-from .connections import AdjustQuantumHelper
+from .connections import AdjustQuantumHelper, QuantaAdjuster
 from .graph import QuantumGraph
 from .pipeline_graph import PipelineGraph, TaskNode
 from .prerequisite_helpers import PrerequisiteInfo, SkyPixBoundsBuilder, TimespanBuilder
@@ -475,7 +475,6 @@ class QuantumGraphBuilder(ABC):
         # Loop over all quanta for this task, remembering the ones we've
         # gotten rid of.
         skipped_quanta = []
-        no_work_quanta = []
         for quantum_key in skeleton.get_quanta(task_node.label):
             if self._skip_quantum_if_metadata_exists(task_node, quantum_key, skeleton):
                 skipped_quanta.append(quantum_key)
@@ -490,6 +489,17 @@ class QuantumGraphBuilder(ABC):
                 skypix_bounds_builder,
                 timespan_builder,
             )
+        for skipped_quantum in skipped_quanta:
+            skeleton.remove_quantum_node(skipped_quantum, remove_outputs=False)
+        # Give the task a chance to adjust all quanta together.  This
+        # operates directly on the skeleton (via a the 'adjuster', which
+        # is just an interface adapter).
+        adjuster = QuantaAdjuster(task_node.label, self._pipeline_graph, skeleton)
+        task_node.get_connections().adjust_all_quanta(adjuster)
+        # Loop over all quanta again, remembering those we get rid of in other
+        # ways.
+        no_work_quanta = []
+        for quantum_key in skeleton.get_quanta(task_node.label):
             adjusted_outputs = self._adapt_quantum_outputs(task_node, quantum_key, skeleton)
             adjusted_inputs = self._adapt_quantum_inputs(task_node, quantum_key, skeleton)
             # Give the task's Connections class an opportunity to remove
@@ -550,8 +560,6 @@ class QuantumGraphBuilder(ABC):
             skeleton[quantum_key]["outputs"] = helper.outputs
         for no_work_quantum in no_work_quanta:
             skeleton.remove_quantum_node(no_work_quantum, remove_outputs=True)
-        for skipped_quantum in skipped_quanta:
-            skeleton.remove_quantum_node(skipped_quantum, remove_outputs=False)
         remaining_quanta = skeleton.get_quanta(task_node.label)
         self._resolve_task_init(task_node, skeleton, bool(skipped_quanta))
         message_terms = []
@@ -559,6 +567,8 @@ class QuantumGraphBuilder(ABC):
             message_terms.append(f"{len(no_work_quanta)} had no work to do")
         if skipped_quanta:
             message_terms.append(f"{len(skipped_quanta)} previously succeeded")
+        if adjuster.n_removed:
+            message_terms.append(f"{adjuster.n_removed} removed by adjust_all_quanta")
         message_parenthetical = f" ({', '.join(message_terms)})" if message_terms else ""
         if remaining_quanta:
             self.log.info(
