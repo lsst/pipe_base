@@ -1581,7 +1581,7 @@ class QuantumProvenanceGraph:
         collections: Sequence[str] | None = None,
         where: str = "",
         curse_failed_logs: bool = False,
-        read_caveats: Literal["lazy", "exhaustive"] | None = "exhaustive",
+        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
     ) -> None:
         """Assemble the quantum provenance graph from a list of all graphs
         corresponding to processing attempts.
