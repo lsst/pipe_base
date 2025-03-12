@@ -110,7 +110,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         # With a bind for the user query
         with temporaryDirectory() as root:
             simpleQGraph.makeSimpleQGraph(
-                root=root, pipeline=pipeline, userQuery="instrument = instr", bind={"instr": instr}
+                root=root, pipeline=pipeline, userQuery="instrument = :instr", bind={"instr": instr}
             )
 
     def test_datastore_records(self):
