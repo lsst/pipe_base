@@ -97,7 +97,7 @@ class GroupTestTask(PipelineTask):
 
 
 class AdjustAllQuantaTestCase(unittest.TestCase):
-    """Tests for the `PipelineTaskConnection.adjust_all_quanta` hook in
+    """Tests for the `PipelineTaskConnections.adjust_all_quanta` hook in
     quantum-graph generation.
     """
 

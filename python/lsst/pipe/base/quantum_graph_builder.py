@@ -660,7 +660,7 @@ class QuantumGraphBuilder(ABC):
             Identifier for this quantum in the graph.
         skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
-        task_prerequisite_info : `~prerequisite_helpers.TaskPrerequisiteInfo`
+        task_prerequisite_info : `~prerequisite_helpers.PrerequisiteInfo`
             Information about the prerequisite inputs to this task.
         skypix_bounds_builder : `~prerequisite_helpers.SkyPixBoundsBuilder`
             An object that accumulates the appropriate spatial bounds for a
