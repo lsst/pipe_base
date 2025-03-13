@@ -1125,17 +1125,6 @@ class Summary(pydantic.BaseModel):
 class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
     information.
-
-    Step through all the quantum graphs associated with certain tasks or
-    processing steps. For each graph/attempt, the status of each quantum and
-    dataset is recorded in `QuantumProvenanceGraph.__add_new_graph` and
-    outcomes of quanta over multiple runs are resolved in
-    `QuantumProvenanceGraph.__resolve_duplicates`. These can be called outside
-    the class in the correct order by
-    `QuantumProvenanceGraph.assemble_quantum_provenance_graph`. At the end of
-    this process, we can combine all attempts into a summary using the
-    `QuantumProvenanceGraph.to_summary` method. This serves to answer the
-    question 'What happened to this data ID?' in a wholistic sense.
     """
 
     def __init__(self) -> None:
@@ -1586,11 +1575,6 @@ class QuantumProvenanceGraph:
         """Assemble the quantum provenance graph from a list of all graphs
         corresponding to processing attempts.
 
-        This method calls the private method `__add_new_graph` on each of the
-        constituent graphs, verifying that the graphs have been passed in
-        order. After `__add_new_graph` has been called on all graphs in the
-        `Sequence`, the method calls `__resolve_duplicates`.
-
         Parameters
         ----------
         butler : `lsst.daf.butler.Butler`
@@ -1607,10 +1591,7 @@ class QuantumProvenanceGraph:
         curse_failed_logs : `bool`
             Mark log datasets as CURSED if they are visible in the final
             output collection. Note that a campaign-level collection must be
-            used here for `collections` if `curse_failed_logs` is `True`; if
-            `__resolve_duplicates` is run on a list of group-level collections
-            then each will only show log datasets from their own failures as
-            visible and datasets from others will be marked as cursed.
+            used here for `collections` if `curse_failed_logs` is `True`.
         read_caveats : `str` or `None`, optional
             Whether to read metadata files to get flags that describe qualified
             successes.  If `None`, no metadata files will be read and all
