@@ -35,6 +35,7 @@ __all__ = [
     "InputQuantizedConnection",
     "OutputQuantizedConnection",
     "PipelineTaskConnections",
+    "QuantaAdjuster",
     "QuantizedConnection",
     "ScalarError",
     "ScalarError",
@@ -45,8 +46,8 @@ import dataclasses
 import itertools
 import string
 import warnings
-from collections import UserDict
-from collections.abc import Collection, Generator, Iterable, Mapping, Sequence, Set
+from collections import UserDict, defaultdict
+from collections.abc import Collection, Generator, Iterable, Iterator, Mapping, Sequence, Set
 from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,8 @@ from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInpu
 
 if TYPE_CHECKING:
     from .config import PipelineTaskConfig
+    from .pipeline_graph import PipelineGraph, TaskNode
+    from .quantum_graph_skeleton import QuantumGraphSkeleton
 
 
 class ScalarError(TypeError):
@@ -999,6 +1002,25 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
         """
         return ()
 
+    def adjust_all_quanta(self, adjuster: QuantaAdjuster) -> None:
+        """Customize the set of quanta predicted for this task during quantum
+        graph generation.
+
+        Parameters
+        ----------
+        adjuster : `QuantaAdjuster`
+            A helper object that implementations can use to modify the
+            under-construction quantum graph.
+
+        Notes
+        -----
+        This hook is called before `adjustQuantum`, which is where built-in
+        checks for `NoWorkFound` cases and missing prerequisites are handled.
+        This means that the set of preliminary quanta seen by this method could
+        include some that would normally be dropped later.
+        """
+        pass
+
 
 def iterConnections(
     connections: PipelineTaskConnections, connectionType: str | Iterable[str]
@@ -1130,3 +1152,158 @@ class AdjustQuantumHelper:
             self.outputs_adjusted = True
         else:
             self.outputs_adjusted = False
+
+
+class QuantaAdjuster:
+    """A helper class for the `PipelineTaskConnections.adjust_all_quanta` hook.
+
+    Parameters
+    ----------
+    task_label : `str`
+        Label of the task whose quanta are being adjusted.
+    pipeline_graph : `pipeline_graph.PipelineGraph`
+        Pipeline graph the quantum graph is being built from.
+    skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        Under-construction quantum graph that will be modified in place.
+    """
+
+    def __init__(self, task_label: str, pipeline_graph: PipelineGraph, skeleton: QuantumGraphSkeleton):
+        self._task_node = pipeline_graph.tasks[task_label]
+        self._pipeline_graph = pipeline_graph
+        self._skeleton = skeleton
+        self._n_removed = 0
+
+    @property
+    def task_label(self) -> str:
+        """The label this task has been configured with."""
+        return self._task_node.label
+
+    @property
+    def task_node(self) -> TaskNode:
+        """The node for this task in the pipeline graph."""
+        return self._task_node
+
+    def iter_data_ids(self) -> Iterator[DataCoordinate]:
+        """Iterate over the data IDs of all quanta for this task."
+
+        Returns
+        -------
+        data_ids : `~collections.abc.Iterator` [ \
+                `~lsst.daf.butler.DataCoordinate` ]
+            Data IDs.  These are minimal data IDs without dimension records or
+            implied values; use `expand_quantum_data_id` to get a full data ID
+            when needed.
+        """
+        for key in self._skeleton.get_quanta(self._task_node.label):
+            yield DataCoordinate.from_required_values(self._task_node.dimensions, key.data_id_values)
+
+    def remove_quantum(self, data_id: DataCoordinate) -> None:
+        """Remove a quantum from the graph.
+
+        Parameters
+        ----------
+        data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to remove.  All outputs will be removed as
+            well.
+        """
+        from .quantum_graph_skeleton import QuantumKey
+
+        self._skeleton.remove_quantum_node(
+            QuantumKey(self._task_node.label, data_id.required_values), remove_outputs=True
+        )
+        self._n_removed += 1
+
+    def get_inputs(self, quantum_data_id: DataCoordinate) -> dict[str, list[DataCoordinate]]:
+        """Return the data IDs of all regular inputs to a quantum.
+
+        Parameters
+        ----------
+        data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to get the inputs of.
+
+        Returns
+        -------
+        inputs : `dict` [ `str`, `list` [ `~lsst.daf.butler.DataCoordinate` ] ]
+            Data IDs of inputs, keyed by the connection name (the internal task
+            name, not the dataset type name).  This only contains regular
+            inputs, not init-inputs or prerequisite inputs.
+
+        Notes
+        -----
+        If two connections have the same dataset type, the current
+        implementation assumes the set of datasets is the same for the two
+        connections.  This limitation may be removed in the future.
+        """
+        from .quantum_graph_skeleton import DatasetKey, QuantumKey
+
+        by_dataset_type_name: defaultdict[str, list[DataCoordinate]] = defaultdict(list)
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+        for dataset_key in self._skeleton.iter_inputs_of(quantum_key):
+            if not isinstance(dataset_key, DatasetKey):
+                continue
+            dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
+            by_dataset_type_name[dataset_key.parent_dataset_type_name].append(
+                DataCoordinate.from_required_values(dataset_type_node.dimensions, dataset_key.data_id_values)
+            )
+        return {
+            edge.connection_name: by_dataset_type_name[edge.parent_dataset_type_name]
+            for edge in self._task_node.iter_all_inputs()
+        }
+
+    def add_input(
+        self, quantum_data_id: DataCoordinate, connection_name: str, dataset_data_id: DataCoordinate
+    ) -> None:
+        """Add a new input to a quantum.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to add an input to.
+        connection_name : `str`
+            Name of the connection (the task-internal name, not the butler
+            dataset type name).
+        dataset_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the input dataset.  Must already exist in the graph
+            as an input to a different quantum of this task, and must be a
+            regular input, not a prerequisite input or init-input.
+
+        Notes
+        -----
+        If two connections have the same dataset type, the current
+        implementation assumes the set of datasets is the same for the two
+        connections.  This limitation may be removed in the future.
+        """
+        from .quantum_graph_skeleton import DatasetKey, QuantumKey
+
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+        read_edge = self._task_node.inputs[connection_name]
+        dataset_key = DatasetKey(read_edge.parent_dataset_type_name, dataset_data_id.required_values)
+        if dataset_key not in self._skeleton:
+            raise LookupError(
+                f"Dataset {read_edge.parent_dataset_type_name}@{dataset_data_id} is not already in the graph."
+            )
+        self._skeleton.add_input_edge(quantum_key, dataset_key)
+
+    def expand_quantum_data_id(self, data_id: DataCoordinate) -> DataCoordinate:
+        """Expand a quantum data ID to include implied values and dimension
+        records.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            A data ID of a quantum already in the graph.
+
+        Returns
+        -------
+        expanded_data_id : `~lsst.daf.butler.DataCoordinate`
+            The same data ID, with implied values included and dimension
+            records attached.
+        """
+        from .quantum_graph_skeleton import QuantumKey
+
+        return self._skeleton.get_data_id(QuantumKey(self._task_node.label, data_id.required_values))
+
+    @property
+    def n_removed(self) -> int:
+        """The number of quanta that have been removed by this helper."""
+        return self._n_removed

@@ -62,7 +62,7 @@ from lsst.utils.timer import timeMethod
 from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
 from ._task_metadata import TaskMetadata
-from .connections import AdjustQuantumHelper
+from .connections import AdjustQuantumHelper, QuantaAdjuster
 from .graph import QuantumGraph
 from .pipeline_graph import PipelineGraph, TaskNode
 from .prerequisite_helpers import PrerequisiteInfo, SkyPixBoundsBuilder, TimespanBuilder
@@ -475,7 +475,6 @@ class QuantumGraphBuilder(ABC):
         # Loop over all quanta for this task, remembering the ones we've
         # gotten rid of.
         skipped_quanta = []
-        no_work_quanta = []
         for quantum_key in skeleton.get_quanta(task_node.label):
             if self._skip_quantum_if_metadata_exists(task_node, quantum_key, skeleton):
                 skipped_quanta.append(quantum_key)
@@ -483,17 +482,26 @@ class QuantumGraphBuilder(ABC):
             quantum_data_id = skeleton[quantum_key]["data_id"]
             skypix_bounds_builder = task_prerequisite_info.bounds.make_skypix_bounds_builder(quantum_data_id)
             timespan_builder = task_prerequisite_info.bounds.make_timespan_builder(quantum_data_id)
-            adjusted_outputs = self._gather_quantum_outputs(
-                task_node, quantum_key, skeleton, skypix_bounds_builder, timespan_builder
-            )
-            adjusted_inputs = self._gather_quantum_inputs(
-                task_node,
+            self._update_quantum_for_adjust(
                 quantum_key,
                 skeleton,
                 task_prerequisite_info,
                 skypix_bounds_builder,
                 timespan_builder,
             )
+        for skipped_quantum in skipped_quanta:
+            skeleton.remove_quantum_node(skipped_quantum, remove_outputs=False)
+        # Give the task a chance to adjust all quanta together.  This
+        # operates directly on the skeleton (via a the 'adjuster', which
+        # is just an interface adapter).
+        adjuster = QuantaAdjuster(task_node.label, self._pipeline_graph, skeleton)
+        task_node.get_connections().adjust_all_quanta(adjuster)
+        # Loop over all quanta again, remembering those we get rid of in other
+        # ways.
+        no_work_quanta = []
+        for quantum_key in skeleton.get_quanta(task_node.label):
+            adjusted_outputs = self._adapt_quantum_outputs(task_node, quantum_key, skeleton)
+            adjusted_inputs = self._adapt_quantum_inputs(task_node, quantum_key, skeleton)
             # Give the task's Connections class an opportunity to remove
             # some inputs, or complain if they are unacceptable.  This will
             # raise if one of the check conditions is not met, which is the
@@ -552,8 +560,6 @@ class QuantumGraphBuilder(ABC):
             skeleton[quantum_key]["outputs"] = helper.outputs
         for no_work_quantum in no_work_quanta:
             skeleton.remove_quantum_node(no_work_quantum, remove_outputs=True)
-        for skipped_quantum in skipped_quanta:
-            skeleton.remove_quantum_node(skipped_quantum, remove_outputs=False)
         remaining_quanta = skeleton.get_quanta(task_node.label)
         self._resolve_task_init(task_node, skeleton, bool(skipped_quanta))
         message_terms = []
@@ -561,6 +567,8 @@ class QuantumGraphBuilder(ABC):
             message_terms.append(f"{len(no_work_quanta)} had no work to do")
         if skipped_quanta:
             message_terms.append(f"{len(skipped_quanta)} previously succeeded")
+        if adjuster.n_removed:
+            message_terms.append(f"{adjuster.n_removed} removed by adjust_all_quanta")
         message_parenthetical = f" ({', '.join(message_terms)})" if message_terms else ""
         if remaining_quanta:
             self.log.info(
@@ -634,39 +642,31 @@ class QuantumGraphBuilder(ABC):
         return False
 
     @final
-    def _gather_quantum_outputs(
+    def _update_quantum_for_adjust(
         self,
-        task_node: TaskNode,
         quantum_key: QuantumKey,
         skeleton: QuantumGraphSkeleton,
+        task_prerequisite_info: PrerequisiteInfo,
         skypix_bounds_builder: SkyPixBoundsBuilder,
         timespan_builder: TimespanBuilder,
-    ) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
-        """Collect outputs or generate datasets for a preliminary quantum and
-        put them in the form used by `~lsst.daf.butler.Quantum` and
-        `~PipelineTaskConnections.adjustQuantum`.
+    ) -> None:
+        """Update the quantum node in the skeleton by finding remaining
+        prerequisite inputs and dropping regular inputs that we now know will
+        not be produced.
 
         Parameters
         ----------
-        task_node : `pipeline_graph.TaskNode`
-            Node for this task in the pipeline graph.
         quantum_key : `QuantumKey`
             Identifier for this quantum in the graph.
         skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
+        task_prerequisite_info : `~prerequisite_helpers.PrerequisiteInfo`
+            Information about the prerequisite inputs to this task.
         skypix_bounds_builder : `~prerequisite_helpers.SkyPixBoundsBuilder`
             An object that accumulates the appropriate spatial bounds for a
             quantum.
         timespan_builder : `~prerequisite_helpers.TimespanBuilder`
             An object that accumulates the appropriate timespan for a quantum.
-
-        Returns
-        -------
-        outputs : `~lsst.daf.butler.NamedKeyDict` [ \
-                `~lsst.daf.butler.DatasetType`, `list` [ \
-                `~lsst.daf.butler.DatasetRef` ] ]
-            All outputs to the task, using the storage class and components
-            defined by the task's own connections.
 
         Notes
         -----
@@ -680,8 +680,7 @@ class QuantumGraphBuilder(ABC):
         UUID is generated.  In all cases the dataset node in the skeleton is
         associated with a `DatasetRef`.
         """
-        outputs_by_type: dict[str, list[DatasetRef]] = {}
-        dataset_key: DatasetKey
+        dataset_key: DatasetKey | PrerequisiteDatasetKey
         for dataset_key in skeleton.iter_outputs_of(quantum_key):
             dataset_data_id = skeleton[dataset_key]["data_id"]
             dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
@@ -699,6 +698,66 @@ class QuantumGraphBuilder(ABC):
             skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             skeleton.set_dataset_ref(ref, dataset_key)
+        quantum_data_id = skeleton[quantum_key]["data_id"]
+        # Process inputs already present in the skeleton - this should include
+        # all regular inputs (including intermediates) and may include some
+        # prerequisites.
+        for dataset_key in list(skeleton.iter_inputs_of(quantum_key)):
+            if (ref := skeleton.get_dataset_ref(dataset_key)) is None:
+                # If the dataset ref hasn't been set either as an existing
+                # input or as an output of an already-processed upstream
+                # quantum, it's not going to be produced; remove it.
+                skeleton.remove_dataset_nodes([dataset_key])
+                continue
+            skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
+            timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
+        # Query for any prerequisites not handled by process_subgraph.  Note
+        # that these were not already in the skeleton graph, so we add them
+        # now.
+        skypix_bounds = skypix_bounds_builder.finish()
+        timespan = timespan_builder.finish()
+        for finder in task_prerequisite_info.finders.values():
+            dataset_keys = []
+            for ref in finder.find(
+                self.butler, self.input_collections, quantum_data_id, skypix_bounds, timespan
+            ):
+                dataset_key = skeleton.add_prerequisite_node(ref)
+                dataset_keys.append(dataset_key)
+            skeleton.add_input_edges(quantum_key, dataset_keys)
+
+    @final
+    def _adapt_quantum_outputs(
+        self,
+        task_node: TaskNode,
+        quantum_key: QuantumKey,
+        skeleton: QuantumGraphSkeleton,
+    ) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
+        """Adapt outputs for a preliminary quantum and put them into the form
+        used by `~lsst.daf.butler.Quantum` and
+        `~PipelineTaskConnections.adjustQuantum`.
+
+        Parameters
+        ----------
+        task_node : `pipeline_graph.TaskNode`
+            Node for this task in the pipeline graph.
+        quantum_key : `QuantumKey`
+            Identifier for this quantum in the graph.
+        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+            Preliminary quantum graph, to be modified in-place.
+
+        Returns
+        -------
+        outputs : `~lsst.daf.butler.NamedKeyDict` [ \
+                `~lsst.daf.butler.DatasetType`, `list` [ \
+                `~lsst.daf.butler.DatasetRef` ] ]
+            All outputs to the task, using the storage class and components
+            defined by the task's own connections.
+        """
+        outputs_by_type: dict[str, list[DatasetRef]] = {}
+        dataset_key: DatasetKey
+        for dataset_key in skeleton.iter_outputs_of(quantum_key):
+            ref = skeleton.get_dataset_ref(dataset_key)
+            assert ref is not None, "Should have been added (or the node removed) in a previous pass."
             outputs_by_type.setdefault(dataset_key.parent_dataset_type_name, []).append(ref)
         adapted_outputs: NamedKeyDict[DatasetType, list[DatasetRef]] = NamedKeyDict()
         for write_edge in task_node.iter_all_outputs():
@@ -711,17 +770,14 @@ class QuantumGraphBuilder(ABC):
         return adapted_outputs
 
     @final
-    def _gather_quantum_inputs(
+    def _adapt_quantum_inputs(
         self,
         task_node: TaskNode,
         quantum_key: QuantumKey,
         skeleton: QuantumGraphSkeleton,
-        task_prerequisite_info: PrerequisiteInfo,
-        skypix_bounds_builder: SkyPixBoundsBuilder,
-        timespan_builder: TimespanBuilder,
     ) -> NamedKeyDict[DatasetType, list[DatasetRef]]:
-        """Collect input datasets for a preliminary quantum and put them in the
-        form used by `~lsst.daf.butler.Quantum` and
+        """Adapt input datasets for a preliminary quantum into the form used by
+        `~lsst.daf.butler.Quantum` and
         `~PipelineTaskConnections.adjustQuantum`.
 
         Parameters
@@ -752,37 +808,12 @@ class QuantumGraphBuilder(ABC):
         with a `DatasetRef`, and queries for prerequisite input nodes that do
         not exist.
         """
-        quantum_data_id = skeleton[quantum_key]["data_id"]
         inputs_by_type: dict[str, set[DatasetRef]] = {}
         dataset_key: DatasetKey | PrerequisiteDatasetKey
-        # Process inputs already present in the skeleton - this should include
-        # all regular inputs (including intermediates) and may include some
-        # prerequisites.
         for dataset_key in list(skeleton.iter_inputs_of(quantum_key)):
-            if (ref := skeleton.get_dataset_ref(dataset_key)) is None:
-                # If the dataset ref hasn't been set either as an existing
-                # input or as an output of an already-processed upstream
-                # quantum, it's not going to be produced; remove it.
-                skeleton.remove_dataset_nodes([dataset_key])
-                continue
+            ref = skeleton.get_dataset_ref(dataset_key)
+            assert ref is not None, "Should have been added (or the node removed) in a previous pass."
             inputs_by_type.setdefault(dataset_key.parent_dataset_type_name, set()).add(ref)
-            skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
-            timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, ref.dataId)
-        # Query for any prerequisites not handled by process_subgraph.  Note
-        # that these were not already in the skeleton graph, so we add them
-        # now.
-        skypix_bounds = skypix_bounds_builder.finish()
-        timespan = timespan_builder.finish()
-        for finder in task_prerequisite_info.finders.values():
-            inputs_for_type = inputs_by_type.setdefault(finder.dataset_type_node.name, set())
-            dataset_keys = []
-            for ref in finder.find(
-                self.butler, self.input_collections, quantum_data_id, skypix_bounds, timespan
-            ):
-                dataset_key = skeleton.add_prerequisite_node(ref)
-                dataset_keys.append(dataset_key)
-                inputs_for_type.add(ref)
-            skeleton.add_input_edges(quantum_key, dataset_keys)
         adapted_inputs: NamedKeyDict[DatasetType, list[DatasetRef]] = NamedKeyDict()
         for read_edge in task_node.iter_all_inputs():
             dataset_type_node = self._pipeline_graph.dataset_types[read_edge.parent_dataset_type_name]
