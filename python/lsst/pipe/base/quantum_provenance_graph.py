@@ -1184,6 +1184,157 @@ class QuantumProvenanceGraph:
         """
         return self._xgraph.nodes[key]
 
+    def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
+        """Summarize the `QuantumProvenanceGraph`.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The Butler used for this report.
+        do_store_logs : `bool`
+            Store the logs in the summary dictionary.
+
+        Returns
+        -------
+        result : `Summary`
+            A struct containing counts of quanta and datasets in each of
+            the overall states defined in `QuantumInfo` and `DatasetInfo`,
+            as well as diagnostic information and error messages for failed
+            quanta and strange edge cases, and a list of recovered quanta.
+        """
+        if not self._finalized:
+            raise RuntimeError(
+                """resolve_duplicates must be called to finalize the
+                QuantumProvenanceGraph before making a summary."""
+            )
+        result = Summary()
+        for task_label, quanta in self._quanta.items():
+            task_summary = TaskSummary()
+            task_summary.n_expected = len(quanta)
+            for quantum_key in quanta:
+                quantum_info = self.get_quantum_info(quantum_key)
+                task_summary._add_quantum_info(quantum_info, butler, do_store_logs)
+            result.tasks[task_label] = task_summary
+
+        for dataset_type_name, datasets in self._datasets.items():
+            dataset_type_summary = DatasetTypeSummary(producer="")
+            dataset_type_summary.n_expected = len(datasets)
+            for dataset_key in datasets:
+                dataset_info = self.get_dataset_info(dataset_key)
+                producer_key = self.get_producer_of(dataset_key)
+                producer_info = self.get_quantum_info(producer_key)
+                # Not ideal, but hard to get out of the graph at the moment.
+                # Change after DM-40441
+                dataset_type_summary.producer = producer_key.task_label
+                dataset_type_summary._add_dataset_info(dataset_info, producer_info)
+
+            result.datasets[dataset_type_name] = dataset_type_summary
+        return result
+
+    def iter_outputs_of(self, quantum_key: QuantumKey) -> Iterator[DatasetKey]:
+        """Iterate through the outputs of a quantum, yielding all the
+        `DatasetKey`s produced by the quantum.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey`
+            The key for the quantum whose outputs are needed.
+        """
+        yield from self._xgraph.successors(quantum_key)
+
+    def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
+        """Unpack the predecessor (producer quantum) of a given dataset key
+        from a graph.
+
+        Parameters
+        ----------
+        dataset_key : `DatasetKey`
+            The key for the dataset whose producer quantum is needed.
+
+        Returns
+        -------
+        result : `QuantumKey`
+            The key for the quantum which produced the dataset.
+        """
+        (result,) = self._xgraph.predecessors(dataset_key)
+        return result
+
+    def iter_downstream(
+        self, key: QuantumKey | DatasetKey
+    ) -> Iterator[tuple[QuantumKey, QuantumInfo] | tuple[DatasetKey, DatasetInfo]]:
+        """Iterate over the quanta and datasets that are downstream of a
+        quantum or dataset.
+
+        Parameters
+        ----------
+        key : `QuantumKey` or `DatasetKey`
+            Starting node.
+
+        Returns
+        -------
+        iter : `~collections.abc.Iterator` [ `tuple` ]
+            An iterator over pairs of (`QuantumKey`, `QuantumInfo`) or
+            (`DatasetKey`, `DatasetInfo`).
+        """
+        for key in networkx.dag.descendants(self._xgraph, key):
+            yield (key, self._xgraph.nodes[key])  # type: ignore
+
+    def assemble_quantum_provenance_graph(
+        self,
+        butler: Butler,
+        qgraphs: Sequence[QuantumGraph | ResourcePathExpression],
+        collections: Sequence[str] | None = None,
+        where: str = "",
+        curse_failed_logs: bool = False,
+        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
+    ) -> None:
+        """Assemble the quantum provenance graph from a list of all graphs
+        corresponding to processing attempts.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The Butler used for this report. This should match the Butler used
+            for the run associated with the executed quantum graph.
+        qgraphs : `Sequence` [`QuantumGraph` | `ResourcePathExpression`]
+            A list of either quantum graph objects or their uri's, to be used
+            to assemble the `QuantumProvenanceGraph`.
+        collections : `Sequence` [`str`] | `None`
+            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
+            paring down the query would be useful.
+        where : `str`
+            A "where" string to use to constrain the collections, if passed.
+        curse_failed_logs : `bool`
+            Mark log datasets as CURSED if they are visible in the final
+            output collection. Note that a campaign-level collection must be
+            used here for `collections` if `curse_failed_logs` is `True`.
+        read_caveats : `str` or `None`, optional
+            Whether to read metadata files to get flags that describe qualified
+            successes.  If `None`, no metadata files will be read and all
+            ``caveats`` fields will be `None`.  If "exhaustive", all
+            metadata files will be read.  If "lazy", only metadata files where
+            at least one predicted output is missing will be read.
+        """
+        if read_caveats not in ("lazy", "exhaustive", None):
+            raise TypeError(
+                f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
+            )
+        output_runs = []
+        for graph in qgraphs:
+            qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
+            assert qgraph.metadata is not None, "Saved QGs always have metadata."
+            self.__add_new_graph(butler, qgraph, read_caveats=read_caveats)
+            output_runs.append(qgraph.metadata["output_run"])
+        # If the user has not passed a `collections` variable
+        if not collections:
+            # We reverse the order of the associated output runs because the
+            # query in __resolve_duplicates must be done most recent-first.
+            collections = list(reversed(output_runs))
+            assert not curse_failed_logs, (
+                "curse_failed_logs option must be used with one campaign-level collection."
+            )
+        self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
+
     def __add_new_graph(
         self,
         butler: Butler,
@@ -1562,157 +1713,6 @@ class QuantumProvenanceGraph:
         # If we make it all the way through resolve_duplicates, set
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
-
-    def assemble_quantum_provenance_graph(
-        self,
-        butler: Butler,
-        qgraphs: Sequence[QuantumGraph | ResourcePathExpression],
-        collections: Sequence[str] | None = None,
-        where: str = "",
-        curse_failed_logs: bool = False,
-        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
-    ) -> None:
-        """Assemble the quantum provenance graph from a list of all graphs
-        corresponding to processing attempts.
-
-        Parameters
-        ----------
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report. This should match the Butler used
-            for the run associated with the executed quantum graph.
-        qgraphs : `Sequence` [`QuantumGraph` | `ResourcePathExpression`]
-            A list of either quantum graph objects or their uri's, to be used
-            to assemble the `QuantumProvenanceGraph`.
-        collections : `Sequence` [`str`] | `None`
-            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-            paring down the query would be useful.
-        where : `str`
-            A "where" string to use to constrain the collections, if passed.
-        curse_failed_logs : `bool`
-            Mark log datasets as CURSED if they are visible in the final
-            output collection. Note that a campaign-level collection must be
-            used here for `collections` if `curse_failed_logs` is `True`.
-        read_caveats : `str` or `None`, optional
-            Whether to read metadata files to get flags that describe qualified
-            successes.  If `None`, no metadata files will be read and all
-            ``caveats`` fields will be `None`.  If "exhaustive", all
-            metadata files will be read.  If "lazy", only metadata files where
-            at least one predicted output is missing will be read.
-        """
-        if read_caveats not in ("lazy", "exhaustive", None):
-            raise TypeError(
-                f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
-            )
-        output_runs = []
-        for graph in qgraphs:
-            qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
-            assert qgraph.metadata is not None, "Saved QGs always have metadata."
-            self.__add_new_graph(butler, qgraph, read_caveats=read_caveats)
-            output_runs.append(qgraph.metadata["output_run"])
-        # If the user has not passed a `collections` variable
-        if not collections:
-            # We reverse the order of the associated output runs because the
-            # query in __resolve_duplicates must be done most recent-first.
-            collections = list(reversed(output_runs))
-            assert not curse_failed_logs, (
-                "curse_failed_logs option must be used with one campaign-level collection."
-            )
-        self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
-
-    def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
-        """Summarize the `QuantumProvenanceGraph`.
-
-        Parameters
-        ----------
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report.
-        do_store_logs : `bool`
-            Store the logs in the summary dictionary.
-
-        Returns
-        -------
-        result : `Summary`
-            A struct containing counts of quanta and datasets in each of
-            the overall states defined in `QuantumInfo` and `DatasetInfo`,
-            as well as diagnostic information and error messages for failed
-            quanta and strange edge cases, and a list of recovered quanta.
-        """
-        if not self._finalized:
-            raise RuntimeError(
-                """resolve_duplicates must be called to finalize the
-                QuantumProvenanceGraph before making a summary."""
-            )
-        result = Summary()
-        for task_label, quanta in self._quanta.items():
-            task_summary = TaskSummary()
-            task_summary.n_expected = len(quanta)
-            for quantum_key in quanta:
-                quantum_info = self.get_quantum_info(quantum_key)
-                task_summary._add_quantum_info(quantum_info, butler, do_store_logs)
-            result.tasks[task_label] = task_summary
-
-        for dataset_type_name, datasets in self._datasets.items():
-            dataset_type_summary = DatasetTypeSummary(producer="")
-            dataset_type_summary.n_expected = len(datasets)
-            for dataset_key in datasets:
-                dataset_info = self.get_dataset_info(dataset_key)
-                producer_key = self.get_producer_of(dataset_key)
-                producer_info = self.get_quantum_info(producer_key)
-                # Not ideal, but hard to get out of the graph at the moment.
-                # Change after DM-40441
-                dataset_type_summary.producer = producer_key.task_label
-                dataset_type_summary._add_dataset_info(dataset_info, producer_info)
-
-            result.datasets[dataset_type_name] = dataset_type_summary
-        return result
-
-    def iter_outputs_of(self, quantum_key: QuantumKey) -> Iterator[DatasetKey]:
-        """Iterate through the outputs of a quantum, yielding all the
-        `DatasetKey`s produced by the quantum.
-
-        Parameters
-        ----------
-        quantum_key : `QuantumKey`
-            The key for the quantum whose outputs are needed.
-        """
-        yield from self._xgraph.successors(quantum_key)
-
-    def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
-        """Unpack the predecessor (producer quantum) of a given dataset key
-        from a graph.
-
-        Parameters
-        ----------
-        dataset_key : `DatasetKey`
-            The key for the dataset whose producer quantum is needed.
-
-        Returns
-        -------
-        result : `QuantumKey`
-            The key for the quantum which produced the dataset.
-        """
-        (result,) = self._xgraph.predecessors(dataset_key)
-        return result
-
-    def iter_downstream(
-        self, key: QuantumKey | DatasetKey
-    ) -> Iterator[tuple[QuantumKey, QuantumInfo] | tuple[DatasetKey, DatasetInfo]]:
-        """Iterate over the quanta and datasets that are downstream of a
-        quantum or dataset.
-
-        Parameters
-        ----------
-        key : `QuantumKey` or `DatasetKey`
-            Starting node.
-
-        Returns
-        -------
-        iter : `~collections.abc.Iterator` [ `tuple` ]
-            An iterator over pairs of (`QuantumKey`, `QuantumInfo`) or
-            (`DatasetKey`, `DatasetInfo`).
-        """
-        for key in networkx.dag.descendants(self._xgraph, key):
-            yield (key, self._xgraph.nodes[key])  # type: ignore
 
 
 def _cli() -> None:
