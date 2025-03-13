@@ -178,7 +178,7 @@ class ExceptionInfo(pydantic.BaseModel):
     """Additional metadata included in the exception."""
 
     @classmethod
-    def from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
+    def _from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
         """Construct from task metadata.
 
         Parameters
@@ -476,7 +476,7 @@ class UnsuccessfulQuantumSummary(pydantic.BaseModel):
     """
 
     @classmethod
-    def from_info(cls, info: QuantumInfo) -> UnsuccessfulQuantumSummary:
+    def _from_info(cls, info: QuantumInfo) -> UnsuccessfulQuantumSummary:
         """Summarize all relevant information from the `QuantumInfo` in an
         `UnsuccessfulQuantumSummary`; return an `UnsuccessfulQuantumSummary`.
 
@@ -595,7 +595,7 @@ class TaskSummary(pydantic.BaseModel):
     this module) associated with the particular issue identified.
     """
 
-    def add_quantum_info(self, info: QuantumInfo, butler: Butler, do_store_logs: bool = True) -> None:
+    def _add_quantum_info(self, info: QuantumInfo, butler: Butler, do_store_logs: bool = True) -> None:
         """Add a `QuantumInfo` to a `TaskSummary`.
 
         Unpack the `QuantumInfo` object, sorting quanta of each status into
@@ -638,11 +638,11 @@ class TaskSummary(pydantic.BaseModel):
                                 )
                             )
             case QuantumInfoStatus.WONKY:
-                self.wonky_quanta.append(UnsuccessfulQuantumSummary.from_info(info))
+                self.wonky_quanta.append(UnsuccessfulQuantumSummary._from_info(info))
             case QuantumInfoStatus.BLOCKED:
                 self.n_blocked += 1
             case QuantumInfoStatus.FAILED:
-                failed_quantum_summary = UnsuccessfulQuantumSummary.from_info(info)
+                failed_quantum_summary = UnsuccessfulQuantumSummary._from_info(info)
                 if do_store_logs:
                     for quantum_run in info["runs"].values():
                         try:
@@ -665,7 +665,7 @@ class TaskSummary(pydantic.BaseModel):
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
 
-    def add_data_id_group(self, other_summary: TaskSummary) -> None:
+    def _add_data_id_group(self, other_summary: TaskSummary) -> None:
         """Add information from a `TaskSummary` over one dataquery-identified
         group to another, as part of aggregating `Summary` reports.
 
@@ -712,7 +712,7 @@ class CursedDatasetSummary(pydantic.BaseModel):
     """
 
     @classmethod
-    def from_info(cls, info: DatasetInfo, producer_info: QuantumInfo) -> CursedDatasetSummary:
+    def _from_info(cls, info: DatasetInfo, producer_info: QuantumInfo) -> CursedDatasetSummary:
         """Summarize all relevant information from the `DatasetInfo` in an
         `CursedDatasetSummary`; return a `CursedDatasetSummary`.
 
@@ -797,7 +797,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
     """A list of all unsuccessful datasets by their name and data_id.
     """
 
-    def add_dataset_info(self, info: DatasetInfo, producer_info: QuantumInfo) -> None:
+    def _add_dataset_info(self, info: DatasetInfo, producer_info: QuantumInfo) -> None:
         """Add a `DatasetInfo` to a `DatasetTypeSummary`.
 
         Unpack the `DatasetInfo` object, sorting datasets of each status into
@@ -822,13 +822,13 @@ class DatasetTypeSummary(pydantic.BaseModel):
             case DatasetInfoStatus.UNSUCCESSFUL:
                 self.unsuccessful_datasets.append(dict(info["data_id"].mapping))
             case DatasetInfoStatus.CURSED:
-                self.cursed_datasets.append(CursedDatasetSummary.from_info(info, producer_info))
+                self.cursed_datasets.append(CursedDatasetSummary._from_info(info, producer_info))
             case DatasetInfoStatus.PREDICTED_ONLY:
                 self.n_predicted_only += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
 
-    def add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
+    def _add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
         """Add information from a `DatasetTypeSummary` over one
         dataquery-identified group to another, as part of aggregating `Summary`
         reports.
@@ -889,10 +889,10 @@ class Summary(pydantic.BaseModel):
         for summary in summaries:
             for label, task_summary in summary.tasks.items():
                 result_task_summary = result.tasks.setdefault(label, TaskSummary())
-                result_task_summary.add_data_id_group(task_summary)
+                result_task_summary._add_data_id_group(task_summary)
             for dataset_type, dataset_type_summary in summary.datasets.items():
                 result_dataset_summary = result.datasets.setdefault(dataset_type, DatasetTypeSummary())
-                result_dataset_summary.add_data_id_group(dataset_type_summary)
+                result_dataset_summary._add_data_id_group(dataset_type_summary)
         return result
 
     def pprint(self, brief: bool = False, datasets: bool = True) -> None:
@@ -1348,7 +1348,7 @@ class QuantumProvenanceGraph:
                     except LookupError:
                         pass
                     try:
-                        quantum_run.exception = ExceptionInfo.from_metadata(
+                        quantum_run.exception = ExceptionInfo._from_metadata(
                             md[quantum_key.task_label]["failure"]
                         )
                     except LookupError:
@@ -1667,7 +1667,7 @@ class QuantumProvenanceGraph:
             task_summary.n_expected = len(quanta)
             for quantum_key in quanta:
                 quantum_info = self.get_quantum_info(quantum_key)
-                task_summary.add_quantum_info(quantum_info, butler, do_store_logs)
+                task_summary._add_quantum_info(quantum_info, butler, do_store_logs)
             result.tasks[task_label] = task_summary
 
         for dataset_type_name, datasets in self._datasets.items():
@@ -1680,7 +1680,7 @@ class QuantumProvenanceGraph:
                 # Not ideal, but hard to get out of the graph at the moment.
                 # Change after DM-40441
                 dataset_type_summary.producer = producer_key.task_label
-                dataset_type_summary.add_dataset_info(dataset_info, producer_info)
+                dataset_type_summary._add_dataset_info(dataset_info, producer_info)
 
             result.datasets[dataset_type_name] = dataset_type_summary
         return result
