@@ -39,10 +39,12 @@ __all__ = (
     "QuantumProvenanceGraph",
 )
 
+import concurrent.futures
 import dataclasses
 import itertools
 import logging
 import textwrap
+import threading
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 from enum import Enum
@@ -54,11 +56,14 @@ import pydantic
 
 from lsst.daf.butler import (
     Butler,
+    ButlerConfig,
     ButlerLogRecords,
     DataCoordinate,
     DataIdValue,
     DatasetId,
     DatasetRef,
+    DatasetType,
+    DimensionUniverse,
     LimitedButler,
     QuantumBackedButler,
 )
@@ -1163,6 +1168,8 @@ class QuantumProvenanceGraph:
         If `True`, use a quantum-backed butler when reading metadata files.
         Note that some butler database queries are still run even if this is
         `True`; this does not avoid database access entirely.
+    n_cores : `int`, optional
+        Number of threads to use for parallelization.
     """
 
     def __init__(
@@ -1175,6 +1182,7 @@ class QuantumProvenanceGraph:
         curse_failed_logs: bool = False,
         read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
         use_qbb: bool = True,
+        n_cores: int = 1,
     ) -> None:
         # The graph we annotate as we step through all the graphs associated
         # with the processing to create the `QuantumProvenanceGraph`.
@@ -1187,9 +1195,13 @@ class QuantumProvenanceGraph:
         # Bool representing whether the graph has been finalized. This is set
         # to True when resolve_duplicates completes.
         self._finalized: bool = False
-        # Butlers to use for reading datasets, one for each output run.  May be
-        # quantum-backed butlers, so not used for queries.
-        self._butlers_for_get: dict[str, LimitedButler] = {}
+        # In order to both parallelize metadata/log reads and potentially use
+        # QBB to do it, we in general need one butler for each output_run and
+        # thread combination.  Both dicts below are keyed by output_run; the
+        # first has factories for populating a .butler attribute on the values
+        # of the latter when a thread is initialized.
+        self._butler_factories: dict[str, Callable[[], LimitedButler]] = {}
+        self._butlers_for_get: dict[str, threading.local] = {}
         if butler is not None:
             self.assemble_quantum_provenance_graph(
                 butler,
@@ -1199,6 +1211,7 @@ class QuantumProvenanceGraph:
                 curse_failed_logs=curse_failed_logs,
                 read_caveats=read_caveats,
                 use_qbb=use_qbb,
+                n_cores=n_cores,
             )
         elif qgraphs:
             raise TypeError("'butler' must be provided if `qgraphs` is.")
@@ -1351,6 +1364,7 @@ class QuantumProvenanceGraph:
         curse_failed_logs: bool = False,
         read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
         use_qbb: bool = True,
+        n_cores: int = 1,
     ) -> None:
         """Assemble the quantum provenance graph from a list of all graphs
         corresponding to processing attempts.
@@ -1383,6 +1397,8 @@ class QuantumProvenanceGraph:
             If `True`, use a quantum-backed butler when reading metadata files.
             Note that some butler database queries are still run even if this
             is `True`; this does not avoid database access entirely.
+        n_cores : `int`, optional
+            Number of threads to use for parallelization.
         """
         if read_caveats not in ("lazy", "exhaustive", None):
             raise TypeError(
@@ -1392,7 +1408,7 @@ class QuantumProvenanceGraph:
         for graph in qgraphs:
             qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
             assert qgraph.metadata is not None, "Saved QGs always have metadata."
-            self._add_new_graph(butler, qgraph, read_caveats=read_caveats, use_qbb=use_qbb)
+            self._add_new_graph(butler, qgraph, read_caveats=read_caveats, use_qbb=use_qbb, n_cores=n_cores)
             output_runs.append(qgraph.metadata["output_run"])
         if not collections:
             # We reverse the order of the associated output runs because the
@@ -1409,6 +1425,7 @@ class QuantumProvenanceGraph:
         qgraph: QuantumGraph | ResourcePathExpression,
         read_caveats: Literal["lazy", "exhaustive"] | None,
         use_qbb: bool = True,
+        n_cores: int = 1,
     ) -> None:
         """Add a new quantum graph to the `QuantumProvenanceGraph`.
 
@@ -1430,6 +1447,8 @@ class QuantumProvenanceGraph:
             If `True`, use a quantum-backed butler when reading metadata files.
             Note that some butler database queries are still run even if this
             is `True`; this does not avoid database access entirely.
+        n_cores : `int`, optional
+            Number of threads to use for parallelization.
         """
         # first we load the quantum graph and associated output run collection
         if not isinstance(qgraph, QuantumGraph):
@@ -1456,29 +1475,35 @@ class QuantumProvenanceGraph:
                 butler_config = butler._config  # type: ignore[attr-defined]
             except AttributeError:
                 raise RuntimeError("use_qbb=True requires a direct butler.") from None
-            self._butlers_for_get[output_run] = QuantumBackedButler.from_predicted(
+            self._butler_factories[output_run] = _QuantumBackedButlerFactory(
                 butler_config,
-                predicted_inputs=qbb_dataset_ids,
-                predicted_outputs=[],
-                dimensions=butler.dimensions,
-                # We don't need the datastore records in the QG because we're
-                # only going to read metadata and logs, and those are never
-                # overall inputs.
-                datastore_records={},
+                qbb_dataset_ids,
+                butler.dimensions,
                 dataset_types={dt.name: dt for dt in qgraph.registryDatasetTypes()},
             )
         else:
-            self._butlers_for_get[output_run] = butler
+            self._butler_factories[output_run] = butler.clone
+
+        self._butlers_for_get[output_run] = threading.local()
+
+        def thread_init() -> None:
+            self._butlers_for_get[output_run].butler = self._butler_factories[output_run]()
+
         # Update quantum status information based on which datasets were
         # produced.
         blocked: set[DatasetKey] = set()  # the outputs of failed or blocked quanta in this run.
-        for quantum_key in new_quanta:
-            if (
-                self._update_run_status(quantum_key, output_run, blocked) == QuantumRunStatus.SUCCESSFUL
-                and read_caveats is not None
-            ):
-                self._update_caveats(quantum_key, output_run, read_caveats)
-            self._update_info_status(quantum_key, output_run)
+        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=thread_init) as executor:
+            futures: list[concurrent.futures.Future[None]] = []
+            for quantum_key in new_quanta:
+                if (
+                    self._update_run_status(quantum_key, output_run, blocked) == QuantumRunStatus.SUCCESSFUL
+                    and read_caveats is not None
+                ):
+                    self._update_caveats(quantum_key, output_run, read_caveats, executor, futures)
+                self._update_info_status(quantum_key, output_run)
+            for future in concurrent.futures.as_completed(futures):
+                if (err := future.exception()) is not None:
+                    raise err
 
     def _add_new_quantum(self, node: QuantumNode, output_run: str) -> QuantumKey:
         """Add a quantum from a new quantum graph to the provenance graph.
@@ -1702,6 +1727,8 @@ class QuantumProvenanceGraph:
         quantum_key: QuantumKey,
         output_run: str,
         read_caveats: Literal["lazy", "exhaustive"],
+        executor: concurrent.futures.Executor,
+        futures: list[concurrent.futures.Future[None]],
     ) -> None:
         """Read quantum success caveats and exception information from task
         metadata.
@@ -1728,18 +1755,22 @@ class QuantumProvenanceGraph:
             return
         quantum_info = self.get_quantum_info(quantum_key)
         quantum_run = quantum_info["runs"][output_run]
-        md = self._butler_get(quantum_run.metadata_ref, storageClass="TaskMetadata")
-        try:
-            # Int conversion guards against spurious conversion to
-            # float that can apparently sometimes happen in
-            # TaskMetadata.
-            quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
-        except LookupError:
-            pass
-        try:
-            quantum_run.exception = ExceptionInfo._from_metadata(md[quantum_key.task_label]["failure"])
-        except LookupError:
-            pass
+
+        def read_metadata() -> None:
+            md = self._butler_get(quantum_run.metadata_ref, storageClass="TaskMetadata")
+            try:
+                # Int conversion guards against spurious conversion to
+                # float that can apparently sometimes happen in
+                # TaskMetadata.
+                quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
+            except LookupError:
+                pass
+            try:
+                quantum_run.exception = ExceptionInfo._from_metadata(md[quantum_key.task_label]["failure"])
+            except LookupError:
+                pass
+
+        futures.append(executor.submit(read_metadata))
 
     def _resolve_duplicates(
         self,
@@ -1883,7 +1914,29 @@ class QuantumProvenanceGraph:
         self._finalized = True
 
     def _butler_get(self, ref: DatasetRef, **kwargs: Any) -> Any:
-        return self._butlers_for_get[ref.run].get(ref, **kwargs)
+        butler = self._butlers_for_get[ref.run].butler
+        return butler.get(ref, **kwargs)
+
+
+@dataclasses.dataclass
+class _QuantumBackedButlerFactory:
+    config: ButlerConfig
+    dataset_ids: list[DatasetId]
+    universe: DimensionUniverse
+    dataset_types: dict[str, DatasetType]
+
+    def __call__(self) -> QuantumBackedButler:
+        return QuantumBackedButler.from_predicted(
+            self.config,
+            predicted_inputs=self.dataset_ids,
+            predicted_outputs=[],
+            dimensions=self.universe,
+            # We don't need the datastore records in the QG because we're
+            # only going to read metadata and logs, and those are never
+            # overall inputs.
+            datastore_records={},
+            dataset_types=self.dataset_types,
+        )
 
 
 def _cli() -> None:
