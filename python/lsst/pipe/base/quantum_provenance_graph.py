@@ -1125,9 +1125,43 @@ class Summary(pydantic.BaseModel):
 class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
     information.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        The Butler used for this report. This should match the Butler used
+        for the run associated with the executed quantum graph.
+    qgraphs : `~collections.abc.Sequence` [`QuantumGraph` |\
+            `~lsst.utils.resources.ResourcePathExpression`]
+        A list of either quantum graph objects or their uri's, to be used
+        to assemble the `QuantumProvenanceGraph`.
+    collections : `~collections.abc.Sequence` [`str`] | `None`
+        Collections to use in `lsst.daf.butler.registry.queryDatasets` if
+        paring down the query would be useful.
+    where : `str`
+        A "where" string to use to constrain the collections, if passed.
+    curse_failed_logs : `bool`
+        Mark log datasets as CURSED if they are visible in the final output
+        collection. Note that a campaign-level collection must be used here for
+        `collections` if `curse_failed_logs` is `True`.
+    read_caveats : `str` or `None`, optional
+        Whether to read metadata files to get flags that describe qualified
+        successes.  If `None`, no metadata files will be read and all
+        ``caveats`` fields will be `None`.  If "exhaustive", all metadata files
+        will be read.  If "lazy", only metadata files where at least one
+        predicted output is missing will be read.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        butler: Butler | None = None,
+        qgraphs: Sequence[QuantumGraph | ResourcePathExpression] = (),
+        *,
+        collections: Sequence[str] | None = None,
+        where: str = "",
+        curse_failed_logs: bool = False,
+        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
+    ) -> None:
         # The graph we annotate as we step through all the graphs associated
         # with the processing to create the `QuantumProvenanceGraph`.
         self._xgraph = networkx.DiGraph()
@@ -1139,6 +1173,17 @@ class QuantumProvenanceGraph:
         # Bool representing whether the graph has been finalized. This is set
         # to True when resolve_duplicates completes.
         self._finalized: bool = False
+        if butler is not None:
+            self.assemble_quantum_provenance_graph(
+                butler,
+                qgraphs,
+                collections=collections,
+                where=where,
+                curse_failed_logs=curse_failed_logs,
+                read_caveats=read_caveats,
+            )
+        elif qgraphs:
+            raise TypeError("'butler' must be provided if `qgraphs` is.")
 
     @property
     def quanta(self) -> Mapping[str, Set[QuantumKey]]:
@@ -1296,10 +1341,11 @@ class QuantumProvenanceGraph:
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler used
             for the run associated with the executed quantum graph.
-        qgraphs : `Sequence` [`QuantumGraph` | `ResourcePathExpression`]
+        qgraphs : `~collections.abc.Sequence` [`QuantumGraph` |\
+            `~lsst.utils.resources.ResourcePathExpression`]
             A list of either quantum graph objects or their uri's, to be used
             to assemble the `QuantumProvenanceGraph`.
-        collections : `Sequence` [`str`] | `None`
+        collections : `~collections.abc.Sequence` [`str`] | `None`
             Collections to use in `lsst.daf.butler.registry.queryDatasets` if
             paring down the query would be useful.
         where : `str`
