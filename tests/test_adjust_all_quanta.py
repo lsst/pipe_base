@@ -47,8 +47,6 @@ from lsst.pipe.base import (
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.utils import getPackageDir
 
-DATA_DIR = os.path.join(getPackageDir("daf_butler"), "tests", "data", "registry")
-
 
 class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
     """Connections for a task whose quanta read in all of the biases for all
@@ -103,6 +101,11 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
 
     @staticmethod
     def make_butler() -> Butler:
+        try:
+            DATA_DIR = os.path.join(getPackageDir("daf_butler"), "tests", "data", "registry")
+        except LookupError:
+            raise unittest.SkipTest("Test data is not available with pip-provided daf_butler.") from None
+
         return create_populated_sqlite_registry(
             *[os.path.join(DATA_DIR, filename) for filename in ("base.yaml", "datasets.yaml")]
         )
