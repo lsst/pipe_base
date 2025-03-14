@@ -65,6 +65,7 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionUniverse,
     LimitedButler,
+    MissingDatasetTypeError,
     QuantumBackedButler,
 )
 from lsst.resources import ResourcePathExpression
@@ -1471,7 +1472,13 @@ class QuantumProvenanceGraph:
         # produced.
         qbb_dataset_ids: list[DatasetId] = []
         for dataset_type_name in self._datasets:
-            for ref in butler.registry.queryDatasets(dataset_type_name, collections=output_run):
+            try:
+                refs = butler.query_datasets(
+                    dataset_type_name, collections=output_run, explain=False, limit=None
+                )
+            except MissingDatasetTypeError:
+                continue
+            for ref in refs:
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 dataset_info = self.get_dataset_info(dataset_key)
                 dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
@@ -1832,12 +1839,13 @@ class QuantumProvenanceGraph:
             )
         for dataset_type_name in self._datasets:
             # find datasets in a larger collection.
-            for ref in butler.registry.queryDatasets(
-                dataset_type_name,
-                collections=collections,
-                findFirst=True,
-                where=where,
-            ):
+            try:
+                refs = butler.query_datasets(
+                    dataset_type_name, collections=collections, where=where, limit=None, explain=False
+                )
+            except MissingDatasetTypeError:
+                continue
+            for ref in refs:
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 try:
                     dataset_info = self.get_dataset_info(dataset_key)
