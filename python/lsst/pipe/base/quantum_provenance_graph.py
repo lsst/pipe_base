@@ -69,7 +69,7 @@ from lsst.daf.butler import (
     QuantumBackedButler,
 )
 from lsst.resources import ResourcePathExpression
-from lsst.utils.logging import getLogger
+from lsst.utils.logging import PeriodicLogger, getLogger
 
 from ._status import QuantumSuccessCaveats
 from .graph import QuantumGraph, QuantumNode
@@ -1289,6 +1289,7 @@ class QuantumProvenanceGraph:
             )
         result = Summary()
         for task_label, quanta in self._quanta.items():
+            _LOG.verbose("Summarizing %s quanta for task %r.", len(quanta), task_label)
             task_summary = TaskSummary()
             task_summary.n_expected = len(quanta)
             for quantum_key in quanta:
@@ -1297,6 +1298,7 @@ class QuantumProvenanceGraph:
             result.tasks[task_label] = task_summary
 
         for dataset_type_name, datasets in self._datasets.items():
+            _LOG.verbose("Summarizing %s datasets of type %r.", len(datasets), dataset_type_name)
             dataset_type_summary = DatasetTypeSummary(producer="")
             dataset_type_summary.n_expected = len(datasets)
             for dataset_key in datasets:
@@ -1458,33 +1460,40 @@ class QuantumProvenanceGraph:
         n_cores : `int`, optional
             Number of threads to use for parallelization.
         """
+        status_log = PeriodicLogger(_LOG)
         # first we load the quantum graph and associated output run collection
         if not isinstance(qgraph, QuantumGraph):
+            _LOG.verbose("Loading quantum graph %r.", qgraph)
             qgraph = QuantumGraph.loadUri(qgraph)
         assert qgraph.metadata is not None, "Saved QGs always have metadata."
         output_run = qgraph.metadata["output_run"]
         # Add QuantumRun and DatasetRun (and nodes/edges, as needed) to the
         # QPG for all quanta in the QG.
+        _LOG.verbose("Adding output run to provenance graph.")
         new_quanta: list[QuantumKey] = []
-        for node in qgraph:
+        for n, node in enumerate(qgraph):
             new_quanta.append(self._add_new_quantum(node, output_run))
+            status_log.log("Added nodes for %s of %s quanta.", n + 1, len(qgraph))
         # Query for datasets in the output run to see which ones were actually
         # produced.
         qbb_dataset_ids: list[DatasetId] = []
         for dataset_type_name in self._datasets:
+            _LOG.verbose("Querying for %r existence.", dataset_type_name)
             try:
                 refs = butler.query_datasets(
                     dataset_type_name, collections=output_run, explain=False, limit=None
                 )
             except MissingDatasetTypeError:
                 continue
-            for ref in refs:
+            for n, ref in enumerate(refs):
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 dataset_info = self.get_dataset_info(dataset_key)
                 dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
                 dataset_run.produced = True
                 qbb_dataset_ids.append(ref.id)
+                status_log.log("Updated status for %s of %s datasets.", n + 1, len(refs))
         if use_qbb:
+            _LOG.verbose("Using quantum-backed butler for metadata loads.")
             try:
                 butler_config = butler._config  # type: ignore[attr-defined]
             except AttributeError:
@@ -1496,6 +1505,7 @@ class QuantumProvenanceGraph:
                 dataset_types={dt.name: dt for dt in qgraph.registryDatasetTypes()},
             )
         else:
+            _LOG.verbose("Using full butler for metadata loads.")
             self._butler_factories[output_run] = butler.clone
 
         self._butlers_for_get[output_run] = threading.local()
@@ -1508,16 +1518,18 @@ class QuantumProvenanceGraph:
         blocked: set[DatasetKey] = set()  # the outputs of failed or blocked quanta in this run.
         with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=thread_init) as executor:
             futures: list[concurrent.futures.Future[None]] = []
-            for quantum_key in new_quanta:
+            for n, quantum_key in enumerate(new_quanta):
                 if (
                     self._update_run_status(quantum_key, output_run, blocked) == QuantumRunStatus.SUCCESSFUL
                     and read_caveats is not None
                 ):
                     self._update_caveats(quantum_key, output_run, read_caveats, executor, futures)
                 self._update_info_status(quantum_key, output_run)
-            for future in concurrent.futures.as_completed(futures):
+                status_log.log("Updated status for %s of %s quanta.", n + 1, len(new_quanta))
+            for n, future in enumerate(concurrent.futures.as_completed(futures)):
                 if (err := future.exception()) is not None:
                     raise err
+                status_log.log("Added exception/caveat information for %s of %s quanta.", n + 1, len(futures))
 
     def _add_new_quantum(self, node: QuantumNode, output_run: str) -> QuantumKey:
         """Add a quantum from a new quantum graph to the provenance graph.
@@ -1837,7 +1849,9 @@ class QuantumProvenanceGraph:
                 been added, or make a new graph with all constituent
                 attempts."""
             )
+        status_log = PeriodicLogger(_LOG)
         for dataset_type_name in self._datasets:
+            _LOG.verbose("Querying for %r visibility.", dataset_type_name)
             # find datasets in a larger collection.
             try:
                 refs = butler.query_datasets(
@@ -1845,7 +1859,7 @@ class QuantumProvenanceGraph:
                 )
             except MissingDatasetTypeError:
                 continue
-            for ref in refs:
+            for n, ref in enumerate(refs):
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 try:
                     dataset_info = self.get_dataset_info(dataset_key)
@@ -1855,9 +1869,10 @@ class QuantumProvenanceGraph:
                     continue
                 # queryable datasets are `visible`.
                 dataset_info["runs"][ref.run].visible = True
-
-        for task_quanta in self._quanta.values():
-            for quantum_key in task_quanta:
+                status_log.log("Updated visibility for %s of %s datasets.", n + 1, len(refs))
+        for task_label, task_quanta in self._quanta.items():
+            _LOG.verbose("Updating %s status from dataset visibility.", task_label)
+            for n, quantum_key in enumerate(task_quanta):
                 # runs associated with visible datasets.
                 visible_runs: set[str] = set()
                 quantum_info = self.get_quantum_info(quantum_key)
@@ -1925,6 +1940,9 @@ class QuantumProvenanceGraph:
                             + f"from {str(dataset_info['runs'])};"
                             + f"{str(dataset_info['status'])}"
                         )
+                status_log.log(
+                    "Updated task status from visibility for %s of %s qauanta.", n + 1, len(task_quanta)
+                )
         # If we make it all the way through resolve_duplicates, set
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
