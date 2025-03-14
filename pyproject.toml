@@ -45,7 +45,7 @@ pipe_base = "lsst.pipe.base.cli:get_cli_subcommands"
 
 [project.optional-dependencies]
 test = ["pytest >= 3.2"]
-mermaid = ["mermaid"]
+mermaid = ["mermaid-py >= 0.7.1"]
 
 [tool.setuptools.packages.find]
 where = ["python"]

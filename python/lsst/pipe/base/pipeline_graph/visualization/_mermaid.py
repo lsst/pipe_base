@@ -29,7 +29,6 @@ from __future__ import annotations
 __all__ = ("show_mermaid",)
 
 import html
-import importlib.util
 import os
 import sys
 from collections.abc import Mapping
@@ -42,11 +41,13 @@ from ._formatting import NodeKey, format_dimensions, format_task_class
 from ._options import NodeAttributeOptions
 from ._show import parse_display_args
 
-MERMAID_AVAILABLE = importlib.util.find_spec("mermaid") is not None
-
-if MERMAID_AVAILABLE:
+try:
     from mermaid import Mermaid  # type: ignore
     from mermaid.graph import Graph  # type: ignore
+
+    MERMAID_AVAILABLE = True
+except ImportError:
+    MERMAID_AVAILABLE = False
 
 # Configuration constants for label formatting and overflow handling.
 _LABEL_PX_SIZE = 18
@@ -237,6 +238,8 @@ def _render_mermaid_image(
 
     Raises
     ------
+    ImportError
+        If `mermaid-py` is not installed.
     ValueError
         If the requested ``output_format`` is not supported.
     RuntimeError
@@ -244,6 +247,9 @@ def _render_mermaid_image(
     """
     if output_format.lower() not in {"svg", "png"}:
         raise ValueError(f"Unsupported format: {output_format}. Use 'svg' or 'png'.")
+
+    if not MERMAID_AVAILABLE:
+        raise ImportError("The `mermaid-py` package is required for rendering images but is not installed.")
 
     # Generate Mermaid graph object.
     graph = Graph(title="Mermaid Diagram", script=mermaid_source)

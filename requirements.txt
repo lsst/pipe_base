@@ -1,3 +1,4 @@
+mermaid-py>=0.7.1
 pyyaml >= 5.1
 pydantic >=2,<3.0
 numpy >= 1.17
