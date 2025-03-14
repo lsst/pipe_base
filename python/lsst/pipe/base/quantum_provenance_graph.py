@@ -612,8 +612,11 @@ class TaskSummary(pydantic.BaseModel):
     """
 
     def _add_quantum_info(
-        self, info: QuantumInfo, log_getter: Callable[[DatasetRef], ButlerLogRecords] | None
-    ) -> None:
+        self,
+        info: QuantumInfo,
+        log_getter: Callable[[DatasetRef], ButlerLogRecords] | None,
+        executor: concurrent.futures.Executor,
+    ) -> concurrent.futures.Future[None] | None:
         """Add a `QuantumInfo` to a `TaskSummary`.
 
         Unpack the `QuantumInfo` object, sorting quanta of each status into
@@ -629,6 +632,15 @@ class TaskSummary(pydantic.BaseModel):
             A callable that can be passed a `~lsst.daf.butler.DatasetRef` for
             a log dataset to retreive those logs, or `None` to not load any
             logs.
+        executor : `concurrent.futures.Executor`
+            A possibly-parallel executor that should be used to schedule
+            log dataset reads.
+
+        Returns
+        -------
+        future : `concurrent.futures.Future` or `None`
+            A future that represents a parallelized log read and summary
+            update.
         """
         try:
             final_run, final_quantum_run = QuantumRun.find_final(info)
@@ -653,31 +665,41 @@ class TaskSummary(pydantic.BaseModel):
                                     exception=final_quantum_run.exception,
                                 )
                             )
+                return None
             case QuantumInfoStatus.WONKY:
                 self.wonky_quanta.append(UnsuccessfulQuantumSummary._from_info(info))
+                return None
             case QuantumInfoStatus.BLOCKED:
                 self.n_blocked += 1
+                return None
             case QuantumInfoStatus.FAILED:
                 failed_quantum_summary = UnsuccessfulQuantumSummary._from_info(info)
+                future: concurrent.futures.Future[None] | None = None
                 if log_getter:
-                    for quantum_run in info["runs"].values():
-                        try:
-                            log = log_getter(quantum_run.log_ref)
-                        except LookupError:
-                            failed_quantum_summary.messages.append(
-                                f"Logs not ingested for {quantum_run.log_ref!r}"
-                            )
-                        except FileNotFoundError:
-                            failed_quantum_summary.messages.append(
-                                f"Logs missing or corrupt for {quantum_run.log_ref!r}"
-                            )
-                        else:
-                            failed_quantum_summary.messages.extend(
-                                [record.message for record in log if record.levelno >= logging.ERROR]
-                            )
+
+                    def callback() -> None:
+                        for quantum_run in info["runs"].values():
+                            try:
+                                log = log_getter(quantum_run.log_ref)
+                            except LookupError:
+                                failed_quantum_summary.messages.append(
+                                    f"Logs not ingested for {quantum_run.log_ref!r}"
+                                )
+                            except FileNotFoundError:
+                                failed_quantum_summary.messages.append(
+                                    f"Logs missing or corrupt for {quantum_run.log_ref!r}"
+                                )
+                            else:
+                                failed_quantum_summary.messages.extend(
+                                    [record.message for record in log if record.levelno >= logging.ERROR]
+                                )
+
+                    future = executor.submit(callback)
                 self.failed_quanta.append(failed_quantum_summary)
+                return future
             case QuantumInfoStatus.UNKNOWN:
                 self.n_unknown += 1
+                return None
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
 
@@ -1265,7 +1287,9 @@ class QuantumProvenanceGraph:
         """
         return self._xgraph.nodes[key]
 
-    def to_summary(self, butler: Butler | None = None, do_store_logs: bool = True) -> Summary:
+    def to_summary(
+        self, butler: Butler | None = None, do_store_logs: bool = True, n_cores: int = 1
+    ) -> Summary:
         """Summarize the `QuantumProvenanceGraph`.
 
         Parameters
@@ -1274,6 +1298,7 @@ class QuantumProvenanceGraph:
             Ignored; accepted for backwards compatibility.
         do_store_logs : `bool`
             Store the logs in the summary dictionary.
+        n_cores : `int`, optional
 
         Returns
         -------
@@ -1289,15 +1314,25 @@ class QuantumProvenanceGraph:
                 QuantumProvenanceGraph before making a summary."""
             )
         result = Summary()
-        for task_label, quanta in self._quanta.items():
-            _LOG.verbose("Summarizing %s quanta for task %r.", len(quanta), task_label)
-            task_summary = TaskSummary()
-            task_summary.n_expected = len(quanta)
-            for quantum_key in quanta:
-                quantum_info = self.get_quantum_info(quantum_key)
-                task_summary._add_quantum_info(quantum_info, self._butler_get if do_store_logs else None)
-            result.tasks[task_label] = task_summary
-
+        futures: list[concurrent.futures.Future[None]] = []
+        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=self._thread_init) as executor:
+            for task_label, quanta in self._quanta.items():
+                _LOG.verbose("Summarizing %s quanta for task %r.", len(quanta), task_label)
+                task_summary = TaskSummary()
+                task_summary.n_expected = len(quanta)
+                for quantum_key in quanta:
+                    quantum_info = self.get_quantum_info(quantum_key)
+                    future = task_summary._add_quantum_info(
+                        quantum_info,
+                        log_getter=self._butler_get if do_store_logs else None,
+                        executor=executor,
+                    )
+                    if future is not None:
+                        futures.append(future)
+                result.tasks[task_label] = task_summary
+            for future in concurrent.futures.as_completed(futures):
+                if (err := future.exception()) is not None:
+                    raise err
         for dataset_type_name, datasets in self._datasets.items():
             _LOG.verbose("Summarizing %s datasets of type %r.", len(datasets), dataset_type_name)
             dataset_type_summary = DatasetTypeSummary(producer="")
@@ -1513,13 +1548,10 @@ class QuantumProvenanceGraph:
 
         self._butlers_for_get[output_run] = threading.local()
 
-        def thread_init() -> None:
-            self._butlers_for_get[output_run].butler = self._butler_factories[output_run]()
-
         # Update quantum status information based on which datasets were
         # produced.
         blocked: set[DatasetKey] = set()  # the outputs of failed or blocked quanta in this run.
-        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=thread_init) as executor:
+        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=self._thread_init) as executor:
             futures: list[concurrent.futures.Future[None]] = []
             for n, quantum_key in enumerate(new_quanta):
                 if (
@@ -1949,6 +1981,10 @@ class QuantumProvenanceGraph:
         # If we make it all the way through resolve_duplicates, set
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
+
+    def _thread_init(self) -> None:
+        for output_run, factory in self._butler_factories.items():
+            self._butlers_for_get[output_run].butler = factory()
 
     def _butler_get(self, ref: DatasetRef, **kwargs: Any) -> Any:
         butler = self._butlers_for_get[ref.run].butler
