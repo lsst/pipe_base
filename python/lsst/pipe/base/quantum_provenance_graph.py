@@ -1418,7 +1418,11 @@ class QuantumProvenanceGraph:
         output_runs = []
         last_time: datetime.datetime | None = None
         for graph in qgraphs:
-            qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
+            if not isinstance(graph, QuantumGraph):
+                _LOG.verbose("Loading quantum graph %r.", graph)
+                qgraph = QuantumGraph.loadUri(graph)
+            else:
+                qgraph = graph
             assert qgraph.metadata is not None, "Saved QGs always have metadata."
             self._add_new_graph(butler, qgraph, read_caveats=read_caveats, use_qbb=use_qbb, n_cores=n_cores)
             output_runs.append(qgraph.metadata["output_run"])
@@ -1437,7 +1441,7 @@ class QuantumProvenanceGraph:
     def _add_new_graph(
         self,
         butler: Butler,
-        qgraph: QuantumGraph | ResourcePathExpression,
+        qgraph: QuantumGraph,
         read_caveats: Literal["lazy", "exhaustive"] | None,
         use_qbb: bool = True,
         n_cores: int = 1,
@@ -1449,9 +1453,8 @@ class QuantumProvenanceGraph:
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler
             used for the run associated with the executed quantum graph.
-        qgraph : `QuantumGraph` or `~lsst.resources.ResourcePathExpression`
-            Either the associated quantum graph object or the uri of the
-            location of said quantum graph.
+        qgraph : `QuantumGraph`
+            The quantum graph object to add.
         read_caveats : `str` or `None`
             Whether to read metadata files to get flags that describe qualified
             successes.  If `None`, no metadata files will be read and all
@@ -1466,11 +1469,6 @@ class QuantumProvenanceGraph:
             Number of threads to use for parallelization.
         """
         status_log = PeriodicLogger(_LOG)
-        # first we load the quantum graph and associated output run collection
-        if not isinstance(qgraph, QuantumGraph):
-            _LOG.verbose("Loading quantum graph %r.", qgraph)
-            qgraph = QuantumGraph.loadUri(qgraph)
-        assert qgraph.metadata is not None, "Saved QGs always have metadata."
         output_run = qgraph.metadata["output_run"]
         # Add QuantumRun and DatasetRun (and nodes/edges, as needed) to the
         # QPG for all quanta in the QG.
