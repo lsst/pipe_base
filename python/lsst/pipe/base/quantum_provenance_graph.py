@@ -1150,10 +1150,13 @@ class QuantumProvenanceGraph:
         A list of either quantum graph objects or their uri's, to be used
         to assemble the `QuantumProvenanceGraph`.
     collections : `~collections.abc.Sequence` [`str`] | `None`
-        Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-        paring down the query would be useful.
+        Collections to use in `lsst.daf.butler.query_datasets` when testing
+        which datasets are available at a high level.
     where : `str`
-        A "where" string to use to constrain the collections, if passed.
+        A "where" string to use to constrain the datasets; should be provided
+        if ``collections`` includes many datasets that are not in any graphs,
+        to select just those that might be (e.g. when sharding over dimensions
+        and using a final collection that spans multiple shards).
     curse_failed_logs : `bool`
         Mark log datasets as CURSED if they are visible in the final output
         collection. Note that a campaign-level collection must be used here for
@@ -1379,10 +1382,14 @@ class QuantumProvenanceGraph:
             A list of either quantum graph objects or their uri's, to be used
             to assemble the `QuantumProvenanceGraph`.
         collections : `~collections.abc.Sequence` [`str`] | `None`
-            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-            paring down the query would be useful.
+            Collections to use in `lsst.daf.butler.query_datasets` when testing
+            which datasets are available at a high level.
         where : `str`
-            A "where" string to use to constrain the collections, if passed.
+            A "where" string to use to constrain the datasets; should be
+            provided if ``collections`` includes many datasets that are not in
+            any graphs, to select just those that might be (e.g. when sharding
+            over dimensions and using a final collection that spans multiple
+            shards).
         curse_failed_logs : `bool`
             Mark log datasets as CURSED if they are visible in the final
             output collection. Note that a campaign-level collection must be
@@ -1797,14 +1804,15 @@ class QuantumProvenanceGraph:
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler used
             for the run associated with the executed quantum graph.
-
-        collections : `Sequence` [`str`] | `None`
-            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-            paring down the query would be useful.
-
+        collections : `~collections.abc.Sequence` [`str`] | `None`
+            Collections to use in `lsst.daf.butler.query_datasets` when testing
+            which datasets are available at a high level.
         where : `str`
-            A "where" string to use to constrain the collections, if passed.
-
+            A "where" string to use to constrain the datasets; should be
+            provided if ``collections`` includes many datasets that are not in
+            any graphs, to select just those that might be (e.g. when sharding
+            over dimensions and using a final collection that spans multiple
+            shards).
         curse_failed_logs : `bool`
             Mark log datasets as CURSED if they are visible in the final
             output collection. Note that a campaign-level collection must be
