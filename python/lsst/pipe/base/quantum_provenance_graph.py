@@ -41,6 +41,7 @@ __all__ = (
 
 import concurrent.futures
 import dataclasses
+import datetime
 import itertools
 import logging
 import textwrap
@@ -1415,11 +1416,15 @@ class QuantumProvenanceGraph:
                 f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
             )
         output_runs = []
+        last_time: datetime.datetime | None = None
         for graph in qgraphs:
             qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
             assert qgraph.metadata is not None, "Saved QGs always have metadata."
             self._add_new_graph(butler, qgraph, read_caveats=read_caveats, use_qbb=use_qbb, n_cores=n_cores)
             output_runs.append(qgraph.metadata["output_run"])
+            if last_time is not None and last_time > qgraph.metadata["time"]:
+                raise RuntimeError("Quantum graphs must be passed in chronological order.")
+            last_time = qgraph.metadata["time"]
         if not collections:
             # We reverse the order of the associated output runs because the
             # query in _resolve_duplicates must be done most-recent first.
