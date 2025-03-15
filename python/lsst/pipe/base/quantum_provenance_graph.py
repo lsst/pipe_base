@@ -73,6 +73,7 @@ from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import PeriodicLogger, getLogger
 
 from ._status import QuantumSuccessCaveats
+from .automatic_connection_constants import LOG_OUTPUT_TEMPLATE, METADATA_OUTPUT_TEMPLATE
 from .graph import QuantumGraph, QuantumNode
 
 if TYPE_CHECKING:
@@ -1224,11 +1225,9 @@ class QuantumProvenanceGraph:
         self._finalized: bool = False
         # In order to both parallelize metadata/log reads and potentially use
         # QBB to do it, we in general need one butler for each output_run and
-        # thread combination.  Both dicts below are keyed by output_run; the
-        # first has factories for populating a .butler attribute on the values
-        # of the latter when a thread is initialized.
-        self._butler_factories: dict[str, Callable[[], LimitedButler]] = {}
-        self._butlers_for_get: dict[str, threading.local] = {}
+        # thread combination.  This dict is keyed by the former, and the
+        # wrapper type used for the value handles the latter.
+        self._butler_wrappers: dict[str, _ThreadLocalButlerWrapper] = {}
         if butler is not None:
             self.assemble_quantum_provenance_graph(
                 butler,
@@ -1317,7 +1316,7 @@ class QuantumProvenanceGraph:
         result = Summary()
         futures: list[concurrent.futures.Future[None]] = []
         _LOG.verbose("Summarizing %s tasks.", len(self._quanta.keys()))
-        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=self._thread_init) as executor:
+        with concurrent.futures.ThreadPoolExecutor(n_cores) as executor:
             for m, (task_label, quanta) in enumerate(self._quanta.items()):
                 task_summary = TaskSummary()
                 task_summary.n_expected = len(quanta)
@@ -1529,7 +1528,6 @@ class QuantumProvenanceGraph:
             status_log.log("Added nodes for %s of %s quanta.", n + 1, len(qgraph))
         # Query for datasets in the output run to see which ones were actually
         # produced.
-        qbb_dataset_ids: list[DatasetId] = []
         _LOG.verbose("Querying for existence for %s dataset types.", len(self._datasets.keys()))
         for m, dataset_type_name in enumerate(self._datasets):
             try:
@@ -1543,7 +1541,6 @@ class QuantumProvenanceGraph:
                 dataset_info = self.get_dataset_info(dataset_key)
                 dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
                 dataset_run.produced = True
-                qbb_dataset_ids.append(ref.id)
                 status_log.log(
                     "Updated status for %s of %s datasets of %s of %s types.",
                     n + 1,
@@ -1553,27 +1550,16 @@ class QuantumProvenanceGraph:
                 )
         if use_qbb:
             _LOG.verbose("Using quantum-backed butler for metadata loads.")
-            try:
-                butler_config = butler._config  # type: ignore[attr-defined]
-            except AttributeError:
-                raise RuntimeError("use_qbb=True requires a direct butler.") from None
-            self._butler_factories[output_run] = _QuantumBackedButlerFactory(
-                butler_config,
-                qbb_dataset_ids,
-                butler.dimensions,
-                dataset_types={dt.name: dt for dt in qgraph.registryDatasetTypes()},
-            )
+            self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_qbb(butler, qgraph)
         else:
             _LOG.verbose("Using full butler for metadata loads.")
-            self._butler_factories[output_run] = butler.clone
-
-        self._butlers_for_get[output_run] = threading.local()
+            self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_full(butler)
 
         _LOG.verbose("Setting quantum status from dataset existence.")
         # Update quantum status information based on which datasets were
         # produced.
         blocked: set[DatasetKey] = set()  # the outputs of failed or blocked quanta in this run.
-        with concurrent.futures.ThreadPoolExecutor(n_cores, initializer=self._thread_init) as executor:
+        with concurrent.futures.ThreadPoolExecutor(n_cores) as executor:
             futures: list[concurrent.futures.Future[None]] = []
             for n, quantum_key in enumerate(new_quanta):
                 if (
@@ -2014,17 +2000,90 @@ class QuantumProvenanceGraph:
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
 
-    def _thread_init(self) -> None:
-        for output_run, factory in self._butler_factories.items():
-            self._butlers_for_get[output_run].butler = factory()
-
     def _butler_get(self, ref: DatasetRef, **kwargs: Any) -> Any:
-        butler = self._butlers_for_get[ref.run].butler
-        return butler.get(ref, **kwargs)
+        return self._butler_wrappers[ref.run].butler.get(ref, **kwargs)
+
+
+class _ThreadLocalButlerWrapper:
+    """A wrapper for a thread-local limited butler.
+
+    Parameter
+    ---------
+    factory : `~collections.abc.Callable`
+        A callable that takes no arguments and returns a limited butler.
+    """
+
+    def __init__(self, factory: Callable[[], LimitedButler]):
+        self._factory = factory
+        self._thread_local = threading.local()
+
+    @classmethod
+    def wrap_qbb(cls, full_butler: Butler, qg: QuantumGraph) -> _ThreadLocalButlerWrapper:
+        """Wrap a `~lsst.daf.butler.QuantumBackedButler` suitable for reading
+        log and metadata files.
+
+        Parameters
+        ----------
+        full_butler : `~lsst.daf.butler.Butler`
+            Full butler to draw datastore and dimension configuration from.
+        qg : `QuantumGraph`
+            Quantum graph,
+
+        Returns
+        -------
+        wrapper : `_ThreadLocalButlerWrapper`
+            A wrapper that provides access to a thread-local QBB, constructing]
+            it on first use.
+        """
+        dataset_ids = []
+        for task_label in qg.pipeline_graph.tasks.keys():
+            for quantum in qg.get_task_quanta(task_label).values():
+                dataset_ids.append(quantum.outputs[LOG_OUTPUT_TEMPLATE.format(label=task_label)][0].id)
+                dataset_ids.append(quantum.outputs[METADATA_OUTPUT_TEMPLATE.format(label=task_label)][0].id)
+        try:
+            butler_config = full_butler._config  # type: ignore[attr-defined]
+        except AttributeError:
+            raise RuntimeError("use_qbb=True requires a direct butler.") from None
+        factory = _QuantumBackedButlerFactory(
+            butler_config,
+            dataset_ids,
+            full_butler.dimensions,
+            dataset_types={dt.name: dt for dt in qg.registryDatasetTypes()},
+        )
+        return cls(factory)
+
+    @classmethod
+    def wrap_full(cls, full_butler: Butler) -> _ThreadLocalButlerWrapper:
+        """Wrap a full `~lsst.daf.butler.Butler`.
+
+        Parameters
+        ----------
+        full_butler : `~lsst.daf.butler.Butler`
+            Full butler to clone when making thread-local copies.
+
+        Returns
+        -------
+        wrapper : `_ThreadLocalButlerWrapper`
+            A wrapper that provides access to a thread-local butler,
+            constructing it on first use.
+        """
+        return cls(full_butler.clone)
+
+    @property
+    def butler(self) -> LimitedButler:
+        """The wrapped butler, constructed on first use within each thread."""
+        if (butler := getattr(self._thread_local, "butler", None)) is None:
+            self._thread_local.butler = self._factory()
+            butler = self._thread_local.butler
+        return butler
 
 
 @dataclasses.dataclass
 class _QuantumBackedButlerFactory:
+    """A factory for `~lsst.daf.butler.QuantumBackedButler`, for use by
+    `_ThreadLocalButlerWrapper`.
+    """
+
     config: ButlerConfig
     dataset_ids: list[DatasetId]
     universe: DimensionUniverse
