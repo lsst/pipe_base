@@ -29,11 +29,11 @@ from __future__ import annotations
 
 __all__ = ()
 
-import dataclasses
 import datetime
 import itertools
 import lzma
 import uuid
+import zipfile
 from collections import defaultdict
 from collections.abc import Iterable
 
@@ -42,14 +42,14 @@ import pyarrow.parquet as pq
 import pydantic
 import tqdm
 
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.daf.butler import (
     DataCoordinate,
     DataIdValue,
     DimensionGroup,
     DimensionRecordSet,
-    DimensionRecordTable,
-    DimensionUniverse,
     Quantum,
+    SerializedDimensionRecord,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
 
@@ -133,9 +133,11 @@ class RuntimeQuantumModel(pydantic.BaseModel):
 
 class RuntimeHeaderModel(pydantic.BaseModel):
     version: int = pydantic.Field(default=0)
+    pipeline: SerializedPipelineGraph
     inputs: list[str] = pydantic.Field(default_factory=list)
     output: str | None = pydantic.Field(default=None)
     output_run: str
+    user: str
     timestamp: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
     init_quanta: list[RuntimeQuantumModel] = pydantic.Field(default_factory=list)
     global_outputs: dict[str, RuntimeDatasetModel] = pydantic.Field(default_factory=dict)
@@ -145,11 +147,12 @@ class RuntimeHeaderModel(pydantic.BaseModel):
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> RuntimeGraphModel:
         metadata = dict(quantum_graph.metadata)
         header = RuntimeHeaderModel(
+            pipeline=SerializedPipelineGraph.serialize(quantum_graph.pipeline_graph),
             inputs=list(metadata.pop("input", [])),
             output=metadata.pop("output", None),
             output_run=metadata.pop("output_run"),
+            user=metadata.pop("user"),
         )
-        header.metadata.update(metadata)
         for task_node in quantum_graph.pipeline_graph.tasks.values():
             header.init_quanta.append(RuntimeQuantumModel.from_quantum_graph_init(task_node, quantum_graph))
         (packages_ref,) = quantum_graph.globalInitOutputRefs()
@@ -159,49 +162,50 @@ class RuntimeHeaderModel(pydantic.BaseModel):
         return header
 
 
-def extract_dimension_records(quantum_graph: QuantumGraph) -> dict[str, DimensionRecordSet]:
-    universe = quantum_graph.pipeline_graph.universe
-    data_ids: defaultdict[DimensionGroup, set[DataCoordinate]] = defaultdict(set)
-    for task_node in tqdm.tqdm(
-        quantum_graph.pipeline_graph.tasks.values(), "Extracting dimension record data IDs.", leave=False
-    ):
-        for quantum in quantum_graph.get_task_quanta(task_node.label).values():
-            data_ids[quantum.dataId.dimensions].add(quantum.dataId)
-            for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
-                for ref in refs:
-                    data_ids[ref.dataId.dimensions].add(ref.dataId)
-    result: dict[str, DimensionRecordSet] = {}
-    all_dimension_names: set[str] = set()
-    for task_node in quantum_graph.pipeline_graph.tasks.values():
-        all_dimension_names.update(task_node.dimensions.names)
-    for dataset_type_node in quantum_graph.pipeline_graph.dataset_types.values():
-        all_dimension_names.update(dataset_type_node.dimensions.names)
-    all_dimensions = universe.conform(all_dimension_names)
-    for element in tqdm.tqdm(
-        all_dimensions.elements, "Extracting dimension records from data IDs.", leave=False
-    ):
-        record_set = DimensionRecordSet(element, universe=universe)
-        for data_id_group, data_ids_for_group in data_ids.items():
-            if element in data_id_group.elements:
-                record_set.update_from_data_coordinates(data_ids_for_group)
-        result[element] = DimensionRecordTable(element, record_set, universe=quantum_graph.universe)
-    return result
+class RuntimeDimensionDataModel(pydantic.RootModel):
+    root: dict[str, list[SerializedDimensionRecord]] = pydantic.Field(default_factory=dict)
+
+    @classmethod
+    def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> RuntimeDimensionDataModel:
+        universe = quantum_graph.pipeline_graph.universe
+        data_ids: defaultdict[DimensionGroup, set[DataCoordinate]] = defaultdict(set)
+        for task_node in tqdm.tqdm(
+            quantum_graph.pipeline_graph.tasks.values(), "Extracting dimension record data IDs.", leave=False
+        ):
+            for quantum in quantum_graph.get_task_quanta(task_node.label).values():
+                data_ids[quantum.dataId.dimensions].add(quantum.dataId)
+                for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
+                    for ref in refs:
+                        data_ids[ref.dataId.dimensions].add(ref.dataId)
+        all_dimension_names: set[str] = set()
+        for task_node in quantum_graph.pipeline_graph.tasks.values():
+            all_dimension_names.update(task_node.dimensions.names)
+        for dataset_type_node in quantum_graph.pipeline_graph.dataset_types.values():
+            all_dimension_names.update(dataset_type_node.dimensions.names)
+        all_dimensions = universe.conform(all_dimension_names)
+        result = cls()
+        for element in tqdm.tqdm(
+            all_dimensions.elements, "Extracting dimension records from data IDs.", leave=False
+        ):
+            record_set = DimensionRecordSet(element, universe=universe)
+            for data_id_group, data_ids_for_group in data_ids.items():
+                if element in data_id_group.elements:
+                    record_set.update_from_data_coordinates(data_ids_for_group)
+            result.root[element] = [r.to_simple() for r in record_set]
+        return result
 
 
-@dataclasses.dataclass
-class RuntimeGraphModel:
+class RuntimeGraphModel(pydantic.BaseModel):
     header: RuntimeHeaderModel
-    pipeline: SerializedPipelineGraph
-    graph: QuantumOnlyGraphModel
-    dimension_records: dict[str, DimensionRecordSet]
+    graph: QuantumOnlyGraphModel | None
+    dimension_data: RuntimeDimensionDataModel
     quanta: dict[uuid.UUID, RuntimeQuantumModel]
 
     @classmethod
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> RuntimeGraphModel:
         header = RuntimeHeaderModel.from_quantum_graph(quantum_graph)
-        pipeline = SerializedPipelineGraph.serialize(quantum_graph.pipeline_graph)
         graph = QuantumOnlyGraphModel.from_quantum_graph(quantum_graph)
-        dimension_records = extract_dimension_records(quantum_graph)
+        dimension_data = RuntimeDimensionDataModel.from_quantum_graph(quantum_graph)
         quanta = {
             node.nodeId: RuntimeQuantumModel.from_quantum(
                 quantum_graph.pipeline_graph.tasks[node.taskDef.label], node.quantum
@@ -210,34 +214,38 @@ class RuntimeGraphModel:
         }
         return cls(
             header=header,
-            pipeline=pipeline,
             graph=graph,
-            dimension_records=dimension_records,
+            dimension_data=dimension_data,
             quanta=quanta,
         )
 
-    def print_storage_costs(self, universe: DimensionUniverse) -> None:
-        import humanize
-
-        print_json_sizes("Header", [self.pipeline])
-        print_json_sizes("Pipeline Graph", [self.pipeline])
+    def print_storage_costs(self) -> None:
+        copy1 = self.model_copy()
+        copy1.quanta = {}
+        copy2 = self.model_copy()
+        copy2.quanta = {}
+        copy2.graph = None
+        print_json_sizes("Header", [self.header])
+        print_json_sizes("Dimension Records", [self.dimension_data])
+        print_json_sizes("Progressive Header", [copy2])
         print_json_sizes("Quantum-Only Graph", [self.graph])
-        cached_record_size: int = 0
-        for element, record_table in tqdm.tqdm(
-            self.dimension_records.items(), "Computing dimension record table sizes", leave=False
-        ):
-            record_table_size = compute_parquet_size(record_table.to_arrow())
-            if universe[element].is_cached:
-                cached_record_size += record_table_size
-            else:
-                print(
-                    f"{element} records ({len(record_table)}), Parquet: "
-                    f"{humanize.naturalsize(record_table_size)}."
-                )
-        print(f"Other dimension records, Parquet: {humanize.naturalsize(cached_record_size)}.")
+        print_json_sizes("Consolidated Header", [copy1])
         print_json_sizes(
             "Quantum Models", tqdm.tqdm(self.quanta.values(), "Computing quantum model sizes", leave=False)
         )
+
+    def write_zip(self, uri: ResourcePathExpression) -> None:
+        uri = ResourcePath(uri)
+        with uri.open(mode="wb") as stream:
+            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_LZMA) as zip:
+                zip.writestr("header.json", self.header.model_dump_json())
+                zip.writestr("dimension_data.json", self.dimension_data.model_dump_json())
+                zip.writestr("graph.json", self.graph.model_dump_json())
+                zip.mkdir("quanta")
+                for quantum_uuid, quantum_model in tqdm.tqdm(
+                    self.quanta.items(), "Writing quanta.", leave=False
+                ):
+                    zip.writestr(f"quanta/{quantum_uuid.hex}.json", quantum_model.model_dump_json())
 
 
 def compute_parquet_size(table: pa.Table) -> int:
@@ -274,7 +282,8 @@ def _main():
         qg = QuantumGraph.loadUri(filename)
     print(f"{filename} ({humanize.naturalsize(os.stat(filename).st_size)}).")
     runtime_model = RuntimeGraphModel.from_quantum_graph(qg)
-    runtime_model.print_storage_costs(qg.universe)
+    basename, _ = os.path.splitext(filename)
+    runtime_model.write_zip(f"{basename}.zip")
 
 
 if __name__ == "__main__":
