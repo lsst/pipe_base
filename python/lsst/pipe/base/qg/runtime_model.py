@@ -36,10 +36,8 @@ import lzma
 import uuid
 import zipfile
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pydantic
 import tqdm
 
@@ -59,6 +57,12 @@ from ..graph import QuantumGraph
 from ..pipeline_graph import TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 from .graph_model import QuantumOnlyGraphModel
+
+try:
+    import zstandard
+except ImportError:
+    zstandard = None
+
 
 _LOG = logging.getLogger(__name__)
 
@@ -174,7 +178,7 @@ class RuntimeDimensionDataModel(pydantic.RootModel):
         universe = quantum_graph.pipeline_graph.universe
         data_ids: defaultdict[DimensionGroup, set[DataCoordinate]] = defaultdict(set)
         for task_node in tqdm.tqdm(
-            quantum_graph.pipeline_graph.tasks.values(), "Extracting dimension record data IDs.", leave=False
+            quantum_graph.pipeline_graph.tasks.values(), "Extracting dimension record data IDs."
         ):
             for quantum in quantum_graph.get_task_quanta(task_node.label).values():
                 data_ids[quantum.dataId.dimensions].add(quantum.dataId)
@@ -188,9 +192,7 @@ class RuntimeDimensionDataModel(pydantic.RootModel):
             all_dimension_names.update(dataset_type_node.dimensions.names)
         all_dimensions = universe.conform(all_dimension_names)
         result = cls()
-        for element in tqdm.tqdm(
-            all_dimensions.elements, "Extracting dimension records from data IDs.", leave=False
-        ):
+        for element in tqdm.tqdm(all_dimensions.elements, "Extracting dimension records from data IDs."):
             record_set = DimensionRecordSet(element, universe=universe)
             for data_id_group, data_ids_for_group in data_ids.items():
                 if element in data_id_group.elements:
@@ -214,7 +216,7 @@ class RuntimeGraphModel(pydantic.BaseModel):
             node.nodeId: RuntimeQuantumModel.from_quantum(
                 quantum_graph.pipeline_graph.tasks[node.taskDef.label], node.quantum
             )
-            for node in tqdm.tqdm(quantum_graph, "Extracting runtime quanta.", leave=False)
+            for node in tqdm.tqdm(quantum_graph, "Extracting runtime quanta.")
         }
         return cls(
             header=header,
@@ -224,53 +226,59 @@ class RuntimeGraphModel(pydantic.BaseModel):
         )
 
     def print_storage_costs(self) -> None:
-        copy1 = self.model_copy()
-        copy1.quanta = {}
-        copy2 = self.model_copy()
-        copy2.quanta = {}
-        copy2.graph = None
-        print_json_sizes("Header", [self.header])
-        print_json_sizes("Dimension Records", [self.dimension_data])
-        print_json_sizes("Progressive Header", [copy2])
-        print_json_sizes("Quantum-Only Graph", [self.graph])
-        print_json_sizes("Consolidated Header", [copy1])
-        print_json_sizes(
-            "Quantum Models", tqdm.tqdm(self.quanta.values(), "Computing quantum model sizes", leave=False)
-        )
+        compressors = {
+            "un": lambda b: b,
+            "lzma-": lzma.compress,
+            "zstd[10]-": zstandard.ZstdCompressor(10).compress,
+            "zstd[15]-": zstandard.ZstdCompressor(15).compress,
+        }
+        for prefix, compressor in compressors.items():
+            with time_this(_LOG, f"Dumping {prefix}compressed", level=logging.INFO):
+                print_json_sizes("Header", [self.header], prefix, compressor)
+                print_json_sizes("Dimension Records", [self.dimension_data], prefix, compressor)
+                print_json_sizes("Quantum-Only Graph", [self.graph], prefix, compressor)
+                print_json_sizes(
+                    "Quantum Models",
+                    tqdm.tqdm(self.quanta.values(), "Computing quantum model sizes"),
+                    prefix,
+                    compressor,
+                )
 
-    def write_zip(self, uri: ResourcePathExpression) -> None:
+    def write_zip(self, uri: ResourcePathExpression, zstd_level: int = 10) -> None:
         uri = ResourcePath(uri)
+        if zstandard is not None:
+            compressor = zstandard.ZstdCompressor(level=zstd_level)
+            ext = "zst"
+        else:
+            compressor = lzma
+            ext = "xz"
         with uri.open(mode="wb") as stream:
-            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_LZMA) as zip:
-                zip.writestr("header.json", self.header.model_dump_json())
-                zip.writestr("dimension_data.json", self.dimension_data.model_dump_json())
-                zip.writestr("graph.json", self.graph.model_dump_json())
-                zip.mkdir("quanta")
-                for quantum_uuid, quantum_model in tqdm.tqdm(
-                    self.quanta.items(), "Writing quanta.", leave=False
-                ):
-                    zip.writestr(f"quanta/{quantum_uuid.hex}.json", quantum_model.model_dump_json())
+            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
+                zf.writestr(f"header.json.{ext}", compressor.compress(self.header.model_dump_json().encode()))
+                zf.writestr(
+                    f"dimension_data.json.{ext}",
+                    compressor.compress(self.dimension_data.model_dump_json().encode()),
+                )
+                zf.writestr(f"graph.json.{ext}", compressor.compress(self.graph.model_dump_json().encode()))
+                zf.mkdir("quanta")
+                for quantum_uuid, quantum_model in tqdm.tqdm(self.quanta.items(), "Writing quanta."):
+                    zf.writestr(
+                        f"quanta/{quantum_uuid.hex}.json.{ext}",
+                        compressor.compress(quantum_model.model_dump_json().encode()),
+                    )
 
 
-def compute_parquet_size(table: pa.Table) -> int:
-    writer = pa.BufferOutputStream()
-    pq.write_table(table, writer)
-    return len(writer.getvalue())
-
-
-def print_json_sizes(name: str, models: Iterable[pydantic.BaseModel]) -> None:
+def print_json_sizes(
+    name: str, models: Iterable[pydantic.BaseModel], prefix: str, compressor: Callable[[bytes], bytes]
+) -> None:
     import humanize
 
-    uncompressed_size: int = 0
-    lzma_size: int = 0
+    size: int = 0
     n = 0
     for model in models:
-        json_bytes = model.model_dump_json().encode()
-        uncompressed_size += len(json_bytes)
-        lzma_size += len(lzma.compress(json_bytes))
+        size += len(compressor(model.model_dump_json().encode()))
         n += 1
-    print(f"{name} ({n}), uncompressed JSON: {humanize.naturalsize(uncompressed_size)}.")
-    print(f"{name} ({n}), lzma-compressed JSON: {humanize.naturalsize(lzma_size)}.")
+    print(f"{name} ({n}), {prefix}compressed JSON: {humanize.naturalsize(size)}.")
 
 
 def _main():
@@ -287,9 +295,11 @@ def _main():
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
             qg = QuantumGraph.loadUri(filename)
-    _LOG.info(f"{filename} ({humanize.naturalsize(os.stat(filename).st_size)}).")
+    _LOG.info(f"{filename} ({humanize.naturalsize(os.stat(filename).st_size)}. {len(qg)} quanta).")
     with time_this(_LOG, msg="Converting to runtime model.", level=logging.INFO):
         runtime_model = RuntimeGraphModel.from_quantum_graph(qg)
+    # with time_this(_LOG, msg="Running compression benchmarks.", level=logging.INFO):
+    #     runtime_model.print_storage_costs()
     basename, _ = os.path.splitext(filename)
     with time_this(_LOG, msg="Writing runtime model to zip.", level=logging.INFO):
         runtime_model.write_zip(f"{basename}.zip")
