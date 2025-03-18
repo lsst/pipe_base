@@ -52,6 +52,7 @@ _E = TypeVar("_E")
 
 NodeDict: TypeAlias = dict[uuid.UUID, list[str | int]]
 EdgeList: TypeAlias = list[tuple[uuid.UUID, uuid.UUID]]
+IntEdgeList: TypeAlias = list[tuple[int, int]]
 
 
 class BipartiteGraphModel(pydantic.BaseModel, Generic[_N, _E]):
@@ -64,7 +65,7 @@ class BipartiteGraphModel(pydantic.BaseModel, Generic[_N, _E]):
     @classmethod
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> BipartiteGraphModel[NodeDict, EdgeList]:
         pipeline_graph = quantum_graph.pipeline_graph
-        result = cls.model_construct(edges=[])
+        result: BipartiteGraphModel[NodeDict, EdgeList] = cls.model_construct(edges=[])
         for dataset_type_node in pipeline_graph.dataset_types.values():
             result.datasets[dataset_type_node.name] = {}
         for task_node in tqdm.tqdm(
@@ -133,25 +134,3 @@ class BipartiteGraphModel(pydantic.BaseModel, Generic[_N, _E]):
         for converter in converters:
             arrays[converter.name] = converter.finish(column_lists[converter.name])
         return pa.table(list(arrays.values()), names=list(arrays.keys()))
-
-
-class QuantumOnlyGraphModel(pydantic.BaseModel, Generic[_N, _E]):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    edges: _E
-    quanta: dict[str, _N] = pydantic.Field(default_factory=dict)
-
-    @classmethod
-    def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> BipartiteGraphModel[NodeDict, EdgeList]:
-        pipeline_graph = quantum_graph.pipeline_graph
-        result: BipartiteGraphModel[NodeDict, EdgeList] = cls.model_construct(edges=[])
-        for a, b in tqdm.tqdm(quantum_graph.graph.edges, "Extracting quantum-only graph edges.", leave=False):
-            result.edges.append((a.nodeId, b.nodeId))
-        for task_node in tqdm.tqdm(
-            pipeline_graph.tasks.values(), "Extracting quantum-only nodes.", leave=False
-        ):
-            task_quanta = {}
-            result.quanta[task_node.label] = task_quanta
-            for quantum_uuid, quantum in quantum_graph.get_task_quanta(task_node.label).items():
-                task_quanta[quantum_uuid] = list(quantum.dataId.required_values)
-        return result
