@@ -31,6 +31,7 @@ __all__ = ()
 
 import datetime
 import itertools
+import logging
 import lzma
 import uuid
 import zipfile
@@ -42,7 +43,6 @@ import pyarrow.parquet as pq
 import pydantic
 import tqdm
 
-from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.daf.butler import (
     DataCoordinate,
     DataIdValue,
@@ -52,11 +52,15 @@ from lsst.daf.butler import (
     SerializedDimensionRecord,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
+from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.utils.timer import time_this
 
 from ..graph import QuantumGraph
 from ..pipeline_graph import TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 from .graph_model import QuantumOnlyGraphModel
+
+_LOG = logging.getLogger(__name__)
 
 
 class RuntimeDatasetModel(pydantic.BaseModel):
@@ -276,14 +280,19 @@ def _main():
 
     import humanize
 
+    logging.basicConfig(level=logging.INFO)
+
     filename = sys.argv[1]
-    with warnings.catch_warnings():
-        warnings.simplefilter(action="ignore", category=FutureWarning)
-        qg = QuantumGraph.loadUri(filename)
-    print(f"{filename} ({humanize.naturalsize(os.stat(filename).st_size)}).")
-    runtime_model = RuntimeGraphModel.from_quantum_graph(qg)
+    with time_this(_LOG, msg="Reading original file.", level=logging.INFO):
+        with warnings.catch_warnings():
+            warnings.simplefilter(action="ignore", category=FutureWarning)
+            qg = QuantumGraph.loadUri(filename)
+    _LOG.info(f"{filename} ({humanize.naturalsize(os.stat(filename).st_size)}).")
+    with time_this(_LOG, msg="Converting to runtime model.", level=logging.INFO):
+        runtime_model = RuntimeGraphModel.from_quantum_graph(qg)
     basename, _ = os.path.splitext(filename)
-    runtime_model.write_zip(f"{basename}.zip")
+    with time_this(_LOG, msg="Writing runtime model to zip.", level=logging.INFO):
+        runtime_model.write_zip(f"{basename}.zip")
 
 
 if __name__ == "__main__":
