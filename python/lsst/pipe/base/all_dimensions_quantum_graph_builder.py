@@ -213,7 +213,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     lines.extend(query.explain_no_results())
                 finally:
                     lines.append("To reproduce this query for debugging purposes, run:")
+                    lines.append("")
                     lines.extend(query_cmd)
+                    lines.append("    print(query.any())")
+                    lines.append("")
+                    lines.append("And then try removing various constraints until query.any() returns True.")
                     # If an exception was raised, write a partial.
                     self.log.error("\n".join(lines))
                 return

@@ -86,8 +86,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
         with temporaryDirectory() as root:
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
-            qpg = QuantumProvenanceGraph()
-            qpg.assemble_quantum_provenance_graph(butler, [qgraph])
+            qpg = QuantumProvenanceGraph(butler, [qgraph])
             summary = qpg.to_summary(butler)
 
             for task_summary in summary.tasks.values():
@@ -142,8 +141,7 @@ class QuantumProvenanceGraphTestCase(unittest.TestCase):
         with temporaryDirectory() as root:
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
-            qpg = QuantumProvenanceGraph()
-            qpg.assemble_quantum_provenance_graph(butler, [qgraph])
+            qpg = QuantumProvenanceGraph(butler, [qgraph])
             summary = qpg.to_summary(butler)
             # Check that aggregating one summary only does not cause an error
             one_graph_only_sum = Summary.aggregate([summary])

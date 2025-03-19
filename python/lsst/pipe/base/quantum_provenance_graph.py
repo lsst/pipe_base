@@ -39,25 +39,42 @@ __all__ = (
     "QuantumProvenanceGraph",
 )
 
+import concurrent.futures
 import dataclasses
+import datetime
 import itertools
 import logging
 import textwrap
+import threading
 import uuid
-from collections.abc import Iterator, Mapping, Sequence, Set
+from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 from enum import Enum
-from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, cast
 
 import astropy.table
 import networkx
 import pydantic
 
-from lsst.daf.butler import Butler, DataCoordinate, DataIdValue, DatasetRef
+from lsst.daf.butler import (
+    Butler,
+    ButlerConfig,
+    ButlerLogRecords,
+    DataCoordinate,
+    DataIdValue,
+    DatasetId,
+    DatasetRef,
+    DatasetType,
+    DimensionUniverse,
+    LimitedButler,
+    MissingDatasetTypeError,
+    QuantumBackedButler,
+)
 from lsst.resources import ResourcePathExpression
-from lsst.utils.logging import getLogger
+from lsst.utils.logging import PeriodicLogger, getLogger
 
 from ._status import QuantumSuccessCaveats
-from .graph import QuantumGraph
+from .automatic_connection_constants import LOG_OUTPUT_TEMPLATE, METADATA_OUTPUT_TEMPLATE
+from .graph import QuantumGraph, QuantumNode
 
 if TYPE_CHECKING:
     from ._task_metadata import TaskMetadata
@@ -178,7 +195,7 @@ class ExceptionInfo(pydantic.BaseModel):
     """Additional metadata included in the exception."""
 
     @classmethod
-    def from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
+    def _from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
         """Construct from task metadata.
 
         Parameters
@@ -476,7 +493,7 @@ class UnsuccessfulQuantumSummary(pydantic.BaseModel):
     """
 
     @classmethod
-    def from_info(cls, info: QuantumInfo) -> UnsuccessfulQuantumSummary:
+    def _from_info(cls, info: QuantumInfo) -> UnsuccessfulQuantumSummary:
         """Summarize all relevant information from the `QuantumInfo` in an
         `UnsuccessfulQuantumSummary`; return an `UnsuccessfulQuantumSummary`.
 
@@ -595,7 +612,12 @@ class TaskSummary(pydantic.BaseModel):
     this module) associated with the particular issue identified.
     """
 
-    def add_quantum_info(self, info: QuantumInfo, butler: Butler, do_store_logs: bool = True) -> None:
+    def _add_quantum_info(
+        self,
+        info: QuantumInfo,
+        log_getter: Callable[[DatasetRef], ButlerLogRecords] | None,
+        executor: concurrent.futures.Executor,
+    ) -> concurrent.futures.Future[None] | None:
         """Add a `QuantumInfo` to a `TaskSummary`.
 
         Unpack the `QuantumInfo` object, sorting quanta of each status into
@@ -607,12 +629,19 @@ class TaskSummary(pydantic.BaseModel):
         ----------
         info : `QuantumInfo`
             The `QuantumInfo` object to add to the `TaskSummary`.
-        butler : `lsst.daf.butler.Butler`
-            The butler repo used for the graph being inspected, which can be
-            queried for errors and logs.
-        do_store_logs : `bool`, optional
-            Store error messages from Butler logs associated with failed quanta
-            if `True`.
+        log_getter : `~collections.abc.Callable` or `None`
+            A callable that can be passed a `~lsst.daf.butler.DatasetRef` for
+            a log dataset to retreive those logs, or `None` to not load any
+            logs.
+        executor : `concurrent.futures.Executor`
+            A possibly-parallel executor that should be used to schedule
+            log dataset reads.
+
+        Returns
+        -------
+        future : `concurrent.futures.Future` or `None`
+            A future that represents a parallelized log read and summary
+            update.
         """
         try:
             final_run, final_quantum_run = QuantumRun.find_final(info)
@@ -637,35 +666,45 @@ class TaskSummary(pydantic.BaseModel):
                                     exception=final_quantum_run.exception,
                                 )
                             )
+                return None
             case QuantumInfoStatus.WONKY:
-                self.wonky_quanta.append(UnsuccessfulQuantumSummary.from_info(info))
+                self.wonky_quanta.append(UnsuccessfulQuantumSummary._from_info(info))
+                return None
             case QuantumInfoStatus.BLOCKED:
                 self.n_blocked += 1
+                return None
             case QuantumInfoStatus.FAILED:
-                failed_quantum_summary = UnsuccessfulQuantumSummary.from_info(info)
-                if do_store_logs:
-                    for quantum_run in info["runs"].values():
-                        try:
-                            log = butler.get(quantum_run.log_ref)
-                        except LookupError:
-                            failed_quantum_summary.messages.append(
-                                f"Logs not ingested for {quantum_run.log_ref!r}"
-                            )
-                        except FileNotFoundError:
-                            failed_quantum_summary.messages.append(
-                                f"Logs missing or corrupt for {quantum_run.log_ref!r}"
-                            )
-                        else:
-                            failed_quantum_summary.messages.extend(
-                                [record.message for record in log if record.levelno >= logging.ERROR]
-                            )
+                failed_quantum_summary = UnsuccessfulQuantumSummary._from_info(info)
+                future: concurrent.futures.Future[None] | None = None
+                if log_getter:
+
+                    def callback() -> None:
+                        for quantum_run in info["runs"].values():
+                            try:
+                                log = log_getter(quantum_run.log_ref)
+                            except LookupError:
+                                failed_quantum_summary.messages.append(
+                                    f"Logs not ingested for {quantum_run.log_ref!r}"
+                                )
+                            except FileNotFoundError:
+                                failed_quantum_summary.messages.append(
+                                    f"Logs missing or corrupt for {quantum_run.log_ref!r}"
+                                )
+                            else:
+                                failed_quantum_summary.messages.extend(
+                                    [record.message for record in log if record.levelno >= logging.ERROR]
+                                )
+
+                    future = executor.submit(callback)
                 self.failed_quanta.append(failed_quantum_summary)
+                return future
             case QuantumInfoStatus.UNKNOWN:
                 self.n_unknown += 1
+                return None
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized quantum status {unrecognized_state!r}")
 
-    def add_data_id_group(self, other_summary: TaskSummary) -> None:
+    def _add_data_id_group(self, other_summary: TaskSummary) -> None:
         """Add information from a `TaskSummary` over one dataquery-identified
         group to another, as part of aggregating `Summary` reports.
 
@@ -712,7 +751,7 @@ class CursedDatasetSummary(pydantic.BaseModel):
     """
 
     @classmethod
-    def from_info(cls, info: DatasetInfo, producer_info: QuantumInfo) -> CursedDatasetSummary:
+    def _from_info(cls, info: DatasetInfo, producer_info: QuantumInfo) -> CursedDatasetSummary:
         """Summarize all relevant information from the `DatasetInfo` in an
         `CursedDatasetSummary`; return a `CursedDatasetSummary`.
 
@@ -797,7 +836,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
     """A list of all unsuccessful datasets by their name and data_id.
     """
 
-    def add_dataset_info(self, info: DatasetInfo, producer_info: QuantumInfo) -> None:
+    def _add_dataset_info(self, info: DatasetInfo, producer_info: QuantumInfo) -> None:
         """Add a `DatasetInfo` to a `DatasetTypeSummary`.
 
         Unpack the `DatasetInfo` object, sorting datasets of each status into
@@ -822,13 +861,13 @@ class DatasetTypeSummary(pydantic.BaseModel):
             case DatasetInfoStatus.UNSUCCESSFUL:
                 self.unsuccessful_datasets.append(dict(info["data_id"].mapping))
             case DatasetInfoStatus.CURSED:
-                self.cursed_datasets.append(CursedDatasetSummary.from_info(info, producer_info))
+                self.cursed_datasets.append(CursedDatasetSummary._from_info(info, producer_info))
             case DatasetInfoStatus.PREDICTED_ONLY:
                 self.n_predicted_only += 1
             case unrecognized_state:
                 raise AssertionError(f"Unrecognized dataset status {unrecognized_state!r}")
 
-    def add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
+    def _add_data_id_group(self, other_summary: DatasetTypeSummary) -> None:
         """Add information from a `DatasetTypeSummary` over one
         dataquery-identified group to another, as part of aggregating `Summary`
         reports.
@@ -889,10 +928,10 @@ class Summary(pydantic.BaseModel):
         for summary in summaries:
             for label, task_summary in summary.tasks.items():
                 result_task_summary = result.tasks.setdefault(label, TaskSummary())
-                result_task_summary.add_data_id_group(task_summary)
+                result_task_summary._add_data_id_group(task_summary)
             for dataset_type, dataset_type_summary in summary.datasets.items():
                 result_dataset_summary = result.datasets.setdefault(dataset_type, DatasetTypeSummary())
-                result_dataset_summary.add_data_id_group(dataset_type_summary)
+                result_dataset_summary._add_data_id_group(dataset_type_summary)
         return result
 
     def pprint(self, brief: bool = False, datasets: bool = True) -> None:
@@ -1126,19 +1165,53 @@ class QuantumProvenanceGraph:
     """A set of already-run, merged quantum graphs with provenance
     information.
 
-    Step through all the quantum graphs associated with certain tasks or
-    processing steps. For each graph/attempt, the status of each quantum and
-    dataset is recorded in `QuantumProvenanceGraph.__add_new_graph` and
-    outcomes of quanta over multiple runs are resolved in
-    `QuantumProvenanceGraph.__resolve_duplicates`. These can be called outside
-    the class in the correct order by
-    `QuantumProvenanceGraph.assemble_quantum_provenance_graph`. At the end of
-    this process, we can combine all attempts into a summary using the
-    `QuantumProvenanceGraph.to_summary` method. This serves to answer the
-    question 'What happened to this data ID?' in a wholistic sense.
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        The Butler used for this report. This should match the Butler used
+        for the run associated with the executed quantum graph.
+    qgraphs : `~collections.abc.Sequence` [`QuantumGraph` |\
+            `~lsst.utils.resources.ResourcePathExpression`]
+        A list of either quantum graph objects or their uri's, to be used
+        to assemble the `QuantumProvenanceGraph`.
+    collections : `~collections.abc.Sequence` [`str`] | `None`
+        Collections to use in `lsst.daf.butler.query_datasets` when testing
+        which datasets are available at a high level.
+    where : `str`
+        A "where" string to use to constrain the datasets; should be provided
+        if ``collections`` includes many datasets that are not in any graphs,
+        to select just those that might be (e.g. when sharding over dimensions
+        and using a final collection that spans multiple shards).
+    curse_failed_logs : `bool`
+        Mark log datasets as CURSED if they are visible in the final output
+        collection. Note that a campaign-level collection must be used here for
+        `collections` if `curse_failed_logs` is `True`.
+    read_caveats : `str` or `None`, optional
+        Whether to read metadata files to get flags that describe qualified
+        successes.  If `None`, no metadata files will be read and all
+        ``caveats`` fields will be `None`.  If "exhaustive", all metadata files
+        will be read.  If "lazy", only metadata files where at least one
+        predicted output is missing will be read.
+    use_qbb : `bool`, optional
+        If `True`, use a quantum-backed butler when reading metadata files.
+        Note that some butler database queries are still run even if this is
+        `True`; this does not avoid database access entirely.
+    n_cores : `int`, optional
+        Number of threads to use for parallelization.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        butler: Butler | None = None,
+        qgraphs: Sequence[QuantumGraph | ResourcePathExpression] = (),
+        *,
+        collections: Sequence[str] | None = None,
+        where: str = "",
+        curse_failed_logs: bool = False,
+        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
+        use_qbb: bool = True,
+        n_cores: int = 1,
+    ) -> None:
         # The graph we annotate as we step through all the graphs associated
         # with the processing to create the `QuantumProvenanceGraph`.
         self._xgraph = networkx.DiGraph()
@@ -1150,6 +1223,24 @@ class QuantumProvenanceGraph:
         # Bool representing whether the graph has been finalized. This is set
         # to True when resolve_duplicates completes.
         self._finalized: bool = False
+        # In order to both parallelize metadata/log reads and potentially use
+        # QBB to do it, we in general need one butler for each output_run and
+        # thread combination.  This dict is keyed by the former, and the
+        # wrapper type used for the value handles the latter.
+        self._butler_wrappers: dict[str, _ThreadLocalButlerWrapper] = {}
+        if butler is not None:
+            self.assemble_quantum_provenance_graph(
+                butler,
+                qgraphs,
+                collections=collections,
+                where=where,
+                curse_failed_logs=curse_failed_logs,
+                read_caveats=read_caveats,
+                use_qbb=use_qbb,
+                n_cores=n_cores,
+            )
+        elif qgraphs:
+            raise TypeError("'butler' must be provided if `qgraphs` is.")
 
     @property
     def quanta(self) -> Mapping[str, Set[QuantumKey]]:
@@ -1195,245 +1286,562 @@ class QuantumProvenanceGraph:
         """
         return self._xgraph.nodes[key]
 
-    def __add_new_graph(
+    def to_summary(
+        self, butler: Butler | None = None, do_store_logs: bool = True, n_cores: int = 1
+    ) -> Summary:
+        """Summarize the `QuantumProvenanceGraph`.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`, optional
+            Ignored; accepted for backwards compatibility.
+        do_store_logs : `bool`
+            Store the logs in the summary dictionary.
+        n_cores : `int`, optional
+
+        Returns
+        -------
+        result : `Summary`
+            A struct containing counts of quanta and datasets in each of
+            the overall states defined in `QuantumInfo` and `DatasetInfo`,
+            as well as diagnostic information and error messages for failed
+            quanta and strange edge cases, and a list of recovered quanta.
+        """
+        status_log = PeriodicLogger(_LOG)
+        if not self._finalized:
+            raise RuntimeError(
+                """resolve_duplicates must be called to finalize the
+                QuantumProvenanceGraph before making a summary."""
+            )
+        result = Summary()
+        futures: list[concurrent.futures.Future[None]] = []
+        _LOG.verbose("Summarizing %s tasks.", len(self._quanta.keys()))
+        with concurrent.futures.ThreadPoolExecutor(n_cores) as executor:
+            for m, (task_label, quanta) in enumerate(self._quanta.items()):
+                task_summary = TaskSummary()
+                task_summary.n_expected = len(quanta)
+                for n, quantum_key in enumerate(quanta):
+                    quantum_info = self.get_quantum_info(quantum_key)
+                    future = task_summary._add_quantum_info(
+                        quantum_info,
+                        log_getter=self._butler_get if do_store_logs else None,
+                        executor=executor,
+                    )
+                    if future is not None:
+                        futures.append(future)
+                    status_log.log(
+                        "Summarized %s of %s quanta of task %s of %s.",
+                        n + 1,
+                        len(quanta),
+                        m + 1,
+                        len(self._quanta.keys()),
+                    )
+                result.tasks[task_label] = task_summary
+            for n, future in enumerate(concurrent.futures.as_completed(futures)):
+                if (err := future.exception()) is not None:
+                    raise err
+                status_log.log("Loaded messages from %s of %s log datasets.", n + 1, len(futures))
+        _LOG.verbose("Summarizing %s dataset types.", len(self._datasets.keys()))
+        for m, (dataset_type_name, datasets) in enumerate(self._datasets.items()):
+            dataset_type_summary = DatasetTypeSummary(producer="")
+            dataset_type_summary.n_expected = len(datasets)
+            for n, dataset_key in enumerate(datasets):
+                dataset_info = self.get_dataset_info(dataset_key)
+                producer_key = self.get_producer_of(dataset_key)
+                producer_info = self.get_quantum_info(producer_key)
+                # Not ideal, but hard to get out of the graph at the moment.
+                # Change after DM-40441
+                dataset_type_summary.producer = producer_key.task_label
+                dataset_type_summary._add_dataset_info(dataset_info, producer_info)
+                status_log.log(
+                    "Summarized %s of %s datasets of type %s of %s.",
+                    n + 1,
+                    len(datasets),
+                    m + 1,
+                    len(self._datasets.keys()),
+                )
+            result.datasets[dataset_type_name] = dataset_type_summary
+        return result
+
+    def iter_outputs_of(self, quantum_key: QuantumKey) -> Iterator[DatasetKey]:
+        """Iterate through the outputs of a quantum, yielding the keys of
+        all of the datasets produced by the quantum.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey`
+            The key for the quantum whose outputs are needed.
+        """
+        yield from self._xgraph.successors(quantum_key)
+
+    def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
+        """Unpack the predecessor (producer quantum) of a given dataset key
+        from a graph.
+
+        Parameters
+        ----------
+        dataset_key : `DatasetKey`
+            The key for the dataset whose producer quantum is needed.
+
+        Returns
+        -------
+        result : `QuantumKey`
+            The key for the quantum which produced the dataset.
+        """
+        (result,) = self._xgraph.predecessors(dataset_key)
+        return result
+
+    def iter_downstream(
+        self, key: QuantumKey | DatasetKey
+    ) -> Iterator[tuple[QuantumKey, QuantumInfo] | tuple[DatasetKey, DatasetInfo]]:
+        """Iterate over the quanta and datasets that are downstream of a
+        quantum or dataset.
+
+        Parameters
+        ----------
+        key : `QuantumKey` or `DatasetKey`
+            Starting node.
+
+        Returns
+        -------
+        iter : `~collections.abc.Iterator` [ `tuple` ]
+            An iterator over pairs of (`QuantumKey`, `QuantumInfo`) or
+            (`DatasetKey`, `DatasetInfo`).
+        """
+        for key in networkx.dag.descendants(self._xgraph, key):
+            yield (key, self._xgraph.nodes[key])  # type: ignore
+
+    def assemble_quantum_provenance_graph(
         self,
         butler: Butler,
-        qgraph: QuantumGraph | ResourcePathExpression,
+        qgraphs: Sequence[QuantumGraph | ResourcePathExpression],
+        collections: Sequence[str] | None = None,
+        where: str = "",
+        curse_failed_logs: bool = False,
+        read_caveats: Literal["lazy", "exhaustive"] | None = "lazy",
+        use_qbb: bool = True,
+        n_cores: int = 1,
+    ) -> None:
+        """Assemble the quantum provenance graph from a list of all graphs
+        corresponding to processing attempts.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            The Butler used for this report. This should match the Butler used
+            for the run associated with the executed quantum graph.
+        qgraphs : `~collections.abc.Sequence` [`QuantumGraph` |\
+            `~lsst.utils.resources.ResourcePathExpression`]
+            A list of either quantum graph objects or their uri's, to be used
+            to assemble the `QuantumProvenanceGraph`.
+        collections : `~collections.abc.Sequence` [`str`] | `None`
+            Collections to use in `lsst.daf.butler.query_datasets` when testing
+            which datasets are available at a high level.
+        where : `str`
+            A "where" string to use to constrain the datasets; should be
+            provided if ``collections`` includes many datasets that are not in
+            any graphs, to select just those that might be (e.g. when sharding
+            over dimensions and using a final collection that spans multiple
+            shards).
+        curse_failed_logs : `bool`
+            Mark log datasets as CURSED if they are visible in the final
+            output collection. Note that a campaign-level collection must be
+            used here for `collections` if `curse_failed_logs` is `True`.
+        read_caveats : `str` or `None`, optional
+            Whether to read metadata files to get flags that describe qualified
+            successes.  If `None`, no metadata files will be read and all
+            ``caveats`` fields will be `None`.  If "exhaustive", all
+            metadata files will be read.  If "lazy", only metadata files where
+            at least one predicted output is missing will be read.
+        use_qbb : `bool`, optional
+            If `True`, use a quantum-backed butler when reading metadata files.
+            Note that some butler database queries are still run even if this
+            is `True`; this does not avoid database access entirely.
+        n_cores : `int`, optional
+            Number of threads to use for parallelization.
+        """
+        if read_caveats not in ("lazy", "exhaustive", None):
+            raise TypeError(
+                f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
+            )
+        output_runs = []
+        last_time: datetime.datetime | None = None
+        for graph in qgraphs:
+            if not isinstance(graph, QuantumGraph):
+                _LOG.verbose("Loading quantum graph %r.", graph)
+                qgraph = QuantumGraph.loadUri(graph)
+            else:
+                qgraph = graph
+            assert qgraph.metadata is not None, "Saved QGs always have metadata."
+            self._add_new_graph(butler, qgraph, read_caveats=read_caveats, use_qbb=use_qbb, n_cores=n_cores)
+            output_runs.append(qgraph.metadata["output_run"])
+            if last_time is not None and last_time > qgraph.metadata["time"]:
+                raise RuntimeError("Quantum graphs must be passed in chronological order.")
+            last_time = qgraph.metadata["time"]
+        if not collections:
+            # We reverse the order of the associated output runs because the
+            # query in _resolve_duplicates must be done most-recent first.
+            collections = list(reversed(output_runs))
+            assert not curse_failed_logs, (
+                "curse_failed_logs option must be used with one campaign-level collection."
+            )
+        self._resolve_duplicates(butler, collections, where, curse_failed_logs)
+
+    def _add_new_graph(
+        self,
+        butler: Butler,
+        qgraph: QuantumGraph,
         read_caveats: Literal["lazy", "exhaustive"] | None,
+        use_qbb: bool = True,
+        n_cores: int = 1,
     ) -> None:
         """Add a new quantum graph to the `QuantumProvenanceGraph`.
-
-        Notes
-        -----
-        The algorithm: step through the quantum graph. Annotate a
-        `networkx.DiGraph` (`QuantumProvenanceGraph._xgraph`) with all of the
-        relevant information: quanta, dataset types and their associated run
-        collections (these unique quanta- and dataset type-run
-        collection combinations are encapsulated in the classes
-        `DatasetRun` and `QuantumRun`). For each new quantum, annotate
-        the status of the `QuantumRun` by inspecting the graph. If a
-        DatasetType was produced, annotate this in the run by setting
-        `DatasetRun.produced = True`. If a quantum is given BLOCKED
-        or FAILED status, annotate all their successors in the graph
-        as BLOCKED. For each new quantum, use the transition between
-        the current and last `QuantumRun.status` to determine the status
-        to assign to the overall `QuantumInfo`. For example, if a
-        previous run associated with a quantum had the status FAILED,
-        and the status from the new graph reads SUCCESSFUL, we can
-        mark the overall quantum status as SUCCESSFUL and list the data_id
-        as RECOVERED.
 
         Parameters
         ----------
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler
             used for the run associated with the executed quantum graph.
-        qgraph : `QuantumGraph` | `ResourcePathExpression`
-            Either the associated quantum graph object or the uri of the
-            location of said quantum graph.
+        qgraph : `QuantumGraph`
+            The quantum graph object to add.
         read_caveats : `str` or `None`
             Whether to read metadata files to get flags that describe qualified
             successes.  If `None`, no metadata files will be read and all
             ``caveats`` fields will be `None`.  If "exhaustive", all
             metadata files will be read.  If "lazy", only metadata files where
             at least one predicted output is missing will be read.
+        use_qbb : `bool`, optional
+            If `True`, use a quantum-backed butler when reading metadata files.
+            Note that some butler database queries are still run even if this
+            is `True`; this does not avoid database access entirely.
+        n_cores : `int`, optional
+            Number of threads to use for parallelization.
         """
-        # first we load the quantum graph and associated output run collection
-        if not isinstance(qgraph, QuantumGraph):
-            qgraph = QuantumGraph.loadUri(qgraph)
-        assert qgraph.metadata is not None, "Saved QGs always have metadata."
+        status_log = PeriodicLogger(_LOG)
         output_run = qgraph.metadata["output_run"]
+        # Add QuantumRun and DatasetRun (and nodes/edges, as needed) to the
+        # QPG for all quanta in the QG.
+        _LOG.verbose("Adding output run to provenance graph.")
         new_quanta: list[QuantumKey] = []
-        for node in qgraph:
-            # make a key to refer to the quantum and add it to the quantum
-            # provenance graph.
-            quantum_key = QuantumKey(
-                node.taskDef.label, cast(DataCoordinate, node.quantum.dataId).required_values
-            )
-            self._xgraph.add_node(quantum_key)
-            # use the key to get a `QuantumInfo` object for the quantum
-            # and set defaults for its values.
-            quantum_info = self.get_quantum_info(quantum_key)
-            quantum_info.setdefault("messages", [])
-            quantum_info.setdefault("runs", {})
-            quantum_info.setdefault("data_id", cast(DataCoordinate, node.quantum.dataId))
-            quantum_info.setdefault("status", QuantumInfoStatus.UNKNOWN)
-            quantum_info.setdefault("recovered", False)
-            new_quanta.append(quantum_key)
-            self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
-            metadata_ref = node.quantum.outputs[f"{node.taskDef.label}_metadata"][0]
-            log_ref = node.quantum.outputs[f"{node.taskDef.label}_log"][0]
-            # associate run collections with specific quanta. this is important
-            # if the same quanta are processed in multiple runs as in recovery
-            # workflows.
-            quantum_runs = quantum_info.setdefault("runs", {})
-            # the `QuantumRun` here is the specific quantum-run collection
-            # combination.
-            quantum_runs[output_run] = QuantumRun(id=node.nodeId, metadata_ref=metadata_ref, log_ref=log_ref)
-            # For each of the outputs of the quanta (datasets) make a key to
-            # refer to the dataset.
-            for ref in itertools.chain.from_iterable(node.quantum.outputs.values()):
-                dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
-                # add datasets to the nodes of the graph, with edges on the
-                # quanta.
-                self._xgraph.add_edge(quantum_key, dataset_key)
-                # use the dataset key to make a `DatasetInfo` object for
-                # the dataset and set defaults for its values.
-                dataset_info = self.get_dataset_info(dataset_key)
-                dataset_info.setdefault("data_id", ref.dataId)
-                dataset_info.setdefault("status", DatasetInfoStatus.PREDICTED_ONLY)
-                dataset_info.setdefault("messages", [])
-                self._datasets.setdefault(dataset_key.dataset_type_name, set()).add(dataset_key)
-                dataset_runs = dataset_info.setdefault("runs", {})
-                # make a `DatasetRun` for the specific dataset-run
-                # collection combination.
-                dataset_runs[output_run] = DatasetRun(id=ref.id)
-                # save metadata and logs for easier status interpretation later
-                if dataset_key.dataset_type_name.endswith("_metadata"):
-                    quantum_info["metadata"] = dataset_key
-                    quantum_runs[output_run].metadata_ref = ref
-                if dataset_key.dataset_type_name.endswith("_log"):
-                    quantum_info["log"] = dataset_key
-                    quantum_runs[output_run].log_ref = ref
-            for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
-                dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.required_values)
-                if dataset_key in self._xgraph:
-                    # add another edge if the input datasetType and quantum are
-                    # in the graph
-                    self._xgraph.add_edge(dataset_key, quantum_key)
-        for dataset_type_name in self._datasets:
-            for ref in butler.registry.queryDatasets(dataset_type_name, collections=output_run):
-                # find the datasets in the butler
+        for n, node in enumerate(qgraph):
+            new_quanta.append(self._add_new_quantum(node, output_run))
+            status_log.log("Added nodes for %s of %s quanta.", n + 1, len(qgraph))
+        # Query for datasets in the output run to see which ones were actually
+        # produced.
+        _LOG.verbose("Querying for existence for %s dataset types.", len(self._datasets.keys()))
+        for m, dataset_type_name in enumerate(self._datasets):
+            try:
+                refs = butler.query_datasets(
+                    dataset_type_name, collections=output_run, explain=False, limit=None
+                )
+            except MissingDatasetTypeError:
+                continue
+            for n, ref in enumerate(refs):
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 dataset_info = self.get_dataset_info(dataset_key)
                 dataset_run = dataset_info["runs"][output_run]  # dataset run (singular)
-                # if the dataset is in the output run collection, we produced
-                # it!
                 dataset_run.produced = True
-        # the outputs of failed or blocked quanta in this run.
-        blocked: set[DatasetKey] = set()
-        for quantum_key in new_quanta:
-            quantum_info = self.get_quantum_info(quantum_key)
-            quantum_run = quantum_info["runs"][output_run]
-            metadata_key = quantum_info["metadata"]
-            log_key = quantum_info["log"]
-            metadata_dataset_run = self.get_dataset_info(metadata_key)["runs"][output_run]
-            log_dataset_run = self.get_dataset_info(log_key)["runs"][output_run]
-            # if we do have metadata, we know that the task finished.
-            if metadata_dataset_run.produced:
-                # if we also have logs, this is a success.
-                if log_dataset_run.produced:
-                    quantum_run.status = QuantumRunStatus.SUCCESSFUL
-                else:
-                    # if we have metadata and no logs, this is a very rare
-                    # case. either the task ran successfully and the datastore
-                    # died immediately afterwards, or some supporting
-                    # infrastructure for transferring the logs to the datastore
-                    # failed.
-                    quantum_run.status = QuantumRunStatus.LOGS_MISSING
-                # If requested, read caveats from metadata.
-                if read_caveats == "exhaustive" or (
-                    read_caveats == "lazy"
-                    and not all(
-                        self.get_dataset_info(dataset_key)["runs"][output_run].produced
-                        for dataset_key in self._xgraph.successors(quantum_key)
-                    )
+                status_log.log(
+                    "Updated status for %s of %s datasets of %s of %s types.",
+                    n + 1,
+                    len(refs),
+                    m + 1,
+                    len(self._datasets.keys()),
+                )
+        if use_qbb:
+            _LOG.verbose("Using quantum-backed butler for metadata loads.")
+            self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_qbb(butler, qgraph)
+        else:
+            _LOG.verbose("Using full butler for metadata loads.")
+            self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_full(butler)
+
+        _LOG.verbose("Setting quantum status from dataset existence.")
+        # Update quantum status information based on which datasets were
+        # produced.
+        blocked: set[DatasetKey] = set()  # the outputs of failed or blocked quanta in this run.
+        with concurrent.futures.ThreadPoolExecutor(n_cores) as executor:
+            futures: list[concurrent.futures.Future[None]] = []
+            for n, quantum_key in enumerate(new_quanta):
+                if (
+                    self._update_run_status(quantum_key, output_run, blocked) == QuantumRunStatus.SUCCESSFUL
+                    and read_caveats is not None
                 ):
-                    md = butler.get(quantum_run.metadata_ref, storageClass="TaskMetadata")
-                    try:
-                        # Int conversion guards against spurious conversion to
-                        # float that can apparently sometimes happen in
-                        # TaskMetadata.
-                        quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
-                    except LookupError:
-                        pass
-                    try:
-                        quantum_run.exception = ExceptionInfo.from_metadata(
-                            md[quantum_key.task_label]["failure"]
-                        )
-                    except LookupError:
-                        pass
-            # missing metadata means that the task did not finish.
+                    self._update_caveats(quantum_key, output_run, read_caveats, executor, futures)
+                self._update_info_status(quantum_key, output_run)
+                status_log.log("Updated status for %s of %s quanta.", n + 1, len(new_quanta))
+            for n, future in enumerate(concurrent.futures.as_completed(futures)):
+                if (err := future.exception()) is not None:
+                    raise err
+                status_log.log("Added exception/caveat information for %s of %s quanta.", n + 1, len(futures))
+
+    def _add_new_quantum(self, node: QuantumNode, output_run: str) -> QuantumKey:
+        """Add a quantum from a new quantum graph to the provenance graph.
+
+        Parameters
+        ----------
+        node : `QuantumNode`
+            Node in the quantum graph.
+        output_run : `str`
+            Output run collection.
+
+        Returns
+        -------
+        quantum_key : `QuantumKey`
+            Key for the new or existing node in the provenance graph.
+
+        Notes
+        -----
+        This method adds new quantum and dataset nodes to the provenance graph
+        if they don't already exist, while adding new `QuantumRun` and
+        `DatasetRun` objects to both new and existing nodes.  All status
+        information on those nodes is set to initial, default values that
+        generally reflect quanta that have not been attempted to be run.
+        """
+        # make a key to refer to the quantum and add it to the quantum
+        # provenance graph.
+        quantum_key = QuantumKey(
+            node.taskDef.label, cast(DataCoordinate, node.quantum.dataId).required_values
+        )
+        self._xgraph.add_node(quantum_key)
+        # use the key to get a `QuantumInfo` object for the quantum
+        # and set defaults for its values.
+        quantum_info = self.get_quantum_info(quantum_key)
+        quantum_info.setdefault("messages", [])
+        quantum_info.setdefault("runs", {})
+        quantum_info.setdefault("data_id", cast(DataCoordinate, node.quantum.dataId))
+        quantum_info.setdefault("status", QuantumInfoStatus.UNKNOWN)
+        quantum_info.setdefault("recovered", False)
+        self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
+        metadata_ref = node.quantum.outputs[f"{node.taskDef.label}_metadata"][0]
+        log_ref = node.quantum.outputs[f"{node.taskDef.label}_log"][0]
+        # associate run collections with specific quanta. this is important
+        # if the same quanta are processed in multiple runs as in recovery
+        # workflows.
+        quantum_runs = quantum_info.setdefault("runs", {})
+        # the `QuantumRun` here is the specific quantum-run collection
+        # combination.
+        quantum_runs[output_run] = QuantumRun(id=node.nodeId, metadata_ref=metadata_ref, log_ref=log_ref)
+        # For each of the outputs of the quanta (datasets) make a key to
+        # refer to the dataset.
+        for ref in itertools.chain.from_iterable(node.quantum.outputs.values()):
+            dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
+            # add datasets to the nodes of the graph, with edges on the
+            # quanta.
+            self._xgraph.add_edge(quantum_key, dataset_key)
+            # use the dataset key to make a `DatasetInfo` object for
+            # the dataset and set defaults for its values.
+            dataset_info = self.get_dataset_info(dataset_key)
+            dataset_info.setdefault("data_id", ref.dataId)
+            dataset_info.setdefault("status", DatasetInfoStatus.PREDICTED_ONLY)
+            dataset_info.setdefault("messages", [])
+            self._datasets.setdefault(dataset_key.dataset_type_name, set()).add(dataset_key)
+            dataset_runs = dataset_info.setdefault("runs", {})
+            # make a `DatasetRun` for the specific dataset-run
+            # collection combination.
+            dataset_runs[output_run] = DatasetRun(id=ref.id)
+            # save metadata and logs for easier status interpretation later
+            if dataset_key.dataset_type_name.endswith("_metadata"):
+                quantum_info["metadata"] = dataset_key
+                quantum_runs[output_run].metadata_ref = ref
+            if dataset_key.dataset_type_name.endswith("_log"):
+                quantum_info["log"] = dataset_key
+                quantum_runs[output_run].log_ref = ref
+        for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
+            dataset_key = DatasetKey(ref.datasetType.nameAndComponent()[0], ref.dataId.required_values)
+            if dataset_key in self._xgraph:
+                # add another edge if the input datasetType and quantum are
+                # in the graph
+                self._xgraph.add_edge(dataset_key, quantum_key)
+        return quantum_key
+
+    def _update_run_status(
+        self, quantum_key: QuantumKey, output_run: str, blocked: set[DatasetKey]
+    ) -> QuantumRunStatus:
+        """Update the status of this quantum in its own output run, using
+        information in the graph about which of its output datasets exist.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey`
+            Key for the node in the provenance graph.
+        output_run : `str`
+            Output run collection.
+        blocked : `set` [ `DatasetKey` ]
+            A set of output datasets (for all quanta, not just this one) that
+            were blocked by failures.  Will be modified in place.
+
+        Returns
+        -------
+        run_status : `QuantumRunStatus`
+            Run-specific status for this quantum.
+        """
+        quantum_info = self.get_quantum_info(quantum_key)
+        quantum_run = quantum_info["runs"][output_run]
+        metadata_key = quantum_info["metadata"]
+        log_key = quantum_info["log"]
+        metadata_dataset_run = self.get_dataset_info(metadata_key)["runs"][output_run]
+        log_dataset_run = self.get_dataset_info(log_key)["runs"][output_run]
+        # if we do have metadata, we know that the task finished.
+        if metadata_dataset_run.produced:
+            # if we also have logs, this is a success.
+            if log_dataset_run.produced:
+                quantum_run.status = QuantumRunStatus.SUCCESSFUL
             else:
-                # if we have logs and no metadata, the task not finishing is
-                # a failure in the task itself. This includes all payload
-                # errors and some other problems.
-                if log_dataset_run.produced:
-                    quantum_run.status = QuantumRunStatus.FAILED
-                    # if a quantum fails, all its successor datasets are
-                    # blocked.
-                    blocked.update(self._xgraph.successors(quantum_key))
-                # if we are missing metadata and logs, either the task was not
-                # started, or a hard external environmental error prevented
-                # it from writing logs or metadata.
+                # if we have metadata and no logs, this is a very rare
+                # case. either the task ran successfully and the datastore
+                # died immediately afterwards, or some supporting
+                # infrastructure for transferring the logs to the datastore
+                # failed.
+                quantum_run.status = QuantumRunStatus.LOGS_MISSING
+
+        # missing metadata means that the task did not finish.
+        else:
+            # if we have logs and no metadata, the task not finishing is
+            # a failure in the task itself. This includes all payload
+            # errors and some other problems.
+            if log_dataset_run.produced:
+                quantum_run.status = QuantumRunStatus.FAILED
+                # if a quantum fails, all its successor datasets are
+                # blocked.
+                blocked.update(self._xgraph.successors(quantum_key))
+            # if we are missing metadata and logs, either the task was not
+            # started, or a hard external environmental error prevented
+            # it from writing logs or metadata.
+            else:
+                # if none of this quantum's inputs were blocked, the
+                # metadata must just be missing.
+                if blocked.isdisjoint(self._xgraph.predecessors(quantum_key)):
+                    # None of this quantum's inputs were blocked.
+                    quantum_run.status = QuantumRunStatus.METADATA_MISSING
+                # otherwise we can assume from no metadata and no logs
+                # that the task was blocked by an upstream failure.
                 else:
-                    # if none of this quantum's inputs were blocked, the
-                    # metadata must just be missing.
-                    if blocked.isdisjoint(self._xgraph.predecessors(quantum_key)):
-                        # None of this quantum's inputs were blocked.
-                        quantum_run.status = QuantumRunStatus.METADATA_MISSING
-                    # otherwise we can assume from no metadata and no logs
-                    # that the task was blocked by an upstream failure.
-                    else:
-                        quantum_run.status = QuantumRunStatus.BLOCKED
-                        blocked.update(self._xgraph.successors(quantum_key))
+                    quantum_run.status = QuantumRunStatus.BLOCKED
+                    blocked.update(self._xgraph.successors(quantum_key))
+        return quantum_run.status
 
-            # Now we can start using state transitions to mark overall status.
-            last_status = quantum_info["status"]
-            new_status: QuantumInfoStatus
-            match last_status, quantum_run.status:
-                # A quantum can never escape a WONKY state.
-                case (QuantumInfoStatus.WONKY, _):
-                    new_status = QuantumInfoStatus.WONKY
-                # Any transition to a success (excluding from WONKY) is
-                # a success; any transition from a failed state is also a
-                # recovery.
-                case (_, QuantumRunStatus.SUCCESSFUL):
-                    new_status = QuantumInfoStatus.SUCCESSFUL
-                    if (
-                        last_status != QuantumInfoStatus.SUCCESSFUL
-                        and last_status != QuantumInfoStatus.UNKNOWN
-                    ):
-                        quantum_info["recovered"] = True
-                # Missing logs are one of the categories of wonky quanta. They
-                # interfere with our ability to discern quantum status and are
-                # signs of weird things afoot in processing. Add a message
-                # noting why this quantum is being marked as wonky to be stored
-                # in its `UnsuccessfulQuantumInfo`.
-                case (_, QuantumRunStatus.LOGS_MISSING):
-                    new_status = QuantumInfoStatus.WONKY
-                    quantum_info["messages"].append(f"Logs missing for run {output_run!r}.")
-                # Leaving a successful state is another category of wonky
-                # quanta. If a previous success fails on a subsequent run,
-                # a human should inspect why. Add a message noting why this
-                # quantum is being marked as wonky to be stored in its
-                # `UnsuccessfulQuantumInfo`.
-                case (QuantumInfoStatus.SUCCESSFUL, _):
-                    new_status = QuantumInfoStatus.WONKY
-                    quantum_info["messages"].append(
-                        f"Status went from successful in run {list(quantum_info['runs'].values())[-1]!r} "
-                        f"to {quantum_run.status!r} in {output_run!r}."
-                    )
-                # If a quantum status is unknown and it moves to blocked, we
-                # know for sure that it is a blocked quantum.
-                case (QuantumInfoStatus.UNKNOWN, QuantumRunStatus.BLOCKED):
-                    new_status = QuantumInfoStatus.BLOCKED
-                # A transition into blocked does not change the overall quantum
-                # status for a failure.
-                case (_, QuantumRunStatus.BLOCKED):
-                    new_status = last_status
-                # If a quantum transitions from any state into missing
-                # metadata, we don't have enough information to diagnose its
-                # state.
-                case (_, QuantumRunStatus.METADATA_MISSING):
-                    new_status = QuantumInfoStatus.UNKNOWN
-                # Any transition into failure is a failed state.
-                case (_, QuantumRunStatus.FAILED):
-                    new_status = QuantumInfoStatus.FAILED
-            # Update `QuantumInfo.status` for this quantum.
-            quantum_info["status"] = new_status
+    def _update_info_status(self, quantum_key: QuantumKey, output_run: str) -> QuantumInfoStatus:
+        """Update the status of this quantum across all runs with the status
+        for its latest run.
 
-    def __resolve_duplicates(
+        Parameters
+        ----------
+        quantum_key : `QuantumKey`
+            Key for the node in the provenance graph.
+        output_run : `str`
+            Output run collection.
+
+        Returns
+        -------
+        info_status : `QuantumRunStatus`
+            Run-specific status for this quantum.
+        """
+        # Now we can start using state transitions to mark overall status.
+        quantum_info = self.get_quantum_info(quantum_key)
+        quantum_run = quantum_info["runs"][output_run]
+        last_status = quantum_info["status"]
+        new_status: QuantumInfoStatus
+        match last_status, quantum_run.status:
+            # A quantum can never escape a WONKY state.
+            case (QuantumInfoStatus.WONKY, _):
+                new_status = QuantumInfoStatus.WONKY
+            # Any transition to a success (excluding from WONKY) is
+            # a success; any transition from a failed state is also a
+            # recovery.
+            case (_, QuantumRunStatus.SUCCESSFUL):
+                new_status = QuantumInfoStatus.SUCCESSFUL
+                if last_status != QuantumInfoStatus.SUCCESSFUL and last_status != QuantumInfoStatus.UNKNOWN:
+                    quantum_info["recovered"] = True
+            # Missing logs are one of the categories of wonky quanta. They
+            # interfere with our ability to discern quantum status and are
+            # signs of weird things afoot in processing. Add a message
+            # noting why this quantum is being marked as wonky to be stored
+            # in its `UnsuccessfulQuantumInfo`.
+            case (_, QuantumRunStatus.LOGS_MISSING):
+                new_status = QuantumInfoStatus.WONKY
+                quantum_info["messages"].append(f"Logs missing for run {output_run!r}.")
+            # Leaving a successful state is another category of wonky
+            # quanta. If a previous success fails on a subsequent run,
+            # a human should inspect why. Add a message noting why this
+            # quantum is being marked as wonky to be stored in its
+            # `UnsuccessfulQuantumInfo`.
+            case (QuantumInfoStatus.SUCCESSFUL, _):
+                new_status = QuantumInfoStatus.WONKY
+                quantum_info["messages"].append(
+                    f"Status went from successful in run {list(quantum_info['runs'].values())[-1]!r} "
+                    f"to {quantum_run.status!r} in {output_run!r}."
+                )
+            # If a quantum status is unknown and it moves to blocked, we
+            # know for sure that it is a blocked quantum.
+            case (QuantumInfoStatus.UNKNOWN, QuantumRunStatus.BLOCKED):
+                new_status = QuantumInfoStatus.BLOCKED
+            # A transition into blocked does not change the overall quantum
+            # status for a failure.
+            case (_, QuantumRunStatus.BLOCKED):
+                new_status = last_status
+            # If a quantum transitions from any state into missing
+            # metadata, we don't have enough information to diagnose its
+            # state.
+            case (_, QuantumRunStatus.METADATA_MISSING):
+                new_status = QuantumInfoStatus.UNKNOWN
+            # Any transition into failure is a failed state.
+            case (_, QuantumRunStatus.FAILED):
+                new_status = QuantumInfoStatus.FAILED
+        # Update `QuantumInfo.status` for this quantum.
+        quantum_info["status"] = new_status
+        return new_status
+
+    def _update_caveats(
+        self,
+        quantum_key: QuantumKey,
+        output_run: str,
+        read_caveats: Literal["lazy", "exhaustive"],
+        executor: concurrent.futures.Executor,
+        futures: list[concurrent.futures.Future[None]],
+    ) -> None:
+        """Read quantum success caveats and exception information from task
+        metadata.
+
+        Parameters
+        ----------
+        quantum_key : `QuantumKey`
+            Key for the node in the provenance graph.
+        output_run : `str`
+            Output run collection.
+        read_caveats : `str`
+            Whether to read metadata files to get flags that describe qualified
+            successes. If "exhaustive", all metadata files will be read.  If
+            "lazy", only metadata files where at least one predicted output is
+            missing will be read.
+        butler : `lsst.daf.butler.Butler`
+            The Butler used for this report. This should match the Butler
+            used for the run associated with the executed quantum graph.
+        """
+        if read_caveats == "lazy" and all(
+            self.get_dataset_info(dataset_key)["runs"][output_run].produced
+            for dataset_key in self._xgraph.successors(quantum_key)
+        ):
+            return
+        quantum_info = self.get_quantum_info(quantum_key)
+        quantum_run = quantum_info["runs"][output_run]
+
+        def read_metadata() -> None:
+            md = self._butler_get(quantum_run.metadata_ref, storageClass="TaskMetadata")
+            try:
+                # Int conversion guards against spurious conversion to
+                # float that can apparently sometimes happen in
+                # TaskMetadata.
+                quantum_run.caveats = QuantumSuccessCaveats(int(md["quantum"]["caveats"]))
+            except LookupError:
+                pass
+            try:
+                quantum_run.exception = ExceptionInfo._from_metadata(md[quantum_key.task_label]["failure"])
+            except LookupError:
+                pass
+
+        futures.append(executor.submit(read_metadata))
+
+    def _resolve_duplicates(
         self,
         butler: Butler,
         collections: Sequence[str] | None = None,
@@ -1450,7 +1858,7 @@ class QuantumProvenanceGraph:
         dataset, mark the producer quantum as WONKY.
 
         This method should be called after
-        `QuantumProvenanceGraph.__add_new_graph` has been called on every graph
+        `QuantumProvenanceGraph._add_new_graph` has been called on every graph
         associated with the data processing.
 
         Parameters
@@ -1458,19 +1866,20 @@ class QuantumProvenanceGraph:
         butler : `lsst.daf.butler.Butler`
             The Butler used for this report. This should match the Butler used
             for the run associated with the executed quantum graph.
-
-        collections : `Sequence` [`str`] | `None`
-            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-            paring down the query would be useful.
-
+        collections : `~collections.abc.Sequence` [`str`] | `None`
+            Collections to use in `lsst.daf.butler.query_datasets` when testing
+            which datasets are available at a high level.
         where : `str`
-            A "where" string to use to constrain the collections, if passed.
-
+            A "where" string to use to constrain the datasets; should be
+            provided if ``collections`` includes many datasets that are not in
+            any graphs, to select just those that might be (e.g. when sharding
+            over dimensions and using a final collection that spans multiple
+            shards).
         curse_failed_logs : `bool`
             Mark log datasets as CURSED if they are visible in the final
             output collection. Note that a campaign-level collection must be
             used here for `collections` if `curse_failed_logs` is `True`; if
-            `__resolve_duplicates` is run on a list of group-level collections
+            `_resolve_duplicates` is run on a list of group-level collections
             then each will only show log datasets from their own failures as
             visible and datasets from others will be marked as cursed.
         """
@@ -1483,14 +1892,17 @@ class QuantumProvenanceGraph:
                 been added, or make a new graph with all constituent
                 attempts."""
             )
-        for dataset_type_name in self._datasets:
+        status_log = PeriodicLogger(_LOG)
+        _LOG.verbose("Querying for dataset visibility.")
+        for m, dataset_type_name in enumerate(self._datasets):
             # find datasets in a larger collection.
-            for ref in butler.registry.queryDatasets(
-                dataset_type_name,
-                collections=collections,
-                findFirst=True,
-                where=where,
-            ):
+            try:
+                refs = butler.query_datasets(
+                    dataset_type_name, collections=collections, where=where, limit=None, explain=False
+                )
+            except MissingDatasetTypeError:
+                continue
+            for n, ref in enumerate(refs):
                 dataset_key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
                 try:
                     dataset_info = self.get_dataset_info(dataset_key)
@@ -1500,9 +1912,16 @@ class QuantumProvenanceGraph:
                     continue
                 # queryable datasets are `visible`.
                 dataset_info["runs"][ref.run].visible = True
-
-        for task_quanta in self._quanta.values():
-            for quantum_key in task_quanta:
+                status_log.log(
+                    "Updated visibility for %s of %s datasets of type %s of %s.",
+                    n + 1,
+                    len(refs),
+                    m + 1,
+                    len(self._datasets.keys()),
+                )
+        _LOG.verbose("Updating task status from dataset visibility.")
+        for m, task_quanta in enumerate(self._quanta.values()):
+            for n, quantum_key in enumerate(task_quanta):
                 # runs associated with visible datasets.
                 visible_runs: set[str] = set()
                 quantum_info = self.get_quantum_info(quantum_key)
@@ -1570,168 +1989,118 @@ class QuantumProvenanceGraph:
                             + f"from {str(dataset_info['runs'])};"
                             + f"{str(dataset_info['status'])}"
                         )
+                status_log.log(
+                    "Updated task status from visibility for %s of %s quanta of task %s of %s.",
+                    n + 1,
+                    len(task_quanta),
+                    m + 1,
+                    len(self._quanta.keys()),
+                )
         # If we make it all the way through resolve_duplicates, set
         # self._finalized = True so that it cannot be run again.
         self._finalized = True
 
-    def assemble_quantum_provenance_graph(
-        self,
-        butler: Butler,
-        qgraphs: Sequence[QuantumGraph | ResourcePathExpression],
-        collections: Sequence[str] | None = None,
-        where: str = "",
-        curse_failed_logs: bool = False,
-        read_caveats: Literal["lazy", "exhaustive"] | None = "exhaustive",
-    ) -> None:
-        """Assemble the quantum provenance graph from a list of all graphs
-        corresponding to processing attempts.
+    def _butler_get(self, ref: DatasetRef, **kwargs: Any) -> Any:
+        return self._butler_wrappers[ref.run].butler.get(ref, **kwargs)
 
-        This method calls the private method `__add_new_graph` on each of the
-        constituent graphs, verifying that the graphs have been passed in
-        order. After `__add_new_graph` has been called on all graphs in the
-        `Sequence`, the method calls `__resolve_duplicates`.
 
-        Parameters
-        ----------
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report. This should match the Butler used
-            for the run associated with the executed quantum graph.
-        qgraphs : `Sequence` [`QuantumGraph` | `ResourcePathExpression`]
-            A list of either quantum graph objects or their uri's, to be used
-            to assemble the `QuantumProvenanceGraph`.
-        collections : `Sequence` [`str`] | `None`
-            Collections to use in `lsst.daf.butler.registry.queryDatasets` if
-            paring down the query would be useful.
-        where : `str`
-            A "where" string to use to constrain the collections, if passed.
-        curse_failed_logs : `bool`
-            Mark log datasets as CURSED if they are visible in the final
-            output collection. Note that a campaign-level collection must be
-            used here for `collections` if `curse_failed_logs` is `True`; if
-            `__resolve_duplicates` is run on a list of group-level collections
-            then each will only show log datasets from their own failures as
-            visible and datasets from others will be marked as cursed.
-        read_caveats : `str` or `None`, optional
-            Whether to read metadata files to get flags that describe qualified
-            successes.  If `None`, no metadata files will be read and all
-            ``caveats`` fields will be `None`.  If "exhaustive", all
-            metadata files will be read.  If "lazy", only metadata files where
-            at least one predicted output is missing will be read.
-        """
-        if read_caveats not in ("lazy", "exhaustive", None):
-            raise TypeError(
-                f"Invalid option {read_caveats!r} for read_caveats; should be 'lazy', 'exhaustive', or None."
-            )
-        output_runs = []
-        for graph in qgraphs:
-            qgraph = graph if isinstance(graph, QuantumGraph) else QuantumGraph.loadUri(graph)
-            assert qgraph.metadata is not None, "Saved QGs always have metadata."
-            self.__add_new_graph(butler, qgraph, read_caveats=read_caveats)
-            output_runs.append(qgraph.metadata["output_run"])
-        # If the user has not passed a `collections` variable
-        if not collections:
-            # We reverse the order of the associated output runs because the
-            # query in __resolve_duplicates must be done most recent-first.
-            collections = list(reversed(output_runs))
-            assert not curse_failed_logs, (
-                "curse_failed_logs option must be used with one campaign-level collection."
-            )
-        self.__resolve_duplicates(butler, collections, where, curse_failed_logs)
+class _ThreadLocalButlerWrapper:
+    """A wrapper for a thread-local limited butler.
 
-    def to_summary(self, butler: Butler, do_store_logs: bool = True) -> Summary:
-        """Summarize the `QuantumProvenanceGraph`.
+    Parameter
+    ---------
+    factory : `~collections.abc.Callable`
+        A callable that takes no arguments and returns a limited butler.
+    """
+
+    def __init__(self, factory: Callable[[], LimitedButler]):
+        self._factory = factory
+        self._thread_local = threading.local()
+
+    @classmethod
+    def wrap_qbb(cls, full_butler: Butler, qg: QuantumGraph) -> _ThreadLocalButlerWrapper:
+        """Wrap a `~lsst.daf.butler.QuantumBackedButler` suitable for reading
+        log and metadata files.
 
         Parameters
         ----------
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report.
-        do_store_logs : `bool`
-            Store the logs in the summary dictionary.
+        full_butler : `~lsst.daf.butler.Butler`
+            Full butler to draw datastore and dimension configuration from.
+        qg : `QuantumGraph`
+            Quantum graph,
 
         Returns
         -------
-        result : `Summary`
-            A struct containing counts of quanta and datasets in each of
-            the overall states defined in `QuantumInfo` and `DatasetInfo`,
-            as well as diagnostic information and error messages for failed
-            quanta and strange edge cases, and a list of recovered quanta.
+        wrapper : `_ThreadLocalButlerWrapper`
+            A wrapper that provides access to a thread-local QBB, constructing]
+            it on first use.
         """
-        if not self._finalized:
-            raise RuntimeError(
-                """resolve_duplicates must be called to finalize the
-                QuantumProvenanceGraph before making a summary."""
-            )
-        result = Summary()
-        for task_label, quanta in self._quanta.items():
-            task_summary = TaskSummary()
-            task_summary.n_expected = len(quanta)
-            for quantum_key in quanta:
-                quantum_info = self.get_quantum_info(quantum_key)
-                task_summary.add_quantum_info(quantum_info, butler, do_store_logs)
-            result.tasks[task_label] = task_summary
+        dataset_ids = []
+        for task_label in qg.pipeline_graph.tasks.keys():
+            for quantum in qg.get_task_quanta(task_label).values():
+                dataset_ids.append(quantum.outputs[LOG_OUTPUT_TEMPLATE.format(label=task_label)][0].id)
+                dataset_ids.append(quantum.outputs[METADATA_OUTPUT_TEMPLATE.format(label=task_label)][0].id)
+        try:
+            butler_config = full_butler._config  # type: ignore[attr-defined]
+        except AttributeError:
+            raise RuntimeError("use_qbb=True requires a direct butler.") from None
+        factory = _QuantumBackedButlerFactory(
+            butler_config,
+            dataset_ids,
+            full_butler.dimensions,
+            dataset_types={dt.name: dt for dt in qg.registryDatasetTypes()},
+        )
+        return cls(factory)
 
-        for dataset_type_name, datasets in self._datasets.items():
-            dataset_type_summary = DatasetTypeSummary(producer="")
-            dataset_type_summary.n_expected = len(datasets)
-            for dataset_key in datasets:
-                dataset_info = self.get_dataset_info(dataset_key)
-                producer_key = self.get_producer_of(dataset_key)
-                producer_info = self.get_quantum_info(producer_key)
-                # Not ideal, but hard to get out of the graph at the moment.
-                # Change after DM-40441
-                dataset_type_summary.producer = producer_key.task_label
-                dataset_type_summary.add_dataset_info(dataset_info, producer_info)
-
-            result.datasets[dataset_type_name] = dataset_type_summary
-        return result
-
-    def iter_outputs_of(self, quantum_key: QuantumKey) -> Iterator[DatasetKey]:
-        """Iterate through the outputs of a quantum, yielding all the
-        `DatasetKey`s produced by the quantum.
+    @classmethod
+    def wrap_full(cls, full_butler: Butler) -> _ThreadLocalButlerWrapper:
+        """Wrap a full `~lsst.daf.butler.Butler`.
 
         Parameters
         ----------
-        quantum_key : `QuantumKey`
-            The key for the quantum whose outputs are needed.
-        """
-        yield from self._xgraph.successors(quantum_key)
-
-    def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey:
-        """Unpack the predecessor (producer quantum) of a given dataset key
-        from a graph.
-
-        Parameters
-        ----------
-        dataset_key : `DatasetKey`
-            The key for the dataset whose producer quantum is needed.
+        full_butler : `~lsst.daf.butler.Butler`
+            Full butler to clone when making thread-local copies.
 
         Returns
         -------
-        result : `QuantumKey`
-            The key for the quantum which produced the dataset.
+        wrapper : `_ThreadLocalButlerWrapper`
+            A wrapper that provides access to a thread-local butler,
+            constructing it on first use.
         """
-        (result,) = self._xgraph.predecessors(dataset_key)
-        return result
+        return cls(full_butler.clone)
 
-    def iter_downstream(
-        self, key: QuantumKey | DatasetKey
-    ) -> Iterator[tuple[QuantumKey, QuantumInfo] | tuple[DatasetKey, DatasetInfo]]:
-        """Iterate over the quanta and datasets that are downstream of a
-        quantum or dataset.
+    @property
+    def butler(self) -> LimitedButler:
+        """The wrapped butler, constructed on first use within each thread."""
+        if (butler := getattr(self._thread_local, "butler", None)) is None:
+            self._thread_local.butler = self._factory()
+            butler = self._thread_local.butler
+        return butler
 
-        Parameters
-        ----------
-        key : `QuantumKey` or `DatasetKey`
-            Starting node.
 
-        Returns
-        -------
-        iter : `~collections.abc.Iterator` [ `tuple` ]
-            An iterator over pairs of (`QuantumKey`, `QuantumInfo`) or
-            (`DatasetKey`, `DatasetInfo`).
-        """
-        for key in networkx.dag.descendants(self._xgraph, key):
-            yield (key, self._xgraph.nodes[key])  # type: ignore
+@dataclasses.dataclass
+class _QuantumBackedButlerFactory:
+    """A factory for `~lsst.daf.butler.QuantumBackedButler`, for use by
+    `_ThreadLocalButlerWrapper`.
+    """
+
+    config: ButlerConfig
+    dataset_ids: list[DatasetId]
+    universe: DimensionUniverse
+    dataset_types: dict[str, DatasetType]
+
+    def __call__(self) -> QuantumBackedButler:
+        return QuantumBackedButler.from_predicted(
+            self.config,
+            predicted_inputs=self.dataset_ids,
+            predicted_outputs=[],
+            dimensions=self.universe,
+            # We don't need the datastore records in the QG because we're
+            # only going to read metadata and logs, and those are never
+            # overall inputs.
+            datastore_records={},
+            dataset_types=self.dataset_types,
+        )
 
 
 def _cli() -> None:
