@@ -37,9 +37,10 @@ import os
 import uuid
 import zipfile
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
+from contextlib import ExitStack
 from io import BytesIO
-from typing import BinaryIO, ClassVar, Generic, Self, TypeVar
+from typing import ClassVar, Generic, Self, TypeVar
 
 import click
 import pydantic
@@ -302,89 +303,85 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
         read_thin_quanta: bool = True,
     ) -> Self:
         uri = ResourcePath(uri)
+        with ExitStack() as exit_stack:
+            if quanta is None:
+                read_thin_quanta = True
+                with time_this(_LOG, "Reading raw bytes", level=logging.INFO):
+                    data = uri.read()
+                    stream = BytesIO(data)
+            else:
+                stream = exit_stack.enter_context(uri.open(mode="rb"))
+            with time_this(_LOG, "Initializing zip file", level=logging.INFO):
+                zf = exit_stack.enter_context(zipfile.ZipFile(stream, mode="r"))
+            with time_this(_LOG, "Reading header", level=logging.INFO):
+                if zipfile.Path(zf, "header.json.zst").exists():
+                    if zstandard is None:
+                        raise RuntimeError(f"Cannot read {zf.filename} without zstandard.")
+                    decompressor = zstandard.ZstdDecompressor()
+                    ext = "zst"
+                elif zipfile.Path(zf, "header.json.xz").exists():
+                    decompressor = lzma
+                    ext = "xz"
+                else:
+                    raise RuntimeError(f"{zf.filename} does not include the expected quantum graph header.")
 
-        def read(stream: BinaryIO, quanta: Iterable[uuid.UUID] | None):
-            with zipfile.ZipFile(stream, mode="r") as zf:
-                with time_this(_LOG, "Reading common components", level=logging.INFO):
-                    if zipfile.Path(zf, "header.json.zst").exists():
-                        if zstandard is None:
-                            raise RuntimeError(f"Cannot read {zf.filename} without zstandard.")
-                        decompressor = zstandard.ZstdDecompressor()
-                        ext = "zst"
-                    elif zipfile.Path(zf, "header.json.xz").exists():
-                        decompressor = lzma
-                        ext = "xz"
-                    else:
-                        raise RuntimeError(
-                            f"{zf.filename} does not include the expected quantum graph header."
-                        )
+                def read_decompressed(name: str) -> bytes:
+                    return decompressor.decompress(zf.read(name))
 
-                    def read_decompressed(name: str) -> bytes:
-                        return decompressor.decompress(zf.read(name))
-
-                    header = RuntimeHeaderModel.model_validate_json(read_decompressed(f"header.json.{ext}"))
-                    dimension_data = RuntimeDimensionDataModel.model_validate_json(
-                        read_decompressed(f"dimension_data.json.{ext}")
+                header = RuntimeHeaderModel.model_validate_json(read_decompressed(f"header.json.{ext}"))
+            with time_this(_LOG, "Reading dimension data", level=logging.INFO):
+                dimension_data = RuntimeDimensionDataModel.model_validate_json(
+                    read_decompressed(f"dimension_data.json.{ext}")
+                )
+            if read_thin_quanta:
+                with time_this(_LOG, "Reading thin quanta", level=logging.INFO):
+                    thin_quanta = cls.thin_quanta_adapter.validate_json(
+                        read_decompressed(f"thin_quanta.json.{ext}")
                     )
-                    if read_thin_quanta:
-                        thin_quanta = cls.thin_quanta_adapter.validate_json(
-                            read_decompressed(f"thin_quanta.json.{ext}")
-                        )
-                    else:
-                        thin_quanta = {}
-                    if read_quantum_edges:
-                        quantum_edges = cls.quantum_edges_adapter.validate_json(
-                            read_decompressed(f"quantum_edges.json.{ext}")
-                        )
-                    else:
-                        quantum_edges = []
-                    result = cls.model_construct(
-                        header=header,
-                        dimension_data=dimension_data,
-                        thin_quanta=thin_quanta,
-                        quantum_edges=quantum_edges,
-                        runtime_quanta={},
+            else:
+                thin_quanta = {}
+            if read_quantum_edges:
+                with time_this(_LOG, "Reading quantum edges", level=logging.INFO):
+                    quantum_edges = cls.quantum_edges_adapter.validate_json(
+                        read_decompressed(f"quantum_edges.json.{ext}")
                     )
-                if quanta is None:
-                    quanta = result.get_all_quanta()
-                with time_this(_LOG, f"Reading {len(quanta)} runtime quanta", level=logging.INFO):
-                    runtime_quanta_data = {
-                        quantum_id: zf.read(
-                            os.path.join(
-                                "runtime_quanta",
-                                result.runtime_quantum_filename(result.get_quantum_key(quantum_id), ext),
-                            )
+            else:
+                quantum_edges = []
+            result = cls.model_construct(
+                header=header,
+                dimension_data=dimension_data,
+                thin_quanta=thin_quanta,
+                quantum_edges=quantum_edges,
+                runtime_quanta={},
+            )
+            if quanta is None:
+                quanta = result.get_all_quanta()
+            with time_this(_LOG, f"Reading {len(quanta)} runtime quanta", level=logging.INFO):
+                runtime_quanta_data = {
+                    quantum_id: zf.read(
+                        os.path.join(
+                            "runtime_quanta",
+                            result.runtime_quantum_filename(result.get_quantum_key(quantum_id), ext),
                         )
-                        for quantum_id in tqdm.tqdm(quanta, "Reading runtime quanta.", leave=False)
-                    }
-                with time_this(_LOG, f"Decompressing {len(quanta)} runtime quanta", level=logging.INFO):
-                    runtime_quanta_decompressed = {
-                        quantum_id: decompressor.decompress(data)
-                        for quantum_id, data in tqdm.tqdm(
-                            runtime_quanta_data.items(), "Decompressing runtime quanta.", leave=False
-                        )
-                    }
-                with time_this(
-                    _LOG, f"Parsing and validating {len(quanta)} runtime quanta", level=logging.INFO
-                ):
+                    )
+                    for quantum_id in tqdm.tqdm(quanta, "Reading runtime quanta.", leave=False)
+                }
+            with time_this(_LOG, f"Decompressing {len(quanta)} runtime quanta", level=logging.INFO):
+                runtime_quanta_decompressed = {
+                    quantum_id: decompressor.decompress(data)
                     for quantum_id, data in tqdm.tqdm(
-                        runtime_quanta_decompressed.items(),
-                        "Parsing and validating runtime quanta.",
-                        leave=False,
-                    ):
-                        result.runtime_quanta[quantum_id] = RuntimeQuantumModel.model_validate_json(data)
+                        runtime_quanta_data.items(), "Decompressing runtime quanta.", leave=False
+                    )
+                }
+            with time_this(_LOG, f"Parsing and validating {len(quanta)} runtime quanta", level=logging.INFO):
+                for quantum_id, data in tqdm.tqdm(
+                    runtime_quanta_decompressed.items(),
+                    "Parsing and validating runtime quanta.",
+                    leave=False,
+                ):
+                    result.runtime_quanta[quantum_id] = RuntimeQuantumModel.model_validate_json(data)
 
             return result
-
-        if quanta is None:
-            read_thin_quanta = True
-            with time_this(_LOG, "Reading raw bytes", level=logging.INFO):
-                data = uri.read()
-                stream = BytesIO(data)
-            return read(stream, quanta)
-        else:
-            with uri.open(mode="rb") as stream:
-                return read(stream, quanta)
 
 
 class RuntimeGraphModelUUID(RuntimeGraphModelBase[uuid.UUID]):
@@ -477,15 +474,6 @@ class RuntimeGraphModelInt(RuntimeGraphModelBase[int]):
 
     def get_all_quanta(self) -> Iterable[uuid.UUID]:
         return self._uuid_to_int.keys()
-
-    @classmethod
-    def _read_common(
-        cls,
-        zf: zipfile.ZipFile,
-        read_quantum_edges: bool = True,
-        read_thin_quanta: bool = True,  # always needs to be read for UUID <-> int mapping.
-    ) -> tuple[Self, str, Callable[[str], bytes]]:
-        return super()._read_common(zf, read_quantum_edges=read_quantum_edges, read_thin_quanta=True)
 
 
 @click.group()
