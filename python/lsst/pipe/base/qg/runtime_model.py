@@ -51,15 +51,16 @@ from lsst.daf.butler import (
     DataIdValue,
     DimensionGroup,
     DimensionRecordSet,
+    DimensionRecordSetDeserializer,
     Quantum,
-    SerializedDimensionRecord,
+    SerializedKeyValueDimensionRecord,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.timer import time_this
 
 from ..graph import QuantumGraph
-from ..pipeline_graph import TaskNode
+from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 
 try:
@@ -178,7 +179,7 @@ class RuntimeHeaderModel(pydantic.BaseModel):
 
 
 class RuntimeDimensionDataModel(pydantic.RootModel):
-    root: dict[str, list[SerializedDimensionRecord]] = pydantic.Field(default_factory=dict)
+    root: dict[str, list[SerializedKeyValueDimensionRecord]] = pydantic.Field(default_factory=dict)
 
     @classmethod
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> RuntimeDimensionDataModel:
@@ -204,7 +205,7 @@ class RuntimeDimensionDataModel(pydantic.RootModel):
             for data_id_group, data_ids_for_group in data_ids.items():
                 if element in data_id_group.elements:
                     record_set.update_from_data_coordinates(data_ids_for_group)
-            result.root[element] = [r.to_simple() for r in record_set]
+            result.root[element] = record_set.serialize_records()
         return result
 
 
@@ -333,6 +334,10 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
                 dimension_data = RuntimeDimensionDataModel.model_validate_json(
                     read_decompressed(f"dimension_data.json.{ext}")
                 )
+            with time_this(_LOG, "Reading dimension data", level=logging.INFO):
+                dimension_data = RuntimeDimensionDataModel.model_validate_json(
+                    read_decompressed(f"dimension_data.json.{ext}")
+                )
             if read_thin_quanta:
                 with time_this(_LOG, "Reading thin quanta", level=logging.INFO):
                     thin_quanta = cls.thin_quanta_adapter.validate_json(
@@ -382,6 +387,20 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
                     result.runtime_quanta[quantum_id] = RuntimeQuantumModel.model_validate_json(data)
 
             return result
+
+    def deserialize(self) -> tuple[PipelineGraph, dict[str, DimensionRecordSetDeserializer]]:
+        with time_this(_LOG, "Deserializing pipeline graph", level=logging.INFO):
+            pipeline_graph = SerializedPipelineGraph.deserialize(
+                self.header.pipeline, import_mode=TaskImportMode.DO_NOT_IMPORT
+            )
+        with time_this(_LOG, "Deserializing dimension record data IDs", level=logging.INFO):
+            dimension_records = {
+                element_name: DimensionRecordSetDeserializer.from_raw(
+                    pipeline_graph.universe[element_name], raw_records
+                )
+                for element_name, raw_records in self.dimension_data.root.items()
+            }
+        return pipeline_graph, dimension_records
 
 
 class RuntimeGraphModelUUID(RuntimeGraphModelBase[uuid.UUID]):
@@ -522,7 +541,10 @@ def read(
     cls = RuntimeGraphModelInt if integers else RuntimeGraphModelUUID
     quanta = [uuid.UUID(i) for i in quantum_id] or None
     with time_this(_LOG, msg=f"Reading {uri}", level=logging.INFO):
-        cls.read_zip(uri, read_thin_quanta=thin_quanta, read_quantum_edges=quantum_edges, quanta=quanta)
+        model = cls.read_zip(
+            uri, read_thin_quanta=thin_quanta, read_quantum_edges=quantum_edges, quanta=quanta
+        )
+        model.deserialize()
 
 
 if __name__ == "__main__":
