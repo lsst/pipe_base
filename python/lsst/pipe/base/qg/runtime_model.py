@@ -29,6 +29,7 @@ from __future__ import annotations
 
 __all__ = ()
 
+import dataclasses
 import datetime
 import itertools
 import logging
@@ -37,10 +38,11 @@ import os
 import uuid
 import zipfile
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack
 from io import BytesIO
-from typing import ClassVar, Generic, Self, TypeVar
+from operator import attrgetter
+from typing import BinaryIO, ClassVar, Generic, Self, TypeVar
 
 import click
 import pydantic
@@ -212,31 +214,23 @@ class RuntimeDimensionDataModel(pydantic.RootModel):
 class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
     header: RuntimeHeaderModel
     dimension_data: RuntimeDimensionDataModel
-    thin_quanta: dict[str, dict[uuid.UUID, list[str | int]]]
+    thin_quanta: dict[str, dict[_T, list[str | int]]]
     quantum_edges: list[tuple[_T, _T]]
     runtime_quanta: dict[_T, RuntimeQuantumModel]
 
-    thin_quanta_adapter: ClassVar[pydantic.TypeAdapter[dict[str, dict[uuid.UUID, list[str | int]]]]] = (
-        pydantic.TypeAdapter(dict[str, dict[uuid.UUID, list[str | int]]])
-    )
+    thin_quanta_adapter: ClassVar[pydantic.TypeAdapter[dict[str, dict[_T, list[str | int]]]]]
     quantum_edges_adapter: ClassVar[pydantic.TypeAdapter[list[tuple[_T, _T]]]]
 
-    def make_uuid_to_int_map(self) -> dict[uuid.UUID, int]:
-        uuid_to_int: dict[uuid.UUID, int] = {}
-        n = 0
-        for quanta in self.thin_quanta.values():
-            for quantum_id in quanta.keys():
-                uuid_to_int[quantum_id] = n
-                n += 1
-        return uuid_to_int
-
-    def runtime_quantum_filename(self, key: _T, ext: str) -> str:
+    def write_runtime_quanta(self, zf: zipfile.ZipFile, compress: Callable[[bytes], bytes], ext: str) -> int:
         raise NotImplementedError()
 
-    def get_quantum_key(self, quantum_id: uuid.UUID) -> _T:
-        raise NotImplementedError()
-
-    def get_all_quanta(self) -> Iterable[uuid.UUID]:
+    def read_runtime_quanta(
+        self,
+        quanta: Iterable[uuid.UUID] | None,
+        zf: zipfile.ZipFile,
+        decompress: Callable[[bytes], bytes],
+        ext: str,
+    ) -> None:
         raise NotImplementedError()
 
     def write(self, uri: ResourcePathExpression, zstd_level: int = 10) -> None:
@@ -272,25 +266,7 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
                 total_size += write_and_report(
                     f"quantum_edges.json.{ext}", self.quantum_edges_adapter.dump_json(self.quantum_edges)
                 )
-                zf.mkdir("runtime_quanta")
-                runtime_quanta_size_uncompressed: int = 0
-                runtime_quanta_size_compressed: int = 0
-                for quantum_key, quantum_model in tqdm.tqdm(
-                    self.runtime_quanta.items(), "Writing runtime quanta."
-                ):
-                    data = quantum_model.model_dump_json().encode()
-                    compressed = compressor.compress(data)
-                    runtime_quanta_size_uncompressed += len(data)
-                    runtime_quanta_size_compressed += len(compressed)
-                    zf.writestr(
-                        os.path.join("runtime_quanta", self.runtime_quantum_filename(quantum_key, ext)),
-                        compressed,
-                    )
-                total_size += runtime_quanta_size_compressed
-                _LOG.info(
-                    f"runtime_quanta: {humanize.naturalsize(runtime_quanta_size_uncompressed)} -> "
-                    f"{humanize.naturalsize(runtime_quanta_size_compressed)}."
-                )
+                total_size += self.write_runtime_quanta(zf, compressor.compress, ext)
                 _LOG.info(f"unzipped size: {humanize.naturalsize(total_size)}.")
         _LOG.info(f"zipped size: {humanize.naturalsize(uri.size())}.")
 
@@ -359,33 +335,7 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
                 quantum_edges=quantum_edges,
                 runtime_quanta={},
             )
-            if quanta is None:
-                quanta = result.get_all_quanta()
-            with time_this(_LOG, f"Reading {len(quanta)} runtime quanta", level=logging.INFO):
-                runtime_quanta_data = {
-                    quantum_id: zf.read(
-                        os.path.join(
-                            "runtime_quanta",
-                            result.runtime_quantum_filename(result.get_quantum_key(quantum_id), ext),
-                        )
-                    )
-                    for quantum_id in tqdm.tqdm(quanta, "Reading runtime quanta.", leave=False)
-                }
-            with time_this(_LOG, f"Decompressing {len(quanta)} runtime quanta", level=logging.INFO):
-                runtime_quanta_decompressed = {
-                    quantum_id: decompressor.decompress(data)
-                    for quantum_id, data in tqdm.tqdm(
-                        runtime_quanta_data.items(), "Decompressing runtime quanta.", leave=False
-                    )
-                }
-            with time_this(_LOG, f"Parsing and validating {len(quanta)} runtime quanta", level=logging.INFO):
-                for quantum_id, data in tqdm.tqdm(
-                    runtime_quanta_decompressed.items(),
-                    "Parsing and validating runtime quanta.",
-                    leave=False,
-                ):
-                    result.runtime_quanta[quantum_id] = RuntimeQuantumModel.model_validate_json(data)
-
+            result.read_runtime_quanta(quanta, zf, decompressor.decompress, ext)
             return result
 
     def deserialize(self) -> tuple[PipelineGraph, dict[str, DimensionRecordSetDeserializer]]:
@@ -404,9 +354,8 @@ class RuntimeGraphModelBase(pydantic.BaseModel, Generic[_T]):
 
 
 class RuntimeGraphModelUUID(RuntimeGraphModelBase[uuid.UUID]):
-    quantum_edges_adapter: ClassVar[pydantic.TypeAdapter[list[tuple[uuid.UUID, uuid.UUID]]]] = (
-        pydantic.TypeAdapter(list[tuple[uuid.UUID, uuid.UUID]])
-    )
+    thin_quanta_adapter = pydantic.TypeAdapter(dict[str, dict[uuid.UUID, list[str | int]]])
+    quantum_edges_adapter = pydantic.TypeAdapter(list[tuple[uuid.UUID, uuid.UUID]])
 
     _all_uuids: list[uuid.UUID]
 
@@ -447,52 +396,224 @@ class RuntimeGraphModelUUID(RuntimeGraphModelBase[uuid.UUID]):
             runtime_quanta=runtime_quanta,
         )
 
-    def with_integer_ids(self) -> RuntimeGraphModelInt:
-        uuid_to_int = self.make_uuid_to_int_map()
-        quantum_edges = [(uuid_to_int[a], uuid_to_int[b]) for a, b in self.quantum_edges]
-        runtime_quanta = {uuid_to_int[k]: v for k, v in self.runtime_quanta.items()}
-        return RuntimeGraphModelInt.model_construct(
-            header=self.header,
-            dimension_data=self.dimension_data,
-            thin_quanta=self.thin_quanta,
+    def write_runtime_quanta(self, zf: zipfile.ZipFile, compress: Callable[[bytes], bytes], ext: str) -> int:
+        import humanize
+
+        zf.mkdir("runtime_quanta")
+        runtime_quanta_size_uncompressed: int = 0
+        runtime_quanta_size_compressed: int = 0
+        for quantum_key, quantum_model in tqdm.tqdm(self.runtime_quanta.items(), "Writing runtime quanta."):
+            data = quantum_model.model_dump_json().encode()
+            compressed = compress(data)
+            runtime_quanta_size_uncompressed += len(data)
+            runtime_quanta_size_compressed += len(compressed)
+            zf.writestr(
+                os.path.join("runtime_quanta", self.runtime_quantum_filename(quantum_key, ext)),
+                compressed,
+            )
+        _LOG.info(
+            f"runtime_quanta: {humanize.naturalsize(runtime_quanta_size_uncompressed)} -> "
+            f"{humanize.naturalsize(runtime_quanta_size_compressed)}."
+        )
+        return runtime_quanta_size_compressed
+
+    def read_runtime_quanta(
+        self,
+        quanta: Iterable[uuid.UUID] | None,
+        zf: zipfile.ZipFile,
+        decompress: Callable[[bytes], bytes],
+        ext: str,
+    ) -> None:
+        if quanta is None:
+            quanta = self._all_uuids
+        with time_this(_LOG, f"Reading {len(quanta)} runtime quanta", level=logging.INFO):
+            compressed_data = {
+                quantum_id: zf.read(
+                    os.path.join(
+                        "runtime_quanta",
+                        self.runtime_quantum_filename(quantum_id, ext),
+                    )
+                )
+                for quantum_id in tqdm.tqdm(quanta, "Reading runtime quanta.", leave=False)
+            }
+        with time_this(_LOG, f"Decompressing {len(quanta)} runtime quanta", level=logging.INFO):
+            decompressed_data = {
+                quantum_id: decompress(data)
+                for quantum_id, data in tqdm.tqdm(
+                    compressed_data.items(), "Decompressing runtime quanta.", leave=False
+                )
+            }
+        with time_this(_LOG, f"Parsing and validating {len(quanta)} runtime quanta", level=logging.INFO):
+            for quantum_id, data in tqdm.tqdm(
+                decompressed_data.items(),
+                "Parsing and validating runtime quanta.",
+                leave=False,
+            ):
+                self.runtime_quanta[quantum_id] = RuntimeQuantumModel.model_validate_json(data)
+
+    def runtime_quantum_filename(self, quantum_id: uuid.UUID, ext: str) -> str:
+        return f"{quantum_id.hex}.json.{ext}"
+
+
+class RuntimeGraphModelIndexed(RuntimeGraphModelBase[int]):
+    quantum_indices: dict[uuid.UUID, int]
+    thin_quanta_adapter = pydantic.TypeAdapter(dict[str, dict[int, list[str | int]]])
+    quantum_edges_adapter = pydantic.TypeAdapter(list[tuple[int, int]])
+
+    @classmethod
+    def from_uuid_model(cls, uuid_model: RuntimeGraphModelUUID) -> Self:
+        quantum_indices = {
+            quantum_id: n
+            for n, quantum_id in enumerate(sorted(uuid_model.runtime_quanta.keys(), key=attrgetter("int")))
+        }
+        thin_quanta = {
+            task_label: {quantum_indices[quantum_id]: data_id for quantum_id, data_id in task_quanta.items()}
+            for task_label, task_quanta in uuid_model.thin_quanta.items()
+        }
+        quantum_edges = [(quantum_indices[a], quantum_indices[b]) for a, b in uuid_model.quantum_edges]
+        runtime_quanta = {
+            quantum_indices[quantum_id]: uuid_model.runtime_quanta[quantum_id]
+            for quantum_id in quantum_indices.keys()
+        }
+        return RuntimeGraphModelIndexed.model_construct(
+            header=uuid_model.header,
+            dimension_data=uuid_model.dimension_data,
+            thin_quanta=thin_quanta,
             quantum_edges=quantum_edges,
             runtime_quanta=runtime_quanta,
+            quantum_indices=quantum_indices,
         )
 
-    def runtime_quantum_filename(self, key: uuid.UUID, ext: str) -> str:
-        return f"{key.hex}.json.{ext}"
+    def write_runtime_quanta(self, zf: zipfile.ZipFile, compress: Callable[[bytes], bytes], ext: str) -> int:
+        import humanize
 
-    def get_quantum_key(self, quantum_id: uuid.UUID) -> uuid.UUID:
-        return quantum_id
+        address_stream = BytesIO()
+        address_stream.write(len(self.quantum_indices).to_bytes(4))
+        with zf.open("runtime_quanta.dat", mode="w") as stream:
+            offset = 0
+            for quantum_id, index in tqdm.tqdm(
+                self.quantum_indices.items(), "Dumping, compressing, and writing runtime quanta with index."
+            ):
+                model_bytes = compress(self.runtime_quanta[index].model_dump_json().encode())
+                stream.write(model_bytes)
+                address_stream.write(quantum_id.bytes)
+                address = Address(index, offset, len(model_bytes))
+                address.write(address_stream)
+                offset += address.size
+        _LOG.info(f"runtime_quanta: {humanize.naturalsize(offset)}.")
+        address_bytes = address_stream.getvalue()
+        zf.writestr("quantum_addresses.dat", address_bytes)
+        _LOG.info(f"quantum_addresses: {humanize.naturalsize(len(address_bytes))}.")
+        return len(address_bytes) + offset
 
-    def get_all_quanta(self) -> Iterable[uuid.UUID]:
-        return self._all_uuids
+    def read_runtime_quanta(
+        self,
+        quanta: Iterable[uuid.UUID] | None,
+        zf: zipfile.ZipFile,
+        decompress: Callable[[bytes], bytes],
+        ext: str,
+    ) -> None:
+        with time_this(_LOG, "Reading addresses for runtime quanta", level=logging.INFO):
+            with zf.open("quantum_addresses.dat", mode="r") as address_stream:
+                offset_reader = _AddressReader(address_stream)
+                if quanta is None:
+                    addresses = offset_reader.read_all()
+                else:
+                    addresses = {quantum_id: offset_reader.find(quantum_id) for quantum_id in quanta}
+            self.quantum_indices = {quantum_id: address.index for quantum_id, address in addresses.items()}
+        with time_this(_LOG, f"Reading {len(addresses)} runtime quanta", level=logging.INFO):
+            compressed_data: dict[uuid.UUID, bytes] = {}
+            with zf.open("runtime_quanta.dat", mode="r") as stream:
+                for quantum_id, address in addresses.items():
+                    stream.seek(address.offset)
+                    compressed_data[quantum_id] = stream.read(address.size)
+        with time_this(_LOG, f"Decompressing {len(addresses)} runtime quanta", level=logging.INFO):
+            decompressed_data = {
+                quantum_id: decompress(data)
+                for quantum_id, data in tqdm.tqdm(
+                    compressed_data.items(), "Decompressing runtime quanta.", leave=False
+                )
+            }
+        with time_this(_LOG, f"Parsing and validating {len(addresses)} runtime quanta", level=logging.INFO):
+            for quantum_id, data in tqdm.tqdm(
+                decompressed_data.items(),
+                "Parsing and validating runtime quanta.",
+                leave=False,
+            ):
+                self.runtime_quanta[self.quantum_indices[quantum_id]] = (
+                    RuntimeQuantumModel.model_validate_json(data)
+                )
 
 
-class RuntimeGraphModelInt(RuntimeGraphModelBase[int]):
-    quantum_edges_adapter: ClassVar[pydantic.TypeAdapter[list[tuple[int, int]]]] = pydantic.TypeAdapter(
-        list[tuple[int, int]]
-    )
+@dataclasses.dataclass
+class Address:
+    index: int
+    offset: int
+    size: int
 
-    _uuid_to_int: dict[uuid.UUID, int]
+    @classmethod
+    def read(cls, stream: BinaryIO) -> Address:
+        index = int.from_bytes(stream.read(4))
+        offset = int.from_bytes(stream.read(4))
+        size = int.from_bytes(stream.read(4))
+        return cls(index, offset, size)
 
-    def model_post_init(self, __context):
-        super().model_post_init(__context)
-        self._uuid_to_int = {}
-        n = 0
-        for quanta in self.thin_quanta.values():
-            for quantum_id in quanta.keys():
-                self._uuid_to_int[quantum_id] = n
-                n += 1
+    def write(self, stream: BinaryIO) -> None:
+        stream.write(self.index.to_bytes(4))
+        stream.write(self.offset.to_bytes(4))
+        stream.write(self.size.to_bytes(4))
 
-    def runtime_quantum_filename(self, key: int, ext: str) -> str:
-        return f"{key:08d}.json.{ext}"
 
-    def get_quantum_key(self, quantum_id: uuid.UUID) -> int:
-        return self._uuid_to_int[quantum_id]
+class _AddressReader:
+    OFFSET_HEADER_SIZE: ClassVar[int] = 4
+    ROW_SIZE: ClassVar[int] = 28
+    MAX_UUID_INT: ClassVar[int] = 2**128
 
-    def get_all_quanta(self) -> Iterable[uuid.UUID]:
-        return self._uuid_to_int.keys()
+    def __init__(self, stream: BinaryIO, block_size: int = 1024):
+        self._stream = stream
+        self.n_quanta = int.from_bytes(self._stream.read(4))
+        self._addresses: dict[uuid.UUID, Address] = {}
+        self._block_size = block_size
+        n_full_blocks, last_block_size = divmod(self.n_quanta, self._block_size)
+        self._blocks_unread = dict.fromkeys(range(n_full_blocks), self._block_size)
+        if last_block_size := self.n_quanta % self._block_size:
+            self._blocks_unread[n_full_blocks] = last_block_size
+
+    def read_all(self) -> dict[uuid.UUID, Address]:
+        for _ in range(self.n_quanta):
+            self._read_row()
+        return self._addresses
+
+    def find(self, quantum_id: uuid.UUID) -> Address:
+        if (address := self._addresses.get(quantum_id)) is not None:
+            return address
+        guess_float = (quantum_id.int / self.MAX_UUID_INT) * self.n_quanta / self._block_size
+        guess_block = int(guess_float)
+        for block in self._block_search_path(guess_block):
+            _LOG.info("Reading address block %s, after starting from %s.", block, guess_float)
+            if block in self._blocks_unread:
+                self._read_block(block)
+                if (address := self._addresses.get(quantum_id)) is not None:
+                    return address
+            elif not self._blocks_unread:
+                raise LookupError(f"Quantum with ID {quantum_id} not found.")
+
+    def _read_row(self) -> None:
+        quantum_id = uuid.UUID(bytes=self._stream.read(16))
+        address = Address.read(self._stream)
+        self._addresses[quantum_id] = address
+
+    def _block_search_path(self, start: int) -> Iterator[int]:
+        yield start
+        for abs_offset in itertools.count(1):
+            yield start + abs_offset
+            yield start - abs_offset
+
+    def _read_block(self, block: int) -> None:
+        size = self._blocks_unread.pop(block)
+        self._stream.seek(block * self._block_size * self.ROW_SIZE + self.OFFSET_HEADER_SIZE)
+        for _ in range(size):
+            self._read_row()
 
 
 @click.group()
@@ -515,30 +636,30 @@ def rewrite(uri: str) -> None:
             qg = QuantumGraph.loadUri(uri)
     _LOG.info(f"{uri} ({humanize.naturalsize(os.stat(uri).st_size)}. {len(qg)} quanta).")
     with time_this(_LOG, msg="Converting to runtime model", level=logging.INFO):
-        runtime_model = RuntimeGraphModelUUID.from_quantum_graph(qg)
+        uuid_model = RuntimeGraphModelUUID.from_quantum_graph(qg)
     basename, _ = os.path.splitext(uri)
     with time_this(_LOG, msg="Writing UUID runtime model to zip.", level=logging.INFO):
-        runtime_model.write(f"{basename}-uuid.zip")
+        uuid_model.write(f"{basename}-uuid.zip")
     with time_this(_LOG, msg="Writing int runtime model to zip.", level=logging.INFO):
-        runtime_model.with_integer_ids().write(f"{basename}-int.zip")
+        RuntimeGraphModelIndexed.from_uuid_model(uuid_model).write(f"{basename}-indexed.zip")
 
 
 @main.command()
 @click.argument("uri")
-@click.option("--integers/--uuids", default=False)
+@click.option("--indexed/--uuids", default=False)
 @click.option("--thin-quanta/--no-thin-quanta", default=True)
 @click.option("--quantum-edges/--no-quantum-edges", default=True)
 @click.option("--quantum-id", type=str, multiple=True, default=[])
 def read(
     *,
     uri: str,
-    integers: bool,
+    indexed: bool,
     thin_quanta: bool,
     quantum_edges: bool,
     quantum_id: list[str],
 ) -> None:
     logging.basicConfig(level=logging.INFO)
-    cls = RuntimeGraphModelInt if integers else RuntimeGraphModelUUID
+    cls = RuntimeGraphModelIndexed if indexed else RuntimeGraphModelUUID
     quanta = [uuid.UUID(i) for i in quantum_id] or None
     with time_this(_LOG, msg=f"Reading {uri}", level=logging.INFO):
         model = cls.read_zip(
