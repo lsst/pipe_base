@@ -1,3 +1,56 @@
+lsst-pipe-base v29.0.0 (2025-03-25)
+===================================
+
+New Features
+------------
+
+- * Modified ``QuantumContext`` such that it now tracks all datasets that are retrieved and records them in ``dataset_provenance``.
+    This provenance is then passed to Butler on ``put()``.
+  * Added ``QuantumContext.add_additional_provenance()`` to allow a pipeline task author to attach additional provenance information to be recorded and associated with a particular input dataset. (`DM-35396 <https://rubinobs.atlassian.net/browse/DM-35396>`_)
+- Finished support for "steps" in pipelines and pipeline graphs.
+
+  Steps are an ordered sequence of special pipeline subsets that provide extra information and validation about how pipelines should actually be run. (`DM-46023 <https://rubinobs.atlassian.net/browse/DM-46023>`_)
+- Added Mermaid for pipeline and quantum graph visualization with tools for documentation/presentation purposes. (`DM-46503 <https://rubinobs.atlassian.net/browse/DM-46503>`_)
+- Added ``zip-from-graph`` subcommand for ``butler`` command-line to enable output artifacts associated with a graph to be combined into a Zip archive. (`DM-46776 <https://rubinobs.atlassian.net/browse/DM-46776>`_)
+- Added ``UpstreamFailureNoWorkFound``, an exception that is handled the same way as ``NoWorkFound`` that indicates that the root problem is probably in an upstream ``PipelineTask``. (`DM-46948 <https://rubinobs.atlassian.net/browse/DM-46948>`_)
+- Plugin discovery is now automated through Python entry points when using ``pip``.
+  It is now an error if the ``DAF_BUTLER_PLUGINS`` environment variable is set for this package. (`DM-47143 <https://rubinobs.atlassian.net/browse/DM-47143>`_)
+- * Added new command-line ``butler retrieve-artifacts-for-quanta`` which can be used to retrieve input or output datasets associated with a graph or specific quanta.
+  * Added new ``QuantumGraph.get_refs()`` method to retrieve dataset refs from a graph. (`DM-47328 <https://rubinobs.atlassian.net/browse/DM-47328>`_)
+- Add the ``QuantumSuccessCaveats`` flag enum, which can be used to report on ``NoWorkFound`` and other qualified successes in execution.
+
+  This adds the flag enum itself and functionality in ``QuantumProvenanceGraph`` (which backs ``pipetask report --force-v2``) to include it in reports.
+  It relies on additional changes in ``lsst.ctrl.mpexec.SingleQuantumExecutor`` to write the caveat flags into task metadata. (`DM-47730 <https://rubinobs.atlassian.net/browse/DM-47730>`_)
+- ``QuantumProvenanceGraph`` and ``pipetask report --force-v2`` can now report on exceptions raised and then ignored via the ``--no-raise-on-partial-outputs`` option.
+
+  Exceptions that lead to task failures are not yet tracked, because we do not write task metadata for failures and hence have nowhere to put the information. (`DM-48536 <https://rubinobs.atlassian.net/browse/DM-48536>`_)
+- Swapped to the new butler query system in ``QuantumGraph`` generation.
+
+  This change should be mostly transparent to users, aside from small changes in speed (typically faster, but not always). (`DM-45896 <https://rubinobs.atlassian.net/browse/DM-45896>`)
+
+Bug Fixes
+---------
+
+- Fixed a bug in QG generation that could lead to an error when using ``--skip-existing-in`` on a collection that had a successful quantum that did not write all of its predicted outputs. (`DM-49266 <https://rubinobs.atlassian.net/browse/DM-49266>`_)
+
+
+Performance Enhancement
+-----------------------
+
+- ``QuantumGraph`` generation has been partially rewritten to support building larger graphs and build all graphs faster.
+
+  With this change, ``QuantumGraph`` generation no longer uses a long-lived temporary table in the butler database for followup queries, and instead uploads a set of data IDs to the database for each query.
+  In addition, the algorithm for adding nodes and edges from the data ID query results has been reworked to duplicate irrelevant dimensions earlier, making it much faster. (`DM-49296 <https://rubinobs.atlassian.net/browse/DM-49296>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Modified ``TaskMetadata`` such that it can now be assigned an empty list.
+  This list can be retrieved with ``getArray`` but if an attempt is made to get a scalar `KeyError` will be raised. (`DM-35396 <https://rubinobs.atlassian.net/browse/DM-35396>`_)
+- ``QuantumGraph`` generation will no longer fail when the ``--dataset-query-constraint`` argument includes a dataset type that is not relevant for one or more pipeline subgraphs. (`DM-47505 <https://rubinobs.atlassian.net/browse/DM-47505>`_)
+
+
 lsst-pipe-base v28.0.0 (2024-11-21)
 ===================================
 
