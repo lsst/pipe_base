@@ -1,1 +1,0 @@
-Added Mermaid for pipeline and quantum graph visualization with tools for documentation/presentation purposes.
