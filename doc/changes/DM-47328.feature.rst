@@ -1,2 +1,0 @@
-* Added new command-line ``butler retrieve-artifacts-for-quanta`` which can be used to retrieve input or output datasets associated with a graph or specific quanta.
-* Added new ``QuantumGraph.get_refs()`` method to retrieve dataset refs from a graph.
