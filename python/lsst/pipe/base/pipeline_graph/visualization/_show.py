@@ -48,7 +48,7 @@ from ._merge import (
 )
 from ._options import NodeAttributeOptions
 from ._printer import make_default_printer
-from ._status import StatusAnnotator, NodeStatusOptions
+from ._status_annotator import NodeStatusAnnotator, NodeStatusOptions
 
 DisplayNodeKey = NodeKey | MergedNodeKey
 
@@ -65,7 +65,7 @@ def parse_display_args(
     merge_output_trees: int = 4,
     merge_intermediates: bool = True,
     include_automatic_connections: bool = False,
-    status_annotator: StatusAnnotator | None = None,
+    status_annotator: NodeStatusAnnotator | None = None,
     status_options: NodeStatusOptions | None = None,
 ) -> tuple[networkx.DiGraph | networkx.MultiDiGraph, NodeAttributeOptions]:
     """Print a text-based ~.PipelineGraph` visualization.
@@ -129,7 +129,7 @@ def parse_display_args(
     include_automatic_connections : `bool`, optional
         Whether to include automatically-added connections like the config,
         log, and metadata dataset types for each task.  Default is `False`.
-    status_annotator : `StatusAnnotator`, optional
+    status_annotator : `NodeStatusAnnotator`, optional
         Annotator to add status information to the graph.  Default is `None`.
     status_options : `NodeStatusOptions`, optional
         Options for displaying execution status.  Default is `None`.
@@ -142,6 +142,7 @@ def parse_display_args(
             raise ValueError("Cannot show status with both init and runtime graphs.")
     elif dataset_types:
         xgraph = pipeline_graph.make_bipartite_xgraph(init)
+        # storage_classes = False
         if status_annotator is not None:
             status_annotator(xgraph, dataset_types=True)
     else:
@@ -151,7 +152,10 @@ def parse_display_args(
             status_annotator(xgraph, dataset_types=False)
 
     options = NodeAttributeOptions(
-        dimensions=dimensions, storage_classes=storage_classes, task_classes=task_classes, status=status_options
+        dimensions=dimensions,
+        storage_classes=storage_classes,
+        task_classes=task_classes,
+        status=status_options,
     )
     options = options.checked(pipeline_graph.is_fully_resolved, has_status=status_annotator is not None)
 
@@ -232,10 +236,14 @@ def show(
     if width < 0:
         width, _ = get_terminal_size()
 
+    # Number of columns used for padding after a symbol.
+    # Must match the padding added by the `Printer` class.
+    symbol_padding = 2
+
     printer = make_default_printer(layout.width, color, stream)
     printer.get_symbol = get_node_symbol
 
-    get_text = GetNodeText(xgraph, options, (width - printer.width) if width else 0)
+    get_text = GetNodeText(xgraph, options, (width - printer.width - symbol_padding) if width else 0)
     printer.get_text = get_text
 
     printer.print(stream, layout)

@@ -32,7 +32,8 @@ import dataclasses
 from typing import Literal
 
 from .._nodes import NodeType
-from ._status import NodeStatusOptions
+from ._status_annotator import NodeStatusOptions
+
 
 @dataclasses.dataclass
 class NodeAttributeOptions:
@@ -71,7 +72,7 @@ class NodeAttributeOptions:
     - `None`: context-dependent default behavior.
     """
 
-    status: NodeStatusOptions | None = None
+    status: NodeStatusOptions | None
     """Options for displaying execution status."""
 
     def has_details(self, node_type: NodeType) -> bool:
