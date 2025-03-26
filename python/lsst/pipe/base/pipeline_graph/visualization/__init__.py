@@ -34,3 +34,4 @@ from ._mermaid import *
 from ._options import *
 from ._printer import *
 from ._show import *
+from ._status_annotator import *
