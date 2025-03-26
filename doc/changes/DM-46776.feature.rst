@@ -1,1 +1,0 @@
-Added ``zip-from-graph`` subcommand for ``butler`` command-line to enable output artifacts associated with a graph to be combined into a Zip archive.
