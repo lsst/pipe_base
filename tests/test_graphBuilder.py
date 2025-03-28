@@ -32,10 +32,21 @@ import logging
 import unittest
 
 import lsst.utils.tests
+from lsst.daf.butler import Butler, DatasetType
 from lsst.daf.butler.registry import UserExpressionError
-from lsst.pipe.base import QuantumGraph
-from lsst.pipe.base.all_dimensions_quantum_graph_builder import DatasetQueryConstraintVariant
+from lsst.pipe.base import PipelineGraph, QuantumGraph
+from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
+    AllDimensionsQuantumGraphBuilder,
+    DatasetQueryConstraintVariant,
+)
 from lsst.pipe.base.tests import simpleQGraph
+from lsst.pipe.base.tests.mocks import (
+    DynamicConnectionConfig,
+    DynamicTestPipelineTask,
+    DynamicTestPipelineTaskConfig,
+    MockDataset,
+    MockStorageClass,
+)
 from lsst.utils.tests import temporaryDirectory
 
 _LOG = logging.getLogger(__name__)
@@ -81,6 +92,63 @@ class GraphBuilderTestCase(unittest.TestCase):
                 butler=butler, datasetQueryConstraint=constraint, callPopulateButler=False
             )
             self.assertEqual(len(qgraph3), 5)
+
+    def test_empty_qg(self):
+        """Test that making an empty QG doesn't raise exceptions."""
+        config = DynamicTestPipelineTaskConfig()
+        config.inputs["i"] = DynamicConnectionConfig(
+            dataset_type_name="input",
+            storage_class="StructuredDataDict",
+            dimensions=["detector"],
+        )
+        config.init_inputs["ii"] = DynamicConnectionConfig(
+            dataset_type_name="init_input",
+            storage_class="StructuredDataDict",
+        )
+        config.outputs["o"] = DynamicConnectionConfig(
+            dataset_type_name="output",
+            storage_class="StructuredDataDict",
+            dimensions=["detector"],
+        )
+        config.init_outputs["io"] = DynamicConnectionConfig(
+            dataset_type_name="init_output",
+            storage_class="StructuredDataDict",
+        )
+        pipeline_graph = PipelineGraph()
+        pipeline_graph.add_task("a", DynamicTestPipelineTask, config)
+        with temporaryDirectory() as repo_path:
+            Butler.makeRepo(repo_path)
+            butler = Butler.from_config(repo_path, writeable=True, run="test_empty_qg")
+            MockStorageClass.get_or_register_mock("StructuredDataDict")
+            butler.registry.registerDatasetType(
+                DatasetType(
+                    "input",
+                    dimensions=butler.dimensions.conform(["detector"]),
+                    storageClass="_mock_StructuredDataDict",
+                )
+            )
+            init_input_dataset_type = DatasetType(
+                "init_input",
+                dimensions=butler.dimensions.empty,
+                storageClass="_mock_StructuredDataDict",
+            )
+            butler.registry.registerDatasetType(init_input_dataset_type)
+            # Init-input initially exists, but input does not (hence empty QG).
+            butler.put(
+                MockDataset(
+                    dataset_id=None,
+                    dataset_type=init_input_dataset_type.to_simple(),
+                    data_id={},
+                    run=butler.run,
+                ),
+                "init_input",
+            )
+            # Attempt to make QG; should just be empty, with no exceptions.
+            self.assertFalse(AllDimensionsQuantumGraphBuilder(pipeline_graph, butler).build())
+            # Initialize the output run, try again, with same expected result.
+            pipeline_graph.register_dataset_types(butler)
+            pipeline_graph.init_output_run(butler)
+            self.assertFalse(AllDimensionsQuantumGraphBuilder(pipeline_graph, butler).build())
 
     # Inconsistent governor dimensions are no longer an error, so this test
     # fails with the new query system. We should probably check instead that

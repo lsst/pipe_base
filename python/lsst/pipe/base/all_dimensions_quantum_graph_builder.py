@@ -130,6 +130,10 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         tree = _DimensionGroupTree(subgraph)
         self._query_for_data_ids(tree)
         skeleton = self._make_subgraph_skeleton(tree)
+        if not skeleton.has_any_quanta:
+            # QG is going to be empty; exit early not just for efficiency, but
+            # also so downstream code doesn't have to guard against this case.
+            return skeleton
         self._find_followup_datasets(tree, skeleton)
         dimension_records = self._fetch_most_dimension_records(tree)
         leftovers = self._attach_most_dimension_records(skeleton, dimension_records)
