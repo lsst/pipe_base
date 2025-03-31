@@ -194,6 +194,13 @@ class QuantumGraphSkeleton:
         """The total number of edges."""
         return len(self._xgraph.edges)
 
+    @property
+    def has_any_quanta(self) -> bool:
+        """Test whether this graph has any quanta."""
+        for _ in self.iter_all_quanta():
+            return True
+        return False
+
     def has_task(self, task_label: str) -> bool:
         """Test whether the given task is in this skeleton.
 
