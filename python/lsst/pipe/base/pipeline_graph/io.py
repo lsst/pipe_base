@@ -745,15 +745,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
         """
         universe: DimensionUniverse | None = None
         if self.dimensions is not None:
-            universe = DimensionUniverse(
-                config=DimensionConfig(
-                    expect_not_none(
-                        self.dimensions,
-                        "Serialized pipeline graph has not been resolved; "
-                        "load it is a MutablePipelineGraph instead.",
-                    )
-                )
-            )
+            universe = DimensionUniverse(config=DimensionConfig(self.dimensions))
         xgraph = networkx.MultiDiGraph()
         sort_index_map: dict[int, NodeKey] = {}
         # Save the dataset type keys after the first time we make them - these
