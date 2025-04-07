@@ -51,6 +51,7 @@ import pydantic
 import tqdm
 
 from lsst.daf.butler import (
+    ButlerLogRecords,
     DataCoordinate,
     DataIdValue,
     DatasetRef,
@@ -66,6 +67,7 @@ from lsst.utils.timer import time_this
 
 from .. import automatic_connection_constants as acc
 from .._status import QuantumSuccessCaveats
+from .._task_metadata import TaskMetadata
 from ..graph import QuantumGraph
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
@@ -127,7 +129,7 @@ class HeaderModel(pydantic.BaseModel):
         )
 
 
-class RuntimeThinQuantumModel(pydantic.BaseModel):
+class PredictedThinQuantumModel(pydantic.BaseModel):
     quantum_index: QuantumIndex
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
 
@@ -150,7 +152,7 @@ class DatasetModel(pydantic.BaseModel):
         )
 
 
-class RuntimeFullQuantumModel(pydantic.BaseModel):
+class PredictedFullQuantumModel(pydantic.BaseModel):
     quantum_id: uuid.UUID
     task_label: TaskLabel
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
@@ -174,7 +176,7 @@ class RuntimeFullQuantumModel(pydantic.BaseModel):
     @classmethod
     def from_quantum(
         cls, task_node: TaskNode, quantum: Quantum, quantum_id: uuid.UUID
-    ) -> RuntimeFullQuantumModel:
+    ) -> PredictedFullQuantumModel:
         result = cls.model_construct(
             quantum_id=quantum_id,
             task_label=task_node.label,
@@ -194,7 +196,7 @@ class RuntimeFullQuantumModel(pydantic.BaseModel):
     @classmethod
     def from_quantum_graph_init(
         cls, task_init_node: TaskInitNode, quantum_graph: QuantumGraph
-    ) -> RuntimeFullQuantumModel:
+    ) -> PredictedFullQuantumModel:
         task_def = quantum_graph.findTaskDefByLabel(task_init_node.label)
         assert task_def is not None
         init_input_refs = {ref.datasetType.name: ref for ref in (quantum_graph.initInputRefs(task_def) or [])}
@@ -237,14 +239,17 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     host: str | None = None
 
     @classmethod
-    def from_runtime_quantum(cls, runtime_quantum: RuntimeFullQuantumModel) -> ProvenanceQuantumModel:
-        return cls.model_construct(
-            quantum_id=runtime_quantum.quantum_id,
-            task_label=runtime_quantum.task_label,
-            data_id=runtime_quantum.data_id,
-            metadata_id=runtime_quantum.inputs[acc.METADATA_OUTPUT_CONNECTION_NAME][0].dataset_id,
-            log_id=runtime_quantum.inputs[acc.LOG_OUTPUT_CONNECTION_NAME][0].dataset_id,
+    def from_predicted(cls, predicted: PredictedFullQuantumModel) -> ProvenanceQuantumModel:
+        result = cls.model_construct(
+            quantum_id=predicted.quantum_id,
+            task_label=predicted.task_label,
+            data_id=predicted.data_id,
         )
+        if metadata_datasets := predicted.outputs.get(acc.METADATA_OUTPUT_CONNECTION_NAME):
+            result.metadata_id = metadata_datasets[0].dataset_id
+        if log_datasets := predicted.outputs.get(acc.LOG_OUTPUT_CONNECTION_NAME):
+            result.log_id = log_datasets[0].dataset_id
+        return result
 
 
 class DimensionDataModel(pydantic.RootModel):
@@ -282,24 +287,38 @@ class DimensionDataModel(pydantic.RootModel):
         return result
 
 
-class RuntimeThinQuantaModel(pydantic.RootModel):
-    root: dict[TaskLabel, list[RuntimeThinQuantumModel]] = pydantic.Field(default_factory=dict)
+class PredictedThinQuantaModel(pydantic.RootModel):
+    root: dict[TaskLabel, list[PredictedThinQuantumModel]] = pydantic.Field(default_factory=dict)
 
 
 class QuantumEdgeListModel(pydantic.RootModel):
     root: list[tuple[QuantumIndex, QuantumIndex]] = pydantic.Field(default_factory=list)
 
 
-class RuntimeInitQuantaModel(pydantic.RootModel):
-    root: list[RuntimeFullQuantumModel] = pydantic.Field(default_factory=list)
+class PredictedInitQuantaModel(pydantic.RootModel):
+    root: list[PredictedFullQuantumModel] = pydantic.Field(default_factory=list)
 
     def update_from_quantum_graph(self, quantum_graph: QuantumGraph) -> None:
-        global_init_quantum = RuntimeFullQuantumModel.model_construct(quantum_id=uuid.uuid4(), task_label="")
+        global_init_quantum = PredictedFullQuantumModel.model_construct(
+            quantum_id=uuid.uuid4(), task_label=""
+        )
         for ref in quantum_graph.globalInitOutputRefs():
             global_init_quantum.outputs[ref.datasetType.name] = [DatasetModel.from_ref(ref)]
         self.root.append(global_init_quantum)
         for task_node in quantum_graph.pipeline_graph.tasks.values():
-            self.root.append(RuntimeFullQuantumModel.from_quantum_graph_init(task_node.init, quantum_graph))
+            self.root.append(PredictedFullQuantumModel.from_quantum_graph_init(task_node.init, quantum_graph))
+
+
+class ProvenanceInitQuantaModel(pydantic.RootModel):
+    root: list[ProvenanceQuantumModel] = pydantic.Field(default_factory=list)
+
+    def update_from_predicted(self, predicted: PredictedInitQuantaModel) -> list[DatasetModel]:
+        datasets: list[DatasetModel] = []
+        for predicted_quantum in predicted.root:
+            self.root.append(ProvenanceQuantumModel.from_predicted(predicted_quantum))
+            datasets.extend(itertools.chain.from_iterable(predicted_quantum.inputs.values()))
+            datasets.extend(itertools.chain.from_iterable(predicted_quantum.outputs.values()))
+        return datasets
 
 
 class BipartiteEdgeModel(pydantic.BaseModel):
@@ -332,7 +351,6 @@ class BipartiteEdgeListModel(pydantic.BaseModel):
 class BaseGraph:
     header: HeaderModel
     pipeline_graph: PipelineGraph
-    quantum_edges: QuantumEdgeListModel = dataclasses.field(default_factory=QuantumEdgeListModel)
     bipartite_edges: BipartiteEdgeListModel = dataclasses.field(default_factory=BipartiteEdgeListModel)
     quantum_indices: dict[uuid.UUID, QuantumIndex] = dataclasses.field(default_factory=dict)
     dataset_indices: dict[uuid.UUID, DatasetIndex] = dataclasses.field(default_factory=dict)
@@ -349,7 +367,7 @@ class BaseGraph:
         if self.header.n_quanta != len(self.quantum_indices):
             raise RuntimeError("Cannot save graph after partial read of quanta.")
         if self.header.n_datasets != len(self.dataset_indices):
-            raise RuntimeError("Cannot save graph after partial read of quanta.")
+            raise RuntimeError("Cannot save graph after partial read of datasets.")
 
         uri = ResourcePath(uri)
         if zstandard is not None:
@@ -452,14 +470,15 @@ class GraphReader:
 
 
 @dataclasses.dataclass
-class RuntimeGraph(BaseGraph):
+class PredictedGraph(BaseGraph):
     dimension_data: DimensionDataModel = dataclasses.field(default_factory=DimensionDataModel)
-    init_quanta: RuntimeInitQuantaModel = dataclasses.field(default_factory=RuntimeInitQuantaModel)
-    thin_quanta: RuntimeThinQuantaModel = dataclasses.field(default_factory=RuntimeThinQuantaModel)
-    full_quanta: dict[QuantumIndex, RuntimeFullQuantumModel] = dataclasses.field(default_factory=dict)
+    quantum_edges: QuantumEdgeListModel = dataclasses.field(default_factory=QuantumEdgeListModel)
+    init_quanta: PredictedInitQuantaModel = dataclasses.field(default_factory=PredictedInitQuantaModel)
+    thin_quanta: PredictedThinQuantaModel = dataclasses.field(default_factory=PredictedThinQuantaModel)
+    full_quanta: dict[QuantumIndex, PredictedFullQuantumModel] = dataclasses.field(default_factory=dict)
 
     @classmethod
-    def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> RuntimeGraph:
+    def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> PredictedGraph:
         header = HeaderModel.from_quantum_graph(quantum_graph)
         dimension_data = DimensionDataModel.from_quantum_graph(quantum_graph)
         result = cls(
@@ -473,7 +492,7 @@ class RuntimeGraph(BaseGraph):
         for task_node in tqdm.tqdm(result.pipeline_graph.tasks.values(), "Extracting full quanta by task"):
             task_quanta = quantum_graph.get_task_quanta(task_node.label)
             for quantum_id, quantum in tqdm.tqdm(task_quanta.items(), task_node.label, leave=False):
-                all_quanta.append(RuntimeFullQuantumModel.from_quantum(task_node, quantum, quantum_id))
+                all_quanta.append(PredictedFullQuantumModel.from_quantum(task_node, quantum, quantum_id))
             result.thin_quanta.root[task_node.label] = []
         all_quanta.sort(key=lambda q: q.quantum_id.int)
         dataset_ids: set[uuid.UUID] = set()
@@ -483,7 +502,7 @@ class RuntimeGraph(BaseGraph):
             if full_quantum.quantum_id not in init_quantum_ids:
                 result.full_quanta[quantum_index] = full_quantum
                 result.thin_quanta.root[full_quantum.task_label].append(
-                    RuntimeThinQuantumModel(quantum_index=quantum_index, data_id=full_quantum.data_id)
+                    PredictedThinQuantumModel(quantum_index=quantum_index, data_id=full_quantum.data_id)
                 )
         for dataset_index, dataset_id in tqdm.tqdm(
             enumerate(sorted(dataset_ids, key=attrgetter("int"))), "Setting dataset indices"
@@ -514,7 +533,7 @@ class RuntimeGraph(BaseGraph):
             offset = 0
             for quantum_id, index in tqdm.tqdm(
                 self.quantum_indices.items(),
-                "Dumping, compressing, and writing full runtime quanta",
+                "Dumping, compressing, and writing full predicted quanta",
             ):
                 if (full_quantum := self.full_quanta.get(index)) is not None:
                     model_bytes = compressor.compress(full_quantum.model_dump_json().encode())
@@ -557,9 +576,9 @@ class RuntimeGraph(BaseGraph):
             if read_dimension_data:
                 result.dimension_data = reader.read_model(DimensionDataModel, "dimension_data")
             if read_init_quanta:
-                result.init_quanta = reader.read_model(RuntimeInitQuantaModel, "init_quanta")
+                result.init_quanta = reader.read_model(PredictedInitQuantaModel, "init_quanta")
             if read_thin_quanta:
-                result.thin_quanta = reader.read_model(RuntimeThinQuantaModel, "thin_quanta")
+                result.thin_quanta = reader.read_model(PredictedThinQuantaModel, "thin_quanta")
             if read_quantum_edges:
                 result.quantum_edges = reader.read_model(QuantumEdgeListModel, "quantum_edges")
             if read_bipartite_edges:
@@ -571,7 +590,7 @@ class RuntimeGraph(BaseGraph):
                     result.quantum_indices = {
                         dataset_id: address.index for dataset_id, address in dataset_addresses.items()
                     }
-            with time_this(_LOG, "Reading addresses for full runtime quanta", level=logging.INFO):
+            with time_this(_LOG, "Reading addresses for full predicted quanta", level=logging.INFO):
                 with reader.quantum_address_reader() as quantum_address_reader:
                     if read_quantum_indices or full_quanta is None:
                         quantum_addresses = quantum_address_reader.read_all()
@@ -584,7 +603,9 @@ class RuntimeGraph(BaseGraph):
                 result.quantum_indices = {
                     quantum_id: address.index for quantum_id, address in quantum_addresses.items()
                 }
-            with time_this(_LOG, f"Reading {len(quantum_addresses)} full runtime quanta", level=logging.INFO):
+            with time_this(
+                _LOG, f"Reading {len(quantum_addresses)} full predicted quanta", level=logging.INFO
+            ):
                 compressed_data: dict[uuid.UUID, bytes] = {}
                 with reader.zf.open("full_quanta.dat", mode="r") as stream:
                     for quantum_id in full_quanta:
@@ -593,7 +614,7 @@ class RuntimeGraph(BaseGraph):
                             stream.seek(address.offsets[0])
                             compressed_data[quantum_id] = stream.read(address.sizes[0])
             with time_this(
-                _LOG, f"Decompressing {len(quantum_addresses)} full runtime quanta", level=logging.INFO
+                _LOG, f"Decompressing {len(quantum_addresses)} full predicted quanta", level=logging.INFO
             ):
                 decompressed_data = {
                     quantum_id: reader.decompressor.decompress(data)
@@ -610,7 +631,7 @@ class RuntimeGraph(BaseGraph):
                     leave=False,
                 ):
                     result.full_quanta[result.quantum_indices[quantum_id]] = (
-                        RuntimeFullQuantumModel.model_validate_json(data)
+                        PredictedFullQuantumModel.model_validate_json(data)
                     )
             return result
 
@@ -623,6 +644,41 @@ class RuntimeGraph(BaseGraph):
                 for element_name, raw_records in self.dimension_data.root.items()
             }
         return dimension_records
+
+
+@dataclasses.dataclass
+class ProvenanceGraph(BaseGraph):
+    init_quanta: ProvenanceInitQuantaModel = dataclasses.field(default_factory=ProvenanceInitQuantaModel)
+    quanta: dict[QuantumIndex, ProvenanceQuantumModel] = dataclasses.field(default_factory=dict)
+    datasets: dict[DatasetIndex, DatasetModel] = dataclasses.field(default_factory=dict)
+    metadata: dict[DatasetIndex, TaskMetadata] = dataclasses.field(default_factory=dict)
+    logs: dict[DatasetIndex, ButlerLogRecords] = dataclasses.field(default_factory=dict)
+
+    @classmethod
+    def from_predicted_graph(cls, predicted_graph: PredictedGraph) -> ProvenanceGraph:
+        if predicted_graph.header.n_quanta != len(predicted_graph.quantum_indices):
+            raise RuntimeError("Cannot construct provenance graph after partial read of quanta.")
+        if predicted_graph.header.n_datasets != len(predicted_graph.dataset_indices):
+            raise RuntimeError("Cannot construct provenance graph after partial read of datasets.")
+        result = cls(
+            header=predicted_graph.header,
+            pipeline_graph=predicted_graph.pipeline_graph,
+            bipartite_edges=predicted_graph.bipartite_edges,
+            quantum_indices=predicted_graph.quantum_indices,
+            dataset_indices=predicted_graph.dataset_indices,
+        )
+        for dataset in result.init_quanta.update_from_predicted(predicted_graph.init_quanta):
+            dataset_index = result.dataset_indices[dataset.dataset_id]
+            result.datasets[dataset_index] = dataset
+        for quantum_index, predicted_quantum in predicted_graph.full_quanta.items():
+            result.quanta[quantum_index] = ProvenanceQuantumModel.from_predicted(predicted_quantum)
+            for dataset in itertools.chain(
+                itertools.chain.from_iterable(predicted_quantum.inputs.values()),
+                itertools.chain.from_iterable(predicted_quantum.outputs.values()),
+            ):
+                dataset_index = result.dataset_indices[dataset.dataset_id]
+                result.datasets[dataset_index] = dataset
+        return result
 
 
 @click.group()
@@ -644,11 +700,11 @@ def rewrite(uri: str) -> None:
             warnings.simplefilter(action="ignore", category=FutureWarning)
             qg = QuantumGraph.loadUri(uri)
     _LOG.info(f"{uri} ({humanize.naturalsize(os.stat(uri).st_size)}. {len(qg)} quanta).")
-    with time_this(_LOG, msg="Converting to runtime model", level=logging.INFO):
-        runtime_graph = RuntimeGraph.from_quantum_graph(qg)
+    with time_this(_LOG, msg="Converting to predicted model", level=logging.INFO):
+        predicted_graph = PredictedGraph.from_quantum_graph(qg)
     basename, _ = os.path.splitext(uri)
-    with time_this(_LOG, msg="Writing runtime model to zip.", level=logging.INFO):
-        runtime_graph.write(f"{basename}-runtime.zip")
+    with time_this(_LOG, msg="Writing predicted model to zip.", level=logging.INFO):
+        predicted_graph.write(f"{basename}-runtime.zip")
 
 
 @main.command()
@@ -674,7 +730,7 @@ def read(
     logging.basicConfig(level=logging.INFO)
     quanta = [uuid.UUID(i) for i in quantum_id] or None
     with time_this(_LOG, msg=f"Reading {uri}", level=logging.INFO):
-        model = RuntimeGraph.read_zip(
+        model = PredictedGraph.read_zip(
             uri,
             read_init_quanta=init_quanta,
             read_thin_quanta=thin_quanta,
