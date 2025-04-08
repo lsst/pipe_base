@@ -86,3 +86,102 @@ The export methods include:
    This is a `networkx.DiGraph`, because all dataset types that connect a pair of tasks are rolled into one edge, and edges have no state.
  - `~PipelineGraph.make_dataset_type_graph` exports just dataset type nodes; it is one "bipartite projection" of the full graph.
    This is a `networkx.DiGraph`, because all tasks that connect a pair of dataset types are rolled into one edge, and edges have no state.
+
+.. _pipeline-graph-subset-expressions:
+
+Pipeline graph subset expressions
+---------------------------------
+
+The `PipelineGraph.select` and `PipelineGraph.select_tasks` methods utilize a boolean expression language to select a subset of the tasks in a `PipelineGraph`.
+The language uses familiar set operators for union (``|``), intersection (``&``), and set-inversion (``~``), with the operands any of the following:
+
+- a task label
+- a task subset label
+- a dataset type name (resolves to the label of the producing task, or an empty set for overall inputs; may not be an init-output)
+- an ancestor or descendant search, starting from a task label or dataset type name (see below)
+- a nested expression.
+
+Parentheses may be used for grouping.
+
+Task labels, task subset labels, and dataset type names all appear as regular unquoted strings.
+In cases where dataset type name is the same as a task or task subset label, a prefix can be added to disambiguate: ``T:`` for task, ``D:`` for dataset type, and ``S:`` for task subset.
+
+An ancestor or descendant search uses ``<``, ``<=``, ``>``, and ``>=`` as *unary* operators, with the operands being task labels or dataset type names (which may be qualified with ``T:`` or ``D:``, respectively, as described above).
+For tasks these searches are straightforward:
+
+- ``<`` and ``<=`` select all tasks whose outputs are consumed by the operand task, recursively, with the operand task itself included only for ``<=``.
+
+- ``>`` and ``>=`` select all tasks that consume the outputs of the operand task, rescursively, with the operand task itself included only for ``>=``.
+
+Because the expressions are logically set operations on tasks, ancestor and descendant searches on dataset types work differently and are not quite symmetric:
+
+- ``<`` and ``<=`` act like an ancestor search on the task that produces the operand dataset type.
+  For overall inputs they yield empty sets.
+  Init-outputs are not permitted.
+
+- ``>`` and ``>=`` act like a union of descendant searches on all tasks that consume the operand dataset type.
+  This includes tasks that consume the operand dataset type as an init-input (this is the only context in which init-output dataset types can appear in expressions).
+  For ``>=`` only, the task that produces the operand dataset type is also included, but in this case it is an error for the operand to be an init-output.
+
+Note that these ancestor and descendant searches are not the only useful way to define the subset of a pipeline that is "before" or "after" a task; the ancestors ``<a`` of a task ``a`` are those that *must* be run before ``a``, while the inverse of the descendants ``~>=a`` are the tasks that *can* be run before ``a``.
+Similarly, the descendants ``>a`` of ``a`` are the tasks that can only be run after ``a``, while the inverse of the ancestors ``~<=a`` are all tasks that can be run after ``a``.
+
+Examples
+^^^^^^^^
+
+All tasks in subset ``s`` except task ``b``:
+
+.. code-block:: text
+
+  s & ~b
+
+All tasks in either subset ``r`` or subset ``s`` that would need to be re-run to pick up a change in the behavior of task ``a``:
+
+.. code-block:: text
+
+  (r | s) & >=a
+
+All tasks in subset ``s`` that need to be run to accept failures in task ``c`` as unrecoverable, after a previous run left some quanta of those tasks blocked:
+
+.. code-block:: text
+
+  s & >a
+
+All tasks needed to produce dataset type ``d`` or dataset type ``e``:
+
+.. code-block:: text
+
+  <d | <e
+
+All tasks except task ``a`` that can be run without producing dataset type ``f``:
+
+.. code-block:: text
+
+  ~a & ~>=f
+
+
+Formal grammar
+^^^^^^^^^^^^^^
+
+.. code-block:: bnf
+
+  <expression> ::= ~ <expression>
+                 | <expression> | <expression>
+                 | <expression> & <expression>
+                 | (<expression>)
+                 | S:<subset-label>
+                 | <subset-label>
+                 | < <node>
+                 | <= <node>
+                 | > <node>
+                 | <= <node>
+                 | <node>
+
+  <node> ::= T:<task-label>
+           | <task-label>
+           | D:<dataset-type-name>
+           | <dataset-type-name>
+
+Whitespace is ignored, but is not permitted before or after the ``:`` in qualified identifiers.
+
+The operator precedence in the absence of parenthesis is ``~``, ``&``, ``|`` ( highest to lowest).

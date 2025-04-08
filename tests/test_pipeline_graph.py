@@ -45,6 +45,7 @@ from lsst.pipe.base.pipeline_graph import (
     Edge,
     EdgesChangedError,
     IncompatibleDatasetTypeError,
+    InvalidExpressionError,
     InvalidStepsError,
     NodeKey,
     NodeType,
@@ -1203,6 +1204,124 @@ class PipelineGraphTestCase(unittest.TestCase):
             task_classes="full",
             dataset_types=True,
         )
+
+    def test_select(self) -> None:
+        """Test PipelineGraph.select_tasks."""
+        # New task c is downstream of a and parallel (unrelated) to b.
+        c_config = DynamicTestPipelineTaskConfig()
+        c_config.inputs["input3"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
+        c_config.outputs["output3"] = DynamicConnectionConfig(dataset_type_name="intermediate_2")
+        self.graph.add_task("c", DynamicTestPipelineTask, c_config)
+        # New task d is downstream of c and parallel (unrelated) to b.
+        d_config = DynamicTestPipelineTaskConfig()
+        d_config.inputs["input4"] = DynamicConnectionConfig(dataset_type_name="intermediate_2")
+        d_config.outputs["output4"] = DynamicConnectionConfig(dataset_type_name="output_2")
+        self.graph.add_task("d", DynamicTestPipelineTask, d_config)
+        self.graph.add_task_subset("c_and_d", {"c", "d"})
+        # Check identifiers
+        self.check_expression("a", {"a"})
+        self.check_expression("T:a", {"a"})
+        self.check_expression("only_b", {"b"})
+        self.check_expression("S:c_and_d", {"c", "d"})
+        self.check_expression("output_1", {"b"})
+        self.check_expression("input_1", set())
+        self.check_expression("intermediate_1", {"a"})
+        self.check_expression("D:intermediate_1", {"a"})
+        # Check inversion, intersection, and union.
+        self.check_expression("~a", {"b", "c", "d"})
+        self.check_expression("~only_b", {"a", "c", "d"})
+        self.check_expression("a | c_and_d", {"a", "c", "d"})
+        self.check_expression("c & c_and_d", {"c"})
+        self.check_expression("(a | b) & (b | c)", {"b"})
+        # Check ancestors and descendants for task operands.
+        self.check_expression("<a", set())
+        self.check_expression("<b", {"a"})
+        self.check_expression("<c", {"a"})
+        self.check_expression("<d", {"a", "c"})
+        self.check_expression("<=a", {"a"})
+        self.check_expression("<=b", {"a", "b"})
+        self.check_expression("<=c", {"a", "c"})
+        self.check_expression("<=d", {"a", "c", "d"})
+        self.check_expression(">a", {"b", "c", "d"})
+        self.check_expression(">b", set())
+        self.check_expression(">c", {"d"})
+        self.check_expression(">d", set())
+        self.check_expression(">=a", {"a", "b", "c", "d"})
+        self.check_expression(">=b", {"b"})
+        self.check_expression(">=c", {"c", "d"})
+        self.check_expression(">=d", {"d"})
+        # Check ancestors and descendants for dataset type operands.
+        self.check_expression("<input_1", set())
+        self.check_expression("<intermediate_1", set())
+        self.check_expression("<intermediate_2", {"a"})
+        self.check_expression("<output_1", {"a"})
+        self.check_expression("<output_2", {"a", "c"})
+        self.check_expression("<=input_1", set())
+        self.check_expression("<=intermediate_1", {"a"})
+        self.check_expression("<=intermediate_2", {"a", "c"})
+        self.check_expression("<=output_1", {"a", "b"})
+        self.check_expression("<=output_2", {"a", "c", "d"})
+        self.check_expression(">input_1", {"a", "b", "c", "d"})
+        self.check_expression(">intermediate_1", {"b", "c", "d"})
+        self.check_expression(">intermediate_2", {"d"})
+        self.check_expression(">output_1", set())
+        self.check_expression(">output_2", set())
+        self.check_expression(">=input_1", {"a", "b", "c", "d"})
+        self.check_expression(">=intermediate_1", {"a", "b", "c", "d"})
+        self.check_expression(">=intermediate_2", {"c", "d"})
+        self.check_expression(">=output_1", {"b"})
+        self.check_expression(">=output_2", {"d"})
+        # Test that init datasets can be used with non-inclusive descendant
+        # searches (i.e. as long as we're not trying to select the
+        # pre-exec-init process as a task, it's fine).
+        self.check_expression(">schema", {"b"})
+        # Check exceptions for invalid expressions.
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("schema")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("<schema")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("<=schema")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks(">=schema")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("<only_b")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks(">c_and_d")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("q")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("T:q")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("D:q")
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("S:q")
+        # Add task and subset with names that duplicate a dataset type, check
+        # name resolution (note that subset/task conflicts are not allowed).
+        # New task d is downstream of c and parallel (unrelated) to b.
+        e_config = DynamicTestPipelineTaskConfig()
+        e_config.inputs["input5"] = DynamicConnectionConfig(dataset_type_name="intermediate_2")
+        e_config.outputs["output5"] = DynamicConnectionConfig(dataset_type_name="e")
+        e_config.outputs["output6"] = DynamicConnectionConfig(dataset_type_name="f")
+        self.graph.add_task("e", DynamicTestPipelineTask, e_config)
+        self.graph.add_task_subset("f", {"a"})
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("e")  # ambiguous
+        with self.assertRaises(InvalidExpressionError):
+            self.graph.select_tasks("f")  # ambiguous
+        self.check_expression("T:e", {"e"})
+        self.check_expression("D:e", {"e"})
+        self.check_expression("S:f", {"a"})
+        self.check_expression("D:f", {"e"})
+
+    def check_expression(self, expression: str, expectation: set[str]) -> None:
+        """Test that `PipelineGraph.select` and `PipelineGraph.select_tasks`
+        yield the given result for the given expression.
+        """
+        self.assertEqual(self.graph.select_tasks(expression), expectation)
+        self.assertEqual(self.graph.select(expression).tasks.keys(), expectation)
 
 
 def _have_example_storage_classes() -> bool:
