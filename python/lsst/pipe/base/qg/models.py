@@ -47,6 +47,7 @@ from types import ModuleType
 from typing import IO, Protocol, Self, TypeAlias, TypeVar, cast
 
 import click
+import networkx
 import pydantic
 import tqdm
 
@@ -69,7 +70,7 @@ from .. import automatic_connection_constants as acc
 from .._status import QuantumSuccessCaveats
 from .._task_metadata import TaskMetadata
 from ..graph import QuantumGraph
-from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode, TaskNode
+from ..pipeline_graph import NodeType, PipelineGraph, TaskImportMode, TaskInitNode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 from ..quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from .address import Address, AddressReader, AddressWriter
@@ -100,6 +101,26 @@ class Compressor(Protocol):
 
 class Decompressor(Protocol):
     def decompress(self, data: bytes) -> bytes: ...
+
+
+class NodeDataWriter(Protocol):
+    def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None: ...
+
+    @property
+    def quantum_address_writer(self) -> AddressWriter: ...
+
+    @property
+    def dataset_address_writer(self) -> AddressWriter: ...
+
+
+class QuantumNodeProtocol(Protocol):
+    @property
+    def quantum_id(self) -> uuid.UUID: ...
+
+
+class DatasetNodeProtocol(Protocol):
+    @property
+    def dataset_id(self) -> uuid.UUID: ...
 
 
 _T = TypeVar("_T", bound=pydantic.BaseModel)
@@ -134,21 +155,19 @@ class PredictedThinQuantumModel(pydantic.BaseModel):
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
 
 
-class DatasetModel(pydantic.BaseModel):
+class PredictedDatasetModel(pydantic.BaseModel):
     dataset_id: uuid.UUID
     dataset_type_name: DatasetTypeName
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
     run: str
-    exists: bool
 
     @classmethod
-    def from_ref(cls, ref: DatasetRef) -> DatasetModel:
+    def from_ref(cls, ref: DatasetRef) -> PredictedDatasetModel:
         return cls.model_construct(
             dataset_id=ref.id,
             dataset_type_name=ref.datasetType.name,
             data_id=list(ref.dataId.required_values),
             run=ref.run,
-            exists=False,
         )
 
 
@@ -158,8 +177,8 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
     metadata_id: uuid.UUID | None = None
     log_id: uuid.UUID | None = None
-    inputs: dict[ConnectionName, list[DatasetModel]] = pydantic.Field(default_factory=dict)
-    outputs: dict[ConnectionName, list[DatasetModel]] = pydantic.Field(default_factory=dict)
+    inputs: dict[ConnectionName, list[PredictedDatasetModel]] = pydantic.Field(default_factory=dict)
+    outputs: dict[ConnectionName, list[PredictedDatasetModel]] = pydantic.Field(default_factory=dict)
     datastore_records: dict[DatastoreName, SerializedDatastoreRecordData] = pydantic.Field(
         default_factory=dict
     )
@@ -184,10 +203,10 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
         )
         for read_edge in task_node.iter_all_inputs():
             refs = sorted(quantum.inputs[read_edge.dataset_type_name], key=lambda ref: ref.dataId)
-            result.inputs[read_edge.connection_name] = [DatasetModel.from_ref(ref) for ref in refs]
+            result.inputs[read_edge.connection_name] = [PredictedDatasetModel.from_ref(ref) for ref in refs]
         for write_edge in task_node.iter_all_outputs():
             refs = sorted(quantum.outputs[write_edge.dataset_type_name], key=lambda ref: ref.dataId)
-            result.inputs[write_edge.connection_name] = [DatasetModel.from_ref(ref) for ref in refs]
+            result.inputs[write_edge.connection_name] = [PredictedDatasetModel.from_ref(ref) for ref in refs]
         result.datastore_records = {
             store_name: records.to_simple() for store_name, records in quantum.datastore_records.items()
         }
@@ -207,10 +226,10 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
         result = cls.model_construct(quantum_id=uuid.uuid4(), task_label=task_init_node.label)
         for read_edge in task_init_node.iter_all_inputs():
             ref = init_input_refs[read_edge.dataset_type_name]
-            result.inputs[read_edge.connection_name] = [DatasetModel.from_ref(ref)]
+            result.inputs[read_edge.connection_name] = [PredictedDatasetModel.from_ref(ref)]
         for write_edge in task_init_node.iter_all_outputs():
             ref = init_output_refs[write_edge.dataset_type_name]
-            result.outputs[write_edge.connection_name] = [DatasetModel.from_ref(ref)]
+            result.outputs[write_edge.connection_name] = [PredictedDatasetModel.from_ref(ref)]
         datastore_records: dict[str, DatastoreRecordData] = {}
         for quantum in quantum_graph.get_task_quanta(task_init_node.label).values():
             for store_name, records in quantum.datastore_records.items():
@@ -222,6 +241,24 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
             store_name: records.to_simple() for store_name, records in datastore_records.items()
         }
         return result
+
+
+class ProvenanceDatasetModel(PredictedDatasetModel):
+    produced: bool
+    producer: uuid.UUID | None = None
+
+    @classmethod
+    def from_predicted(
+        cls, predicted: PredictedDatasetModel, producer: uuid.UUID | None = None
+    ) -> ProvenanceDatasetModel:
+        return cls.model_construct(
+            dataset_id=predicted.dataset_id,
+            dataset_type_name=predicted.dataset_type_name,
+            data_id=predicted.data_id,
+            run=predicted.run,
+            produced=False,
+            producer=producer,
+        )
 
 
 class ProvenanceQuantumModel(pydantic.BaseModel):
@@ -303,7 +340,7 @@ class PredictedInitQuantaModel(pydantic.RootModel):
             quantum_id=uuid.uuid4(), task_label=""
         )
         for ref in quantum_graph.globalInitOutputRefs():
-            global_init_quantum.outputs[ref.datasetType.name] = [DatasetModel.from_ref(ref)]
+            global_init_quantum.outputs[ref.datasetType.name] = [PredictedDatasetModel.from_ref(ref)]
         self.root.append(global_init_quantum)
         for task_node in quantum_graph.pipeline_graph.tasks.values():
             self.root.append(PredictedFullQuantumModel.from_quantum_graph_init(task_node.init, quantum_graph))
@@ -312,12 +349,18 @@ class PredictedInitQuantaModel(pydantic.RootModel):
 class ProvenanceInitQuantaModel(pydantic.RootModel):
     root: list[ProvenanceQuantumModel] = pydantic.Field(default_factory=list)
 
-    def update_from_predicted(self, predicted: PredictedInitQuantaModel) -> list[DatasetModel]:
-        datasets: list[DatasetModel] = []
+    def update_from_predicted(self, predicted: PredictedInitQuantaModel) -> list[ProvenanceDatasetModel]:
+        datasets: list[ProvenanceDatasetModel] = []
         for predicted_quantum in predicted.root:
             self.root.append(ProvenanceQuantumModel.from_predicted(predicted_quantum))
-            datasets.extend(itertools.chain.from_iterable(predicted_quantum.inputs.values()))
-            datasets.extend(itertools.chain.from_iterable(predicted_quantum.outputs.values()))
+            datasets.extend(
+                ProvenanceDatasetModel.from_predicted(d, producer=None)
+                for d in itertools.chain.from_iterable(predicted_quantum.inputs.values())
+            )
+            datasets.extend(
+                ProvenanceDatasetModel.from_predicted(d, producer=predicted_quantum.quantum_id)
+                for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
+            )
         return datasets
 
 
@@ -330,7 +373,7 @@ class BipartiteEdgeModel(pydantic.BaseModel):
     def generate(
         cls,
         quantum_index: QuantumIndex,
-        datasets: Mapping[ConnectionName, Iterable[DatasetModel]],
+        datasets: Mapping[ConnectionName, Iterable[PredictedDatasetModel]],
         dataset_indices: Mapping[uuid.UUID, DatasetIndex],
     ) -> Iterator[BipartiteEdgeModel]:
         for connection_name, connection_datasets in datasets.items():
@@ -343,6 +386,8 @@ class BipartiteEdgeModel(pydantic.BaseModel):
 
 
 class BipartiteEdgeListModel(pydantic.BaseModel):
+    init_reads: list[BipartiteEdgeModel] = pydantic.Field(default_factory=list)
+    init_writes: list[BipartiteEdgeModel] = pydantic.Field(default_factory=list)
     reads: list[BipartiteEdgeModel] = pydantic.Field(default_factory=list)
     writes: list[BipartiteEdgeModel] = pydantic.Field(default_factory=list)
 
@@ -355,13 +400,60 @@ class BaseGraph:
     quantum_indices: dict[uuid.UUID, QuantumIndex] = dataclasses.field(default_factory=dict)
     dataset_indices: dict[uuid.UUID, DatasetIndex] = dataclasses.field(default_factory=dict)
 
-    def write_full_quanta(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> AddressWriter:
-        raise NotImplementedError()
+    _bipartite_init_xgraph: networkx.MultiDiGraph | None = None
+    _bipartite_run_xgraph: networkx.MultiDiGraph | None = None
 
-    def write_full_datasets(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> AddressWriter:
-        raise NotImplementedError()
+    def is_quantum_index(self, index: int) -> bool:
+        return index < self.header.n_quanta
 
-    def write(self, uri: ResourcePathExpression, zstd_level: int = 10, int_size: int = 4) -> None:
+    @property
+    def bipartite_init_xgraph(self) -> networkx.MultiDiGraph:
+        if self._bipartite_init_xgraph is None:
+            with time_this(_LOG, "Building bipartite init networkx graph.", level=logging.INFO):
+                self._bipartite_init_xgraph = self._build_bipartite_xgraph(
+                    self.bipartite_edges.init_reads, self.bipartite_edges.init_writes
+                )
+        return self._bipartite_init_xgraph
+
+    @property
+    def bipartite_run_xgraph(self) -> networkx.MultiDiGraph:
+        if self._bipartite_run_xgraph is None:
+            with time_this(_LOG, "Building bipartite run networkx graph.", level=logging.INFO):
+                self._bipartite_run_xgraph = self._build_bipartite_xgraph(
+                    self.bipartite_edges.reads, self.bipartite_edges.writes
+                )
+        return self._bipartite_run_xgraph
+
+    def _build_bipartite_xgraph(
+        self,
+        reads: Iterable[BipartiteEdgeModel],
+        writes: Iterable[BipartiteEdgeModel],
+    ) -> networkx.MultiDiGraph:
+        xgraph = networkx.MultiDiGraph(
+            itertools.chain(
+                ((edge.dataset, edge.quantum, dict(connection=edge.connection)) for edge in reads),
+                ((edge.quantum, edge.dataset, dict(connection=edge.connection)) for edge in writes),
+            )
+        )
+        for index, data in xgraph.nodes.items():
+            if self.is_quantum_index(index):
+                data["bipartite"] = NodeType.TASK.bipartite
+            else:
+                data["bipartite"] = NodeType.DATASET_TYPE.bipartite
+        for quantum_id, quantum_index in self.quantum_indices.items():
+            xgraph.nodes[quantum_index]["id"] = quantum_id
+        for dataset_id, dataset_index in self.dataset_indices.items():
+            xgraph.nodes[dataset_index]["id"] = dataset_id
+        return xgraph
+
+    def _write(
+        self,
+        uri: ResourcePathExpression,
+        *,
+        zstd_level: int = 10,
+        int_size: int = 4,
+        node_data_writer: NodeDataWriter,
+    ) -> None:
         import humanize
 
         if self.header.n_quanta != len(self.quantum_indices):
@@ -390,18 +482,17 @@ class BaseGraph:
                         )
                         zf.writestr(f"{field.name}.json.{ext}", compressed)
                         total_size += len(compressed)
-                quantum_address_writer = self.write_full_quanta(zf, compressor, ext)
-                total_size += quantum_address_writer.total
+                node_data_writer.write_node_data(zf, compressor, ext)
+                total_size += node_data_writer.quantum_address_writer.total
+                total_size += node_data_writer.dataset_address_writer.total
                 with zf.open("quantum_addresses.dat", mode="w") as stream:
-                    quantum_addresses_size = quantum_address_writer.write(stream, int_size)
+                    quantum_addresses_size = node_data_writer.quantum_address_writer.write(stream, int_size)
                     _LOG.info(f"quantum_addresses: {humanize.naturalsize(quantum_addresses_size)}")
                     total_size += quantum_addresses_size
-                dataset_address_writer = self.write_full_datasets(zf, compressor, ext)
-                total_size += dataset_address_writer.total
                 with zf.open("dataset_addresses.dat", mode="w") as stream:
-                    dataset_addresses_size = dataset_address_writer.write(stream, int_size)
+                    dataset_addresses_size = node_data_writer.dataset_address_writer.write(stream, int_size)
                     _LOG.info(f"dataset_addresses: {humanize.naturalsize(dataset_addresses_size)}")
-                    total_size += dataset_address_writer.write(stream, int_size)
+                    total_size += dataset_addresses_size
                 _LOG.info(f"unzipped size: {humanize.naturalsize(total_size)}.")
         _LOG.info(f"zipped size: {humanize.naturalsize(uri.size())}.")
 
@@ -477,6 +568,24 @@ class PredictedGraph(BaseGraph):
     thin_quanta: PredictedThinQuantaModel = dataclasses.field(default_factory=PredictedThinQuantaModel)
     full_quanta: dict[QuantumIndex, PredictedFullQuantumModel] = dataclasses.field(default_factory=dict)
 
+    _quantum_xgraph: networkx.MultiDiGraph | None = None
+    _ordered_quanta: tuple[QuantumIndex, ...] | None = None
+
+    @property
+    def quantum_xgraph(self) -> networkx.DiGraph:
+        if self._quantum_xgraph is None:
+            with time_this(_LOG, "Building quantum-only networkx graph.", level=logging.INFO):
+                self._quantum_xgraph = networkx.DiGraph(self.quantum_edges.root)
+                for quantum_id, quantum_index in self.quantum_indices.items():
+                    self._quantum_xgraph.nodes[quantum_index]["id"] = quantum_id
+        return self._quantum_xgraph
+
+    @property
+    def ordered_quanta(self) -> tuple[QuantumIndex, ...]:
+        if self._ordered_quanta is None:
+            self._ordered_quanta = tuple(networkx.dag.lexicographical_topological_sort(self.quantum_graph))
+        return self._ordered_quanta
+
     @classmethod
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> PredictedGraph:
         header = HeaderModel.from_quantum_graph(quantum_graph)
@@ -494,6 +603,7 @@ class PredictedGraph(BaseGraph):
             for quantum_id, quantum in tqdm.tqdm(task_quanta.items(), task_node.label, leave=False):
                 all_quanta.append(PredictedFullQuantumModel.from_quantum(task_node, quantum, quantum_id))
             result.thin_quanta.root[task_node.label] = []
+        result.header.n_quanta = len(result.quantum_indices)
         all_quanta.sort(key=lambda q: q.quantum_id.int)
         dataset_ids: set[uuid.UUID] = set()
         for quantum_index, full_quantum in tqdm.tqdm(enumerate(all_quanta), "Adding thin quanta"):
@@ -504,16 +614,26 @@ class PredictedGraph(BaseGraph):
                 result.thin_quanta.root[full_quantum.task_label].append(
                     PredictedThinQuantumModel(quantum_index=quantum_index, data_id=full_quantum.data_id)
                 )
+        result.header.n_datasets = len(result.dataset_indices)
         for dataset_index, dataset_id in tqdm.tqdm(
-            enumerate(sorted(dataset_ids, key=attrgetter("int"))), "Setting dataset indices"
+            enumerate(sorted(dataset_ids, key=attrgetter("int")), start=len(all_quanta)),
+            "Setting dataset indices",
         ):
             result.dataset_indices[dataset_id] = dataset_index
         for a, b in tqdm.tqdm(quantum_graph.graph.edges, "Extracting quantum-only graph edges"):
             result.quantum_edges.root.append(
                 (result.quantum_indices[a.nodeId], result.quantum_indices[b.nodeId])
             )
+        for init_quantum in tqdm.tqdm(result.init_quanta.root, "Extracting bipartite init graph edges"):
+            quantum_index = result.quantum_indices[init_quantum.quantum_id]
+            result.bipartite_edges.init_reads.extend(
+                BipartiteEdgeModel.generate(quantum_index, init_quantum.inputs, result.dataset_indices)
+            )
+            result.bipartite_edges.init_writes.extend(
+                BipartiteEdgeModel.generate(quantum_index, init_quantum.outputs, result.dataset_indices)
+            )
         for quantum_index, full_quantum in tqdm.tqdm(
-            enumerate(all_quanta), "Extracting bipartite graph edges"
+            result.full_quanta.items(), "Extracting bipartite run graph edges"
         ):
             result.bipartite_edges.reads.extend(
                 BipartiteEdgeModel.generate(quantum_index, full_quantum.inputs, result.dataset_indices)
@@ -521,38 +641,19 @@ class PredictedGraph(BaseGraph):
             result.bipartite_edges.writes.extend(
                 BipartiteEdgeModel.generate(quantum_index, full_quantum.outputs, result.dataset_indices)
             )
-        result.header.n_quanta = len(result.quantum_indices)
-        result.header.n_datasets = len(result.dataset_indices)
         return result
 
-    def write_full_quanta(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> AddressWriter:
-        import humanize
-
-        addresses: dict[uuid.UUID, Address] = {}
-        with zf.open("full_quanta.dat", mode="w") as stream:
-            offset = 0
-            for quantum_id, index in tqdm.tqdm(
-                self.quantum_indices.items(),
-                "Dumping, compressing, and writing full predicted quanta",
-            ):
-                if (full_quantum := self.full_quanta.get(index)) is not None:
-                    model_bytes = compressor.compress(full_quantum.model_dump_json().encode())
-                    stream.write(model_bytes)
-                    addresses[quantum_id] = Address(index, [offset], [len(model_bytes)])
-                    offset += len(model_bytes)
-                else:
-                    addresses[quantum_id] = Address(index, [offset], [0])
-        _LOG.info(f"full_quanta: {humanize.naturalsize(offset)}.")
-        return AddressWriter(1, addresses, offset)
-
-    def write_full_datasets(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> AddressWriter:
-        return AddressWriter(
-            n_offsets=0,
-            addresses={
-                dataset_id: Address(index, offsets=[], sizes=[])
-                for dataset_id, index in self.dataset_indices.items()
-            },
-            total=0,
+    def write(
+        self,
+        uri: ResourcePathExpression,
+        zstd_level: int = 10,
+        int_size: int = 4,
+    ) -> None:
+        self._write(
+            uri,
+            zstd_level=zstd_level,
+            int_size=int_size,
+            node_data_writer=PredictedNodeDataWriter(self),
         )
 
     @classmethod
@@ -646,13 +747,47 @@ class PredictedGraph(BaseGraph):
         return dimension_records
 
 
+class PredictedNodeDataWriter:
+    def __init__(self, predicted_graph: PredictedGraph) -> None:
+        self.graph = predicted_graph
+        self.quantum_address_writer = AddressWriter(1, {}, 0)
+        self.dataset_address_writer = AddressWriter(
+            0,
+            {
+                dataset_id: Address(index, offsets=[], sizes=[])
+                for dataset_id, index in self.dataset_indices.items()
+            },
+            0,
+        )
+
+    def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
+        import humanize
+
+        addresses: dict[uuid.UUID, Address] = {}
+        with zf.open("full_quanta.dat", mode="w") as stream:
+            for quantum_id, index in tqdm.tqdm(
+                self.graph.quantum_indices.items(),
+                "Dumping, compressing, and writing full predicted quanta",
+            ):
+                if (full_quantum := self.graph.full_quanta.get(index)) is not None:
+                    model_bytes = compressor.compress(full_quantum.model_dump_json().encode())
+                    stream.write(model_bytes)
+                    self.quantum_address_writer.addresses[quantum_id] = Address(
+                        index, [self.quantum_address_writer.total], [len(model_bytes)]
+                    )
+                    self.quantum_address_writer.total += len(model_bytes)
+                else:
+                    addresses[quantum_id] = Address(index, [self.quantum_address_writer.total], [0])
+        _LOG.info(f"full_quanta: {humanize.naturalsize(self.quantum_address_writer.total)}.")
+
+
 @dataclasses.dataclass
 class ProvenanceGraph(BaseGraph):
     init_quanta: ProvenanceInitQuantaModel = dataclasses.field(default_factory=ProvenanceInitQuantaModel)
     quanta: dict[QuantumIndex, ProvenanceQuantumModel] = dataclasses.field(default_factory=dict)
-    datasets: dict[DatasetIndex, DatasetModel] = dataclasses.field(default_factory=dict)
-    metadata: dict[DatasetIndex, TaskMetadata] = dataclasses.field(default_factory=dict)
-    logs: dict[DatasetIndex, ButlerLogRecords] = dataclasses.field(default_factory=dict)
+    datasets: dict[DatasetIndex, ProvenanceDatasetModel] = dataclasses.field(default_factory=dict)
+    metadata: dict[QuantumIndex, TaskMetadata] = dataclasses.field(default_factory=dict)
+    logs: dict[QuantumIndex, ButlerLogRecords] = dataclasses.field(default_factory=dict)
 
     @classmethod
     def from_predicted_graph(cls, predicted_graph: PredictedGraph) -> ProvenanceGraph:
@@ -667,18 +802,45 @@ class ProvenanceGraph(BaseGraph):
             quantum_indices=predicted_graph.quantum_indices,
             dataset_indices=predicted_graph.dataset_indices,
         )
-        for dataset in result.init_quanta.update_from_predicted(predicted_graph.init_quanta):
-            dataset_index = result.dataset_indices[dataset.dataset_id]
-            result.datasets[dataset_index] = dataset
-        for quantum_index, predicted_quantum in predicted_graph.full_quanta.items():
+        for provenance_dataset in result.init_quanta.update_from_predicted(predicted_graph.init_quanta):
+            dataset_index = result.dataset_indices[provenance_dataset.dataset_id]
+            # setdefault keeps a producer's better entry from begin overwritten
+            # by a consumer's less-populated entry, as long as init_quanta is
+            # topologically sorted (as it should be at construction).
+            result.datasets.setdefault(dataset_index, provenance_dataset)
+        # We similarly need to iterate over runtime quanta in topological order
+        # in order to make sure the dataset entries we keep are the ones from
+        # the producing task.
+        for quantum_index in predicted_graph.ordered_quanta:
+            predicted_quantum = predicted_graph.full_quanta[quantum_index]
             result.quanta[quantum_index] = ProvenanceQuantumModel.from_predicted(predicted_quantum)
-            for dataset in itertools.chain(
-                itertools.chain.from_iterable(predicted_quantum.inputs.values()),
-                itertools.chain.from_iterable(predicted_quantum.outputs.values()),
-            ):
-                dataset_index = result.dataset_indices[dataset.dataset_id]
-                result.datasets[dataset_index] = dataset
+            for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
+                dataset_index = result.dataset_indices[predicted_dataset.dataset_id]
+                if dataset_index not in result.datasets:
+                    result.datasets[dataset_index] = ProvenanceDatasetModel.from_predicted(predicted_dataset)
+            for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+                dataset_index = result.dataset_indices[predicted_dataset.dataset_id]
+                result.datasets[dataset_index] = ProvenanceDatasetModel.from_predicted(
+                    predicted_dataset, predicted_quantum.quantum_id
+                )
         return result
+
+
+class ProvenanceNodeDataWriter:
+    def __init__(self, provenance_graph: ProvenanceGraph) -> None:
+        self.graph = provenance_graph
+        self.quantum_address_writer = AddressWriter(1, {}, 0)
+        self.dataset_address_writer = AddressWriter(
+            0,
+            {
+                dataset_id: Address(index, offsets=[], sizes=[])
+                for dataset_id, index in self.dataset_indices.items()
+            },
+            0,
+        )
+
+    def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
+        raise NotImplementedError("TODO")
 
 
 @click.group()
