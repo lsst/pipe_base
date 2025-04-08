@@ -69,8 +69,9 @@ class Address:
 class AddressReader:
     MAX_UUID_INT: ClassVar[int] = 2**128
 
-    def __init__(self, stream: IO[bytes], block_size: int = 1024):
+    def __init__(self, stream: IO[bytes], block_size: int = 1024, start_index: int = 0):
         self._stream = stream
+        self.start_index = start_index
         self.int_size = int.from_bytes(self._stream.read(1))
         self.header_size = 1 + self.int_size * 2
         self.n_nodes = int.from_bytes(self._stream.read(self.int_size))
@@ -91,8 +92,8 @@ class AddressReader:
     def find(self, id: uuid.UUID) -> Address:
         if (address := self._addresses.get(id)) is not None:
             return address
-        guess_index_float = (id.int / self.MAX_UUID_INT) * self.n_nodes
-        guess_block_float = guess_index_float / self._block_size
+        guess_index_float = (id.int / self.MAX_UUID_INT) * self.n_nodes + self.start_index
+        guess_block_float = (guess_index_float - self.start_index) / self._block_size
         guess_block = int(guess_block_float)
         _LOG.info(f"Looking for ID {id} at guessed index {guess_index_float} (block {guess_block_float}).")
         for block in self._block_search_path(guess_block):
@@ -110,11 +111,11 @@ class AddressReader:
         self._addresses[id] = address
         return id
 
-    def _block_search_path(self, start: int) -> Iterator[int]:
-        yield start
+    def _block_search_path(self, mid: int) -> Iterator[int]:
+        yield mid
         for abs_offset in itertools.count(1):
-            yield start + abs_offset
-            yield start - abs_offset
+            yield mid + abs_offset
+            yield mid - abs_offset
 
     def _read_block(self, block: int) -> None:
         size = self._blocks_unread.pop(block)
@@ -126,10 +127,10 @@ class AddressReader:
         _LOG.info(
             "Read block %s (%s -> %s ... %s -> %s).",
             block,
-            block * self._block_size,
-            self.n_nodes * a.int / self.MAX_UUID_INT,
-            (block + 1) * self._block_size,
-            self.n_nodes * b.int / self.MAX_UUID_INT,
+            self.start_index + block * self._block_size,
+            self.start_index + self.n_nodes * a.int / self.MAX_UUID_INT,
+            self.start_index + (block + 1) * self._block_size,
+            self.start_index + self.n_nodes * b.int / self.MAX_UUID_INT,
         )
 
 
