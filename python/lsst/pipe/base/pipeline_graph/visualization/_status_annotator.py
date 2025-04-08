@@ -83,6 +83,14 @@ class StatusColors:
     or statuses.
     """
 
+    # Base task status colors.
+    expected: str = WHITE
+    succeeded: str = GREEN
+    failed: str = RED
+
+    # Base dataset type status colors.
+    produced: str = GREEN
+
     # Reset to default color.
     reset: str = RESET
 
@@ -107,18 +115,12 @@ class QuantumProvenanceGraphStatusColors(StatusColors):
     Status colors for both task and dataset type nodes are included.
     """
 
-    # Task status colors.
-    expected: str = WHITE
-    succeeded: str = GREEN
-    failed: str = RED
+    # Additional task status colors.
     blocked: str = YELLOW
     ready: str = GRAY
     running: str = MAGENTA
     wonky: str = CYAN
     unknown: str = BROWN
-
-    # Dataset type status colors.
-    produced: str = GREEN
 
 
 @dataclasses.dataclass
