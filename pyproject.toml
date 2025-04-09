@@ -30,6 +30,7 @@ dependencies = [
     "astropy",
     "pydantic >=2,<3.0",
     "networkx",
+    "wcwidth",
     "pyyaml >= 5.1",
     "numpy >= 1.17",
     "frozendict",
