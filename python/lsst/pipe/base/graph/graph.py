@@ -40,6 +40,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from collections.abc import Generator, Iterable, Iterator, Mapping, MutableMapping
+from io import BytesIO
 from itertools import chain
 from types import MappingProxyType
 from typing import Any, BinaryIO, TypeVar
@@ -963,6 +964,8 @@ class QuantumGraph:
         """
         uri = ResourcePath(uri)
         if uri.getExtension() in {".qgraph"}:
+            if nodes is None:
+                uri = BytesIO(uri.read())
             with LoadHelper(uri, minimumVersion) as loader:
                 qgraph = loader.load(universe, nodes, graphID)
         else:
