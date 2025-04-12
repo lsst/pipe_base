@@ -963,7 +963,7 @@ class QuantumGraph:
         """
         uri = ResourcePath(uri)
         if uri.getExtension() in {".qgraph"}:
-            with LoadHelper(uri, minimumVersion) as loader:
+            with LoadHelper(uri, minimumVersion, fullRead=(nodes is None)) as loader:
                 qgraph = loader.load(universe, nodes, graphID)
         else:
             raise ValueError(f"Only know how to handle files saved as `.qgraph`, not {uri}")
@@ -1230,7 +1230,7 @@ class QuantumGraph:
             being loaded or if the supplied uri does not point at a valid
             `QuantumGraph` save file.
         """
-        with LoadHelper(file, minimumVersion) as loader:
+        with LoadHelper(file, minimumVersion, fullRead=(nodes is None)) as loader:
             qgraph = loader.load(universe, nodes, graphID)
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph file contains unexpected object type: {type(qgraph)}")
