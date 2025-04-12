@@ -206,7 +206,10 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # It's important for tables to be joined in last, so data IDs from
             # pipeline and where can be used to fill in missing columns.
             for table in self.data_id_tables:
-                query_cmd.append("    query = query.join_data_coordinate_table(<elided>)")
+                # If this is from ctrl_mpexec's pipetask, it'll have added
+                # a filename to the metadata for us.
+                table_name = table.meta.get("filename", "unknown")
+                query_cmd.append(f"    query = query.join_data_coordinate_table(<{table_name}>)")
                 query = query.join_data_coordinate_table(table)
             self.log.verbose("Querying for data IDs via: %s", "\n".join(query_cmd))
             # Allow duplicates from common skypix overlaps to make some queries
