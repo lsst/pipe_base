@@ -32,8 +32,8 @@ import html
 import os
 import sys
 from collections.abc import Mapping
-from io import BufferedIOBase, BytesIO, StringIO, TextIOBase
-from typing import Any, TextIO
+from io import StringIO
+from typing import IO, Any
 
 from .._nodes import NodeType
 from .._pipeline_graph import PipelineGraph
@@ -58,7 +58,7 @@ _OVERFLOW_MAX_LINES = 20
 
 def show_mermaid(
     pipeline_graph: PipelineGraph,
-    stream: TextIO | BytesIO = sys.stdout,
+    stream: IO[Any] = sys.stdout,
     output_format: str = "mmd",
     width: int | None = None,
     height: int | None = None,
@@ -78,7 +78,7 @@ def show_mermaid(
     ----------
     pipeline_graph : `PipelineGraph`
         The pipeline graph to visualize.
-    stream : `TextIO` or `BytesIO`, optional
+    stream : `typing.IO`, optional
         The output stream where Mermaid code is written. Defaults to
         `sys.stdout`.
     output_format : str, optional
@@ -113,19 +113,11 @@ def show_mermaid(
     mermaid_source = _generate_mermaid_source(pipeline_graph, **kwargs)
 
     if output_format == "mmd":
-        if isinstance(stream, TextIOBase):
-            # Write Mermaid source as a string.
-            stream.write(mermaid_source)
-        else:
-            raise TypeError(f"Expected a text stream, but got {type(stream)}.")
+        # Write Mermaid source as a string.
+        stream.write(mermaid_source)
     else:
-        if isinstance(stream, BufferedIOBase):
-            # Render Mermaid source as an image and write to binary stream.
-            _render_mermaid_image(
-                mermaid_source, stream, output_format, width=width, height=height, scale=scale
-            )
-        else:
-            raise ValueError(f"Expected a binary stream, but got {type(stream)}.")
+        # Render Mermaid source as an image and write to binary stream.
+        _render_mermaid_image(mermaid_source, stream, output_format, width=width, height=height, scale=scale)
 
 
 def _generate_mermaid_source(pipeline_graph: PipelineGraph, **kwargs: Any) -> str:
@@ -210,7 +202,7 @@ def _generate_mermaid_source(pipeline_graph: PipelineGraph, **kwargs: Any) -> st
 
 def _render_mermaid_image(
     mermaid_source: str,
-    binary_stream: BytesIO,
+    binary_stream: IO[bytes],
     output_format: str,
     width: int | None = None,
     height: int | None = None,
@@ -287,7 +279,7 @@ def _render_task_node(
     node_key: NodeKey,
     node_data: Mapping[str, Any],
     options: NodeAttributeOptions,
-    stream: TextIO,
+    stream: IO[str],
 ) -> None:
     """Render a Mermaid node for a task or task-init node.
 
@@ -301,7 +293,7 @@ def _render_task_node(
     options : NodeAttributeOptions
         Rendering options controlling whether to show dimensions, storage
         classes, etc.
-    stream : TextIO
+    stream : `typing.IO` [ `str` ]
         The output stream for Mermaid syntax.
     """
     # Convert node_key into a label, handling line splitting and prefix
@@ -337,7 +329,7 @@ def _render_dataset_type_node(
     node_key: NodeKey,
     node_data: Mapping[str, Any],
     options: NodeAttributeOptions,
-    stream: TextIO,
+    stream: IO[str],
     overflow_ref: int,
 ) -> tuple[int, list[str]]:
     """Render a Mermaid node for a dataset-type node, handling overflow lines
@@ -355,7 +347,7 @@ def _render_dataset_type_node(
     options : NodeAttributeOptions
         Rendering options controlling whether to show dimensions and storage
         classes.
-    stream : TextIO
+    stream : `typing.IO` [ `str` ]
         The output stream for Mermaid syntax.
     overflow_ref : int
         The current reference number for overflow nodes. If overflow occurs,
@@ -414,7 +406,7 @@ def _render_dataset_type_node(
     return overflow_ref, overflow_ids
 
 
-def _render_simple_node(node_id: str, lines: list[str], node_class: str, stream: TextIO) -> None:
+def _render_simple_node(node_id: str, lines: list[str], node_class: str, stream: IO[str]) -> None:
     """Render a simple Mermaid node with given lines and a class.
 
     This helper function is used for both primary nodes and overflow nodes once
@@ -429,7 +421,7 @@ def _render_simple_node(node_id: str, lines: list[str], node_class: str, stream:
     node_class : str
         Mermaid class name to style the node (e.g., 'dsType', 'task',
         'taskInit').
-    stream : TextIO
+    stream : `typing.IO` [ `str` ]
         The output stream.
     """
     label = "<br>".join(lines)
@@ -437,7 +429,7 @@ def _render_simple_node(node_id: str, lines: list[str], node_class: str, stream:
     print(f"class {node_id} {node_class};", file=stream)
 
 
-def _render_edge(from_node_id: str, to_node_id: str, is_prerequisite: bool, stream: TextIO) -> None:
+def _render_edge(from_node_id: str, to_node_id: str, is_prerequisite: bool, stream: IO[str]) -> None:
     """Render a Mermaid edge from one node to another.
 
     Edges in Mermaid are normally specified as `A --> B`. Prerequisite edges
@@ -453,7 +445,7 @@ def _render_edge(from_node_id: str, to_node_id: str, is_prerequisite: bool, stre
     is_prerequisite : bool
         If True, this edge represents a prerequisite connection and will be
         styled as dashed.
-    stream : TextIO
+    stream : `typing.IO` [ `str` ]
         The output stream for Mermaid syntax.
     """
     # At this stage, we simply print the edge. The styling (dashed) for

@@ -39,6 +39,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, TypeAlias, final
 
+import astropy.table
+
 from lsst.daf.butler import (
     Butler,
     DataCoordinate,
@@ -85,6 +87,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         (sometimes catastrophically bad) query plan.
     bind : `~collections.abc.Mapping`, optional
         Variable substitutions for the ``where`` expression.
+    data_id_tables : `~collections.abc.Iterable` [ `astropy.table.Table` ],\
+            optional
+        Tables of data IDs to join in as constraints.  Missing dimensions that
+        are constrained by the ``where`` argument or pipeline data ID will be
+        filled in automatically.
     **kwargs
         Additional keyword arguments forwarded to `QuantumGraphBuilder`.
 
@@ -113,6 +120,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         where: str = "",
         dataset_query_constraint: DatasetQueryConstraintVariant = DatasetQueryConstraintVariant.ALL,
         bind: Mapping[str, Any] | None = None,
+        data_id_tables: Iterable[astropy.table.Table] = (),
         **kwargs: Any,
     ):
         super().__init__(pipeline_graph, butler, **kwargs)
@@ -120,6 +128,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         self.where = where
         self.dataset_query_constraint = dataset_query_constraint
         self.bind = bind
+        self.data_id_tables = list(data_id_tables)
 
     @timeMethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
@@ -194,6 +203,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                 f"{self.where!r}, bind={self.bind!r})"
             )
             query = query.where(tree.subgraph.data_id, self.where, bind=self.bind)
+            # It's important for tables to be joined in last, so data IDs from
+            # pipeline and where can be used to fill in missing columns.
+            for table in self.data_id_tables:
+                # If this is from ctrl_mpexec's pipetask, it'll have added
+                # a filename to the metadata for us.
+                table_name = table.meta.get("filename", "unknown")
+                query_cmd.append(f"    query = query.join_data_coordinate_table(<{table_name}>)")
+                query = query.join_data_coordinate_table(table)
             self.log.verbose("Querying for data IDs via: %s", "\n".join(query_cmd))
             # Allow duplicates from common skypix overlaps to make some queries
             # run faster.
