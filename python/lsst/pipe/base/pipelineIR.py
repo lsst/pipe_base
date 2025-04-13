@@ -980,7 +980,7 @@ class PipelineIR:
             if extraTaskLabels := (labeled_subset.subset - pipeline.tasks.keys()):
                 match subsetCtrl:
                     case PipelineSubsetCtrl.DROP:
-                        pipeline.labeled_subsets.pop(label)
+                        del pipeline.labeled_subsets[label]
                     case PipelineSubsetCtrl.EDIT:
                         for extra in extraTaskLabels:
                             labeled_subset.subset.discard(extra)
