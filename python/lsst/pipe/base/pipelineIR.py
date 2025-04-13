@@ -984,6 +984,15 @@ class PipelineIR:
                     case PipelineSubsetCtrl.EDIT:
                         for extra in extraTaskLabels:
                             labeled_subset.subset.discard(extra)
+            elif subsetCtrl is PipelineSubsetCtrl.DROP and not labeled_subset.subset:
+                # When mode is DROP, also drop any subsets that were already
+                # empty.  This ensures we drop steps that were emptied-out by
+                # (earlier) imports with exclude in EDIT mode.  Note that we
+                # don't want to drop those steps when they're first excluded
+                # down to nothing, because the pipeline might be about to add
+                # new tasks back into them, and then we'd want to preserve the
+                # step definitions.
+                del pipeline.labeled_subsets[label]
 
         # remove any steps that correspond to removed subsets
         new_steps = []
