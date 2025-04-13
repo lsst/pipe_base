@@ -427,7 +427,7 @@ class Pipeline:
             if "," in label_subset:
                 if ".." in label_subset:
                     raise ValueError(
-                        "Can only specify a list of labels or a rangewhen loading a Pipline not both"
+                        "Can only specify a list of labels or a range when loading a Pipeline, not both."
                     )
                 args = {"labels": set(label_subset.split(","))}
             # labels supplied as a range
