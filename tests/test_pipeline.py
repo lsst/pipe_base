@@ -27,6 +27,7 @@
 
 """Simple unit test for Pipeline."""
 
+import os
 import pickle
 import textwrap
 import unittest
@@ -35,6 +36,9 @@ import lsst.utils.tests
 from lsst.pipe.base import LabelSpecifier, Pipeline, TaskDef
 from lsst.pipe.base.pipelineIR import LabeledSubset
 from lsst.pipe.base.tests.simpleQGraph import AddTask, makeSimplePipeline
+
+# Find where the test pipelines exist and store it in an environment variable.
+os.environ["TESTDIR"] = os.path.dirname(__file__)
 
 
 class PipelineTestCase(unittest.TestCase):
@@ -200,6 +204,24 @@ class PipelineTestCase(unittest.TestCase):
         pipeline = Pipeline.fromString(pipeline_str)
         pipeline_graph = pipeline.to_graph()
         self.assertEqual(list(pipeline_graph.steps), ["step1"])
+
+    def test_excluded_steps(self) -> None:
+        """Test that a step that is modified on import to contain no tasks is
+        initially preserved, but dropped later in further subsetting with
+        mode=DROP (e.g. with URI parameters).
+        """
+        # This pipeline has two steps, but the second empty due to an import
+        # exclusion of the only task in it.
+        pg1 = Pipeline.from_uri("$TESTDIR/pipelines/step-exclusion.yaml").to_graph()
+        self.assertEqual(list(pg1.steps), ["step1", "step2"])
+        self.assertEqual(pg1.task_subsets["step1"], {"a", "b"})
+        self.assertEqual(pg1.task_subsets["step2"], set())
+        # If we load just one task from the pipeline (which subsets in DROP
+        # mode), we want the already-empty step to be dropped as well, since
+        # otherwise we'll get a complaint that there are steps and task 'a' is
+        # not in any of them.
+        pg2 = Pipeline.from_uri("$TESTDIR/pipelines/step-exclusion.yaml#a").to_graph()
+        self.assertEqual(list(pg2.steps), [])
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

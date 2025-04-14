@@ -1,0 +1,7 @@
+description: |
+  A test pipeline that imports step definitions while excluding a task that
+  makes one of the steps empty.
+imports:
+  - location: $TESTDIR/pipelines/steps.yaml
+    labeledSubsetModifyMode: EDIT
+    exclude: [c]
