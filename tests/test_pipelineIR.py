@@ -129,8 +129,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline1.yaml
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline1.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
         # "modA" is the duplicated label, and it should appear in the error.
@@ -142,9 +142,9 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline1.yaml
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
               exclude: modA
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -155,10 +155,10 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline1.yaml
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
               include: modB
               labeledSubsetModifyMode: DROP
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
 
@@ -170,11 +170,11 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline1.yaml
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
               exclude: modA
               include: modB
               labeledSubsetModifyMode: EDIT
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
 
@@ -186,11 +186,11 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline1.yaml
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
               exclude: modA
               include: modB
               labeledSubsetModifyMode: WRONG
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
         with self.assertRaises(ValueError):
@@ -201,7 +201,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline1.yaml
+            - $TESTDIR/pipelines/testPipeline1.yaml
         """
         )
 
@@ -213,7 +213,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline1.yaml
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
               importContracts: False
         """
         )
@@ -227,7 +227,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         tasks:
           modA:
             class: "test.moduleA"
@@ -244,7 +244,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         tasks:
           modA:
             class: "test.moduleAReplace"
@@ -260,7 +260,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -272,7 +272,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         tasks:
           modE: "test.moduleE"
         subsets:
@@ -290,8 +290,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
-            - $TESTDIR/testPipeline3.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline3.yaml
         """
         )
         with self.assertRaises(ValueError):
@@ -303,7 +303,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
         tasks:
           modSubset: "test.moduleE"
         """
@@ -316,8 +316,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline2.yaml
-            - $TESTDIR/testPipeline4.yaml
+            - $TESTDIR/pipelines/testPipeline2.yaml
+            - $TESTDIR/pipelines/testPipeline4.yaml
         """
         )
         with self.assertRaises(ValueError):
@@ -328,7 +328,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - $TESTDIR/testPipeline5.yaml
+            - $TESTDIR/pipelines/testPipeline5.yaml
         steps:
             - label: sub1
               dimensions: ['a', 'e']
@@ -342,7 +342,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline5.yaml
+            - location: $TESTDIR/pipelines/testPipeline5.yaml
               importSteps: false
         steps:
             - label: sub1
@@ -356,7 +356,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-            - location: $TESTDIR/testPipeline5.yaml
+            - location: $TESTDIR/pipelines/testPipeline5.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -446,8 +446,8 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - $TESTDIR/testPipeline1.yaml
-          - location: $TESTDIR/testPipeline2.yaml
+          - $TESTDIR/pipelines/testPipeline1.yaml
+          - location: $TESTDIR/pipelines/testPipeline2.yaml
             exclude:
               - modA
 
@@ -468,7 +468,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - $TESTDIR/testPipeline1.yaml
+          - $TESTDIR/pipelines/testPipeline1.yaml
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
@@ -479,7 +479,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - location: $TESTDIR/testPipeline1.yaml
+          - location: $TESTDIR/pipelines/testPipeline1.yaml
             instrument: None
         """
         )
@@ -491,7 +491,7 @@ class PipelineIRTestCase(unittest.TestCase):
             """
         description: Test Pipeline
         imports:
-          - location: $TESTDIR/testPipeline1.yaml
+          - location: $TESTDIR/pipelines/testPipeline1.yaml
             instrument: new.instrument
         """
         )
@@ -505,7 +505,7 @@ class PipelineIRTestCase(unittest.TestCase):
         description: Test Pipeline
         instrument: new.instrument
         imports:
-          - location: $TESTDIR/testPipeline1.yaml
+          - location: $TESTDIR/pipelines/testPipeline1.yaml
         """
         )
         with self.assertRaisesRegex(ValueError, "new.instrument .* test.instrument."):
@@ -531,7 +531,7 @@ class PipelineIRTestCase(unittest.TestCase):
 
     def testReadContracts(self):
         # Verify that contracts are read in from a pipeline
-        location = "$TESTDIR/testPipeline1.yaml"
+        location = "$TESTDIR/pipelines/testPipeline1.yaml"
         pipeline = PipelineIR.from_uri(location)
         self.assertEqual(pipeline.contracts[0].contract, "modA.b == modA.c")
 
@@ -739,7 +739,7 @@ class PipelineIRTestCase(unittest.TestCase):
         description: Test Pipeline
         instrument: dummyCam
         imports:
-          - location: $TESTDIR/testPipeline1.yaml
+          - location: $TESTDIR/pipelines/testPipeline1.yaml
             instrument: None
         tasks:
             modC:
