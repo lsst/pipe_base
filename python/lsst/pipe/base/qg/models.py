@@ -486,11 +486,11 @@ class BaseGraph:
                 total_size += node_data_writer.quantum_address_writer.total
                 total_size += node_data_writer.dataset_address_writer.total
                 with zf.open("quantum_addresses.dat", mode="w") as stream:
-                    quantum_addresses_size = node_data_writer.quantum_address_writer.write(stream, int_size)
+                    quantum_addresses_size = node_data_writer.quantum_address_writer.write_addresses(stream)
                     _LOG.info(f"quantum_addresses: {humanize.naturalsize(quantum_addresses_size)}")
                     total_size += quantum_addresses_size
                 with zf.open("dataset_addresses.dat", mode="w") as stream:
-                    dataset_addresses_size = node_data_writer.dataset_address_writer.write(stream, int_size)
+                    dataset_addresses_size = node_data_writer.dataset_address_writer.write_addresses(stream)
                     _LOG.info(f"dataset_addresses: {humanize.naturalsize(dataset_addresses_size)}")
                     total_size += dataset_addresses_size
                 _LOG.info(f"unzipped size: {humanize.naturalsize(total_size)}.")
@@ -583,7 +583,7 @@ class PredictedGraph(BaseGraph):
     @property
     def ordered_quanta(self) -> tuple[QuantumIndex, ...]:
         if self._ordered_quanta is None:
-            self._ordered_quanta = tuple(networkx.dag.lexicographical_topological_sort(self.quantum_graph))
+            self._ordered_quanta = tuple(networkx.dag.lexicographical_topological_sort(self.quantum_xgraph))
         return self._ordered_quanta
 
     @classmethod
@@ -653,7 +653,7 @@ class PredictedGraph(BaseGraph):
             uri,
             zstd_level=zstd_level,
             int_size=int_size,
-            node_data_writer=PredictedNodeDataWriter(self),
+            node_data_writer=PredictedNodeDataWriter(self, int_size),
         )
 
     @classmethod
@@ -687,17 +687,19 @@ class PredictedGraph(BaseGraph):
             if read_dataset_indices:
                 with time_this(_LOG, "Reading dataset indices", level=logging.INFO):
                     with reader.dataset_address_reader() as dataset_address_reader:
-                        dataset_addresses = dataset_address_reader.read_all()
+                        dataset_addresses = dataset_address_reader.read_all_addresses()
                     result.quantum_indices = {
                         dataset_id: address.index for dataset_id, address in dataset_addresses.items()
                     }
             with time_this(_LOG, "Reading addresses for full predicted quanta", level=logging.INFO):
                 with reader.quantum_address_reader() as quantum_address_reader:
+                    int_size = quantum_address_reader.int_size
                     if read_quantum_indices or full_quanta is None:
-                        quantum_addresses = quantum_address_reader.read_all()
+                        quantum_addresses = quantum_address_reader.read_all_addresses()
                     else:
                         quantum_addresses = {
-                            quantum_id: quantum_address_reader.find(quantum_id) for quantum_id in full_quanta
+                            quantum_id: quantum_address_reader.find_address(quantum_id)
+                            for quantum_id in full_quanta
                         }
                     if full_quanta is None:
                         full_quanta = quantum_addresses.keys()
@@ -710,10 +712,9 @@ class PredictedGraph(BaseGraph):
                 compressed_data: dict[uuid.UUID, bytes] = {}
                 with reader.zf.open("full_quanta.dat", mode="r") as stream:
                     for quantum_id in full_quanta:
-                        address = quantum_addresses[quantum_id]
-                        if address.sizes[0]:
-                            stream.seek(address.offsets[0])
-                            compressed_data[quantum_id] = stream.read(address.sizes[0])
+                        compressed_data[quantum_id] = AddressReader.read_subfile(
+                            stream, quantum_addresses[quantum_id], int_size=int_size
+                        )
             with time_this(
                 _LOG, f"Decompressing {len(quantum_addresses)} full predicted quanta", level=logging.INFO
             ):
@@ -722,6 +723,7 @@ class PredictedGraph(BaseGraph):
                     for quantum_id, data in tqdm.tqdm(
                         compressed_data.items(), "Decompressing full quanta.", leave=False
                     )
+                    if data
                 }
             with time_this(
                 _LOG, f"Parsing and validating {len(quantum_addresses)} full quanta", level=logging.INFO
@@ -748,16 +750,16 @@ class PredictedGraph(BaseGraph):
 
 
 class PredictedNodeDataWriter:
-    def __init__(self, predicted_graph: PredictedGraph) -> None:
+    def __init__(self, predicted_graph: PredictedGraph, int_size: int) -> None:
         self.graph = predicted_graph
-        self.quantum_address_writer = AddressWriter(1, {}, 0)
+        self.quantum_address_writer = AddressWriter(int_size, {}, [0])
         self.dataset_address_writer = AddressWriter(
-            0,
+            int_size,
             {
                 dataset_id: Address(index, offsets=[], sizes=[])
-                for dataset_id, index in self.dataset_indices.items()
+                for dataset_id, index in self.graph.dataset_indices.items()
             },
-            0,
+            [],
         )
 
     def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
@@ -771,11 +773,7 @@ class PredictedNodeDataWriter:
             ):
                 if (full_quantum := self.graph.full_quanta.get(index)) is not None:
                     model_bytes = compressor.compress(full_quantum.model_dump_json().encode())
-                    stream.write(model_bytes)
-                    self.quantum_address_writer.addresses[quantum_id] = Address(
-                        index, [self.quantum_address_writer.total], [len(model_bytes)]
-                    )
-                    self.quantum_address_writer.total += len(model_bytes)
+                    self.quantum_address_writer.write_subfile(stream, full_quantum.quantum_id, model_bytes)
                 else:
                     addresses[quantum_id] = Address(index, [self.quantum_address_writer.total], [0])
         _LOG.info(f"full_quanta: {humanize.naturalsize(self.quantum_address_writer.total)}.")
@@ -827,16 +825,16 @@ class ProvenanceGraph(BaseGraph):
 
 
 class ProvenanceNodeDataWriter:
-    def __init__(self, provenance_graph: ProvenanceGraph) -> None:
+    def __init__(self, provenance_graph: ProvenanceGraph, int_size: int) -> None:
         self.graph = provenance_graph
-        self.quantum_address_writer = AddressWriter(1, {}, 0)
+        self.quantum_address_writer = AddressWriter(int_size, {}, [0])
         self.dataset_address_writer = AddressWriter(
-            0,
+            int_size,
             {
                 dataset_id: Address(index, offsets=[], sizes=[])
-                for dataset_id, index in self.dataset_indices.items()
+                for dataset_id, index in self.graph.dataset_indices.items()
             },
-            0,
+            [],
         )
 
     def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:

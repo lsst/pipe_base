@@ -69,7 +69,7 @@ class Address:
 class AddressReader:
     MAX_UUID_INT: ClassVar[int] = 2**128
 
-    def __init__(self, stream: IO[bytes], block_size: int = 1024, start_index: int = 0):
+    def __init__(self, stream: IO[bytes], address_block_size: int = 1024, start_index: int = 0):
         self._stream = stream
         self.start_index = start_index
         self.int_size = int.from_bytes(self._stream.read(1))
@@ -78,32 +78,45 @@ class AddressReader:
         self.n_offsets = int.from_bytes(self._stream.read(self.int_size))
         self.row_size = 16 + (1 + 2 * self.n_offsets) * self.int_size
         self._addresses: dict[uuid.UUID, Address] = {}
-        self._block_size = block_size
+        self._block_size = address_block_size
         n_full_blocks, last_block_size = divmod(self.n_nodes, self._block_size)
         self._blocks_unread = dict.fromkeys(range(n_full_blocks), self._block_size)
         if last_block_size := self.n_nodes % self._block_size:
             self._blocks_unread[n_full_blocks] = last_block_size
 
-    def read_all(self) -> dict[uuid.UUID, Address]:
+    def read_all_addresses(self) -> dict[uuid.UUID, Address]:
         for _ in range(self.n_nodes):
             self._read_row()
         return self._addresses
 
-    def find(self, id: uuid.UUID) -> Address:
+    def find_address(self, id: uuid.UUID) -> Address:
         if (address := self._addresses.get(id)) is not None:
             return address
         guess_index_float = (id.int / self.MAX_UUID_INT) * self.n_nodes + self.start_index
         guess_block_float = (guess_index_float - self.start_index) / self._block_size
         guess_block = int(guess_block_float)
         _LOG.info(f"Looking for ID {id} at guessed index {guess_index_float} (block {guess_block_float}).")
-        for block in self._block_search_path(guess_block):
+        for block in self._address_block_search_path(guess_block):
             if block in self._blocks_unread:
-                self._read_block(block)
+                self._read_address_block(block)
                 if (address := self._addresses.get(id)) is not None:
                     return address
             elif not self._blocks_unread:
                 raise LookupError(f"Quantum with ID {id} not found.")
         raise AssertionError("Logic error in block tracking.")
+
+    @staticmethod
+    def read_subfile(stream: IO[bytes], address: Address, *, column: int = 0, int_size: int) -> bytes:
+        if address.sizes[column] == 0:
+            return b""
+        stream.seek(address.offsets[column])
+        embedded_size = int.from_bytes(stream.read(int_size))
+        if embedded_size != address.sizes[column] - int_size:
+            raise RuntimeError(
+                f"Embedded size {embedded_size} does not match size from address "
+                f"{address.sizes[0] - int_size}."
+            )
+        return stream.read(embedded_size)
 
     def _read_row(self) -> uuid.UUID:
         id = uuid.UUID(bytes=self._stream.read(16))
@@ -111,13 +124,13 @@ class AddressReader:
         self._addresses[id] = address
         return id
 
-    def _block_search_path(self, mid: int) -> Iterator[int]:
+    def _address_block_search_path(self, mid: int) -> Iterator[int]:
         yield mid
         for abs_offset in itertools.count(1):
             yield mid + abs_offset
             yield mid - abs_offset
 
-    def _read_block(self, block: int) -> None:
+    def _read_address_block(self, block: int) -> None:
         size = self._blocks_unread.pop(block)
         self._stream.seek(block * self._block_size * self.row_size + self.header_size)
         a = self._read_row()
@@ -136,17 +149,37 @@ class AddressReader:
 
 @dataclasses.dataclass
 class AddressWriter:
-    n_offsets: int
+    int_size: int
     addresses: dict[uuid.UUID, Address]
-    total: int
+    totals: list[int]
 
-    def write(self, stream: IO[bytes], int_size: int) -> int:
-        stream.write(int_size.to_bytes(1))
-        stream.write(len(self.addresses).to_bytes(int_size))
-        stream.write(self.n_offsets.to_bytes(int_size))
-        total = 1 + 2 * int_size
+    @property
+    def n_columns(self) -> int:
+        return len(self.totals)
+
+    @property
+    def total(self) -> int:
+        return sum(self.totals)
+
+    def write_addresses(self, stream: IO[bytes]) -> int:
+        stream.write(self.int_size.to_bytes(1))
+        stream.write(len(self.addresses).to_bytes(self.int_size))
+        stream.write(self.n_columns.to_bytes(self.int_size))
+        address_total = 1 + 2 * self.int_size
         for key, address in self.addresses.items():
             stream.write(key.bytes)
-            total += len(key.bytes)
-            total += address.write(stream, int_size=int_size)
-        return total
+            address_total += len(key.bytes)
+            address_total += address.write(stream, int_size=self.int_size)
+        return address_total
+
+    def write_subfile(self, stream: IO[bytes], id: uuid.UUID, data: bytes, *, column: int = 0) -> int:
+        stream.write(len(data).to_bytes(self.int_size))
+        stream.write(data)
+        if (address := self.addresses.get(id)) is None:
+            address = Address(len(self.addresses), offsets=[0] * self.n_columns, sizes=[0] * self.n_columns)
+            self.addresses[id] = address
+        size = len(data) + self.int_size
+        address.offsets[column] = self.totals[column]
+        address.sizes[column] = size
+        self.totals[column] += size
+        return size
