@@ -65,6 +65,7 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
     to upgrade them to the latest format before they can be used in
     production.
     """
+    fullRead: bool = False
 
     def __post_init__(self) -> None:
         self._resourceHandle: ResourceHandleProtocol | None = None
@@ -261,6 +262,9 @@ class LoadHelper(AbstractContextManager["LoadHelper"]):
     def __enter__(self) -> LoadHelper:
         if isinstance(self.uri, BinaryIO | BytesIO | BufferedRandom):
             self._resourceHandle = self.uri
+        elif self.fullRead:
+            local = self._exitStack.enter_context(self.uri.as_local())
+            self._resourceHandle = self._exitStack.enter_context(local.open("rb"))
         else:
             self._resourceHandle = self._exitStack.enter_context(self.uri.open("rb"))
         self._initialize()
