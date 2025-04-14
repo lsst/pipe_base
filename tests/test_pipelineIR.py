@@ -230,12 +230,31 @@ class PipelineIRTestCase(unittest.TestCase):
             - $TESTDIR/testPipeline2.yaml
         tasks:
           modA:
-            class: "test.moduleA"
+            class: "lsst.pipe.base.tests.pipelineIRTestClasses.ModuleA"
             config:
                 value2: 2
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
+        pipeline.resolve_task_ambiguity()
+        self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
+
+        # Test that configs are imported when defining the same task again
+        # that is aliased with the same label
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - $TESTDIR/testPipeline2.yaml
+        tasks:
+          modA:
+            class: "lsst.pipe.base.tests.pipelineIRTestClasses.ModuleAAlias"
+            config:
+                value2: 2
+        """
+        )
+        pipeline = PipelineIR.from_string(pipeline_str)
+        pipeline.resolve_task_ambiguity()
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value1": 1, "value2": 2})
 
         # Test that configs are not imported when redefining the task
@@ -247,12 +266,13 @@ class PipelineIRTestCase(unittest.TestCase):
             - $TESTDIR/testPipeline2.yaml
         tasks:
           modA:
-            class: "test.moduleAReplace"
+            class: "lsst.pipe.base.tests.pipelineIRTestClasses.ModuleAReplace"
             config:
                 value2: 2
         """
         )
         pipeline = PipelineIR.from_string(pipeline_str)
+        pipeline.resolve_task_ambiguity()
         self.assertEqual(pipeline.tasks["modA"].config[0].rest, {"value2": 2})
 
         # Test that named subsets are imported
