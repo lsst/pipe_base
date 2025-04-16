@@ -1,0 +1,31 @@
+description: A test pipeline with step definitions
+tasks:
+  a:
+    class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+    config:
+      python: |
+        from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+        config.inputs["i"] = DynamicConnectionConfig(dataset_type_name="d")
+        config.outputs["o"] = DynamicConnectionConfig(dataset_type_name="e")
+  b:
+    class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+    config:
+      python: |
+        from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+        config.inputs["i"] = DynamicConnectionConfig(dataset_type_name="e")
+        config.outputs["o"] = DynamicConnectionConfig(dataset_type_name="f")
+  c:
+    class: lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+    config:
+      python: |
+        from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+        config.inputs["i"] = DynamicConnectionConfig(dataset_type_name="f")
+        config.outputs["o"] = DynamicConnectionConfig(dataset_type_name="g")
+subsets:
+  step1: [a, b]
+  step2: [c]
+steps:
+  - label: step1
+    dimensions: []
+  - label: step2
+    dimensions: []
