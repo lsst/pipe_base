@@ -52,7 +52,6 @@ import pydantic
 import tqdm
 
 from lsst.daf.butler import (
-    ButlerLogRecords,
     DataCoordinate,
     DataIdValue,
     DatasetRef,
@@ -68,7 +67,6 @@ from lsst.utils.timer import time_this
 
 from .. import automatic_connection_constants as acc
 from .._status import QuantumSuccessCaveats
-from .._task_metadata import TaskMetadata
 from ..graph import QuantumGraph
 from ..pipeline_graph import NodeType, PipelineGraph, TaskImportMode, TaskInitNode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
@@ -166,7 +164,7 @@ class PredictedDatasetModel(pydantic.BaseModel):
         return cls.model_construct(
             dataset_id=ref.id,
             dataset_type_name=ref.datasetType.name,
-            data_id=list(ref.dataId.required_values),
+            data_id=list(ref.dataId.full_values),
             run=ref.run,
         )
 
@@ -199,7 +197,7 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
         result = cls.model_construct(
             quantum_id=quantum_id,
             task_label=task_node.label,
-            data_id=list(cast(DataCoordinate, quantum.dataId).required_values),
+            data_id=list(cast(DataCoordinate, quantum.dataId).full_values),
         )
         for read_edge in task_node.iter_all_inputs():
             refs = sorted(quantum.inputs[read_edge.dataset_type_name], key=lambda ref: ref.dataId)
@@ -244,7 +242,7 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
 
 
 class ProvenanceDatasetModel(PredictedDatasetModel):
-    produced: bool
+    exists: bool
     producer: uuid.UUID | None = None
 
     @classmethod
@@ -256,7 +254,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             dataset_type_name=predicted.dataset_type_name,
             data_id=predicted.data_id,
             run=predicted.run,
-            produced=False,
+            produced=(producer is None),  # if it's not produced by this QG, it's an overall input
             producer=producer,
         )
 
@@ -266,7 +264,11 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     task_label: TaskLabel
     data_id: DataCoordinateValues = pydantic.Field(default_factory=list)
     metadata_id: uuid.UUID | None = None
+    metadata_offset: int = 0
+    metadata_size: int = 0
     log_id: uuid.UUID | None = None
+    log_offset: int = 0
+    log_size: int = 0
     status: QuantumRunStatus = QuantumRunStatus.METADATA_MISSING
     caveats: QuantumSuccessCaveats | None = None
     exception: ExceptionInfo | None = None
@@ -354,7 +356,7 @@ class ProvenanceInitQuantaModel(pydantic.RootModel):
         for predicted_quantum in predicted.root:
             self.root.append(ProvenanceQuantumModel.from_predicted(predicted_quantum))
             datasets.extend(
-                ProvenanceDatasetModel.from_predicted(d, producer=None)
+                ProvenanceDatasetModel.from_predicted(d)
                 for d in itertools.chain.from_iterable(predicted_quantum.inputs.values())
             )
             datasets.extend(
@@ -451,7 +453,6 @@ class BaseGraph:
         uri: ResourcePathExpression,
         *,
         zstd_level: int = 10,
-        int_size: int = 4,
         node_data_writer: NodeDataWriter,
     ) -> None:
         import humanize
@@ -652,7 +653,6 @@ class PredictedGraph(BaseGraph):
         self._write(
             uri,
             zstd_level=zstd_level,
-            int_size=int_size,
             node_data_writer=PredictedNodeDataWriter(self, int_size),
         )
 
@@ -760,12 +760,12 @@ class PredictedNodeDataWriter:
                 for dataset_id, index in self.graph.dataset_indices.items()
             },
             [],
+            start_index=len(predicted_graph.quantum_indices),
         )
 
     def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
         import humanize
 
-        addresses: dict[uuid.UUID, Address] = {}
         with zf.open("full_quanta.dat", mode="w") as stream:
             for quantum_id, index in tqdm.tqdm(
                 self.graph.quantum_indices.items(),
@@ -773,9 +773,9 @@ class PredictedNodeDataWriter:
             ):
                 if (full_quantum := self.graph.full_quanta.get(index)) is not None:
                     model_bytes = compressor.compress(full_quantum.model_dump_json().encode())
-                    self.quantum_address_writer.write_subfile(stream, full_quantum.quantum_id, model_bytes)
+                    self.quantum_address_writer.write_subfile(stream, quantum_id, model_bytes)
                 else:
-                    addresses[quantum_id] = Address(index, [self.quantum_address_writer.total], [0])
+                    self.quantum_address_writer.add_empty(quantum_id)
         _LOG.info(f"full_quanta: {humanize.naturalsize(self.quantum_address_writer.total)}.")
 
 
@@ -784,8 +784,8 @@ class ProvenanceGraph(BaseGraph):
     init_quanta: ProvenanceInitQuantaModel = dataclasses.field(default_factory=ProvenanceInitQuantaModel)
     quanta: dict[QuantumIndex, ProvenanceQuantumModel] = dataclasses.field(default_factory=dict)
     datasets: dict[DatasetIndex, ProvenanceDatasetModel] = dataclasses.field(default_factory=dict)
-    metadata: dict[QuantumIndex, TaskMetadata] = dataclasses.field(default_factory=dict)
-    logs: dict[QuantumIndex, ButlerLogRecords] = dataclasses.field(default_factory=dict)
+    heavy_addresses: dict[QuantumIndex, Address] = dataclasses.field(default_factory=dict)
+    heavy_file: str | None = None
 
     @classmethod
     def from_predicted_graph(cls, predicted_graph: PredictedGraph) -> ProvenanceGraph:
@@ -827,18 +827,39 @@ class ProvenanceGraph(BaseGraph):
 class ProvenanceNodeDataWriter:
     def __init__(self, provenance_graph: ProvenanceGraph, int_size: int) -> None:
         self.graph = provenance_graph
-        self.quantum_address_writer = AddressWriter(int_size, {}, [0])
+        self.quantum_address_writer = AddressWriter(int_size, {}, [0, 0])
         self.dataset_address_writer = AddressWriter(
-            int_size,
-            {
-                dataset_id: Address(index, offsets=[], sizes=[])
-                for dataset_id, index in self.graph.dataset_indices.items()
-            },
-            [],
+            int_size, {}, [0], start_index=len(self.graph.quantum_indices)
         )
 
     def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
-        raise NotImplementedError("TODO")
+        import humanize
+
+        with zf.open("quanta.dat", mode="w") as stream:
+            for quantum_id, index in tqdm.tqdm(
+                self.graph.quantum_indices.items(),
+                "Dumping, compressing, and writing provenance quanta",
+            ):
+                if (quantum := self.graph.quanta.get(index)) is not None:
+                    model_bytes = compressor.compress(quantum.model_dump_json().encode())
+                    self.quantum_address_writer.write_subfile(stream, quantum_id, model_bytes)
+                else:
+                    self.quantum_address_writer.add_empty(quantum_id)
+                if (heavy_address := self.graph.heavy_addresses.get(index)) is not None:
+                    self.quantum_address_writer.transfer(quantum_id, heavy_address, column=1)
+        _LOG.info(f"quanta: {humanize.naturalsize(self.quantum_address_writer.totals[0])}.")
+        if self.graph.heavy_file is not None:
+            zf.write(self.graph.heavy_file, "heavy.dat")
+        _LOG.info(f"metadata and logs: {humanize.naturalsize(self.quantum_address_writer.totals[1])}.")
+        with zf.open("datasets.dat", mode="w") as stream:
+            for dataset_id, index in tqdm.tqdm(
+                self.graph.dataset_indices.items(),
+                "Dumping, compressing, and writing provenance datasets",
+            ):
+                dataset = self.graph.datasets[index]
+                model_bytes = compressor.compress(dataset.model_dump_json().encode())
+                self.dataset_address_writer.write_subfile(stream, dataset_id, model_bytes)
+        _LOG.info(f"full_quanta: {humanize.naturalsize(self.dataset_address_writer.total)}.")
 
 
 @click.group()

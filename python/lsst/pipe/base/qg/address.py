@@ -89,6 +89,14 @@ class AddressReader:
             self._read_row()
         return self._addresses
 
+    def make_writer(self) -> AddressWriter:
+        addresses = self.read_all_addresses()
+        totals = [0] * self.n_offsets
+        for address in addresses.values():
+            for i, size in enumerate(address.sizes):
+                totals[i] += size
+        return AddressWriter(self.int_size, addresses, totals, start_index=self.start_index)
+
     def find_address(self, id: uuid.UUID) -> Address:
         if (address := self._addresses.get(id)) is not None:
             return address
@@ -117,6 +125,16 @@ class AddressReader:
                 f"{address.sizes[0] - int_size}."
             )
         return stream.read(embedded_size)
+
+    @staticmethod
+    def read_all_subfiles(stream: IO[bytes], *, int_size: int) -> Iterator[tuple[int, int, bytes]]:
+        while size_data := stream.read(int_size):
+            offset = stream.tell()
+            size = int.from_bytes(size_data)
+            data = stream.read(size)
+            if len(data) != size:
+                raise RuntimeError("File unexpectedly truncated.")
+            yield offset, size + int_size, data
 
     def _read_row(self) -> uuid.UUID:
         id = uuid.UUID(bytes=self._stream.read(16))
@@ -152,6 +170,7 @@ class AddressWriter:
     int_size: int
     addresses: dict[uuid.UUID, Address]
     totals: list[int]
+    start_index: int = 0
 
     @property
     def n_columns(self) -> int:
@@ -172,14 +191,24 @@ class AddressWriter:
             address_total += address.write(stream, int_size=self.int_size)
         return address_total
 
-    def write_subfile(self, stream: IO[bytes], id: uuid.UUID, data: bytes, *, column: int = 0) -> int:
+    def write_subfile(self, stream: IO[bytes], id: uuid.UUID, data: bytes, *, column: int = 0) -> Address:
         stream.write(len(data).to_bytes(self.int_size))
         stream.write(data)
-        if (address := self.addresses.get(id)) is None:
-            address = Address(len(self.addresses), offsets=[0] * self.n_columns, sizes=[0] * self.n_columns)
-            self.addresses[id] = address
+        address = self.add_empty(id)
         size = len(data) + self.int_size
         address.offsets[column] = self.totals[column]
         address.sizes[column] = size
         self.totals[column] += size
-        return size
+        return address
+
+    def add_empty(self, id: uuid.UUID) -> Address:
+        if (address := self.addresses.get(id)) is None:
+            address = Address(len(self.addresses), offsets=[0] * self.n_columns, sizes=[0] * self.n_columns)
+            self.addresses[id] = address
+        return address
+
+    def transfer(self, id: uuid.UUID, source: Address, column: int) -> None:
+        dest = self.addresses[id]
+        dest.offsets[column] = source.offsets[0]
+        dest.sizes[column] = source.sizes[0]
+        self.totals[column] += source.sizes[0]
