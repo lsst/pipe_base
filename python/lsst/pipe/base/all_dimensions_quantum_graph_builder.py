@@ -34,19 +34,18 @@ from __future__ import annotations
 __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
-import itertools
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any, TypeAlias, final
+from typing import TYPE_CHECKING, Any, final
 
 import astropy.table
 
 from lsst.daf.butler import (
     Butler,
     DataCoordinate,
-    DataIdValue,
+    DimensionDataAttacher,
     DimensionGroup,
-    DimensionRecord,
+    DimensionRecordSet,
     DimensionUniverse,
     MissingDatasetTypeError,
 )
@@ -59,9 +58,6 @@ from .quantum_graph_skeleton import DatasetKey, Key, PrerequisiteDatasetKey, Qua
 
 if TYPE_CHECKING:
     from .pipeline_graph import DatasetTypeNode, PipelineGraph, TaskNode
-
-
-DimensionRecordsMap: TypeAlias = dict[str, dict[tuple[DataIdValue, ...], DimensionRecord]]
 
 
 @final
@@ -145,9 +141,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             return skeleton
         self._find_followup_datasets(tree, skeleton)
         dimension_records = self._fetch_most_dimension_records(tree)
-        leftovers = self._attach_most_dimension_records(skeleton, dimension_records)
-        self._fetch_leftover_dimension_records(leftovers, dimension_records)
-        self._attach_leftover_dimension_records(skeleton, leftovers, dimension_records)
+        self._attach_dimension_records(skeleton, dimension_records)
         return skeleton
 
     def _query_for_data_ids(self, tree: _DimensionGroupTree) -> None:
@@ -453,7 +447,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     del branch.data_ids
 
     @timeMethod
-    def _fetch_most_dimension_records(self, tree: _DimensionGroupTree) -> DimensionRecordsMap:
+    def _fetch_most_dimension_records(self, tree: _DimensionGroupTree) -> list[DimensionRecordSet]:
         """Query for dimension records for all non-prerequisite data IDs (and
         possibly some prerequisite data IDs).
 
@@ -464,10 +458,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
         Returns
         -------
-        dimension_records : `dict`
-            Nested dictionary of dimension records, keyed first by dimension
-            element name and then by the `DataCoordinate.required_values`
-            tuple.
+        dimension_records : `list` [ `lsst.daf.butler.DimensionRecordSet` ]
+            List of sets of dimension records.
 
         Notes
         -----
@@ -476,7 +468,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         can also be used to fetch dimension records for those data IDs.
         """
         self.log.verbose("Performing follow-up queries for dimension records.")
-        result: dict[str, dict[tuple[DataIdValue, ...], DimensionRecord]] = {}
+        result: list[DimensionRecordSet] = []
         for branch in tree.branches_by_dimensions.values():
             if not branch.record_elements:
                 continue
@@ -485,16 +477,17 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             with self.butler.query() as butler_query:
                 butler_query = butler_query.join_data_coordinates(branch.data_ids)
                 for element in branch.record_elements:
-                    result[element] = {
-                        record.dataId.required_values: record
-                        for record in butler_query.dimension_records(element)
-                    }
+                    result.append(
+                        DimensionRecordSet(
+                            element, butler_query.dimension_records(element), universe=self.universe
+                        )
+                    )
         return result
 
     @timeMethod
-    def _attach_most_dimension_records(
-        self, skeleton: QuantumGraphSkeleton, dimension_records: DimensionRecordsMap
-    ) -> DataIdExpansionLeftovers:
+    def _attach_dimension_records(
+        self, skeleton: QuantumGraphSkeleton, dimension_records: Iterable[DimensionRecordSet]
+    ) -> None:
         """Attach dimension records to most data IDs in the in-progress graph,
         and return a data structure that records the rest.
 
@@ -502,108 +495,31 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         ----------
         skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             In-progress quantum graph to modify in place.
-        dimension_records : `dict`
-            Nested dictionary of dimension records, keyed first by dimension
-            element name and then by the `DataCoordinate.required_values`
-            tuple.
-
-        Returns
-        -------
-        leftovers : `DataIdExpansionLeftovers`
-            Struct recording data IDs in ``skeleton`` that were not expanded
-            and the data IDs of the dimension records that need to be fetched
-            in order to do so.
+        dimension_records : `~collections.abc.Iterable` [ \
+                `lsst.daf.butler.DimensionRecordSet` ]
+            Iterable of sets of dimension records.
         """
         # Group all nodes by data ID (and dimensions of data ID).
-        data_ids_to_expand: defaultdict[DimensionGroup, defaultdict[DataCoordinate, NodeKeysForDataId]] = (
-            defaultdict(NodeKeysForDataId.make_defaultdict)
+        data_ids_to_expand: defaultdict[DimensionGroup, defaultdict[DataCoordinate, list[Key]]] = defaultdict(
+            lambda: defaultdict(list)
         )
         data_id: DataCoordinate | None
         for node_key in skeleton:
             if data_id := skeleton[node_key].get("data_id"):
-                if isinstance(node_key, PrerequisiteDatasetKey):
-                    data_ids_to_expand[data_id.dimensions][data_id].prerequisites.append(node_key)
-                else:
-                    data_ids_to_expand[data_id.dimensions][data_id].others.append(node_key)
-        # Expand data IDs and track the records that are missing (which can
-        # only come from prerequisite data IDs).
-        leftovers = DataIdExpansionLeftovers()
+                data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
+        attacher = DimensionDataAttacher(
+            records=dimension_records,
+            dimensions=_union_dimensions(data_ids_to_expand.keys(), universe=self.universe),
+        )
         for dimensions, data_ids in data_ids_to_expand.items():
-            attacher = DimensionRecordAttacher(dimensions, dimension_records)
-            skipped_data_ids: dict[DataCoordinate, list[PrerequisiteDatasetKey]] = {}
-            for data_id, node_keys in data_ids.items():
-                expanded_data_id: DataCoordinate | None
-                if node_keys.others:
-                    # This data ID was used in at least one non-prerequisite
-                    # key, so we know we've got the records we need for it
-                    # already.
-                    expanded_data_id = attacher.apply(data_id)
-                else:
-                    # This key only appeared in prerequisites, so we might not
-                    # have all the records we need.
-                    if (expanded_data_id := attacher.maybe_apply(data_id, leftovers)) is None:
-                        skipped_data_ids[data_id] = node_keys.prerequisites
-                        continue
-                for node_key in itertools.chain(node_keys.others, node_keys.prerequisites):
-                    skeleton.set_data_id(node_key, expanded_data_id)
-            if skipped_data_ids:
-                leftovers.data_ids_to_expand[dimensions] = skipped_data_ids
-        return leftovers
-
-    @timeMethod
-    def _fetch_leftover_dimension_records(
-        self, leftovers: DataIdExpansionLeftovers, dimension_records: DimensionRecordsMap
-    ) -> None:
-        """Fetch additional dimension records whose data IDs were not included
-        in the initial common data ID query.
-
-        Parameters
-        ----------
-        leftovers : `DataIdExpansionLeftovers`
-            Struct recording data IDs in ``skeleton`` that were not expanded.
-        dimension_records : `dict`
-            Nested dictionary of dimension records, keyed first by dimension
-            element name and then by the `DataCoordinate.required_values`
-            tuple. Will be updated in place.
-        """
-        for element, data_id_values_set in leftovers.missing_record_data_ids.items():
-            dimensions = self.butler.dimensions[element].minimal_group
-            data_ids = [DataCoordinate.from_required_values(dimensions, v) for v in data_id_values_set]
-            with self.butler.query() as q:
-                new_records = {
-                    r.dataId.required_values: r
-                    for r in q.join_data_coordinates(data_ids).dimension_records(element)
-                }
-            dimension_records.setdefault(element, {}).update(new_records)
-
-    @timeMethod
-    def _attach_leftover_dimension_records(
-        self,
-        skeleton: QuantumGraphSkeleton,
-        leftovers: DataIdExpansionLeftovers,
-        dimension_records: DimensionRecordsMap,
-    ) -> None:
-        """Attach dimension records to any data IDs in the in-progress graph
-        that were not handled in the first pass.
-
-        Parameters
-        ----------
-        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
-            In-progress quantum graph to modify in place.
-        leftovers : `DataIdExpansionLeftovers`
-            Struct recording data IDs in ``skeleton`` that were not expanded
-            and the data IDs of the dimension records that need to be fetched
-            in order to do so.
-        dimension_records : `dict`
-            Nested dictionary of dimension records, keyed first by dimension
-            element name and then by the `DataCoordinate.required_values`
-            tuple.
-        """
-        for dimensions, data_ids in leftovers.data_ids_to_expand.items():
-            attacher = DimensionRecordAttacher(dimensions, dimension_records)
-            for data_id, prerequisite_keys in data_ids.items():
-                expanded_data_id = attacher.apply(data_id)
-                for node_key in prerequisite_keys:
+            with self.butler.query() as query:
+                # Butler query will be used as-needed to get dimension records
+                # (from prerequisites) we didn't fetch in advance.  These are
+                # cached in the attacher so we don't look them up multiple
+                # times.
+                expanded_data_ids = attacher.attach(dimensions, data_ids.keys(), query=query)
+            for expanded_data_id, node_keys in zip(expanded_data_ids, data_ids.values()):
+                for node_key in node_keys:
                     skeleton.set_data_id(node_key, expanded_data_id)
 
 
@@ -997,137 +913,6 @@ class _DimensionGroupTree:
         for branch_dimensions, branch in self.trunk_branches.items():
             log.debug("Projecting query data IDs to %s.", branch_dimensions)
             branch.project_data_ids(log)
-
-
-class DimensionRecordAttacher:
-    """A helper class that expands data IDs by attaching dimension records.
-
-    Parameters
-    ----------
-    dimensions : `DimensionGroup`
-        Dimensions of the data IDs this instance will operate on.
-    dimension_records : `dict`
-        Nested dictionary of dimension records, keyed first by dimension
-        element name and then by the `DataCoordinate.required_values`
-        tuple.
-    """
-
-    def __init__(self, dimensions: DimensionGroup, dimension_records: DimensionRecordsMap):
-        self.dimensions = dimensions
-        self.indexers = {element: self._make_indexer(element) for element in dimensions.elements}
-        self.dimension_records = dimension_records
-
-    def _make_indexer(self, element: str) -> list[int]:
-        """Return a list of indexes into data ID full-values that extract the
-        `~DataCoordinate.required_values` for the ``element``
-        `DimensionElement.minimal_group` from the `~DataCoordinate.full_values`
-        for `dimensions`.
-        """
-        return [
-            self.dimensions._data_coordinate_indices[d]
-            for d in self.dimensions.universe[element].minimal_group.required
-        ]
-
-    def apply(self, data_id: DataCoordinate) -> DataCoordinate:
-        """Attach dimension records to the given data ID.
-
-        Parameters
-        ----------
-        data_id : `DataCoordinate`
-            Input data ID.
-
-        Returns
-        -------
-        expanded_data_id : `DataCoordinate`
-            Output data ID.
-        """
-        v = data_id.full_values
-        records_for_data_id = {}
-        for element, indexer in self.indexers.items():
-            records_for_element = self.dimension_records[element]
-            records_for_data_id[element] = records_for_element[tuple([v[i] for i in indexer])]
-        return data_id.expanded(records_for_data_id)
-
-    def maybe_apply(
-        self, data_id: DataCoordinate, leftovers: DataIdExpansionLeftovers
-    ) -> DataCoordinate | None:
-        """Attempt to attach dimension records to the given data ID, and record
-        the data IDs of missing dimension records on failure.
-
-        Parameters
-        ----------
-        data_id : `DataCoordinate`
-            Input data ID.
-        leftovers : `DataIdExpansionLeftovers`
-            Struct recording data IDs that were not expanded and the data IDs
-            of the dimension records that need to be fetched in order to do so.
-            The latter will be updated in place; callers are responsible for
-            updating the former when `None` is returned (since this method
-            doesn't have enough information to do so on its own).
-
-        Returns
-        -------
-        expanded_data_id : `DataCoordinate` or `None`
-            Output data ID, or `None` if one or more records were missing.
-        """
-        v = data_id.full_values
-        records_for_data_id = {}
-        failed = False
-        # Note that we need to process all elements even when we know we're
-        # going to fail, since we need to fully populate `leftovers` with what
-        # we still need to query for.
-        for element, indexer in self.indexers.items():
-            k = tuple([v[i] for i in indexer])
-            if (records_for_element := self.dimension_records.get(element)) is None:
-                leftovers.missing_record_data_ids[element].add(k)
-                failed = True
-            elif (r := records_for_element.get(k)) is None:
-                leftovers.missing_record_data_ids[element].add(k)
-                failed = True
-            else:
-                records_for_data_id[element] = r
-        if not failed:
-            return data_id.expanded(records_for_data_id)
-        else:
-            return None
-
-
-@dataclasses.dataclass
-class NodeKeysForDataId:
-    """Struct that holds the skeleton-graph node keys for a single data ID.
-
-    This is used when expanding (i.e. attaching dimension records to) data IDs,
-    where we group node keys by data ID in order to avoid repeatedly expanding
-    the same data ID and cut down on the number of equivalent data ID instances
-    alive in memory.  We separate prerequisite nodes from all other nodes
-    because they're the only ones whose data IDs are not by construction a
-    subset of the data IDs in the big initial query.
-    """
-
-    prerequisites: list[PrerequisiteDatasetKey] = dataclasses.field(default_factory=list)
-    """Node keys that correspond to prerequisite input dataset types."""
-
-    others: list[Key] = dataclasses.field(default_factory=list)
-    """All other node keys."""
-
-    @classmethod
-    def make_defaultdict(cls) -> defaultdict[DataCoordinate, NodeKeysForDataId]:
-        return defaultdict(cls)
-
-
-DataIdExpansionToDoMap: TypeAlias = defaultdict[
-    DimensionGroup, defaultdict[DataCoordinate, NodeKeysForDataId]
-]
-
-
-@dataclasses.dataclass
-class DataIdExpansionLeftovers:
-    data_ids_to_expand: dict[DimensionGroup, dict[DataCoordinate, list[PrerequisiteDatasetKey]]] = (
-        dataclasses.field(default_factory=dict)
-    )
-    missing_record_data_ids: defaultdict[str, set[tuple[DataIdValue, ...]]] = dataclasses.field(
-        default_factory=lambda: defaultdict(set)
-    )
 
 
 def _union_dimensions(groups: Iterable[DimensionGroup], universe: DimensionUniverse) -> DimensionGroup:
