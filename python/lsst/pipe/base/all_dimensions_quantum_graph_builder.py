@@ -46,7 +46,6 @@ from lsst.daf.butler import (
     DimensionDataAttacher,
     DimensionGroup,
     DimensionRecordSet,
-    DimensionUniverse,
     MissingDatasetTypeError,
 )
 from lsst.utils.logging import LsstLogAdapter
@@ -509,7 +508,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                 data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
         attacher = DimensionDataAttacher(
             records=dimension_records,
-            dimensions=_union_dimensions(data_ids_to_expand.keys(), universe=self.universe),
+            dimensions=DimensionGroup.union(*data_ids_to_expand.keys(), universe=self.universe),
         )
         for dimensions, data_ids in data_ids_to_expand.items():
             with self.butler.query() as query:
@@ -886,7 +885,7 @@ class _DimensionGroupTree:
             dimensions: _DimensionGroupBranch(tasks, dataset_types)
             for dimensions, (tasks, dataset_types) in self.subgraph.group_by_dimensions().items()
         }
-        self.all_dimensions = _union_dimensions(self.branches_by_dimensions.keys(), universe)
+        self.all_dimensions = DimensionGroup.union(*self.branches_by_dimensions.keys(), universe=universe)
         _DimensionGroupBranch.populate_record_elements(self.all_dimensions, self.branches_by_dimensions)
         _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
         self.trunk_branches = _DimensionGroupBranch.populate_branches(
@@ -913,10 +912,3 @@ class _DimensionGroupTree:
         for branch_dimensions, branch in self.trunk_branches.items():
             log.debug("Projecting query data IDs to %s.", branch_dimensions)
             branch.project_data_ids(log)
-
-
-def _union_dimensions(groups: Iterable[DimensionGroup], universe: DimensionUniverse) -> DimensionGroup:
-    dimension_names: set[str] = set()
-    for dimensions_for_group in groups:
-        dimension_names.update(dimensions_for_group.names)
-    return universe.conform(dimension_names)
