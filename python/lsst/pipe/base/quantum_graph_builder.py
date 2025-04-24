@@ -507,6 +507,7 @@ class QuantumGraphBuilder(ABC):
             # raise if one of the check conditions is not met, which is the
             # intended behavior.
             helper = AdjustQuantumHelper(inputs=adjusted_inputs, outputs=adjusted_outputs)
+            quantum_data_id = skeleton[quantum_key]["data_id"]
             try:
                 helper.adjust_in_place(task_node.get_connections(), task_node.label, quantum_data_id)
             except NoWorkFound as err:
