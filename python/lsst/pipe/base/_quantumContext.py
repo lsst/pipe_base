@@ -52,6 +52,7 @@ from lsst.daf.butler import (
 )
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.logging import PeriodicLogger, getLogger
+from lsst.utils.timer import time_this
 
 from .automatic_connection_constants import LOG_OUTPUT_CONNECTION_NAME, METADATA_OUTPUT_CONNECTION_NAME
 from .connections import DeferredDatasetRef, InputQuantizedConnection, OutputQuantizedConnection
@@ -233,6 +234,8 @@ class QuantumContext:
         self.outputsPut: set[tuple[DatasetType, DataCoordinate, uuid.UUID]] = set()
         self.__butler = butler
         self.dataset_provenance = DatasetProvenance(quantum_id=quantum_id)
+        self.time_in_get = 0.0
+        self.time_in_put = 0.0
 
     def _get(self, ref: DeferredDatasetRef | DatasetRef | None) -> Any:
         # Butler methods below will check for unresolved DatasetRefs and
@@ -303,60 +306,63 @@ class QuantumContext:
         # are taking too long.
         periodic = PeriodicLogger(_LOG)
 
-        if isinstance(dataset, InputQuantizedConnection):
-            retVal = {}
-            n_connections = len(dataset)
-            n_retrieved = 0
-            for i, (name, ref) in enumerate(dataset):
-                if isinstance(ref, list | tuple):
-                    val = []
-                    n_refs = len(ref)
-                    for j, r in enumerate(ref):
-                        val.append(self._get(r))
-                        n_retrieved += 1
+        retrieved: Any = None
+        with time_this(_LOG, msg="Retrieving datasets") as timer_result:
+            if isinstance(dataset, InputQuantizedConnection):
+                retVal = {}
+                n_connections = len(dataset)
+                n_retrieved = 0
+                for i, (name, ref) in enumerate(dataset):
+                    if isinstance(ref, list | tuple):
+                        val = []
+                        n_refs = len(ref)
+                        for j, r in enumerate(ref):
+                            val.append(self._get(r))
+                            n_retrieved += 1
+                            periodic.log(
+                                "Retrieved %d out of %d datasets for connection '%s' (%d out of %d)",
+                                j + 1,
+                                n_refs,
+                                name,
+                                i + 1,
+                                n_connections,
+                            )
+                    else:
+                        val = self._get(ref)
                         periodic.log(
-                            "Retrieved %d out of %d datasets for connection '%s' (%d out of %d)",
-                            j + 1,
-                            n_refs,
+                            "Retrieved dataset for connection '%s' (%d out of %d)",
                             name,
                             i + 1,
                             n_connections,
                         )
-                else:
-                    val = self._get(ref)
-                    periodic.log(
-                        "Retrieved dataset for connection '%s' (%d out of %d)",
-                        name,
-                        i + 1,
-                        n_connections,
+                        n_retrieved += 1
+                    retVal[name] = val
+                if periodic.num_issued > 0:
+                    # This took long enough that we issued some periodic log
+                    # messages, so issue a final confirmation message as well.
+                    _LOG.verbose(
+                        "Completed retrieval of %d datasets from %d connections", n_retrieved, n_connections
                     )
-                    n_retrieved += 1
-                retVal[name] = val
-            if periodic.num_issued > 0:
-                # This took long enough that we issued some periodic log
-                # messages, so issue a final confirmation message as well.
-                _LOG.verbose(
-                    "Completed retrieval of %d datasets from %d connections", n_retrieved, n_connections
+                retrieved = retVal
+            elif isinstance(dataset, list | tuple):
+                n_datasets = len(dataset)
+                retrieved = []
+                for i, x in enumerate(dataset):
+                    # Mypy is not sure of the type of x because of the union
+                    # of lists so complains. Ignoring it is more efficient
+                    # than adding an isinstance assert.
+                    retrieved.append(self._get(x))
+                    periodic.log("Retrieved %d out of %d datasets", i + 1, n_datasets)
+                if periodic.num_issued > 0:
+                    _LOG.verbose("Completed retrieval of %d datasets", n_datasets)
+            elif isinstance(dataset, DatasetRef | DeferredDatasetRef) or dataset is None:
+                retrieved = self._get(dataset)
+            else:
+                raise TypeError(
+                    f"Dataset argument ({get_full_type_name(dataset)}) is not a type that can be used to get"
                 )
-            return retVal
-        elif isinstance(dataset, list | tuple):
-            n_datasets = len(dataset)
-            retrieved = []
-            for i, x in enumerate(dataset):
-                # Mypy is not sure of the type of x because of the union
-                # of lists so complains. Ignoring it is more efficient
-                # than adding an isinstance assert.
-                retrieved.append(self._get(x))
-                periodic.log("Retrieved %d out of %d datasets", i + 1, n_datasets)
-            if periodic.num_issued > 0:
-                _LOG.verbose("Completed retrieval of %d datasets", n_datasets)
-            return retrieved
-        elif isinstance(dataset, DatasetRef | DeferredDatasetRef) or dataset is None:
-            return self._get(dataset)
-        else:
-            raise TypeError(
-                f"Dataset argument ({get_full_type_name(dataset)}) is not a type that can be used to get"
-            )
+        self.time_in_get += timer_result.duration
+        return retrieved
 
     def put(
         self,
@@ -395,33 +401,35 @@ class QuantumContext:
             not defined in the `~lsst.daf.butler.Quantum` object, or the type
             of values does not match what is expected from the type of dataset.
         """
-        if isinstance(dataset, OutputQuantizedConnection):
-            if not isinstance(values, Struct):
-                raise ValueError(
-                    "dataset is a OutputQuantizedConnection, a Struct with corresponding"
-                    " attributes must be passed as the values to put"
-                )
-            for name, refs in dataset:
-                if (valuesAttribute := getattr(values, name, None)) is None:
-                    continue
-                if isinstance(refs, list | tuple):
-                    if len(refs) != len(valuesAttribute):
-                        raise ValueError(f"There must be a object to put for every Dataset ref in {name}")
-                    for i, ref in enumerate(refs):
-                        self._put(valuesAttribute[i], ref)
-                else:
-                    self._put(valuesAttribute, refs)
-        elif isinstance(dataset, list | tuple):
-            if not isinstance(values, Sequence):
-                raise ValueError("Values to put must be a sequence")
-            if len(dataset) != len(values):
-                raise ValueError("There must be a common number of references and values to put")
-            for i, ref in enumerate(dataset):
-                self._put(values[i], ref)
-        elif isinstance(dataset, DatasetRef):
-            self._put(values, dataset)
-        else:
-            raise TypeError("Dataset argument is not a type that can be used to put")
+        with time_this(_LOG, msg="Putting datasets") as timer_result:
+            if isinstance(dataset, OutputQuantizedConnection):
+                if not isinstance(values, Struct):
+                    raise ValueError(
+                        "dataset is a OutputQuantizedConnection, a Struct with corresponding"
+                        " attributes must be passed as the values to put"
+                    )
+                for name, refs in dataset:
+                    if (valuesAttribute := getattr(values, name, None)) is None:
+                        continue
+                    if isinstance(refs, list | tuple):
+                        if len(refs) != len(valuesAttribute):
+                            raise ValueError(f"There must be a object to put for every Dataset ref in {name}")
+                        for i, ref in enumerate(refs):
+                            self._put(valuesAttribute[i], ref)
+                    else:
+                        self._put(valuesAttribute, refs)
+            elif isinstance(dataset, list | tuple):
+                if not isinstance(values, Sequence):
+                    raise ValueError("Values to put must be a sequence")
+                if len(dataset) != len(values):
+                    raise ValueError("There must be a common number of references and values to put")
+                for i, ref in enumerate(dataset):
+                    self._put(values[i], ref)
+            elif isinstance(dataset, DatasetRef):
+                self._put(values, dataset)
+            else:
+                raise TypeError("Dataset argument is not a type that can be used to put")
+        self.time_in_put += timer_result.duration
 
     def _checkMembership(self, ref: list[DatasetRef] | DatasetRef, inout: set) -> None:
         """Check if a `~lsst.daf.butler.DatasetRef` is part of the input
