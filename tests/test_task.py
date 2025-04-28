@@ -355,6 +355,17 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(task.metadata["failure"]["type"], result)
         self.assertEqual(task.metadata["failure"]["metadata"]["something"], 12345)
 
+    def test_AlgorithmError(self):
+        """Test that AlgorithmError checks for abstractness;
+        see https://github.com/python/cpython/issues/50246
+        """
+
+        class StillAbstractError(pipeBase.AlgorithmError):
+            pass
+
+        with self.assertRaisesRegex(TypeError, "with abstract methods: metadata"):
+            StillAbstractError()
+
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):
     """Run file leak tests."""
