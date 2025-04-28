@@ -517,6 +517,20 @@ class QuantumGraphSkeleton:
         assert dataset_key in self._xgraph
         self._xgraph.add_edge(task_key, dataset_key)
 
+    def remove_output_edge(self, dataset_key: DatasetKey) -> None:
+        """Remove the edge connecting a dataset to the quantum that produces
+        it.
+
+        Parameters
+        ----------
+        dataset_key : `DatasetKey`
+            Identifier for the dataset node.  Must identify a node already
+            present in the graph.
+        """
+        (task_key,) = self._xgraph.predecessors(dataset_key)
+        assert dataset_key in self._xgraph
+        self._xgraph.remove_edge(task_key, dataset_key)
+
     def remove_orphan_datasets(self) -> None:
         """Remove any dataset nodes that do not have any edges."""
         for orphan in list(networkx.isolates(self._xgraph)):

@@ -1271,6 +1271,41 @@ class QuantaAdjuster:
             for edge in self._task_node.iter_all_inputs()
         }
 
+    def get_outputs(self, quantum_data_id: DataCoordinate) -> dict[str, list[DataCoordinate]]:
+        """Return the data IDs of all regular outputs to a quantum.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to get the outputs of.
+
+        Returns
+        -------
+        inputs : `dict` [ `str`, `list` [ `~lsst.daf.butler.DataCoordinate` ] ]
+            Data IDs of inputs, keyed by the connection name (the internal task
+            name, not the dataset type name).  This only contains regular
+            outputs, not init-outputs or log or metadata outputs.
+
+        Notes
+        -----
+        If two connections have the same dataset type, the current
+        implementation assumes the set of datasets is the same for the two
+        connections.  This limitation may be removed in the future.
+        """
+        from .quantum_graph_skeleton import QuantumKey
+
+        by_dataset_type_name: defaultdict[str, list[DataCoordinate]] = defaultdict(list)
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+        for dataset_key in self._skeleton.iter_outputs_of(quantum_key):
+            dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
+            by_dataset_type_name[dataset_key.parent_dataset_type_name].append(
+                DataCoordinate.from_required_values(dataset_type_node.dimensions, dataset_key.data_id_values)
+            )
+        return {
+            edge.connection_name: by_dataset_type_name[edge.parent_dataset_type_name]
+            for edge in self._task_node.outputs.values()
+        }
+
     def add_input(
         self, quantum_data_id: DataCoordinate, connection_name: str, dataset_data_id: DataCoordinate
     ) -> None:
@@ -1304,6 +1339,35 @@ class QuantaAdjuster:
                 f"Dataset {read_edge.parent_dataset_type_name}@{dataset_data_id} is not already in the graph."
             )
         self._skeleton.add_input_edge(quantum_key, dataset_key)
+
+    def move_output(
+        self, quantum_data_id: DataCoordinate, connection_name: str, dataset_data_id: DataCoordinate
+    ) -> None:
+        """Remove an output of one quantum and make it a new output of another.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to move the output to.
+        connection_name : `str`
+            Name of the connection (the task-internal name, not the butler
+            dataset type name).
+        dataset_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the output dataset.  Must already exist in the graph
+            as an output of a different quantum of this task.
+        """
+        from .quantum_graph_skeleton import DatasetKey, QuantumKey
+
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+        write_edge = self._task_node.outputs[connection_name]
+        dataset_key = DatasetKey(write_edge.parent_dataset_type_name, dataset_data_id.required_values)
+        if dataset_key not in self._skeleton:
+            raise LookupError(
+                f"Dataset {write_edge.parent_dataset_type_name}@{dataset_data_id} is "
+                "not already in the graph."
+            )
+        self._skeleton.remove_output_edge(dataset_key)
+        self._skeleton.add_output_edge(quantum_key, dataset_key)
 
     def expand_quantum_data_id(self, data_id: DataCoordinate) -> DataCoordinate:
         """Expand a quantum data ID to include implied values and dimension

@@ -50,9 +50,10 @@ from lsst.utils import getPackageDir
 
 class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
     """Connections for a task whose quanta read in all of the biases for all
-    detectors with the same purpose and (theoretically) writes a single output,
-    with the data IDs of the quanta and the outputs using the detector with
-    the lowest ID in that group.
+    detectors with the same purpose and (theoretically) writes both a single
+    summary output for all inputs and another output for each input. The data
+    IDs of the quanta and the summary outputs using the detector with the
+    lowest ID in that group.
     """
 
     input_group = cT.Input(
@@ -61,6 +62,12 @@ class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
         multiple=True,
         dimensions=("detector",),
         isCalibration=True,
+    )
+    output_group = cT.Output(
+        "bias_stuff",
+        "StructuredDataDict",
+        multiple=True,
+        dimensions=("detector",),
     )
     single_output = cT.Output(
         "bias_summary",
@@ -76,13 +83,16 @@ class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
             quantum_data_id = adjuster.expand_quantum_data_id(quantum_data_id)
             quanta_by_detector_purpose[quantum_data_id.records["detector"].purpose].append(quantum_data_id)
         # Within each group, keep only the one with the lowest detector ID,
-        # while transferring the inputs of the others to that quantum.
+        # while transferring the inputs and outputs of the others to that
+        # quantum.
         for data_id_group in quanta_by_detector_purpose.values():
             data_id_group.sort(key=operator.itemgetter("detector"))
             keep, *drop = data_id_group
             for drop_data_id in drop:
                 for input_data_id in adjuster.get_inputs(drop_data_id)["input_group"]:
                     adjuster.add_input(keep, "input_group", input_data_id)
+                for output_data_id in adjuster.get_outputs(drop_data_id)["output_group"]:
+                    adjuster.move_output(keep, "output_group", output_data_id)
                 adjuster.remove_quantum(drop_data_id)
 
 
@@ -130,6 +140,7 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
         # 1-3 have purpose=SCIENCE, and 4 has purpose=WAVEFRONT.
         self.assertEqual(quanta.keys(), {1, 4})
         self.assertEqual(len(quanta[1].inputs["bias"]), 3)
+        self.assertEqual(len(quanta[1].outputs["bias_stuff"]), 3)
         self.assertCountEqual(
             quanta[1].inputs["bias"],
             butler.query_datasets("bias", collections=collections, where="detector.purpose = 'SCIENCE'"),
@@ -137,6 +148,7 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
         self.assertEqual(len(quanta[1].outputs["bias_summary"]), 1)
         self.assertEqual(quanta[1].outputs["bias_summary"][0].dataId["detector"], 1)
         self.assertEqual(len(quanta[4].inputs["bias"]), 1)
+        self.assertEqual(len(quanta[4].outputs["bias_stuff"]), 1)
         self.assertCountEqual(
             quanta[4].inputs["bias"],
             butler.query_datasets("bias", collections=collections, where="detector.purpose = 'WAVEFRONT'"),
