@@ -52,7 +52,15 @@ from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, NamedKeyDict, NamedKeyMapping, Quantum
+from lsst.daf.butler import (
+    Butler,
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    NamedKeyDict,
+    NamedKeyMapping,
+    Quantum,
+)
 
 from ._status import NoWorkFound
 from .connectionTypes import BaseConnection, BaseInput, Output, PrerequisiteInput
@@ -1165,13 +1173,19 @@ class QuantaAdjuster:
         Pipeline graph the quantum graph is being built from.
     skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
         Under-construction quantum graph that will be modified in place.
+    butler : `lsst.daf.butler.Butler`
+        Read-only instance with its default collection search path set to the
+        input collections passed to the quantum-graph builder.
     """
 
-    def __init__(self, task_label: str, pipeline_graph: PipelineGraph, skeleton: QuantumGraphSkeleton):
+    def __init__(
+        self, task_label: str, pipeline_graph: PipelineGraph, skeleton: QuantumGraphSkeleton, butler: Butler
+    ):
         self._task_node = pipeline_graph.tasks[task_label]
         self._pipeline_graph = pipeline_graph
         self._skeleton = skeleton
         self._n_removed = 0
+        self._butler = butler
 
     @property
     def task_label(self) -> str:
@@ -1183,8 +1197,15 @@ class QuantaAdjuster:
         """The node for this task in the pipeline graph."""
         return self._task_node
 
+    @property
+    def butler(self) -> Butler:
+        """Read-only instance with its default collection search path set to
+        the input collections passed to the quantum-graph builder.
+        """
+        return self._butler
+
     def iter_data_ids(self) -> Iterator[DataCoordinate]:
-        """Iterate over the data IDs of all quanta for this task."
+        """Iterate over the data IDs of all quanta for this task.
 
         Returns
         -------
@@ -1218,7 +1239,7 @@ class QuantaAdjuster:
 
         Parameters
         ----------
-        data_id : `~lsst.daf.butler.DataCoordinate`
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
             Data ID of the quantum to get the inputs of.
 
         Returns
@@ -1290,7 +1311,7 @@ class QuantaAdjuster:
 
         Parameters
         ----------
-        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+        data_id : `~lsst.daf.butler.DataCoordinate`
             A data ID of a quantum already in the graph.
 
         Returns

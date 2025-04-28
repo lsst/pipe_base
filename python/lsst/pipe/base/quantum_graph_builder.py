@@ -170,7 +170,6 @@ class QuantumGraphBuilder(ABC):
         self.log = getLogger(__name__)
         self.metadata = TaskMetadata()
         self._pipeline_graph = pipeline_graph
-        self.butler = butler
         if input_collections is None:
             input_collections = butler.collections.defaults
         if not input_collections:
@@ -180,6 +179,7 @@ class QuantumGraphBuilder(ABC):
             output_run = butler.run
         if not output_run:
             raise ValueError("No output RUN collection provided.")
+        self.butler = butler.clone(collections=input_collections)
         self.output_run = output_run
         self.skip_existing_in = skip_existing_in
         self.empty_data_id = DataCoordinate.make_empty(butler.dimensions)
@@ -494,7 +494,7 @@ class QuantumGraphBuilder(ABC):
         # Give the task a chance to adjust all quanta together.  This
         # operates directly on the skeleton (via a the 'adjuster', which
         # is just an interface adapter).
-        adjuster = QuantaAdjuster(task_node.label, self._pipeline_graph, skeleton)
+        adjuster = QuantaAdjuster(task_node.label, self._pipeline_graph, skeleton, self.butler)
         task_node.get_connections().adjust_all_quanta(adjuster)
         # Loop over all quanta again, remembering those we get rid of in other
         # ways.
