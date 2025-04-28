@@ -190,7 +190,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                 query_cmd.append(f"    collections = {list(self.input_collections)}")
             for dataset_type_name in constraint_datasets:
                 query_cmd.append(f"    query = query.join_dataset_search({dataset_type_name!r}, collections)")
-                query = query.join_dataset_search(dataset_type_name, self.input_collections)
+                try:
+                    query = query.join_dataset_search(dataset_type_name, self.input_collections)
+                except MissingDatasetTypeError:
+                    raise QuantumGraphBuilderError(
+                        f"No datasets for overall-input {dataset_type_name!r} found (the dataset type is "
+                        "not even registered).  This is probably a bug in either the pipeline definition or "
+                        "the dataset constraints passed to the quantum graph builder."
+                    ) from None
             query_cmd.append(
                 f"    query = query.where({dict(tree.subgraph.data_id.mapping)}, "
                 f"{self.where!r}, bind={self.bind!r})"
