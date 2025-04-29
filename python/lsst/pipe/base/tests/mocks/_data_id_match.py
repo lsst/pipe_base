@@ -135,6 +135,10 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         # docstring is inherited from base class
         raise NotImplementedError()
 
+    def visitGlobNode(self, expression: Any, pattern: Any, node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
 
 class DataIdMatch:
     """Class that can match DataId against the user-defined string expression.
