@@ -30,7 +30,7 @@ from __future__ import annotations
 import abc
 import enum
 import logging
-from typing import TYPE_CHECKING, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from lsst.utils import introspection
 
@@ -244,6 +244,16 @@ class AlgorithmError(RepeatableQuantumError, abc.ABC):
     Subclass this exception to define the metadata associated with the error
     (for example: number of data points in a fit vs. degrees of freedom).
     """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> AlgorithmError:
+        # Have to override __new__ because builtin subclasses aren't checked
+        # for abstract methods; see https://github.com/python/cpython/issues/50246
+        if cls.__abstractmethods__:
+            raise TypeError(
+                f"Can't instantiate abstract class {cls.__name__} with "
+                f"abstract methods: {','.join(sorted(cls.__abstractmethods__))}"
+            )
+        return super().__new__(cls, *args, **kwargs)
 
     @property
     @abc.abstractmethod
