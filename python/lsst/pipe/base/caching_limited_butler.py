@@ -34,6 +34,7 @@ from collections.abc import Iterable, Set
 from typing import Any
 
 from lsst.daf.butler import (
+    ButlerMetrics,
     DatasetId,
     DatasetProvenance,
     DatasetRef,
@@ -89,6 +90,17 @@ class CachingLimitedButler(LimitedButler):
         self._cache_on_get = cache_on_get
         self._cache: dict[str, tuple[DatasetId, InMemoryDatasetHandle]] = {}
         self._no_copy_on_cache = no_copy_on_cache
+
+    @property
+    def _metrics(self) -> ButlerMetrics:
+        # Need to always forward from the wrapped metrics object.
+        return self._wrapped._metrics
+
+    @_metrics.setter
+    def _metrics(self, metrics: ButlerMetrics) -> None:
+        # Allow record_metrics() context manager to override the wrapped
+        # butler.
+        self._wrapped._metrics = metrics
 
     def get(
         self,
