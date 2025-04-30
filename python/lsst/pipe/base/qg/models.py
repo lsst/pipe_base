@@ -254,7 +254,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             dataset_type_name=predicted.dataset_type_name,
             data_id=predicted.data_id,
             run=predicted.run,
-            produced=(producer is None),  # if it's not produced by this QG, it's an overall input
+            exists=(producer is None),  # if it's not produced by this QG, it's an overall input
             producer=producer,
         )
 
@@ -738,14 +738,14 @@ class PredictedGraph(BaseGraph):
                     )
             return result
 
-    def deserialize(self) -> dict[str, DimensionRecordSetDeserializer]:
+    def deserialize_records(self) -> list[DimensionRecordSetDeserializer]:
         with time_this(_LOG, "Deserializing dimension record data IDs", level=logging.INFO):
             universe = self.pipeline_graph.universe
             assert universe is not None
-            dimension_records = {
-                element_name: DimensionRecordSetDeserializer.from_raw(universe[element_name], raw_records)
+            dimension_records = [
+                DimensionRecordSetDeserializer.from_raw(universe[element_name], raw_records)
                 for element_name, raw_records in self.dimension_data.root.items()
-            }
+            ]
         return dimension_records
 
 
@@ -921,7 +921,7 @@ def read(
             read_dataset_indices=dataset_indices,
             full_quanta=quanta,
         )
-        model.deserialize()
+        model.deserialize_records()
 
 
 if __name__ == "__main__":

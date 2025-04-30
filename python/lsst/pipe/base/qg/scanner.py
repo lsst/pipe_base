@@ -41,7 +41,15 @@ from typing import IO, Generic, TypedDict, TypeVar, cast
 import tqdm
 import zstandard
 
-from lsst.daf.butler import ButlerConfig, DataCoordinate, DatasetRef, QuantumBackedButler
+from lsst.daf.butler import (
+    ButlerConfig,
+    DataCoordinate,
+    DatasetRef,
+    DimensionDataAttacher,
+    DimensionGroup,
+    DimensionUniverse,
+    QuantumBackedButler,
+)
 
 from ..quantum_provenance_graph import QuantumRunStatus
 from .address import AddressReader, AddressWriter
@@ -68,6 +76,7 @@ class Files(TypedDict, Generic[_U]):
 @dataclasses.dataclass
 class Scanner:
     predicted: PredictedGraph
+    dimension_data_attacher: DimensionDataAttacher
     files: Files[IO[bytes]]
     qbb: QuantumBackedButler
     quantum_address_writer: AddressWriter
@@ -82,17 +91,20 @@ class Scanner:
 
     @staticmethod
     def make_filenames(root: str) -> Files[str]:
-        return {name: os.path.join(root, f"{name}.dat.zst") for name in Files.__required_keys__}
+        return cast(
+            Files[str], {name: os.path.join(root, f"{name}.dat.zst") for name in Files.__required_keys__}
+        )
 
     @staticmethod
     def files_exist(filenames: Files[str]) -> Files[bool]:
-        return {k: os.path.exists(v) for k, v in filenames.items()}
+        return cast(Files[bool], {k: os.path.exists(cast(str, v)) for k, v in filenames.items()})
 
     @classmethod
-    def open(
-        cls, filenames: Files[str], exit_stack: ExitStack, *, int_size: int, mode: str
-    ) -> Files[IO[bytes]]:
-        return {k: exit_stack.enter_context(open(cast(str, v), "r+b")) for k, v in filenames.items()}
+    def open(cls, filenames: Files[str], exit_stack: ExitStack, *, mode: str) -> Files[IO[bytes]]:
+        return cast(
+            Files[IO[bytes]],
+            {k: exit_stack.enter_context(open(cast(str, v), mode)) for k, v in filenames.items()},
+        )
 
     @contextmanager
     @classmethod
@@ -101,6 +113,8 @@ class Scanner:
     ) -> Iterator[Scanner]:
         filenames = cls.make_filenames(workdir)
         exists = cls.files_exist(filenames)
+        universe = cast(DimensionUniverse, predicted.pipeline_graph.universe)
+        dimension_data_attacher = DimensionDataAttacher(deserializers=predicted.deserialize_records())
         with ExitStack() as exit_stack:
             if all(exists.values()):
                 _LOG.info("Restoring scanner state from file.")
@@ -109,12 +123,12 @@ class Scanner:
                 raise RuntimeError("Some scanner files are present, but not all.")
             else:
                 mode = "w+b"
-            files = cls.open(filenames, exit_stack, int_size=int_size, mode=mode)
+            files = cls.open(filenames, exit_stack, mode=mode)
             qbb = QuantumBackedButler.from_predicted(
                 butler_config,
                 predicted_inputs=predicted.dataset_indices.keys(),
                 predicted_outputs=[],
-                dimensions=predicted.pipeline_graph.universe,
+                dimensions=universe,
                 # We don't need the datastore records because we're never going
                 # to look for overall inputs.
                 datastore_records={},
@@ -124,6 +138,7 @@ class Scanner:
             )
             scanner = cls(
                 predicted,
+                dimension_data_attacher,
                 files=files,
                 qbb=qbb,
                 quantum_address_writer=AddressWriter(int_size, {}, [0, 0, 0]),
@@ -154,7 +169,7 @@ class Scanner:
             address.offsets[2] = quantum.log_offset
             address.sizes[2] = quantum.log_size
             total_log_size += quantum.log_size
-            self.quanta[address.index] = quantum
+            self.quanta[quantum.quantum_id] = quantum
         for dataset_offset, dataset_size, dataset_data in tqdm.tqdm(
             AddressReader.read_all_subfiles(self.files["datasets"], int_size=self.int_size),
             "Reading provenance datasets.",
@@ -164,17 +179,17 @@ class Scanner:
             address = self.dataset_address_writer.addresses[dataset.dataset_id]
             address.offsets[0] = dataset_offset
             address.sizes[0] = dataset_size
-            self.datasets[address.index] = dataset
+            self.datasets[dataset.dataset_id] = dataset
         self.files["metadata"].seek(0, os.SEEK_END)
         assert self.files["metadata"].tell() == total_metadata_size
-        self.files["log"].seek(0, os.SEEK_END)
-        assert self.files["log"].tell() == total_log_size
+        self.files["logs"].seek(0, os.SEEK_END)
+        assert self.files["logs"].tell() == total_log_size
 
     def finalize_dataset(self, dataset: ProvenanceDatasetModel) -> None:
         self.dataset_address_writer.write_subfile(
             self.files["datasets"],
             dataset.dataset_id,
-            self.compressor.compress(dataset.model_dump_json()),
+            self.compressor.compress(dataset.model_dump_json().encode()),
         )
         self.datasets[dataset.dataset_id] = dataset
 
@@ -182,7 +197,7 @@ class Scanner:
         self.quantum_address_writer.write_subfile(
             self.files["quanta"],
             quantum.quantum_id,
-            self.compressor.compress(quantum.model_dump_json()),
+            self.compressor.compress(quantum.model_dump_json().encode()),
         )
         self.quanta[quantum.quantum_id] = quantum
 
@@ -193,15 +208,22 @@ class Scanner:
                 return False
         return True
 
-    def scan_datasets(self, datasets: dict[uuid.UUID, ProvenanceDatasetModel]) -> None:
+    def scan_datasets(
+        self, dimensions: DimensionGroup, datasets: dict[uuid.UUID, ProvenanceDatasetModel]
+    ) -> None:
+        data_ids = [
+            DataCoordinate.from_full_values(dimensions, tuple(dataset.data_id))
+            for dataset in datasets.values()
+        ]
+        data_ids = self.dimension_data_attacher.attach(dimensions, data_ids)
         refs = []
-        for dataset in datasets.values():
+        for dataset, data_id in zip(datasets.values(), data_ids):
             dataset_type = self.predicted.pipeline_graph.dataset_types[dataset.dataset_type_name].dataset_type
+            assert dataset_type.dimensions == dimensions
             refs.append(
-                # TODO: need to expand data IDs when this moves beyond inits.
                 DatasetRef(
                     dataset_type,
-                    DataCoordinate.from_full_values(dataset_type.dimensions, dataset.data_id),
+                    data_id,
                     run=dataset.run,
                     id=dataset.dataset_id,
                 )
@@ -231,7 +253,7 @@ class Scanner:
                         predicted_dataset, producer=predicted_quantum.quantum_id
                     )
                     new_outputs[provenance_dataset.dataset_id] = provenance_dataset
-        self.scan_datasets(new_outputs)
+        self.scan_datasets(self.qbb.dimensions.empty, new_outputs)
         all_successful = True
         for predicted_quantum in self.predicted.init_quanta.root:
             if (provenance_quantum := self.quanta.get(predicted_quantum.quantum_id)) is None:
