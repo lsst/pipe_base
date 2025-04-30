@@ -32,6 +32,7 @@ __all__ = ["DataIdMatch"]
 import operator
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 import astropy.time
 
@@ -59,6 +60,10 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         return value
 
     def visitTimeLiteral(self, value: astropy.time.Time, node: Node) -> Any:
+        # docstring is inherited from base class
+        return value
+
+    def visitUuidLiteral(self, value: UUID, node: Node) -> Any:
         # docstring is inherited from base class
         return value
 
