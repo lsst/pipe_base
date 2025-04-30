@@ -45,10 +45,16 @@ class CachingLimitedButlerTestCase(unittest.TestCase):
 
     def test_init(self):
         with temporaryDirectory() as root:
-            config = os.path.join(TESTDIR, "config/butler-obscore.yaml")
-            butler = simpleQGraph.makeSimpleButler(root=root, inMemory=False, config=config)
+            butler, _ = simpleQGraph.makeSimpleQGraph(root=root, inMemory=False)
             limitedButler = CachingLimitedButler(butler)
             self.assertIsInstance(limitedButler, CachingLimitedButler)
+            refs = butler.query_datasets("add_dataset0")
+            dataset = limitedButler.get(refs[0])
+            self.assertIsNotNone(dataset)
+
+            with limitedButler.record_metrics() as metrics:
+                limitedButler.get(refs[0])
+            self.assertEqual(metrics.n_get, 1)
 
 
 if __name__ == "__main__":
