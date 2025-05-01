@@ -38,7 +38,6 @@ import lzma
 import os
 import uuid
 import zipfile
-from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import ExitStack
 from io import BytesIO
@@ -55,11 +54,12 @@ from lsst.daf.butler import (
     DataCoordinate,
     DataIdValue,
     DatasetRef,
+    DimensionDataExtractor,
     DimensionGroup,
-    DimensionRecordSet,
     DimensionRecordSetDeserializer,
+    DimensionUniverse,
     Quantum,
-    SerializedKeyValueDimensionRecord,
+    SerializableDimensionData,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -133,6 +133,7 @@ class HeaderModel(pydantic.BaseModel):
     user: str
     timestamp: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
     metadata: dict[str, str | int | float | datetime.datetime] = pydantic.Field(default_factory=dict)
+    int_size: int = 4
     n_quanta: int = 0
     n_datasets: int = 0
 
@@ -204,7 +205,7 @@ class PredictedFullQuantumModel(pydantic.BaseModel):
             result.inputs[read_edge.connection_name] = [PredictedDatasetModel.from_ref(ref) for ref in refs]
         for write_edge in task_node.iter_all_outputs():
             refs = sorted(quantum.outputs[write_edge.dataset_type_name], key=lambda ref: ref.dataId)
-            result.inputs[write_edge.connection_name] = [PredictedDatasetModel.from_ref(ref) for ref in refs]
+            result.outputs[write_edge.connection_name] = [PredictedDatasetModel.from_ref(ref) for ref in refs]
         result.datastore_records = {
             store_name: records.to_simple() for store_name, records in quantum.datastore_records.items()
         }
@@ -272,10 +273,6 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     status: QuantumRunStatus = QuantumRunStatus.METADATA_MISSING
     caveats: QuantumSuccessCaveats | None = None
     exception: ExceptionInfo | None = None
-    start_time: datetime.datetime | None = None
-    end_time: datetime.datetime | None = None
-    max_rss: float | None = None
-    host: str | None = None
 
     @classmethod
     def from_predicted(cls, predicted: PredictedFullQuantumModel) -> ProvenanceQuantumModel:
@@ -288,41 +285,6 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             result.metadata_id = metadata_datasets[0].dataset_id
         if log_datasets := predicted.outputs.get(acc.LOG_OUTPUT_CONNECTION_NAME):
             result.log_id = log_datasets[0].dataset_id
-        return result
-
-
-class DimensionDataModel(pydantic.RootModel):
-    root: dict[DimensionElementName, list[SerializedKeyValueDimensionRecord]] = pydantic.Field(
-        default_factory=dict
-    )
-
-    @classmethod
-    def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> DimensionDataModel:
-        universe = quantum_graph.pipeline_graph.universe
-        assert universe is not None
-        data_ids: defaultdict[DimensionGroup, set[DataCoordinate]] = defaultdict(set)
-        for task_node in tqdm.tqdm(
-            quantum_graph.pipeline_graph.tasks.values(), "Extracting dimension record data IDs"
-        ):
-            for quantum in quantum_graph.get_task_quanta(task_node.label).values():
-                assert quantum.dataId is not None
-                data_ids[quantum.dataId.dimensions].add(quantum.dataId)
-                for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
-                    for ref in refs:
-                        data_ids[ref.dataId.dimensions].add(ref.dataId)
-        all_dimension_names: set[str] = set()
-        for task_node in quantum_graph.pipeline_graph.tasks.values():
-            all_dimension_names.update(task_node.dimensions.names)
-        for dataset_type_node in quantum_graph.pipeline_graph.dataset_types.values():
-            all_dimension_names.update(dataset_type_node.dimensions.names)
-        all_dimensions = universe.conform(all_dimension_names)
-        result = cls()
-        for element in tqdm.tqdm(all_dimensions.elements, "Extracting dimension records from data IDs"):
-            record_set = DimensionRecordSet(element, universe=universe)
-            for data_id_group, data_ids_for_group in data_ids.items():
-                if element in data_id_group.elements:
-                    record_set.update_from_data_coordinates(data_ids_for_group)
-            result.root[element] = record_set.serialize_records()
         return result
 
 
@@ -563,7 +525,7 @@ class GraphReader:
 
 @dataclasses.dataclass
 class PredictedGraph(BaseGraph):
-    dimension_data: DimensionDataModel = dataclasses.field(default_factory=DimensionDataModel)
+    dimension_data: SerializableDimensionData = dataclasses.field(default_factory=SerializableDimensionData)
     quantum_edges: QuantumEdgeListModel = dataclasses.field(default_factory=QuantumEdgeListModel)
     init_quanta: PredictedInitQuantaModel = dataclasses.field(default_factory=PredictedInitQuantaModel)
     thin_quanta: PredictedThinQuantaModel = dataclasses.field(default_factory=PredictedThinQuantaModel)
@@ -590,21 +552,30 @@ class PredictedGraph(BaseGraph):
     @classmethod
     def from_quantum_graph(cls, quantum_graph: QuantumGraph) -> PredictedGraph:
         header = HeaderModel.from_quantum_graph(quantum_graph)
-        dimension_data = DimensionDataModel.from_quantum_graph(quantum_graph)
-        result = cls(
-            header=header,
-            pipeline_graph=quantum_graph.pipeline_graph,
-            dimension_data=dimension_data,
-        )
+        result = cls(header=header, pipeline_graph=quantum_graph.pipeline_graph)
         result.init_quanta.update_from_quantum_graph(quantum_graph)
         all_quanta = list(result.init_quanta.root)
         init_quantum_ids = {q.quantum_id for q in result.init_quanta.root}
-        for task_node in tqdm.tqdm(result.pipeline_graph.tasks.values(), "Extracting full quanta by task"):
+        dimension_data_extractor = DimensionDataExtractor.from_dimension_group(
+            DimensionGroup.union(
+                *quantum_graph.pipeline_graph.group_by_dimensions(prerequisites=True).keys(),
+                universe=cast(DimensionUniverse, quantum_graph.pipeline_graph.universe),
+            )
+        )
+        for task_node in tqdm.tqdm(
+            result.pipeline_graph.tasks.values(), "Extracting full quanta and dimension data by task"
+        ):
             task_quanta = quantum_graph.get_task_quanta(task_node.label)
             for quantum_id, quantum in tqdm.tqdm(task_quanta.items(), task_node.label, leave=False):
                 all_quanta.append(PredictedFullQuantumModel.from_quantum(task_node, quantum, quantum_id))
+                dimension_data_extractor.update([cast(DataCoordinate, quantum.dataId)])
+                for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
+                    dimension_data_extractor.update(ref.dataId for ref in refs)
             result.thin_quanta.root[task_node.label] = []
         result.header.n_quanta = len(result.quantum_indices)
+        result.dimension_data = SerializableDimensionData.from_record_sets(
+            dimension_data_extractor.records.values()
+        )
         all_quanta.sort(key=lambda q: q.quantum_id.int)
         dataset_ids: set[uuid.UUID] = set()
         for quantum_index, full_quantum in tqdm.tqdm(enumerate(all_quanta), "Adding thin quanta"):
@@ -648,12 +619,11 @@ class PredictedGraph(BaseGraph):
         self,
         uri: ResourcePathExpression,
         zstd_level: int = 10,
-        int_size: int = 4,
     ) -> None:
         self._write(
             uri,
             zstd_level=zstd_level,
-            node_data_writer=PredictedNodeDataWriter(self, int_size),
+            node_data_writer=PredictedNodeDataWriter(self),
         )
 
     @classmethod
@@ -673,9 +643,10 @@ class PredictedGraph(BaseGraph):
         if full_quanta is not None:
             full_quanta = set(full_quanta)
         with GraphReader.open(uri, preload_all=(full_quanta is None)) as reader:
+            int_size = reader.header.int_size
             result = cls(header=reader.header, pipeline_graph=reader.pipeline_graph)
             if read_dimension_data:
-                result.dimension_data = reader.read_model(DimensionDataModel, "dimension_data")
+                result.dimension_data = reader.read_model(SerializableDimensionData, "dimension_data")
             if read_init_quanta:
                 result.init_quanta = reader.read_model(PredictedInitQuantaModel, "init_quanta")
             if read_thin_quanta:
@@ -693,7 +664,7 @@ class PredictedGraph(BaseGraph):
                     }
             with time_this(_LOG, "Reading addresses for full predicted quanta", level=logging.INFO):
                 with reader.quantum_address_reader() as quantum_address_reader:
-                    int_size = quantum_address_reader.int_size
+                    assert int_size == quantum_address_reader.int_size
                     if read_quantum_indices or full_quanta is None:
                         quantum_addresses = quantum_address_reader.read_all_addresses()
                     else:
@@ -750,11 +721,11 @@ class PredictedGraph(BaseGraph):
 
 
 class PredictedNodeDataWriter:
-    def __init__(self, predicted_graph: PredictedGraph, int_size: int) -> None:
+    def __init__(self, predicted_graph: PredictedGraph) -> None:
         self.graph = predicted_graph
-        self.quantum_address_writer = AddressWriter(int_size, {}, [0])
+        self.quantum_address_writer = AddressWriter(self.graph.header.int_size, {}, [0])
         self.dataset_address_writer = AddressWriter(
-            int_size,
+            self.graph.header.int_size,
             {
                 dataset_id: Address(index, offsets=[], sizes=[])
                 for dataset_id, index in self.graph.dataset_indices.items()
@@ -822,44 +793,6 @@ class ProvenanceGraph(BaseGraph):
                     predicted_dataset, predicted_quantum.quantum_id
                 )
         return result
-
-
-class ProvenanceNodeDataWriter:
-    def __init__(self, provenance_graph: ProvenanceGraph, int_size: int) -> None:
-        self.graph = provenance_graph
-        self.quantum_address_writer = AddressWriter(int_size, {}, [0, 0])
-        self.dataset_address_writer = AddressWriter(
-            int_size, {}, [0], start_index=len(self.graph.quantum_indices)
-        )
-
-    def write_node_data(self, zf: zipfile.ZipFile, compressor: Compressor, ext: str) -> None:
-        import humanize
-
-        with zf.open("quanta.dat", mode="w") as stream:
-            for quantum_id, index in tqdm.tqdm(
-                self.graph.quantum_indices.items(),
-                "Dumping, compressing, and writing provenance quanta",
-            ):
-                if (quantum := self.graph.quanta.get(index)) is not None:
-                    model_bytes = compressor.compress(quantum.model_dump_json().encode())
-                    self.quantum_address_writer.write_subfile(stream, quantum_id, model_bytes)
-                else:
-                    self.quantum_address_writer.add_empty(quantum_id)
-                if (heavy_address := self.graph.heavy_addresses.get(index)) is not None:
-                    self.quantum_address_writer.transfer(quantum_id, heavy_address, column=1)
-        _LOG.info(f"quanta: {humanize.naturalsize(self.quantum_address_writer.totals[0])}.")
-        if self.graph.heavy_file is not None:
-            zf.write(self.graph.heavy_file, "heavy.dat")
-        _LOG.info(f"metadata and logs: {humanize.naturalsize(self.quantum_address_writer.totals[1])}.")
-        with zf.open("datasets.dat", mode="w") as stream:
-            for dataset_id, index in tqdm.tqdm(
-                self.graph.dataset_indices.items(),
-                "Dumping, compressing, and writing provenance datasets",
-            ):
-                dataset = self.graph.datasets[index]
-                model_bytes = compressor.compress(dataset.model_dump_json().encode())
-                self.dataset_address_writer.write_subfile(stream, dataset_id, model_bytes)
-        _LOG.info(f"full_quanta: {humanize.naturalsize(self.dataset_address_writer.total)}.")
 
 
 @click.group()

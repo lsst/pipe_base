@@ -206,9 +206,3 @@ class AddressWriter:
             address = Address(len(self.addresses), offsets=[0] * self.n_columns, sizes=[0] * self.n_columns)
             self.addresses[id] = address
         return address
-
-    def transfer(self, id: uuid.UUID, source: Address, column: int) -> None:
-        dest = self.addresses[id]
-        dest.offsets[column] = source.offsets[0]
-        dest.sizes[column] = source.sizes[0]
-        self.totals[column] += source.sizes[0]
