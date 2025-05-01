@@ -181,6 +181,13 @@ class QuantumRunStatus(Enum):
     BLOCKED = 0
     SUCCESSFUL = 1
 
+    @property
+    def blocks_downstream(self) -> bool:
+        """Whether quanta downstream of one with this status are blocked from
+        having been attempted.
+        """
+        return self is not QuantumRunStatus.SUCCESSFUL and self is not QuantumRunStatus.LOGS_MISSING
+
 
 class ExceptionInfo(pydantic.BaseModel):
     """Information about an exception that was raised."""
