@@ -29,6 +29,7 @@ from __future__ import annotations
 
 __all__ = ()
 
+import asyncio
 import concurrent.futures
 import dataclasses
 import itertools
@@ -36,10 +37,11 @@ import logging
 import multiprocessing
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from typing import IO, ClassVar, Generic, TypedDict, TypeVar, cast
 
+import click
 import tqdm
 import zstandard
 
@@ -48,6 +50,7 @@ from lsst.daf.butler import (
     ButlerLogRecords,
     DataCoordinate,
     DatasetRef,
+    DatasetType,
     DimensionDataAttacher,
     DimensionRecordSetDeserializer,
     DimensionUniverse,
@@ -99,7 +102,7 @@ class Scanner:
     datasets: dict[uuid.UUID, bool] = dataclasses.field(default_factory=dict)
 
     @classmethod
-    def scan(
+    async def scan(
         cls,
         predicted_graph_uri: ResourcePathExpression,
         butler_uri: ResourcePathExpression,
@@ -126,9 +129,10 @@ class Scanner:
                     ),
                 )
             else:
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                executor = SequentialExecutor()
                 ScannerWorker.instance = scanner.worker
-            scanner.scan_graph(executor)
+            with executor:
+                await scanner.scan_graph(executor)
 
     @property
     def int_size(self) -> int:
@@ -151,8 +155,8 @@ class Scanner:
             {k: exit_stack.enter_context(open(cast(str, v), mode)) for k, v in filenames.items()},
         )
 
-    @contextmanager
     @classmethod
+    @contextmanager
     def from_predicted(
         cls, predicted: PredictedGraph, butler_config: ButlerConfig, work_dir: str
     ) -> Iterator[Scanner]:
@@ -189,7 +193,7 @@ class Scanner:
                 quantum_address_writer=AddressWriter(predicted.header.int_size, {}, [0, 0, 0]),
                 dataset_address_writer=AddressWriter(predicted.header.int_size, {}, [0]),
                 quantum_progress=tqdm.tqdm(desc="Quanta", total=len(predicted.quantum_indices)),
-                dataset_progress=tqdm.tqdm(desc="Datasets", total=len(predicted.quantum_indices)),
+                dataset_progress=tqdm.tqdm(desc="Datasets", total=len(predicted.dataset_indices)),
             )
             for quantum_id in scanner.predicted.quantum_indices.keys():
                 scanner.quantum_address_writer.add_empty(quantum_id)
@@ -235,9 +239,14 @@ class Scanner:
         assert self.files["metadata"].tell() == total_metadata_size
         self.files["logs"].seek(0, os.SEEK_END)
         assert self.files["logs"].tell() == total_log_size
-        _LOG.info("Restored progress from %s quanta and %s datasets.", len(self.quanta), len(self.datasets))
 
     def finalize_dataset(self, dataset_id: uuid.UUID, exists: bool, dataset_bytes: bytes) -> None:
+        if dataset_id in self.datasets:
+            for predicted_quantum in self.predicted.full_quanta.values():
+                for candidate in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+                    if candidate.dataset_id == dataset_id:
+                        raise AssertionError(candidate.model_dump_json())
+            raise AssertionError(dataset_id)
         self.dataset_address_writer.write_subfile(self.files["datasets"], dataset_id, dataset_bytes)
         self.datasets[dataset_id] = exists
         self.dataset_progress.update(1)
@@ -246,7 +255,8 @@ class Scanner:
         if predicted.dataset_id in self.datasets:
             return True
         provenance = ProvenanceDatasetModel.from_predicted(predicted)
-        dataset_bytes = self.worker.compressor.compress(predicted.model_dump_json().encode())
+        dataset_bytes = self.worker.compressor.compress(provenance.model_dump_json().encode())
+        tqdm.tqdm.write(f"Finalizing input dataset {predicted.dataset_id}.")
         self.finalize_dataset(provenance.dataset_id, provenance.exists, dataset_bytes)
         return False
 
@@ -261,6 +271,7 @@ class Scanner:
             return False
         provenance = ProvenanceQuantumModel.from_predicted(predicted)
         provenance.status = QuantumRunStatus.BLOCKED
+        tqdm.tqdm.write(f"Finalizing blocked quantum {predicted.quantum_id}.")
         self.finalize_quantum(provenance)
         return True
 
@@ -285,17 +296,17 @@ class Scanner:
                 self.process_input_dataset(predicted_dataset)
             for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
                 if predicted_dataset.dataset_id not in self.datasets:
-                    self.worker.scan_dataset(predicted_dataset, predicted_quantum.quantum_id).finalize(self)
+                    result = self.worker.scan_dataset(predicted_dataset, predicted_quantum.quantum_id)
+                    self.finalize_dataset(result.dataset_id, result.exists, result.dataset_bytes)
         for predicted_quantum in self.predicted.init_quanta.root:
             self.process_init_quantum(predicted_quantum)
 
-    def scan_graph(self, executor: concurrent.futures.Executor) -> None:
+    async def scan_graph(self, executor: concurrent.futures.Executor) -> None:
         walker = GraphWalker[QuantumIndex](self.predicted.quantum_xgraph.copy())
-        scanning: set[concurrent.futures.Future[QuantumScanResult | DatasetScanResult]] = set()
+        pending: set[asyncio.Task[None]] = set()
         for ready in walker:
             for quantum_index in ready:
                 predicted_quantum = self.predicted.full_quanta[quantum_index]
-                task_node = self.predicted.pipeline_graph.tasks[predicted_quantum.task_label]
                 if (provenance_quantum := self.quanta.get(predicted_quantum.quantum_id)) is not None:
                     if provenance_quantum.status.blocks_downstream:
                         for blocked_quantum_index in walker.fail(quantum_index):
@@ -303,54 +314,85 @@ class Scanner:
                     else:
                         walker.finish(quantum_index)
                 else:
-                    scanning.add(executor.submit(ScanQuantumRunner(predicted_quantum)))
-                for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
-                    self.process_input_dataset(predicted_dataset)
-                for write_edge in task_node.outputs.values():
-                    for predicted_dataset in predicted_quantum.outputs.get(write_edge.connection_name, []):
-                        if predicted_dataset.dataset_id not in self.datasets:
-                            scanning.add(
-                                executor.submit(
-                                    ScanDatasetRunner(predicted_dataset, predicted_quantum.quantum_id)
-                                )
-                            )
-            futures_done, scanning = concurrent.futures.wait(scanning, return_when="FIRST_COMPLETED")
-            for future in futures_done:
-                future.result().finalize(self, walker)
+                    pending.add(asyncio.create_task(self.scan_quantum(executor, predicted_quantum, walker)))
+            if pending:
+                _, pending = await asyncio.wait(pending, return_when="FIRST_COMPLETED")
+
+    async def scan_quantum(
+        self,
+        executor: concurrent.futures.Executor,
+        predicted_quantum: PredictedFullQuantumModel,
+        walker: GraphWalker,
+    ) -> None:
+        task_node = self.predicted.pipeline_graph.tasks[predicted_quantum.task_label]
+        loop = asyncio.get_running_loop()
+        quantum_scan = loop.run_in_executor(executor, ScannerWorker.scan_quantum_in_pool, predicted_quantum)
+        for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
+            self.process_input_dataset(predicted_dataset)
+        dataset_scans: set[asyncio.Future[DatasetScanResult]] = set()
+        for write_edge in task_node.outputs.values():
+            for predicted_dataset in predicted_quantum.outputs.get(write_edge.connection_name, []):
+                assert predicted_dataset.dataset_id not in self.datasets
+                dataset_scans.add(
+                    loop.run_in_executor(
+                        executor,
+                        ScannerWorker.scan_dataset_in_pool,
+                        predicted_dataset,
+                        predicted_quantum.quantum_id,
+                    )
+                )
+        for dataset_scan in asyncio.as_completed(dataset_scans):
+            dataset_result = await dataset_scan
+            self.finalize_dataset(
+                dataset_result.dataset_id, dataset_result.exists, dataset_result.dataset_bytes
+            )
+        quantum_result = await quantum_scan
+        if quantum_result.metadata_content_bytes:
+            metadata_address = self.quantum_address_writer.write_subfile(
+                self.files["metadata"],
+                quantum_result.quantum.quantum_id,
+                quantum_result.metadata_content_bytes,
+                column=1,
+            )
+            quantum_result.quantum.metadata_offset = metadata_address.offsets[1]
+            quantum_result.quantum.metadata_size = metadata_address.sizes[1]
+        assert quantum_result.quantum.metadata_id is not None
+        self.finalize_dataset(
+            quantum_result.quantum.metadata_id,
+            bool(quantum_result.metadata_content_bytes),
+            quantum_result.metadata_provenance_bytes,
+        )
+        if quantum_result.log_content_bytes:
+            log_address = self.quantum_address_writer.write_subfile(
+                self.files["logs"],
+                quantum_result.quantum.quantum_id,
+                quantum_result.log_content_bytes,
+                column=2,
+            )
+            quantum_result.quantum.log_offset = log_address.offsets[2]
+            quantum_result.quantum.log_size = log_address.sizes[2]
+        assert quantum_result.quantum.log_id is not None
+        self.finalize_dataset(
+            quantum_result.quantum.log_id,
+            bool(quantum_result.log_content_bytes),
+            quantum_result.log_provenance_bytes,
+        )
+        self.finalize_quantum(quantum_result.quantum)
+        quantum_index = self.predicted.quantum_indices[quantum_result.quantum.quantum_id]
+        if quantum_result.quantum.status.blocks_downstream:
+            for blocked_quantum_index in walker.fail(quantum_index):
+                self.process_blocked_quantum(self.predicted.full_quanta[blocked_quantum_index])
+        else:
+            walker.finish(quantum_index)
 
 
 @dataclasses.dataclass
 class QuantumScanResult:
     quantum: ProvenanceQuantumModel
-    metadata_bytes: bytes
-    log_bytes: bytes
-
-    def finalize(self, scanner: Scanner, walker: GraphWalker) -> None:
-        if self.metadata_bytes:
-            metadata_address = scanner.quantum_address_writer.write_subfile(
-                scanner.files["metadata"],
-                self.quantum.quantum_id,
-                self.metadata_bytes,
-                column=1,
-            )
-            self.quantum.metadata_offset = metadata_address.offsets[1]
-            self.quantum.metadata_size = metadata_address.sizes[1]
-        if self.log_bytes:
-            log_address = scanner.quantum_address_writer.write_subfile(
-                scanner.files["logs"],
-                self.quantum.quantum_id,
-                self.log_bytes,
-                column=2,
-            )
-            self.quantum.log_offset = log_address.offsets[2]
-            self.quantum.log_size = log_address.sizes[2]
-        scanner.finalize_quantum(self.quantum)
-        quantum_index = scanner.predicted.quantum_indices[self.quantum.quantum_id]
-        if self.quantum.status.blocks_downstream:
-            for blocked_quantum_index in walker.fail(quantum_index):
-                scanner.process_blocked_quantum(scanner.predicted.full_quanta[blocked_quantum_index])
-        else:
-            walker.finish(quantum_index)
+    metadata_content_bytes: bytes = b""
+    metadata_provenance_bytes: bytes = b""
+    log_content_bytes: bytes = b""
+    log_provenance_bytes: bytes = b""
 
 
 @dataclasses.dataclass
@@ -358,9 +400,6 @@ class DatasetScanResult:
     dataset_id: uuid.UUID
     exists: bool
     dataset_bytes: bytes
-
-    def finalize(self, scanner: Scanner, walker: GraphWalker | None = None) -> None:
-        scanner.finalize_dataset(self.dataset_id, self.exists, self.dataset_bytes)
 
 
 @dataclasses.dataclass
@@ -381,62 +420,97 @@ class ScannerWorker:
         )
 
     def scan_quantum(self, predicted: PredictedFullQuantumModel) -> QuantumScanResult:
-        provenance = ProvenanceQuantumModel.from_predicted(predicted)
-        metadata_bytes = self.read_and_compress_metadata(predicted, provenance)
-        log_bytes = self.read_and_compress_logs(predicted)
-        if metadata_bytes:
-            if log_bytes:
-                provenance.status = QuantumRunStatus.SUCCESSFUL
+        result = QuantumScanResult(ProvenanceQuantumModel.from_predicted(predicted))
+        metadata_exists = self.read_and_compress_metadata(predicted, result)
+        logs_exists = self.read_and_compress_logs(predicted, result)
+        if metadata_exists:
+            if logs_exists:
+                result.quantum.status = QuantumRunStatus.SUCCESSFUL
             else:
-                provenance.status = QuantumRunStatus.LOGS_MISSING
+                result.quantum.status = QuantumRunStatus.LOGS_MISSING
         else:
-            if log_bytes:
-                provenance.status = QuantumRunStatus.FAILED
+            if logs_exists:
+                result.quantum.status = QuantumRunStatus.FAILED
             else:
-                provenance.status = QuantumRunStatus.METADATA_MISSING
-        return QuantumScanResult(provenance, metadata_bytes=metadata_bytes, log_bytes=log_bytes)
+                result.quantum.status = QuantumRunStatus.METADATA_MISSING
+        return result
+
+    @staticmethod
+    def scan_dataset_in_pool(predicted: PredictedDatasetModel, producer: uuid.UUID) -> DatasetScanResult:
+        return ScannerWorker.instance.scan_dataset(predicted, producer)
+
+    @staticmethod
+    def scan_quantum_in_pool(predicted: PredictedFullQuantumModel) -> QuantumScanResult:
+        return ScannerWorker.instance.scan_quantum(predicted)
 
     def make_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
-        dimensions = self.pipeline_graph.dataset_types[predicted.dataset_type_name].dimensions
+        try:
+            dataset_type = self.pipeline_graph.dataset_types[predicted.dataset_type_name].dataset_type
+        except KeyError:
+            if predicted.dataset_type_name == acc.PACKAGES_INIT_OUTPUT_NAME:
+                dataset_type = DatasetType(
+                    acc.PACKAGES_INIT_OUTPUT_NAME,
+                    cast(DimensionUniverse, self.pipeline_graph.universe).empty,
+                    storageClass=acc.PACKAGES_INIT_OUTPUT_STORAGE_CLASS,
+                )
+            else:
+                raise
         (data_id,) = self.dimension_data_attacher.attach(
-            dimensions, [DataCoordinate.from_full_values(dimensions, tuple(predicted.data_id))]
+            dataset_type.dimensions,
+            [DataCoordinate.from_full_values(dataset_type.dimensions, tuple(predicted.data_id))],
         )
         return DatasetRef(
-            self.pipeline_graph.dataset_types[predicted.dataset_type_name].dataset_type,
+            dataset_type,
             data_id,
             run=predicted.run,
             id=predicted.dataset_id,
         )
 
-    def read_and_compress_logs(self, predicted: PredictedFullQuantumModel) -> bytes:
-        ref = self.make_ref(predicted.outputs[acc.LOG_OUTPUT_CONNECTION_NAME][0])
-        try:
-            logs: ButlerLogRecords = self.qbb.get(ref)
-        except FileNotFoundError:
-            return b""
-        return self.compressor.compress(logs.model_dump_json().encode())
-
     def read_and_compress_metadata(
-        self, predicted: PredictedFullQuantumModel, provenance: ProvenanceQuantumModel
-    ) -> bytes:
-        ref = self.make_ref(predicted.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME][0])
+        self, predicted_quantum: PredictedFullQuantumModel, result: QuantumScanResult
+    ) -> bool:
+        predicted = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME][0]
+        provenance = ProvenanceDatasetModel.from_predicted(predicted, predicted_quantum.quantum_id)
+        ref = self.make_ref(predicted)
         try:
-            metadata: TaskMetadata = self.qbb.get(ref)
+            content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
         except FileNotFoundError:
-            return b""
-        try:
-            # Int conversion guards against spurious conversion to
-            # float that can apparently sometimes happen in
-            # TaskMetadata.
-            provenance.caveats = QuantumSuccessCaveats(int(metadata["quantum"]["caveats"]))
-        except LookupError:
             pass
+        else:
+            provenance.exists = True
+            try:
+                # Int conversion guards against spurious conversion to
+                # float that can apparently sometimes happen in
+                # TaskMetadata.
+                result.quantum.caveats = QuantumSuccessCaveats(int(content["quantum"]["caveats"]))
+            except LookupError:
+                pass
+            try:
+                result.quantum.exception = ExceptionInfo._from_metadata(
+                    content[result.quantum.task_label]["failure"]
+                )
+            except LookupError:
+                pass
+            # TODO: add resource usage information
+            result.metadata_content_bytes = self.compressor.compress(content.model_dump_json().encode())
+        result.metadata_provenance_bytes = self.compressor.compress(provenance.model_dump_json().encode())
+        return provenance.exists
+
+    def read_and_compress_logs(
+        self, predicted_quantum: PredictedFullQuantumModel, result: QuantumScanResult
+    ) -> bool:
+        predicted = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME][0]
+        provenance = ProvenanceDatasetModel.from_predicted(predicted, predicted_quantum.quantum_id)
+        ref = self.make_ref(predicted)
         try:
-            provenance.exception = ExceptionInfo._from_metadata(metadata[provenance.task_label]["failure"])
-        except LookupError:
+            content: ButlerLogRecords = self.qbb.get(ref)
+        except FileNotFoundError:
             pass
-        # TODO: add resource usage information
-        return self.compressor.compress(metadata.model_dump_json().encode())
+        else:
+            provenance.exists = True
+            result.log_content_bytes = self.compressor.compress(content.model_dump_json().encode())
+        result.log_provenance_bytes = self.compressor.compress(provenance.model_dump_json().encode())
+        return provenance.exists
 
     instance: ClassVar[ScannerWorker]
 
@@ -446,6 +520,8 @@ class ScannerWorker:
         serialized_pipeline_graph: SerializedPipelineGraph,
         dimension_data: SerializableDimensionData,
     ) -> None:
+        import lsst.pipe.base.tests.mocks  # noqa: F401
+
         pipeline_graph = serialized_pipeline_graph.deserialize(TaskImportMode.DO_NOT_IMPORT)
         butler_config = ButlerConfig(butler_uri)
         qbb = QuantumBackedButler.from_predicted(
@@ -459,9 +535,8 @@ class ScannerWorker:
             datastore_records={},
             dataset_types={node.name: node.dataset_type for node in pipeline_graph.dataset_types.values()},
         )
-        universe = cast(DimensionUniverse, pipeline_graph.universe)
         deserializers = [
-            DimensionRecordSetDeserializer.from_raw(universe[element_name], raw_records)
+            DimensionRecordSetDeserializer.from_raw(qbb.dimensions[element_name], raw_records)
             for element_name, raw_records in dimension_data.root.items()
         ]
         ScannerWorker.instance = ScannerWorker(
@@ -469,19 +544,45 @@ class ScannerWorker:
         )
 
 
-@dataclasses.dataclass
-class ScanDatasetRunner:
-    predicted: PredictedDatasetModel
-    producer: uuid.UUID
+class SequentialExecutor(concurrent.futures.Executor):
+    def submit[T, **P](
+        self, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs
+    ) -> concurrent.futures.Future[T]:
+        f = concurrent.futures.Future[T]()
+        try:
+            result = fn(*args, **kwargs)
+        except BaseException as e:
+            f.set_exception(e)
+        else:
+            f.set_result(result)
+        return f
 
-    def __call__(self) -> DatasetScanResult:
-        return ScannerWorker.instance.scan_dataset(self.predicted, self.producer)
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        pass
 
 
-class ScanQuantumRunner:
-    def __init__(self, predicted: PredictedFullQuantumModel) -> None:
-        self.predicted_json = predicted.model_dump_json()
+@click.group()
+def main() -> None:
+    pass
 
-    def __call__(self) -> QuantumScanResult:
-        predicted = PredictedFullQuantumModel.model_validate_json(self.predicted_json)
-        return ScannerWorker.instance.scan_quantum(predicted)
+
+@main.command()
+@click.argument("graph")
+@click.argument("butler")
+@click.argument("directory")
+@click.option("-j", "--jobs", default=1, type=int)
+def scan(
+    *,
+    graph: str,
+    butler: str,
+    directory: str,
+    jobs: int = 1,
+) -> None:
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(Scanner.scan(graph, butler, directory, n_processes=jobs))
+
+
+if __name__ == "__main__":
+    import lsst.pipe.base.tests.mocks  # noqa: F401
+
+    main()

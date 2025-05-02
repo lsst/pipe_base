@@ -420,9 +420,15 @@ class BaseGraph:
         import humanize
 
         if self.header.n_quanta != len(self.quantum_indices):
-            raise RuntimeError("Cannot save graph after partial read of quanta.")
+            raise RuntimeError(
+                f"Cannot save graph after partial read of quanta: expected {self.header.n_quanta}, "
+                f"got {len(self.quantum_indices)}."
+            )
         if self.header.n_datasets != len(self.dataset_indices):
-            raise RuntimeError("Cannot save graph after partial read of datasets.")
+            raise RuntimeError(
+                f"Cannot save graph after partial read of datasets: expected {self.header.n_datasets}, "
+                f"got {len(self.dataset_indices)}."
+            )
 
         uri = ResourcePath(uri)
         if zstandard is not None:
@@ -537,10 +543,10 @@ class PredictedGraph(BaseGraph):
     @property
     def quantum_xgraph(self) -> networkx.DiGraph:
         if self._quantum_xgraph is None:
-            with time_this(_LOG, "Building quantum-only networkx graph.", level=logging.INFO):
-                self._quantum_xgraph = networkx.DiGraph(self.quantum_edges.root)
-                for quantum_id, quantum_index in self.quantum_indices.items():
-                    self._quantum_xgraph.nodes[quantum_index]["id"] = quantum_id
+            self._quantum_xgraph = networkx.DiGraph(self.quantum_edges.root)
+            for quantum_id, quantum_index in self.quantum_indices.items():
+                if (node_state := self._quantum_xgraph.nodes.get(quantum_index)) is not None:
+                    node_state["id"] = quantum_id
         return self._quantum_xgraph
 
     @property
@@ -572,7 +578,6 @@ class PredictedGraph(BaseGraph):
                 for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
                     dimension_data_extractor.update(ref.dataId for ref in refs)
             result.thin_quanta.root[task_node.label] = []
-        result.header.n_quanta = len(result.quantum_indices)
         result.dimension_data = SerializableDimensionData.from_record_sets(
             dimension_data_extractor.records.values()
         )
@@ -586,12 +591,13 @@ class PredictedGraph(BaseGraph):
                 result.thin_quanta.root[full_quantum.task_label].append(
                     PredictedThinQuantumModel(quantum_index=quantum_index, data_id=full_quantum.data_id)
                 )
-        result.header.n_datasets = len(result.dataset_indices)
+        result.header.n_quanta = len(result.quantum_indices)
         for dataset_index, dataset_id in tqdm.tqdm(
-            enumerate(sorted(dataset_ids, key=attrgetter("int")), start=len(all_quanta)),
+            enumerate(sorted(dataset_ids, key=attrgetter("int")), start=result.header.n_quanta),
             "Setting dataset indices",
         ):
             result.dataset_indices[dataset_id] = dataset_index
+        result.header.n_datasets = len(result.dataset_indices)
         for a, b in tqdm.tqdm(quantum_graph.graph.edges, "Extracting quantum-only graph edges"):
             result.quantum_edges.root.append(
                 (result.quantum_indices[a.nodeId], result.quantum_indices[b.nodeId])
@@ -659,7 +665,7 @@ class PredictedGraph(BaseGraph):
                 with time_this(_LOG, "Reading dataset indices", level=logging.INFO):
                     with reader.dataset_address_reader() as dataset_address_reader:
                         dataset_addresses = dataset_address_reader.read_all_addresses()
-                    result.quantum_indices = {
+                    result.dataset_indices = {
                         dataset_id: address.index for dataset_id, address in dataset_addresses.items()
                     }
             with time_this(_LOG, "Reading addresses for full predicted quanta", level=logging.INFO):
@@ -758,42 +764,6 @@ class ProvenanceGraph(BaseGraph):
     heavy_addresses: dict[QuantumIndex, Address] = dataclasses.field(default_factory=dict)
     heavy_file: str | None = None
 
-    @classmethod
-    def from_predicted_graph(cls, predicted_graph: PredictedGraph) -> ProvenanceGraph:
-        if predicted_graph.header.n_quanta != len(predicted_graph.quantum_indices):
-            raise RuntimeError("Cannot construct provenance graph after partial read of quanta.")
-        if predicted_graph.header.n_datasets != len(predicted_graph.dataset_indices):
-            raise RuntimeError("Cannot construct provenance graph after partial read of datasets.")
-        result = cls(
-            header=predicted_graph.header,
-            pipeline_graph=predicted_graph.pipeline_graph,
-            bipartite_edges=predicted_graph.bipartite_edges,
-            quantum_indices=predicted_graph.quantum_indices,
-            dataset_indices=predicted_graph.dataset_indices,
-        )
-        for provenance_dataset in result.init_quanta.update_from_predicted(predicted_graph.init_quanta):
-            dataset_index = result.dataset_indices[provenance_dataset.dataset_id]
-            # setdefault keeps a producer's better entry from begin overwritten
-            # by a consumer's less-populated entry, as long as init_quanta is
-            # topologically sorted (as it should be at construction).
-            result.datasets.setdefault(dataset_index, provenance_dataset)
-        # We similarly need to iterate over runtime quanta in topological order
-        # in order to make sure the dataset entries we keep are the ones from
-        # the producing task.
-        for quantum_index in predicted_graph.ordered_quanta:
-            predicted_quantum = predicted_graph.full_quanta[quantum_index]
-            result.quanta[quantum_index] = ProvenanceQuantumModel.from_predicted(predicted_quantum)
-            for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
-                dataset_index = result.dataset_indices[predicted_dataset.dataset_id]
-                if dataset_index not in result.datasets:
-                    result.datasets[dataset_index] = ProvenanceDatasetModel.from_predicted(predicted_dataset)
-            for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-                dataset_index = result.dataset_indices[predicted_dataset.dataset_id]
-                result.datasets[dataset_index] = ProvenanceDatasetModel.from_predicted(
-                    predicted_dataset, predicted_quantum.quantum_id
-                )
-        return result
-
 
 @click.group()
 def main() -> None:
@@ -818,7 +788,7 @@ def rewrite(uri: str) -> None:
         predicted_graph = PredictedGraph.from_quantum_graph(qg)
     basename, _ = os.path.splitext(uri)
     with time_this(_LOG, msg="Writing predicted model to zip.", level=logging.INFO):
-        predicted_graph.write(f"{basename}-runtime.zip")
+        predicted_graph.write(f"{basename}-predicted.zip")
 
 
 @main.command()

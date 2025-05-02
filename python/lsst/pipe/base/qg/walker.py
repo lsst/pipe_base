@@ -58,17 +58,19 @@ class GraphWalker[_T]:
     def __init__(self, xgraph: networkx.DiGraph | networkx.MultiDiGraph):
         self._xgraph = xgraph
         self._ready: set[_T] = set(next(iter(networkx.dag.topological_generations(self._xgraph)), []))
-        self._active: frozenset[_T] = frozenset()
+        self._active: set[_T] = set()
+        self._incomplete: set[_T] = set(self._xgraph)
 
     def __iter__(self) -> Self:
         return self
 
     def __next__(self) -> frozenset[_T]:
-        if not self._xgraph:
+        if not self._incomplete:
             raise StopIteration()
-        self._active = frozenset(self._ready)
+        new_active = frozenset(self._ready)
+        self._active.update(new_active)
         self._ready.clear()
-        return self._active
+        return new_active
 
     def finish(self, key: _T) -> None:
         """Mark a node as successfully processed, unblocking (at least in part)
@@ -79,12 +81,13 @@ class GraphWalker[_T]:
         key
             NetworkX key of the node to mark finished.
         """
+        self._active.remove(key)
+        self._incomplete.remove(key)
         successors = list(self._xgraph.successors(key))
-        self._xgraph.remove_node(key)
         for successor in successors:
+            assert successor not in self._active
             if all(
-                predecessor not in self._active and predecessor not in self._ready
-                for predecessor in self._xgraph.predecessors(successor)
+                predecessor not in self._incomplete for predecessor in self._xgraph.predecessors(successor)
             ):
                 self._ready.add(successor)
 
@@ -103,7 +106,10 @@ class GraphWalker[_T]:
             NetworkX keys of nodes that were recursive descendants of the
             failed node, and will hence never be yielded by the iterator.
         """
+        self._active.remove(key)
+        self._incomplete.remove(key)
         descendants = list(networkx.dag.descendants(self._xgraph, key))
         self._xgraph.remove_node(key)
         self._xgraph.remove_nodes_from(descendants)
+        self._incomplete.difference_update(descendants)
         return descendants
