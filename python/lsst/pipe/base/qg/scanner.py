@@ -121,12 +121,8 @@ class Scanner:
                 executor = concurrent.futures.ProcessPoolExecutor(
                     max_workers=n_processes - 1,
                     mp_context=multiprocessing.get_context("spawn"),
-                    initializer=ScannerWorker.initialize,
-                    initargs=(
-                        butler_uri,
-                        SerializedPipelineGraph.serialize(predicted_graph.pipeline_graph),
-                        predicted_graph.dimension_data,
-                    ),
+                    initializer=ScannerWorker.initialize_from_files,
+                    initargs=(butler_uri, predicted_graph_uri),
                 )
             else:
                 executor = SequentialExecutor()
@@ -513,6 +509,45 @@ class ScannerWorker:
         return provenance.exists
 
     instance: ClassVar[ScannerWorker]
+
+    @staticmethod
+    def initialize_from_files(
+        butler_uri: ResourcePathExpression,
+        predicted_graph_uri: ResourcePathExpression,
+    ) -> None:
+        import lsst.pipe.base.tests.mocks  # noqa: F401
+
+        predicted_graph = PredictedGraph.read_zip(
+            predicted_graph_uri,
+            read_thin_quanta=False,
+            read_bipartite_edges=False,
+            read_dimension_data=True,
+            full_quanta=[],
+            read_quantum_edges=False,
+            read_quantum_indices=False,
+            read_dataset_indices=False,
+        )
+        butler_config = ButlerConfig(butler_uri)
+        qbb = QuantumBackedButler.from_predicted(
+            butler_config,
+            predicted_inputs=[],
+            predicted_outputs=[],
+            dimensions=cast(DimensionUniverse, predicted_graph.pipeline_graph.universe),
+            # We don't need the datastore records in the QG because we're
+            # only going to read metadata and logs, and those are never
+            # overall inputs.
+            datastore_records={},
+            dataset_types={
+                node.name: node.dataset_type for node in predicted_graph.pipeline_graph.dataset_types.values()
+            },
+        )
+        deserializers = [
+            DimensionRecordSetDeserializer.from_raw(qbb.dimensions[element_name], raw_records)
+            for element_name, raw_records in predicted_graph.dimension_data.root.items()
+        ]
+        ScannerWorker.instance = ScannerWorker(
+            qbb, predicted_graph.pipeline_graph, DimensionDataAttacher(deserializers=deserializers)
+        )
 
     @staticmethod
     def initialize(
