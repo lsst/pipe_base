@@ -60,12 +60,13 @@ class DatasetTypeNode:
     """
 
     dataset_type: DatasetType
-    """Common definition of this dataset type for the graph.
+    """Common definition of this dataset type for the graph
+    (`~lsst.daf.butler.DatasetType`).
     """
 
     is_initial_query_constraint: bool
     """Whether this dataset should be included as a constraint in the initial
-    query for data IDs in QuantumGraph generation.
+    query for data IDs in QuantumGraph generation (`bool`).
 
     This is only `True` for dataset types that are overall regular inputs, and
     only if none of those input connections had ``deferQueryConstraint=True``.
@@ -73,14 +74,16 @@ class DatasetTypeNode:
 
     is_prerequisite: bool
     """Whether this dataset type is a prerequisite input that must exist in
-    the Registry before graph creation.
+    the Registry before graph creation (`bool`).
     """
 
     producing_edge: WriteEdge | None
-    """The edge to the task that produces this dataset type."""
+    """The edge to the task that produces this dataset type
+    (`lsst.pipe.base.pipeline_graph.WriteEdge` or `None`)."""
 
     consuming_edges: Collection[ReadEdge]
-    """The edges to tasks that consume this dataset type."""
+    """The edges to tasks that consume this dataset type
+    (collection [`lsst.pipe.base.pipeline_graph.ReadEdge`])."""
 
     @classmethod
     def _from_edges(
@@ -184,7 +187,7 @@ class DatasetTypeNode:
 
     @property
     def name(self) -> str:
-        """Name of the dataset type.
+        """Name of the dataset type (`str`).
 
         This is always the parent dataset type, never that of a component.
         """
@@ -193,29 +196,33 @@ class DatasetTypeNode:
     @property
     def key(self) -> NodeKey:
         """Key that identifies this dataset type in internal and exported
-        networkx graphs.
+        networkx graphs (`~lsst.pipe.base.pipeline_graph.NodeKey`).
         """
         return NodeKey(NodeType.DATASET_TYPE, self.dataset_type.name)
 
     @property
     def dimensions(self) -> DimensionGroup:
-        """Dimensions of the dataset type."""
+        """Dimensions of the dataset type
+        (`~lsst.daf.butler.DimensionGroup`).
+        """
         return self.dataset_type.dimensions
 
     @property
     def storage_class_name(self) -> str:
-        """String name of the storage class for this dataset type."""
+        """String name of the storage class for this dataset type (`str`)."""
         return self.dataset_type.storageClass_name
 
     @property
     def storage_class(self) -> StorageClass:
-        """Storage class for this dataset type."""
+        """Storage class for this dataset type
+        (`~lsst.daf.butler.StorageClass`).
+        """
         return self.dataset_type.storageClass
 
     @property
     def is_calibration(self) -> bool:
         """Whether this dataset type can be included in
-        `~lsst.daf.butler.CollectionType.CALIBRATION` collections.
+        `~lsst.daf.butler.CollectionType.CALIBRATION` collections (`bool`).
         """
         return self.dataset_type.isCalibration()
 
