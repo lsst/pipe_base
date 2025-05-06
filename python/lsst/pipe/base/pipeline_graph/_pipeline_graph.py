@@ -1546,7 +1546,7 @@ class PipelineGraph:
 
             - the parent dataset type name;
             - the resolved `DatasetTypeNode`, or `None` if the dataset type has
-            - not been resolved.
+              not been resolved.
         """
         for generation in networkx.algorithms.dag.topological_generations(self._xgraph):
             key: NodeKey
