@@ -42,12 +42,16 @@ __all__ = (
 import concurrent.futures
 import dataclasses
 import datetime
+import io
 import itertools
 import logging
+import sys
 import textwrap
 import threading
 import uuid
+from collections import defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
+from contextlib import contextmanager
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, cast
 
@@ -934,7 +938,33 @@ class Summary(pydantic.BaseModel):
                 result_dataset_summary._add_data_id_group(dataset_type_summary)
         return result
 
-    def pprint(self, brief: bool = False, datasets: bool = True) -> None:
+    @contextmanager
+    def tty_buffer(self) -> Iterator[io.StringIO]:
+        """Context manager that temporarily redirects sys.stdout to a
+        teletypewriter-like buffer. Useful for capturing output that formats
+        differently when writing to a TTY.
+        """
+
+        class MockTTY(io.StringIO):
+            # Pretend to be a terminal to capture full TTY output.
+            def isatty(self) -> bool:
+                return True
+
+        orig = sys.stdout
+        buf = MockTTY()
+        sys.stdout = buf
+        try:
+            yield buf  # Use buffer inside `with` block.
+        finally:
+            sys.stdout = orig  # Restore original stdout.
+
+    def pprint(
+        self,
+        brief: bool = False,
+        datasets: bool = True,
+        show_exception_diagnostics: bool = False,
+        butler: Butler | None = None,
+    ) -> None:
         """Print this summary to stdout, as a series of tables.
 
         Parameters
@@ -948,6 +978,9 @@ class Summary(pydantic.BaseModel):
             includes a summary table of dataset counts for various status and
             (if ``brief`` is `True`) a table with per-data ID information for
             each unsuccessful or cursed dataset.
+        butler : `lsst.daf.butler.Butler`, optional
+            The butler used to create this summary. This is only used to get
+            exposure dimension records for the exception diagnostics.
         """
         self.make_quantum_table().pprint_all()
         print("")
@@ -957,6 +990,24 @@ class Summary(pydantic.BaseModel):
         print("")
         if exception_table := self.make_exception_table():
             exception_table.pprint_all()
+            print("")
+        if show_exception_diagnostics:
+            exception_diagnostics_table = self.make_exception_diagnostics_table(
+                butler, max_message_width=45, shorten_type_name=True
+            )
+            with self.tty_buffer() as buffer:
+                # Use pprint() to trim long tables; pprint_all() may flood the
+                # screen in those cases.
+                exception_diagnostics_table.pprint()
+                last_line = buffer.getvalue().splitlines()[-1]
+            # Print the table from the buffer.
+            print(buffer.getvalue())
+            if "Length =" in last_line:
+                # The table was too long to print, so we had to truncate it.
+                print(
+                    "▲ Note: The exception diagnostics table above is truncated. "
+                    "Use --exception-diagnostics-filename to save the complete table."
+                )
             print("")
         if datasets:
             self.make_dataset_table().pprint_all()
@@ -1074,6 +1125,110 @@ class Summary(pydantic.BaseModel):
             for type_name, exception_summaries in task_summary.exceptions.items():
                 rows.append({"Task": task_label, "Exception": type_name, "Count": len(exception_summaries)})
         return astropy.table.Table(rows)
+
+    def make_exception_diagnostics_table(
+        self,
+        butler: Butler | None = None,
+        add_exception_msg: bool = True,
+        max_message_width: int | None = None,
+        shorten_type_name: bool = False,
+    ) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` showing exceptions grouped by
+        data ID.
+
+        Each row represents one data ID that encountered an exception, along
+        with the exception type under the column named after the task that
+        raised it. If a Butler is provided, the table will also include a
+        subset of exposure-related metadata pulled from the exposure dimension
+        records. The exception message can optionaly be included in the table.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`, optional
+            Butler instance used to fetch exposure records. If not provided,
+            exposure dimension records will not be included in the table.
+        add_exception_msg : `bool`, optional
+            If `True`, include the exception message in the table.
+        max_message_width : `int`, optional
+            Maximum width for storing exception messages in the output table.
+            Longer messages will be truncated. If not provided, messages will
+            be included in full without truncation.
+        shorten_type_name : `bool`, optional
+            If `True`, shorten the exception type name by removing the
+            package name. This is useful for making the table more readable
+            when the package name is long or not relevant to the user.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            Table with one row per data ID and columns for exception types (by
+            task), and optionally, exposure dimension records and exception
+            messages.
+        """
+        add_exposure_records = True
+        needed_exposure_records = ["day_obs", "physical_filter", "exposure_time", "target_name"]
+
+        # Preload all exposure dimension records up front for faster O(1)
+        # lookup later. Querying per data ID in the loop is painfully slow.
+        if butler:
+            exposure_record_lookup = {
+                d.dataId["exposure"]: d for d in butler.query_dimension_records("exposure", explain=False)
+            }
+        else:
+            exposure_record_lookup = {}
+            add_exposure_records = False
+
+        if butler and not exposure_record_lookup:
+            _LOG.warning("No exposure records found in the butler; they will not be included in the table.")
+            add_exposure_records = False
+
+        rows: defaultdict[tuple, defaultdict[str, str]] = defaultdict(lambda: defaultdict(str))
+
+        # Loop over all tasks and exceptions, and associate them with data IDs.
+        for task_label, task_summary in self.tasks.items():
+            for type_name, exceptions in task_summary.exceptions.items():
+                for exception in exceptions:
+                    data_id = exception.data_id
+                    key = tuple(sorted(data_id.items()))  # Hashable and stable
+                    assert len(rows[key]) == 0, f"Multiple exceptions for one data ID: {key}"
+                    assert rows[key]["Exception"] == "", f"Duplicate entry for data ID {key} in {task_label}"
+                    if shorten_type_name:
+                        # Trim off the package name from the exception type for
+                        # brevity.
+                        type_name = type_name.rsplit(".", maxsplit=1)[-1]
+                    rows[key]["Task"] = task_label
+                    rows[key]["Exception"] = type_name
+                    if add_exception_msg:
+                        msg = exception.exception.message
+                        if max_message_width and len(msg) > max_message_width:
+                            msg = textwrap.shorten(msg, max_message_width)
+                        rows[key]["Exception Message"] = msg
+                    if add_exposure_records:
+                        exposure_record = exposure_record_lookup[data_id["exposure"]]
+                        for k in needed_exposure_records:
+                            rows[key][k] = getattr(exposure_record, k)
+
+        # Extract all unique columns.
+        all_columns = {col for r in rows.values() for col in r}
+        table_rows = []
+
+        # Loop over all rows and add them to the table.
+        for key, col_counts in rows.items():
+            # Add data ID values as columns at the start of the row.
+            row = dict(key)
+            # Add exposure records next, if requested.
+            if add_exposure_records:
+                for col in needed_exposure_records:
+                    row[col] = col_counts.get(col, "-")
+            # Add all other columns last.
+            for col in all_columns - set(needed_exposure_records) - {"Exception Message"}:
+                row[col] = col_counts.get(col, "-")
+            # Add the exception message if requested.
+            if add_exception_msg:
+                row["Exception Message"] = col_counts.get("Exception Message", "-")
+            table_rows.append(row)
+
+        return astropy.table.Table(table_rows)
 
     def make_bad_quantum_tables(self, max_message_width: int = 80) -> dict[str, astropy.table.Table]:
         """Construct an `astropy.table.Table` with per-data-ID information
@@ -1295,7 +1450,7 @@ class QuantumProvenanceGraph:
         ----------
         butler : `lsst.daf.butler.Butler`, optional
             Ignored; accepted for backwards compatibility.
-        do_store_logs : `bool`
+        do_store_logs : `bool`, optional
             Store the logs in the summary dictionary.
         n_cores : `int`, optional
 
