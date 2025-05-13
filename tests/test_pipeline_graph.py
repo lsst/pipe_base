@@ -1205,6 +1205,15 @@ class PipelineGraphTestCase(unittest.TestCase):
             dataset_types=True,
         )
 
+    def test_no_outputs(self) -> None:
+        """Test that a task with no output connections is dropped."""
+        # New task c consumes datasets produced by upstream tasks but produces
+        # nothing.
+        c_config = DynamicTestPipelineTaskConfig()
+        c_config.inputs["input3"] = DynamicTestPipelineTaskConfig(dataset_type_name="intermediate_1")
+        self.graph.add_task("c", DynamicTestPipelineTask, c_config)
+        self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
+
     def test_select(self) -> None:
         """Test PipelineGraph.select_tasks."""
         # New task c is downstream of a and parallel (unrelated) to b.
