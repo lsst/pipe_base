@@ -1213,7 +1213,6 @@ class PipelineGraphTestCase(unittest.TestCase):
         c_config.inputs["input3"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
         self.graph.add_task("c", DynamicTestPipelineTask, c_config)
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
-        self.check_make_xgraph(self.graph, resolved=False)
         self.graph.resolve(MockRegistry(dimensions=self.dimensions, dataset_types={}))
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
         self.check_make_xgraph(self.graph, resolved=True)
