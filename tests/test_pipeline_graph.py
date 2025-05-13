@@ -1210,7 +1210,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         # New task c consumes datasets produced by upstream tasks but produces
         # nothing.
         c_config = DynamicTestPipelineTaskConfig()
-        c_config.inputs["input3"] = DynamicTestPipelineTaskConfig(dataset_type_name="intermediate_1")
+        c_config.inputs["input3"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
         self.graph.add_task("c", DynamicTestPipelineTask, c_config)
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
 
