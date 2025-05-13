@@ -1215,7 +1215,24 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
         self.graph.resolve(MockRegistry(dimensions=self.dimensions, dataset_types={}))
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
-        self.check_make_xgraph(self.graph, resolved=True)
+        with self.assertRaises(AssertionError):
+            self.check_make_xgraph(self.graph, resolved=True)
+        self.check_visualization(
+            self.graph,
+            """
+            ○  input_1: {} _mock_StructuredDataDict
+            │
+            ■  a: {} lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+            │
+            ○  intermediate_1: {} _mock_StructuredDataDict
+            │
+            ■  b: {} lsst.pipe.base.tests.mocks.DynamicTestPipelineTask
+            │
+            ○  output_1: {} _mock_StructuredDataDict
+            """,
+            task_classes="full",
+            dataset_types=True,
+        )
 
     def test_select(self) -> None:
         """Test PipelineGraph.select_tasks."""
