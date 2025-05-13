@@ -1213,6 +1213,8 @@ class PipelineGraphTestCase(unittest.TestCase):
         c_config.inputs["input3"] = DynamicConnectionConfig(dataset_type_name="intermediate_1")
         self.graph.add_task("c", DynamicTestPipelineTask, c_config)
         self.assertEqual(self.graph.tasks.keys(), {"a", "b", "c"})
+        self.graph.resolve(MockRegistry(dimensions=self.dimensions, dataset_types={}))
+        self.assertEqual(self.graph.tasks.keys(), {"a", "b"})
 
     def test_select(self) -> None:
         """Test PipelineGraph.select_tasks."""
