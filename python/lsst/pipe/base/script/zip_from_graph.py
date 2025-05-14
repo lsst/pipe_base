@@ -28,12 +28,12 @@
 __all__ = ["zip_from_graph"]
 
 import logging
-import re
 
 from lsst.daf.butler import QuantumBackedButler
-from lsst.daf.butler.utils import globToRegex
 from lsst.pipe.base import QuantumGraph
 from lsst.resources import ResourcePath
+
+from .utils import filter_by_dataset_type_glob
 
 _LOG = logging.getLogger(__name__)
 
@@ -83,22 +83,8 @@ def zip_from_graph(
     )
 
     # Filter the refs based on requested dataset types.
-    regexes = globToRegex(dataset_type)
-    if regexes is ...:
-        filtered_refs = output_refs
-    else:
+    filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
 
-        def _matches(dataset_type_name: str, regexes: list[str | re.Pattern]) -> bool:
-            for regex in regexes:
-                if isinstance(regex, str):
-                    if dataset_type_name == regex:
-                        return True
-                elif regex.search(dataset_type_name):
-                    return True
-            return False
-
-        filtered_refs = {ref for ref in output_refs if _matches(ref.datasetType.name, regexes)}
-
-    _LOG.info("Retrieving artifacts for %d datasets and storing in Zip file.", len(output_refs))
+    _LOG.info("Retrieving artifacts for %d datasets and storing in Zip file.", len(filtered_refs))
     zip = qbb.retrieve_artifacts_zip(filtered_refs, dest)
     return zip

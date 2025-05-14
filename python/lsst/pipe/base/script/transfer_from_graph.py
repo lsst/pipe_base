@@ -31,6 +31,8 @@ from lsst.daf.butler import Butler, CollectionType, QuantumBackedButler, Registr
 from lsst.daf.butler.registry import MissingCollectionError
 from lsst.pipe.base import QuantumGraph
 
+from .utils import filter_by_dataset_type_glob
+
 
 def transfer_from_graph(
     graph: str,
@@ -39,6 +41,7 @@ def transfer_from_graph(
     transfer_dimensions: bool,
     update_output_chain: bool,
     dry_run: bool,
+    dataset_type: tuple[str, ...],
 ) -> int:
     """Transfer output datasets from quantum graph to dest.
 
@@ -60,6 +63,9 @@ def transfer_from_graph(
         name as a the first collection in the chain.
     dry_run : `bool`
         Run the transfer without updating the destination butler.
+    dataset_type : `tuple` of `str`
+        Dataset type names. An empty tuple implies all dataset types.
+        Can include globs.
 
     Returns
     -------
@@ -84,11 +90,14 @@ def transfer_from_graph(
         dataset_types=dataset_types,
     )
 
+    # Filter the refs based on requested dataset types.
+    filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
+
     dest_butler = Butler.from_config(dest, writeable=True)
 
     transferred = dest_butler.transfer_from(
         qbb,
-        output_refs,
+        filtered_refs,
         transfer="auto",
         register_dataset_types=register_dataset_types,
         transfer_dimensions=transfer_dimensions,
