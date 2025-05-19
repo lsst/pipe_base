@@ -90,16 +90,16 @@ class Edge(ABC):
     """
 
     task_key: NodeKey
-    """Task part of the key for this edge in networkx graphs."""
+    """Task part of the key for this edge in networkx graphs (`NodeKey`)."""
 
     dataset_type_key: NodeKey
-    """Task part of the key for this edge in networkx graphs."""
+    """Task part of the key for this edge in networkx graphs (`NodeKey`)."""
 
     connection_name: str
-    """Name used by the task to refer to this dataset type."""
+    """Name used by the task to refer to this dataset type (`str`)."""
 
     storage_class_name: str
-    """Storage class expected by this task.
+    """Storage class expected by this task (`str`).
 
     If `ReadEdge.component` is not `None`, this is the component storage class,
     not the parent storage class.
@@ -111,7 +111,7 @@ class Edge(ABC):
     """
 
     raw_dimensions: frozenset[str]
-    """Raw dimensions in the task declaration.
+    """Raw dimensions in the task declaration (`frozenset` [`str`]).
 
     This can only be used safely for partial comparisons: two edges with the
     same ``raw_dimensions`` (and the same parent dataset type name) always have
@@ -128,12 +128,12 @@ class Edge(ABC):
 
     @property
     def task_label(self) -> str:
-        """Label of the task."""
+        """Label of the task (`str`)."""
         return str(self.task_key)
 
     @property
     def parent_dataset_type_name(self) -> str:
-        """Name of the parent dataset type.
+        """Name of the parent dataset type (`str`).
 
         All dataset type nodes in a pipeline graph are for parent dataset
         types; components are represented by additional `ReadEdge` state.
@@ -154,7 +154,9 @@ class Edge(ABC):
     @property
     def key(self) -> tuple[NodeKey, NodeKey, str]:
         """Ordered tuple of node keys and connection name that uniquely
-        identifies this edge in a pipeline graph.
+        identifies this edge in a pipeline graph (`NodeKey`, `NodeKey`, `str`).
+
+        The nodes are ordered in the same sense as for `nodes`.
         """
         return self.nodes + (self.connection_name,)
 
@@ -163,7 +165,7 @@ class Edge(ABC):
 
     @property
     def dataset_type_name(self) -> str:
-        """Dataset type name seen by the task.
+        """Dataset type name seen by the task (`str`).
 
         This defaults to the parent dataset type name, which is appropriate
         for all writes and most reads.
@@ -355,7 +357,7 @@ class ReadEdge(Edge):
 
     component: str | None
     """Component to add to `parent_dataset_type_name` to form the dataset type
-    name seen by this task.
+    name seen by this task (`str` or `None`).
     """
 
     is_prerequisite: bool
@@ -378,7 +380,7 @@ class ReadEdge(Edge):
 
     @property
     def dataset_type_name(self) -> str:
-        """Complete dataset type name, as seen by the task."""
+        """Complete dataset type name, as seen by the task (`str`)."""
         if self.component is not None:
             return f"{self.parent_dataset_type_name}.{self.component}"
         return self.parent_dataset_type_name
