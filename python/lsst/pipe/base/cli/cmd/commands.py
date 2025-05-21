@@ -61,6 +61,7 @@ def register_instrument(*args: Any, **kwargs: Any) -> None:
 @click.option(
     "--dry-run", is_flag=True, default=False, help="Run the transfer but do not update the destination butler"
 )
+@dataset_type_option(help="Subset of dataset types to transfer from graph.")
 @options_file_option()
 def transfer_from_graph(**kwargs: Any) -> None:
     """Transfer datasets from a quantum graph to a destination butler.
