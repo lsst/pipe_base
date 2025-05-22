@@ -48,7 +48,7 @@ from lsst.daf.butler import (
     DimensionRecordSet,
     MissingDatasetTypeError,
 )
-from lsst.utils.logging import LsstLogAdapter
+from lsst.utils.logging import LsstLogAdapter, PeriodicLogger
 from lsst.utils.timer import timeMethod
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
@@ -215,17 +215,26 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # Allow duplicates from common skypix overlaps to make some queries
             # run faster.
             query._allow_duplicate_overlaps = True
-            self.log.info("Iterating over query results to associate quanta with datasets.")
             # Iterate over query results, populating data IDs for datasets,
             # quanta, and edges.  We populate only the first level of the tree
             # in the first pass, so we can be done with the query results as
             # quickly as possible in case that holds a connection/cursor open.
             n_rows = 0
+            progress_logger: PeriodicLogger | None = None
             for common_data_id in query.data_ids(tree.all_dimensions):
+                if progress_logger is None:
+                    # There can be a long wait between submitting the query and
+                    # returning the first row, so we want to make sure we log
+                    # when we get it; note that PeriodicLogger is not going to
+                    # do that for us, as it waits for its interval _after_ the
+                    # first log is seen.
+                    self.log.info("Iterating over data ID query results.")
+                    progress_logger = PeriodicLogger(self.log)
                 for branch_dimensions, branch in tree.trunk_branches.items():
                     data_id = common_data_id.subset(branch_dimensions)
                     branch.data_ids.add(data_id)
                 n_rows += 1
+                progress_logger.log("Iterating over data ID query results: %d rows processed so far.", n_rows)
             if n_rows == 0:
                 # A single multiline log plays better with log aggregators like
                 # Loki.
@@ -242,7 +251,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # If an exception was raised, write a partial.
                     self.log.error("\n".join(lines))
                 return
-        self.log.verbose("Processed %s initial data ID query rows.", n_rows)
+        self.log.verbose("Done iterating over query results: %d rows processed in total.", n_rows)
         # We now recursively populate the data IDs of the rest of the tree.
         tree.project_data_ids(self.log)
 
