@@ -227,7 +227,7 @@ class MockDataset(pydantic.BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
-        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
             """See `pydantic.BaseModel.model_construct`."""
             return super().model_construct(*args, **kwargs)
 
@@ -266,7 +266,7 @@ class ConvertedUnmockedDataset(pydantic.BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
-        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
             """See `pydantic.BaseModel.model_construct`."""
             return super().model_construct(*args, **kwargs)
 
@@ -316,7 +316,7 @@ class MockDatasetQuantum(pydantic.BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
-        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
             """See `pydantic.BaseModel.model_construct`."""
             return super().model_construct(*args, **kwargs)
 
