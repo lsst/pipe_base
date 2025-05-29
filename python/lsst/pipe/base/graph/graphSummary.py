@@ -66,7 +66,7 @@ class QgraphTaskSummary(pydantic.BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
-        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
             """See `pydantic.BaseModel.model_construct`."""
             return super().model_construct(*args, **kwargs)
 
@@ -121,7 +121,7 @@ class QgraphSummary(pydantic.BaseModel):
             return super().model_copy(*args, **kwargs)
 
         @classmethod
-        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
             """See `pydantic.BaseModel.model_construct`."""
             return super().model_construct(*args, **kwargs)
 
