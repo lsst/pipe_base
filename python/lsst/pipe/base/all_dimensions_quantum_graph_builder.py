@@ -133,13 +133,13 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
         self._query_for_data_ids(tree)
+        dimension_records = self._fetch_most_dimension_records(tree)
         skeleton = self._make_subgraph_skeleton(tree)
         if not skeleton.has_any_quanta:
             # QG is going to be empty; exit early not just for efficiency, but
             # also so downstream code doesn't have to guard against this case.
             return skeleton
         self._find_followup_datasets(tree, skeleton)
-        dimension_records = self._fetch_most_dimension_records(tree)
         self._attach_dimension_records(skeleton, dimension_records)
         return skeleton
 
@@ -311,7 +311,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
                 skeleton.set_output_in_the_way(ref)
         for dimensions, branch in tree.branches_by_dimensions.items():
-            if not branch.has_followup_queries:
+            if not branch.dataset_types and not branch.tasks:
                 continue
             if not branch.data_ids:
                 continue
@@ -457,9 +457,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             finder.dataset_type_node.name,
                             task_node.label,
                         )
-                if not branch.record_elements:
-                    # Delete data ID sets we don't need anymore.
-                    del branch.data_ids
+                # Delete data ID sets we don't need anymore to save memory.
+                del branch.data_ids
 
     @timeMethod
     def _fetch_most_dimension_records(self, tree: _DimensionGroupTree) -> list[DimensionRecordSet]:
@@ -486,18 +485,15 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         self.log.verbose("Performing follow-up queries for dimension records.")
         result: list[DimensionRecordSet] = []
         for branch in tree.branches_by_dimensions.values():
-            if not branch.record_elements:
+            if not branch.dimension_records:
                 continue
             if not branch.data_ids:
                 continue
             with self.butler.query() as butler_query:
                 butler_query = butler_query.join_data_coordinates(branch.data_ids)
-                for element in branch.record_elements:
-                    result.append(
-                        DimensionRecordSet(
-                            element, butler_query.dimension_records(element), universe=self.universe
-                        )
-                    )
+                for record_set in branch.dimension_records:
+                    record_set.update(butler_query.dimension_records(record_set.element.name))
+                    result.append(record_set)
         return result
 
     @timeMethod
@@ -576,10 +572,8 @@ class _DimensionGroupBranch:
     dataset type name.
     """
 
-    record_elements: list[str] = dataclasses.field(default_factory=list)
-    """The names of dimension elements whose records should be looked up via
-    these dimensions.
-    """
+    dimension_records: list[DimensionRecordSet] = dataclasses.field(default_factory=list)
+    """Sets of dimension records looked up with these dimensions."""
 
     data_ids: set[DataCoordinate] = dataclasses.field(default_factory=set)
     """All data IDs with these dimensions seen in the QuantumGraph."""
@@ -610,13 +604,6 @@ class _DimensionGroupBranch:
     edge in `input_edges` or `output_edges`.
     """
 
-    @property
-    def has_followup_queries(self) -> bool:
-        """Whether we will need to perform follow-up queries with these
-        dimensions.
-        """
-        return bool(self.tasks or self.dataset_types or self.record_elements)
-
     @staticmethod
     def populate_record_elements(
         all_dimensions: DimensionGroup, branches: dict[DimensionGroup, _DimensionGroupBranch]
@@ -636,10 +623,11 @@ class _DimensionGroupBranch:
         """
         for element_name in all_dimensions.elements:
             element = all_dimensions.universe[element_name]
+            record_set = DimensionRecordSet(element_name, universe=all_dimensions.universe)
             if element.minimal_group in branches:
-                branches[element.minimal_group].record_elements.append(element_name)
+                branches[element.minimal_group].dimension_records.append(record_set)
             else:
-                branches[element.minimal_group] = _DimensionGroupBranch(record_elements=[element_name])
+                branches[element.minimal_group] = _DimensionGroupBranch(dimension_records=[record_set])
 
     @staticmethod
     def populate_edges(
@@ -813,7 +801,7 @@ class _DimensionGroupBranch:
                 skeleton.add_input_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
             for task_label, dataset_type_name in self.output_edges:
                 skeleton.add_output_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
-        if not self.has_followup_queries:
+        if not self.dataset_types and not self.tasks:
             # Delete data IDs we don't need anymore to save memory.
             del self.data_ids
 
