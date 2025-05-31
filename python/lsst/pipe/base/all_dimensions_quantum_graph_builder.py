@@ -468,8 +468,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
         Parameters
         ----------
-        query : `_AllDimensionsQuery`
-            Object representing the materialized sub-pipeline data ID query.
+        tree : `_DimensionGroupTree`
+            Tree with dimension group branches that holds subgraph-specific
+            state for this builder.
 
         Returns
         -------
