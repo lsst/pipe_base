@@ -35,7 +35,7 @@ __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
 import astropy.table
@@ -134,6 +134,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # be the same as or a dimension-subset of another.  This is an
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
+        tree.pprint(printer=self.log.debug)
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
         skeleton = self._make_subgraph_skeleton(tree)
@@ -142,7 +143,6 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # also so downstream code doesn't have to guard against this case.
             return skeleton
         self._find_followup_datasets(tree, skeleton)
-        dimension_records = self._fetch_most_dimension_records(tree)
         self._attach_dimension_records(skeleton, dimension_records)
         return skeleton
 
@@ -241,7 +241,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # first log is seen.
                     self.log.info("Iterating over data ID query results.")
                     progress_logger = PeriodicLogger(self.log)
-                for branch_dimensions, branch in tree.trunk_branches.items():
+                for branch_dimensions, branch in tree.queryable_branches.items():
                     data_id = common_data_id.subset(branch_dimensions)
                     branch.data_ids.add(data_id)
                 n_rows += 1
@@ -283,13 +283,20 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Preliminary quantum graph.
         """
         skeleton = QuantumGraphSkeleton(tree.subgraph.tasks)
-        for branch_dimensions, branch in tree.trunk_branches.items():
+        for branch_dimensions, branch in tree.queryable_branches.items():
             self.log.verbose(
-                "Adding nodes and edges for %s %s data ID(s).",
+                "Adding nodes for %s %s data ID(s).",
                 len(branch.data_ids),
                 branch_dimensions,
             )
-            branch.update_skeleton(skeleton, self.log)
+            branch.update_skeleton_nodes(skeleton, self.log)
+        for branch_dimensions, branch in tree.queryable_branches.items():
+            self.log.verbose(
+                "Adding edges for %s %s data ID(s).",
+                len(branch.data_ids),
+                branch_dimensions,
+            )
+            branch.update_skeleton_edges(skeleton, self.log)
         n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in tree.subgraph.tasks)
         self.log.info(
             "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges.",
@@ -603,18 +610,10 @@ class _DimensionGroupBranch:
     type dimensions.
     """
 
-    projection_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
+    branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
     """Child branches whose dimensions are strict subsets of this branch's
     dimensions, populated by projecting this branch's set of data IDs (i.e.
     remove a dimension, then deduplicate).
-    """
-
-    overlap_branches: dict[DimensionGroup, SkyPixScalingDataIdGenerator | OverlapDataIdGenerator] = (
-        dataclasses.field(default_factory=dict)
-    )
-    """Child branches whose dimensions are strict supersets of this branch's
-    dimensions, populated by generating skypix envelopes of the parent data
-    IDs.
     """
 
     twigs: defaultdict[DimensionGroup, _DimensionGroupTwig] = dataclasses.field(
@@ -624,17 +623,15 @@ class _DimensionGroupBranch:
     edge in `input_edges` or `output_edges`.
     """
 
-    data_id_generator: OverlapDataIdGenerator | SkyPixScalingDataIdGenerator | None = None
-
     @property
     def has_followup_queries(self) -> bool:
         """Whether we will need to perform follow-up queries with these
         dimensions.
         """
-        return bool(self.tasks or self.dataset_types or self.record_elements)
+        return bool(self.tasks or self.dataset_types or self.dimension_records)
 
     @staticmethod
-    def populate_record_elements(
+    def make_dimension_record_branches(
         all_dimensions: DimensionGroup, branches: dict[DimensionGroup, _DimensionGroupBranch]
     ) -> None:
         """Ensure we have branches for all dimension elements we'll need to
@@ -659,7 +656,7 @@ class _DimensionGroupBranch:
                 branches[element.minimal_group] = _DimensionGroupBranch(dimension_records=record_set)
 
     @staticmethod
-    def populate_edges(
+    def make_edge_branches(
         pipeline_graph: PipelineGraph, branches: dict[DimensionGroup, _DimensionGroupBranch]
     ) -> None:
         """Ensure we have branches for all edges in the graph.
@@ -698,27 +695,16 @@ class _DimensionGroupBranch:
                 branch = update_edge_branch(task_node, dataset_type_node)
                 branch.output_edges.append((task_node.label, dataset_type_node.name))
 
-    @staticmethod
-    def populate_overlap_branches(
-        branches: dict[DimensionGroup, _DimensionGroupBranch],
+    def pprint(
+        self,
+        dimensions: DimensionGroup,
+        indent: str = "  ",
+        suffix: str = "",
+        printer: Callable[[str], None] = print,
     ) -> None:
-        """Ensure we have branches for all spatial queryable subsets of all
-        dimension groups.
-
-        These data IDs in these branches can be expanded to include unqueryable
-        spatial dimensions by iterating over the sky pixels they overlap.
-        """
-        for dimensions in list(branches.keys()):
-            queryable_subset = strip_unqueryable(dimensions)
-            if queryable_subset is not dimensions and len(queryable_subset.spatial) == 1:
-                branches.setdefault(queryable_subset, _DimensionGroupBranch())
-
-    def pprint(self, dimensions: DimensionGroup, indent: str = "  ") -> None:
-        print(f"{indent}{dimensions}")
-        for branch_dimensions, branch in self.projection_branches.items():
-            branch.pprint(branch_dimensions, indent + "p ")
-        for branch_dimensions, branch in self.overlap_branches.items():
-            branch.pprint(branch_dimensions, indent + "o ")
+        printer(f"{indent}{dimensions}{suffix}")
+        for branch_dimensions, branch in self.branches.items():
+            branch.pprint(branch_dimensions, indent + "  ", printer=printer)
 
     def project_data_ids(self, log: LsstLogAdapter, log_indent: str = "  ") -> None:
         """Populate the data ID sets of child branches from the data IDs in
@@ -733,17 +719,15 @@ class _DimensionGroupBranch:
             to make the branch structure clear.
         """
         for data_id in self.data_ids:
-            for branch_dimensions, branch in self.projection_branches.items():
+            for branch_dimensions, branch in self.branches.items():
                 branch.data_ids.add(data_id.subset(branch_dimensions))
-        for branch_dimensions, branch in self.projection_branches.items():
+        for branch_dimensions, branch in self.branches.items():
             log.debug(
                 "%sProjecting %s query data ID(s) to %s.", log_indent, len(branch.data_ids), branch_dimensions
             )
             branch.project_data_ids(log, log_indent + "  ")
 
-    def update_skeleton(
-        self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter, log_indent: str = "  "
-    ) -> None:
+    def update_skeleton_nodes(self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter) -> None:
         """Process the data ID sets of this branch and its children recursively
         to add nodes and edges to the under-construction quantum graph.
 
@@ -757,19 +741,43 @@ class _DimensionGroupBranch:
             Indentation to prefix the log message.  This is used when recursing
             to make the branch structure clear.
         """
-        for branch_dimensions, branch in self.projection_branches.items():
-            log.verbose(
-                "%sAdding nodes and edges for %s %s data ID(s).",
-                log_indent,
-                len(branch.data_ids),
-                branch_dimensions,
-            )
-            branch.update_skeleton(skeleton, log, log_indent + "  ")
+        for branch_dimensions, branch in self.branches.items():
+            if branch.tasks or branch.dataset_types:
+                log.verbose(
+                    "Adding nodes for %s %s data ID(s).",
+                    len(branch.data_ids),
+                    branch_dimensions,
+                )
+            branch.update_skeleton_nodes(skeleton, log)
         for data_id in self.data_ids:
             for task_label in self.tasks:
                 skeleton.add_quantum_node(task_label, data_id)
             for dataset_type_name in self.dataset_types:
                 skeleton.add_dataset_node(dataset_type_name, data_id)
+
+    def update_skeleton_edges(self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter) -> None:
+        """Process the data ID sets of this branch and its children recursively
+        to add nodes and edges to the under-construction quantum graph.
+
+        Parameters
+        ----------
+        skeleton : `QuantumGraphSkeleton`
+            Under-construction quantum graph to modify in place.
+        log : `lsst.logging.LsstLogAdapter`
+            Logger to use for status reporting.
+        log_indent : `str`, optional
+            Indentation to prefix the log message.  This is used when recursing
+            to make the branch structure clear.
+        """
+        for branch_dimensions, branch in self.branches.items():
+            if branch.input_edges or branch.output_edges:
+                log.verbose(
+                    "Adding edges for %s %s data ID(s).",
+                    len(branch.data_ids),
+                    branch_dimensions,
+                )
+            branch.update_skeleton_edges(skeleton, log)
+        for data_id in self.data_ids:
             quantum_keys: dict[str, QuantumKey] = {}
             dataset_keys: dict[str, DatasetKey] = {}
             for twig_dimensions, twig in self.twigs.items():
@@ -784,9 +792,6 @@ class _DimensionGroupBranch:
                 skeleton.add_input_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
             for task_label, dataset_type_name in self.output_edges:
                 skeleton.add_output_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
-        if not self.has_followup_queries:
-            # Delete data IDs we don't need anymore to save memory.
-            del self.data_ids
 
 
 @dataclasses.dataclass(eq=False, repr=False)
@@ -855,13 +860,22 @@ class _DimensionGroupTree:
     Prerequisite dataset types are not included.
     """
 
-    trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
+    queryable_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
     """The top-level branches in the tree of dimension groups populated by the
     butler query.
 
     Data IDs in these branches are populated from the top down, with each
     branch a projection ("remove dimension, then deduplicate") of its parent,
     starting with the query result rows.
+    """
+
+    generators: list[DataIdGenerator] = dataclasses.field(default_factory=list)
+    """Branches for dimensions groups that are populated by algorithmically
+    generating data IDs from those in one or more other branches.
+
+    These are typically variants on the theme of adding a skypix dimension to
+    another set of dimensions by identifying the sky pixels that overlap the
+    region of the original dimensions.
     """
 
     branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
@@ -887,40 +901,30 @@ class _DimensionGroupTree:
         }
         self.all_dimensions = DimensionGroup.union(*self.branches_by_dimensions.keys(), universe=universe)
         self.queryable_dimensions = strip_unqueryable(self.all_dimensions)
-        _DimensionGroupBranch.populate_record_elements(self.all_dimensions, self.branches_by_dimensions)
-        _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
-        _DimensionGroupBranch.populate_overlap_branches(self.branches_by_dimensions)
-        branches_not_in_tree = self.branches_by_dimensions.copy()
-        # Make a tree of queryable dimension groups, with each branch having a
-        # subset of its parent's dimensions.
-        for target_dimensions, target_branch in list(branches_not_in_tree.items()):
-            if is_queryable(target_dimensions):
-                if self.maybe_insert_projection_branch(
-                    target_dimensions, target_branch, self.queryable_dimensions, self.trunk_branches
-                ):
-                    del branches_not_in_tree[target_dimensions]
-                else:
-                    raise AssertionError(
-                        "Projection-branch insertion should not fail for queryable dimensions."
-                    )
-        # While there are still branches that haven't been inserted into the
-        # tree, first try to add them as overlap_branches, in which we add
-        # a single spatial dimension by generating all of the values for that
-        # dimension that overlap each (also spatial) data ID in the parent.
+        _DimensionGroupBranch.make_dimension_record_branches(self.all_dimensions, self.branches_by_dimensions)
+        _DimensionGroupBranch.make_edge_branches(self.subgraph, self.branches_by_dimensions)
+        branches_not_in_tree = set(self.branches_by_dimensions.keys())
+        self._make_queryable_branch_tree(branches_not_in_tree)
+        self._make_queryable_overlap_branch_generators(branches_not_in_tree)
+        # As long as there are still branches that haven't been inserted into
+        # the tree, try to add them as projections of generated branches or
+        # generators on generated branches.
         while branches_not_in_tree:
-            for overlap_dimensions, overlap_branch in branches_not_in_tree.items():
-                if self.maybe_insert_overlap_branch(overlap_dimensions, overlap_branch, self.trunk_branches):
-                    del branches_not_in_tree[overlap_dimensions]
-                    break
-            else:
-                raise QuantumGraphBuilderError(f"Cannot generate data IDs for {list(branches_not_in_tree)}.")
-            # If we succeeded in adding an overlap branch, try to add
-            # projection branches under that overlap branch.
-            for target_dimensions, target_branch in list(branches_not_in_tree.items()):
-                if self.maybe_insert_projection_branch(
-                    target_dimensions, target_branch, overlap_dimensions, overlap_branch.projection_branches
-                ):
-                    del branches_not_in_tree[target_dimensions]
+            # Look for projections first, since those are more efficient, and
+            # some may be available after we've added some generators.
+            # We intentionally add the same branch as a projection of multiple
+            # parents since (unlike queryable dimensions) there's no guarantee
+            # that each parent branch's data IDs would project to the same set
+            # (e.g. a visit-healpix overlap may yield different healpixels than
+            # a patch-healpix overlap, even if the visits and patches overlap).
+            for target_dimensions in sorted(branches_not_in_tree):
+                for generator in self.generators:
+                    if self.maybe_insert_projection_branch(
+                        target_dimensions, generator.dimensions, generator.branch.branches
+                    ):
+                        branches_not_in_tree.discard(target_dimensions)
+            if not self._make_general_overlap_branch_generators(branches_not_in_tree):
+                raise QuantumGraphBuilderError(f"Could not generate data IDs for {branches_not_in_tree}.")
         self.empty_dimensions_branch = self.branches_by_dimensions.pop(
             universe.empty, _DimensionGroupBranch()
         )
@@ -930,47 +934,173 @@ class _DimensionGroupTree:
             if not node.is_prerequisite  # type: ignore
         }
 
+    def _make_queryable_branch_tree(
+        self, branches_not_in_tree: dict[DimensionGroup, _DimensionGroupBranch]
+    ) -> None:
+        for target_dimensions in sorted(branches_not_in_tree):
+            if is_queryable(target_dimensions):
+                if self.maybe_insert_projection_branch(
+                    target_dimensions, self.queryable_dimensions, self.queryable_branches
+                ):
+                    branches_not_in_tree.remove(target_dimensions)
+                else:
+                    raise AssertionError(
+                        "Projection-branch insertion should not fail for queryable dimensions."
+                    )
+
+    def _append_data_id_generator(
+        self,
+        source_dimensions: DimensionGroup,
+        source_region_element: DimensionElement,
+        target_dimensions: DimensionGroup,
+        remainder_skypix: SkyPixDimension,
+        branches_not_in_tree: set[DimensionGroup],
+    ) -> None:
+        target_branch = self.branches_by_dimensions[target_dimensions]
+        # We want to do the overlap calculation without any extra dimensions
+        # beyond the two spatial dimensions, which may or may not be what we
+        # already have.
+        overlap_dimensions = source_region_element.minimal_group | remainder_skypix.minimal_group
+        generator: DataIdGenerator
+        if overlap_dimensions == target_dimensions:
+            if isinstance(source_region_element, SkyPixDimension):
+                if source_region_element.system == remainder_skypix.system:
+                    if source_region_element.level > remainder_skypix.level:
+                        generator = SkyPixGatherDataIdGenerator(
+                            target_branch,
+                            target_dimensions,
+                            source_dimensions,
+                            remainder_skypix,
+                            source_region_element,
+                        )
+                    else:
+                        generator = SkyPixScatterDataIdGenerator(
+                            target_branch,
+                            target_dimensions,
+                            source_dimensions,
+                            remainder_skypix,
+                            source_region_element,
+                        )
+                else:
+                    generator = CrossSystemDataIdGenerator(
+                        target_branch,
+                        target_dimensions,
+                        source_dimensions,
+                        remainder_skypix,
+                        source_region_element,
+                    )
+            else:
+                generator = DatabaseSourceDataIdGenerator(
+                    target_branch,
+                    target_dimensions,
+                    source_dimensions,
+                    remainder_skypix,
+                    source_region_element,
+                )
+            # We know we can populate the data IDs in remainder_skypix_branch
+            # from the target branch by projection.  Even if it's already
+            # populated by some other generated branch, we want to populate it
+            # again in case that picks up additional sky pixels.
+            target_branch.branches[remainder_skypix.minimal_group] = self.branches_by_dimensions[
+                remainder_skypix.minimal_group
+            ]
+            branches_not_in_tree.discard(remainder_skypix.minimal_group)
+        else:
+            if overlap_dimensions not in self.branches_by_dimensions:
+                self.branches_by_dimensions[overlap_dimensions] = _DimensionGroupBranch()
+                branches_not_in_tree.add(overlap_dimensions)
+                self._append_data_id_generator(
+                    source_region_element.minimal_group,
+                    source_region_element,
+                    overlap_dimensions,
+                    remainder_skypix,
+                    branches_not_in_tree,
+                )
+            generator = IndirectDataIdGenerator(
+                target_branch,
+                target_dimensions,
+                source_dimensions,
+                remainder_skypix,
+                direct_dimensions=overlap_dimensions,
+            )
+        self.generators.append(generator)
+        branches_not_in_tree.remove(target_dimensions)
+
+    def _make_queryable_overlap_branch_generators(self, branches_not_in_tree: set[DimensionGroup]) -> None:
+        for target_dimensions in sorted(branches_not_in_tree):
+            queryable_subset_dimensions = strip_unqueryable(target_dimensions)
+            if queryable_region_name := queryable_subset_dimensions.region_dimension:
+                # If there is a single well-defined region for the queryable
+                # subset, we can potentially generate skypix IDs from it.
+                # Do the target dimensions just add a single skypix dimension
+                # to the queryable subset?
+                remainder_dimensions = target_dimensions - queryable_subset_dimensions
+                if (remainder_skypix := get_single_skypix(remainder_dimensions)) is not None:
+                    # Make sure we actually have a branch to capture the
+                    # queryable subset data IDs (i.e. in case we didn't already
+                    # have one for some dataset type or task, etc).
+                    if queryable_subset_dimensions not in self.branches_by_dimensions:
+                        # If we have to make a new queryable branch, we also
+                        # have to insert it into the tree so its data IDs get
+                        # populated.
+                        self.branches_by_dimensions[queryable_subset_dimensions] = _DimensionGroupBranch()
+                        if not self.maybe_insert_projection_branch(
+                            queryable_subset_dimensions,
+                            self.queryable_dimensions,
+                            self.queryable_branches,
+                        ):
+                            raise AssertionError(
+                                "Projection-branch insertion should not fail for queryable dimensions."
+                            )
+                    queryable_region_element = target_dimensions.universe[queryable_region_name]
+                    self._append_data_id_generator(
+                        queryable_subset_dimensions,
+                        queryable_region_element,
+                        target_dimensions,
+                        remainder_skypix,
+                        branches_not_in_tree,
+                    )
+
+    def _make_general_overlap_branch_generators(self, branches_not_in_tree: set[DimensionGroup]) -> bool:
+        dimensions_done = sorted(self.branches_by_dimensions.keys() - branches_not_in_tree)
+        for source_dimensions in dimensions_done:
+            for target_dimensions in sorted(branches_not_in_tree):
+                if not source_dimensions <= target_dimensions:
+                    continue
+                if source_region_name := source_dimensions.region_dimension:
+                    source_region_element = source_dimensions.universe[source_region_name]
+                    remainder_dimensions = target_dimensions - source_dimensions
+                    if (remainder_skypix := get_single_skypix(remainder_dimensions)) is not None:
+                        self._append_data_id_generator(
+                            source_dimensions,
+                            source_region_element,
+                            target_dimensions,
+                            remainder_skypix,
+                            branches_not_in_tree,
+                        )
+                        return True
+        return not branches_not_in_tree
+
     def maybe_insert_projection_branch(
         self,
         target_dimensions: DimensionGroup,
-        target_branch: _DimensionGroupBranch,
         candidate_dimensions: DimensionGroup,
         candidate_projection_branches: dict[DimensionGroup, _DimensionGroupBranch],
     ) -> bool:
         if candidate_dimensions >= target_dimensions:
-            for child_dimensions, child_branch in list(candidate_projection_branches.items()):
+            target_branch = self.branches_by_dimensions[target_dimensions]
+            for child_dimensions in list(candidate_projection_branches.keys()):
                 if self.maybe_insert_projection_branch(
-                    child_dimensions, child_branch, target_dimensions, target_branch.projection_branches
+                    child_dimensions, target_dimensions, target_branch.branches
                 ):
                     del candidate_projection_branches[child_dimensions]
             for child_dimensions, child_branch in candidate_projection_branches.items():
                 if self.maybe_insert_projection_branch(
-                    target_dimensions, target_branch, child_dimensions, child_branch.projection_branches
+                    target_dimensions, child_dimensions, child_branch.branches
                 ):
                     return True
             candidate_projection_branches[target_dimensions] = target_branch
             return True
-        return False
-
-    def maybe_insert_overlap_branch(
-        self,
-        target_dimensions: DimensionGroup,
-        target_branch: _DimensionGroupBranch,
-        candidates: Mapping[DimensionGroup, _DimensionGroupBranch],
-    ) -> bool:
-        for candidate_dimensions, candidate_branch in candidates.items():
-            if data_id_generator := make_data_id_generator(candidate_dimensions, target_dimensions):
-                candidate_branch.overlap_branches[target_dimensions] = target_branch
-                target_branch.data_id_generator = data_id_generator
-                return True
-            if self.maybe_insert_overlap_branch(
-                target_dimensions, target_branch, candidate_branch.overlap_branches
-            ):
-                return True
-            if self.maybe_insert_overlap_branch(
-                target_dimensions, target_branch, candidate_branch.projection_branches
-            ):
-                return True
         return False
 
     def project_data_ids(self, log: LsstLogAdapter) -> None:
@@ -982,13 +1112,17 @@ class _DimensionGroupTree:
         log : `lsst.logging.LsstLogAdapter`
             Logger to use for status reporting.
         """
-        for branch_dimensions, branch in self.trunk_branches.items():
+        for branch_dimensions, branch in self.queryable_branches.items():
             log.debug("Projecting %s query data IDs to %s.", len(branch.data_ids), branch_dimensions)
             branch.project_data_ids(log)
 
-    def pprint(self) -> None:
-        for branch_dimensions, branch in self.trunk_branches.items():
-            branch.pprint(branch_dimensions, "")
+    def pprint(self, printer: Callable[[str], None] = print) -> None:
+        printer("Queryable:")
+        for branch_dimensions, branch in self.queryable_branches.items():
+            branch.pprint(branch_dimensions, "  ", printer=printer)
+        printer("Generator:")
+        for generator in self.generators:
+            generator.pprint("  ", printer=printer)
 
 
 def strip_unqueryable(dimensions: DimensionGroup) -> DimensionGroup:
@@ -1003,33 +1137,49 @@ def is_queryable(dimensions: DimensionGroup) -> bool:
     return not dimensions.skypix or dimensions.skypix == {dimensions.universe.commonSkyPix.name}
 
 
+def get_single_skypix(dimensions: DimensionGroup) -> SkyPixDimension:
+    if len(dimensions) == 1:
+        (name,) = dimensions.names
+        return dimensions.universe.skypix_dimensions.get(name)
+    return None
+
+
 @dataclasses.dataclass
-class OverlapDataIdGenerator:
+class DataIdGenerator:
+    branch: _DimensionGroupBranch
+    dimensions: DimensionGroup
+    source: DimensionGroup
+    remainder_skypix: SkyPixDimension
+
+    def pprint(self, indent: str = "  ", printer: Callable[[str], None] = print) -> None:
+        self.branch.pprint(
+            self.dimensions,
+            indent,
+            f" <- {self.source} & {self.remainder_skypix} ({self.__class__.__name__})",
+            printer=printer,
+        )
+
+
+@dataclasses.dataclass
+class DatabaseSourceDataIdGenerator(DataIdGenerator):
     source_element: DimensionElement
-    target_skypix: SkyPixDimension
 
 
 @dataclasses.dataclass
-class SkyPixScalingDataIdGenerator:
+class CrossSystemDataIdGenerator(DataIdGenerator):
     source_skypix: SkyPixDimension
-    target_skypix: SkyPixDimension
 
 
-def make_data_id_generator(
-    subset: DimensionGroup, superset: DimensionGroup
-) -> OverlapDataIdGenerator | SkyPixScalingDataIdGenerator | None:
-    if not subset <= superset:
-        return None
-    if len(subset.spatial) != 1:
-        return None
-    extra_dimension, *rest = superset.names - subset.names
-    if rest:
-        return None
-    universe = superset.universe
-    target_skypix = universe.skypix_dimensions.get(extra_dimension)
-    if source_skypix := universe.skypix_dimensions.get(subset.region_dimension):
-        if target_skypix.system == source_skypix.system:
-            return SkyPixScalingDataIdGenerator(source_skypix=source_skypix, target_skypix=target_skypix)
-    return OverlapDataIdGenerator(
-        source_element=universe[subset.region_dimension], target_skypix=target_skypix
-    )
+@dataclasses.dataclass
+class SkyPixScatterDataIdGenerator(DataIdGenerator):
+    source_skypix: SkyPixDimension
+
+
+@dataclasses.dataclass
+class SkyPixGatherDataIdGenerator(DataIdGenerator):
+    source_skypix: SkyPixDimension
+
+
+@dataclasses.dataclass
+class IndirectDataIdGenerator(DataIdGenerator):
+    direct_dimensions: DimensionGroup
