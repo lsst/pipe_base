@@ -50,6 +50,7 @@ from lsst.daf.butler import (
     MissingDatasetTypeError,
     SkyPixDimension,
 )
+from lsst.sphgeom import RangeSet
 from lsst.utils.logging import LsstLogAdapter, PeriodicLogger
 from lsst.utils.timer import timeMethod
 
@@ -137,6 +138,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         tree.pprint(printer=self.log.debug)
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
+        tree.generate_data_ids(self.log)
         skeleton = self._make_subgraph_skeleton(tree)
         if not skeleton.has_any_quanta:
             # QG is going to be empty; exit early not just for efficiency, but
@@ -283,20 +285,20 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Preliminary quantum graph.
         """
         skeleton = QuantumGraphSkeleton(tree.subgraph.tasks)
-        for branch_dimensions, branch in tree.queryable_branches.items():
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
             self.log.verbose(
                 "Adding nodes for %s %s data ID(s).",
                 len(branch.data_ids),
                 branch_dimensions,
             )
-            branch.update_skeleton_nodes(skeleton, self.log)
-        for branch_dimensions, branch in tree.queryable_branches.items():
+            branch.update_skeleton_nodes(skeleton)
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
             self.log.verbose(
                 "Adding edges for %s %s data ID(s).",
                 len(branch.data_ids),
                 branch_dimensions,
             )
-            branch.update_skeleton_edges(skeleton, self.log)
+            branch.update_skeleton_edges(skeleton)
         n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in tree.subgraph.tasks)
         self.log.info(
             "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges.",
@@ -722,12 +724,12 @@ class _DimensionGroupBranch:
             for branch_dimensions, branch in self.branches.items():
                 branch.data_ids.add(data_id.subset(branch_dimensions))
         for branch_dimensions, branch in self.branches.items():
-            log.debug(
+            log.verbose(
                 "%sProjecting %s query data ID(s) to %s.", log_indent, len(branch.data_ids), branch_dimensions
             )
             branch.project_data_ids(log, log_indent + "  ")
 
-    def update_skeleton_nodes(self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter) -> None:
+    def update_skeleton_nodes(self, skeleton: QuantumGraphSkeleton) -> None:
         """Process the data ID sets of this branch and its children recursively
         to add nodes and edges to the under-construction quantum graph.
 
@@ -735,27 +737,14 @@ class _DimensionGroupBranch:
         ----------
         skeleton : `QuantumGraphSkeleton`
             Under-construction quantum graph to modify in place.
-        log : `lsst.logging.LsstLogAdapter`
-            Logger to use for status reporting.
-        log_indent : `str`, optional
-            Indentation to prefix the log message.  This is used when recursing
-            to make the branch structure clear.
         """
-        for branch_dimensions, branch in self.branches.items():
-            if branch.tasks or branch.dataset_types:
-                log.verbose(
-                    "Adding nodes for %s %s data ID(s).",
-                    len(branch.data_ids),
-                    branch_dimensions,
-                )
-            branch.update_skeleton_nodes(skeleton, log)
         for data_id in self.data_ids:
             for task_label in self.tasks:
                 skeleton.add_quantum_node(task_label, data_id)
             for dataset_type_name in self.dataset_types:
                 skeleton.add_dataset_node(dataset_type_name, data_id)
 
-    def update_skeleton_edges(self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter) -> None:
+    def update_skeleton_edges(self, skeleton: QuantumGraphSkeleton) -> None:
         """Process the data ID sets of this branch and its children recursively
         to add nodes and edges to the under-construction quantum graph.
 
@@ -763,20 +752,7 @@ class _DimensionGroupBranch:
         ----------
         skeleton : `QuantumGraphSkeleton`
             Under-construction quantum graph to modify in place.
-        log : `lsst.logging.LsstLogAdapter`
-            Logger to use for status reporting.
-        log_indent : `str`, optional
-            Indentation to prefix the log message.  This is used when recursing
-            to make the branch structure clear.
         """
-        for branch_dimensions, branch in self.branches.items():
-            if branch.input_edges or branch.output_edges:
-                log.verbose(
-                    "Adding edges for %s %s data ID(s).",
-                    len(branch.data_ids),
-                    branch_dimensions,
-                )
-            branch.update_skeleton_edges(skeleton, log)
         for data_id in self.data_ids:
             quantum_keys: dict[str, QuantumKey] = {}
             dataset_keys: dict[str, DatasetKey] = {}
@@ -1105,7 +1081,7 @@ class _DimensionGroupTree:
 
     def project_data_ids(self, log: LsstLogAdapter) -> None:
         """Recursively populate the data ID sets of the dimension group tree
-        from the data ID sets of the trunk branches.
+        from the data ID sets of the queryable branches.
 
         Parameters
         ----------
@@ -1113,8 +1089,13 @@ class _DimensionGroupTree:
             Logger to use for status reporting.
         """
         for branch_dimensions, branch in self.queryable_branches.items():
-            log.debug("Projecting %s query data IDs to %s.", len(branch.data_ids), branch_dimensions)
+            log.verbose("Projecting %s query data IDs to %s.", len(branch.data_ids), branch_dimensions)
             branch.project_data_ids(log)
+
+    def generate_data_ids(self, log: LsstLogAdapter) -> None:
+        for generator in self.generators:
+            generator.run(log, self.branches_by_dimensions)
+            generator.branch.project_data_ids(log, log_indent="  ")
 
     def pprint(self, printer: Callable[[str], None] = print) -> None:
         printer("Queryable:")
@@ -1159,27 +1140,134 @@ class DataIdGenerator:
             printer=printer,
         )
 
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        raise NotImplementedError()
+
 
 @dataclasses.dataclass
 class DatabaseSourceDataIdGenerator(DataIdGenerator):
     source_element: DimensionElement
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs via %s envelope of %s %s region(s).",
+            self.dimensions,
+            self.remainder_skypix,
+            len(source_branch.data_ids),
+            self.source_element,
+        )
+        pixelization = self.remainder_skypix.pixelization
+        (source_records,) = [
+            record_set
+            for record_set in source_branch.dimension_records
+            if record_set.element == self.source_element
+        ]
+        for source_data_id in source_branch.data_ids:
+            source_record = source_records.find(source_data_id)
+            for begin, end in pixelization.envelope(source_record.region):
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id, **{self.remainder_skypix.name: index}
+                    )
+                    self.branch.data_ids.add(target_data_id)
 
 
 @dataclasses.dataclass
 class CrossSystemDataIdGenerator(DataIdGenerator):
     source_skypix: SkyPixDimension
 
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs via %s envelope of %s %s region(s).",
+            self.dimensions,
+            self.remainder_skypix,
+            len(source_branch.data_ids),
+            self.source_skypix,
+        )
+        source_pixelization = self.source_skypix.pixelization
+        remainder_pixelization = self.remainder_skypix.pixelization
+        for source_data_id in source_branch.data_ids:
+            source_region = source_pixelization.pixel(source_data_id[self.source_skypix.name])
+            for begin, end in remainder_pixelization.envelope(source_region):
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id, **{self.remainder_skypix.name: index}
+                    )
+                    self.branch.data_ids.add(target_data_id)
+
 
 @dataclasses.dataclass
 class SkyPixScatterDataIdGenerator(DataIdGenerator):
     source_skypix: SkyPixDimension
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        factor = 4 ** (self.remainder_skypix.level - self.source_skypix.level)
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs by scaling %s %s IDs in %s by %s.",
+            self.dimensions,
+            len(source_branch.data_ids),
+            self.remainder_skypix,
+            self.source,
+            factor,
+        )
+        for source_data_id in source_branch.data_ids:
+            ranges = RangeSet(source_data_id[self.source_skypix.name])
+            ranges.scale(factor)
+            for begin, end in ranges:
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id, **{self.remainder_skypix.name: index}
+                    )
+                    self.branch.data_ids.add(target_data_id)
 
 
 @dataclasses.dataclass
 class SkyPixGatherDataIdGenerator(DataIdGenerator):
     source_skypix: SkyPixDimension
 
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        factor = 4 ** (self.source_skypix.level - self.remainder_skypix.level)
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs by dividing %s %s IDs in %s by %s.",
+            self.dimensions,
+            len(source_branch.data_ids),
+            self.remainder_skypix,
+            self.source,
+            factor,
+        )
+        for source_data_id in source_branch.data_ids:
+            index = source_data_id[self.source_skypix.name] // factor
+            target_data_id = DataCoordinate.standardize(source_data_id, **{self.remainder_skypix.name: index})
+            self.branch.data_ids.add(target_data_id)
+
 
 @dataclasses.dataclass
 class IndirectDataIdGenerator(DataIdGenerator):
     direct_dimensions: DimensionGroup
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        source_branch = branches[self.source]
+        direct_branch = branches[self.direct_dimensions]
+        log.verbose(
+            "Generating %s data IDs by joining %s (%s) to %s (%s).",
+            self.dimensions,
+            self.source,
+            len(source_branch.data_ids),
+            self.direct_dimensions,
+            len(direct_branch.data_ids),
+        )
+        common = self.source & self.direct_dimensions
+        direct_by_common: defaultdict[DataCoordinate, list[DataCoordinate]] = defaultdict(list)
+        for direct_data_id in direct_branch.data_ids:
+            direct_by_common[direct_data_id.subset(common)].append(direct_data_id)
+        source_by_common: defaultdict[DataCoordinate, list[DataCoordinate]] = defaultdict(list)
+        for source_data_id in source_branch.data_ids:
+            source_by_common[source_data_id.subset(common)].append(source_data_id)
+        for common_data_id in direct_by_common.keys() & source_by_common.keys():
+            for direct_data_id in direct_by_common[common_data_id]:
+                for source_data_id in source_by_common[common_data_id]:
+                    self.branch.data_ids.add(direct_data_id.union(source_data_id))
