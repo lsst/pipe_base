@@ -27,11 +27,17 @@
 
 __all__ = ["transfer_from_graph"]
 
+import math
+
 from lsst.daf.butler import Butler, CollectionType, QuantumBackedButler, Registry
 from lsst.daf.butler.registry import MissingCollectionError
 from lsst.pipe.base import QuantumGraph
+from lsst.utils.iteration import chunk_iterable
+from lsst.utils.logging import getLogger
 
-from .utils import filter_by_dataset_type_glob
+from .utils import filter_by_dataset_type_glob, filter_by_existence
+
+_LOG = getLogger(__name__)
 
 
 def transfer_from_graph(
@@ -92,18 +98,31 @@ def transfer_from_graph(
 
     # Filter the refs based on requested dataset types.
     filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
+    _LOG.verbose("After filtering by dataset_type, number of datasets to transfer: %d", len(filtered_refs))
 
     dest_butler = Butler.from_config(dest, writeable=True)
 
-    transferred = dest_butler.transfer_from(
-        qbb,
-        filtered_refs,
-        transfer="auto",
-        register_dataset_types=register_dataset_types,
-        transfer_dimensions=transfer_dimensions,
-        dry_run=dry_run,
-    )
-    count = len(transferred)
+    # For faster restarts, filter out those the destination already knows.
+    filtered_refs = filter_by_existence(dest_butler, filtered_refs)
+
+    # Transfer in chunks
+    chunk_size = 50_000
+    n_chunks = math.ceil(len(filtered_refs) / chunk_size)
+    chunk_num = 0
+    count = 0
+    for chunk in chunk_iterable(filtered_refs, chunk_size=chunk_size):
+        chunk_num += 1
+        if n_chunks > 1:
+            _LOG.verbose("Transferring %d datasets in chunk %d/%d", len(chunk), chunk_num, n_chunks)
+        transferred = dest_butler.transfer_from(
+            qbb,
+            chunk,
+            transfer="auto",
+            register_dataset_types=register_dataset_types,
+            transfer_dimensions=transfer_dimensions,
+            dry_run=dry_run,
+        )
+        count += len(transferred)
 
     # If anything was transferred then update output chain definition if asked.
     if count > 0 and update_output_chain and (metadata := qgraph.metadata) is not None:

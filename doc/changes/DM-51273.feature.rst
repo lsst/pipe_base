@@ -1,0 +1,1 @@
+Added filtering out dataset refs that the destination butler already knows in transfer_from_graph as well as dividing the transfer into smaller chunks to speed up restarts.

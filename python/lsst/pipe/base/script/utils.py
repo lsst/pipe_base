@@ -27,15 +27,17 @@
 
 from __future__ import annotations
 
-__all__ = [
-    "filter_by_dataset_type_glob",
-]
+__all__ = ["filter_by_dataset_type_glob", "filter_by_existence"]
 
 import re
 from collections.abc import Collection
 
-from lsst.daf.butler import DatasetRef
+from lsst.daf.butler import Butler, DatasetRef
 from lsst.daf.butler.utils import globToRegex
+from lsst.utils.logging import getLogger
+from lsst.utils.timer import time_this
+
+_LOG = getLogger(__name__)
 
 
 def _matches_dataset_type(dataset_type_name: str, regexes: list[str | re.Pattern]) -> bool:
@@ -72,3 +74,30 @@ def filter_by_dataset_type_glob(
         return refs
 
     return {ref for ref in refs if _matches_dataset_type(ref.datasetType.name, regexes)}
+
+
+def filter_by_existence(butler: Butler, refs: Collection[DatasetRef]) -> Collection[DatasetRef]:
+    """Filter out the refs that the butler already knows exist.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        Butler in which to check existence of given datarefs.
+    refs : `collections.abc.Collection` [ `lsst.daf.butler.DatasetRef` ]
+        Datasets to be filtered.
+
+    Returns
+    -------
+    filtered : `collections.abc.Collection` [ `lsst.daf.butler.DatasetRef` ]
+        Filter datasets.
+    """
+    _LOG.verbose("Filtering out datasets already known to the target butler...")
+    with time_this(log=_LOG, msg="Completed checking existence"):
+        existence = butler._datastore.knows_these(refs)
+        filtered = [ref for ref in existence if not existence[ref]]
+    _LOG.verbose(
+        "After filtering out those already in the target butler, number of datasets to transfer: %d",
+        len(filtered),
+    )
+
+    return filtered
