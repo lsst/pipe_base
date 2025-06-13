@@ -30,7 +30,6 @@ from __future__ import annotations
 __all__ = ()
 
 import operator
-import os
 import unittest
 from collections import defaultdict
 
@@ -45,7 +44,7 @@ from lsst.pipe.base import (
     QuantaAdjuster,
 )
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
-from lsst.utils import getPackageDir
+from lsst.resources import ResourcePath
 
 
 class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
@@ -111,13 +110,9 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
 
     @staticmethod
     def make_butler() -> Butler:
-        try:
-            DATA_DIR = os.path.join(getPackageDir("daf_butler"), "tests", "data", "registry")
-        except LookupError:
-            raise unittest.SkipTest("Test data is not available with pip-provided daf_butler.") from None
-
+        DATA_ROOT = ResourcePath("resource://lsst.daf.butler/tests/registry_data", forceDirectory=True)
         return create_populated_sqlite_registry(
-            *[os.path.join(DATA_DIR, filename) for filename in ("base.yaml", "datasets.yaml")]
+            *[DATA_ROOT.join(filename) for filename in ("base.yaml", "datasets.yaml")]
         )
 
     def test_adjust_all_quanta(self) -> None:
