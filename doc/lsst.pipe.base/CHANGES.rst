@@ -1,3 +1,42 @@
+lsst-pipe-base v29.1.0 (2025-06-13)
+===================================
+
+New Features
+------------
+
+- Introduced a graph-style visualization of pipeline processing that annotates nodes with their status using ``QuantumProvenanceGraph`` data. (`DM-48206 <https://rubinobs.atlassian.net/browse/DM-48206>`_)
+- Integrated ``mermaid-py`` for rendering pipeline visualizations as SVG/PNG images. (`DM-48482 <https://rubinobs.atlassian.net/browse/DM-48482>`_)
+- Added ``PipelineTask.select`` and and ``PipelineTask.select_tasks``, which use a small custom expression language to select subsets of a pipeline.
+
+  This functionality is intended to eventually be made available on the ``pipetask`` command-line and possibly in ``Pipeline`` YAML definitions, but this change just adds it to the ``PipelineGraph`` Python interface while design work continues on making it available more broadly. (`DM-48913 <https://rubinobs.atlassian.net/browse/DM-48913>`_)
+- Added a quantum graph generation hook that allows tasks to adjust all of their quanta (in limited ways) at once. (`DM-49300 <https://rubinobs.atlassian.net/browse/DM-49300>`_)
+- ``AllDimensionQuantumGraphBuilder`` now accepts one or more Astropy tables of data IDs as constraints. (`DM-49949 <https://rubinobs.atlassian.net/browse/DM-49949>`_)
+- Added support for moving outputs from one quantum to another in the ``adjust_all_quanta`` hook, as well as access to a ``Butler`` instance with implementations of that hook. (`DM-50539 <https://rubinobs.atlassian.net/browse/DM-50539>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed unintentional exceptions from building an empty ``QuantumGraph``. (`DM-49763 <https://rubinobs.atlassian.net/browse/DM-49763>`_)
+- Fixed pipeline incorrect step-validation failures caused by further subsetting a pipeline with an empty step. (`DM-50107 <https://rubinobs.atlassian.net/browse/DM-50107>`_)
+- Fixed quantum graph builder logging to correctly identify when the initial butler query actually starts returning rows. (`DM-50969 <https://rubinobs.atlassian.net/browse/DM-50969>`_)
+
+
+Performance Enhancement
+-----------------------
+
+- Added parallelization and quantum-backed butler usage to ``QuantumProvenanceGraph`` to speed up metadata reads.
+
+  By default, ``QuantumProvenanceGraph`` now uses quantum-backed butler and only reads metadata for quanta for which at least one predicted output was not produced (``read_caveats='lazy'``). (`DM-49440 <https://rubinobs.atlassian.net/browse/DM-49440>`_)
+- When reading a full ``QuantumGraph`` file from a remote location (i.e. a non-POSIX URI), first copy the file into a temporary local location. (`DM-50041 <https://rubinobs.atlassian.net/browse/DM-50041>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Added ability to select specific dataset types when transferring datasets from a graph. (`DM-50885 <https://rubinobs.atlassian.net/browse/DM-50885>`_)
+
+
 lsst-pipe-base v29.0.0 (2025-03-25)
 ===================================
 
