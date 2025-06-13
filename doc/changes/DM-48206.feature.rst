@@ -1,1 +1,0 @@
-Introduce a graph-style visualization of pipeline processing that annotates nodes with their status using ``QuantumProvenanceGraph`` data.
