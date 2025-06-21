@@ -353,6 +353,7 @@ class PrerequisiteFinder:
                         where=" AND ".join(where_terms),
                         bind=bind,
                         with_dimension_records=True,
+                        limit=None,
                     )
                 except MissingDatasetTypeError:
                     return []
@@ -378,12 +379,16 @@ class PrerequisiteFinder:
         # butler query system to handle the spatial/temporal stuff like it
         # normally would.
         try:
-            return butler.query_datasets(
+            print(self.dataset_type_node.dataset_type, input_collections, data_id)
+            asdf = butler.query_datasets(
                 self.dataset_type_node.dataset_type,
                 collections=input_collections,
                 data_id=data_id,
                 with_dimension_records=True,
+                limit=None,
             )
+            print('success')
+            return asdf
         except MissingDatasetTypeError:
             return []
 
