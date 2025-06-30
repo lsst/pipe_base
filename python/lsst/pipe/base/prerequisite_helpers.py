@@ -353,6 +353,7 @@ class PrerequisiteFinder:
                         where=" AND ".join(where_terms),
                         bind=bind,
                         with_dimension_records=True,
+                        limit=None,
                     )
                 except MissingDatasetTypeError:
                     return []
@@ -383,6 +384,7 @@ class PrerequisiteFinder:
                 collections=input_collections,
                 data_id=data_id,
                 with_dimension_records=True,
+                limit=None,
             )
         except MissingDatasetTypeError:
             return []
