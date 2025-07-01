@@ -35,7 +35,7 @@ __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
 import astropy.table
@@ -133,6 +133,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
         tree.build()
+        tree.pprint(printer=self.log.debug)
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
         skeleton = self._make_subgraph_skeleton(tree)
@@ -618,6 +619,17 @@ class _DimensionGroupBranch:
     edge in `input_edges` or `output_edges`.
     """
 
+    def pprint(
+        self,
+        dimensions: DimensionGroup,
+        indent: str = "  ",
+        suffix: str = "",
+        printer: Callable[[str], None] = print,
+    ) -> None:
+        printer(f"{indent}{dimensions}{suffix}")
+        for branch_dimensions, branch in self.branches.items():
+            branch.pprint(branch_dimensions, indent + "  ", printer=printer)
+
     def project_data_ids(self, log: LsstLogAdapter, log_indent: str = "  ") -> None:
         """Populate the data ID sets of child branches from the data IDs in
         this branch, recursively.
@@ -889,3 +901,16 @@ class _DimensionGroupTree:
         for branch_dimensions, branch in self.trunk_branches.items():
             log.verbose("Projecting query data ID(s) to %s.", branch_dimensions)
             branch.project_data_ids(log)
+
+    def pprint(self, printer: Callable[[str], None] = print) -> None:
+        """Print a human-readable representation of the dimensions tree.
+
+        Parameters
+        ----------
+        printer : `~collections.abc.Callable`, optional
+            A function that takes a single string argument and prints a single
+            line (including a newline). Default is the built-in `print`
+            function.
+        """
+        for branch_dimensions, branch in self.trunk_branches.items():
+            branch.pprint(branch_dimensions, "  ", printer=printer)
