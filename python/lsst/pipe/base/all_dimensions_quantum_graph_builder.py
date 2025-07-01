@@ -276,13 +276,20 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Preliminary quantum graph.
         """
         skeleton = QuantumGraphSkeleton(tree.subgraph.tasks)
-        for branch_dimensions, branch in tree.trunk_branches.items():
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
             self.log.verbose(
-                "Adding nodes and edges for %s %s data ID(s).",
+                "Adding nodes for %s %s data ID(s).",
                 len(branch.data_ids),
                 branch_dimensions,
             )
-            branch.update_skeleton(skeleton, self.log)
+            branch.update_skeleton_nodes(skeleton)
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
+            self.log.verbose(
+                "Adding edges for %s %s data ID(s).",
+                len(branch.data_ids),
+                branch_dimensions,
+            )
+            branch.update_skeleton_edges(skeleton)
         n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in tree.subgraph.tasks)
         self.log.info(
             "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges.",
@@ -761,12 +768,10 @@ class _DimensionGroupBranch:
             for branch_dimensions, branch in self.branches.items():
                 branch.data_ids.add(data_id.subset(branch_dimensions))
         for branch_dimensions, branch in self.branches.items():
-            log.debug("%sProjecting query data IDs to %s.", log_indent, branch_dimensions)
+            log.verbose("%sProjecting query data ID(s) to %s.", log_indent, branch_dimensions)
             branch.project_data_ids(log, log_indent + "  ")
 
-    def update_skeleton(
-        self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter, log_indent: str = "  "
-    ) -> None:
+    def update_skeleton_nodes(self, skeleton: QuantumGraphSkeleton) -> None:
         """Process the data ID sets of this branch and its children recursively
         to add nodes and edges to the under-construction quantum graph.
 
@@ -774,25 +779,23 @@ class _DimensionGroupBranch:
         ----------
         skeleton : `QuantumGraphSkeleton`
             Under-construction quantum graph to modify in place.
-        log : `lsst.logging.LsstLogAdapter`
-            Logger to use for status reporting.
-        log_indent : `str`, optional
-            Indentation to prefix the log message.  This is used when recursing
-            to make the branch structure clear.
         """
-        for branch_dimensions, branch in self.branches.items():
-            log.verbose(
-                "%sAdding nodes and edges for %s %s data ID(s).",
-                log_indent,
-                len(branch.data_ids),
-                branch_dimensions,
-            )
-            branch.update_skeleton(skeleton, log, log_indent + "  ")
         for data_id in self.data_ids:
             for task_label in self.tasks:
                 skeleton.add_quantum_node(task_label, data_id)
             for dataset_type_name in self.dataset_types:
                 skeleton.add_dataset_node(dataset_type_name, data_id)
+
+    def update_skeleton_edges(self, skeleton: QuantumGraphSkeleton) -> None:
+        """Process the data ID sets of this branch and its children recursively
+        to add nodes and edges to the under-construction quantum graph.
+
+        Parameters
+        ----------
+        skeleton : `QuantumGraphSkeleton`
+            Under-construction quantum graph to modify in place.
+        """
+        for data_id in self.data_ids:
             quantum_keys: dict[str, QuantumKey] = {}
             dataset_keys: dict[str, DatasetKey] = {}
             for twig_dimensions, twig in self.twigs.items():
@@ -837,7 +840,11 @@ class _DimensionGroupTree:
        dimensions are those dimensions;
      - if there is a dimension element in any task or non-prerequisite dataset
        type dimensions whose `~lsst.daf.butler.DimensionElement.minimal_group`
-       is those dimensions.
+       is those dimensions (allowing us to look up dimension records).
+
+    In addition, for any dimension group that has unqueryable dimensions (e.g.
+    non-common skypix dimensions, like healpix), we create a branch for the
+    subset of the group with only queryable dimensions.
 
     We process the initial data query by recursing through this tree structure
     to populate a data ID set for each branch
@@ -907,5 +914,5 @@ class _DimensionGroupTree:
             Logger to use for status reporting.
         """
         for branch_dimensions, branch in self.trunk_branches.items():
-            log.debug("Projecting query data IDs to %s.", branch_dimensions)
+            log.verbose("Projecting query data ID(s) to %s.", branch_dimensions)
             branch.project_data_ids(log)
