@@ -167,7 +167,11 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             self.log.debug("Not using dataset existence to constrain query.")
         elif self.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
             constraint = set(self.dataset_query_constraint)
-            inputs = tree.overall_inputs - tree.empty_dimensions_branch.dataset_types.keys()
+            inputs = {
+                name
+                for name, dataset_type_node in tree.overall_inputs.items()
+                if dataset_type_node.dimensions
+            }
             if remainder := constraint.difference(inputs):
                 self.log.debug(
                     "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
@@ -302,15 +306,17 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             In-progress quantum graph to modify in place.
         """
         dataset_key: DatasetKey | PrerequisiteDatasetKey
-        for dataset_type_name in tree.empty_dimensions_branch.dataset_types.keys():
-            dataset_key = DatasetKey(dataset_type_name, self.empty_data_id.required_values)
-            if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
-                skeleton.set_dataset_ref(ref, dataset_key)
-            if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
-                skeleton.set_output_for_skip(ref)
-            if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
-                skeleton.set_output_in_the_way(ref)
         for dimensions, branch in tree.branches_by_dimensions.items():
+            if not dimensions:
+                for dataset_type_name in branch.dataset_types.keys():
+                    dataset_key = DatasetKey(dataset_type_name, self.empty_data_id.required_values)
+                    if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
+                        skeleton.set_dataset_ref(ref, dataset_key)
+                    if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
+                        skeleton.set_output_for_skip(ref)
+                    if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
+                        skeleton.set_output_in_the_way(ref)
+                continue
             if not branch.dataset_types and not branch.tasks:
                 continue
             if not branch.data_ids:
@@ -856,13 +862,6 @@ class _DimensionGroupTree:
     (non-prerequisite) dataset type in this subgraph.
     """
 
-    empty_dimensions_branch: _DimensionGroupBranch = dataclasses.field(init=False)
-    """The tasks and dataset types of this subset of this pipeline that have
-    empty dimensions.
-
-    Prerequisite dataset types are not included.
-    """
-
     trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
     """The top-level branches in the tree of dimension groups.
     """
@@ -870,10 +869,6 @@ class _DimensionGroupTree:
     branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
-
-    The tasks and dataset types with empty dimensions are not included; they're
-    in `empty_dimensions_tree` since they are usually used differently.
-    Prerequisite dataset types are also not included.
 
     This is a flatter view of the objects in `trunk_branches`.
     """
@@ -895,9 +890,6 @@ class _DimensionGroupTree:
         _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
         self.trunk_branches = _DimensionGroupBranch.populate_branches(
             None, self.branches_by_dimensions.copy()
-        )
-        self.empty_dimensions_branch = self.branches_by_dimensions.pop(
-            universe.empty, _DimensionGroupBranch()
         )
         self.overall_inputs = {
             name: node  # type: ignore
