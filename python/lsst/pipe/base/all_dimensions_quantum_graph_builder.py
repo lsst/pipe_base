@@ -132,7 +132,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # be the same as or a dimension-subset of another.  This is an
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
-        tree.build()
+        tree.build(self.dataset_query_constraint, self.log)
         tree.pprint(printer=self.log.debug)
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
@@ -155,46 +155,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Tree with dimension group branches that holds subgraph-specific
             state for this builder, to be modified in place.
         """
-        self.log.debug("Analyzing subgraph dimensions and overall-inputs.")
-        constraint_datasets: set[str] = set()
-        self.log.debug("Building query for data IDs.")
-        if self.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
-            self.log.debug("Constraining graph query using all datasets not marked as deferred.")
-            constraint_datasets = {
-                name
-                for name, dataset_type_node in tree.overall_inputs.items()
-                if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
-            }
-        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
-            self.log.debug("Not using dataset existence to constrain query.")
-        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
-            constraint = set(self.dataset_query_constraint)
-            inputs = {
-                name
-                for name, dataset_type_node in tree.overall_inputs.items()
-                if dataset_type_node.dimensions
-            }
-            if remainder := constraint.difference(inputs):
-                self.log.debug(
-                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
-                    "subgraph, on the assumption that they are relevant for a different subgraph.",
-                    remainder,
-                )
-            constraint.intersection_update(inputs)
-            self.log.debug(f"Constraining graph query using {constraint}")
-            constraint_datasets = constraint
-        else:
-            raise QuantumGraphBuilderError(
-                f"Unable to handle type {self.dataset_query_constraint} given as datasetQueryConstraint."
-            )
         query_cmd: list[str] = []
         with self.butler.query() as query:
             query_cmd.append("with butler.query() as query:")
             query_cmd.append(f"    query = query.join_dimensions({list(tree.all_dimensions.names)})")
             query = query.join_dimensions(tree.all_dimensions)
-            if constraint_datasets:
+            if tree.dataset_constraint:
                 query_cmd.append(f"    collections = {list(self.input_collections)}")
-            for dataset_type_name in constraint_datasets:
+            for dataset_type_name in tree.dataset_constraint:
                 query_cmd.append(f"    query = query.join_dataset_search({dataset_type_name!r}, collections)")
                 try:
                     query = query.join_dataset_search(dataset_type_name, self.input_collections)
@@ -335,7 +303,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             with self.butler.query() as butler_query:
                 butler_query = butler_query.join_data_coordinates(branch.data_ids)
                 for dataset_type_node in branch.dataset_types.values():
-                    if dataset_type_node.name in tree.overall_inputs:
+                    if tree.subgraph.producer_of(dataset_type_node.name) is None:
                         # Dataset type is an overall input; we always need to
                         # try to find these.
                         count = 0
@@ -751,10 +719,7 @@ class _DimensionGroupTree:
     by their dimensions.
     """
 
-    overall_inputs: dict[str, DatasetTypeNode] = dataclasses.field(init=False)
-    """Pipeline graph nodes for all non-prerequisite, non-init overall-input
-    dataset types for this subset of the pipeline.
-    """
+    dataset_constraint: set[str] = dataclasses.field(default_factory=set)
 
     queryable_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
     """The top-level branches in the tree of dimension groups populated by the
@@ -773,20 +738,64 @@ class _DimensionGroupTree:
             for dimensions, (tasks, dataset_types) in self.subgraph.group_by_dimensions().items()
         }
         self.all_dimensions = DimensionGroup.union(*self.branches_by_dimensions.keys(), universe=universe)
-        self.overall_inputs = {
-            name: node  # type: ignore
-            for name, node in self.subgraph.iter_overall_inputs()
-            if not node.is_prerequisite  # type: ignore
-        }
 
-    def build(self) -> None:
-        """Organize the branches into a tree."""
+    def build(self, requested: DatasetQueryConstraintVariant, log: LsstLogAdapter) -> None:
+        """Organize the branches into a tree.
+
+        Parameters
+        ----------
+        requested : `DatasetQueryConstraintVariant`
+            Query constraint specified by the user.
+        log : `lsst.log.LsstLogAdapter`
+            Logger that supports ``verbose`` output.
+        """
         self._make_dimension_record_branches()
         self._make_edge_branches()
+        self._set_dataset_constraint(requested, log)
         branches_not_in_tree = set(self.branches_by_dimensions.keys())
         self._make_queryable_branch_tree(branches_not_in_tree)
         if branches_not_in_tree:
             raise QuantumGraphBuilderError(f"Could not generate data IDs for {branches_not_in_tree}.")
+
+    def _set_dataset_constraint(self, requested: DatasetQueryConstraintVariant, log: LsstLogAdapter) -> None:
+        """Set the dataset query constraint.
+
+        Parameters
+        ----------
+        requested : `DatasetQueryConstraintVariant`
+            Query constraint specified by the user.
+        log : `lsst.log.LsstLogAdapter`
+            Logger that supports ``verbose`` output.
+        """
+        overall_inputs: dict[str, DatasetTypeNode] = {
+            name: node  # type: ignore
+            for name, node in self.subgraph.iter_overall_inputs()
+            if not node.is_prerequisite  # type: ignore
+        }
+        if requested == DatasetQueryConstraintVariant.ALL:
+            self.dataset_constraint = {
+                name
+                for name, dataset_type_node in overall_inputs.items()
+                if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
+            }
+        elif requested == DatasetQueryConstraintVariant.OFF:
+            pass
+        elif requested == DatasetQueryConstraintVariant.LIST:
+            self.dataset_constraint = set(requested)
+            inputs = {
+                name for name, dataset_type_node in overall_inputs.items() if dataset_type_node.dimensions
+            }
+            if remainder := self.dataset_constraint.difference(inputs):
+                log.verbose(
+                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
+                    "subgraph, on the assumption that they are relevant for a different subgraph.",
+                    remainder,
+                )
+            self.dataset_constraint.intersection_update(inputs)
+        else:
+            raise QuantumGraphBuilderError(
+                f"Unable to handle type {requested} given as dataset query constraint."
+            )
 
     def _make_dimension_record_branches(self) -> None:
         """Ensure we have branches for all dimension elements we'll need to
