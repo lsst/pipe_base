@@ -132,6 +132,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # be the same as or a dimension-subset of another.  This is an
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
+        tree.build()
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
         skeleton = self._make_subgraph_skeleton(tree)
@@ -617,141 +618,6 @@ class _DimensionGroupBranch:
     edge in `input_edges` or `output_edges`.
     """
 
-    @staticmethod
-    def populate_record_elements(
-        all_dimensions: DimensionGroup, branches: dict[DimensionGroup, _DimensionGroupBranch]
-    ) -> None:
-        """Ensure we have branches for all dimension elements we'll need to
-        fetch dimension records for.
-
-        Parameters
-        ----------
-        all_dimensions : `~lsst.daf.butler.DimensionGroup`
-            All dimensions that appear in the quantum graph.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place.  New branches may
-            be added and existing branches may have their `record_element`
-            attributes updated.
-        """
-        for element_name in all_dimensions.elements:
-            element = all_dimensions.universe[element_name]
-            record_set = DimensionRecordSet(element_name, universe=all_dimensions.universe)
-            if element.minimal_group in branches:
-                branches[element.minimal_group].dimension_records.append(record_set)
-            else:
-                branches[element.minimal_group] = _DimensionGroupBranch(dimension_records=[record_set])
-
-    @staticmethod
-    def populate_edges(
-        pipeline_graph: PipelineGraph, branches: dict[DimensionGroup, _DimensionGroupBranch]
-    ) -> None:
-        """Ensure we have branches for all edges in the graph.
-
-        Parameters
-        ----------
-        pipeline_graph : `~..pipeline_graph.PipelineGraph``
-            Graph of tasks and dataset types.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place.  New branches may
-            be added and existing branches may have their `input_edges`,
-            `output_edges`, and `twigs` attributes updated.
-        """
-
-        def update_edge_branch(
-            task_node: TaskNode, dataset_type_node: DatasetTypeNode
-        ) -> _DimensionGroupBranch:
-            union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
-            if (branch := branches.get(union_dimensions)) is None:
-                branch = _DimensionGroupBranch()
-                branches[union_dimensions] = branch
-            branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(dataset_type_node.name)
-            branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
-            return branch
-
-        for task_node in pipeline_graph.tasks.values():
-            for dataset_type_node in pipeline_graph.inputs_of(task_node.label).values():
-                assert dataset_type_node is not None, "Pipeline graph is resolved."
-                if dataset_type_node.is_prerequisite:
-                    continue
-                branch = update_edge_branch(task_node, dataset_type_node)
-                branch.input_edges.append((dataset_type_node.name, task_node.label))
-            for dataset_type_node in pipeline_graph.outputs_of(task_node.label).values():
-                assert dataset_type_node is not None, "Pipeline graph is resolved."
-                branch = update_edge_branch(task_node, dataset_type_node)
-                branch.output_edges.append((task_node.label, dataset_type_node.name))
-
-    @staticmethod
-    def find_next_uncontained_dimensions(
-        parent_dimensions: DimensionGroup | None, candidates: Iterable[DimensionGroup]
-    ) -> list[DimensionGroup]:
-        """Find dimension groups that are not a subset of any other dimension
-        groups in a set.
-
-        Parameters
-        ----------
-        parent_dimensions : `~lsst.daf.butler.DimensionGroup` or `None`
-            If not `None`, first filter out any candidates that are not strict
-            subsets of these dimensions.
-        candidates : `~collections.abc.Iterable` [\
-                `~lsst.daf.butler.DimensionGroup` ]
-            Iterable of dimension groups to consider.
-
-        Returns
-        -------
-        uncontained : `list` [ `~lsst.daf.butler.DimensionGroup` ]
-            Dimension groups that are not contained by any other dimension
-            group in the set of filtered candidates.
-        """
-        if parent_dimensions is None:
-            refined_candidates = candidates
-        else:
-            refined_candidates = [dimensions for dimensions in candidates if dimensions < parent_dimensions]
-        return [
-            dimensions
-            for dimensions in refined_candidates
-            if not any(dimensions < other for other in refined_candidates)
-        ]
-
-    @classmethod
-    def populate_branches(
-        cls,
-        parent_dimensions: DimensionGroup | None,
-        branches: dict[DimensionGroup, _DimensionGroupBranch],
-    ) -> dict[DimensionGroup, _DimensionGroupBranch]:
-        """Transform a flat mapping of dimension group branches into a tree.
-
-        Parameters
-        ----------
-        parent_dimensions : `~lsst.daf.butler.DimensionGroup` or `None`
-            If not `None`, ignore any candidates in `branches` that are not
-            strict subsets of these dimensions.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place, by populating
-            the `branches` attributes to form a tree and removing entries that
-            have been put into the tree.
-
-        Returns
-        -------
-        uncontained_branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Branches whose dimensions were not subsets of any others in the
-            mapping except those that were supersets of ``parent_dimensions``.
-        """
-        result: dict[DimensionGroup, _DimensionGroupBranch] = {}
-        for parent_branch_dimensions in cls.find_next_uncontained_dimensions(
-            parent_dimensions, branches.keys()
-        ):
-            parent_branch = branches.pop(parent_branch_dimensions)
-            result[parent_branch_dimensions] = parent_branch
-            for child_branch_dimensions, child_branch in cls.populate_branches(
-                parent_branch_dimensions, branches
-            ).items():
-                parent_branch.branches[child_branch_dimensions] = child_branch
-        return result
-
     def project_data_ids(self, log: LsstLogAdapter, log_indent: str = "  ") -> None:
         """Populate the data ID sets of child branches from the data IDs in
         this branch, recursively.
@@ -848,11 +714,10 @@ class _DimensionGroupTree:
 
     We process the initial data query by recursing through this tree structure
     to populate a data ID set for each branch
-    (`_DimensionGroupBranch.project_data_ids`), and then process those sets
-    recursively (`_DimensionGroupBranch.update_skeleton`). This can be far
-    faster than the non-recursive processing the QG builder used to use because
-    the set of data IDs is smaller (sometimes dramatically smaller) as we move
-    to smaller sets of dimensions.
+    (`_DimensionGroupBranch.project_data_ids`), and then process those sets.
+    This can be far faster than the non-recursive processing the QG builder
+    used to use because the set of data IDs is smaller (sometimes dramatically
+    smaller) as we move to smaller sets of dimensions.
 
     In addition to their child branches, a branch that is used to define graph
     edges also has "twigs", which are a flatter set of dimension subsets for
@@ -869,20 +734,21 @@ class _DimensionGroupTree:
     (non-prerequisite) dataset type in this subgraph.
     """
 
-    trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
-    """The top-level branches in the tree of dimension groups.
-    """
-
     branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
-
-    This is a flatter view of the objects in `trunk_branches`.
     """
 
     overall_inputs: dict[str, DatasetTypeNode] = dataclasses.field(init=False)
     """Pipeline graph nodes for all non-prerequisite, non-init overall-input
     dataset types for this subset of the pipeline.
+    """
+
+    trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
+    """The top-level branches in the tree of dimension groups.
+
+    This attribute must be populated by the `build` method before the tree can
+    be used to process data IDs.
     """
 
     def __post_init__(self) -> None:
@@ -893,16 +759,123 @@ class _DimensionGroupTree:
             for dimensions, (tasks, dataset_types) in self.subgraph.group_by_dimensions().items()
         }
         self.all_dimensions = DimensionGroup.union(*self.branches_by_dimensions.keys(), universe=universe)
-        _DimensionGroupBranch.populate_record_elements(self.all_dimensions, self.branches_by_dimensions)
-        _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
-        self.trunk_branches = _DimensionGroupBranch.populate_branches(
-            None, self.branches_by_dimensions.copy()
-        )
         self.overall_inputs = {
             name: node  # type: ignore
             for name, node in self.subgraph.iter_overall_inputs()
             if not node.is_prerequisite  # type: ignore
         }
+
+    def build(self) -> None:
+        """Organize the branches into a tree."""
+        self._make_dimension_record_branches()
+        self._make_edge_branches()
+        branches_not_in_tree = set(self.branches_by_dimensions.keys())
+        self._make_queryable_branch_tree(branches_not_in_tree)
+        if branches_not_in_tree:
+            raise QuantumGraphBuilderError(f"Could not generate data IDs for {branches_not_in_tree}.")
+
+    def _make_dimension_record_branches(self) -> None:
+        """Ensure we have branches for all dimension elements we'll need to
+        fetch dimension records for.
+        """
+        for element_name in self.all_dimensions.elements:
+            element = self.all_dimensions.universe[element_name]
+            record_set = DimensionRecordSet(element_name, universe=self.all_dimensions.universe)
+            if element.minimal_group in self.branches_by_dimensions:
+                self.branches_by_dimensions[element.minimal_group].dimension_records.append(record_set)
+            else:
+                self.branches_by_dimensions[element.minimal_group] = _DimensionGroupBranch(
+                    dimension_records=[record_set]
+                )
+
+    def _make_edge_branches(self) -> None:
+        """Ensure we have branches for all edges in the graph."""
+
+        def update_edge_branch(
+            task_node: TaskNode, dataset_type_node: DatasetTypeNode
+        ) -> _DimensionGroupBranch:
+            union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
+            if (branch := self.branches_by_dimensions.get(union_dimensions)) is None:
+                branch = _DimensionGroupBranch()
+                self.branches_by_dimensions[union_dimensions] = branch
+            branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(dataset_type_node.name)
+            branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
+            return branch
+
+        for task_node in self.subgraph.tasks.values():
+            for dataset_type_node in self.subgraph.inputs_of(task_node.label).values():
+                assert dataset_type_node is not None, "Pipeline graph is resolved."
+                if dataset_type_node.is_prerequisite:
+                    continue
+                branch = update_edge_branch(task_node, dataset_type_node)
+                branch.input_edges.append((dataset_type_node.name, task_node.label))
+            for dataset_type_node in self.subgraph.outputs_of(task_node.label).values():
+                assert dataset_type_node is not None, "Pipeline graph is resolved."
+                branch = update_edge_branch(task_node, dataset_type_node)
+                branch.output_edges.append((task_node.label, dataset_type_node.name))
+
+    def _make_queryable_branch_tree(self, branches_not_in_tree: set[DimensionGroup]) -> None:
+        """Assemble the branches with queryable dimensions into a tree, in
+        which each branch has a subset of the dimensions of its parent.
+
+        Parameters
+        ----------
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+        """
+        for target_dimensions in sorted(branches_not_in_tree):
+            if self._maybe_insert_projection_branch(
+                target_dimensions, self.all_dimensions, self.trunk_branches
+            ):
+                branches_not_in_tree.remove(target_dimensions)
+            else:
+                raise AssertionError("Projection-branch insertion should not fail for queryable dimensions.")
+
+    def _maybe_insert_projection_branch(
+        self,
+        target_dimensions: DimensionGroup,
+        candidate_dimensions: DimensionGroup,
+        candidate_projection_branches: dict[DimensionGroup, _DimensionGroupBranch],
+    ) -> bool:
+        """Insert a branch at the appropriate location in a [sub]tree.
+
+        Branches are inserted below the first parent branch whose dimensions
+        are a superset of their own.
+
+        Parameters
+        ----------
+        target_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the branch to be inserted.
+        candidate_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the subtree the branch might be inserted under.  If
+            this is not a superset of ``target_dimensions``, this method
+            returns `False` and nothing is done.
+        candidate_projection_branches : `dict` [ \
+                `lsst.daf.butler.DimensionGroup`, `_DimensionGroupBranch` ]
+            Subtree branches to be updated directly or indirectly (i.e. in a
+            nested branch).
+
+        Returns
+        -------
+        inserted : `bool`
+            Whether the branch was actually inserted.
+        """
+        if candidate_dimensions >= target_dimensions:
+            target_branch = self.branches_by_dimensions[target_dimensions]
+            for child_dimensions in list(candidate_projection_branches.keys()):
+                if self._maybe_insert_projection_branch(
+                    child_dimensions, target_dimensions, target_branch.branches
+                ):
+                    del candidate_projection_branches[child_dimensions]
+            for child_dimensions, child_branch in candidate_projection_branches.items():
+                if self._maybe_insert_projection_branch(
+                    target_dimensions, child_dimensions, child_branch.branches
+                ):
+                    return True
+            candidate_projection_branches[target_dimensions] = target_branch
+            return True
+        return False
 
     def project_data_ids(self, log: LsstLogAdapter) -> None:
         """Recursively populate the data ID sets of the dimension group tree
