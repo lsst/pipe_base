@@ -236,7 +236,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # first log is seen.
                     self.log.info("Iterating over data ID query results.")
                     progress_logger = PeriodicLogger(self.log)
-                for branch_dimensions, branch in tree.trunk_branches.items():
+                for branch_dimensions, branch in tree.queryable_branches.items():
                     data_id = common_data_id.subset(branch_dimensions)
                     branch.data_ids.add(data_id)
                 n_rows += 1
@@ -756,11 +756,13 @@ class _DimensionGroupTree:
     dataset types for this subset of the pipeline.
     """
 
-    trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
-    """The top-level branches in the tree of dimension groups.
+    queryable_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
+    """The top-level branches in the tree of dimension groups populated by the
+    butler query.
 
-    This attribute must be populated by the `build` method before the tree can
-    be used to process data IDs.
+    Data IDs in these branches are populated from the top down, with each
+    branch a projection ("remove dimension, then deduplicate") of its parent,
+    starting with the query result rows.
     """
 
     def __post_init__(self) -> None:
@@ -838,7 +840,7 @@ class _DimensionGroupTree:
         """
         for target_dimensions in sorted(branches_not_in_tree):
             if self._maybe_insert_projection_branch(
-                target_dimensions, self.all_dimensions, self.trunk_branches
+                target_dimensions, self.all_dimensions, self.queryable_branches
             ):
                 branches_not_in_tree.remove(target_dimensions)
             else:
@@ -898,7 +900,7 @@ class _DimensionGroupTree:
         log : `lsst.logging.LsstLogAdapter`
             Logger to use for status reporting.
         """
-        for branch_dimensions, branch in self.trunk_branches.items():
+        for branch_dimensions, branch in self.queryable_branches.items():
             log.verbose("Projecting query data ID(s) to %s.", branch_dimensions)
             branch.project_data_ids(log)
 
@@ -912,5 +914,5 @@ class _DimensionGroupTree:
             line (including a newline). Default is the built-in `print`
             function.
         """
-        for branch_dimensions, branch in self.trunk_branches.items():
+        for branch_dimensions, branch in self.queryable_branches.items():
             branch.pprint(branch_dimensions, "  ", printer=printer)
