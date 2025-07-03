@@ -32,7 +32,7 @@ jobs:
           uv pip install --system wheel
 
       - name: Install documenteer
-        run: uv pip install --system 'documenteer[pipelines]==0.8.2' sphinx-automodapi==0.19
+        run: uv pip install --system 'documenteer[pipelines]==0.8.2' sphinx-automodapi==0.19 sphinx-prompt==1.6.0
 
       - name: Install dependencies
         run: |
