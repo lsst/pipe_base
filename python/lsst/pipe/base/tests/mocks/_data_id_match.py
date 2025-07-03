@@ -140,6 +140,22 @@ class _DataIdMatchTreeVisitor(TreeVisitor):
         # docstring is inherited from base class
         raise NotImplementedError()
 
+    def visitCircleNode(self, ra: Any, dec: Any, radius: Any, node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
+    def visitBoxNode(self, ra: Any, dec: Any, width: Any, height: Any, node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
+    def visitPolygonNode(self, vertices: list[tuple[Any, Any]], node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
+    def visitRegionNode(self, pos: Any, node: Node) -> Any:
+        # docstring is inherited from base class
+        raise NotImplementedError()
+
     def visitGlobNode(self, expression: Any, pattern: Any, node: Node) -> Any:
         # docstring is inherited from base class
         raise NotImplementedError()

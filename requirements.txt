@@ -6,6 +6,7 @@ networkx
 wcwidth
 frozendict
 astropy
+sphinx-prompt == 1.6.0
 lsst-daf-butler @ git+https://github.com/lsst/daf_butler@main
 lsst-utils @ git+https://github.com/lsst/utils@main
 lsst-resources @ git+https://github.com/lsst/resources@main
