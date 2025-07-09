@@ -354,6 +354,7 @@ class PrerequisiteFinder:
                         bind=bind,
                         with_dimension_records=True,
                         limit=None,
+                        explain=False,
                     )
                 except MissingDatasetTypeError:
                     return []
@@ -385,6 +386,7 @@ class PrerequisiteFinder:
                 data_id=data_id,
                 with_dimension_records=True,
                 limit=None,
+                explain=False,
             )
         except MissingDatasetTypeError:
             return []
