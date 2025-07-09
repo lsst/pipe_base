@@ -34,8 +34,9 @@ from __future__ import annotations
 __all__ = ("AllDimensionsQuantumGraphBuilder", "DatasetQueryConstraintVariant")
 
 import dataclasses
+import itertools
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
 import astropy.table
@@ -44,10 +45,13 @@ from lsst.daf.butler import (
     Butler,
     DataCoordinate,
     DimensionDataAttacher,
+    DimensionElement,
     DimensionGroup,
     DimensionRecordSet,
     MissingDatasetTypeError,
+    SkyPixDimension,
 )
+from lsst.sphgeom import RangeSet
 from lsst.utils.logging import LsstLogAdapter, PeriodicLogger
 from lsst.utils.timer import timeMethod
 
@@ -132,14 +136,17 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         # be the same as or a dimension-subset of another.  This is an
         # optimization opportunity we're not currently taking advantage of.
         tree = _DimensionGroupTree(subgraph)
+        tree.build(self.dataset_query_constraint, self.data_id_tables, log=self.log)
+        tree.pprint(printer=self.log.debug)
         self._query_for_data_ids(tree)
+        dimension_records = self._fetch_most_dimension_records(tree)
+        tree.generate_data_ids(self.log)
         skeleton = self._make_subgraph_skeleton(tree)
         if not skeleton.has_any_quanta:
             # QG is going to be empty; exit early not just for efficiency, but
             # also so downstream code doesn't have to guard against this case.
             return skeleton
         self._find_followup_datasets(tree, skeleton)
-        dimension_records = self._fetch_most_dimension_records(tree)
         self._attach_dimension_records(skeleton, dimension_records)
         return skeleton
 
@@ -153,42 +160,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Tree with dimension group branches that holds subgraph-specific
             state for this builder, to be modified in place.
         """
-        self.log.debug("Analyzing subgraph dimensions and overall-inputs.")
-        constraint_datasets: set[str] = set()
-        self.log.debug("Building query for data IDs.")
-        if self.dataset_query_constraint == DatasetQueryConstraintVariant.ALL:
-            self.log.debug("Constraining graph query using all datasets not marked as deferred.")
-            constraint_datasets = {
-                name
-                for name, dataset_type_node in tree.overall_inputs.items()
-                if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
-            }
-        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.OFF:
-            self.log.debug("Not using dataset existence to constrain query.")
-        elif self.dataset_query_constraint == DatasetQueryConstraintVariant.LIST:
-            constraint = set(self.dataset_query_constraint)
-            inputs = tree.overall_inputs - tree.empty_dimensions_branch.dataset_types.keys()
-            if remainder := constraint.difference(inputs):
-                self.log.debug(
-                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
-                    "subgraph, on the assumption that they are relevant for a different subgraph.",
-                    remainder,
-                )
-            constraint.intersection_update(inputs)
-            self.log.debug(f"Constraining graph query using {constraint}")
-            constraint_datasets = constraint
-        else:
-            raise QuantumGraphBuilderError(
-                f"Unable to handle type {self.dataset_query_constraint} given as datasetQueryConstraint."
-            )
         query_cmd: list[str] = []
         with self.butler.query() as query:
             query_cmd.append("with butler.query() as query:")
-            query_cmd.append(f"    query = query.join_dimensions({list(tree.all_dimensions.names)})")
-            query = query.join_dimensions(tree.all_dimensions)
-            if constraint_datasets:
+            query_cmd.append(f"    query = query.join_dimensions({list(tree.queryable_dimensions.names)})")
+            query = query.join_dimensions(tree.queryable_dimensions)
+            if tree.dataset_constraint:
                 query_cmd.append(f"    collections = {list(self.input_collections)}")
-            for dataset_type_name in constraint_datasets:
+            for dataset_type_name in tree.dataset_constraint:
                 query_cmd.append(f"    query = query.join_dataset_search({dataset_type_name!r}, collections)")
                 try:
                     query = query.join_dataset_search(dataset_type_name, self.input_collections)
@@ -221,7 +200,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             # quickly as possible in case that holds a connection/cursor open.
             n_rows = 0
             progress_logger: PeriodicLogger | None = None
-            for common_data_id in query.data_ids(tree.all_dimensions):
+            for common_data_id in query.data_ids(tree.queryable_dimensions):
                 if progress_logger is None:
                     # There can be a long wait between submitting the query and
                     # returning the first row, so we want to make sure we log
@@ -230,7 +209,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     # first log is seen.
                     self.log.info("Iterating over data ID query results.")
                     progress_logger = PeriodicLogger(self.log)
-                for branch_dimensions, branch in tree.trunk_branches.items():
+                for branch_dimensions, branch in tree.queryable_branches.items():
                     data_id = common_data_id.subset(branch_dimensions)
                     branch.data_ids.add(data_id)
                 n_rows += 1
@@ -272,13 +251,20 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             Preliminary quantum graph.
         """
         skeleton = QuantumGraphSkeleton(tree.subgraph.tasks)
-        for branch_dimensions, branch in tree.trunk_branches.items():
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
             self.log.verbose(
-                "Adding nodes and edges for %s %s data ID(s).",
+                "Adding nodes for %s %s data ID(s).",
                 len(branch.data_ids),
                 branch_dimensions,
             )
-            branch.update_skeleton(skeleton, self.log)
+            branch.update_skeleton_nodes(skeleton)
+        for branch_dimensions, branch in tree.branches_by_dimensions.items():
+            self.log.verbose(
+                "Adding edges for %s %s data ID(s).",
+                len(branch.data_ids),
+                branch_dimensions,
+            )
+            branch.update_skeleton_edges(skeleton)
         n_quanta = sum(len(skeleton.get_quanta(task_label)) for task_label in tree.subgraph.tasks)
         self.log.info(
             "Initial bipartite graph has %d quanta, %d dataset nodes, and %d edges.",
@@ -302,16 +288,18 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             In-progress quantum graph to modify in place.
         """
         dataset_key: DatasetKey | PrerequisiteDatasetKey
-        for dataset_type_name in tree.empty_dimensions_branch.dataset_types.keys():
-            dataset_key = DatasetKey(dataset_type_name, self.empty_data_id.required_values)
-            if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
-                skeleton.set_dataset_ref(ref, dataset_key)
-            if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
-                skeleton.set_output_for_skip(ref)
-            if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
-                skeleton.set_output_in_the_way(ref)
         for dimensions, branch in tree.branches_by_dimensions.items():
-            if not branch.has_followup_queries:
+            if not dimensions:
+                for dataset_type_name in branch.dataset_types.keys():
+                    dataset_key = DatasetKey(dataset_type_name, self.empty_data_id.required_values)
+                    if ref := self.empty_dimensions_datasets.inputs.get(dataset_key):
+                        skeleton.set_dataset_ref(ref, dataset_key)
+                    if ref := self.empty_dimensions_datasets.outputs_for_skip.get(dataset_key):
+                        skeleton.set_output_for_skip(ref)
+                    if ref := self.empty_dimensions_datasets.outputs_in_the_way.get(dataset_key):
+                        skeleton.set_output_in_the_way(ref)
+                continue
+            if not branch.dataset_types and not branch.tasks:
                 continue
             if not branch.data_ids:
                 continue
@@ -320,7 +308,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
             with self.butler.query() as butler_query:
                 butler_query = butler_query.join_data_coordinates(branch.data_ids)
                 for dataset_type_node in branch.dataset_types.values():
-                    if dataset_type_node.name in tree.overall_inputs:
+                    if tree.subgraph.producer_of(dataset_type_node.name) is None:
                         # Dataset type is an overall input; we always need to
                         # try to find these.
                         count = 0
@@ -457,9 +445,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                             finder.dataset_type_node.name,
                             task_node.label,
                         )
-                if not branch.record_elements:
-                    # Delete data ID sets we don't need anymore.
-                    del branch.data_ids
+                # Delete data ID sets we don't need anymore to save memory.
+                del branch.data_ids
 
     @timeMethod
     def _fetch_most_dimension_records(self, tree: _DimensionGroupTree) -> list[DimensionRecordSet]:
@@ -468,8 +455,9 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
 
         Parameters
         ----------
-        query : `_AllDimensionsQuery`
-            Object representing the materialized sub-pipeline data ID query.
+        tree : `_DimensionGroupTree`
+            Tree with dimension group branches that holds subgraph-specific
+            state for this builder.
 
         Returns
         -------
@@ -485,18 +473,15 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         self.log.verbose("Performing follow-up queries for dimension records.")
         result: list[DimensionRecordSet] = []
         for branch in tree.branches_by_dimensions.values():
-            if not branch.record_elements:
+            if not branch.dimension_records:
                 continue
             if not branch.data_ids:
                 continue
             with self.butler.query() as butler_query:
                 butler_query = butler_query.join_data_coordinates(branch.data_ids)
-                for element in branch.record_elements:
-                    result.append(
-                        DimensionRecordSet(
-                            element, butler_query.dimension_records(element), universe=self.universe
-                        )
-                    )
+                for record_set in branch.dimension_records:
+                    record_set.update(butler_query.dimension_records(record_set.element.name))
+                    result.append(record_set)
         return result
 
     @timeMethod
@@ -575,10 +560,8 @@ class _DimensionGroupBranch:
     dataset type name.
     """
 
-    record_elements: list[str] = dataclasses.field(default_factory=list)
-    """The names of dimension elements whose records should be looked up via
-    these dimensions.
-    """
+    dimension_records: list[DimensionRecordSet] = dataclasses.field(default_factory=list)
+    """Sets of dimension records looked up with these dimensions."""
 
     data_ids: set[DataCoordinate] = dataclasses.field(default_factory=set)
     """All data IDs with these dimensions seen in the QuantumGraph."""
@@ -599,7 +582,8 @@ class _DimensionGroupBranch:
 
     branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
     """Child branches whose dimensions are strict subsets of this branch's
-    dimensions.
+    dimensions, populated by projecting this branch's set of data IDs (i.e.
+    remove a dimension, then deduplicate).
     """
 
     twigs: defaultdict[DimensionGroup, _DimensionGroupTwig] = dataclasses.field(
@@ -609,146 +593,16 @@ class _DimensionGroupBranch:
     edge in `input_edges` or `output_edges`.
     """
 
-    @property
-    def has_followup_queries(self) -> bool:
-        """Whether we will need to perform follow-up queries with these
-        dimensions.
-        """
-        return bool(self.tasks or self.dataset_types or self.record_elements)
-
-    @staticmethod
-    def populate_record_elements(
-        all_dimensions: DimensionGroup, branches: dict[DimensionGroup, _DimensionGroupBranch]
+    def pprint(
+        self,
+        dimensions: DimensionGroup,
+        indent: str = "  ",
+        suffix: str = "",
+        printer: Callable[[str], None] = print,
     ) -> None:
-        """Ensure we have branches for all dimension elements we'll need to
-        fetch dimension records for.
-
-        Parameters
-        ----------
-        all_dimensions : `~lsst.daf.butler.DimensionGroup`
-            All dimensions that appear in the quantum graph.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place.  New branches may
-            be added and existing branches may have their `record_element`
-            attributes updated.
-        """
-        for element_name in all_dimensions.elements:
-            element = all_dimensions.universe[element_name]
-            if element.minimal_group in branches:
-                branches[element.minimal_group].record_elements.append(element_name)
-            else:
-                branches[element.minimal_group] = _DimensionGroupBranch(record_elements=[element_name])
-
-    @staticmethod
-    def populate_edges(
-        pipeline_graph: PipelineGraph, branches: dict[DimensionGroup, _DimensionGroupBranch]
-    ) -> None:
-        """Ensure we have branches for all edges in the graph.
-
-        Parameters
-        ----------
-        pipeline_graph : `~..pipeline_graph.PipelineGraph``
-            Graph of tasks and dataset types.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place.  New branches may
-            be added and existing branches may have their `input_edges`,
-            `output_edges`, and `twigs` attributes updated.
-        """
-
-        def update_edge_branch(
-            task_node: TaskNode, dataset_type_node: DatasetTypeNode
-        ) -> _DimensionGroupBranch:
-            union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
-            if (branch := branches.get(union_dimensions)) is None:
-                branch = _DimensionGroupBranch()
-                branches[union_dimensions] = branch
-            branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(dataset_type_node.name)
-            branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
-            return branch
-
-        for task_node in pipeline_graph.tasks.values():
-            for dataset_type_node in pipeline_graph.inputs_of(task_node.label).values():
-                assert dataset_type_node is not None, "Pipeline graph is resolved."
-                if dataset_type_node.is_prerequisite:
-                    continue
-                branch = update_edge_branch(task_node, dataset_type_node)
-                branch.input_edges.append((dataset_type_node.name, task_node.label))
-            for dataset_type_node in pipeline_graph.outputs_of(task_node.label).values():
-                assert dataset_type_node is not None, "Pipeline graph is resolved."
-                branch = update_edge_branch(task_node, dataset_type_node)
-                branch.output_edges.append((task_node.label, dataset_type_node.name))
-
-    @staticmethod
-    def find_next_uncontained_dimensions(
-        parent_dimensions: DimensionGroup | None, candidates: Iterable[DimensionGroup]
-    ) -> list[DimensionGroup]:
-        """Find dimension groups that are not a subset of any other dimension
-        groups in a set.
-
-        Parameters
-        ----------
-        parent_dimensions : `~lsst.daf.butler.DimensionGroup` or `None`
-            If not `None`, first filter out any candidates that are not strict
-            subsets of these dimensions.
-        candidates : `~collections.abc.Iterable` [\
-                `~lsst.daf.butler.DimensionGroup` ]
-            Iterable of dimension groups to consider.
-
-        Returns
-        -------
-        uncontained : `list` [ `~lsst.daf.butler.DimensionGroup` ]
-            Dimension groups that are not contained by any other dimension
-            group in the set of filtered candidates.
-        """
-        if parent_dimensions is None:
-            refined_candidates = candidates
-        else:
-            refined_candidates = [dimensions for dimensions in candidates if dimensions < parent_dimensions]
-        return [
-            dimensions
-            for dimensions in refined_candidates
-            if not any(dimensions < other for other in refined_candidates)
-        ]
-
-    @classmethod
-    def populate_branches(
-        cls,
-        parent_dimensions: DimensionGroup | None,
-        branches: dict[DimensionGroup, _DimensionGroupBranch],
-    ) -> dict[DimensionGroup, _DimensionGroupBranch]:
-        """Transform a flat mapping of dimension group branches into a tree.
-
-        Parameters
-        ----------
-        parent_dimensions : `~lsst.daf.butler.DimensionGroup` or `None`
-            If not `None`, ignore any candidates in `branches` that are not
-            strict subsets of these dimensions.
-        branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Flat mapping of all branches to update in-place, by populating
-            the `branches` attributes to form a tree and removing entries that
-            have been put into the tree.
-
-        Returns
-        -------
-        uncontained_branches : `dict` [ `~lsst.daf.butler.DimensionGroup`,\
-                `_DimensionGroupBranch` ]
-            Branches whose dimensions were not subsets of any others in the
-            mapping except those that were supersets of ``parent_dimensions``.
-        """
-        result: dict[DimensionGroup, _DimensionGroupBranch] = {}
-        for parent_branch_dimensions in cls.find_next_uncontained_dimensions(
-            parent_dimensions, branches.keys()
-        ):
-            parent_branch = branches.pop(parent_branch_dimensions)
-            result[parent_branch_dimensions] = parent_branch
-            for child_branch_dimensions, child_branch in cls.populate_branches(
-                parent_branch_dimensions, branches
-            ).items():
-                parent_branch.branches[child_branch_dimensions] = child_branch
-        return result
+        printer(f"{indent}{dimensions}{suffix}")
+        for branch_dimensions, branch in self.branches.items():
+            branch.pprint(branch_dimensions, indent + "  ", printer=printer)
 
     def project_data_ids(self, log: LsstLogAdapter, log_indent: str = "  ") -> None:
         """Populate the data ID sets of child branches from the data IDs in
@@ -766,12 +620,10 @@ class _DimensionGroupBranch:
             for branch_dimensions, branch in self.branches.items():
                 branch.data_ids.add(data_id.subset(branch_dimensions))
         for branch_dimensions, branch in self.branches.items():
-            log.debug("%sProjecting query data IDs to %s.", log_indent, branch_dimensions)
+            log.verbose("%sProjecting query data ID(s) to %s.", log_indent, branch_dimensions)
             branch.project_data_ids(log, log_indent + "  ")
 
-    def update_skeleton(
-        self, skeleton: QuantumGraphSkeleton, log: LsstLogAdapter, log_indent: str = "  "
-    ) -> None:
+    def update_skeleton_nodes(self, skeleton: QuantumGraphSkeleton) -> None:
         """Process the data ID sets of this branch and its children recursively
         to add nodes and edges to the under-construction quantum graph.
 
@@ -779,25 +631,23 @@ class _DimensionGroupBranch:
         ----------
         skeleton : `QuantumGraphSkeleton`
             Under-construction quantum graph to modify in place.
-        log : `lsst.logging.LsstLogAdapter`
-            Logger to use for status reporting.
-        log_indent : `str`, optional
-            Indentation to prefix the log message.  This is used when recursing
-            to make the branch structure clear.
         """
-        for branch_dimensions, branch in self.branches.items():
-            log.verbose(
-                "%sAdding nodes and edges for %s %s data ID(s).",
-                log_indent,
-                len(branch.data_ids),
-                branch_dimensions,
-            )
-            branch.update_skeleton(skeleton, log, log_indent + "  ")
         for data_id in self.data_ids:
             for task_label in self.tasks:
                 skeleton.add_quantum_node(task_label, data_id)
             for dataset_type_name in self.dataset_types:
                 skeleton.add_dataset_node(dataset_type_name, data_id)
+
+    def update_skeleton_edges(self, skeleton: QuantumGraphSkeleton) -> None:
+        """Process the data ID sets of this branch and its children recursively
+        to add nodes and edges to the under-construction quantum graph.
+
+        Parameters
+        ----------
+        skeleton : `QuantumGraphSkeleton`
+            Under-construction quantum graph to modify in place.
+        """
+        for data_id in self.data_ids:
             quantum_keys: dict[str, QuantumKey] = {}
             dataset_keys: dict[str, DatasetKey] = {}
             for twig_dimensions, twig in self.twigs.items():
@@ -812,7 +662,7 @@ class _DimensionGroupBranch:
                 skeleton.add_input_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
             for task_label, dataset_type_name in self.output_edges:
                 skeleton.add_output_edge(quantum_keys[task_label], dataset_keys[dataset_type_name])
-        if not self.has_followup_queries:
+        if not self.dataset_types and not self.tasks:
             # Delete data IDs we don't need anymore to save memory.
             del self.data_ids
 
@@ -842,15 +692,18 @@ class _DimensionGroupTree:
        dimensions are those dimensions;
      - if there is a dimension element in any task or non-prerequisite dataset
        type dimensions whose `~lsst.daf.butler.DimensionElement.minimal_group`
-       is those dimensions.
+       is those dimensions (allowing us to look up dimension records).
+
+    In addition, for any dimension group that has unqueryable dimensions (e.g.
+    non-common skypix dimensions, like healpix), we create a branch for the
+    subset of the group with only queryable dimensions.
 
     We process the initial data query by recursing through this tree structure
     to populate a data ID set for each branch
-    (`_DimensionGroupBranch.project_data_ids`), and then process those sets
-    recursively (`_DimensionGroupBranch.update_skeleton`). This can be far
-    faster than the non-recursive processing the QG builder used to use because
-    the set of data IDs is smaller (sometimes dramatically smaller) as we move
-    to smaller sets of dimensions.
+    (`_DimensionGroupBranch.project_data_ids`), and then process those sets.
+    This can be far faster than the non-recursive processing the QG builder
+    used to use because the set of data IDs is smaller (sometimes dramatically
+    smaller) as we move to smaller sets of dimensions.
 
     In addition to their child branches, a branch that is used to define graph
     edges also has "twigs", which are a flatter set of dimension subsets for
@@ -867,31 +720,35 @@ class _DimensionGroupTree:
     (non-prerequisite) dataset type in this subgraph.
     """
 
-    empty_dimensions_branch: _DimensionGroupBranch = dataclasses.field(init=False)
-    """The tasks and dataset types of this subset of this pipeline that have
-    empty dimensions.
-
-    Prerequisite dataset types are not included.
-    """
-
-    trunk_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
-    """The top-level branches in the tree of dimension groups.
+    queryable_dimensions: DimensionGroup = dataclasses.field(init=False)
+    """All dimensions except those that cannot be queried for directly via the
+    butler (e.g. skypix systems other than the common one).
     """
 
     branches_by_dimensions: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(init=False)
     """The tasks and dataset types of this subset of the pipeline, grouped
     by their dimensions.
-
-    The tasks and dataset types with empty dimensions are not included; they're
-    in `empty_dimensions_tree` since they are usually used differently.
-    Prerequisite dataset types are also not included.
-
-    This is a flatter view of the objects in `trunk_branches`.
     """
 
-    overall_inputs: dict[str, DatasetTypeNode] = dataclasses.field(init=False)
-    """Pipeline graph nodes for all non-prerequisite, non-init overall-input
-    dataset types for this subset of the pipeline.
+    dataset_constraint: set[str] = dataclasses.field(default_factory=set)
+    """The names of dataset types used as query constraints."""
+
+    queryable_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
+    """The top-level branches in the tree of dimension groups populated by the
+    butler query.
+
+    Data IDs in these branches are populated from the top down, with each
+    branch a projection ("remove dimension, then deduplicate") of its parent,
+    starting with the query result rows.
+    """
+
+    generators: list[DataIdGenerator] = dataclasses.field(default_factory=list)
+    """Branches for dimensions groups that are populated by algorithmically
+    generating data IDs from those in one or more other branches.
+
+    These are typically variants on the theme of adding a skypix dimension to
+    another set of dimensions by identifying the sky pixels that overlap the
+    region of the original dimensions.
     """
 
     def __post_init__(self) -> None:
@@ -902,29 +759,751 @@ class _DimensionGroupTree:
             for dimensions, (tasks, dataset_types) in self.subgraph.group_by_dimensions().items()
         }
         self.all_dimensions = DimensionGroup.union(*self.branches_by_dimensions.keys(), universe=universe)
-        _DimensionGroupBranch.populate_record_elements(self.all_dimensions, self.branches_by_dimensions)
-        _DimensionGroupBranch.populate_edges(self.subgraph, self.branches_by_dimensions)
-        self.trunk_branches = _DimensionGroupBranch.populate_branches(
-            None, self.branches_by_dimensions.copy()
-        )
-        self.empty_dimensions_branch = self.branches_by_dimensions.pop(
-            universe.empty, _DimensionGroupBranch()
-        )
-        self.overall_inputs = {
+
+    def build(
+        self,
+        requested: DatasetQueryConstraintVariant,
+        data_id_tables: Iterable[astropy.table.Table],
+        *,
+        log: LsstLogAdapter,
+    ) -> None:
+        """Organize the branches into a tree.
+
+        Parameters
+        ----------
+        requested : `DatasetQueryConstraintVariant`
+            Query constraint specified by the user.
+        data_id_tables : `~collections.abc.Iterable` [ `astropy.table.Table` ]
+            Data ID tables being joined into the query.
+        log : `lsst.log.LsstLogAdapter`
+            Logger that supports ``verbose`` output.
+        """
+        universe = self.all_dimensions.universe
+        self._make_dimension_record_branches()
+        self._make_edge_branches()
+        self._set_dataset_constraint(requested, log)
+        # Work out which dimensions we can potentially query the database for.
+        # We start out by dropping all skypix dimensions other than the common
+        # one, and then we add them back in if a constraint dataset type or
+        # data ID table provides them.
+        unqueryable_skypix = universe.conform(self.all_dimensions.skypix - {universe.commonSkyPix.name})
+        self.queryable_dimensions = self.all_dimensions.difference(unqueryable_skypix)
+        for dataset_type_name in sorted(self.dataset_constraint):
+            dataset_type_dimensions = self.subgraph.dataset_types[dataset_type_name].dimensions
+            dataset_type_skypix = dataset_type_dimensions.intersection(unqueryable_skypix)
+            if dataset_type_skypix:
+                log.info(
+                    f"Including {dataset_type_skypix} in the set of dimensions to query via "
+                    f"{dataset_type_name}.  If this query fails, exclude those dataset type "
+                    "from the constraint or provide a data ID table for missing spatial joins."
+                )
+            self.queryable_dimensions = self.queryable_dimensions.union(dataset_type_dimensions)
+        for data_id_table in data_id_tables:
+            table_dimensions = universe.conform(data_id_table.colnames)
+            if table_dimensions.skypix:
+                self.queryable_dimensions = self.queryable_dimensions.union(table_dimensions)
+        # Set up the tree to generate most data IDs by querying for them from
+        # the database and then projecting to subset dimensions.
+        branches_not_in_tree = set(self.branches_by_dimensions.keys())
+        self._make_queryable_branch_tree(branches_not_in_tree)
+        # Try to find ways to generate other data IDs directly from the
+        # queryable branches.
+        self._make_queryable_overlap_branch_generators(branches_not_in_tree)
+        # As long as there are still branches that haven't been inserted into
+        # the tree, try to add them as projections of generated branches or
+        # generators on generated branches.
+        while branches_not_in_tree:
+            # Look for projections first, since those are more efficient, and
+            # some may be available after we've added some generators.
+            # We intentionally add the same branch as a projection of multiple
+            # parents since (unlike queryable dimensions) there's no guarantee
+            # that each parent branch's data IDs would project to the same set
+            # (e.g. a visit-healpix overlap may yield different healpixels than
+            # a patch-healpix overlap, even if the visits and patches overlap).
+            for target_dimensions in sorted(branches_not_in_tree):
+                for generator in self.generators:
+                    if self._maybe_insert_projection_branch(
+                        target_dimensions, generator.dimensions, generator.branch.branches
+                    ):
+                        branches_not_in_tree.discard(target_dimensions)
+            if not self._make_general_overlap_branch_generator(branches_not_in_tree):
+                break
+        # After we've exhausted overlap generation, try generation via joins
+        # of dimensions we can already query for or generate.
+        while branches_not_in_tree:
+            if not self._make_join_branch_generator(branches_not_in_tree):
+                raise QuantumGraphBuilderError(f"Could not generate data IDs for {branches_not_in_tree}.")
+
+    def _set_dataset_constraint(self, requested: DatasetQueryConstraintVariant, log: LsstLogAdapter) -> None:
+        """Set the dataset query constraint.
+
+        Parameters
+        ----------
+        requested : `DatasetQueryConstraintVariant`
+            Query constraint specified by the user.
+        log : `lsst.log.LsstLogAdapter`
+            Logger that supports ``verbose`` output.
+        """
+        overall_inputs: dict[str, DatasetTypeNode] = {
             name: node  # type: ignore
             for name, node in self.subgraph.iter_overall_inputs()
             if not node.is_prerequisite  # type: ignore
         }
+        match requested:
+            case DatasetQueryConstraintVariant.ALL:
+                self.dataset_constraint = {
+                    name
+                    for name, dataset_type_node in overall_inputs.items()
+                    if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
+                }
+            case DatasetQueryConstraintVariant.OFF:
+                pass
+            case DatasetQueryConstraintVariant.LIST:
+                self.dataset_constraint = set(requested)
+                inputs = {
+                    name for name, dataset_type_node in overall_inputs.items() if dataset_type_node.dimensions
+                }
+                if remainder := self.dataset_constraint.difference(inputs):
+                    log.verbose(
+                        "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
+                        "subgraph, on the assumption that they are relevant for a different subgraph.",
+                        remainder,
+                    )
+                self.dataset_constraint.intersection_update(inputs)
+            case _:
+                raise QuantumGraphBuilderError(
+                    f"Unable to handle type {requested} given as dataset query constraint."
+                )
+
+    def _make_dimension_record_branches(self) -> None:
+        """Ensure we have branches for all dimension elements we'll need to
+        fetch dimension records for.
+        """
+        for element_name in self.all_dimensions.elements:
+            element = self.all_dimensions.universe[element_name]
+            record_set = DimensionRecordSet(element_name, universe=self.all_dimensions.universe)
+            if element.minimal_group in self.branches_by_dimensions:
+                self.branches_by_dimensions[element.minimal_group].dimension_records.append(record_set)
+            else:
+                self.branches_by_dimensions[element.minimal_group] = _DimensionGroupBranch(
+                    dimension_records=[record_set]
+                )
+
+    def _make_edge_branches(self) -> None:
+        """Ensure we have branches for all edges in the graph."""
+
+        def update_edge_branch(
+            task_node: TaskNode, dataset_type_node: DatasetTypeNode
+        ) -> _DimensionGroupBranch:
+            union_dimensions = task_node.dimensions.union(dataset_type_node.dimensions)
+            if (branch := self.branches_by_dimensions.get(union_dimensions)) is None:
+                branch = _DimensionGroupBranch()
+                self.branches_by_dimensions[union_dimensions] = branch
+            branch.twigs[dataset_type_node.dimensions].parent_edge_dataset_types.add(dataset_type_node.name)
+            branch.twigs[task_node.dimensions].parent_edge_tasks.add(task_node.label)
+            return branch
+
+        for task_node in self.subgraph.tasks.values():
+            for dataset_type_node in self.subgraph.inputs_of(task_node.label).values():
+                assert dataset_type_node is not None, "Pipeline graph is resolved."
+                if dataset_type_node.is_prerequisite:
+                    continue
+                branch = update_edge_branch(task_node, dataset_type_node)
+                branch.input_edges.append((dataset_type_node.name, task_node.label))
+            for dataset_type_node in self.subgraph.outputs_of(task_node.label).values():
+                assert dataset_type_node is not None, "Pipeline graph is resolved."
+                branch = update_edge_branch(task_node, dataset_type_node)
+                branch.output_edges.append((task_node.label, dataset_type_node.name))
+
+    def _make_queryable_branch_tree(self, branches_not_in_tree: set[DimensionGroup]) -> None:
+        """Assemble the branches with queryable dimensions into a tree, in
+        which each branch has a subset of the dimensions of its parent.
+
+        Parameters
+        ----------
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+        """
+        for target_dimensions in sorted(branches_not_in_tree):
+            if target_dimensions.issubset(self.queryable_dimensions):
+                if self._maybe_insert_projection_branch(
+                    target_dimensions, self.queryable_dimensions, self.queryable_branches
+                ):
+                    branches_not_in_tree.remove(target_dimensions)
+                else:
+                    raise AssertionError(
+                        "Projection-branch insertion should not fail for queryable dimensions."
+                    )
+
+    def _maybe_insert_projection_branch(
+        self,
+        target_dimensions: DimensionGroup,
+        candidate_dimensions: DimensionGroup,
+        candidate_projection_branches: dict[DimensionGroup, _DimensionGroupBranch],
+    ) -> bool:
+        """Insert a branch at the appropriate location in a [sub]tree.
+
+        Branches are inserted below the first parent branch whose dimensions
+        are a superset of their own.
+
+        Parameters
+        ----------
+        target_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the branch to be inserted.
+        candidate_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the subtree the branch might be inserted under.  If
+            this is not a superset of ``target_dimensions``, this method
+            returns `False` and nothing is done.
+        candidate_projection_branches : `dict` [ \
+                `lsst.daf.butler.DimensionGroup`, `_DimensionGroupBranch` ]
+            Subtree branches to be updated directly or indirectly (i.e. in a
+            nested branch).
+
+        Returns
+        -------
+        inserted : `bool`
+            Whether the branch was actually inserted.
+        """
+        if candidate_dimensions >= target_dimensions:
+            target_branch = self.branches_by_dimensions[target_dimensions]
+            for child_dimensions in list(candidate_projection_branches.keys()):
+                if self._maybe_insert_projection_branch(
+                    child_dimensions, target_dimensions, target_branch.branches
+                ):
+                    del candidate_projection_branches[child_dimensions]
+            for child_dimensions, child_branch in candidate_projection_branches.items():
+                if self._maybe_insert_projection_branch(
+                    target_dimensions, child_dimensions, child_branch.branches
+                ):
+                    return True
+            candidate_projection_branches[target_dimensions] = target_branch
+            return True
+        return False
+
+    def _make_queryable_overlap_branch_generators(self, branches_not_in_tree: set[DimensionGroup]) -> None:
+        """Add data ID generators for sets of dimensions that can only
+        partially queried for, with the rest needing to be generated by
+        manipulating the data IDs of the queryable subset.
+
+        Parameters
+        ----------
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+        """
+        for target_dimensions in sorted(branches_not_in_tree):
+            queryable_subset_dimensions = target_dimensions.intersection(self.queryable_dimensions)
+            # Make sure we actually have a branch to capture the queryable
+            # subset data IDs (i.e. in case we didn't already have one for some
+            # dataset type or task, etc).
+            if queryable_subset_dimensions not in self.branches_by_dimensions:
+                # If we have to make a new queryable branch, we also have to
+                # insert it into the tree so its data IDs get populated.
+                self.branches_by_dimensions[queryable_subset_dimensions] = _DimensionGroupBranch()
+                if not self._maybe_insert_projection_branch(
+                    queryable_subset_dimensions,
+                    self.queryable_dimensions,
+                    self.queryable_branches,
+                ):
+                    raise AssertionError(
+                        "Projection-branch insertion should not fail for queryable dimensions."
+                    )
+            if queryable_region_name := queryable_subset_dimensions.region_dimension:
+                # If there is a single well-defined region for the queryable
+                # subset, we can potentially generate skypix IDs from it.
+                # Do the target dimensions just add a single skypix dimension
+                # to the queryable subset?
+                remainder_dimensions = target_dimensions - queryable_subset_dimensions
+                if (remainder_skypix := get_single_skypix(remainder_dimensions)) is not None:
+                    queryable_region_element = target_dimensions.universe[queryable_region_name]
+                    self._append_data_id_generator(
+                        queryable_subset_dimensions,
+                        queryable_region_element,
+                        target_dimensions,
+                        remainder_skypix,
+                        branches_not_in_tree,
+                    )
+
+    def _append_data_id_generator(
+        self,
+        source_dimensions: DimensionGroup,
+        source_region_element: DimensionElement,
+        target_dimensions: DimensionGroup,
+        remainder_skypix: SkyPixDimension,
+        branches_not_in_tree: set[DimensionGroup],
+    ) -> None:
+        """Append an appropriate `DataIdGenerator` instance for generating
+        data IDs with the given characteristics.
+
+        Parameters
+        ----------
+        source_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions whose data IDs can already populated, to use as a
+            starting point.
+        source_region_element : `lsst.daf.butler.DimensionElement`
+            Dimension element associated with the region for the source
+            dimensions.  It is guaranteed that there is exactly one such
+            region.
+        target_dimensions : `lsst.daf.butler.DimensionGroup`
+            Dimensions of the data IDs to be generated.
+        remainder_skypix : `lsst.daf.butler.SkyPixDimension`
+            The single skypix dimension that is being added to
+            ``source_dimensions`` to yield ``target_dimensions``.
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+        """
+        target_branch = self.branches_by_dimensions[target_dimensions]
+        # We want to do the overlap calculation without any extra dimensions
+        # beyond the two spatial dimensions, which may or may not be what we
+        # already have.
+        overlap_dimensions = source_region_element.minimal_group | remainder_skypix.minimal_group
+        generator: DataIdGenerator
+        if overlap_dimensions == target_dimensions:
+            if isinstance(source_region_element, SkyPixDimension):
+                if source_region_element.system == remainder_skypix.system:
+                    if source_region_element.level > remainder_skypix.level:
+                        generator = SkyPixGatherDataIdGenerator(
+                            target_branch,
+                            target_dimensions,
+                            source_dimensions,
+                            remainder_skypix,
+                            source_region_element,
+                        )
+                    else:
+                        generator = SkyPixScatterDataIdGenerator(
+                            target_branch,
+                            target_dimensions,
+                            source_dimensions,
+                            remainder_skypix,
+                            source_region_element,
+                        )
+                else:
+                    generator = CrossSystemDataIdGenerator(
+                        target_branch,
+                        target_dimensions,
+                        source_dimensions,
+                        remainder_skypix,
+                        source_region_element,
+                    )
+            else:
+                generator = DatabaseSourceDataIdGenerator(
+                    target_branch,
+                    target_dimensions,
+                    source_dimensions,
+                    remainder_skypix,
+                    source_region_element,
+                )
+            # We know we can populate the data IDs in remainder_skypix_branch
+            # from the target branch by projection.  Even if it's already
+            # populated by some other generated branch, we want to populate it
+            # again in case that picks up additional sky pixels.
+            target_branch.branches[remainder_skypix.minimal_group] = self.branches_by_dimensions[
+                remainder_skypix.minimal_group
+            ]
+            branches_not_in_tree.discard(remainder_skypix.minimal_group)
+        else:
+            if overlap_dimensions not in self.branches_by_dimensions:
+                self.branches_by_dimensions[overlap_dimensions] = _DimensionGroupBranch()
+                branches_not_in_tree.add(overlap_dimensions)
+                self._append_data_id_generator(
+                    source_region_element.minimal_group,
+                    source_region_element,
+                    overlap_dimensions,
+                    remainder_skypix,
+                    branches_not_in_tree,
+                )
+            generator = JoinDataIdGenerator(
+                target_branch,
+                target_dimensions,
+                source_dimensions,
+                overlap_dimensions,
+            )
+        self.generators.append(generator)
+        branches_not_in_tree.remove(target_dimensions)
+
+    def _make_general_overlap_branch_generator(self, branches_not_in_tree: set[DimensionGroup]) -> bool:
+        """Add data ID generators for sets of dimensions that can be generated
+        via skypix envelopes of other generated data IDs.
+
+        This method should be called in a loop until it returns `False`
+        (indicating no progress was made) or ``branches_not_in_tree`` is empty
+        (indicating no more work to be done).
+
+        Parameters
+        ----------
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+
+        Returns
+        -------
+        appended : `bool`
+            Whether a new data ID generator was successfully appended.
+        """
+        dimensions_done = sorted(self.branches_by_dimensions.keys() - branches_not_in_tree)
+        for source_dimensions in dimensions_done:
+            for target_dimensions in sorted(branches_not_in_tree):
+                if not source_dimensions <= target_dimensions:
+                    continue
+                remainder_dimensions = target_dimensions - source_dimensions
+                if (remainder_skypix := get_single_skypix(remainder_dimensions)) is not None:
+                    if source_region_name := source_dimensions.region_dimension:
+                        # If the target dimensions are just adding a single
+                        # skypix to the source dimensions and the source
+                        # dimensions have a single region column, we can
+                        # generate the skypix indices from the envelopes of
+                        # those regions.
+                        source_region_element = source_dimensions.universe[source_region_name]
+                        self._append_data_id_generator(
+                            source_dimensions,
+                            source_region_element,
+                            target_dimensions,
+                            remainder_skypix,
+                            branches_not_in_tree,
+                        )
+                        return True
+        return not branches_not_in_tree
+
+    def _make_join_branch_generator(self, branches_not_in_tree: set[DimensionGroup]) -> bool:
+        """Add data ID generators for sets of dimensions that can be generated
+        via inner joints of other generated data IDs.
+
+        This method should be called in a loop until it returns `False`
+        (indicating no progress was made) or ``branches_not_in_tree`` is empty
+        (indicating no more work to be done).
+
+        Parameters
+        ----------
+        branches_not_in_tree : `set` [ `lsst.daf.butler.DimensionGroup` ]
+            Dimensions that have not yet been inserted into the tree.  Updated
+            in place.
+
+        Returns
+        -------
+        appended : `bool`
+            Whether a new data ID generator was successfully appended.
+        """
+        for target_dimensions in sorted(branches_not_in_tree):
+            dimensions_done = sorted(self.branches_by_dimensions.keys() - branches_not_in_tree)
+            candidates_by_common: dict[DimensionGroup, tuple[DimensionGroup, DimensionGroup]] = {}
+            for operand1, operand2 in itertools.combinations(dimensions_done, 2):
+                if operand1.union(operand2) == target_dimensions:
+                    candidates_by_common[operand1.intersection(operand2)] = (operand1, operand2)
+            if candidates_by_common:
+                # Because DimensionGroup defines a set-like inequality
+                # operator, 'max' returns the set of dimensions that contains
+                # as many of the other sets of dimensions as possible, which is
+                # a reasonable guess at the most-constrained join.
+                operand1, operand2 = candidates_by_common[max(candidates_by_common)]
+                generator = JoinDataIdGenerator(
+                    self.branches_by_dimensions[target_dimensions],
+                    target_dimensions,
+                    operand1,
+                    operand2,
+                )
+                self.generators.append(generator)
+                branches_not_in_tree.remove(target_dimensions)
+                return True
+        return not branches_not_in_tree
 
     def project_data_ids(self, log: LsstLogAdapter) -> None:
         """Recursively populate the data ID sets of the dimension group tree
-        from the data ID sets of the trunk branches.
+        from the data ID sets of the queryable branches.
 
         Parameters
         ----------
         log : `lsst.logging.LsstLogAdapter`
             Logger to use for status reporting.
         """
-        for branch_dimensions, branch in self.trunk_branches.items():
-            log.debug("Projecting query data IDs to %s.", branch_dimensions)
+        for branch_dimensions, branch in self.queryable_branches.items():
+            log.verbose("Projecting query data ID(s) to %s.", branch_dimensions)
             branch.project_data_ids(log)
+
+    def generate_data_ids(self, log: LsstLogAdapter) -> None:
+        """Run all data ID generators.
+
+        This runs data ID generators and projects data IDs to their subset
+        dimensions.  It can only be called after queryable data IDs have been
+        populated and dimension records fetched.
+
+        Parameters
+        ----------
+        log : `lsst.logging.LsstLogAdapter`
+            Logger to use for status reporting.
+        """
+        for generator in self.generators:
+            generator.run(log, self.branches_by_dimensions)
+            generator.branch.project_data_ids(log, log_indent="  ")
+
+    def pprint(self, printer: Callable[[str], None] = print) -> None:
+        """Print a human-readable representation of the dimensions tree.
+
+        Parameters
+        ----------
+        printer : `~collections.abc.Callable`, optional
+            A function that takes a single string argument and prints a single
+            line (including a newline). Default is the built-in `print`
+            function.
+        """
+        printer("Queryable:")
+        for branch_dimensions, branch in self.queryable_branches.items():
+            branch.pprint(branch_dimensions, "  ", printer=printer)
+        printer("Generator:")
+        for generator in self.generators:
+            generator.pprint("  ", printer=printer)
+
+
+def get_single_skypix(dimensions: DimensionGroup) -> SkyPixDimension | None:
+    """Try to coerce a dimension group a single skypix dimenison.
+
+    Parameters
+    ----------
+    dimensions : `lsst.daf.butler.DimensionGroup`
+        Input dimensions.
+
+    Returns
+    -------
+    skypix : `lsst.daf.butler.SkyPixDimension` or `None`
+        A skypix dimension that is the only dimension in the given group, or
+        `None` in all other cases.
+    """
+    if len(dimensions) == 1:
+        (name,) = dimensions.names
+        return dimensions.universe.skypix_dimensions.get(name)
+    return None
+
+
+@dataclasses.dataclass
+class DataIdGenerator:
+    """A base class for generators for quantum and dataset data IDs that cannot
+    be directly queried for.
+    """
+
+    branch: _DimensionGroupBranch
+    """Branch of the dimensions tree that this generator populates."""
+
+    dimensions: DimensionGroup
+    """Dimensions of the data IDs generated."""
+
+    source: DimensionGroup
+    """Dimensions of another set of data IDs that this generator uses as a
+    starting point.
+    """
+
+    def pprint(self, indent: str = "  ", printer: Callable[[str], None] = print) -> None:
+        """Print a human-readable representation of this generator.
+
+        Parameters
+        ----------
+        indent : `str`
+            Blank spaces to prefix the output with (useful when this is nested
+            in hierarchical object being printed).
+        printer : `~collections.abc.Callable`, optional
+            A function that takes a single string argument and prints a single
+            line (including a newline). Default is the built-in `print`
+            function.
+        """
+        self.branch.pprint(
+            self.dimensions,
+            indent,
+            f" <- {self.source} ({self.__class__.__name__})",
+            printer=printer,
+        )
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        """Run the generator, populating its branch's data IDs.
+
+        Parameters
+        ----------
+        log : `lsst.log.LsstLogAdapter`
+            Logger with a ``verbose`` method as well as the built-in ones.
+        branches : `~collections.abc.Mapping`
+            Mapping of other dimension branches, keyed by their dimensions.
+        """
+        raise NotImplementedError()
+
+
+@dataclasses.dataclass
+class DatabaseSourceDataIdGenerator(DataIdGenerator):
+    """A data ID generator that generates skypix indices from the envelope of
+    regions stored in the database.
+    """
+
+    remainder_skypix: SkyPixDimension
+    """A single additional skypix dimension to be added to the source
+    dimensions.
+    """
+
+    source_element: DimensionElement
+    """Dimension element that the database-stored regions are associated with.
+    """
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        # Docstring inherited.
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs via %s envelope of %s %s region(s).",
+            self.dimensions,
+            self.remainder_skypix,
+            len(source_branch.data_ids),
+            self.source_element,
+        )
+        pixelization = self.remainder_skypix.pixelization
+        (source_records,) = [
+            record_set
+            for record_set in source_branch.dimension_records
+            if record_set.element == self.source_element
+        ]
+        for source_data_id in source_branch.data_ids:
+            source_record = source_records.find(source_data_id)
+            for begin, end in pixelization.envelope(source_record.region):
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id,
+                        **{self.remainder_skypix.name: index},  # type: ignore[arg-type]
+                    )
+                    self.branch.data_ids.add(target_data_id)
+
+
+@dataclasses.dataclass
+class CrossSystemDataIdGenerator(DataIdGenerator):
+    """A data ID generator that generates skypix indices from the envelope of
+    skypix regions from some other system (e.g. healpix from HTM).
+    """
+
+    remainder_skypix: SkyPixDimension
+    """A single additional skypix dimension to be added to the source
+    dimensions.
+    """
+
+    source_skypix: SkyPixDimension
+    """Dimension element for the already-known skypix indices."""
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        # Docstring inherited.
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs via %s envelope of %s %s region(s).",
+            self.dimensions,
+            self.remainder_skypix,
+            len(source_branch.data_ids),
+            self.source_skypix,
+        )
+        source_pixelization = self.source_skypix.pixelization
+        remainder_pixelization = self.remainder_skypix.pixelization
+        for source_data_id in source_branch.data_ids:
+            source_region = source_pixelization.pixel(source_data_id[self.source_skypix.name])
+            for begin, end in remainder_pixelization.envelope(source_region):
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id,
+                        **{self.remainder_skypix.name: index},  # type: ignore[arg-type]
+                    )
+                    self.branch.data_ids.add(target_data_id)
+
+
+@dataclasses.dataclass
+class SkyPixScatterDataIdGenerator(DataIdGenerator):
+    """A data ID generator that generates skypix indices at a high (fine) level
+    from low-level (coarse) indices in the same system.
+    """
+
+    remainder_skypix: SkyPixDimension
+    """A single additional skypix dimension to be added to the source
+    dimensions.
+    """
+
+    source_skypix: SkyPixDimension
+    """Dimension element for the already-known skypix indices."""
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        # Docstring inherited.
+        factor = 4 ** (self.remainder_skypix.level - self.source_skypix.level)
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs by scaling %s %s IDs in %s by %s.",
+            self.dimensions,
+            len(source_branch.data_ids),
+            self.remainder_skypix,
+            self.source,
+            factor,
+        )
+        for source_data_id in source_branch.data_ids:
+            ranges = RangeSet(source_data_id[self.source_skypix.name])
+            ranges.scale(factor)
+            for begin, end in ranges:
+                for index in range(begin, end):
+                    target_data_id = DataCoordinate.standardize(
+                        source_data_id,
+                        **{self.remainder_skypix.name: index},  # type: ignore[arg-type]
+                    )
+                    self.branch.data_ids.add(target_data_id)
+
+
+@dataclasses.dataclass
+class SkyPixGatherDataIdGenerator(DataIdGenerator):
+    """A data ID generator that generates skypix indices at a low (coarse)
+    level from high-level (fine) indices in the same system.
+    """
+
+    remainder_skypix: SkyPixDimension
+    """A single additional skypix dimension to be added to the source
+    dimensions.
+    """
+
+    source_skypix: SkyPixDimension
+    """Dimension element for the already-known skypix indices."""
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        # Docstring inherited.
+        factor = 4 ** (self.source_skypix.level - self.remainder_skypix.level)
+        source_branch = branches[self.source]
+        log.verbose(
+            "Generating %s data IDs by dividing %s %s IDs in %s by %s.",
+            self.dimensions,
+            len(source_branch.data_ids),
+            self.remainder_skypix,
+            self.source,
+            factor,
+        )
+        for source_data_id in source_branch.data_ids:
+            index = source_data_id[self.source_skypix.name] // factor
+            target_data_id = DataCoordinate.standardize(source_data_id, **{self.remainder_skypix.name: index})
+            self.branch.data_ids.add(target_data_id)
+
+
+@dataclasses.dataclass
+class JoinDataIdGenerator(DataIdGenerator):
+    """A data ID that does an inner join between two already-populated
+    sets of data IDs.
+    """
+
+    other: DimensionGroup
+    """Dimensions of the other data ID branches to join to those of ``source``.
+    """
+
+    def run(self, log: LsstLogAdapter, branches: Mapping[DimensionGroup, _DimensionGroupBranch]) -> None:
+        # Docstring inherited.
+        source_branch = branches[self.source]
+        other_branch = branches[self.other]
+        log.verbose(
+            "Generating %s data IDs by joining %s (%s) to %s (%s).",
+            self.dimensions,
+            self.source,
+            len(source_branch.data_ids),
+            self.other,
+            len(other_branch.data_ids),
+        )
+        common = self.source & self.other
+        other_by_common: defaultdict[DataCoordinate, list[DataCoordinate]] = defaultdict(list)
+        for other_data_id in other_branch.data_ids:
+            other_by_common[other_data_id.subset(common)].append(other_data_id)
+        source_by_common: defaultdict[DataCoordinate, list[DataCoordinate]] = defaultdict(list)
+        for source_data_id in source_branch.data_ids:
+            source_by_common[source_data_id.subset(common)].append(source_data_id)
+        for common_data_id in other_by_common.keys() & source_by_common.keys():
+            for other_data_id in other_by_common[common_data_id]:
+                for source_data_id in source_by_common[common_data_id]:
+                    self.branch.data_ids.add(other_data_id.union(source_data_id))

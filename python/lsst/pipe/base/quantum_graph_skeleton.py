@@ -351,7 +351,7 @@ class QuantumGraphSkeleton:
         key = DatasetKey(parent_dataset_type_name, data_id.required_values)
         self._xgraph.add_node(key, data_id=data_id, **attrs)
         if is_global_init_output:
-            assert isinstance(key, DatasetKey)
+            assert isinstance(key, DatasetKey), str(key)
             self._global_init_outputs.add(key)
         return key
 
@@ -448,7 +448,7 @@ class QuantumGraphSkeleton:
 
         Dataset nodes that are not already present will be created.
         """
-        assert task_key in self._xgraph
+        assert task_key in self._xgraph, str(task_key)
         self._xgraph.add_edges_from((dataset_key, task_key) for dataset_key in dataset_keys)
 
     def remove_input_edges(
@@ -513,8 +513,8 @@ class QuantumGraphSkeleton:
             Identifier for the dataset node.  Must identify a node already
             present in the graph.
         """
-        assert task_key in self._xgraph
-        assert dataset_key in self._xgraph
+        assert task_key in self._xgraph, str(task_key)
+        assert dataset_key in self._xgraph, str(dataset_key)
         self._xgraph.add_edge(task_key, dataset_key)
 
     def remove_output_edge(self, dataset_key: DatasetKey) -> None:
@@ -528,7 +528,7 @@ class QuantumGraphSkeleton:
             present in the graph.
         """
         (task_key,) = self._xgraph.predecessors(dataset_key)
-        assert dataset_key in self._xgraph
+        assert dataset_key in self._xgraph, str(dataset_key)
         self._xgraph.remove_edge(task_key, dataset_key)
 
     def remove_orphan_datasets(self) -> None:
