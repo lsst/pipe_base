@@ -731,6 +731,7 @@ class _DimensionGroupTree:
     """
 
     dataset_constraint: set[str] = dataclasses.field(default_factory=set)
+    """The names of dataset types used as query constraints."""
 
     queryable_branches: dict[DimensionGroup, _DimensionGroupBranch] = dataclasses.field(default_factory=dict)
     """The top-level branches in the tree of dimension groups populated by the
@@ -848,30 +849,31 @@ class _DimensionGroupTree:
             for name, node in self.subgraph.iter_overall_inputs()
             if not node.is_prerequisite  # type: ignore
         }
-        if requested == DatasetQueryConstraintVariant.ALL:
-            self.dataset_constraint = {
-                name
-                for name, dataset_type_node in overall_inputs.items()
-                if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
-            }
-        elif requested == DatasetQueryConstraintVariant.OFF:
-            pass
-        elif requested == DatasetQueryConstraintVariant.LIST:
-            self.dataset_constraint = set(requested)
-            inputs = {
-                name for name, dataset_type_node in overall_inputs.items() if dataset_type_node.dimensions
-            }
-            if remainder := self.dataset_constraint.difference(inputs):
-                log.verbose(
-                    "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
-                    "subgraph, on the assumption that they are relevant for a different subgraph.",
-                    remainder,
+        match requested:
+            case DatasetQueryConstraintVariant.ALL:
+                self.dataset_constraint = {
+                    name
+                    for name, dataset_type_node in overall_inputs.items()
+                    if (dataset_type_node.is_initial_query_constraint and dataset_type_node.dimensions)
+                }
+            case DatasetQueryConstraintVariant.OFF:
+                pass
+            case DatasetQueryConstraintVariant.LIST:
+                self.dataset_constraint = set(requested)
+                inputs = {
+                    name for name, dataset_type_node in overall_inputs.items() if dataset_type_node.dimensions
+                }
+                if remainder := self.dataset_constraint.difference(inputs):
+                    log.verbose(
+                        "Ignoring dataset types %s in dataset query constraint that are not inputs to this "
+                        "subgraph, on the assumption that they are relevant for a different subgraph.",
+                        remainder,
+                    )
+                self.dataset_constraint.intersection_update(inputs)
+            case _:
+                raise QuantumGraphBuilderError(
+                    f"Unable to handle type {requested} given as dataset query constraint."
                 )
-            self.dataset_constraint.intersection_update(inputs)
-        else:
-            raise QuantumGraphBuilderError(
-                f"Unable to handle type {requested} given as dataset query constraint."
-            )
 
     def _make_dimension_record_branches(self) -> None:
         """Ensure we have branches for all dimension elements we'll need to
@@ -1125,7 +1127,9 @@ class _DimensionGroupTree:
         """Add data ID generators for sets of dimensions that can be generated
         via skypix envelopes of other generated data IDs.
 
-        This method should be called in a loop until it returns `False`.
+        This method should be called in a loop until it returns `False`
+        (indicating no progress was made) or ``branches_not_in_tree`` is empty
+        (indicating no more work to be done).
 
         Parameters
         ----------
@@ -1166,7 +1170,9 @@ class _DimensionGroupTree:
         """Add data ID generators for sets of dimensions that can be generated
         via inner joints of other generated data IDs.
 
-        This method should be called in a loop until it returns `False`.
+        This method should be called in a loop until it returns `False`
+        (indicating no progress was made) or ``branches_not_in_tree`` is empty
+        (indicating no more work to be done).
 
         Parameters
         ----------
