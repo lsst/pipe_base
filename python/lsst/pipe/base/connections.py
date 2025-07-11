@@ -45,6 +45,7 @@ __all__ = [
 import dataclasses
 import itertools
 import string
+import uuid
 import warnings
 from collections import UserDict, defaultdict
 from collections.abc import Collection, Generator, Iterable, Iterator, Mapping, Sequence, Set
@@ -1271,6 +1272,52 @@ class QuantaAdjuster:
             for edge in self._task_node.iter_all_inputs()
         }
 
+    def get_prerequisite_inputs(
+        self,
+        quantum_data_id: DataCoordinate,
+    ) -> dict[str, dict[uuid.UUID, DataCoordinate]]:
+        """Return the data IDs of all prerequisite inputs to a quantum.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to get the inputs of.
+
+        Returns
+        -------
+        inputs : `dict` [ `str`, \
+            `dict` [ `uuid.UUID`, `~lsst.daf.butler.DataCoordinate` ] ]
+            Dataset IDs and and data IDs of prerequisite inputs, keyed by the
+            connection name (the internal task name, not the dataset type
+            name).  This only contains prerequisite inputs, not init-inputs or
+            regular inputs.
+
+        Notes
+        -----
+        If two connections have the same dataset type, the current
+        implementation assumes the set of datasets is the same for the two
+        connections.  This limitation may be removed in the future.
+
+        Unlike regular inputs, prerequisite inputs are not looked up from input
+        collections or indexed by data ID.  Instead, they are uniquely
+        identified by dataset UUID and reused directly between quanta.
+        """
+        from .quantum_graph_skeleton import PrerequisiteDatasetKey, QuantumKey
+
+        by_dataset_type_name: defaultdict[str, dict[uuid.UUID, DataCoordinate]] = defaultdict(dict)
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+
+        for dataset_key in self._skeleton.iter_inputs_of(quantum_key):
+            if not isinstance(dataset_key, PrerequisiteDatasetKey):
+                continue
+            by_dataset_type_name[dataset_key.parent_dataset_type_name][
+                uuid.UUID(bytes=dataset_key.dataset_id_bytes)
+            ] = self._skeleton.get_data_id(dataset_key)
+        return {
+            edge.connection_name: by_dataset_type_name[edge.parent_dataset_type_name]
+            for edge in self._task_node.iter_all_inputs()
+        }
+
     def get_outputs(self, quantum_data_id: DataCoordinate) -> dict[str, list[DataCoordinate]]:
         """Return the data IDs of all regular outputs to a quantum.
 
@@ -1337,6 +1384,45 @@ class QuantaAdjuster:
         if dataset_key not in self._skeleton:
             raise LookupError(
                 f"Dataset {read_edge.parent_dataset_type_name}@{dataset_data_id} is not already in the graph."
+            )
+        self._skeleton.add_input_edge(quantum_key, dataset_key)
+
+    def add_prerequisite_input(
+        self, quantum_data_id: DataCoordinate, connection_name: str, dataset_uuid: uuid.UUID
+    ) -> None:
+        """Add a new prerequisite input to a quantum.
+
+        Parameters
+        ----------
+        quantum_data_id : `~lsst.daf.butler.DataCoordinate`
+            Data ID of the quantum to add an input to.
+        connection_name : `str`
+            Name of the connection (the task-internal name, not the butler
+            dataset type name).
+        dataset_uuid : `uuid.UUID`
+            UUID of the prerequisite input dataset.  Must already exist in the
+            graph as an input to a different quantum of this task, and must be
+            a prerequisite input, not a regular input or init-input.
+
+        Notes
+        -----
+        If two connections have the same dataset type, the current
+        implementation assumes the set of datasets is the same for the two
+        connections.  This limitation may be removed in the future.
+
+        Unlike regular inputs, prerequisite inputs are not looked up from input
+        collections or indexed by data ID.  Instead, they are uniquely
+        identified by dataset UUID and reused directly between quanta.
+        """
+        from .quantum_graph_skeleton import PrerequisiteDatasetKey, QuantumKey
+
+        quantum_key = QuantumKey(self._task_node.label, quantum_data_id.required_values)
+        read_edge = self._task_node.prerequisite_inputs[connection_name]
+        dataset_key = PrerequisiteDatasetKey(read_edge.parent_dataset_type_name, dataset_uuid.bytes)
+        if dataset_key not in self._skeleton:
+            raise LookupError(
+                f"Prerequisite Dataset {read_edge.parent_dataset_type_name}@{dataset_uuid} "
+                "is not already in the graph."
             )
         self._skeleton.add_input_edge(quantum_key, dataset_key)
 

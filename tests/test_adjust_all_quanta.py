@@ -49,10 +49,10 @@ from lsst.resources import ResourcePath
 
 class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
     """Connections for a task whose quanta read in all of the biases for all
-    detectors with the same purpose and (theoretically) writes both a single
-    summary output for all inputs and another output for each input. The data
-    IDs of the quanta and the summary outputs using the detector with the
-    lowest ID in that group.
+    detectors with the same purpose, use flat-field exposures as prerequisites,
+    and (theoretically) writes both a single summary output for all inputs and
+    another output for each input. The data IDs of the quanta and the summary
+    outputs using the detector with the lowest ID in that group.
     """
 
     input_group = cT.Input(
@@ -60,6 +60,13 @@ class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
         "Exposure",
         multiple=True,
         dimensions=("detector",),
+        isCalibration=True,
+    )
+    prereq_input_group = cT.PrerequisiteInput(
+        "flat",
+        "Exposure",
+        multiple=True,
+        dimensions=("detector", "physical_filter", "band"),
         isCalibration=True,
     )
     output_group = cT.Output(
@@ -90,6 +97,8 @@ class GroupTestConnections(PipelineTaskConnections, dimensions=("detector",)):
             for drop_data_id in drop:
                 for input_data_id in adjuster.get_inputs(drop_data_id)["input_group"]:
                     adjuster.add_input(keep, "input_group", input_data_id)
+                for input_uuid in adjuster.get_prerequisite_inputs(drop_data_id)["prereq_input_group"]:
+                    adjuster.add_prerequisite_input(keep, "prereq_input_group", input_uuid)
                 for output_data_id in adjuster.get_outputs(drop_data_id)["output_group"]:
                     adjuster.move_output(keep, "output_group", output_data_id)
                 adjuster.remove_quantum(drop_data_id)
@@ -135,18 +144,28 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
         # 1-3 have purpose=SCIENCE, and 4 has purpose=WAVEFRONT.
         self.assertEqual(quanta.keys(), {1, 4})
         self.assertEqual(len(quanta[1].inputs["bias"]), 3)
+        self.assertEqual(len(quanta[1].inputs["flat"]), 5)
         self.assertEqual(len(quanta[1].outputs["bias_stuff"]), 3)
         self.assertCountEqual(
             quanta[1].inputs["bias"],
             butler.query_datasets("bias", collections=collections, where="detector.purpose = 'SCIENCE'"),
         )
+        self.assertCountEqual(
+            quanta[1].inputs["flat"],
+            butler.query_datasets("flat", collections=collections, where="detector.purpose = 'SCIENCE'"),
+        )
         self.assertEqual(len(quanta[1].outputs["bias_summary"]), 1)
         self.assertEqual(quanta[1].outputs["bias_summary"][0].dataId["detector"], 1)
         self.assertEqual(len(quanta[4].inputs["bias"]), 1)
+        self.assertEqual(len(quanta[4].inputs["flat"]), 2)
         self.assertEqual(len(quanta[4].outputs["bias_stuff"]), 1)
         self.assertCountEqual(
             quanta[4].inputs["bias"],
             butler.query_datasets("bias", collections=collections, where="detector.purpose = 'WAVEFRONT'"),
+        )
+        self.assertCountEqual(
+            quanta[4].inputs["flat"],
+            butler.query_datasets("flat", collections=collections, where="detector.purpose = 'WAVEFRONT'"),
         )
         self.assertEqual(len(quanta[4].outputs["bias_summary"]), 1)
         self.assertEqual(quanta[4].outputs["bias_summary"][0].dataId["detector"], 4)
