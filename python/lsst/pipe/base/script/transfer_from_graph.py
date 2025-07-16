@@ -29,7 +29,7 @@ __all__ = ["transfer_from_graph"]
 
 import math
 
-from lsst.daf.butler import Butler, CollectionType, QuantumBackedButler, Registry
+from lsst.daf.butler import Butler, CollectionType, QuantumBackedButler
 from lsst.daf.butler.registry import MissingCollectionError
 from lsst.pipe.base import QuantumGraph
 from lsst.utils.iteration import chunk_iterable
@@ -124,23 +124,34 @@ def transfer_from_graph(
         )
         count += len(transferred)
 
-    # If anything was transferred then update output chain definition if asked.
-    if count > 0 and update_output_chain and (metadata := qgraph.metadata) is not None:
+    # If asked to update output chain definition.
+    if update_output_chain and (metadata := qgraph.metadata) is not None:
         # These are defined in CmdLineFwk.
         output_run = metadata.get("output_run")
         output = metadata.get("output")
         input = metadata.get("input")
         if output_run is not None and output is not None:
-            _update_chain(dest_butler.registry, output, output_run, input)
+            _update_chain(dest_butler, output, output_run, input)
 
     return count
 
 
-def _update_chain(registry: Registry, output_chain: str, output_run: str, inputs: list[str] | None) -> None:
+def _update_chain(butler: Butler, output_chain: str, output_run: str, inputs: list[str] | None) -> None:
     """Update chain definition if it exists to include run as the first item
     in a chain. If it does not exist then create it to include all inputs and
     output.
     """
+    # Make sure output_run already exists in butler
+    try:
+        _ = butler.collections.get_info(output_run)
+    except MissingCollectionError:
+        _LOG.verbose(
+            "output RUN collection (%s) does not exist.  Skipping updating the output chain.",
+            output_run,
+        )
+        return
+
+    registry = butler.registry
     try:
         # If output_chain is not a chain the exception will be raised.
         chain_definition = list(registry.getCollectionChain(output_chain))
