@@ -29,8 +29,7 @@ __all__ = ["transfer_from_graph"]
 
 import math
 
-from lsst.daf.butler import Butler, CollectionType, QuantumBackedButler, Registry
-from lsst.daf.butler.registry import MissingCollectionError
+from lsst.daf.butler import Butler, CollectionType, MissingCollectionError, QuantumBackedButler
 from lsst.pipe.base import QuantumGraph
 from lsst.utils.iteration import chunk_iterable
 from lsst.utils.logging import getLogger
@@ -124,45 +123,55 @@ def transfer_from_graph(
         )
         count += len(transferred)
 
-    # If anything was transferred then update output chain definition if asked.
-    if count > 0 and update_output_chain and (metadata := qgraph.metadata) is not None:
+    # If asked to do so, update output chain definition.
+    if update_output_chain and (metadata := qgraph.metadata) is not None:
         # These are defined in CmdLineFwk.
         output_run = metadata.get("output_run")
         output = metadata.get("output")
         input = metadata.get("input")
         if output_run is not None and output is not None:
-            _update_chain(dest_butler.registry, output, output_run, input)
+            _update_chain(dest_butler, output, output_run, input)
 
     return count
 
 
-def _update_chain(registry: Registry, output_chain: str, output_run: str, inputs: list[str] | None) -> None:
+def _update_chain(butler: Butler, output_chain: str, output_run: str, inputs: list[str] | None) -> None:
     """Update chain definition if it exists to include run as the first item
     in a chain. If it does not exist then create it to include all inputs and
     output.
-    """
-    try:
-        # If output_chain is not a chain the exception will be raised.
-        chain_definition = list(registry.getCollectionChain(output_chain))
-    except MissingCollectionError:
-        # We have to create chained collection to include inputs and output run
-        # (this reproduces logic in CmdLineFwk).
-        registry.registerCollection(output_chain, type=CollectionType.CHAINED)
-        chain_definition = list(registry.queryCollections(inputs, flattenChains=True)) if inputs else []
-        chain_definition = [output_run] + [run for run in chain_definition if run != output_run]
-        registry.setCollectionChain(output_chain, chain_definition)
-    else:
-        # If run is in the chain but not the first item then remove it, will
-        # re-insert at front below.
-        try:
-            index = chain_definition.index(output_run)
-            if index == 0:
-                # It is already at the top.
-                return
-            else:
-                del chain_definition[index]
-        except ValueError:
-            pass
 
-        chain_definition.insert(0, output_run)
-        registry.setCollectionChain(output_chain, chain_definition)
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        Butler where to update the collection chain.
+    output_chain : `str`
+        Name of the output CHAINED collection.
+    output_run : `str`
+        Name of the output RUN collection.
+    inputs : `list` [`str`] | None
+        All the input collections to be included in the chain if the
+        chain is created.
+    """
+    # Do not need to update chain if output_run does not already exist.
+    try:
+        _ = butler.collections.get_info(output_run)
+    except MissingCollectionError:
+        _LOG.verbose(
+            "Output RUN collection (%s) does not exist.  Skipping updating the output chain.",
+            output_run,
+        )
+        return
+
+    # Make chain collection if doesn't exist before calling prepend_chain.
+    created_now = butler.collections.register(output_chain, CollectionType.CHAINED)
+    if created_now:
+        _LOG.verbose("Registered chain collection: %s", output_chain)
+        if inputs:
+            # Add input collections to chain collection just made.  Using
+            # extend instead of prepend in case of race condition where another
+            # execution adds a run before this adds the inputs to the chain.
+            butler.collections.extend_chain(output_chain, inputs)
+    _LOG.verbose(
+        "Prepending output chain collection (%s) with output RUN collection (%s)", output_chain, output_run
+    )
+    butler.collections.prepend_chain(output_chain, output_run)
