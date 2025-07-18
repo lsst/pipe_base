@@ -34,6 +34,7 @@ __all__ = (
     "PredictedQuantumDatasetsModel",
     "PredictedQuantumGraph",
     "PredictedQuantumGraphComponents",
+    "PredictedQuantumGraphReader",
     "PredictedQuantumInfo",
     "PredictedThinGraphModel",
     "PredictedThinQuantumModel",
@@ -45,13 +46,17 @@ import logging
 import operator
 import sys
 import uuid
+import zipfile
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from io import DEFAULT_BUFFER_SIZE
 from typing import TYPE_CHECKING, Any, NotRequired, cast
 
 import networkx
 import networkx.algorithms.bipartite
 import pydantic
+import zstandard
 
 from lsst.daf.butler import (
     Config,
@@ -62,13 +67,15 @@ from lsst.daf.butler import (
     DimensionDataAttacher,
     DimensionDataExtractor,
     DimensionGroup,
+    DimensionRecordSetDeserializer,
     LimitedButler,
     Quantum,
     QuantumBackedButler,
+    SerializableDimensionData,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
-from lsst.resources import ResourcePathExpression
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.packages import Packages
 
 from .. import automatic_connection_constants as acc
@@ -76,10 +83,24 @@ from ..pipeline import TaskDef
 from ..pipeline_graph import (
     NodeBipartite,
     PipelineGraph,
+    TaskImportMode,
     TaskInitNode,
     TaskNode,
     compare_packages,
     log_config_mismatch,
+)
+
+if TYPE_CHECKING:
+    from ..graph import QgraphSummary, QuantumGraph
+
+from ..pipeline_graph.io import SerializedPipelineGraph
+from ._multiblock import (
+    AddressReader,
+    AddressWriter,
+    Compressor,
+    Decompressor,
+    MultiblockReader,
+    MultiblockWriter,
 )
 
 if TYPE_CHECKING:
@@ -604,6 +625,14 @@ class PredictedQuantumGraph(BaseQuantumGraph):
                     self._quantum_only_xgraph.nodes.keys(),
                 )
             )
+        if _LOG.isEnabledFor(logging.DEBUG):
+            for quantum_id in self:
+                _LOG.debug(
+                    "%s: %s @ %s",
+                    quantum_id,
+                    self._quantum_only_xgraph.nodes[quantum_id]["task_label"],
+                    self._quantum_only_xgraph.nodes[quantum_id]["data_id"].required,
+                )
 
     def _add_quantum(
         self, quantum_id: uuid.UUID, task_label: str, data_coordinate_values: Sequence[DataIdValue]
@@ -632,6 +661,78 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         data_id = DataCoordinate.from_full_values(dimensions, data_coordinate_values)
         self._bipartite_xgraph.nodes[model.dataset_id].setdefault("data_id", data_id)
         self._datasets_by_type[model.dataset_type_name][data_id] = model.dataset_id
+
+    @classmethod
+    def open(
+        cls,
+        uri: ResourcePathExpression,
+        page_size: int = DEFAULT_BUFFER_SIZE,
+        import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
+    ) -> AbstractContextManager[PredictedQuantumGraphReader]:
+        """Open a quantum graph and return a reader to load from it.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files.
+            Note that this does not set a page size for *all* reads, but it
+            does affect the smallest, most numerous reads.
+        import_mode : `..pipeline_graph.TaskImportMode`, optional
+            How to handle importing the task classes referenced in the pipeline
+            graph.
+
+        Returns
+        -------
+        reader : `contextlib.AbstractContextManager` [ \
+                `PredictedQuantumGraphReader` ]
+            A context manager that returns the reader when entered.
+        """
+        return PredictedQuantumGraphReader.open(uri, page_size=page_size, import_mode=import_mode)
+
+    @classmethod
+    def read_execution_quanta(
+        cls,
+        uri: ResourcePathExpression,
+        quantum_ids: Iterable[uuid.UUID] | None = None,
+        page_size: int = DEFAULT_BUFFER_SIZE,
+    ) -> PredictedQuantumGraph:
+        """Read one or more executable quanta from a quantum graph file.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension for new quantum graph
+            files, or ``.qgraph`` for the old format.
+        quantum_ids : `~collections.abc.Iterable` [ `uuid.UUID` ], optional
+            Iterable of quantum IDs to load.  If not provided, all quanta will
+            be loaded.  The UUIDs of special init quanta will be ignored.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files.
+            Note that this does not set a page size for *all* reads, but it
+            does affect the smallest, most numerous reads.
+
+        Returns
+        -------
+        quantum_graph : `PredictedQuantumGraph` ]
+            A quantum graph that can build execution quanta for all of the
+            given IDs.
+        """
+        uri = ResourcePath(uri)
+        if uri.getExtension() == ".qgraph":
+            _LOG.warning(
+                f"Reading and converting old quantum graph {uri}.  "
+                "Use the '.qg' extension to write in the new format."
+            )
+            from ..graph import QuantumGraph
+
+            old_qg = QuantumGraph.loadUri(uri, nodes=quantum_ids)
+            return PredictedQuantumGraphComponents.from_old_quantum_graph(old_qg).assemble()
+
+        with cls.open(uri, page_size=page_size) as reader:
+            reader.read_execution_quanta(quantum_ids)
+            return reader.finish()
 
     @property
     def quanta_by_task(self) -> Mapping[str, Mapping[DataCoordinate, uuid.UUID]]:
@@ -1399,3 +1500,354 @@ class PredictedQuantumGraphComponents:
         result.set_thin_graph()
         result.set_header_counts()
         return result
+
+    def write(
+        self,
+        uri: ResourcePathExpression,
+        *,
+        zstd_level: int = 10,
+        zstd_dict_size: int = 2048,
+    ) -> None:
+        """Write the graph to a file.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            Path to write to.  Should have a ``.qg`` extension, or ``.qgraph``
+            to force writing the old format.  If there is no extension, ``.qg``
+            will be added.
+        zstd_level : `int`, optional
+            ZStandard compression level to use on JSON blocks.
+        zstd_dict_size : `int`, optional
+            Size of a ZStandard dictionary that shares compression information
+            across components.  Set to zero to disable the dictionary.
+
+        Notes
+        -----
+        Only a complete predicted quantum graph with all components fully
+        populated should be written.
+        """
+        if self.header.n_quanta + len(self.init_quanta.root) != len(self.quantum_indices):
+            raise RuntimeError(
+                f"Cannot save graph after partial read of quanta: expected {self.header.n_quanta}, "
+                f"got {len(self.quantum_indices)}."
+            )
+        uri = ResourcePath(uri)
+        match uri.getExtension():
+            case ".qg":
+                pass
+            case ".qgraph":
+                _LOG.warning(
+                    "Converting to an old-format quantum graph.. "
+                    "Use '.qg' instead of '.qgraph' to save in the new format."
+                )
+                old_qg = self.assemble().to_old_quantum_graph()
+                old_qg.saveUri(uri)
+                return
+            case "":
+                uri = uri.updatedExtension(".qg")
+            case ext:
+                raise ValueError(
+                    f"Unsupported extension {ext!r} for quantum graph; "
+                    "expected '.qg' (or '.qgraph' to force the old format)."
+                )
+        quantum_address_writer = AddressWriter(self.quantum_indices)
+        cdict: zstandard.ZstdCompressionDict | None = None
+        quantum_datasets_json: dict[uuid.UUID, bytes] = {}
+        if zstd_dict_size:
+            quantum_datasets_json = {
+                quantum_model.quantum_id: quantum_model.model_dump_json().encode()
+                for quantum_model in self.quantum_datasets.values()
+            }
+            cdict = zstandard.train_dictionary(
+                zstd_dict_size,
+                list(quantum_datasets_json.values()),
+                level=zstd_level,
+            )
+        compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
+        with uri.open(mode="wb") as stream:
+            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
+                self._write_single_model(zf, "header", self.header, compressor)
+                if cdict is not None:
+                    zf.writestr("compression_dict", cdict.as_bytes())
+                self._write_single_model(
+                    zf, "pipeline_graph", SerializedPipelineGraph.serialize(self.pipeline_graph), compressor
+                )
+                self._write_single_model(zf, "thin_graph", self.thin_graph, compressor)
+                if self.dimension_data is None:
+                    raise IncompleteQuantumGraphError(
+                        "Cannot save predicted quantum graph with no dimension data."
+                    )
+                serialized_dimension_data = self.dimension_data.serialized()
+                self._write_single_model(zf, "dimension_data", serialized_dimension_data, compressor)
+                del serialized_dimension_data
+                self._write_single_model(zf, "init_quanta", self.init_quanta, compressor)
+                with MultiblockWriter.open_in_zip(
+                    zf, "quantum_datasets", self.header.int_size
+                ) as quantum_datasets_mb:
+                    for quantum_model in self.quantum_datasets.values():
+                        if json_data := quantum_datasets_json.get(quantum_model.quantum_id):
+                            quantum_datasets_mb.write_bytes(
+                                quantum_model.quantum_id, compressor.compress(json_data)
+                            )
+                        else:
+                            quantum_datasets_mb.write_model(
+                                quantum_model.quantum_id, quantum_model, compressor
+                            )
+                quantum_address_writer.addresses.append(quantum_datasets_mb.addresses)
+                quantum_address_writer.write_to_zip(zf, "quanta", int_size=self.header.int_size)
+
+    def _write_single_model(
+        self, zf: zipfile.ZipFile, name: str, model: pydantic.BaseModel, compressor: Compressor
+    ) -> None:
+        """Write a single compressed JSON block as a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to add the file to.
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model : `pydantic.BaseModel`
+            Pydantic model to convert to JSON.
+        compressor : `Compressor`
+            Object with a `compress` method that takes and returns `bytes`.
+        """
+        json_data = model.model_dump_json().encode()
+        self._write_single_block(zf, name, json_data, compressor)
+
+    def _write_single_block(
+        self, zf: zipfile.ZipFile, name: str, json_data: bytes, compressor: Compressor
+    ) -> None:
+        """Write a single compressed JSON block as a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to add the file to.
+        name : `str`
+            Base name of the file.  An extension will be added.
+        json_data : `bytes`
+            Raw JSON to compress and write.
+        compressor : `Compressor`
+            Object with a `compress` method that takes and returns `bytes`.
+        """
+        compressed_data = compressor.compress(json_data)
+        zf.writestr(f"{name}.json.zst", compressed_data)
+
+
+@dataclasses.dataclass
+class PredictedQuantumGraphReader:
+    """A helper class for reading predicted quantum graphs."""
+
+    components: PredictedQuantumGraphComponents
+    """Quantum graph components populated by this reader's methods."""
+
+    zf: zipfile.ZipFile
+    """The zip archive that represents the quantum graph on disk."""
+
+    decompressor: Decompressor
+    """A decompressor for all compressed JSON blocks."""
+
+    address_reader: AddressReader
+    """A helper object for reading addresses into the full-quantum multi-block
+    files.
+    """
+
+    @classmethod
+    @contextmanager
+    def open(
+        cls,
+        uri: ResourcePathExpression,
+        page_size: int = DEFAULT_BUFFER_SIZE,
+        import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
+    ) -> Iterator[PredictedQuantumGraphReader]:
+        """Construct a reader from a URI.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files.
+            Note that this does not set a page size for *all* reads, but it
+            does affect the smallest, most numerous reads.
+        import_mode : `..pipeline_graph.TaskImportMode`, optional
+            How to handle importing the task classes referenced in the pipeline
+            graph.
+
+        Returns
+        -------
+        reader : `contextlib.AbstractContextManager` [ \
+                `PredictedQuantumGraphReader` ]
+            A context manager that returns the reader when entered.
+        """
+        uri = ResourcePath(uri)
+        cdict: zstandard.ZstdCompressionDict | None = None
+        with uri.open(mode="rb") as zf_stream:
+            with zipfile.ZipFile(zf_stream, "r") as zf:
+                if (cdict_path := zipfile.Path(zf, "compression_dict")).exists():
+                    cdict = zstandard.ZstdCompressionDict(cdict_path.read_bytes())
+                decompressor = zstandard.ZstdDecompressor(cdict)
+                header = cls._read_single_block_static("header", HeaderModel, zf, decompressor)
+                if not header.graph_type == "predicted":
+                    raise TypeError(f"Header is for a {header.graph_type!r} graph, not 'predicted'.")
+                serialized_pipeline_graph = cls._read_single_block_static(
+                    "pipeline_graph", SerializedPipelineGraph, zf, decompressor
+                )
+                pipeline_graph = serialized_pipeline_graph.deserialize(import_mode)
+                with AddressReader.open_in_zip(
+                    zf, "quanta", page_size=page_size, int_size=header.int_size
+                ) as address_reader:
+                    yield cls(
+                        components=PredictedQuantumGraphComponents(
+                            header=header, pipeline_graph=pipeline_graph
+                        ),
+                        zf=zf,
+                        decompressor=decompressor,
+                        address_reader=address_reader,
+                    )
+
+    def finish(self) -> PredictedQuantumGraph:
+        """Construct a `PredictedQuantumGraph` instance from this reader."""
+        return self.components.assemble()
+
+    def read_all(self) -> PredictedQuantumGraphReader:
+        """Read all components in full."""
+        return self.read_thin_graph().read_execution_quanta()
+
+    def read_thin_graph(self) -> PredictedQuantumGraphReader:
+        """Read the thin graph.
+
+        The thin graph is a quantum-quantum DAG with internal integer IDs for
+        nodes and just task labels and data IDs as node attributes.  It always
+        includes all regular quanta, and does not include init-input or
+        init-output information.
+        """
+        if not self.components.thin_graph.quanta:
+            self.components.thin_graph = self._read_single_block("thin_graph", PredictedThinGraphModel)
+        if len(self.components.quantum_indices) != self.components.header.n_quanta:
+            self.address_reader.read_all()
+            self.components.quantum_indices.update(
+                {row.key: row.index for row in self.address_reader.rows.values()}
+            )
+        return self
+
+    def read_init_quanta(self) -> PredictedQuantumGraphReader:
+        """Read the list of special quanta that represent init-inputs and
+        init-outputs.
+        """
+        if not self.components.init_quanta.root:
+            self.components.init_quanta = self._read_single_block("init_quanta", PredictedInitQuantaModel)
+        return self
+
+    def read_dimension_data(self) -> PredictedQuantumGraphReader:
+        """Read all dimension records.
+
+        Record data IDs will be immediately deserialized, while other fields
+        will be left in serialized form until they are needed.
+        """
+        if self.components.dimension_data is None:
+            serializable_dimension_data = self._read_single_block("dimension_data", SerializableDimensionData)
+            self.components.dimension_data = DimensionDataAttacher(
+                deserializers=[
+                    DimensionRecordSetDeserializer.from_raw(
+                        self.components.pipeline_graph.universe[element], serialized_records
+                    )
+                    for element, serialized_records in serializable_dimension_data.root.items()
+                ],
+                dimensions=DimensionGroup.union(
+                    *self.components.pipeline_graph.group_by_dimensions(prerequisites=True).keys(),
+                    universe=self.components.pipeline_graph.universe,
+                ),
+            )
+        return self
+
+    def read_quantum_datasets(
+        self, quantum_ids: Iterable[uuid.UUID] | None = None
+    ) -> PredictedQuantumGraphReader:
+        """Read information about all datasets produced and consumed by the
+        given quantum IDs.
+
+        Parameters
+        ----------
+        quantum_ids : `~collections.abc.Iterable` [ `uuid.UUID` ], optional
+            Iterable of quantum IDs to load.  If not provided, all quanta will
+            be loaded.  The UUIDs of special init quanta will be ignored.
+        """
+        if quantum_ids is None:
+            self.address_reader.read_all()
+            quantum_ids = self.address_reader.rows.keys()
+        with MultiblockReader.open_in_zip(
+            self.zf, "quantum_datasets", self.components.header.int_size
+        ) as mb_reader:
+            for quantum_id in quantum_ids:
+                address_row = self.address_reader.find(quantum_id)
+                self.components.quantum_indices[address_row.key] = address_row.index
+                if address_row.key not in self.components.quantum_datasets:
+                    quantum_datasets = mb_reader.read_model(
+                        address_row.addresses[0], PredictedQuantumDatasetsModel, self.decompressor
+                    )
+                    if quantum_datasets is not None:
+                        self.components.quantum_datasets[address_row.key] = quantum_datasets
+        return self
+
+    def read_execution_quanta(
+        self, quantum_ids: Iterable[uuid.UUID] | None = None
+    ) -> PredictedQuantumGraphReader:
+        """Read all information needed to execute the given quanta.
+
+        Parameters
+        ----------
+        quantum_ids : `~collections.abc.Iterable` [ `uuid.UUID` ], optional
+            Iterable of quantum IDs to load.  If not provided, all quanta will
+            be loaded.  The UUIDs of special init quanta will be ignored.
+        """
+        return self.read_init_quanta().read_dimension_data().read_quantum_datasets(quantum_ids)
+
+    @staticmethod
+    def _read_single_block_static[T: pydantic.BaseModel](
+        name: str, model_type: type[T], zf: zipfile.ZipFile, decompressor: Decompressor
+    ) -> T:
+        """Read a single compressed JSON block from a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to read the file from.
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model_type : `type` [ `pydantic.BaseModel` ]
+            Pydantic model to validate JSON with.
+        decompressor : `Decompressor`
+            Object with a `decompress` method that takes and returns `bytes`.
+
+        Returns
+        -------
+        model : `pydantic.BaseModel`
+            Validated model.
+        """
+        compressed_data = zf.read(f"{name}.json.zst")
+        json_data = decompressor.decompress(compressed_data)
+        return model_type.model_validate_json(json_data)
+
+    def _read_single_block[T: pydantic.BaseModel](self, name: str, model_type: type[T]) -> T:
+        """Read a single compressed JSON block from a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to read the file from.
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model_type : `type` [ `pydantic.BaseModel` ]
+            Pydantic model to validate JSON with.
+        decompressor : `Decompressor`
+            Object with a `decompress` method that takes and returns `bytes`.
+
+        Returns
+        -------
+        model : `pydantic.BaseModel`
+            Validated model.
+        """
+        return self._read_single_block_static(name, model_type, self.zf, self.decompressor)
