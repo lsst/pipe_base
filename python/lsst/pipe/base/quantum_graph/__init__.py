@@ -27,4 +27,5 @@
 
 from __future__ import annotations
 
+from ._multiblock import *
 from ._predicted import *
