@@ -150,8 +150,10 @@ class PipelineGraph:
         self._description = value
 
     @property
-    def universe(self) -> DimensionUniverse | None:
+    def universe(self) -> DimensionUniverse:
         """Definitions for all butler dimensions."""
+        if self._universe is None:
+            raise UnresolvedGraphError("Pipeline graph is not resolved.")
         return self._universe
 
     @property
@@ -159,7 +161,7 @@ class PipelineGraph:
         """Data ID that represents a constraint on all quanta generated from
         this pipeline.
 
-        This is may not be available unless `universe` is not `None`.
+        This is may not be available unless the graph is resolved.
         """
         return DataCoordinate.standardize(self._raw_data_id, universe=self.universe)
 
@@ -305,7 +307,7 @@ class PipelineGraph:
                 for k, v in self._task_subsets.items()
             },
             description=self._description,
-            universe=self.universe,
+            universe=self._universe,
             data_id=self._raw_data_id,
             step_definitions=step_definitions,
         )
@@ -774,7 +776,7 @@ class PipelineGraph:
             key=NodeKey(NodeType.TASK, label),
             init_key=NodeKey(NodeType.TASK_INIT, label),
             data=_TaskNodeImportedData.configure(label, task_class, config, connections),
-            universe=self.universe,
+            universe=self._universe,
         )
         self.add_task_nodes([task_node])
         return task_node
@@ -1668,11 +1670,13 @@ class PipelineGraph:
         not considered part of the pipeline graph in other respects, but it
         does get written with other provenance datasets.
         """
-        if self.universe is None:
+        if self._universe is None:
             raise UnresolvedGraphError(
                 "PipelineGraph must be resolved in order to get the packages dataset type."
             )
-        return DatasetType(PACKAGES_INIT_OUTPUT_NAME, self.universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS)
+        return DatasetType(
+            PACKAGES_INIT_OUTPUT_NAME, self._universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
+        )
 
     def register_dataset_types(self, butler: Butler, include_packages: bool = True) -> None:
         """Register all dataset types in a data repository.
@@ -1793,7 +1797,7 @@ class PipelineGraph:
         """
         if not self.is_fully_resolved:
             raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
-        empty_data_id = DataCoordinate.make_empty(cast(DimensionUniverse, self.universe))
+        empty_data_id = DataCoordinate.make_empty(self.universe)
         handles: dict[str, InMemoryDatasetHandle] = {}
         tasks: list[PipelineTask] = []
         for task_node in self.tasks.values():
