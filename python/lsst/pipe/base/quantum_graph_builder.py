@@ -55,6 +55,7 @@ from lsst.daf.butler import (
     NamedKeyMapping,
     Quantum,
 )
+from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.timer import timeMethod
@@ -1000,19 +1001,35 @@ class QuantumGraphBuilder(ABC):
         """
         overall_inputs = skeleton.extract_overall_inputs()
         exported_records = self.butler._datastore.export_records(overall_inputs.values())
-        for quantum_key in skeleton.iter_all_quanta():
-            quantum_records = {}
-            input_ids = {
+        for task_label in self._pipeline_graph.tasks:
+            if not skeleton.has_task(task_label):
+                continue
+            task_init_key = skeleton.get_task_init_node(task_label)
+            init_input_ids = {
                 ref.id
-                for dataset_key in skeleton.iter_inputs_of(quantum_key)
+                for dataset_key in skeleton.iter_inputs_of(task_init_key)
                 if (ref := overall_inputs.get(dataset_key)) is not None
             }
-            if input_ids:
+            init_records = {}
+            if init_input_ids:
                 for datastore_name, records in exported_records.items():
-                    matching_records = records.subset(input_ids)
+                    matching_records = records.subset(init_input_ids)
                     if matching_records is not None:
-                        quantum_records[datastore_name] = matching_records
-            skeleton[quantum_key]["datastore_records"] = quantum_records
+                        init_records[datastore_name] = matching_records
+            skeleton[task_init_key]["datastore_records"] = init_records
+            for quantum_key in skeleton.get_quanta(task_label):
+                quantum_records = {}
+                input_ids = {
+                    ref.id
+                    for dataset_key in skeleton.iter_inputs_of(quantum_key)
+                    if (ref := overall_inputs.get(dataset_key)) is not None
+                }
+                if input_ids:
+                    for datastore_name, records in exported_records.items():
+                        matching_records = records.subset(input_ids)
+                        if matching_records is not None:
+                            quantum_records[datastore_name] = matching_records
+                skeleton[quantum_key]["datastore_records"] = quantum_records
 
     @final
     @timeMethod
@@ -1045,20 +1062,29 @@ class QuantumGraphBuilder(ABC):
                 continue
             task_node = self._pipeline_graph.tasks[task_def.label]
             task_init_key = skeleton.get_task_init_node(task_def.label)
-            init_inputs[task_def] = skeleton[task_init_key]["inputs"].values()
-            init_outputs[task_def] = skeleton[task_init_key]["outputs"].values()
+            task_init_state = skeleton[task_init_key]
+            init_datastore_records: dict[str, DatastoreRecordData] = task_init_state.get(
+                "datastore_records", {}
+            )
+            init_inputs[task_def] = task_init_state["inputs"].values()
+            init_outputs[task_def] = task_init_state["outputs"].values()
             quanta_for_task: set[Quantum] = set()
             for quantum_key in skeleton.get_quanta(task_node.label):
-                node_state = skeleton[quantum_key]
+                quantum_state = skeleton[quantum_key]
+                quantum_datastore_records: dict[str, DatastoreRecordData] = quantum_state.get(
+                    "datastore_records", {}
+                )
                 quanta_for_task.add(
                     Quantum(
                         taskName=task_node.task_class_name,
                         taskClass=task_node.task_class,
-                        dataId=node_state["data_id"],
-                        initInputs=node_state["init_inputs"],
-                        inputs=node_state["inputs"],
-                        outputs=node_state["outputs"],
-                        datastore_records=node_state.get("datastore_records"),
+                        dataId=quantum_state["data_id"],
+                        initInputs=quantum_state["init_inputs"],
+                        inputs=quantum_state["inputs"],
+                        outputs=quantum_state["outputs"],
+                        datastore_records=DatastoreRecordData.merge_mappings(
+                            quantum_datastore_records, init_datastore_records
+                        ),
                     )
                 )
             quanta[task_def] = quanta_for_task
