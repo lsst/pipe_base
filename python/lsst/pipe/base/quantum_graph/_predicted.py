@@ -47,13 +47,14 @@ import sys
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, NotRequired, cast
+from typing import TYPE_CHECKING, Any, NotRequired, cast
 
 import networkx
 import networkx.algorithms.bipartite
 import pydantic
 
 from lsst.daf.butler import (
+    Config,
     DataCoordinate,
     DataIdValue,
     DatasetRef,
@@ -61,9 +62,14 @@ from lsst.daf.butler import (
     DimensionDataAttacher,
     DimensionDataExtractor,
     DimensionGroup,
+    LimitedButler,
     Quantum,
+    QuantumBackedButler,
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
+from lsst.daf.butler.registry import ConflictingDefinitionError
+from lsst.resources import ResourcePathExpression
+from lsst.utils.packages import Packages
 
 from .. import automatic_connection_constants as acc
 from ..pipeline import TaskDef
@@ -72,9 +78,12 @@ from ..pipeline_graph import (
     PipelineGraph,
     TaskInitNode,
     TaskNode,
+    compare_packages,
+    log_config_mismatch,
 )
 
 if TYPE_CHECKING:
+    from ..config import PipelineTaskConfig
     from ..graph import QuantumGraph
 
 from ._common import (
@@ -918,6 +927,227 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         node_state = self._bipartite_xgraph.nodes[dataset_id]
         data_id = self._expanded_data_ids[node_state["data_id"]]
         return DatasetRef(dataset_type, data_id, run=node_state["run"], id=dataset_id)
+
+    def make_init_qbb(
+        self,
+        butler_config: Config | ResourcePathExpression,
+        *,
+        config_search_paths: Iterable[str] | None = None,
+    ) -> QuantumBackedButler:
+        """Construct an quantum-backed butler suitable for reading and writing
+        init input and init output datasets, respectively.
+
+        This only requires the ``init_quanta`` component to have been loaded.
+
+        Parameters
+        ----------
+        butler_config : `~lsst.daf.butler.Config` or \
+                `~lsst.resources.ResourcePathExpression`
+            A butler repository root, configuration filename, or configuration
+            instance.
+        config_search_paths : `~collections.abc.Iterable` [ `str` ], optional
+            Additional search paths for butler configuration.
+
+        Returns
+        -------
+        qbb : `~lsst.daf.butler.QuantumBackedButler`
+            A limited butler that can ``get`` init-input datasets and ``put``
+            init-output datasets.
+        """
+        # Collect all init input/output dataset IDs.
+        predicted_inputs: set[uuid.UUID] = set()
+        predicted_outputs: set[uuid.UUID] = set()
+        datastore_record_maps: list[dict[DatastoreName, DatastoreRecordData]] = []
+        for init_quantum_datasets in self._init_quanta.values():
+            predicted_inputs.update(
+                d.dataset_id for d in itertools.chain.from_iterable(init_quantum_datasets.inputs.values())
+            )
+            predicted_outputs.update(
+                d.dataset_id for d in itertools.chain.from_iterable(init_quantum_datasets.outputs.values())
+            )
+            datastore_record_maps.append(
+                {
+                    datastore_name: DatastoreRecordData.from_simple(serialized_records)
+                    for datastore_name, serialized_records in init_quantum_datasets.datastore_records.items()
+                }
+            )
+        # Remove intermediates from inputs.
+        predicted_inputs -= predicted_outputs
+        dataset_types = {d.name: d.dataset_type for d in self.pipeline_graph.dataset_types.values()}
+        # Make butler from everything.
+        return QuantumBackedButler.from_predicted(
+            config=butler_config,
+            predicted_inputs=predicted_inputs,
+            predicted_outputs=predicted_outputs,
+            dimensions=self.pipeline_graph.universe,
+            datastore_records=DatastoreRecordData.merge_mappings(*datastore_record_maps),
+            search_paths=list(config_search_paths) if config_search_paths is not None else None,
+            dataset_types=dataset_types,
+        )
+
+    def write_init_outputs(self, butler: LimitedButler, skip_existing: bool = True) -> None:
+        """Write the init-output datasets for all tasks in the quantum graph.
+
+        This only requires the ``init_quanta`` component to have been loaded.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        skip_existing : `bool`, optional
+            If `True` (default) ignore init-outputs that already exist.  If
+            `False`, raise.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if an init-output dataset already exists and
+            ``skip_existing=False``.
+        """
+        # Extract init-input and init-output refs from the QG.
+        input_refs: dict[str, DatasetRef] = {}
+        output_refs: dict[str, DatasetRef] = {}
+        for task_node in self.pipeline_graph.tasks.values():
+            if task_node.label not in self._init_quanta:
+                continue
+            input_refs.update(
+                {ref.datasetType.name: ref for ref in self.get_init_inputs(task_node.label).values()}
+            )
+            output_refs.update(
+                {
+                    ref.datasetType.name: ref
+                    for ref in self.get_init_outputs(task_node.label).values()
+                    if ref.datasetType.name != task_node.init.config_output.dataset_type_name
+                }
+            )
+        for ref, is_stored in butler.stored_many(output_refs.values()).items():
+            if is_stored:
+                if not skip_existing:
+                    raise ConflictingDefinitionError(f"Init-output dataset {ref} already exists.")
+                # We'll `put` whatever's left in output_refs at the end.
+                del output_refs[ref.datasetType.name]
+        # Instantiate tasks, reading overall init-inputs and gathering
+        # init-output in-memory objects.
+        init_outputs: list[tuple[Any, DatasetType]] = []
+        self.pipeline_graph.instantiate_tasks(
+            get_init_input=lambda dataset_type: butler.get(
+                input_refs[dataset_type.name].overrideStorageClass(dataset_type.storageClass)
+            ),
+            init_outputs=init_outputs,
+            # A task can be in the pipeline graph without having an init
+            # quantum if it doesn't have any regular quanta either (e.g. they
+            # were all skipped), and the _init_quanta has a "" entry for global
+            # init-outputs that we don't want to pass here.
+            labels=self.pipeline_graph.tasks.keys() & self._init_quanta.keys(),
+        )
+        # Write init-outputs that weren't already present.
+        for obj, dataset_type in init_outputs:
+            if new_ref := output_refs.get(dataset_type.name):
+                assert new_ref.datasetType.storageClass_name == dataset_type.storageClass_name, (
+                    "QG init refs should use task connection storage classes."
+                )
+                butler.put(obj, new_ref)
+
+    def write_configs(self, butler: LimitedButler, compare_existing: bool = True) -> None:
+        """Write the config datasets for all tasks in the quantum graph.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        compare_existing : `bool`, optional
+            If `True` check configs that already exist for consistency.  If
+            `False`, always raise if configs already exist.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if an config dataset already exists and
+            ``compare_existing=False``, or if the existing config is not
+            consistent with the config in the quantum graph.
+        """
+        to_put: list[tuple[PipelineTaskConfig, DatasetRef]] = []
+        for task_node in self.pipeline_graph.tasks.values():
+            if task_node.label not in self._init_quanta:
+                continue
+            dataset_type_name = task_node.init.config_output.dataset_type_name
+            ref = self.get_init_outputs(task_node.label)[acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME]
+            try:
+                old_config = butler.get(ref)
+            except (LookupError, FileNotFoundError):
+                old_config = None
+            if old_config is not None:
+                if not compare_existing:
+                    raise ConflictingDefinitionError(f"Config dataset {ref} already exists.")
+                if not task_node.config.compare(old_config, shortcut=False, output=log_config_mismatch):
+                    raise ConflictingDefinitionError(
+                        f"Config does not match existing task config {dataset_type_name!r} in "
+                        "butler; tasks configurations must be consistent within the same run collection."
+                    )
+            else:
+                to_put.append((task_node.config, ref))
+        # We do writes at the end to minimize the mess we leave behind when we
+        # raise an exception.
+        for config, ref in to_put:
+            butler.put(config, ref)
+
+    def write_packages(self, butler: LimitedButler, compare_existing: bool = True) -> None:
+        """Write the 'packages' dataset for the currently-active software
+        versions.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        compare_existing : `bool`, optional
+            If `True` check packages that already exist for consistency.  If
+            `False`, always raise if the packages dataset already exists.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if the packages dataset already exists and is not consistent
+            with the current packages.
+        """
+        new_packages = Packages.fromSystem()
+        (ref,) = self.get_init_outputs("").values()
+        try:
+            packages = butler.get(ref)
+        except (LookupError, FileNotFoundError):
+            packages = None
+        if packages is not None:
+            if not compare_existing:
+                raise ConflictingDefinitionError(f"Packages dataset {ref} already exists.")
+            if compare_packages(packages, new_packages):
+                # have to remove existing dataset first; butler has no
+                # replace option.
+                butler.pruneDatasets([ref], unstore=True, purge=True)
+                butler.put(packages, ref)
+        else:
+            butler.put(new_packages, ref)
+
+    def init_output_run(self, butler: LimitedButler, existing: bool = True) -> None:
+        """Initialize a new output RUN collection by writing init-output
+        datasets (including configs and packages).
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.LimitedButler`
+            A limited butler data repository client.
+        existing : `bool`, optional
+            If `True` check or ignore outputs that already exist.  If
+            `False`, always raise if an output dataset already exists.
+
+        Raises
+        ------
+        lsst.daf.butler.registry.ConflictingDefinitionError
+            Raised if there are existing init output datasets, and either
+            ``existing=False`` or their contents are not compatible with this
+            graph.
+        """
+        self.write_configs(butler, compare_existing=existing)
+        self.write_packages(butler, compare_existing=existing)
+        self.write_init_outputs(butler, skip_existing=existing)
 
     @classmethod
     def from_old_quantum_graph(cls, old_quantum_graph: QuantumGraph) -> PredictedQuantumGraph:
