@@ -1573,9 +1573,9 @@ class PipelineGraph:
 
         Returns
         -------
-        groups : `dict` [ `DimensionGroup`, `tuple` ]
-            A dictionary of groups keyed by `DimensionGroup`, in which each
-            value is a tuple of:
+        groups : `dict` [ `~lsst.daf.butler.DimensionGroup`, `tuple` ]
+            A dictionary of groups keyed by `~lsst.daf.butler.DimensionGroup`,
+            in which each value is a tuple of:
 
             - a `dict` of `TaskNode` instances, keyed by task label
             - a `dict` of `DatasetTypeNode` instances, keyed by
