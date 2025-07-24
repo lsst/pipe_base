@@ -43,9 +43,9 @@ from lsst.daf.butler import (
     StorageClassFactory,
 )
 from lsst.daf.butler.registry import ConflictingDefinitionError
-from lsst.pipe.base import QuantumGraph
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.pipe.base.pipeline_graph import PipelineGraph
+from lsst.pipe.base.quantum_graph import PredictedQuantumGraph
 from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
     DynamicTestPipelineTask,
@@ -158,14 +158,16 @@ class InitOutputRunTestCase(unittest.TestCase):
         init_output_refs["*"] = [butler.find_dataset(pipeline_graph.packages_dataset_type)]
         return init_output_refs
 
-    def get_quantum_graph_init_output_refs(self, quantum_graph: QuantumGraph) -> dict[str, list[DatasetRef]]:
+    def get_quantum_graph_init_output_refs(
+        self, quantum_graph: PredictedQuantumGraph
+    ) -> dict[str, list[DatasetRef]]:
         """Extract dataset references from a QuantumGraph into the same form
         as returned by `find_init_output_refs`.
         """
         init_output_refs: dict[str, list[DatasetRef]] = {}
         for task_label in quantum_graph.pipeline_graph.tasks:
-            init_output_refs[task_label] = quantum_graph.get_init_output_refs(task_label)
-        init_output_refs["*"] = list(quantum_graph.globalInitOutputRefs())
+            init_output_refs[task_label] = list(quantum_graph.get_init_outputs(task_label).values())
+        init_output_refs["*"] = list(quantum_graph.get_init_outputs("").values())
         return init_output_refs
 
     def assert_init_output_refs_equal(
@@ -200,7 +202,7 @@ class InitOutputRunTestCase(unittest.TestCase):
 
     def init_with_pipeline_graph_first(
         self, pipeline_graph: PipelineGraph, butler: Butler, run: str
-    ) -> QuantumGraph:
+    ) -> PredictedQuantumGraph:
         """Test the init_output_run methods of PipelineGraph and QuantumGraph,
         using the former to actually write init-outputs (with later attempts
         correctly failing or doing nothing, depending on parameters).
@@ -216,9 +218,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             output_run=run,
             input_collections=[self.INPUT_COLLECTION],
         )
-        quantum_graph = quantum_graph_builder.build(
-            metadata={"output_run": run}, attach_datastore_records=True
-        )
+        quantum_graph = quantum_graph_builder.finish(metadata={"output_run": run}).assemble()
         # Check that the QG refs are the same as the ones that were present
         # already.
         self.assert_init_output_refs_equal(
@@ -259,7 +259,7 @@ class InitOutputRunTestCase(unittest.TestCase):
 
     def init_with_quantum_graph_first(
         self, pipeline_graph: PipelineGraph, butler: Butler, run: str
-    ) -> QuantumGraph:
+    ) -> PredictedQuantumGraph:
         """Test the init_output_run methods of PipelineGraph and QuantumGraph,
         using the latter to actually write init-outputs (with later attempts
         correctly failing or doing nothing, depending on parameters).
@@ -271,9 +271,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             butler,
             input_collections=[self.INPUT_COLLECTION],
         )
-        quantum_graph = quantum_graph_builder.build(
-            metadata={"output_run": run}, attach_datastore_records=True
-        )
+        quantum_graph = quantum_graph_builder.finish(metadata={"output_run": run}).assemble()
         # Initialize with the QG.
         quantum_graph.init_output_run(butler)
         # Check that the QG refs are the same as the ones we find in the repo.
@@ -310,7 +308,9 @@ class InitOutputRunTestCase(unittest.TestCase):
             quantum_graph.init_output_run(qbb, existing=False)
         return quantum_graph
 
-    def init_with_qbb_first(self, pipeline_graph: PipelineGraph, butler: Butler, run: str) -> QuantumGraph:
+    def init_with_qbb_first(
+        self, pipeline_graph: PipelineGraph, butler: Butler, run: str
+    ) -> PredictedQuantumGraph:
         """Test the init_output_run methods of PipelineGraph and QuantumGraph,
         using the latter a quantum-backed butler to actually write init-outputs
         (with later attempts correctly failing or doing nothing, depending on
@@ -323,9 +323,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             butler,
             input_collections=[self.INPUT_COLLECTION],
         )
-        quantum_graph = quantum_graph_builder.build(
-            metadata={"output_run": run}, attach_datastore_records=True
-        )
+        quantum_graph = quantum_graph_builder.finish(metadata={"output_run": run}).assemble()
         # Make a quantum-backed butler and use it to initialize the run.
         qbb = quantum_graph.make_init_qbb(butler._config)
         quantum_graph.init_output_run(qbb)
@@ -521,9 +519,7 @@ class InitOutputRunTestCase(unittest.TestCase):
                 output_run="run1",
                 input_collections=[self.INPUT_COLLECTION],
             )
-            quantum_graph = quantum_graph_builder.build(
-                metadata={"output_run": "run1"}, attach_datastore_records=True
-            )
+            quantum_graph = quantum_graph_builder.finish(metadata={"output_run": "run1"}).assemble()
             with self.assertRaises(ConflictingDefinitionError):
                 quantum_graph.init_output_run(
                     butler.clone(run="run1", collections=[self.INPUT_COLLECTION, "run1"])
