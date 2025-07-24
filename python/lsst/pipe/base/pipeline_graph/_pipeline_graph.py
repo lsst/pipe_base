@@ -1790,6 +1790,7 @@ class PipelineGraph:
         self,
         get_init_input: Callable[[DatasetType], Any] | None = None,
         init_outputs: list[tuple[Any, DatasetType]] | None = None,
+        labels: Iterable[str] | None = None,
     ) -> list[PipelineTask]:
         """Instantiate all tasks in the pipeline.
 
@@ -1808,6 +1809,9 @@ class PipelineGraph:
             correspond to the storage class of the output connection, which
             may not be the same as the storage class on the graph's dataset
             type node.
+        labels : `~collections.abc.Iterable` [ `str` ], optional
+            The labels of tasks to instantiate.  If not provided, all tasks in
+            the graph will be instantiated.
 
         Returns
         -------
@@ -1817,9 +1821,12 @@ class PipelineGraph:
         if not self.is_fully_resolved:
             raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
         empty_data_id = DataCoordinate.make_empty(self.universe)
+        labels = set(labels) if labels is not None else self.tasks.keys()
         handles: dict[str, InMemoryDatasetHandle] = {}
         tasks: list[PipelineTask] = []
         for task_node in self.tasks.values():
+            if task_node.label not in labels:
+                continue
             task_init_inputs: dict[str, Any] = {}
             for read_edge in task_node.init.inputs.values():
                 if (handle := handles.get(read_edge.dataset_type_name)) is not None:
