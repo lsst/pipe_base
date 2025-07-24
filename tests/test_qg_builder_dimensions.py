@@ -33,7 +33,7 @@ import astropy.table
 import lsst.utils.tests
 from lsst.daf.butler import Butler, DataCoordinate
 from lsst.daf.butler.tests.utils import create_populated_sqlite_registry
-from lsst.pipe.base import PipelineGraph, QuantumGraph
+from lsst.pipe.base import PipelineGraph
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
     AllDimensionsQuantumGraphBuilder,
     DatasetQueryConstraintVariant,
@@ -90,8 +90,8 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             input_collections=["c1"],
             output_run="c2",
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        quanta = qg.get_task_quanta("t1")
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        quanta = qg.quanta_by_task["t1"]
         self.assertEqual(len(quanta), 8)  # 2 visits x 4 detectors
 
     def test_patch_to_hpx_to_global(self) -> None:
@@ -110,10 +110,10 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             input_collections=["c1"],
             output_run="c2",
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        self.assertEqual(len(qg.get_task_quanta("patch_to_hpx8_and_hpx11")), 22)
-        self.assertEqual(len(qg.get_task_quanta("hpx8_to_hpx5")), 2)
-        self.assertEqual(len(qg.get_task_quanta("hpx5_to_global")), 1)
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(len(qg.quanta_by_task["patch_to_hpx8_and_hpx11"]), 22)
+        self.assertEqual(len(qg.quanta_by_task["hpx8_to_hpx5"]), 2)
+        self.assertEqual(len(qg.quanta_by_task["hpx5_to_global"]), 1)
 
     def test_patch_to_hpx_to_instrument(self) -> None:
         """Test building a QG with patch inputs and a hierarchy of healpix
@@ -131,10 +131,10 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             input_collections=["c1"],
             output_run="c2",
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        self.assertEqual(len(qg.get_task_quanta("patch_to_hpx8_and_hpx11")), 22)
-        self.assertEqual(len(qg.get_task_quanta("hpx8_to_hpx5")), 2)
-        self.assertEqual(len(qg.get_task_quanta("hpx5_to_instrument")), 1)
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(len(qg.quanta_by_task["patch_to_hpx8_and_hpx11"]), 22)
+        self.assertEqual(len(qg.quanta_by_task["hpx8_to_hpx5"]), 2)
+        self.assertEqual(len(qg.quanta_by_task["hpx5_to_instrument"]), 1)
 
     def test_hpx_to_global_dataset_constraint(self) -> None:
         """Test building a QG with healpix inputs and a hierarchy of healpix
@@ -152,9 +152,9 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             input_collections=["c1"],
             output_run="c2",
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        self.assertEqual(len(qg.get_task_quanta("hpx8_to_hpx5")), 2)
-        self.assertEqual(len(qg.get_task_quanta("hpx5_to_global")), 1)
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(len(qg.quanta_by_task["hpx8_to_hpx5"]), 2)
+        self.assertEqual(len(qg.quanta_by_task["hpx5_to_global"]), 1)
 
     @unittest.expectedFailure
     def test_hpx_to_global_where_constraint(self) -> None:
@@ -178,9 +178,9 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             dataset_query_constraint=DatasetQueryConstraintVariant.OFF,
             where="healpix5 IN (4864, 4522)",
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        self.assertEqual(len(qg.get_task_quanta("hpx8_to_hpx5")), 2)
-        self.assertEqual(len(qg.get_task_quanta("hpx5_to_global")), 1)
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(len(qg.quanta_by_task["hpx8_to_hpx5"]), 2)
+        self.assertEqual(len(qg.quanta_by_task["hpx5_to_global"]), 1)
 
     def test_hpx_to_global_data_id_table(self) -> None:
         """Test building a QG with healpix inputs and a hierarchy of healpix
@@ -201,9 +201,9 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
             dataset_query_constraint=DatasetQueryConstraintVariant.OFF,
             data_id_tables=[tbl],
         )
-        qg: QuantumGraph = builder.build(attach_datastore_records=False)
-        self.assertEqual(len(qg.get_task_quanta("hpx8_to_hpx5")), 2)
-        self.assertEqual(len(qg.get_task_quanta("hpx5_to_global")), 1)
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(len(qg.quanta_by_task["hpx8_to_hpx5"]), 2)
+        self.assertEqual(len(qg.quanta_by_task["hpx5_to_global"]), 1)
 
     def _make_hpx_pipeline_graph(
         self,

@@ -138,8 +138,11 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
             input_collections=collections,
             output_run="irrelevant",
         )
-        qg = qgb.build(attach_datastore_records=False)
-        quanta = {quantum.dataId["detector"]: quantum for quantum in qg.get_task_quanta("grouper").values()}
+        qg = qgb.finish(attach_datastore_records=False).assemble()
+        quanta = {
+            quantum.dataId["detector"]: quantum
+            for quantum in qg.build_execution_quanta(task_label="grouper").values()
+        }
         # This test camera (defined in daf_butler test data) has 4 detectors;
         # 1-3 have purpose=SCIENCE, and 4 has purpose=WAVEFRONT.
         self.assertEqual(quanta.keys(), {1, 4})
