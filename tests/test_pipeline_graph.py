@@ -1036,6 +1036,7 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(self.graph.group_by_dimensions(), expected)
         expected[htm7_dims][1]["prereq_1"] = self.graph.dataset_types["prereq_1"]
         self.assertEqual(self.graph.group_by_dimensions(prerequisites=True), expected)
+        self.assertEqual(self.graph.get_all_dimensions(), visit_dims | htm7_dims)
 
     def test_add_and_remove(self) -> None:
         """Tests for adding and removing tasks and task subsets from a
