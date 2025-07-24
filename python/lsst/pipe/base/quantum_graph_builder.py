@@ -40,9 +40,12 @@ __all__ = (
 )
 
 import dataclasses
+import operator
+import uuid
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, Any, cast, final
 
 from lsst.daf.butler import (
     Butler,
@@ -50,6 +53,7 @@ from lsst.daf.butler import (
     DataCoordinate,
     DatasetRef,
     DatasetType,
+    DimensionDataAttacher,
     DimensionUniverse,
     NamedKeyDict,
     NamedKeyMapping,
@@ -64,8 +68,7 @@ from . import automatic_connection_constants as acc
 from ._status import NoWorkFound
 from ._task_metadata import TaskMetadata
 from .connections import AdjustQuantumHelper, QuantaAdjuster
-from .graph import QuantumGraph
-from .pipeline_graph import PipelineGraph, TaskNode
+from .pipeline_graph import Edge, PipelineGraph, TaskNode
 from .prerequisite_helpers import PrerequisiteInfo, SkyPixBoundsBuilder, TimespanBuilder
 from .quantum_graph_skeleton import (
     DatasetKey,
@@ -76,7 +79,9 @@ from .quantum_graph_skeleton import (
 )
 
 if TYPE_CHECKING:
+    from .graph import QuantumGraph
     from .pipeline import TaskDef
+    from .quantum_graph import PredictedDatasetModel, PredictedQuantumGraphComponents
 
 
 class QuantumGraphBuilderError(Exception):
@@ -310,7 +315,7 @@ class QuantumGraphBuilder(ABC):
     def build(
         self, metadata: Mapping[str, Any] | None = None, attach_datastore_records: bool = True
     ) -> QuantumGraph:
-        """Build the quantum graph.
+        """Build the quantum graph, returning an old `QuantumGraph` instance.
 
         Parameters
         ----------
@@ -330,6 +335,59 @@ class QuantumGraphBuilder(ABC):
         External code is expected to construct a `QuantumGraphBuilder` and then
         call this method exactly once.  See class documentation for details on
         what it does.
+        """
+        skeleton = self._build_skeleton(attach_datastore_records=attach_datastore_records)
+        # TODO initialize most metadata here instead of in ctrl_mpexec.
+        if metadata is None:
+            metadata = {}
+        return self._construct_quantum_graph(skeleton, metadata)
+
+    def finish(
+        self,
+        output: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        attach_datastore_records: bool = True,
+    ) -> PredictedQuantumGraphComponents:
+        """Return quantum graph components that can be used to save or
+        construct a `PredictedQuantumGraph` instance.
+
+        Parameters
+        ----------
+        output : `str` or `None`, optional
+            Output `~lsst.daf.butler.CollectionType.CHAINED` collection that
+            combines the input and output collections.
+        metadata : `~collections.abc.Mapping`, optional
+            Mapping of JSON-friendly metadata.  Collection information, the
+            current user, and the current timestamp are automatically
+            included.
+        attach_datastore_records : `bool`, optional
+            Whether to include datastore records for overall inputs for
+            `~lsst.daf.butler.QuantumBackedButler`.
+
+        Returns
+        -------
+        components : `.quantum_graph.PredictedQuantumGraphComponents`
+            Components that can be used to construct a graph object and/or save
+            it to disk.
+        """
+        skeleton = self._build_skeleton(attach_datastore_records=attach_datastore_records)
+        return self._construct_components(skeleton, output=output, metadata=metadata)
+
+    def _build_skeleton(self, attach_datastore_records: bool = True) -> QuantumGraphSkeleton:
+        """Build a complete skeleton for the quantum graph.
+
+        Parameters
+        ----------
+        metadata : `~collections.abc.Mapping`, optional
+            Flexible metadata to add to the quantum graph.
+        attach_datastore_records : `bool`, optional
+            Whether to include datastore records in the graph.  Required for
+            `lsst.daf.butler.QuantumBackedButler` execution.
+
+        Returns
+        -------
+        quantum_graph_skeleton : `QuantumGraphSkeleton`
+            DAG describing processing to be performed.
         """
         with self.butler.registry.caching_context():
             full_skeleton = QuantumGraphSkeleton(self._pipeline_graph.tasks)
@@ -369,10 +427,7 @@ class QuantumGraphBuilder(ABC):
             full_skeleton.attach_dimension_records(self.butler, self._pipeline_graph.get_all_dimensions())
             if attach_datastore_records:
                 self._attach_datastore_records(full_skeleton)
-            # TODO initialize most metadata here instead of in ctrl_mpexec.
-            if metadata is None:
-                metadata = {}
-            return self._construct_quantum_graph(full_skeleton, metadata)
+        return full_skeleton
 
     @abstractmethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
@@ -1057,6 +1112,8 @@ class QuantumGraphBuilder(ABC):
         quantum_graph : `.QuantumGraph`
             DAG describing processing to be performed.
         """
+        from .graph import QuantumGraph
+
         quanta: dict[TaskDef, set[Quantum]] = {}
         init_inputs: dict[TaskDef, Iterable[DatasetRef]] = {}
         init_outputs: dict[TaskDef, Iterable[DatasetRef]] = {}
@@ -1112,6 +1169,169 @@ class QuantumGraphBuilder(ABC):
             globalInitOutputs=global_init_outputs,
             registryDatasetTypes=registry_dataset_types,
         )
+
+    @final
+    @timeMethod
+    def _construct_components(
+        self,
+        skeleton: QuantumGraphSkeleton,
+        output: str | None,
+        metadata: Mapping[str, Any] | None,
+    ) -> PredictedQuantumGraphComponents:
+        """Return quantum graph components from a completed skeleton.
+
+        Parameters
+        ----------
+        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+            Temporary data structure used by the builder to represent the
+            graph.
+        output : `str` or `None`, optional
+            Output `~lsst.daf.butler.CollectionType.CHAINED` collection that
+            combines the input and output collections.
+        metadata : `~collections.abc.Mapping`, optional
+            Mapping of JSON-friendly metadata.  Collection information, the
+            current user, and the current timestamp are automatically
+            included.
+
+        Returns
+        -------
+        components : `.quantum_graph.PredictedQuantumGraphComponents`
+            Components that can be used to construct a graph object and/or save
+            it to disk.
+        """
+        from .quantum_graph import (
+            PredictedDatasetModel,
+            PredictedQuantumDatasetsModel,
+            PredictedQuantumGraphComponents,
+        )
+
+        components = PredictedQuantumGraphComponents(pipeline_graph=self._pipeline_graph)
+        components.header.inputs = list(self.input_collections)
+        components.header.output_run = self.output_run
+        components.header.output = output
+        if metadata is not None:
+            components.header.metadata.update(metadata)
+        components.dimension_data = DimensionDataAttacher(
+            records=skeleton.get_dimension_data(),
+            dimensions=self._pipeline_graph.get_all_dimensions(),
+        )
+        components.init_quanta.root = [
+            PredictedQuantumDatasetsModel.model_construct(
+                quantum_id=uuid.uuid4(),
+                task_label="",
+                outputs={
+                    dataset_key.parent_dataset_type_name: [
+                        PredictedDatasetModel.from_dataset_ref(
+                            cast(DatasetRef, skeleton.get_dataset_ref(dataset_key))
+                        )
+                    ]
+                    for dataset_key in skeleton.global_init_outputs
+                },
+            )
+        ]
+        for task_node in self._pipeline_graph.tasks.values():
+            if not skeleton.has_task(task_node.label):
+                continue
+            task_init_key = TaskInitKey(task_node.label)
+            init_quantum_datasets = PredictedQuantumDatasetsModel.model_construct(
+                quantum_id=uuid.uuid4(),
+                task_label=task_node.label,
+                inputs=self._make_predicted_datasets(
+                    skeleton,
+                    task_node.init.iter_all_inputs(),
+                    skeleton.iter_inputs_of(task_init_key),
+                ),
+                outputs=self._make_predicted_datasets(
+                    skeleton,
+                    task_node.init.iter_all_outputs(),
+                    skeleton.iter_outputs_of(task_init_key),
+                ),
+                datastore_records={
+                    datastore_name: records.to_simple()
+                    for datastore_name, records in skeleton[task_init_key]
+                    .get("datastore_records", {})
+                    .items()
+                },
+            )
+            components.init_quanta.root.append(init_quantum_datasets)
+            for quantum_key in skeleton.get_quanta(task_node.label):
+                quantum_datasets = PredictedQuantumDatasetsModel.model_construct(
+                    quantum_id=uuid.uuid4(),
+                    task_label=task_node.label,
+                    data_coordinate=list(skeleton.get_data_id(quantum_key).full_values),
+                    inputs=self._make_predicted_datasets(
+                        skeleton,
+                        task_node.iter_all_inputs(),
+                        skeleton.iter_inputs_of(quantum_key),
+                    ),
+                    outputs=self._make_predicted_datasets(
+                        skeleton,
+                        task_node.iter_all_outputs(),
+                        skeleton.iter_outputs_of(quantum_key),
+                    ),
+                    datastore_records={
+                        datastore_name: records.to_simple()
+                        for datastore_name, records in skeleton[quantum_key]
+                        .get("datastore_records", {})
+                        .items()
+                    },
+                )
+                components.quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
+        components.set_quantum_indices()
+        components.set_thin_graph()
+        components.set_header_counts()
+        return components
+
+    @staticmethod
+    def _make_predicted_datasets(
+        skeleton: QuantumGraphSkeleton,
+        edges: Iterable[Edge],
+        dataset_keys: Iterable[DatasetKey | PrerequisiteDatasetKey],
+    ) -> dict[str, list[PredictedDatasetModel]]:
+        """Make the predicted quantum graph model objects that represent the
+        datasets from an iterable of pipeline graph edges.
+
+        Parameters
+        ----------
+        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+            Temporary data structure used by the builder to represent the
+            graph.
+        edges : `~collections.abc.Iterable` [ `.pipeline_graph.Edge` ]
+            Pipeline graph edges.
+        dataset_keys : `~collections.abc.Iterable` [ \
+                `.quantum_graph_skeleton.DatasetKey` or\
+                `.quantum_graph_skeleton.PrerequisiteDatasetKey` ]
+            All nodes in the skeleton that correspond to any of the given
+            pipeline graph edges.
+
+        Returns
+        -------
+        predicted_datasets : `dict` [ `str`, \
+                `list` [ `.quantum_graph.PredictedDatasetModel` ] ]
+            Mapping of dataset models, keyed by connection name.
+        """
+        from .quantum_graph import PredictedDatasetModel
+
+        connection_names_by_dataset_type: defaultdict[str, list[str]] = defaultdict(list)
+        result: dict[str, list[PredictedDatasetModel]] = {}
+        for edge in edges:
+            connection_names_by_dataset_type[edge.parent_dataset_type_name].append(edge.connection_name)
+            result[edge.connection_name] = []
+
+        for dataset_key in dataset_keys:
+            connection_names = connection_names_by_dataset_type.get(dataset_key.parent_dataset_type_name)
+            if connection_names is None:
+                # Ignore if this isn't one of the connections we're processing
+                # (probably an init-input), which would also be predecessor to
+                # a quantum node, but should be handled separately.
+                continue
+            ref = skeleton.get_dataset_ref(dataset_key)
+            assert ref is not None, "DatasetRefs should have already been added to skeleton."
+            for connection_name in connection_names:
+                result[connection_name].append(PredictedDatasetModel.from_dataset_ref(ref))
+        for refs in result.values():
+            refs.sort(key=operator.attrgetter("data_coordinate"))
+        return result
 
     @staticmethod
     @final
