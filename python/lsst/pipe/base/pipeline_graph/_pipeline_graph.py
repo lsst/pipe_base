@@ -1607,6 +1607,25 @@ class PipelineGraph:
                 group[1][dataset_type_node.name] = dataset_type_node
         return result
 
+    def get_all_dimensions(self, prerequisites: bool = True) -> DimensionGroup:
+        """Return all dimensions used in this graph's tasks and dataset types.
+
+        Parameters
+        ----------
+        prerequisites : `bool`, optional
+            If `False`, do not include the dimensions that are only used by
+            prerequisite input dataset types.
+
+        Returns
+        -------
+        dimensions : `~lsst.daf.butler.DimensionGroup`.
+            All dimensions in this pipeline.
+        """
+        return DimensionGroup.union(
+            *self.group_by_dimensions(prerequisites=prerequisites).keys(),
+            universe=self.universe,
+        )
+
     def split_independent(self) -> Iterable[PipelineGraph]:
         """Iterate over independent subgraphs that together comprise this
         pipeline graph.
