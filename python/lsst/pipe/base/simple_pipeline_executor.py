@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -46,10 +46,15 @@ from lsst.daf.butler import (
     Quantum,
 )
 from lsst.pex.config import Config
-from lsst.pipe.base import ExecutionResources, Instrument, Pipeline, PipelineGraph, PipelineTask, QuantumGraph
-from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 
-from .singleQuantumExecutor import SingleQuantumExecutor
+from ._instrument import Instrument
+from ._quantumContext import ExecutionResources
+from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
+from .graph import QuantumGraph
+from .pipeline import Pipeline
+from .pipeline_graph import PipelineGraph
+from .pipelineTask import PipelineTask
+from .single_quantum_executor import SingleQuantumExecutor
 from .taskFactory import TaskFactory
 
 

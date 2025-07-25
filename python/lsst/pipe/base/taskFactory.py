@@ -25,15 +25,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Module defining TaskFactory interface."""
-
 from __future__ import annotations
 
 __all__ = ["TaskFactory"]
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lsst.daf.butler import DatasetRef, LimitedButler
@@ -49,7 +47,6 @@ class TaskFactory(metaclass=ABCMeta):
     subclasses.
     """
 
-    @abstractmethod
     def makeTask(
         self,
         task_node: TaskNode,
@@ -79,4 +76,16 @@ class TaskFactory(metaclass=ABCMeta):
         Any exceptions that are raised by PipelineTask constructor or its
         configuration class are propagated back to caller.
         """
-        raise NotImplementedError()
+        config = task_node.config
+        init_inputs: dict[str, Any] = {}
+        init_input_refs_by_dataset_type = {}
+        if initInputRefs is not None:
+            init_input_refs_by_dataset_type = {ref.datasetType.name: ref for ref in initInputRefs}
+        task_class = task_node.task_class
+        if init_input_refs_by_dataset_type:
+            for read_edge in task_node.init.inputs.values():
+                init_inputs[read_edge.connection_name] = butler.get(
+                    init_input_refs_by_dataset_type[read_edge.dataset_type_name]
+                )
+        task = task_class(config=config, initInputs=init_inputs, name=task_node.label)
+        return task

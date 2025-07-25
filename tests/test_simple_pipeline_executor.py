@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -35,8 +35,8 @@ import unittest
 import lsst.daf.butler
 import lsst.pipe.base.quantum_provenance_graph as qpg
 import lsst.utils.tests
-from lsst.ctrl.mpexec import SimplePipelineExecutor
 from lsst.pipe.base import PipelineGraph, QuantumSuccessCaveats, RepeatableQuantumError
+from lsst.pipe.base.simple_pipeline_executor import SimplePipelineExecutor
 from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
     DynamicTestPipelineTask,
