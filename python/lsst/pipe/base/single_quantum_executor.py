@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -49,35 +49,19 @@ from lsst.daf.butler import (
     Quantum,
 )
 from lsst.daf.butler.registry.wildcards import CollectionWildcard
-from lsst.pipe.base import (
-    AdjustQuantumHelper,
-    AnnotatedPartialOutputsError,
-    ExecutionResources,
-    Instrument,
-    InvalidQuantumError,
-    NoWorkFound,
-    PipelineTask,
-    QuantumContext,
-    QuantumSuccessCaveats,
-    TaskFactory,
-)
-from lsst.pipe.base.pipeline_graph import TaskNode
-
-# During metadata transition phase, determine metadata class by
-# asking pipe_base
-from lsst.pipe.base.task import _TASK_FULL_METADATA_TYPE, _TASK_METADATA_TYPE
 from lsst.utils.timer import logInfo
 
-# -----------------------------
-#  Imports for other modules --
-# -----------------------------
+from ._instrument import Instrument
+from ._quantumContext import ExecutionResources, QuantumContext
+from ._status import AnnotatedPartialOutputsError, InvalidQuantumError, NoWorkFound, QuantumSuccessCaveats
+from .connections import AdjustQuantumHelper
 from .log_capture import LogCapture
-from .quantumGraphExecutor import QuantumExecutor
-from .reports import QuantumReport
-
-# ----------------------------------
-#  Local non-exported definitions --
-# ----------------------------------
+from .pipeline_graph import TaskNode
+from .pipelineTask import PipelineTask
+from .quantum_graph_executor import QuantumExecutor
+from .quantum_reports import QuantumReport
+from .task import _TASK_FULL_METADATA_TYPE, _TASK_METADATA_TYPE
+from .taskFactory import TaskFactory
 
 _LOG = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -27,8 +27,8 @@
 
 import unittest
 
-from lsst.ctrl.mpexec import ExecutionStatus, QuantumReport, Report
 from lsst.pipe.base import QgraphSummary
+from lsst.pipe.base.quantum_reports import ExecutionStatus, QuantumReport, Report
 
 
 class ReportsTestCase(unittest.TestCase):

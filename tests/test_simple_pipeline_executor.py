@@ -184,7 +184,7 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
         same task, with an executor created by the `from_pipeline_filename`
         factory method, and the `SimplePipelineExecutor.run` method.
         """
-        filename = os.path.join(TESTDIR, "pipeline_simple.yaml")
+        filename = os.path.join(TESTDIR, "pipelines", "pipeline_simple.yaml")
         executor = SimplePipelineExecutor.from_pipeline_filename(filename, butler=self.butler)
         self._test_pipeline_file(executor)
 
@@ -192,7 +192,7 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
         """Test generating a local butler repository from a pipeline, then
         running that pipeline using the local butler.
         """
-        filename = os.path.join(TESTDIR, "pipeline_simple.yaml")
+        filename = os.path.join(TESTDIR, "pipelines", "pipeline_simple.yaml")
         executor = SimplePipelineExecutor.from_pipeline_filename(
             filename, butler=self.butler, output="u/someone/pipeline"
         )

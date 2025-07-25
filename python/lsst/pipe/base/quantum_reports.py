@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -36,8 +36,9 @@ from typing import Any
 import pydantic
 
 from lsst.daf.butler import DataCoordinate, DataId, DataIdValue
-from lsst.pipe.base import QgraphSummary
 from lsst.utils.introspection import get_full_type_name
+
+from .graph import QgraphSummary
 
 
 def _serializeDataId(dataId: DataId) -> dict[str, DataIdValue]:

@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -35,9 +35,8 @@ from typing import Any
 
 import networkx as nx
 
-from lsst.pipe.base import QuantumGraph, QuantumNode
-
-from .executionGraphFixup import ExecutionGraphFixup
+from .execution_graph_fixup import ExecutionGraphFixup
+from .graph import QuantumGraph, QuantumNode
 
 
 class ExecFixupDataId(ExecutionGraphFixup):

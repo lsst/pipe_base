@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -29,23 +29,23 @@ __all__ = ["ExecutionGraphFixup"]
 
 from abc import ABC, abstractmethod
 
-from lsst.pipe.base import QuantumGraph
+from .graph import QuantumGraph
 
 
 class ExecutionGraphFixup(ABC):
     """Interface for classes which update quantum graphs before execution.
 
-    Primary goal of this class is to modify quanta dependencies which may
-    not be possible to reflect in a quantum graph using standard tools.
-    One known use case for that is to guarantee particular execution order
-    of visits in CI jobs for cases when outcome depends on the processing
-    order of visits (e.g. AP association pipeline).
+    Primary goal of this class is to modify quanta dependencies which may not
+    be possible to reflect in a quantum graph using standard tools. One known
+    use case for that is to guarantee particular execution order of visits in
+    CI jobs for cases when outcome depends on the processing order of visits
+    (e.g. AP association pipeline).
 
     Instances of this class receive pre-ordered sequence of quanta
-    (`~lsst.pipe.base.QuantumGraph` instances) and they are allowed to
-    modify quanta data in place, for example update ``dependencies`` field to
-    add additional dependencies. Returned list of quanta will be re-ordered
-    once again by the graph executor to reflect new dependencies.
+    (`QuantumGraph` instances) and they are allowed to modify quanta data in
+    place, for example update ``dependencies`` field to add additional
+    dependencies. Returned list of quanta will be re-ordered once again by the
+    graph executor to reflect new dependencies.
     """
 
     @abstractmethod

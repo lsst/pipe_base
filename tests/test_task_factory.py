@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -34,8 +34,13 @@ from typing import TYPE_CHECKING
 
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
-from lsst.ctrl.mpexec import TaskFactory
-from lsst.pipe.base import PipelineGraph, PipelineTaskConfig, PipelineTaskConnections, connectionTypes
+from lsst.pipe.base import (
+    PipelineGraph,
+    PipelineTaskConfig,
+    PipelineTaskConnections,
+    TaskFactory,
+    connectionTypes,
+)
 
 if TYPE_CHECKING:
     from lsst.daf.butler import Butler, DatasetRef

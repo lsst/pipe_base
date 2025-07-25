@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -34,10 +34,10 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config
 import lsst.utils.tests
-from lsst.ctrl.mpexec import SeparablePipelineExecutor
 from lsst.pipe.base import Instrument, Pipeline, TaskMetadata
 from lsst.pipe.base.automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME
 from lsst.pipe.base.quantum_graph_builder import OutputExistsError
+from lsst.pipe.base.separable_pipeline_executor import SeparablePipelineExecutor
 from lsst.resources import ResourcePath
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
@@ -46,7 +46,7 @@ TESTDIR = os.path.abspath(os.path.dirname(__file__))
 class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
     """Test the SeparablePipelineExecutor API with a trivial task."""
 
-    pipeline_file = os.path.join(TESTDIR, "pipeline_separable.yaml")
+    pipeline_file = os.path.join(TESTDIR, "pipelines", "pipeline_separable.yaml")
 
     def setUp(self):
         repodir = tempfile.TemporaryDirectory()

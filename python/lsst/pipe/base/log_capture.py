@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_Base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -39,8 +39,9 @@ from logging import FileHandler
 
 from lsst.daf.butler import Butler, FileDataset, LimitedButler, Quantum
 from lsst.daf.butler.logging import ButlerLogRecordHandler, ButlerLogRecords, ButlerMDC, JsonLogFormatter
-from lsst.pipe.base import InvalidQuantumError
-from lsst.pipe.base.pipeline_graph import TaskNode
+
+from ._status import InvalidQuantumError
+from .pipeline_graph import TaskNode
 
 _LOG = logging.getLogger(__name__)
 

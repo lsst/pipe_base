@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -32,14 +32,15 @@ __all__ = ["QuantumExecutor", "QuantumGraphExecutor"]
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from .reports import QuantumReport, Report
+from .quantum_reports import QuantumReport, Report
 
 if TYPE_CHECKING:
     import uuid
 
     from lsst.daf.butler import Quantum
-    from lsst.pipe.base import QuantumGraph
-    from lsst.pipe.base.pipeline_graph import TaskNode
+
+    from .graph import QuantumGraph
+    from .pipeline_graph import TaskNode
 
 
 class QuantumExecutor(ABC):

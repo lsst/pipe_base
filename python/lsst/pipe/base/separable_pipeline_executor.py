@@ -1,4 +1,4 @@
-# This file is part of ctrl_mpexec.
+# This file is part of pipe_base.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -42,12 +42,12 @@ from typing import Any
 import lsst.pipe.base
 import lsst.resources
 from lsst.daf.butler import Butler
-from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
-from lsst.pipe.base.quantum_graph_builder import QuantumGraphBuilder
 
-from .mpGraphExecutor import MPGraphExecutor
-from .quantumGraphExecutor import QuantumGraphExecutor
-from .singleQuantumExecutor import SingleQuantumExecutor
+from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
+from .mp_graph_executor import MPGraphExecutor
+from .quantum_graph_builder import QuantumGraphBuilder
+from .quantum_graph_executor import QuantumGraphExecutor
+from .single_quantum_executor import SingleQuantumExecutor
 from .taskFactory import TaskFactory
 
 _LOG = logging.getLogger(__name__)
