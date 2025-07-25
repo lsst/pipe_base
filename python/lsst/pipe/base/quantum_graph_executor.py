@@ -71,7 +71,7 @@ class QuantumExecutor(ABC):
         -------
         quantum : `~lsst.daf.butler.Quantum`
             The quantum actually executed.
-        report : `~lsst.ctrl.mpexec.QuantumReport`
+        report : `~.quantum_reports.QuantumReport`
             Structure describing the status of the execution of a quantum.
             `None` is returned if implementation does not support this
             feature.
@@ -112,7 +112,7 @@ class QuantumGraphExecutor(ABC):
 
         Returns
         -------
-        report : `~lsst.ctrl.mpexec.Report`, optional
+        report : `~.quantum_reports.Report`, optional
             Structure describing the status of the execution of a quantum
             graph. `None` is returned if implementation does not support
             this feature.

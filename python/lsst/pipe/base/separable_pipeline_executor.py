@@ -82,7 +82,7 @@ class SeparablePipelineExecutor:
         ``clobber_output``).
     task_factory : `lsst.pipe.base.TaskFactory`, optional
         A custom task factory for use in pre-execution and execution. By
-        default, a new instance of `lsst.ctrl.mpexec.TaskFactory` is used.
+        default, a new instance of `lsst.pipe.base.TaskFactory` is used.
     resources : `~lsst.pipe.base.ExecutionResources`
         The resources available to each quantum being executed.
     raise_on_partial_outputs : `bool`, optional
@@ -264,9 +264,11 @@ class SeparablePipelineExecutor:
             If `True`, abort all execution if any task fails when
             running with multiple processes. Only used with the default graph
             executor).
-        graph_executor : `lsst.ctrl.mpexec.QuantumGraphExecutor`, optional
+        graph_executor : \
+                `lsst.pipe.base.quantum_graph_executor.QuantumGraphExecutor`,\
+                optional
             A custom graph executor. By default, a new instance of
-            `lsst.ctrl.mpexec.MPGraphExecutor` is used.
+            `lsst.pipe.base.mp_graph_executor.MPGraphExecutor` is used.
         num_proc : `int`, optional
             The number of processes that can be used to run the pipeline. The
             default value ensures that no subprocess is created. Only used with

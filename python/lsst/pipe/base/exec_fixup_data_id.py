@@ -49,7 +49,7 @@ class ExecFixupDataId(ExecutionGraphFixup):
 
         # lsst/ap/verify/ci_fixup.py
 
-        from lsst.ctrl.mpexec.execFixupDataId import ExecFixupDataId
+        from lsst.pipe.base.exec_fixup_data_id import ExecFixupDataId
 
 
         def assoc_fixup():
