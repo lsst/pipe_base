@@ -27,9 +27,6 @@
 
 __all__ = ["SingleQuantumExecutor"]
 
-# -------------------------------
-#  Imports of standard modules --
-# -------------------------------
 import logging
 import time
 import uuid
@@ -74,21 +71,22 @@ class SingleQuantumExecutor(QuantumExecutor):
     butler : `~lsst.daf.butler.Butler` or `None`
         Data butler, `None` means that Quantum-backed butler should be used
         instead.
-    taskFactory : `~lsst.pipe.base.TaskFactory`
+    task_factory : `~lsst.pipe.base.TaskFactory`
         Instance of a task factory.
-    skipExistingIn : `~typing.Any`
+    skip_existing_in : `~typing.Any`
         Expressions representing the collections to search for existing output
         datasets. See :ref:`daf_butler_ordered_collection_searches` for allowed
         types. This class only checks for the presence of butler output run in
         the list of collections. If the output run is present in the list then
         the quanta whose complete outputs exist in the output run will be
         skipped. `None` or empty string/sequence disables skipping.
-    clobberOutputs : `bool`, optional
+    clobber_outputs : `bool`, optional
         If `True`, then outputs from a quantum that exist in output run
         collection will be removed prior to executing a quantum. If
-        ``skipExistingIn`` contains output run, then only partial outputs from
-        a quantum will be removed. Only used when ``butler`` is not `None`.
-    enableLsstDebug : `bool`, optional
+        ``skip_existing_in`` contains output run, then only partial outputs
+        from a quantum will be removed. Only used when ``butler`` is not
+        `None`.
+    enable_lsst_debug : `bool`, optional
         Enable debugging with ``lsstDebug`` facility for a task.
     limited_butler_factory : `Callable`, optional
         A method that creates a `~lsst.daf.butler.LimitedButler` instance for a
@@ -96,16 +94,16 @@ class SingleQuantumExecutor(QuantumExecutor):
         If ``butler`` is not `None` then this parameter is ignored.
     resources : `~lsst.pipe.base.ExecutionResources`, optional
         The resources available to this quantum when executing.
-    skipExisting : `bool`, optional
+    skip_existing : `bool`, optional
         If `True`, skip quanta whose metadata datasets are already stored.
-        Unlike ``skipExistingIn``, this works with limited butlers as well as
-        full butlers.  Always set to `True` if ``skipExistingIn`` matches
+        Unlike ``skip_existing_in``, this works with limited butlers as well as
+        full butlers.  Always set to `True` if ``skip_existing_in`` matches
         ``butler.run``.
-    assumeNoExistingOutputs : `bool`, optional
+    assume_no_existing_outputs : `bool`, optional
         If `True`, assume preexisting outputs are impossible (e.g. because this
         is known by higher-level code to be a new ``RUN`` collection), and do
-        not look for them.  This causes the ``skipExisting`` and
-        ``clobberOutputs`` options to be ignored, but unlike just setting both
+        not look for them.  This causes the ``skip_existing`` and
+        ``clobber_outputs`` options to be ignored, but unlike just setting both
         of those to `False`, it also avoids all dataset existence checks.
     raise_on_partial_outputs : `bool`, optional
         If `True` raise exceptions chained by
@@ -121,43 +119,44 @@ class SingleQuantumExecutor(QuantumExecutor):
 
     def __init__(
         self,
+        *,
         butler: Butler | None,
-        taskFactory: TaskFactory,
-        skipExistingIn: Any = None,
-        clobberOutputs: bool = False,
-        enableLsstDebug: bool = False,
+        task_factory: TaskFactory,
+        skip_existing_in: Any = None,
+        clobber_outputs: bool = False,
+        enable_lsst_debug: bool = False,
         limited_butler_factory: Callable[[Quantum], LimitedButler] | None = None,
         resources: ExecutionResources | None = None,
-        skipExisting: bool = False,
-        assumeNoExistingOutputs: bool = False,
+        skip_existing: bool = False,
+        assume_no_existing_outputs: bool = False,
         raise_on_partial_outputs: bool = True,
         job_metadata: Mapping[str, int | str | float] | None = None,
     ):
-        self.butler = butler
-        self.taskFactory = taskFactory
-        self.enableLsstDebug = enableLsstDebug
-        self.clobberOutputs = clobberOutputs
-        self.limited_butler_factory = limited_butler_factory
-        self.resources = resources
-        self.assumeNoExistingOutputs = assumeNoExistingOutputs
-        self.raise_on_partial_outputs = raise_on_partial_outputs
-        self.job_metadata = job_metadata
+        self._butler = butler
+        self._task_factory = task_factory
+        self._clobber_outputs = clobber_outputs
+        self._enable_lsst_debug = enable_lsst_debug
+        self._limited_butler_factory = limited_butler_factory
+        self._resources = resources
+        self._assume_no_existing_outputs = assume_no_existing_outputs
+        self._raise_on_partial_outputs = raise_on_partial_outputs
+        self._job_metadata = job_metadata
 
-        if self.butler is None:
+        if self._butler is None:
             assert limited_butler_factory is not None, "limited_butler_factory is needed when butler is None"
 
-        # Find whether output run is in skipExistingIn.
+        # Find whether output run is in skip_existing_in.
         # TODO: This duplicates logic in GraphBuilder, would be nice to have
         # better abstraction for this some day.
-        self.skipExisting = skipExisting
-        if self.butler is not None and skipExistingIn:
-            skip_collections_wildcard = CollectionWildcard.from_expression(skipExistingIn)
+        self._skip_existing = skip_existing
+        if self._butler is not None and skip_existing_in:
+            skip_collections_wildcard = CollectionWildcard.from_expression(skip_existing_in)
             # As optimization check in the explicit list of names first
-            self.skipExisting = self.butler.run in skip_collections_wildcard.strings
-            if not self.skipExisting:
+            self._skip_existing = self._butler.run in skip_collections_wildcard.strings
+            if not self._skip_existing:
                 # need to flatten it and check again
-                self.skipExisting = self.butler.run in self.butler.registry.queryCollections(
-                    skipExistingIn,
+                self._skip_existing = self._butler.run in self._butler.registry.queryCollections(
+                    skip_existing_in,
                     collectionTypes=CollectionType.RUN,
                 )
 
@@ -167,8 +166,8 @@ class SingleQuantumExecutor(QuantumExecutor):
         # Docstring inherited from QuantumExecutor.execute
         assert quantum.dataId is not None, "Quantum DataId cannot be None"
 
-        if self.butler is not None:
-            self.butler.registry.refresh()
+        if self._butler is not None:
+            self._butler.registry.refresh()
 
         result = self._execute(task_node, quantum, quantum_id=quantum_id)
         report = QuantumReport(dataId=quantum.dataId, taskLabel=task_node.label)
@@ -186,15 +185,15 @@ class SingleQuantumExecutor(QuantumExecutor):
         # Make a limited butler instance if needed (which should be QBB if full
         # butler is not defined).
         limited_butler: LimitedButler
-        if self.butler is not None:
-            limited_butler = self.butler
+        if self._butler is not None:
+            limited_butler = self._butler
         else:
             # We check this in constructor, but mypy needs this check here.
-            assert self.limited_butler_factory is not None
-            limited_butler = self.limited_butler_factory(quantum)
+            assert self._limited_butler_factory is not None
+            limited_butler = self._limited_butler_factory(quantum)
 
-        if self.butler is not None:
-            log_capture = LogCapture.from_full(self.butler)
+        if self._butler is not None:
+            log_capture = LogCapture.from_full(self._butler)
         else:
             log_capture = LogCapture.from_limited(limited_butler)
         with log_capture.capture_logging(task_node, quantum) as captureLog:
@@ -210,7 +209,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             # or raises an exception do not try to store logs, as they may be
             # already in butler.
             captureLog.store = False
-            if self.checkExistingOutputs(quantum, task_node, limited_butler):
+            if self._check_existing_outputs(quantum, task_node, limited_butler):
                 _LOG.info(
                     "Skipping already-successful quantum for label=%s dataId=%s.",
                     task_node.label,
@@ -220,7 +219,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             captureLog.store = True
 
             try:
-                quantum = self.updatedQuantumInputs(quantum, task_node, limited_butler)
+                quantum = self._updated_quantum_inputs(quantum, task_node, limited_butler)
             except NoWorkFound as exc:
                 _LOG.info(
                     "Nothing to do for task '%s' on quantum %s; saving metadata and skipping: %s",
@@ -238,13 +237,13 @@ class SingleQuantumExecutor(QuantumExecutor):
                 fullMetadata = _TASK_FULL_METADATA_TYPE()
                 fullMetadata[task_node.label] = _TASK_METADATA_TYPE()
                 fullMetadata["quantum"] = quantumMetadata
-                if self.job_metadata is not None:
-                    fullMetadata["job"] = self.job_metadata
-                self.writeMetadata(quantum, fullMetadata, task_node, limited_butler)
+                if self._job_metadata is not None:
+                    fullMetadata["job"] = self._job_metadata
+                self._write_metadata(quantum, fullMetadata, task_node, limited_butler)
                 return quantum
 
             # enable lsstDebug debugging
-            if self.enableLsstDebug:
+            if self._enable_lsst_debug:
                 try:
                     _LOG.debug("Will try to import debug.py")
                     import debug  # type: ignore # noqa:F401
@@ -252,7 +251,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                     _LOG.warning("No 'debug' module found.")
 
             # initialize global state
-            self.initGlobals(quantum)
+            self._init_globals(quantum)
 
             # Ensure that we are executing a frozen config
             task_node.config.freeze()
@@ -264,10 +263,10 @@ class SingleQuantumExecutor(QuantumExecutor):
                 task_node.label,
                 quantum.dataId,
             )
-            task = self.taskFactory.makeTask(task_node, limited_butler, init_input_refs)
+            task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
             logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
             try:
-                caveats, outputsPut, butler_metrics = self.runQuantum(
+                caveats, outputsPut, butler_metrics = self._run_quantum(
                     task, quantum, task_node, limited_butler, quantum_id=quantum_id
                 )
             except Exception as e:
@@ -288,9 +287,9 @@ class SingleQuantumExecutor(QuantumExecutor):
             logInfo(None, "end", metadata=quantumMetadata)  # type: ignore[arg-type]
             fullMetadata = task.getFullMetadata()
             fullMetadata["quantum"] = quantumMetadata
-            if self.job_metadata is not None:
-                fullMetadata["job"] = self.job_metadata
-            self.writeMetadata(quantum, fullMetadata, task_node, limited_butler)
+            if self._job_metadata is not None:
+                fullMetadata["job"] = self._job_metadata
+            self._write_metadata(quantum, fullMetadata, task_node, limited_butler)
             stopTime = time.time()
             _LOG.info(
                 "Execution of task '%s' on quantum %s took %.3f seconds",
@@ -300,7 +299,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             )
         return quantum
 
-    def checkExistingOutputs(
+    def _check_existing_outputs(
         self, quantum: Quantum, task_node: TaskNode, /, limited_butler: LimitedButler
     ) -> bool:
         """Decide whether this quantum needs to be executed.
@@ -333,10 +332,10 @@ class SingleQuantumExecutor(QuantumExecutor):
         RuntimeError
             Raised if some outputs exist and some not.
         """
-        if self.assumeNoExistingOutputs:
+        if self._assume_no_existing_outputs:
             return False
 
-        if self.skipExisting:
+        if self._skip_existing:
             _LOG.debug(
                 "Checking existence of metadata from previous execution of label=%s dataId=%s.",
                 task_node.label,
@@ -359,9 +358,9 @@ class SingleQuantumExecutor(QuantumExecutor):
         if existingRefs:
             if not missingRefs:
                 # Full outputs exist.
-                if self.skipExisting:
+                if self._skip_existing:
                     return True
-                elif self.clobberOutputs:
+                elif self._clobber_outputs:
                     _LOG.info("Removing complete outputs for quantum %s: %s", quantum, existingRefs)
                     limited_butler.pruneDatasets(existingRefs, disassociate=True, unstore=True, purge=True)
                 else:
@@ -378,7 +377,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                     existingRefs,
                     missingRefs,
                 )
-                if self.clobberOutputs:
+                if self._clobber_outputs:
                     # only prune
                     _LOG.info("Removing partial outputs for task %s: %s", task_node.label, existingRefs)
                     limited_butler.pruneDatasets(existingRefs, disassociate=True, unstore=True, purge=True)
@@ -393,7 +392,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         # By default always execute.
         return False
 
-    def updatedQuantumInputs(
+    def _updated_quantum_inputs(
         self, quantum: Quantum, task_node: TaskNode, /, limited_butler: LimitedButler
     ) -> Quantum:
         """Update quantum with extra information, returns a new updated
@@ -477,7 +476,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             outputs=helper.outputs,
         )
 
-    def runQuantum(
+    def _run_quantum(
         self,
         task: PipelineTask,
         quantum: Quantum,
@@ -514,7 +513,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         flags = QuantumSuccessCaveats.NO_CAVEATS
 
         # Create a butler that operates in the context of a quantum
-        butlerQC = QuantumContext(limited_butler, quantum, resources=self.resources, quantum_id=quantum_id)
+        butlerQC = QuantumContext(limited_butler, quantum, resources=self._resources, quantum_id=quantum_id)
 
         # Get the input and output references for the task
         inputRefs, outputRefs = task_node.get_connections().buildDatasetRefs(quantum)
@@ -543,7 +542,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                 error = caught
             else:
                 error = caught.__cause__
-            if self.raise_on_partial_outputs:
+            if self._raise_on_partial_outputs:
                 # Note: this is a real edge case that required some
                 # experimentation: without 'from None' below, this raise would
                 # produce a "while one exception was being handled, another was
@@ -567,7 +566,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         ids_put = [output[2] for output in butlerQC.outputsPut]
         return flags, ids_put, butler_metrics
 
-    def writeMetadata(
+    def _write_metadata(
         self, quantum: Quantum, metadata: Any, task_node: TaskNode, /, limited_butler: LimitedButler
     ) -> None:
         # DatasetRef has to be in the Quantum outputs, can lookup by name
@@ -582,7 +581,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             ) from exc
         limited_butler.put(metadata, ref)
 
-    def initGlobals(self, quantum: Quantum) -> None:
+    def _init_globals(self, quantum: Quantum) -> None:
         """Initialize global state needed for task execution.
 
         Parameters
@@ -601,7 +600,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         This will need revision when filter singleton disappears.
         """
         # can only work for full butler
-        if self.butler is None:
+        if self._butler is None:
             return
         oneInstrument = None
         for datasetRefs in chain(quantum.inputs.values(), quantum.outputs.values()):
@@ -615,7 +614,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                         ), "Currently require that only one instrument is used per graph"
                     else:
                         oneInstrument = instrument
-                        Instrument.fromName(instrument, self.butler.registry)
+                        Instrument.fromName(instrument, self._butler.registry)
 
     def _should_assume_exists(self, quantum: Quantum, ref: DatasetRef) -> bool | None:
         """Report whether the given dataset can be assumed to exist because

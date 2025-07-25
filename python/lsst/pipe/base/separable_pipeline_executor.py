@@ -276,10 +276,10 @@ class SeparablePipelineExecutor:
         """
         if not graph_executor:
             quantum_executor = SingleQuantumExecutor(
-                self._butler,
-                self._task_factory,
-                skipExistingIn=self._skip_existing_in,
-                clobberOutputs=self._clobber_output,
+                butler=self._butler,
+                task_factory=self._task_factory,
+                skip_existing_in=self._skip_existing_in,
+                clobber_outputs=self._clobber_output,
                 resources=self.resources,
                 raise_on_partial_outputs=self.raise_on_partial_outputs,
             )
