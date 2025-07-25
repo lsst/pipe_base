@@ -1,0 +1,2 @@
+formatters:
+  TaskMetadataLike: lsst.daf.butler.formatters.json.JsonFormatter
