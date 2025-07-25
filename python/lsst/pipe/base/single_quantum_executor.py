@@ -38,14 +38,12 @@ from typing import Any, cast
 from lsst.daf.butler import (
     Butler,
     ButlerMetrics,
-    CollectionType,
     DatasetRef,
     DatasetType,
     LimitedButler,
     NamedKeyDict,
     Quantum,
 )
-from lsst.daf.butler.registry.wildcards import CollectionWildcard
 from lsst.utils.timer import logInfo
 
 from ._instrument import Instrument
@@ -146,19 +144,11 @@ class SingleQuantumExecutor(QuantumExecutor):
             assert limited_butler_factory is not None, "limited_butler_factory is needed when butler is None"
 
         # Find whether output run is in skip_existing_in.
-        # TODO: This duplicates logic in GraphBuilder, would be nice to have
-        # better abstraction for this some day.
         self._skip_existing = skip_existing
-        if self._butler is not None and skip_existing_in:
-            skip_collections_wildcard = CollectionWildcard.from_expression(skip_existing_in)
-            # As optimization check in the explicit list of names first
-            self._skip_existing = self._butler.run in skip_collections_wildcard.strings
-            if not self._skip_existing:
-                # need to flatten it and check again
-                self._skip_existing = self._butler.run in self._butler.registry.queryCollections(
-                    skip_existing_in,
-                    collectionTypes=CollectionType.RUN,
-                )
+        if self._butler is not None and skip_existing_in and not self._skip_existing:
+            self._skip_existing = self._butler.run in self._butler.collections.query(
+                skip_existing_in, flatten_chains=True
+            )
 
     def execute(
         self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
