@@ -686,10 +686,10 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
 
-        taskFactory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler, taskFactory)
+        task_factory = AddTaskFactoryMock()
+        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 1)
+        self.assertEqual(task_factory.countExec, 1)
 
         # There must be one dataset of task's output connection
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
@@ -704,20 +704,22 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
 
-        taskFactory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler, taskFactory)
+        task_factory = AddTaskFactoryMock()
+        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 1)
+        self.assertEqual(task_factory.countExec, 1)
 
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
         self.assertEqual(len(refs), 1)
         dataset_id_1 = refs[0].id
 
-        # Re-run it with skipExistingIn, it should not run.
+        # Re-run it with skip_existing_in, it should not run.
         assert butler.run is not None
-        executor = SingleQuantumExecutor(butler, taskFactory, skipExistingIn=[butler.run])
+        executor = SingleQuantumExecutor(
+            butler=butler, task_factory=task_factory, skip_existing_in=[butler.run]
+        )
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 1)
+        self.assertEqual(task_factory.countExec, 1)
 
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
         self.assertEqual(len(refs), 1)
@@ -733,10 +735,10 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
 
-        taskFactory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler, taskFactory)
+        task_factory = AddTaskFactoryMock()
+        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 1)
+        self.assertEqual(task_factory.countExec, 1)
 
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
         self.assertEqual(len(refs), 1)
@@ -750,14 +752,14 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         replacement = original_dataset + 10
         butler.put(replacement, refs[0])
 
-        # Re-run it with clobberOutputs and skipExistingIn, it should not
+        # Re-run it with clobber_outputs and skip_existing_in, it should not
         # clobber but should skip instead.
         assert butler.run is not None
         executor = SingleQuantumExecutor(
-            butler, taskFactory, skipExistingIn=[butler.run], clobberOutputs=True
+            butler=butler, task_factory=task_factory, skip_existing_in=[butler.run], clobber_outputs=True
         )
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 1)
+        self.assertEqual(task_factory.countExec, 1)
 
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
         self.assertEqual(len(refs), 1)
@@ -767,12 +769,12 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         second_dataset = butler.get(refs[0])
         self.assertEqual(list(second_dataset), list(replacement))
 
-        # Re-run it with clobberOutputs but without skipExistingIn, it should
-        # clobber.
+        # Re-run it with clobber_outputs but without skip_existing_in, it
+        # should clobber.
         assert butler.run is not None
-        executor = SingleQuantumExecutor(butler, taskFactory, clobberOutputs=True)
+        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory, clobber_outputs=True)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(taskFactory.countExec, 2)
+        self.assertEqual(task_factory.countExec, 2)
 
         refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
         self.assertEqual(len(refs), 1)

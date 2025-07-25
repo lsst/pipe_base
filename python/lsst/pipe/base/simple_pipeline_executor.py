@@ -639,8 +639,8 @@ class SimplePipelineExecutor:
             self.quantum_graph.write_packages(self.butler, compare_existing=False)
         task_factory = TaskFactory()
         single_quantum_executor = SingleQuantumExecutor(
-            self.butler,
-            task_factory,
+            butler=self.butler,
+            task_factory=task_factory,
             resources=self.resources,
             raise_on_partial_outputs=self.raise_on_partial_outputs,
         )
