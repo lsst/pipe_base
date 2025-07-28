@@ -45,7 +45,7 @@ import warnings
 from collections import Counter
 from collections.abc import Generator, Hashable, Iterable, MutableMapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 
@@ -461,6 +461,8 @@ class ImportIR:
     """list of tasks that should be excluded when inheriting this pipeline.
     Either the include or exclude attributes may be specified, but not both.
     """
+    rename: dict[str, str] | None = None
+    """dict of tasks to rename, keyed by old name with new name value."""
     importContracts: bool = True
     """Boolean attribute to dictate if contracts should be inherited with the
     pipeline or not.
@@ -497,18 +499,41 @@ class ImportIR:
                 "An include list and an exclude list cannot both be specified"
                 " when declaring a pipeline import."
             )
+        if (rename := self.rename) is not None:
+            keys = rename.keys()
+            set_values = set(rename.values())
+            if len(set_values) != len(keys):
+                raise ValueError(f"rename {keys=} must not have duplicates")
+            if set_values.intersection(keys):
+                raise ValueError(f"rename {keys=} must not intersect with values={rename.values()}")
+        else:
+            rename = {}
         tmp_pipeline = PipelineIR.from_uri(os.path.expandvars(self.location))
         if self.instrument is not _Tags.KeepInstrument:
             tmp_pipeline.instrument = self.instrument
 
         included_labels = set()
+        renamed_tasks = {}
         for label in tmp_pipeline.tasks:
+            is_included = self.include and label in self.include
             if (
-                (self.include and label in self.include)
+                is_included
                 or (self.exclude and label not in self.exclude)
                 or (self.include is None and self.exclude is None)
             ):
-                included_labels.add(label)
+                if (label_new := rename.get(label)) is not None:
+                    renamed_tasks[label] = label_new
+                    if is_included:
+                        self.include = [
+                            label_new if (x == label) else label for x in cast(list[str], self.include)
+                        ]
+                else:
+                    label_new = label
+                included_labels.add(label_new)
+        for label, label_new in renamed_tasks.items():
+            task = tmp_pipeline.tasks.pop(label)
+            task.label = label_new
+            tmp_pipeline.tasks[label_new] = task
 
         # Handle labeled subsets being specified in the include or exclude
         # list, adding or removing labels.
