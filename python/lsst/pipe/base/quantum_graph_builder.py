@@ -337,9 +337,11 @@ class QuantumGraphBuilder(ABC):
         what it does.
         """
         skeleton = self._build_skeleton(attach_datastore_records=attach_datastore_records)
-        # TODO initialize most metadata here instead of in ctrl_mpexec.
         if metadata is None:
-            metadata = {}
+            metadata = {
+                "input": list(self.input_collections),
+                "output_run": self.output_run,
+            }
         return self._construct_quantum_graph(skeleton, metadata)
 
     def finish(
