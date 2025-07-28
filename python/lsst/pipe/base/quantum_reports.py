@@ -90,6 +90,36 @@ class ExceptionInfo(pydantic.BaseModel):
         """
         return cls(className=get_full_type_name(exception), message=str(exception))
 
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
 
 class QuantumReport(pydantic.BaseModel):
     """Task execution report for a single Quantum.
@@ -200,6 +230,36 @@ class QuantumReport(pydantic.BaseModel):
             exitCode=exitCode,
         )
 
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
 
 class Report(pydantic.BaseModel):
     """Execution report for the whole job with one or few quanta."""
@@ -242,3 +302,33 @@ class Report(pydantic.BaseModel):
             Exception to use to extract information from.
         """
         self.exceptionInfo = ExceptionInfo.from_exception(exception)
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
