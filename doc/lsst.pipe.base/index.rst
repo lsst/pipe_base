@@ -96,6 +96,10 @@ Python API reference
 .. automodapi:: lsst.pipe.base.execution_reports
    :no-main-docstr:
 
+.. automodapi:: lsst.pipe.base.simple_pipeline_executor
+
+.. automodapi:: lsst.pipe.base.separable_pipeline_executor
+
 QuantumGraph generation API reference
 -------------------------------------
 
@@ -105,3 +109,14 @@ QuantumGraph generation API reference
 .. automodapi:: lsst.pipe.base.all_dimensions_quantum_graph_builder
    :skip: DatasetQueryConstraintVariant
 .. automodapi:: lsst.pipe.base._datasetQueryConstraints
+
+Execution system API reference
+------------------------------
+
+.. automodapi:: lsst.pipe.base.exec_fixup_data_id
+.. automodapi:: lsst.pipe.base.execution_graph_fixup
+.. automodapi:: lsst.pipe.base.log_capture
+.. automodapi:: lsst.pipe.base.mp_graph_executor
+.. automodapi:: lsst.pipe.base.quantum_graph_executor
+.. automodapi:: lsst.pipe.base.quantum_reports
+.. automodapi:: lsst.pipe.base.single_quantum_executor
