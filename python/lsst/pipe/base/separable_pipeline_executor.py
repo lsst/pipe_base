@@ -39,12 +39,14 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
-import lsst.pipe.base
 import lsst.resources
 from lsst.daf.butler import Butler
 
+from ._quantumContext import ExecutionResources
 from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
+from .graph import QuantumGraph
 from .mp_graph_executor import MPGraphExecutor
+from .pipeline import Pipeline
 from .quantum_graph_builder import QuantumGraphBuilder
 from .quantum_graph_executor import QuantumGraphExecutor
 from .single_quantum_executor import SingleQuantumExecutor
@@ -97,8 +99,8 @@ class SeparablePipelineExecutor:
         butler: Butler,
         clobber_output: bool = False,
         skip_existing_in: Iterable[str] | None = None,
-        task_factory: lsst.pipe.base.TaskFactory | None = None,
-        resources: lsst.pipe.base.ExecutionResources | None = None,
+        task_factory: TaskFactory | None = None,
+        resources: ExecutionResources | None = None,
         raise_on_partial_outputs: bool = True,
     ):
         self._butler = Butler.from_config(
@@ -118,7 +120,7 @@ class SeparablePipelineExecutor:
 
     def pre_execute_qgraph(
         self,
-        graph: lsst.pipe.base.QuantumGraph,
+        graph: QuantumGraph,
         register_dataset_types: bool = False,
         save_init_outputs: bool = True,
         save_versions: bool = True,
@@ -150,7 +152,7 @@ class SeparablePipelineExecutor:
         if save_versions:
             graph.write_packages(self._butler)
 
-    def make_pipeline(self, pipeline_uri: str | lsst.resources.ResourcePath) -> lsst.pipe.base.Pipeline:
+    def make_pipeline(self, pipeline_uri: str | lsst.resources.ResourcePath) -> Pipeline:
         """Build a pipeline from pipeline and configuration information.
 
         Parameters
@@ -165,17 +167,17 @@ class SeparablePipelineExecutor:
         pipeline : `lsst.pipe.base.Pipeline`
             The fully-built pipeline.
         """
-        return lsst.pipe.base.Pipeline.from_uri(pipeline_uri)
+        return Pipeline.from_uri(pipeline_uri)
 
     def make_quantum_graph(
         self,
-        pipeline: lsst.pipe.base.Pipeline,
+        pipeline: Pipeline,
         where: str = "",
         *,
         builder_class: type[QuantumGraphBuilder] = AllDimensionsQuantumGraphBuilder,
         attach_datastore_records: bool = False,
         **kwargs: Any,
-    ) -> lsst.pipe.base.QuantumGraph:
+    ) -> QuantumGraph:
         """Build a quantum graph from a pipeline and input datasets.
 
         Parameters
@@ -246,7 +248,7 @@ class SeparablePipelineExecutor:
 
     def run_pipeline(
         self,
-        graph: lsst.pipe.base.QuantumGraph,
+        graph: QuantumGraph,
         fail_fast: bool = False,
         graph_executor: QuantumGraphExecutor | None = None,
         num_proc: int = 1,
