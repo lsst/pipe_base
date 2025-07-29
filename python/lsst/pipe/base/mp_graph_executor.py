@@ -70,7 +70,7 @@ class _Job:
 
     Parameters
     ----------
-    qnode: `~lsst.pipe.base.QuantumNode`
+    qnode: `QuantumNode`
         Quantum and some associated information.
     """
 
@@ -309,7 +309,7 @@ class _JobList:
 
     Parameters
     ----------
-    iterable : iterable of `~lsst.pipe.base.QuantumNode`
+    iterable : ~collections.abc.Iterable` [ `QuantumNode` ]
         Sequence of Quanta to execute. This has to be ordered according to
         task dependencies.
     """
@@ -417,7 +417,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
         Number of processes to use for executing tasks.
     timeout : `float`
         Time in seconds to wait for tasks to finish.
-    quantum_executor : `QuantumExecutor`
+    quantum_executor : `.quantum_graph_executor.QuantumExecutor`
         Executor for single quantum. For multiprocess-style execution when
         ``num_proc`` is greater than one this instance must support pickle.
     start_method : `str`, optional
@@ -475,13 +475,13 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
         Parameters
         ----------
-        graph : `~lsst.pipe.base.QuantumGraph`
-            `~lsst.pipe.base.QuantumGraph` to modify.
+        graph : `.QuantumGraph`
+            `.QuantumGraph` to modify.
 
         Returns
         -------
-        graph : `~lsst.pipe.base.QuantumGraph`
-            Modified `~lsst.pipe.base.QuantumGraph`.
+        graph : `.QuantumGraph`
+            Modified `.QuantumGraph`.
 
         Raises
         ------
@@ -506,8 +506,8 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
         Parameters
         ----------
-        graph : `~lsst.pipe.base.QuantumGraph`
-            `~lsst.pipe.base.QuantumGraph` that is to be executed.
+        graph : `.QuantumGraph`
+            `.QuantumGraph` that is to be executed.
         report : `Report`
             Object for reporting execution status.
         """
@@ -626,8 +626,8 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
         Parameters
         ----------
-        graph : `~lsst.pipe.base.QuantumGraph`
-            `~lsst.pipe.base.QuantumGraph` that is to be executed.
+        graph : `.QuantumGraph`
+            `.QuantumGraph` that is to be executed.
         report : `Report`
             Object for reporting execution status.
         """

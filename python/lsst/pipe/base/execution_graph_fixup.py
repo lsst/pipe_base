@@ -42,7 +42,7 @@ class ExecutionGraphFixup(ABC):
     (e.g. AP association pipeline).
 
     Instances of this class receive pre-ordered sequence of quanta
-    (`QuantumGraph` instances) and they are allowed to modify quanta data in
+    (`.QuantumGraph` instances) and they are allowed to modify quanta data in
     place, for example update ``dependencies`` field to add additional
     dependencies. Returned list of quanta will be re-ordered once again by the
     graph executor to reflect new dependencies.
@@ -58,12 +58,12 @@ class ExecutionGraphFixup(ABC):
 
         Parameters
         ----------
-        graph : QuantumGraph
+        graph : `.QuantumGraph`
             Quantum Graph that will be executed by the executor.
 
         Returns
         -------
-        graph : QuantumGraph
+        graph : `.QuantumGraph`
             Modified graph.
         """
         raise NotImplementedError

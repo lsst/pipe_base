@@ -69,7 +69,7 @@ class SingleQuantumExecutor(QuantumExecutor):
     butler : `~lsst.daf.butler.Butler` or `None`
         Data butler, `None` means that Quantum-backed butler should be used
         instead.
-    task_factory : `~lsst.pipe.base.TaskFactory`
+    task_factory : `.TaskFactory`
         Instance of a task factory.
     skip_existing_in : `~typing.Any`
         Expressions representing the collections to search for existing output
@@ -90,7 +90,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         A method that creates a `~lsst.daf.butler.LimitedButler` instance for a
         given Quantum. This parameter must be defined if ``butler`` is `None`.
         If ``butler`` is not `None` then this parameter is ignored.
-    resources : `~lsst.pipe.base.ExecutionResources`, optional
+    resources : `.ExecutionResources`, optional
         The resources available to this quantum when executing.
     skip_existing : `bool`, optional
         If `True`, skip quanta whose metadata datasets are already stored.
@@ -104,10 +104,9 @@ class SingleQuantumExecutor(QuantumExecutor):
         ``clobber_outputs`` options to be ignored, but unlike just setting both
         of those to `False`, it also avoids all dataset existence checks.
     raise_on_partial_outputs : `bool`, optional
-        If `True` raise exceptions chained by
-        `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead of
-        considering the partial result a success and continuing to run
-        downstream tasks.
+        If `True` raise exceptions chained by `.AnnotatedPartialOutputsError`
+        immediately, instead of considering the partial result a success and
+        continuing to run downstream tasks.
     job_metadata : `~collections.abc.Mapping`
         Mapping with extra metadata to embed within the quantum metadata under
         the "job" key.  This is intended to correspond to information common
@@ -304,7 +303,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         ----------
         quantum : `~lsst.daf.butler.Quantum`
             Quantum to check for existing outputs.
-        task_node : `~lsst.pipe.base.pipeline_graph.TaskNode`
+        task_node : `~.pipeline_graph.TaskNode`
             Task definition structure.
         limited_butler : `~lsst.daf.butler.LimitedButler`
             Butler to use for querying and clobbering.
@@ -397,7 +396,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         ----------
         quantum : `~lsst.daf.butler.Quantum`
             Single Quantum instance.
-        task_node : `~lsst.pipe.base.pipeline_graph.TaskNode`
+        task_node : `~.pipeline_graph.TaskNode`
             Task definition structure.
         limited_butler : `~lsst.daf.butler.LimitedButler`
             Butler to use for querying.
@@ -479,11 +478,11 @@ class SingleQuantumExecutor(QuantumExecutor):
 
         Parameters
         ----------
-        task : `~lsst.pipe.base.PipelineTask`
+        task : `PipelineTask`
             Task object.
         quantum : `~lsst.daf.butler.Quantum`
             Single Quantum instance.
-        task_node : `~lsst.pipe.base.pipeline_graph.TaskNode`
+        task_node : `~.pipeline_graph.TaskNode`
             Task definition structure.
         limited_butler : `~lsst.daf.butler.LimitedButler`
             Butler to use for dataset I/O.

@@ -41,11 +41,7 @@ if TYPE_CHECKING:
 
 
 class TaskFactory(metaclass=ABCMeta):
-    """Abstract base class for task factory.
-
-    Task factory is responsible for creating instances of PipelineTask
-    subclasses.
-    """
+    """A helper class for creating instances of PipelineTask subclasses."""
 
     def makeTask(
         self,
@@ -54,7 +50,8 @@ class TaskFactory(metaclass=ABCMeta):
         butler: LimitedButler,
         initInputRefs: Iterable[DatasetRef] | None,
     ) -> PipelineTask:
-        """Create new PipelineTask instance from its `~lsst.pipe.base.TaskDef`.
+        """Create new PipelineTask instance from its
+        `~.pipeline_graph.TaskNode`.
 
         Parameters
         ----------

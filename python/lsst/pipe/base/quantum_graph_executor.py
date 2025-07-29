@@ -60,7 +60,7 @@ class QuantumExecutor(ABC):
 
         Parameters
         ----------
-        task_node : `~lsst.pipe.base.pipeline_graph.TaskNode`
+        task_node : `~.pipeline_graph.TaskNode`
             Task definition structure.
         quantum : `~lsst.daf.butler.Quantum`
             Quantum for this execution.
@@ -102,7 +102,7 @@ class QuantumGraphExecutor(ABC):
 
         Parameters
         ----------
-        graph : `~lsst.pipe.base.QuantumGraph`
+        graph : `.QuantumGraph`
             Execution graph.
         """
         raise NotImplementedError()

@@ -82,14 +82,14 @@ class SeparablePipelineExecutor:
         for existing outputs, and skips any quanta that have run to completion
         (or have no work to do). Otherwise, all tasks are attempted (subject to
         ``clobber_output``).
-    task_factory : `lsst.pipe.base.TaskFactory`, optional
+    task_factory : `.TaskFactory`, optional
         A custom task factory for use in pre-execution and execution. By
-        default, a new instance of `lsst.pipe.base.TaskFactory` is used.
-    resources : `~lsst.pipe.base.ExecutionResources`
+        default, a new instance of `.TaskFactory` is used.
+    resources : `.ExecutionResources`
         The resources available to each quantum being executed.
     raise_on_partial_outputs : `bool`, optional
         If `True` raise exceptions chained by
-        `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead of
+        `.AnnotatedPartialOutputsError` immediately, instead of
         considering the partial result a success and continuing to run
         downstream tasks.
     """
@@ -128,12 +128,12 @@ class SeparablePipelineExecutor:
         """Run pre-execution initialization.
 
         This method will be deprecated after DM-38041, to be replaced with a
-        method that takes either a `~lsst.pipe.base.Pipeline` or a
-        ``ResolvedPipelineGraph`` instead of a `~lsst.pipe.base.QuantumGraph`.
+        method that takes either a `.Pipeline` or a
+        resolved `.pipeline_graph.PipelineGraph` instead of a `.QuantumGraph`.
 
         Parameters
         ----------
-        graph : `lsst.pipe.base.QuantumGraph`
+        graph : `.QuantumGraph`
             The quantum graph defining the pipeline and datasets to
             be initialized.
         register_dataset_types : `bool`, optional
@@ -164,7 +164,7 @@ class SeparablePipelineExecutor:
 
         Returns
         -------
-        pipeline : `lsst.pipe.base.Pipeline`
+        pipeline : `.Pipeline`
             The fully-built pipeline.
         """
         return Pipeline.from_uri(pipeline_uri)
@@ -182,15 +182,14 @@ class SeparablePipelineExecutor:
 
         Parameters
         ----------
-        pipeline : `lsst.pipe.base.Pipeline`
+        pipeline : `.Pipeline`
             The pipeline for which to generate a quantum graph.
         where : `str`, optional
             A data ID query that constrains the quanta generated.  Must not be
             provided if a custom ``builder_class`` is given and that class does
             not accept ``where`` as a construction argument.
         builder_class : `type` [ \
-                `lsst.pipe.base.quantum_graph_builder.QuantumGraphBuilder` ], \
-                optional
+                `.quantum_graph_builder.QuantumGraphBuilder` ], optional
             Quantum graph builder implementation.  Ignored if ``builder`` is
             provided.
         attach_datastore_records : `bool`, optional
@@ -201,15 +200,15 @@ class SeparablePipelineExecutor:
             Additional keyword arguments are forwarded to ``builder_class``
             when a quantum graph builder instance is constructed.  All
             arguments accepted by the
-            `~lsst.pipe.base.quantum_graph_builder.QuantumGraphBuilder` base
+            `~.quantum_graph_builder.QuantumGraphBuilder` base
             class are provided automatically (from explicit arguments to this
             method and executor attributes) and do not need to be included
             as keyword arguments.
 
         Returns
         -------
-        graph : `lsst.pipe.base.QuantumGraph`
-            The quantum graph for ``pipeline`` as run on the datasets
+        graph : `.QuantumGraph`
+            The quantum graph for ``.Pipeline`` as run on the datasets
             identified by ``where``.
 
         Notes
@@ -260,17 +259,16 @@ class SeparablePipelineExecutor:
 
         Parameters
         ----------
-        graph : `lsst.pipe.base.QuantumGraph`
+        graph : `.QuantumGraph`
             The pipeline and datasets to execute.
         fail_fast : `bool`, optional
             If `True`, abort all execution if any task fails when
             running with multiple processes. Only used with the default graph
             executor).
-        graph_executor : \
-                `lsst.pipe.base.quantum_graph_executor.QuantumGraphExecutor`,\
+        graph_executor : `.quantum_graph_executor.QuantumGraphExecutor`,\
                 optional
             A custom graph executor. By default, a new instance of
-            `lsst.pipe.base.mp_graph_executor.MPGraphExecutor` is used.
+            `.mp_graph_executor.MPGraphExecutor` is used.
         num_proc : `int`, optional
             The number of processes that can be used to run the pipeline. The
             default value ensures that no subprocess is created. Only used with

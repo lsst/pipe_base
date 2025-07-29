@@ -63,36 +63,34 @@ class SimplePipelineExecutor:
 
     Parameters
     ----------
-    quantum_graph : `~lsst.pipe.base.QuantumGraph`
+    quantum_graph : `.QuantumGraph`
         Graph to be executed.
     butler : `~lsst.daf.butler.Butler`
         Object that manages all I/O.  Must be initialized with `collections`
         and `run` properties that correspond to the input and output
         collections, which must be consistent with those used to create
         ``quantum_graph``.
-    resources : `~lsst.pipe.base.ExecutionResources`
+    resources : `.ExecutionResources`
         The resources available to each quantum being executed.
     raise_on_partial_outputs : `bool`, optional
-        If `True` raise exceptions chained by
-        `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead of
-        considering the partial result a success and continuing to run
-        downstream tasks.
+        If `True` raise exceptions chained by `.AnnotatedPartialOutputsError`
+        immediately, instead of considering the partial result a success and
+        continuing to run downstream tasks.
 
     Notes
     -----
     Most callers should use one of the `classmethod` factory functions
     (`from_pipeline_filename`, `from_task_class`, `from_pipeline`) instead of
     invoking the constructor directly; these guarantee that the
-    `~lsst.daf.butler.Butler` and `~lsst.pipe.base.QuantumGraph` are created
-    consistently.
+    `~lsst.daf.butler.Butler` and `.QuantumGraph` are created consistently.
 
     This class is intended primarily to support unit testing and small-scale
-    integration testing of `~lsst.pipe.base.PipelineTask` classes.  It
-    deliberately lacks many features present in the command-line-only
-    ``pipetask`` tool in order to keep the implementation simple.  Python
-    callers that need more sophistication should call lower-level tools like
-    `~lsst.pipe.base.quantum_graph_builder.QuantumGraphBuilder`
-    and `SingleQuantumExecutor` directly.
+    integration testing of `.PipelineTask` classes.  It deliberately lacks many
+    features present in the command-line-only ``pipetask`` tool in order to
+    keep the implementation simple.  Python callers that need more
+    sophistication should call lower-level tools like
+    `~.quantum_graph_builder.QuantumGraphBuilder` and
+    `.single_quantum_executor.SingleQuantumExecutor` directly.
     """
 
     def __init__(
@@ -132,8 +130,8 @@ class SimplePipelineExecutor:
             collection to create that will combine both inputs and outputs.
         output_run : `str`, optional
             Name of the output `~lsst.daf.butler.CollectionType.RUN` that will
-            directly hold all output datasets.  If not provided, a name will
-            be created from ``output`` and a timestamp.
+            directly hold all output datasets.  If not provided, a name will be
+            created from ``output`` and a timestamp.
 
         Returns
         -------
@@ -184,13 +182,13 @@ class SimplePipelineExecutor:
         butler : `~lsst.daf.butler.Butler`
             Butler that manages all I/O.  `prep_butler` can be used to create
             one.
-        resources : `~lsst.pipe.base.ExecutionResources`
+        resources : `.ExecutionResources`
             The resources available to each quantum being executed.
         raise_on_partial_outputs : `bool`, optional
             If `True` raise exceptions chained by
-            `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead
-            of considering the partial result a success and continuing to run
-            downstream tasks.
+            `.AnnotatedPartialOutputsError` immediately, instead of considering
+            the partial result a success and continuing to run downstream
+            tasks.
         attach_datastore_records : `bool`, optional
             Whether to attach datastore records to the quantum graph.  This is
             usually unnecessary, unless the executor is used to test behavior
@@ -200,15 +198,14 @@ class SimplePipelineExecutor:
             collection to create that will combine both inputs and outputs.
         output_run : `str`, optional
             Name of the output `~lsst.daf.butler.CollectionType.RUN` that will
-            directly hold all output datasets.  If not provided, a name will
-            be created from ``output`` and a timestamp.
+            directly hold all output datasets.  If not provided, a name will be
+            created from ``output`` and a timestamp.
 
         Returns
         -------
         executor : `SimplePipelineExecutor`
-            An executor instance containing the constructed
-            `~lsst.pipe.base.QuantumGraph` and `~lsst.daf.butler.Butler`, ready
-            for `run` to be called.
+            An executor instance containing the constructed `.QuantumGraph` and
+            `~lsst.daf.butler.Butler`, ready for `run` to be called.
         """
         pipeline = Pipeline.fromFile(pipeline_filename)
         return cls.from_pipeline(
@@ -245,7 +242,7 @@ class SimplePipelineExecutor:
         Parameters
         ----------
         task_class : `type`
-            A concrete `~lsst.pipe.base.PipelineTask` subclass.
+            A concrete `.PipelineTask` subclass.
         config : `~lsst.pex.config.Config`, optional
             Configuration for the task.  If not provided, task-level defaults
             will be used (no per-instrument overrides).
@@ -260,13 +257,13 @@ class SimplePipelineExecutor:
         butler : `~lsst.daf.butler.Butler`
             Butler that manages all I/O.  `prep_butler` can be used to create
             one.
-        resources : `~lsst.pipe.base.ExecutionResources`
+        resources : `.ExecutionResources`
             The resources available to each quantum being executed.
         raise_on_partial_outputs : `bool`, optional
             If `True` raise exceptions chained by
-            `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead
-            of considering the partial result a success and continuing to run
-            downstream tasks.
+            `.AnnotatedPartialOutputsError` immediately, instead of considering
+            the partial result a success and continuing to run downstream
+            tasks.
         attach_datastore_records : `bool`, optional
             Whether to attach datastore records to the quantum graph.  This is
             usually unnecessary, unless the executor is used to test behavior
@@ -276,15 +273,14 @@ class SimplePipelineExecutor:
             collection to create that will combine both inputs and outputs.
         output_run : `str`, optional
             Name of the output `~lsst.daf.butler.CollectionType.RUN` that will
-            directly hold all output datasets.  If not provided, a name will
-            be created from ``output`` and a timestamp.
+            directly hold all output datasets.  If not provided, a name will be
+            created from ``output`` and a timestamp.
 
         Returns
         -------
         executor : `SimplePipelineExecutor`
-            An executor instance containing the constructed
-            `~lsst.pipe.base.QuantumGraph` and `~lsst.daf.butler.Butler`, ready
-            for `run` to be called.
+            An executor instance containing the constructed `.QuantumGraph` and
+            `~lsst.daf.butler.Butler`, ready for `run` to be called.
         """
         if config is None:
             config = task_class.ConfigClass()
@@ -328,8 +324,7 @@ class SimplePipelineExecutor:
 
         Parameters
         ----------
-        pipeline : `~lsst.pipe.base.Pipeline` or \
-                `~collections.abc.Iterable` [ `~lsst.pipe.base.TaskDef` ]
+        pipeline : `.Pipeline` or `~collections.abc.Iterable` [ `.TaskDef` ]
             A Python object describing the tasks to run, along with their
             labels and configuration.
         where : `str`, optional
@@ -340,13 +335,13 @@ class SimplePipelineExecutor:
         butler : `~lsst.daf.butler.Butler`
             Butler that manages all I/O.  `prep_butler` can be used to create
             one.
-        resources : `~lsst.pipe.base.ExecutionResources`
+        resources : `.ExecutionResources`
             The resources available to each quantum being executed.
         raise_on_partial_outputs : `bool`, optional
             If `True` raise exceptions chained by
-            `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead
-            of considering the partial result a success and continuing to run
-            downstream tasks.
+            `.AnnotatedPartialOutputsError` immediately, instead of considering
+            the partial result a success and continuing to run downstream
+            tasks.
         attach_datastore_records : `bool`, optional
             Whether to attach datastore records to the quantum graph.  This is
             usually unnecessary, unless the executor is used to test behavior
@@ -362,9 +357,8 @@ class SimplePipelineExecutor:
         Returns
         -------
         executor : `SimplePipelineExecutor`
-            An executor instance containing the constructed
-            `~lsst.pipe.base.QuantumGraph` and `~lsst.daf.butler.Butler`, ready
-            for `run` to be called.
+            An executor instance containing the constructed `.QuantumGraph` and
+            `~lsst.daf.butler.Butler`, ready for `run` to be called.
         """
         pipeline_graph = pipeline.to_graph()
         return cls.from_pipeline_graph(
@@ -398,7 +392,7 @@ class SimplePipelineExecutor:
 
         Parameters
         ----------
-        pipeline_graph : `~lsst.pipe.base.PipelineGraph`
+        pipeline_graph : `~.pipeline_graph.PipelineGraph`
             A Python object describing the tasks to run, along with their
             labels and configuration, in graph form.  Will be resolved against
             the given ``butler``, with any existing resolutions ignored.
@@ -409,13 +403,13 @@ class SimplePipelineExecutor:
             ``where`` expression, keyed by the identifiers they replace.
         butler : `~lsst.daf.butler.Butler`
             Butler that manages all I/O.  `prep_butler` can be used to create
-            one.  Must have its `~Butler.run` and
-            `~Butler.collections.defaults` not empty and not `None`.
-        resources : `~lsst.pipe.base.ExecutionResources`
+            one.  Must have its `~lsst.daf.butler.Butler.run` and
+            ``butler.collections.defaults`` not empty and not `None`.
+        resources : `.ExecutionResources`
             The resources available to each quantum being executed.
         raise_on_partial_outputs : `bool`, optional
             If `True` raise exceptions chained by
-            `lsst.pipe.base.AnnotatedPartialOutputError` immediately, instead
+            `.AnnotatedPartialOutputsError` immediately, instead
             of considering the partial result a success and continuing to run
             downstream tasks.
         attach_datastore_records : `bool`, optional
@@ -434,7 +428,7 @@ class SimplePipelineExecutor:
         -------
         executor : `SimplePipelineExecutor`
             An executor instance containing the constructed
-            `~lsst.pipe.base.QuantumGraph` and `~lsst.daf.butler.Butler`, ready
+            `.QuantumGraph` and `~lsst.daf.butler.Butler`, ready
             for `run` to be called.
         """
         if output_run is None:
@@ -569,8 +563,7 @@ class SimplePipelineExecutor:
         return self.butler
 
     def run(self, register_dataset_types: bool = False, save_versions: bool = True) -> list[Quantum]:
-        """Run all the quanta in the `~lsst.pipe.base.QuantumGraph` in
-        topological order.
+        """Run all the quanta in the `.QuantumGraph` in topological order.
 
         Use this method to run all quanta in the graph.  Use
         `as_generator` to get a generator to run the quanta one at
@@ -601,8 +594,7 @@ class SimplePipelineExecutor:
     def as_generator(
         self, register_dataset_types: bool = False, save_versions: bool = True
     ) -> Iterator[Quantum]:
-        """Yield quanta in the `~lsst.pipe.base.QuantumGraph` in topological
-        order.
+        """Yield quanta in the `.QuantumGraph` in topological order.
 
         These quanta will be run as the returned generator is iterated
         over.  Use this method to run the quanta one at a time.
@@ -623,10 +615,9 @@ class SimplePipelineExecutor:
 
         Notes
         -----
-        Global initialization steps (see
-        `~lsst.pipe.base.QuantumGraph.init_output_run`) are performed
-        immediately when this method is called, but individual quanta are not
-        actually executed until the returned iterator is iterated over.
+        Global initialization steps (see `.QuantumGraph.init_output_run`) are
+        performed immediately when this method is called, but individual quanta
+        are not actually executed until the returned iterator is iterated over.
 
         A topological ordering is not in general unique, but no other
         guarantees are made about the order in which quanta are processed.
