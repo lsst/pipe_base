@@ -284,10 +284,10 @@ class SeparablePipelineExecutor:
                 raise_on_partial_outputs=self.raise_on_partial_outputs,
             )
             graph_executor = MPGraphExecutor(
-                numProc=num_proc,
+                num_proc=num_proc,
                 timeout=2_592_000.0,  # In practice, timeout is never helpful; set to 30 days.
-                quantumExecutor=quantum_executor,
-                failFast=fail_fast,
+                quantum_executor=quantum_executor,
+                fail_fast=fail_fast,
             )
             # Have to reset connection pool to avoid sharing connections with
             # forked processes.

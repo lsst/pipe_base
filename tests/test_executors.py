@@ -323,7 +323,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
         # run in single-process mode
         qexec = QuantumExecutorMock()
-        mpexec = MPGraphExecutor(numProc=1, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=1, timeout=100, quantum_executor=qexec)
         mpexec.execute(qgraph)  # type: ignore[arg-type]
         self.assertEqual(qexec.getDataIds("detector"), [0, 1, 2])
         report = mpexec.getReport()
@@ -353,7 +353,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
                 # Run in multi-process mode, the order of results is not
                 # defined.
                 qexec = QuantumExecutorMock(mp=True)
-                mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec, startMethod=method)
+                mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, start_method=method)
                 mpexec.execute(qgraph)  # type: ignore[arg-type]
                 self.assertCountEqual(qexec.getDataIds("detector"), [0, 1, 2])
                 report = mpexec.getReport()
@@ -376,7 +376,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
         # run in multi-process mode
         qexec = QuantumExecutorMock()
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "Task 'task1' does not support multiprocessing"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
 
@@ -393,7 +393,9 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
             qexec = QuantumExecutorMock()
             fixup = ExecFixupDataId("task1", "detector", reverse=reverse)
-            mpexec = MPGraphExecutor(numProc=1, timeout=100, quantumExecutor=qexec, executionGraphFixup=fixup)
+            mpexec = MPGraphExecutor(
+                num_proc=1, timeout=100, quantum_executor=qexec, execution_graph_fixup=fixup
+            )
             mpexec.execute(qgraph)  # type: ignore[arg-type]
 
             expected = [0, 1, 2]
@@ -415,7 +417,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
         # with failFast we'll get immediate MPTimeoutError
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=1, quantumExecutor=qexec, failFast=True)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=1, quantum_executor=qexec, fail_fast=True)
         with self.assertRaises(MPTimeoutError):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         report = mpexec.getReport()
@@ -429,7 +431,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
         # with failFast=False exception happens after last task finishes
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=3, quantumExecutor=qexec, failFast=False)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=3, quantum_executor=qexec, fail_fast=False)
         with self.assertRaises(MPTimeoutError):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         # We expect two tasks (0 and 2) to finish successfully and one task to
@@ -461,7 +463,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         )
 
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         self.assertCountEqual(qexec.getDataIds("detector"), [0, 2])
@@ -495,7 +497,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         qgraph = QuantumGraphMock(qdata)
 
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         self.assertCountEqual(qexec.getDataIds("detector"), [0, 3])
@@ -531,7 +533,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         qgraph = QuantumGraphMock(qdata)
 
         qexec = QuantumExecutorMock()
-        mpexec = MPGraphExecutor(numProc=1, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=1, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         self.assertCountEqual(qexec.getDataIds("detector"), [0, 3])
@@ -573,7 +575,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         qgraph = QuantumGraphMock(qdata)
 
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec, failFast=True)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, fail_fast=True)
         with self.assertRaisesRegex(MPGraphExecutorError, "failed, exit code=1"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         self.assertCountEqual(qexec.getDataIds("detector"), [0])
@@ -602,7 +604,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         )
 
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         report = mpexec.getReport()
@@ -631,7 +633,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         )
 
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec, failFast=True)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, fail_fast=True)
         with self.assertRaisesRegex(MPGraphExecutorError, "failed, killed by signal 4 .Illegal instruction"):
             mpexec.execute(qgraph)  # type: ignore[arg-type]
         report = mpexec.getReport()
@@ -656,7 +658,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
 
         # run in multi-process mode, the order of results is not defined
         qexec = QuantumExecutorMock(mp=True)
-        mpexec = MPGraphExecutor(numProc=3, timeout=100, quantumExecutor=qexec)
+        mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         mpexec.execute(qgraph)  # type: ignore[arg-type]
 
         num_fds_1 = this_proc.num_fds()

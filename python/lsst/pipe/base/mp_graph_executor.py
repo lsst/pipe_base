@@ -413,60 +413,61 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
     Parameters
     ----------
-    numProc : `int`
+    num_proc : `int`
         Number of processes to use for executing tasks.
     timeout : `float`
         Time in seconds to wait for tasks to finish.
-    quantumExecutor : `QuantumExecutor`
+    quantum_executor : `QuantumExecutor`
         Executor for single quantum. For multiprocess-style execution when
-        ``numProc`` is greater than one this instance must support pickle.
-    startMethod : `str`, optional
+        ``num_proc`` is greater than one this instance must support pickle.
+    start_method : `str`, optional
         Start method from `multiprocessing` module, `None` selects the best
         one for current platform.
-    failFast : `bool`, optional
+    fail_fast : `bool`, optional
         If set to ``True`` then stop processing on first error from any task.
     pdb : `str`, optional
         Debugger to import and use (via the ``post_mortem`` function) in the
         event of an exception.
-    executionGraphFixup : `ExecutionGraphFixup`, optional
+    execution_graph_fixup : `.execution_graph_fixup.ExecutionGraphFixup`, \
+            optional
         Instance used for modification of execution graph.
     """
 
     def __init__(
         self,
-        numProc: int,
-        timeout: float,
-        quantumExecutor: QuantumExecutor,
         *,
-        startMethod: Literal["spawn"] | Literal["forkserver"] | None = None,
-        failFast: bool = False,
+        num_proc: int,
+        timeout: float,
+        quantum_executor: QuantumExecutor,
+        start_method: Literal["spawn"] | Literal["forkserver"] | None = None,
+        fail_fast: bool = False,
         pdb: str | None = None,
-        executionGraphFixup: ExecutionGraphFixup | None = None,
+        execution_graph_fixup: ExecutionGraphFixup | None = None,
     ):
-        self.numProc = numProc
-        self.timeout = timeout
-        self.quantumExecutor = quantumExecutor
-        self.failFast = failFast
-        self.pdb = pdb
-        self.executionGraphFixup = executionGraphFixup
-        self.report: Report | None = None
+        self._num_proc = num_proc
+        self._timeout = timeout
+        self._quantum_executor = quantum_executor
+        self._fail_fast = fail_fast
+        self._pdb = pdb
+        self._execution_graph_fixup = execution_graph_fixup
+        self._report: Report | None = None
 
         # We set default start method as spawn for all platforms.
-        if startMethod is None:
-            startMethod = "spawn"
-        self.startMethod = startMethod
+        if start_method is None:
+            start_method = "spawn"
+        self._start_method = start_method
 
     def execute(self, graph: QuantumGraph) -> None:
         # Docstring inherited from QuantumGraphExecutor.execute
         graph = self._fixupQuanta(graph)
-        self.report = Report(qgraphSummary=graph.getSummary())
+        self._report = Report(qgraphSummary=graph.getSummary())
         try:
-            if self.numProc > 1:
-                self._executeQuantaMP(graph, self.report)
+            if self._num_proc > 1:
+                self._executeQuantaMP(graph, self._report)
             else:
-                self._executeQuantaInProcess(graph, self.report)
+                self._executeQuantaInProcess(graph, self._report)
         except Exception as exc:
-            self.report.set_exception(exc)
+            self._report.set_exception(exc)
             raise
 
     def _fixupQuanta(self, graph: QuantumGraph) -> QuantumGraph:
@@ -488,11 +489,11 @@ class MPGraphExecutor(QuantumGraphExecutor):
             Raised if execution graph cannot be ordered after modification,
             i.e. it has dependency cycles.
         """
-        if not self.executionGraphFixup:
+        if not self._execution_graph_fixup:
             return graph
 
         _LOG.debug("Call execution graph fixup method")
-        graph = self.executionGraphFixup.fixupQuanta(graph)
+        graph = self._execution_graph_fixup.fixupQuanta(graph)
 
         # Detect if there is now a cycle created within the graph
         if graph.findCycle():
@@ -540,14 +541,14 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 # exception-specific exit code, but we still want to start
                 # debugger before exiting if debugging is enabled.
                 try:
-                    _, quantum_report = self.quantumExecutor.execute(
+                    _, quantum_report = self._quantum_executor.execute(
                         task_node, qnode.quantum, quantum_id=qnode.nodeId
                     )
                     if quantum_report:
                         report.quantaReports.append(quantum_report)
                     successCount += 1
                 except RepeatableQuantumError as exc:
-                    if self.failFast:
+                    if self._fail_fast:
                         _LOG.warning(
                             "Caught repeatable quantum error for %s (%s):",
                             task_node.label,
@@ -569,7 +570,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 )
                 report.quantaReports.append(quantum_report)
 
-                if self.pdb and sys.stdin.isatty() and sys.stdout.isatty():
+                if self._pdb and sys.stdin.isatty() and sys.stdout.isatty():
                     _LOG.error(
                         "Task <%s dataId=%s> failed; dropping into pdb.",
                         task_node.label,
@@ -577,14 +578,14 @@ class MPGraphExecutor(QuantumGraphExecutor):
                         exc_info=exc,
                     )
                     try:
-                        pdb = importlib.import_module(self.pdb)
+                        pdb = importlib.import_module(self._pdb)
                     except ImportError as imp_exc:
                         raise MPGraphExecutorError(
-                            f"Unable to import specified debugger module ({self.pdb}): {imp_exc}"
+                            f"Unable to import specified debugger module ({self._pdb}): {imp_exc}"
                         ) from exc
                     if not hasattr(pdb, "post_mortem"):
                         raise MPGraphExecutorError(
-                            f"Specified debugger module ({self.pdb}) can't debug with post_mortem",
+                            f"Specified debugger module ({self._pdb}) can't debug with post_mortem",
                         ) from exc
                     pdb.post_mortem(exc.__traceback__)
                 failedNodes.add(qnode)
@@ -594,7 +595,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 # code, otherwise crash if fail-fast option is enabled.
                 if fail_exit_code is not None:
                     sys.exit(fail_exit_code)
-                if self.failFast:
+                if self._fail_fast:
                     raise MPGraphExecutorError(
                         f"Task <{task_node.label} dataId={qnode.quantum.dataId}> failed."
                     ) from exc
@@ -632,7 +633,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
         """
         disable_implicit_threading()  # To prevent thread contention
 
-        _LOG.debug("Using %r for multiprocessing start method", self.startMethod)
+        _LOG.debug("Using %r for multiprocessing start method", self._start_method)
 
         # re-pack input quantum data into jobs list
         jobs = _JobList(graph)
@@ -669,7 +670,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                             if report.status == ExecutionStatus.SUCCESS:
                                 # Do not override global FAILURE status
                                 report.status = ExecutionStatus.TIMEOUT
-                            message = f"Timeout ({self.timeout} sec) for task {job}, task is killed"
+                            message = f"Timeout ({self._timeout} sec) for task {job}, task is killed"
                             jobs.setJobState(job, JobState.TIMED_OUT)
                         else:
                             report.status = ExecutionStatus.FAILURE
@@ -679,13 +680,13 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
                         job.cleanup()
                         _LOG.debug("failed: %s", job)
-                        if self.failFast or exitcode == InvalidQuantumError.EXIT_CODE:
+                        if self._fail_fast or exitcode == InvalidQuantumError.EXIT_CODE:
                             # stop all running jobs
                             for stopJob in jobs.running:
                                 if stopJob is not job:
                                     stopJob.stop()
                             if job.state is JobState.TIMED_OUT:
-                                raise MPTimeoutError(f"Timeout ({self.timeout} sec) for task {job}.")
+                                raise MPTimeoutError(f"Timeout ({self._timeout} sec) for task {job}.")
                             else:
                                 raise MPGraphExecutorError(message)
                         else:
@@ -693,7 +694,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 else:
                     # check for timeout
                     now = time.time()
-                    if now - job.started > self.timeout:
+                    if now - job.started > self._timeout:
                         # Try to kill it, and there is a chance that it
                         # finishes successfully before it gets killed. Exit
                         # status is handled by the code above on next
@@ -718,15 +719,15 @@ class MPGraphExecutor(QuantumGraphExecutor):
                         _LOG.error("Upstream job failed for task %s, skipping this task.", job)
 
             # see if we can start more jobs
-            if len(jobs.running) < self.numProc:
+            if len(jobs.running) < self._num_proc:
                 for job in jobs.pending:
                     jobInputNodes = graph.determineInputsToQuantumNode(job.qnode)
                     if jobInputNodes <= jobs.finishedNodes:
                         # all dependencies have completed, can start new job
-                        if len(jobs.running) < self.numProc:
+                        if len(jobs.running) < self._num_proc:
                             _LOG.debug("Submitting %s", job)
-                            jobs.submit(job, self.quantumExecutor, self.startMethod)
-                        if len(jobs.running) >= self.numProc:
+                            jobs.submit(job, self._quantum_executor, self._start_method)
+                        if len(jobs.running) >= self._num_proc:
                             # Cannot start any more jobs, wait until something
                             # finishes.
                             break
@@ -768,6 +769,6 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
     def getReport(self) -> Report | None:
         # Docstring inherited from base class
-        if self.report is None:
+        if self._report is None:
             raise RuntimeError("getReport() called before execute()")
-        return self.report
+        return self._report
