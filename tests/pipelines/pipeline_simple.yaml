@@ -1,0 +1,29 @@
+description: test
+tasks:
+    a:
+        class: "lsst.pipe.base.tests.mocks.DynamicTestPipelineTask"
+        config:
+            python: |
+                from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                config.inputs["i"] = DynamicConnectionConfig(
+                    dataset_type_name="input",
+                    storage_class="StructuredDataDict",
+                    mock_storage_class=False,
+                )
+                config.outputs["o"] = DynamicConnectionConfig(
+                    dataset_type_name="intermediate",
+                    storage_class="StructuredDataDict",
+                )
+    b:
+        class: "lsst.pipe.base.tests.mocks.DynamicTestPipelineTask"
+        config:
+            python: |
+                from lsst.pipe.base.tests.mocks import DynamicConnectionConfig
+                config.inputs["i"] = DynamicConnectionConfig(
+                    dataset_type_name="intermediate",
+                    storage_class="StructuredDataDict",
+                )
+                config.outputs["o"] = DynamicConnectionConfig(
+                    dataset_type_name="output",
+                    storage_class="StructuredDataDict",
+                )

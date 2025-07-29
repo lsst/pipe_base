@@ -1,0 +1,12 @@
+description: test pipeline for tests/test_separablePipelineExecutor.py
+tasks:
+    a:
+        class: "lsst.pipe.base.tests.no_dimensions.NoDimensionsTestTask"
+        config:
+            connections.output: "intermediate"
+    b:
+        class: "lsst.pipe.base.tests.no_dimensions.NoDimensionsTestTask"
+        config:
+            connections.input: "intermediate"
+            key: "two"
+            value: 2

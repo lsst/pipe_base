@@ -65,13 +65,14 @@ if TYPE_CHECKING:
 
 @final
 class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
-    """An implementation of `QuantumGraphBuilder` that uses a single large
-    query for data IDs covering all dimensions in the pipeline.
+    """An implementation of `.quantum_graph_builder.QuantumGraphBuilder` that
+    uses a single large query for data IDs covering all dimensions in the
+    pipeline.
 
     Parameters
     ----------
     pipeline_graph : `.pipeline_graph.PipelineGraph`
-        Pipeline to build a `QuantumGraph` from, as a graph.  Will be resolved
+        Pipeline to build a `.QuantumGraph` from, as a graph.  Will be resolved
         in-place with the given butler (any existing resolution is ignored).
     butler : `lsst.daf.butler.Butler`
         Client for the data repository.  Should be read-only.
@@ -92,7 +93,8 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         are constrained by the ``where`` argument or pipeline data ID will be
         filled in automatically.
     **kwargs
-        Additional keyword arguments forwarded to `QuantumGraphBuilder`.
+        Additional keyword arguments forwarded to
+        `.quantum_graph_builder.QuantumGraphBuilder`.
 
     Notes
     -----

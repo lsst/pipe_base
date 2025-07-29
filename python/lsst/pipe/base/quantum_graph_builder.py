@@ -103,13 +103,13 @@ class InitInputMissingError(QuantumGraphBuilderError):
 
 
 class QuantumGraphBuilder(ABC):
-    """An abstract base class for building `QuantumGraph` objects from a
+    """An abstract base class for building `.QuantumGraph` objects from a
     pipeline.
 
     Parameters
     ----------
     pipeline_graph : `.pipeline_graph.PipelineGraph`
-        Pipeline to build a `QuantumGraph` from, as a graph.  Will be resolved
+        Pipeline to build a `.QuantumGraph` from, as a graph.  Will be resolved
         in-place with the given butler (any existing resolution is ignored).
     butler : `lsst.daf.butler.Butler`
         Client for the data repository.  Should be read-only.
@@ -139,7 +139,7 @@ class QuantumGraphBuilder(ABC):
     The `build` method splits the pipeline graph into independent subgraphs,
     then calls the abstract method `process_subgraph` on each, to allow
     concrete implementations to populate the rough graph structure (the
-    `~quantum_graph_skeleton.QuantumGraphSkeleton` class), including searching
+    `~.quantum_graph_skeleton.QuantumGraphSkeleton` class), including searching
     for existing datasets.  The `build` method then:
 
     - assembles `lsst.daf.butler.Quantum` instances from all data IDs in the
@@ -321,7 +321,7 @@ class QuantumGraphBuilder(ABC):
 
         Returns
         -------
-        quantum_graph : `QuantumGraph`
+        quantum_graph : `.QuantumGraph`
             DAG describing processing to be performed.
 
         Notes
@@ -373,7 +373,7 @@ class QuantumGraphBuilder(ABC):
     @abstractmethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
         """Build the rough structure for an independent subset of the
-        `QuantumGraph` and query for relevant existing datasets.
+        `.QuantumGraph` and query for relevant existing datasets.
 
         Parameters
         ----------
@@ -384,39 +384,38 @@ class QuantumGraphBuilder(ABC):
 
         Returns
         -------
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Class representing an initial quantum graph. See
-            `quantum_graph_skeleton.QuantumGraphSkeleton` docs for details.
+            `.quantum_graph_skeleton.QuantumGraphSkeleton` docs for details.
             After this is returned, the object may be modified in-place in
             unspecified ways.
 
         Notes
         -----
-        The `quantum_graph_skeleton.QuantumGraphSkeleton` should associate
-        `DatasetRef` objects with nodes for existing datasets.  In
-        particular:
+        The `.quantum_graph_skeleton.QuantumGraphSkeleton` should associate
+        `lsst.daf.butler.DatasetRef` objects with nodes for existing datasets.
+        In particular:
 
-        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_dataset_ref` must be
-          used to associate existing datasets with all overall-input dataset
+        - `.quantum_graph_skeleton.QuantumGraphSkeleton.set_dataset_ref` must
+          be used to associate existing datasets with all overall-input dataset
           nodes in the skeleton by querying `input_collections`.  This includes
           all standard input nodes and any prerequisite nodes added by the
           method (prerequisite nodes may also be left out entirely, as the base
           class can add them later, albeit possibly less efficiently).
-        - `quantum_graph_skeleton.QuantumGraphSkeleton.set_output_for_skip`
+        - `.quantum_graph_skeleton.QuantumGraphSkeleton.set_output_for_skip`
           must be used to associate existing datasets with output dataset nodes
           by querying `skip_existing_in`.
-        - `quantum_graph_skeleton.QuantumGraphSkeleton.add_output_in_the_way`
+        - `.quantum_graph_skeleton.QuantumGraphSkeleton.add_output_in_the_way`
           must be used to associated existing outputs with output dataset nodes
-          by querying `output_run` if `output_run_exists` is `True`.
-          Note that the presence of such datasets is not automatically an
-          error, even if `clobber` is `False`, as these may be quanta that will
-          be skipped.
+          by querying `output_run` if `output_run_exists` is `True`. Note that
+          the presence of such datasets is not automatically an error, even if
+          `clobber` is `False`, as these may be quanta that will be skipped.
 
-        `DatasetRef` objects for existing datasets with empty data IDs in all
-        of the above categories may be found in the `empty_dimensions_datasets`
-        attribute, as these are queried for prior to this call by the base
-        class, but associating them with graph nodes is still this method's
-        responsibility.
+        `lsst.daf.butler.DatasetRef` objects for existing datasets with empty
+        data IDs in all of the above categories may be found in the
+        `empty_dimensions_datasets` attribute, as these are queried for prior
+        to this call by the base class, but associating them with graph nodes
+        is still this method's responsibility.
 
         Dataset types should never be components and should always use the
         "common" storage class definition in `pipeline_graph.DatasetTypeNode`
@@ -435,16 +434,17 @@ class QuantumGraphBuilder(ABC):
         ----------
         task_node : `pipeline_graph.TaskNode`
             Node for this task in the pipeline graph.
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
 
         Notes
         -----
         This method modifies ``skeleton`` in-place in several ways:
 
-        - It associates a `DatasetRef` with all output datasets and drops input
-          dataset nodes that do not have a `DatasetRef` already.  This ensures
-          producing and consuming tasks start from the same `DatasetRef`.
+        - It associates a `lsst.daf.butler.DatasetRef` with all output datasets
+          and drops input dataset nodes that do not have a
+          `lsst.daf.butler.DatasetRef` already.  This ensures producing and
+          consuming tasks start from the same `lsst.daf.butler.DatasetRef`.
         - It adds "inputs", "outputs", and "init_inputs" attributes to the
           quantum nodes, holding the same `NamedValueMapping` objects needed to
           construct an actual `Quantum` instances.
@@ -596,7 +596,7 @@ class QuantumGraphBuilder(ABC):
             Node for this task in the pipeline graph.
         quantum_key : `QuantumKey`
             Identifier for this quantum in the graph.
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
 
         Returns
@@ -611,9 +611,10 @@ class QuantumGraphBuilder(ABC):
         `skip_existing_in` collections, the quantum will be skipped. This
         causes the quantum node to be removed from the graph.  Dataset nodes
         that were previously the outputs of this quantum will be associated
-        with `DatasetRef` objects that were found in ``skip_existing_in``, or
-        will be removed if there is no such dataset there.  Any output dataset
-        in `output_run` will be removed from the "output in the way" category.
+        with `lsst.daf.butler.DatasetRef` objects that were found in
+        ``skip_existing_in``, or will be removed if there is no such dataset
+        there.  Any output dataset in `output_run` will be removed from the
+        "output in the way" category.
         """
         metadata_dataset_key = DatasetKey(
             task_node.metadata_output.parent_dataset_type_name, quantum_key.data_id_values
@@ -659,7 +660,7 @@ class QuantumGraphBuilder(ABC):
         ----------
         quantum_key : `QuantumKey`
             Identifier for this quantum in the graph.
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
         task_prerequisite_info : `~prerequisite_helpers.PrerequisiteInfo`
             Information about the prerequisite inputs to this task.
@@ -679,7 +680,7 @@ class QuantumGraphBuilder(ABC):
         the original there).  If `clobber` is `False`, `RuntimeError` is
         raised.  If there is no output already present, a new one with a random
         UUID is generated.  In all cases the dataset node in the skeleton is
-        associated with a `DatasetRef`.
+        associated with a `lsst.daf.butler.DatasetRef`.
         """
         dataset_key: DatasetKey | PrerequisiteDatasetKey
         for dataset_key in skeleton.iter_outputs_of(quantum_key):
@@ -743,7 +744,7 @@ class QuantumGraphBuilder(ABC):
             Node for this task in the pipeline graph.
         quantum_key : `QuantumKey`
             Identifier for this quantum in the graph.
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
 
         Returns
@@ -787,7 +788,7 @@ class QuantumGraphBuilder(ABC):
             Node for this task in the pipeline graph.
         quantum_key : `QuantumKey`
             Identifier for this quantum in the graph.
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
         skypix_bounds_builder : `~prerequisite_helpers.SkyPixBoundsBuilder`
             An object that accumulates the appropriate spatial bounds for a
@@ -806,8 +807,8 @@ class QuantumGraphBuilder(ABC):
         Notes
         -----
         This method trims input dataset nodes that are not already associated
-        with a `DatasetRef`, and queries for prerequisite input nodes that do
-        not exist.
+        with a `lsst.daf.butler.DatasetRef`, and queries for prerequisite input
+        nodes that do not exist.
         """
         inputs_by_type: dict[str, set[DatasetRef]] = {}
         dataset_key: DatasetKey | PrerequisiteDatasetKey
@@ -987,7 +988,7 @@ class QuantumGraphBuilder(ABC):
 
         Parameters
         ----------
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph to update in place.
 
         Notes
@@ -1018,12 +1019,12 @@ class QuantumGraphBuilder(ABC):
     def _construct_quantum_graph(
         self, skeleton: QuantumGraphSkeleton, metadata: Mapping[str, Any]
     ) -> QuantumGraph:
-        """Construct a `QuantumGraph` object from the contents of a
-        fully-processed `quantum_graph_skeleton.QuantumGraphSkeleton`.
+        """Construct a `.QuantumGraph` object from the contents of a
+        fully-processed `.quantum_graph_skeleton.QuantumGraphSkeleton`.
 
         Parameters
         ----------
-        skeleton : `quantum_graph_skeleton.QuantumGraphSkeleton`
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph.  Must have "init_inputs", "inputs", and
             "outputs" attributes on all quantum nodes, as added by
             `_resolve_task_quanta`, as well as a "datastore_records" attribute
@@ -1033,7 +1034,7 @@ class QuantumGraphBuilder(ABC):
 
         Returns
         -------
-        quantum_graph : `QuantumGraph`
+        quantum_graph : `.QuantumGraph`
             DAG describing processing to be performed.
         """
         quanta: dict[TaskDef, set[Quantum]] = {}

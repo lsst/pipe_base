@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Symbols defined in this package should be imported from
-`all_dimensions_quantum_graph_builder` instead; it only appears in the docs
+`.all_dimensions_quantum_graph_builder` instead; it only appears in the docs
 due to limitations in Sphinx.
 """
 

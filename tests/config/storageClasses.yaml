@@ -1,0 +1,4 @@
+TaskMetadataLike:
+  pytype: lsst.pipe.base.TaskMetadata
+  converters:
+    builtins.dict: lsst.pipe.base.TaskMetadata.from_dict

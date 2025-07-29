@@ -1063,8 +1063,8 @@ def iterConnections(
 class AdjustQuantumHelper:
     """Helper class for calling `PipelineTaskConnections.adjustQuantum`.
 
-    This class holds `input` and `output` mappings in the form used by
-    `Quantum` and execution harness code, i.e. with
+    This class holds `inputs` and `outputs` mappings in the form used by
+    `lsst.daf.butler.Quantum` and execution harness code, i.e. with
     `~lsst.daf.butler.DatasetType` keys, translating them to and from the
     connection-oriented mappings used inside `PipelineTaskConnections`.
     """
