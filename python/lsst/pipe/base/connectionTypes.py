@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Module defining connection types to be used within a
-`PipelineTaskConnections` class.
+`.PipelineTaskConnections` class.
 """
 
 __all__ = ["BaseConnection", "InitInput", "InitOutput", "Input", "Output", "PrerequisiteInput"]
@@ -53,7 +53,7 @@ class BaseConnection:
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
-        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        `.PipelineTaskConnections.adjustQuantum` to ensure those datasets are
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum()` and
         notify the execution system as early as possible of outputs that will
         not be produced because the corresponding input is missing.
@@ -121,7 +121,7 @@ class DimensionedConnection(BaseConnection):
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
-        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        `.PipelineTaskConnections.adjustQuantum` to ensure those datasets are
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
         the execution system as early as possible of outputs that will not be
         produced because the corresponding input is missing.
@@ -161,7 +161,7 @@ class BaseInput(DimensionedConnection):
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
-        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        `.PipelineTaskConnections.adjustQuantum` to ensure those datasets are
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
         the execution system as early as possible of outputs that will not be
         produced because the corresponding input is missing.
@@ -175,14 +175,14 @@ class BaseInput(DimensionedConnection):
     minimum : `bool`
         Minimum number of datasets required for this connection, per quantum.
         This is checked in the base implementation of
-        `PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
+        `.PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
         the minimum is not met for `Input` connections (causing the quantum to
         be pruned, skipped, or never created, depending on the context), and
         `FileNotFoundError` for `PrerequisiteInput` connections (causing
         QuantumGraph generation to fail).  `PipelineTask` implementations may
-        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
-        for more fine-grained or configuration-driven constraints, as long as
-        they are compatible with this minium.
+        provide custom `~.PipelineTaskConnections.adjustQuantum`
+        implementations for more fine-grained or configuration-driven
+        constraints, as long as they are compatible with this minium.
 
     Raises
     ------
@@ -216,7 +216,7 @@ class Input(BaseInput):
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
-        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        `.PipelineTaskConnections.adjustQuantum` to ensure those datasets are
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
         the execution system as early as possible of outputs that will not be
         produced because the corresponding input is missing.
@@ -230,14 +230,14 @@ class Input(BaseInput):
     minimum : `bool`
         Minimum number of datasets required for this connection, per quantum.
         This is checked in the base implementation of
-        `PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
+        `.PipelineTaskConnections.adjustQuantum`, which raises `NoWorkFound` if
         the minimum is not met for `Input` connections (causing the quantum to
         be pruned, skipped, or never created, depending on the context), and
         `FileNotFoundError` for `PrerequisiteInput` connections (causing
         QuantumGraph generation to fail).  `PipelineTask` implementations may
-        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
-        for more fine-grained or configuration-driven constraints, as long as
-        they are compatible with this minium.
+        provide custom `~.PipelineTaskConnections.adjustQuantum`
+        implementations for more fine-grained or configuration-driven
+        constraints, as long as they are compatible with this minium.
     deferGraphConstraint : `bool`, optional
         If `True`, do not include this dataset type's existence in the initial
         query that starts the QuantumGraph generation process.  This can be
@@ -286,7 +286,7 @@ class PrerequisiteInput(BaseInput):
         Indicates if this connection should expect to contain multiple objects
         of the given dataset type.  Tasks with more than one connection with
         ``multiple=True`` with the same dimensions may want to implement
-        `PipelineTaskConnections.adjustQuantum` to ensure those datasets are
+        `.PipelineTaskConnections.adjustQuantum` to ensure those datasets are
         consistent (i.e. zip-iterable) in `PipelineTask.runQuantum` and notify
         the execution system as early as possible of outputs that will not be
         produced because the corresponding input is missing.
@@ -296,12 +296,12 @@ class PrerequisiteInput(BaseInput):
     minimum : `bool`
         Minimum number of datasets required for this connection, per quantum.
         This is checked in the base implementation of
-        `PipelineTaskConnections.adjustQuantum`, which raises
+        `.PipelineTaskConnections.adjustQuantum`, which raises
         `FileNotFoundError` (causing QuantumGraph generation to fail).
-        `PipelineTask` implementations may
-        provide custom `~PipelineTaskConnections.adjustQuantum` implementations
-        for more fine-grained or configuration-driven constraints, as long as
-        they are compatible with this minium.
+        `PipelineTask` implementations may provide custom
+        `~.PipelineTaskConnections.adjustQuantum` implementations for more
+        fine-grained or configuration-driven constraints, as long as they are
+        compatible with this minium.
     lookupFunction : `typing.Callable`, optional
         An optional callable function that will look up PrerequisiteInputs
         using the DatasetType, registry, quantum dataId, and input collections
