@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from .graph import QuantumGraph
     from .pipeline_graph import TaskNode
+    from .quantum_graph import PredictedQuantumGraph
 
 
 class QuantumExecutor(ABC):
@@ -92,7 +93,7 @@ class QuantumGraphExecutor(ABC):
     """
 
     @abstractmethod
-    def execute(self, graph: QuantumGraph) -> None:
+    def execute(self, graph: QuantumGraph | PredictedQuantumGraph) -> None:
         """Execute whole graph.
 
         Implementation of this method depends on particular execution model
