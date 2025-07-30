@@ -76,7 +76,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         """Make simple graph and execute."""
         helper = InMemoryRepo("base.yaml")
         helper.add_task(dimensions=["detector"])
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        qgraph = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
         # run in single-process mode
         mpexec = MPGraphExecutor(num_proc=1, timeout=100, quantum_executor=qexec)
@@ -99,7 +99,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         """Make simple graph and execute."""
         helper = InMemoryRepo("base.yaml")
         helper.add_task(dimensions=["detector"])
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        qg = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
 
         methods: list[Literal["spawn", "forkserver"]] = ["spawn"]
@@ -111,7 +111,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
                 # Run in multi-process mode, the order of results is not
                 # defined.
                 mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, start_method=method)
-                mpexec.execute(qgraph)  # type: ignore[arg-type]
+                mpexec.execute(qg)  # type: ignore[arg-type]
                 report = mpexec.getReport()
                 assert report is not None
                 self.assertEqual(report.status, ExecutionStatus.SUCCESS)
@@ -127,17 +127,38 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         """Try to run MP for task that has no MP support which should fail."""
         helper = InMemoryRepo("base.yaml")
         helper.add_task(task_class=NoMultiprocessingTask, dimensions=["detector"])
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        qg = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(
             MPGraphExecutorError, "Task 'task_auto1' does not support multiprocessing"
         ):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
 
     def test_mpexec_fixup(self) -> None:
         """Make simple graph and execute, add dependencies by executing fixup
         code.
+        """
+        helper = InMemoryRepo("base.yaml")
+        helper.add_task(dimensions=["detector"])
+        qg = helper.make_quantum_graph()
+        for reverse in (False, True):
+            qexec, butler = helper.make_single_quantum_executor()
+            fixup = ExecFixupDataId("task_auto1", "detector", reverse=reverse)
+            mpexec = MPGraphExecutor(
+                num_proc=1, timeout=100, quantum_executor=qexec, execution_graph_fixup=fixup
+            )
+            mpexec.execute(qg)  # type: ignore[arg-type]
+            expected = [1, 2, 3, 4]
+            if reverse:
+                expected = list(reversed(expected))
+            self.assertEqual(
+                [ref.dataId["detector"] for ref in butler.get_datasets("dataset_auto1")], expected
+            )
+
+    def test_mpexec_fixup_old_qg(self) -> None:
+        """Test using an old QuantumGraph object to initialize the executor,
+        with an ordering fixup.
         """
         helper = InMemoryRepo("base.yaml")
         helper.add_task(dimensions=["detector"])
@@ -169,13 +190,13 @@ class MPGraphExecutorTestCase(unittest.TestCase):
             inputs={"input_connection": DynamicConnectionConfig(dataset_type_name="dataset_auto0")},
             config=DynamicTestPipelineTaskConfig(sleep=100.0),
         )
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        qg = helper.make_quantum_graph()
 
         # with failFast we'll get immediate MPTimeoutError
-        qexec, butler = helper.make_single_quantum_executor()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=1, quantum_executor=qexec, fail_fast=True)
         with self.assertRaises(MPTimeoutError):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.TIMEOUT)
@@ -186,10 +207,10 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         self.assertTrue(all(qrep.exceptionInfo is None for qrep in report.quantaReports))
 
         # with failFast=False exception happens after last task finishes
-        qexec, butler = helper.make_single_quantum_executor()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=3, quantum_executor=qexec, fail_fast=False)
         with self.assertRaises(MPTimeoutError):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.TIMEOUT)
         self.assertEqual(report.exceptionInfo.className, "lsst.pipe.base.mp_graph_executor.MPTimeoutError")
@@ -213,11 +234,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
             config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"),
             dimensions=["detector"],
         )
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.FAILURE)
@@ -237,11 +258,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
             "a", config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"), dimensions=["detector"]
         )
         helper.add_task("b", dimensions=["detector"])  # depends on 'a', for the same detector.
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.FAILURE)
@@ -263,11 +284,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
             "a", config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"), dimensions=["detector"]
         )
         helper.add_task("b", dimensions=["detector"])  # depends on 'a', for the same detector.
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        qg = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=1, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         self.assertCountEqual(
             [ref.dataId["detector"] for ref in butler.get_datasets("dataset_auto1")], [1, 3, 4]
         )
@@ -300,11 +321,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         )
         helper.add_task("b", config=DynamicTestPipelineTaskConfig(sleep=100.0), dimensions=["detector"])
         helper.add_task("c", dimensions=["detector"])  # depends on 'b', for the same detector.
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, fail_fast=True)
         with self.assertRaisesRegex(MPGraphExecutorError, "failed, exit code=1"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.FAILURE)
@@ -324,11 +345,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
             config=DynamicTestPipelineTaskConfig(fail_condition="detector=2", fail_signal=signal.SIGILL),
             dimensions=["detector"],
         )
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
         with self.assertRaisesRegex(MPGraphExecutorError, "One or more tasks failed"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.FAILURE)
@@ -352,11 +373,11 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         )
         helper.add_task("b", config=DynamicTestPipelineTaskConfig(sleep=100.0), dimensions=["detector"])
         helper.add_task("c", dimensions=["detector"])  # depends on 'b', for the same detector.
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec, fail_fast=True)
         with self.assertRaisesRegex(MPGraphExecutorError, "failed, killed by signal 4 .Illegal instruction"):
-            mpexec.execute(qgraph)  # type: ignore[arg-type]
+            mpexec.execute(qg)  # type: ignore[arg-type]
         report = mpexec.getReport()
         assert report is not None and report.exceptionInfo is not None
         self.assertEqual(report.status, ExecutionStatus.FAILURE)
@@ -372,14 +393,14 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         helper = InMemoryRepo("base.yaml")
         helper.add_task("a", task_class=NoMultiprocessingTask, dimensions=["detector", "visit"])
         helper.add_task("b", task_class=NoMultiprocessingTask, dimensions=["detector", "visit"])
-        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
-        qexec, butler = helper.make_single_quantum_executor()
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
         this_proc = psutil.Process()
         num_fds_0 = this_proc.num_fds()
 
         # run in multi-process mode, the order of results is not defined
         mpexec = MPGraphExecutor(num_proc=3, timeout=100, quantum_executor=qexec)
-        mpexec.execute(qgraph)  # type: ignore[arg-type]
+        mpexec.execute(qg)  # type: ignore[arg-type]
 
         num_fds_1 = this_proc.num_fds()
         # They should be the same but allow small growth just in case.
