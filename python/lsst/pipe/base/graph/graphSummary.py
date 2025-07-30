@@ -79,7 +79,7 @@ class QgraphTaskSummary(pydantic.BaseModel):
 class QgraphSummary(pydantic.BaseModel):
     """Report for the QuantumGraph creation or reading."""
 
-    graphID: BuildId
+    graphID: BuildId | None = None
     """QuantumGraph ID."""
 
     cmdLine: str | None = None
