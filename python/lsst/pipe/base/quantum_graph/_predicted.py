@@ -84,7 +84,7 @@ from ..pipeline_graph import (
 
 if TYPE_CHECKING:
     from ..config import PipelineTaskConfig
-    from ..graph import QuantumGraph
+    from ..graph import QgraphSummary, QuantumGraph
 
 from ._common import (
     BaseQuantumGraph,
@@ -1208,6 +1208,32 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             registryDatasetTypes=registry_dataset_types,
         )
         return result
+
+    def _make_summary(self) -> QgraphSummary:
+        from ..graph import QgraphSummary, QgraphTaskSummary
+
+        summary = QgraphSummary(
+            cmdLine=self.header.command or None,
+            creationUTC=str(self.header.timestamp) if self.header.timestamp is not None else None,
+            inputCollection=self.header.inputs or None,
+            outputCollection=self.header.output,
+            outputRun=self.header.output_run,
+        )
+        for task_label, quanta_for_task in self.quanta_by_task.items():
+            task_summary = QgraphTaskSummary(taskLabel=task_label, numQuanta=len(quanta_for_task))
+            task_node = self.pipeline_graph.tasks[task_label]
+            for quantum_id in quanta_for_task.values():
+                quantum_datasets = self._quantum_datasets[quantum_id]
+                for connection_name, input_datasets in quantum_datasets.inputs.items():
+                    task_summary.numInputs[
+                        task_node.get_input_edge(connection_name).parent_dataset_type_name
+                    ] += len(input_datasets)
+                for connection_name, output_datasets in quantum_datasets.outputs.items():
+                    task_summary.numOutputs[
+                        task_node.get_output_edge(connection_name).parent_dataset_type_name
+                    ] += len(output_datasets)
+            summary.qgraphTaskSummaries[task_label] = task_summary
+        return summary
 
 
 @dataclasses.dataclass(kw_only=True)
