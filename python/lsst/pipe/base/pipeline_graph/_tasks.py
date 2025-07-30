@@ -360,6 +360,57 @@ class TaskInitNode:
         yield from self.outputs.values()
         yield self.config_output
 
+    def get_input_edge(self, connection_name: str) -> ReadEdge:
+        """Look up an input edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `ReadEdge`
+            Input edge.
+        """
+        return self.inputs[connection_name]
+
+    def get_output_edge(self, connection_name: str) -> WriteEdge:
+        """Look up an output edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `WriteEdge`
+            Output edge.
+        """
+        if connection_name == acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME:
+            return self.config_output
+        return self.outputs[connection_name]
+
+    def get_edge(self, connection_name: str) -> Edge:
+        """Look up an edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `Edge`
+            Edge.
+        """
+        try:
+            return self.get_input_edge(connection_name)
+        except KeyError:
+            pass
+        return self.get_output_edge(connection_name)
+
     def diff_edges(self, other: TaskInitNode) -> list[str]:
         """Compare the edges of this task initialization node to those from the
         same task label in a different pipeline.
@@ -741,6 +792,61 @@ class TaskNode:
         yield self.metadata_output
         if self.log_output is not None:
             yield self.log_output
+
+    def get_input_edge(self, connection_name: str) -> ReadEdge:
+        """Look up an input edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `ReadEdge`
+            Input edge.
+        """
+        return self.inputs[connection_name]
+
+    def get_output_edge(self, connection_name: str) -> WriteEdge:
+        """Look up an output edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `WriteEdge`
+            Output edge.
+        """
+        if connection_name == acc.METADATA_OUTPUT_CONNECTION_NAME:
+            return self.metadata_output
+        if connection_name == acc.LOG_OUTPUT_CONNECTION_NAME:
+            if self.log_output is None:
+                raise KeyError(connection_name)
+            return self.log_output
+        return self.outputs[connection_name]
+
+    def get_edge(self, connection_name: str) -> Edge:
+        """Look up an edge by connection name.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        edge : `Edge`
+            Edge.
+        """
+        try:
+            return self.get_input_edge(connection_name)
+        except KeyError:
+            pass
+        return self.get_output_edge(connection_name)
 
     def diff_edges(self, other: TaskNode) -> list[str]:
         """Compare the edges of this task node to those from the same task
