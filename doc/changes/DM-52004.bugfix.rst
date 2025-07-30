@@ -1,0 +1,1 @@
+Fixed bug in transfer_from_graph where the input collections were not flattened before adding to a new output chain.
