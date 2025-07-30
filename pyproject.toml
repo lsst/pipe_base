@@ -195,6 +195,7 @@ checks = [
     "EX01",  # Example section.
     "SS06",  # Summary can go into second line.
     "GL01",  # Summary text can start on same line as """
+    "GL03",  # Double line breaks (fights with ruff-fmt on examples in docs).
     "GL08",  # Do not require docstring.
     "ES01",  # No extended summary required.
     "RT01",  # Unfortunately our @property trigger this.
