@@ -29,6 +29,7 @@
 
 import copy
 import io
+import itertools
 import logging
 import pickle
 import textwrap
@@ -599,6 +600,11 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(
             repr(graph.task_subsets["only_b"]), f"only_b: {self.subset_description!r}, tasks={{b}}"
         )
+        for task_node in graph.tasks.values():
+            for edge in itertools.chain(task_node.iter_all_inputs(), task_node.iter_all_outputs()):
+                self.assertEqual(task_node.get_edge(edge.connection_name), edge)
+            for edge in itertools.chain(task_node.init.iter_all_inputs(), task_node.init.iter_all_outputs()):
+                self.assertEqual(task_node.init.get_edge(edge.connection_name), edge)
 
     def check_sorted(self, graph: PipelineGraph) -> None:
         """Run a battery of tests on a PipelineGraph that must be
@@ -1345,7 +1351,7 @@ def _have_example_storage_classes() -> bool:
 
 
 class PipelineGraphResolveTestCase(unittest.TestCase):
-    """More extensive tests for PipelineGraph.resolve and its primate helper
+    """More extensive tests for PipelineGraph.resolve and its primary helper
     methods.
 
     These are in a separate TestCase because they utilize a different `setUp`
