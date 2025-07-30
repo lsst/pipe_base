@@ -167,10 +167,13 @@ def _update_chain(butler: Butler, output_chain: str, output_run: str, inputs: li
     if created_now:
         _LOG.verbose("Registered chain collection: %s", output_chain)
         if inputs:
+            # First must flatten any input chains
+            flattened = butler.collections.query(inputs, flatten_chains=True)
+
             # Add input collections to chain collection just made.  Using
             # extend instead of prepend in case of race condition where another
             # execution adds a run before this adds the inputs to the chain.
-            butler.collections.extend_chain(output_chain, inputs)
+            butler.collections.extend_chain(output_chain, flattened)
     _LOG.verbose(
         "Prepending output chain collection (%s) with output RUN collection (%s)", output_chain, output_run
     )
