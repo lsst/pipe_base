@@ -148,9 +148,6 @@ class CachingLimitedButler(LimitedButler):
         # note that this does not use the cache at all
         return self._wrapped.getDeferred(ref, parameters=parameters, storageClass=storageClass)
 
-    def stored(self, ref: DatasetRef) -> bool:
-        return self.stored_many([ref])[ref]  # TODO: remove this once DM-43086 is done.
-
     def stored_many(self, refs: Iterable[DatasetRef]) -> dict[DatasetRef, bool]:
         result = {}
         unknown_refs = []
