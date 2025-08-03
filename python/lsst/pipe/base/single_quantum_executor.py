@@ -66,12 +66,12 @@ class SingleQuantumExecutor(QuantumExecutor):
 
     Parameters
     ----------
-    butler : `~lsst.daf.butler.Butler` or `None`
-        Data butler, `None` means that Quantum-backed butler should be used
-        instead.
-    task_factory : `.TaskFactory`
-        Instance of a task factory.
-    skip_existing_in : `~typing.Any`
+    butler : `~lsst.daf.butler.Butler` or `None`, optional
+        Data butler, `None` means that a limited butler should be used instead.
+    task_factory : `.TaskFactory`, optional
+        Instance of a task factory.  Defaults to a new instance of
+        `lsst.pipe.base.TaskFactory`.
+    skip_existing_in : `str` or `~collections.abc.Iterable` [ `str` ]
         Expressions representing the collections to search for existing output
         datasets. See :ref:`daf_butler_ordered_collection_searches` for allowed
         types. This class only checks for the presence of butler output run in
@@ -117,8 +117,8 @@ class SingleQuantumExecutor(QuantumExecutor):
     def __init__(
         self,
         *,
-        butler: Butler | None,
-        task_factory: TaskFactory,
+        butler: Butler | None = None,
+        task_factory: TaskFactory | None = None,
         skip_existing_in: Any = None,
         clobber_outputs: bool = False,
         enable_lsst_debug: bool = False,
@@ -130,7 +130,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         job_metadata: Mapping[str, int | str | float] | None = None,
     ):
         self._butler = butler
-        self._task_factory = task_factory
+        self._task_factory = task_factory if task_factory is not None else TaskFactory()
         self._clobber_outputs = clobber_outputs
         self._enable_lsst_debug = enable_lsst_debug
         self._limited_butler_factory = limited_butler_factory
@@ -171,8 +171,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         """
         startTime = time.time()
 
-        # Make a limited butler instance if needed (which should be QBB if full
-        # butler is not defined).
+        # Make a limited butler instance if needed.
         limited_butler: LimitedButler
         if self._butler is not None:
             limited_butler = self._butler
