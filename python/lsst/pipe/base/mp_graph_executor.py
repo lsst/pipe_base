@@ -29,6 +29,7 @@ from __future__ import annotations
 
 __all__ = ["MPGraphExecutor", "MPGraphExecutorError", "MPTimeoutError"]
 
+import enum
 import importlib
 import logging
 import multiprocessing
@@ -39,7 +40,6 @@ import threading
 import time
 import uuid
 from collections.abc import Iterable
-from enum import Enum
 from typing import Literal
 
 from lsst.daf.butler.cli.cliLog import CliLog
@@ -55,14 +55,26 @@ from .quantum_reports import ExecutionStatus, QuantumReport, Report
 _LOG = logging.getLogger(__name__)
 
 
-# Possible states for the executing task:
-#  - PENDING: job has not started yet
-#  - RUNNING: job is currently executing
-#  - FINISHED: job finished successfully
-#  - FAILED: job execution failed (process returned non-zero status)
-#  - TIMED_OUT: job is killed due to too long execution time
-#  - FAILED_DEP: one of the dependencies of this job has failed/timed out
-JobState = Enum("JobState", "PENDING RUNNING FINISHED FAILED TIMED_OUT FAILED_DEP")
+class JobState(enum.Enum):
+    """Possible state for an executing task."""
+
+    PENDING = enum.auto()
+    """The job has not started yet."""
+
+    RUNNING = enum.auto()
+    """The job is currently executing."""
+
+    FINISHED = enum.auto()
+    """The job finished successfully."""
+
+    FAILED = enum.auto()
+    """The job execution failed (process returned non-zero status)."""
+
+    TIMED_OUT = enum.auto()
+    """The job was killed due to too long execution time."""
+
+    FAILED_DEP = enum.auto()
+    """One of the dependencies of this job failed or timed out."""
 
 
 class _Job:
