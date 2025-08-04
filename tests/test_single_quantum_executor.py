@@ -30,9 +30,8 @@ from __future__ import annotations
 import os
 import unittest
 
-from lsst.daf.butler.tests.utils import makeTestTempDir, removeTestTempDir
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
-from lsst.pipe.base.tests.simpleQGraph import AddTaskFactoryMock, makeSimpleQGraph
+from lsst.pipe.base.tests.mocks import InMemoryRepo
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -42,120 +41,92 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
 
     instrument = "lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
 
-    def setUp(self) -> None:
-        self.root = makeTestTempDir(TESTDIR)
-
-    def tearDown(self) -> None:
-        removeTestTempDir(self.root)
-
     def test_simple_execute(self) -> None:
         """Run execute() method in simplest setup."""
+        helper = InMemoryRepo("base.yaml")
+        helper.add_task()
+        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        executor, butler = helper.make_single_quantum_executor()
         nQuanta = 1
-        butler, qgraph = makeSimpleQGraph(nQuanta, root=self.root, instrument=self.instrument)
-
         nodes = list(qgraph)
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
-
-        task_factory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 1)
-
         # There must be one dataset of task's output connection
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
+        self.assertEqual(len(butler.get_datasets("dataset_auto1")), 1)
 
     def test_skip_existing_execute(self) -> None:
         """Run execute() method twice, with skip_existing_in."""
+        helper = InMemoryRepo("base.yaml")
+        helper.add_task()
+        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        executor, butler = helper.make_single_quantum_executor()
         nQuanta = 1
-        butler, qgraph = makeSimpleQGraph(nQuanta, root=self.root, instrument=self.instrument)
-
         nodes = list(qgraph)
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
-
-        task_factory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 1)
 
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
-        dataset_id_1 = refs[0].id
+        outputs1 = butler.get_datasets("dataset_auto1")
+        self.assertEqual(len(outputs1), 1)
+        ref1, obj1 = outputs1.popitem()
 
-        # Re-run it with skip_existing_in, it should not run.
-        assert butler.run is not None
-        executor = SingleQuantumExecutor(
-            butler=butler, task_factory=task_factory, skip_existing_in=[butler.run]
-        )
+        # Re-run it with skip_existing, it should not run.  Note that if it did
+        # run (and called 'butler.put') that would raise an exception.
+        executor = SingleQuantumExecutor(limited_butler_factory=butler.factory, skip_existing=True)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 1)
 
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
-        dataset_id_2 = refs[0].id
-        self.assertEqual(dataset_id_1, dataset_id_2)
+        outputs2 = butler.get_datasets("dataset_auto1")
+        self.assertEqual(len(outputs2), 1)
+        ref2, obj2 = outputs2.popitem()
+        self.assertEqual(ref1, ref2)
+        # Objects should be the same (but not identities, because the butler
+        # will copy them).
+        self.assertEqual(obj1, obj2)
 
     def test_clobber_outputs_execute(self) -> None:
         """Run execute() method twice, with clobber_outputs."""
+        helper = InMemoryRepo("base.yaml")
+        helper.add_task()
+        qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
+        executor, butler = helper.make_single_quantum_executor()
         nQuanta = 1
-        butler, qgraph = makeSimpleQGraph(nQuanta, root=self.root, instrument=self.instrument)
-
         nodes = list(qgraph)
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
-
-        task_factory = AddTaskFactoryMock()
-        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 1)
 
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
-        dataset_id_1 = refs[0].id
-
-        original_dataset = butler.get(refs[0])
+        outputs1 = butler.get_datasets("dataset_auto1")
+        self.assertEqual(len(outputs1), 1)
+        ref1, obj1 = outputs1.popitem()
 
         # Remove the dataset ourself, and replace it with something
         # different so we can check later whether it got replaced.
-        butler.pruneDatasets([refs[0]], disassociate=False, unstore=True, purge=False)
-        replacement = original_dataset + 10
-        butler.put(replacement, refs[0])
+        butler.pruneDatasets([ref1], disassociate=False, unstore=True, purge=False)
+        obj1.quantum = None
+        butler.put(obj1, ref1)
 
-        # Re-run it with clobber_outputs and skip_existing_in, it should not
+        # Re-run it with clobber_outputs and skip_existing, it should not
         # clobber but should skip instead.
-        assert butler.run is not None
         executor = SingleQuantumExecutor(
-            butler=butler, task_factory=task_factory, skip_existing_in=[butler.run], clobber_outputs=True
+            limited_butler_factory=butler.factory, skip_existing=True, clobber_outputs=True
         )
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 1)
-
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
-        dataset_id_2 = refs[0].id
-        self.assertEqual(dataset_id_1, dataset_id_2)
-
-        second_dataset = butler.get(refs[0])
-        self.assertEqual(list(second_dataset), list(replacement))
+        outputs2 = butler.get_datasets("dataset_auto1")
+        self.assertEqual(len(outputs2), 1)
+        ref2, obj2 = outputs2.popitem()
+        self.assertEqual(ref1, ref2)
+        self.assertEqual(obj1, obj2)
 
         # Re-run it with clobber_outputs but without skip_existing_in, it
         # should clobber.
-        assert butler.run is not None
-        executor = SingleQuantumExecutor(butler=butler, task_factory=task_factory, clobber_outputs=True)
+        executor = SingleQuantumExecutor(limited_butler_factory=butler.factory, clobber_outputs=True)
         executor.execute(node.task_node, node.quantum)
-        self.assertEqual(task_factory.countExec, 2)
-
-        refs = list(butler.registry.queryDatasets("add_dataset1", collections=butler.run))
-        self.assertEqual(len(refs), 1)
-        dataset_id_3 = refs[0].id
-
-        third_dataset = butler.get(refs[0])
-        self.assertEqual(list(third_dataset), list(original_dataset))
-
-        # No change in UUID even after replacement
-        self.assertEqual(dataset_id_1, dataset_id_3)
+        outputs3 = butler.get_datasets("dataset_auto1")
+        self.assertEqual(len(outputs3), 1)
+        ref3, obj3 = outputs3.popitem()
+        self.assertEqual(ref1, ref3)
+        self.assertNotEqual(obj1, obj3)
 
 
 if __name__ == "__main__":
