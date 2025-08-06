@@ -164,8 +164,25 @@ class DatasetTypeNode:
         # Put edges that are not component datasets before any edges that are.
         consuming_edges.sort(key=lambda consuming_edge: consuming_edge.component is not None)
         for consuming_edge in consuming_edges:
+            # In the case that a butler has been provided to build the graph,
+            # edges are always resolved using the butler's known dataset types.
+            # If no butler is provided, the dataset type is resolved using
+            # _resolve_dataset_type below. When a parent dataset type and a
+            # component of a dataset type are mixed, the parent dataset type
+            # will be used to infer the dataset type for all following
+            # components. In the case whereby no parent dataset type is in the
+            # list of consuming edges (i.e., only components are present),
+            # we do not want to re-use the inferred dataset type from a prior
+            # component, so we instead pass in `None` as the current graph-wide
+            # dataset type.
+            try:
+                has_valid_storage_class = (
+                    isinstance(dataset_type, DatasetType) and dataset_type.storageClass is not None
+                )
+            except KeyError:
+                has_valid_storage_class = False
             dataset_type, is_initial_query_constraint, is_prerequisite = consuming_edge._resolve_dataset_type(
-                current=dataset_type,
+                current=dataset_type if has_valid_storage_class else None,
                 universe=dimensions,
                 is_initial_query_constraint=is_initial_query_constraint,
                 is_prerequisite=is_prerequisite,
