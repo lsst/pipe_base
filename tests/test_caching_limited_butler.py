@@ -32,8 +32,7 @@ import unittest
 
 import lsst.utils.tests
 from lsst.pipe.base.caching_limited_butler import CachingLimitedButler
-from lsst.pipe.base.tests import simpleQGraph
-from lsst.utils.tests import temporaryDirectory
+from lsst.pipe.base.tests.mocks import InMemoryRepo
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -44,16 +43,15 @@ class CachingLimitedButlerTestCase(unittest.TestCase):
     # TODO: expand these tests in DM-43353
 
     def test_init(self):
-        with temporaryDirectory() as root:
-            butler, _ = simpleQGraph.makeSimpleQGraph(root=root, inMemory=False)
-            limitedButler = CachingLimitedButler(butler)
-            self.assertIsInstance(limitedButler, CachingLimitedButler)
-            refs = butler.query_datasets("add_dataset0")
-            dataset = limitedButler.get(refs[0])
-            self.assertIsNotNone(dataset)
-
-            with limitedButler.record_metrics() as metrics:
-                limitedButler.get(refs[0])
+        helper = InMemoryRepo("base.yaml")
+        helper.add_task()
+        refs = helper.insert_datasets("dataset_auto0")
+        in_memory_butler = helper.make_limited_butler()
+        caching_butler = CachingLimitedButler(in_memory_butler)
+        mock_dataset = caching_butler.get(refs[0])
+        self.assertIsNotNone(mock_dataset)
+        with caching_butler.record_metrics() as metrics:
+            caching_butler.get(refs[0])
             self.assertEqual(metrics.n_get, 1)
 
 

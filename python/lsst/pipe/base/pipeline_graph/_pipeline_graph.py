@@ -150,8 +150,10 @@ class PipelineGraph:
         self._description = value
 
     @property
-    def universe(self) -> DimensionUniverse | None:
+    def universe(self) -> DimensionUniverse:
         """Definitions for all butler dimensions."""
+        if self._universe is None:
+            raise UnresolvedGraphError("Pipeline graph is not resolved.")
         return self._universe
 
     @property
@@ -159,7 +161,7 @@ class PipelineGraph:
         """Data ID that represents a constraint on all quanta generated from
         this pipeline.
 
-        This is may not be available unless `universe` is not `None`.
+        This is may not be available unless the graph is resolved.
         """
         return DataCoordinate.standardize(self._raw_data_id, universe=self.universe)
 
@@ -305,7 +307,7 @@ class PipelineGraph:
                 for k, v in self._task_subsets.items()
             },
             description=self._description,
-            universe=self.universe,
+            universe=self._universe,
             data_id=self._raw_data_id,
             step_definitions=step_definitions,
         )
@@ -774,7 +776,7 @@ class PipelineGraph:
             key=NodeKey(NodeType.TASK, label),
             init_key=NodeKey(NodeType.TASK_INIT, label),
             data=_TaskNodeImportedData.configure(label, task_class, config, connections),
-            universe=self.universe,
+            universe=self._universe,
         )
         self.add_task_nodes([task_node])
         return task_node
@@ -1571,9 +1573,9 @@ class PipelineGraph:
 
         Returns
         -------
-        groups : `dict` [ `DimensionGroup`, `tuple` ]
-            A dictionary of groups keyed by `DimensionGroup`, in which each
-            value is a tuple of:
+        groups : `dict` [ `~lsst.daf.butler.DimensionGroup`, `tuple` ]
+            A dictionary of groups keyed by `~lsst.daf.butler.DimensionGroup`,
+            in which each value is a tuple of:
 
             - a `dict` of `TaskNode` instances, keyed by task label
             - a `dict` of `DatasetTypeNode` instances, keyed by
@@ -1604,6 +1606,25 @@ class PipelineGraph:
                     next_new_value = ({}, {})  # make new lists for next time
                 group[1][dataset_type_node.name] = dataset_type_node
         return result
+
+    def get_all_dimensions(self, prerequisites: bool = True) -> DimensionGroup:
+        """Return all dimensions used in this graph's tasks and dataset types.
+
+        Parameters
+        ----------
+        prerequisites : `bool`, optional
+            If `False`, do not include the dimensions that are only used by
+            prerequisite input dataset types.
+
+        Returns
+        -------
+        dimensions : `~lsst.daf.butler.DimensionGroup`.
+            All dimensions in this pipeline.
+        """
+        return DimensionGroup.union(
+            *self.group_by_dimensions(prerequisites=prerequisites).keys(),
+            universe=self.universe,
+        )
 
     def split_independent(self) -> Iterable[PipelineGraph]:
         """Iterate over independent subgraphs that together comprise this
@@ -1668,11 +1689,13 @@ class PipelineGraph:
         not considered part of the pipeline graph in other respects, but it
         does get written with other provenance datasets.
         """
-        if self.universe is None:
+        if self._universe is None:
             raise UnresolvedGraphError(
                 "PipelineGraph must be resolved in order to get the packages dataset type."
             )
-        return DatasetType(PACKAGES_INIT_OUTPUT_NAME, self.universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS)
+        return DatasetType(
+            PACKAGES_INIT_OUTPUT_NAME, self._universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
+        )
 
     def register_dataset_types(self, butler: Butler, include_packages: bool = True) -> None:
         """Register all dataset types in a data repository.
@@ -1767,6 +1790,7 @@ class PipelineGraph:
         self,
         get_init_input: Callable[[DatasetType], Any] | None = None,
         init_outputs: list[tuple[Any, DatasetType]] | None = None,
+        labels: Iterable[str] | None = None,
     ) -> list[PipelineTask]:
         """Instantiate all tasks in the pipeline.
 
@@ -1785,6 +1809,9 @@ class PipelineGraph:
             correspond to the storage class of the output connection, which
             may not be the same as the storage class on the graph's dataset
             type node.
+        labels : `~collections.abc.Iterable` [ `str` ], optional
+            The labels of tasks to instantiate.  If not provided, all tasks in
+            the graph will be instantiated.
 
         Returns
         -------
@@ -1793,10 +1820,13 @@ class PipelineGraph:
         """
         if not self.is_fully_resolved:
             raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
-        empty_data_id = DataCoordinate.make_empty(cast(DimensionUniverse, self.universe))
+        empty_data_id = DataCoordinate.make_empty(self.universe)
+        labels = set(labels) if labels is not None else self.tasks.keys()
         handles: dict[str, InMemoryDatasetHandle] = {}
         tasks: list[PipelineTask] = []
         for task_node in self.tasks.values():
+            if task_node.label not in labels:
+                continue
             task_init_inputs: dict[str, Any] = {}
             for read_edge in task_node.init.inputs.values():
                 if (handle := handles.get(read_edge.dataset_type_name)) is not None:

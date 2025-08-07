@@ -44,7 +44,6 @@ import astropy.table
 from lsst.daf.butler import (
     Butler,
     DataCoordinate,
-    DimensionDataAttacher,
     DimensionElement,
     DimensionGroup,
     DimensionRecordSet,
@@ -57,7 +56,7 @@ from lsst.utils.timer import timeMethod
 
 from ._datasetQueryConstraints import DatasetQueryConstraintVariant
 from .quantum_graph_builder import QuantumGraphBuilder, QuantumGraphBuilderError
-from .quantum_graph_skeleton import DatasetKey, Key, PrerequisiteDatasetKey, QuantumGraphSkeleton, QuantumKey
+from .quantum_graph_skeleton import DatasetKey, PrerequisiteDatasetKey, QuantumGraphSkeleton, QuantumKey
 
 if TYPE_CHECKING:
     from .pipeline_graph import DatasetTypeNode, PipelineGraph, TaskNode
@@ -143,13 +142,14 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
         self._query_for_data_ids(tree)
         dimension_records = self._fetch_most_dimension_records(tree)
         tree.generate_data_ids(self.log)
-        skeleton = self._make_subgraph_skeleton(tree)
+        skeleton: QuantumGraphSkeleton = self._make_subgraph_skeleton(tree)
         if not skeleton.has_any_quanta:
             # QG is going to be empty; exit early not just for efficiency, but
             # also so downstream code doesn't have to guard against this case.
             return skeleton
         self._find_followup_datasets(tree, skeleton)
-        self._attach_dimension_records(skeleton, dimension_records)
+        all_data_id_dimensions = subgraph.get_all_dimensions()
+        skeleton.attach_dimension_records(self.butler, all_data_id_dimensions, dimension_records)
         return skeleton
 
     def _query_for_data_ids(self, tree: _DimensionGroupTree) -> None:
@@ -485,44 +485,6 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                     record_set.update(butler_query.dimension_records(record_set.element.name))
                     result.append(record_set)
         return result
-
-    @timeMethod
-    def _attach_dimension_records(
-        self, skeleton: QuantumGraphSkeleton, dimension_records: Iterable[DimensionRecordSet]
-    ) -> None:
-        """Attach dimension records to most data IDs in the in-progress graph,
-        and return a data structure that records the rest.
-
-        Parameters
-        ----------
-        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
-            In-progress quantum graph to modify in place.
-        dimension_records : `~collections.abc.Iterable` [ \
-                `lsst.daf.butler.DimensionRecordSet` ]
-            Iterable of sets of dimension records.
-        """
-        # Group all nodes by data ID (and dimensions of data ID).
-        data_ids_to_expand: defaultdict[DimensionGroup, defaultdict[DataCoordinate, list[Key]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
-        data_id: DataCoordinate | None
-        for node_key in skeleton:
-            if data_id := skeleton[node_key].get("data_id"):
-                data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
-        attacher = DimensionDataAttacher(
-            records=dimension_records,
-            dimensions=DimensionGroup.union(*data_ids_to_expand.keys(), universe=self.universe),
-        )
-        for dimensions, data_ids in data_ids_to_expand.items():
-            with self.butler.query() as query:
-                # Butler query will be used as-needed to get dimension records
-                # (from prerequisites) we didn't fetch in advance.  These are
-                # cached in the attacher so we don't look them up multiple
-                # times.
-                expanded_data_ids = attacher.attach(dimensions, data_ids.keys(), query=query)
-            for expanded_data_id, node_keys in zip(expanded_data_ids, data_ids.values()):
-                for node_key in node_keys:
-                    skeleton.set_data_id(node_key, expanded_data_id)
 
 
 @dataclasses.dataclass(eq=False, repr=False, slots=True)

@@ -39,10 +39,10 @@ class QgraphTaskSummary(pydantic.BaseModel):
     numQuanta: int = 0
     """Number of Quanta for this PipelineTask in this QuantumGraph."""
 
-    numInputs: dict[str, int] = Counter()
+    numInputs: dict[str, int] = pydantic.Field(default_factory=Counter)
     """Total number of inputs per dataset type name for this PipelineTask."""
 
-    numOutputs: dict[str, int] = Counter()
+    numOutputs: dict[str, int] = pydantic.Field(default_factory=Counter)
     """Total number of outputs per dataset type name for this PipelineTask."""
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
@@ -79,7 +79,7 @@ class QgraphTaskSummary(pydantic.BaseModel):
 class QgraphSummary(pydantic.BaseModel):
     """Report for the QuantumGraph creation or reading."""
 
-    graphID: BuildId
+    graphID: BuildId | None = None
     """QuantumGraph ID."""
 
     cmdLine: str | None = None
@@ -97,7 +97,7 @@ class QgraphSummary(pydantic.BaseModel):
     outputRun: str | None = None
     """Output run collection."""
 
-    qgraphTaskSummaries: dict[str, QgraphTaskSummary] = {}
+    qgraphTaskSummaries: dict[str, QgraphTaskSummary] = pydantic.Field(default_factory=dict)
     """Quanta information summarized per PipelineTask."""
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,

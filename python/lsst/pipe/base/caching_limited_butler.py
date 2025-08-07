@@ -84,7 +84,6 @@ class CachingLimitedButler(LimitedButler):
         no_copy_on_cache: Set[str] = frozenset(),
     ):
         self._wrapped = wrapped
-        self._datastore = self._wrapped._datastore
         self.storageClasses = self._wrapped.storageClasses
         self._cache_on_put = cache_on_put
         self._cache_on_get = cache_on_get
@@ -148,9 +147,6 @@ class CachingLimitedButler(LimitedButler):
         # note that this does not use the cache at all
         return self._wrapped.getDeferred(ref, parameters=parameters, storageClass=storageClass)
 
-    def stored(self, ref: DatasetRef) -> bool:
-        return self.stored_many([ref])[ref]  # TODO: remove this once DM-43086 is done.
-
     def stored_many(self, refs: Iterable[DatasetRef]) -> dict[DatasetRef, bool]:
         result = {}
         unknown_refs = []
@@ -205,3 +201,11 @@ class CachingLimitedButler(LimitedButler):
     @property
     def dimensions(self) -> DimensionUniverse:
         return self._wrapped.dimensions
+
+    @property
+    def _datastore(self) -> Any:
+        return self._wrapped._datastore
+
+    @_datastore.setter  # demanded by MyPy since we declare it to be an instance attribute in LimitedButler.
+    def _datastore(self, value: Any) -> None:
+        self._wrapped._datastore = value

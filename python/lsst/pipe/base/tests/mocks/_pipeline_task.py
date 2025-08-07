@@ -41,6 +41,8 @@ __all__ = (
 
 import dataclasses
 import logging
+import signal
+import time
 from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
@@ -92,7 +94,7 @@ class ForcedFailure:
 
     memory_required: Quantity | None = None
     """If not `None`, this failure simulates an out-of-memory failure by
-    raising only if this value exceeds `ExecutionResources.max_mem`.
+    raising only if this value exceeds `ExecutionResources.max_mem`.f
     """
 
     def set_config(self, config: MockPipelineTaskConfig) -> None:
@@ -181,6 +183,8 @@ class BaseTestPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=BaseTes
         ),
     )
 
+    fail_signal = Field[int](dtype=int, optional=True, doc="Signal to raise instead of an exception.")
+
     memory_required = Field[str](
         dtype=str,
         default=None,
@@ -190,6 +194,12 @@ class BaseTestPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=BaseTes
             "exceeds this value.  This string should include units as parsed by astropy.units.Quantity "
             "(e.g. '4GB')."
         ),
+    )
+
+    sleep = Field[float](
+        dtype=float,
+        default=0.0,
+        doc="Time to sleep (seconds) before mock execution reading inputs or failing.",
     )
 
     def data_id_match(self) -> DataIdMatch | None:
@@ -300,6 +310,9 @@ class BaseTestPipelineTask(PipelineTask):
 
         _LOG.info("Mocking execution of task '%s' on quantum %s", self.getName(), quantum.dataId)
 
+        if self.config.sleep:
+            time.sleep(self.config.sleep)
+
         assert quantum.dataId is not None, "Quantum DataId cannot be None"
 
         # Possibly raise an exception.
@@ -374,7 +387,11 @@ class BaseTestPipelineTask(PipelineTask):
             Quantum producing the error.
         """
         message = f"Simulated failure: task={self.getName()} dataId={quantum.dataId}"
-        if self.fail_exception is AnnotatedPartialOutputsError:
+        # Type annotations for optional config fields are broken, so MyPy
+        # doesn't think fail_signal could be None.
+        if self.config.fail_signal is not None:
+            signal.raise_signal(signal.Signals(self.config.fail_signal))
+        elif self.fail_exception is AnnotatedPartialOutputsError:  # type: ignore[unreachable]
             # This exception is expected to always chain another.
             try:
                 raise MockAlgorithmError(message)

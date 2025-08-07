@@ -713,7 +713,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
             },
             step_labels=list(target.steps),
             steps_verified=target.steps.verified,
-            dimensions=target.universe.dimensionConfig.toDict() if target.universe is not None else None,
+            dimensions=target._universe.dimensionConfig.toDict() if target._universe is not None else None,
             data_id=target._raw_data_id,
         )
         if target._sorted_keys:

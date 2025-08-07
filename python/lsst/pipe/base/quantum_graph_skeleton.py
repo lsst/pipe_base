@@ -40,12 +40,21 @@ __all__ = (
 )
 
 import dataclasses
+from collections import defaultdict
 from collections.abc import Iterable, Iterator, MutableMapping, Set
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 import networkx
 
-from lsst.daf.butler import DataCoordinate, DataIdValue, DatasetRef
+from lsst.daf.butler import (
+    Butler,
+    DataCoordinate,
+    DataIdValue,
+    DatasetRef,
+    DimensionDataAttacher,
+    DimensionGroup,
+    DimensionRecordSet,
+)
 from lsst.utils.logging import getLogger
 
 if TYPE_CHECKING:
@@ -170,6 +179,7 @@ class QuantumGraphSkeleton:
         self._tasks: dict[str, tuple[TaskInitKey, set[QuantumKey]]] = {}
         self._xgraph: networkx.DiGraph = networkx.DiGraph()
         self._global_init_outputs: set[DatasetKey] = set()
+        self._dimension_data: dict[str, DimensionRecordSet] = {}
         for task_label in task_labels:
             task_init_key = TaskInitKey(task_label)
             self._tasks[task_label] = (task_init_key, set())
@@ -310,6 +320,10 @@ class QuantumGraphSkeleton:
         for task_label, (_, quanta) in other._tasks.items():
             self._tasks[task_label][1].update(quanta)
         self._xgraph.update(other._xgraph)
+        for record_set in other._dimension_data.values():
+            self._dimension_data.setdefault(
+                record_set.element.name, DimensionRecordSet(record_set.element)
+            ).update(record_set)
 
     def add_quantum_node(self, task_label: str, data_id: DataCoordinate, **attrs: Any) -> QuantumKey:
         """Add a new node representing a quantum.
@@ -710,3 +724,48 @@ class QuantumGraphSkeleton:
             Raised if this node does not have an expanded data ID.
         """
         return self._xgraph.nodes[key]["data_id"]
+
+    def attach_dimension_records(
+        self, butler: Butler, dimensions: DimensionGroup, dimension_records: Iterable[DimensionRecordSet]
+    ) -> None:
+        """Attach dimension records to the data IDs in the skeleton.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler`
+            Butler to use to query for missing dimension records.
+        dimensions : `lsst.daf.butler.DimensionGroup`
+            Superset of all of the dimensions of all data IDs.
+        dimension_records : `~collections.abc.Iterable` [ \
+                `lsst.daf.butler.DimensionRecordSet` ]
+            Iterable of sets of dimension records to attach.
+        """
+        for record_set in dimension_records:
+            self._dimension_data.setdefault(
+                record_set.element.name, DimensionRecordSet(record_set.element)
+            ).update(record_set)
+        # Group all nodes by data ID (and dimensions of data ID).
+        data_ids_to_expand: defaultdict[DimensionGroup, defaultdict[DataCoordinate, list[Key]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        data_id: DataCoordinate | None
+        for node_key in self:
+            if data_id := self[node_key].get("data_id"):
+                data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
+        attacher = DimensionDataAttacher(records=self._dimension_data.values(), dimensions=dimensions)
+        for dimensions, data_ids in data_ids_to_expand.items():
+            with butler.query() as query:
+                # Butler query will be used as-needed to get dimension records
+                # (from prerequisites) we didn't fetch in advance.  These are
+                # cached in the attacher so we don't look them up multiple
+                # times.
+                expanded_data_ids = attacher.attach(dimensions, data_ids.keys(), query=query)
+            for expanded_data_id, node_keys in zip(expanded_data_ids, data_ids.values()):
+                for node_key in node_keys:
+                    self.set_data_id(node_key, expanded_data_id)
+        # Hold on to any records that we had to query for.
+        self._dimension_data = attacher.records
+
+    def get_dimension_data(self) -> list[DimensionRecordSet]:
+        """Return the dimension records attached to data IDs."""
+        return list(self._dimension_data.values())
