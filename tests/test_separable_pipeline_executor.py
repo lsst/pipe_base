@@ -34,7 +34,8 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config
 import lsst.utils.tests
-from lsst.pipe.base import Instrument, Pipeline, TaskMetadata
+from lsst.pipe.base import Instrument, Pipeline, PipelineGraph, QuantumGraph, TaskMetadata
+from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.pipe.base.automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME
 from lsst.pipe.base.quantum_graph_builder import OutputExistsError
 from lsst.pipe.base.separable_pipeline_executor import SeparablePipelineExecutor
@@ -73,11 +74,67 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         butlerTests.addDatasetType(self.butler, "a_metadata", set(), "TaskMetadata")
         butlerTests.addDatasetType(self.butler, "a_config", set(), "Config")
 
+    def build_empty_quantum_graph(self) -> None:
+        pipeline_graph = PipelineGraph(universe=self.butler.dimensions)
+        pipeline_graph.resolve(self.butler.registry)
+        builder = AllDimensionsQuantumGraphBuilder(pipeline_graph, self.butler)
+        return builder.finish(attach_datastore_records=False).assemble()
+
+    def test_pre_execute_qgraph_old(self):
+        # Too hard to make a quantum graph from scratch.
+        executor = SeparablePipelineExecutor(self.butler)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.make_quantum_graph(pipeline)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, PACKAGES_INIT_OUTPUT_NAME, set(), "Packages")
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=False,
+            save_init_outputs=False,
+            save_versions=False,
+        )
+        self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
     def test_pre_execute_qgraph(self):
         # Too hard to make a quantum graph from scratch.
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, PACKAGES_INIT_OUTPUT_NAME, set(), "Packages")
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=False,
+            save_init_outputs=False,
+            save_versions=False,
+        )
+        self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
+    def test_pre_execute_qgraph_unconnected_old(self):
+        # Unconnected graph; see
+        # test_make_quantum_graph_nowhere_skippartial_clobber.
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
         graph = executor.make_quantum_graph(pipeline)
 
         butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
@@ -106,7 +163,26 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
         self.butler.put({"zero": 0}, "intermediate")
-        graph = executor.make_quantum_graph(pipeline)
+        graph = executor.build_quantum_graph(pipeline)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, PACKAGES_INIT_OUTPUT_NAME, set(), "Packages")
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=False,
+            save_init_outputs=False,
+            save_versions=False,
+        )
+        self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
+    def test_pre_execute_qgraph_empty_old(self):
+        executor = SeparablePipelineExecutor(self.butler)
+        graph = QuantumGraph({}, universe=self.butler.dimensions)
 
         butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
         butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
@@ -125,7 +201,7 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
 
     def test_pre_execute_qgraph_empty(self):
         executor = SeparablePipelineExecutor(self.butler)
-        graph = lsst.pipe.base.QuantumGraph({}, universe=self.butler.dimensions)
+        graph = self.build_empty_quantum_graph()
 
         butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
         butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
@@ -142,7 +218,7 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
         self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
 
-    def test_pre_execute_qgraph_register(self):
+    def test_pre_execute_qgraph_register_old(self):
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
@@ -162,7 +238,27 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
         self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
 
-    def test_pre_execute_qgraph_init_outputs(self):
+    def test_pre_execute_qgraph_register(self):
+        executor = SeparablePipelineExecutor(self.butler)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=False,
+            save_versions=False,
+        )
+        self.assertEqual({d.name for d in self.butler.registry.queryDatasetTypes("output")}, {"output"})
+        self.assertEqual(
+            {d.name for d in self.butler.registry.queryDatasetTypes("b_*")},
+            {"b_config", "b_log", "b_metadata"},
+        )
+        self.assertFalse(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
+    def test_pre_execute_qgraph_init_outputs_old(self):
         # Too hard to make a quantum graph from scratch.
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
@@ -184,11 +280,54 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertTrue(self.butler.exists("a_config", {}, collections=[self.butler.run]))
         self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
 
-    def test_pre_execute_qgraph_versions(self):
+    def test_pre_execute_qgraph_init_outputs(self):
+        # Too hard to make a quantum graph from scratch.
+        executor = SeparablePipelineExecutor(self.butler)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, PACKAGES_INIT_OUTPUT_NAME, set(), "Packages")
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=False,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+        self.assertTrue(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertFalse(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
+    def test_pre_execute_qgraph_versions_old(self):
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
         graph = executor.make_quantum_graph(pipeline)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, PACKAGES_INIT_OUTPUT_NAME, set(), "Packages")
+
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=False,
+            save_init_outputs=True,
+            save_versions=True,
+        )
+        self.assertTrue(self.butler.exists("a_config", {}, collections=[self.butler.run]))
+        self.assertTrue(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
+
+    def test_pre_execute_qgraph_versions(self):
+        executor = SeparablePipelineExecutor(self.butler)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
 
         butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
         butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
@@ -238,7 +377,7 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             pipeline_graph = executor.make_pipeline(uri).to_graph()
             self.assertEqual(set(pipeline_graph.tasks), {"a"})
 
-    def test_make_quantum_graph_nowhere_noskip_noclobber(self):
+    def test_build_quantum_graph_nowhere_noskip_noclobber(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
         pipeline = Pipeline.fromFile(self.pipeline_file)
 
@@ -250,6 +389,16 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
+    def test_make_quantum_graph_nowhere_noskip_noclobber(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
     def test_make_quantum_graph_nowhere_noskip_noclobber_conflict(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
         pipeline = Pipeline.fromFile(self.pipeline_file)
@@ -260,12 +409,12 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.butler.put(TaskMetadata(), "a_metadata")
 
         with self.assertRaises(OutputExistsError):
-            executor.make_quantum_graph(pipeline)
+            executor.build_quantum_graph(pipeline)
 
     # TODO: need more complex task and Butler to test
     # make_quantum_graph(where=...)
 
-    def test_make_quantum_graph_nowhere_skipnone_noclobber(self):
+    def test_build_quantum_graph_nowhere_skipnone_noclobber(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -281,7 +430,19 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
-    def test_make_quantum_graph_nowhere_skiptotal_noclobber(self):
+    def test_make_quantum_graph_nowhere_skipnone_noclobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
+    def test_build_quantum_graph_nowhere_skiptotal_noclobber(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -301,6 +462,25 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"b"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
+    def test_make_quantum_graph_nowhere_skiptotal_noclobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 1)
+        self.assertEqual(graph.header.n_task_quanta["a"], 0)
+        self.assertEqual(graph.header.n_task_quanta["b"], 1)
+
     def test_make_quantum_graph_nowhere_skippartial_noclobber(self):
         executor = SeparablePipelineExecutor(
             self.butler,
@@ -313,9 +493,9 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.butler.put({"zero": 0}, "intermediate")
 
         with self.assertRaises(OutputExistsError):
-            executor.make_quantum_graph(pipeline)
+            executor.build_quantum_graph(pipeline)
 
-    def test_make_quantum_graph_nowhere_noskip_clobber(self):
+    def test_build_quantum_graph_nowhere_noskip_clobber(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
         pipeline = Pipeline.fromFile(self.pipeline_file)
 
@@ -327,7 +507,15 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
-    def test_make_quantum_graph_nowhere_noskip_clobber_conflict(self):
+    def test_make_quantum_graph_nowhere_noskip_clobber(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
+    def test_build_quantum_graph_nowhere_noskip_clobber_conflict(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
         pipeline = Pipeline.fromFile(self.pipeline_file)
 
@@ -342,7 +530,18 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
-    def test_make_quantum_graph_nowhere_skipnone_clobber(self):
+    def test_make_quantum_graph_nowhere_noskip_clobber_conflict(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
+    def test_build_quantum_graph_nowhere_skipnone_clobber(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -358,7 +557,39 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
         self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
 
+    def test_make_quantum_graph_nowhere_skipnone_clobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
     def test_make_quantum_graph_nowhere_skiptotal_clobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+
+        graph = executor.make_quantum_graph(pipeline)
+        self.assertTrue(graph.isConnected)
+        self.assertEqual(len(graph), 1)
+        self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"b"})
+        self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
+
+    def test_build_quantum_graph_nowhere_skiptotal_clobber(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -385,21 +616,24 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             clobber_output=True,
         )
         pipeline = Pipeline.fromFile(self.pipeline_file)
-
         self.butler.put({"zero": 0}, "input")
         self.butler.put({"zero": 0}, "intermediate")
-
-        graph = executor.make_quantum_graph(pipeline)
-        self.assertTrue(graph.isConnected)
+        graph = executor.build_quantum_graph(pipeline)
         self.assertEqual(len(graph), 2)
-        self.assertEqual({q.taskDef.label for q in graph.inputQuanta}, {"a"})
-        self.assertEqual({q.taskDef.label for q in graph.outputQuanta}, {"b"})
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
 
     def test_make_quantum_graph_noinput(self):
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
 
         graph = executor.make_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 0)
+
+    def test_build_quantum_graph_noinput(self):
+        executor = SeparablePipelineExecutor(self.butler)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        graph = executor.build_quantum_graph(pipeline)
         self.assertEqual(len(graph), 0)
 
     def test_make_quantum_graph_alloutput_skip(self):
@@ -424,6 +658,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         graph = executor.make_quantum_graph(pipeline)
         self.assertEqual(len(graph), 0)
 
+    def test_build_quantum_graph_alloutput_skip(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=[self.butler.run])
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        butlerTests.addDatasetType(self.butler, "output", set(), "StructuredDataDict")
+        butlerTests.addDatasetType(self.butler, "b_log", set(), "ButlerLogRecords")
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put({"zero": 0}, "output")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "b_log")
+        self.butler.put(TaskMetadata(), "b_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+        self.butler.put(lsst.pex.config.Config(), "b_config")
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 0)
+
     def test_run_pipeline_noskip_noclobber_fullgraph(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
         pipeline = Pipeline.fromFile(self.pipeline_file)
@@ -441,11 +697,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
 
-    def test_run_pipeline_noskip_noclobber_emptygraph(self):
+    def test_run_pipeline_noskip_noclobber_fullgraph_old(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+
+    def test_run_pipeline_noskip_noclobber_emptygraph_old(self):
         old_repo_size = self.butler.registry.queryDatasets(...).count()
 
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
-        graph = lsst.pipe.base.QuantumGraph({}, universe=self.butler.dimensions)
+        graph = QuantumGraph({}, universe=self.butler.dimensions)
         executor.pre_execute_qgraph(
             graph,
             register_dataset_types=True,
@@ -458,7 +731,24 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         # Empty graph execution should do nothing.
         self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size)
 
-    def test_run_pipeline_skipnone_noclobber(self):
+    def test_run_pipeline_noskip_noclobber_emptygraph(self):
+        old_repo_size = self.butler.registry.queryDatasets(...).count()
+
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
+        graph = self.build_empty_quantum_graph()
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        # Empty graph execution should do nothing.
+        self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size)
+
+    def test_run_pipeline_skipnone_noclobber_old(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -479,7 +769,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
 
-    def test_run_pipeline_skiptotal_noclobber(self):
+    def test_run_pipeline_skipnone_noclobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+
+    def test_run_pipeline_skiptotal_noclobber_old(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -503,7 +814,31 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("output"), {"zero": 0, "two": 2})
 
-    def test_run_pipeline_noskip_clobber_connected(self):
+    def test_run_pipeline_skiptotal_noclobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "two": 2})
+
+    def test_run_pipeline_noskip_clobber_connected_old(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
@@ -520,7 +855,24 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
 
-    def test_run_pipeline_noskip_clobber_unconnected(self):
+    def test_run_pipeline_noskip_clobber_connected(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+
+    def test_run_pipeline_noskip_clobber_unconnected_old(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
         pipeline = Pipeline.fromFile(self.pipeline_file)
         self.butler.put({"zero": 0}, "input")
@@ -541,7 +893,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         # The value of output is undefined; it depends on which task ran first.
         self.assertTrue(self.butler.exists("output", {}))
 
-    def test_run_pipeline_skipnone_clobber(self):
+    def test_run_pipeline_noskip_clobber_unconnected(self):
+        executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        # The value of output is undefined; it depends on which task ran first.
+        self.assertTrue(self.butler.exists("output", {}))
+
+    def test_run_pipeline_skipnone_clobber_old(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -562,7 +935,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
 
-    def test_run_pipeline_skiptotal_clobber_connected(self):
+    def test_run_pipeline_skipnone_clobber(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+
+    def test_run_pipeline_skiptotal_clobber_connected_old(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -586,7 +980,31 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("output"), {"zero": 0, "two": 2})
 
-    def test_run_pipeline_skippartial_clobber_unconnected(self):
+    def test_run_pipeline_skiptotal_clobber_connected(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.daf.butler.ButlerLogRecords.from_records([]), "a_log")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
+
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("output"), {"zero": 0, "two": 2})
+
+    def test_run_pipeline_skippartial_clobber_unconnected_old(self):
         executor = SeparablePipelineExecutor(
             self.butler,
             skip_existing_in=[self.butler.run],
@@ -603,6 +1021,28 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
+        executor.run_pipeline(graph)
+        self.butler.registry.refresh()
+        self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
+        # The value of output is undefined; it depends on which task ran first.
+        self.assertTrue(self.butler.exists("output", {}))
+
+    def test_run_pipeline_skippartial_clobber_unconnected(self):
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            clobber_output=True,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put({"zero": 0}, "intermediate")
+        graph = executor.build_quantum_graph(pipeline)
+        executor.pre_execute_qgraph(
+            graph,
+            register_dataset_types=True,
+            save_init_outputs=True,
+            save_versions=False,
+        )
         executor.run_pipeline(graph)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
