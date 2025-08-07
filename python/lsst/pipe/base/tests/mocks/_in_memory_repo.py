@@ -39,6 +39,7 @@ from lsst.sphgeom import RangeSet
 
 from ...all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from ...pipeline_graph import PipelineGraph
+from ...quantum_graph import PredictedQuantumGraph
 from ...single_quantum_executor import SingleQuantumExecutor
 from ..in_memory_limited_butler import InMemoryLimitedButler
 from ._pipeline_task import (
@@ -205,6 +206,45 @@ class InMemoryRepo:
             self.last_auto_task_index += 1
             label = f"task_auto{self.last_auto_task_index}"
         self.pipeline_graph.add_task(label, task_class=task_class, config=config)
+
+    def make_quantum_graph(
+        self,
+        *,
+        output: str | None = None,
+        insert_mocked_inputs: bool = True,
+        register_output_dataset_types: bool = True,
+    ) -> PredictedQuantumGraph:
+        """Make a quantum graph from the pipeline task and internal data
+        repository.
+
+        Parameters
+        ----------
+        output : `str` or `None`, optional
+            Name of the output chained collection to embed within the quantum
+            graph.  Note that this does not actually create this collection.
+        insert_mocked_inputs : `bool`, optional
+            Whether to automatically insert datasets for all overall inputs to
+            the pipeline graph whose dataset types have not already been
+            registered.  If set to `False`, inputs must be provided by imported
+            YAML files or explicit calls to `insert_datasets`, which provides
+            more fine-grained control over the data IDs of the datasets.
+        register_output_dataset_types : `bool`, optional
+            If `True`, register all output dataset types.
+
+        Returns
+        -------
+        qg : `..quantum_graph.PredictedQuantumGraph`
+            Quantum graph.  Datastore records will not be attached, since the
+            test helper does not actually have a datastore.
+        """
+        return (
+            self.make_quantum_graph_builder(
+                insert_mocked_inputs=insert_mocked_inputs,
+                register_output_dataset_types=register_output_dataset_types,
+            )
+            .finish(output=output, attach_datastore_records=False)
+            .assemble()
+        )
 
     def make_quantum_graph_builder(
         self,
