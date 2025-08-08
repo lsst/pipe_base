@@ -939,7 +939,7 @@ class QuantumGraphBuilder(ABC):
         inputs: dict[DatasetKey | PrerequisiteDatasetKey, DatasetRef] = {}
         outputs_for_skip: dict[DatasetKey, DatasetRef] = {}
         outputs_in_the_way: dict[DatasetKey, DatasetRef] = {}
-        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty]
+        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions().get(self.universe.empty, ({}, {}))
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
         for dataset_type in dataset_types:
