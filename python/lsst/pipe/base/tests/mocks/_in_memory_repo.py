@@ -243,7 +243,7 @@ class InMemoryRepo:
         builder = AllDimensionsQuantumGraphBuilder(
             self.pipeline_graph,
             self.butler,
-            input_collections=self.input_chain,
+            input_collections=[self.input_chain],
             output_run=self.output_run,
         )
         if register_output_dataset_types:
