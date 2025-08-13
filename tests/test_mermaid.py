@@ -227,22 +227,13 @@ class MermaidTestCase(unittest.TestCase):
         # Create a pipeline graph for processing.
         self.graph = self.pipeline.to_graph(visualization_only=True)
 
-    def validateMermaidSource(self, file, naming="generic"):
+    def validateMermaidSource(self, file):
         """Validate the Mermaid source output for basic components.
 
         Parameters
         ----------
         file : `~io.StringIO`
             The in-memory file-like object containing the Mermaid source.
-        naming : `str`, optional
-            Indicates how nodes are labeled internally in the Mermaid source
-            so that we verify them accordingly. This has nothing to do with the
-            appearance of the visualization itself. Options are:
-            - `"generic"` (default) assumes predefined labels, e.g., "TASK_1"
-            and "DATASET_A", in a sequential manner.
-            - `"structured"` assumes node labels based on pipeline-defined
-            names, e.g., "task_name:1" and "dateset_name:2", with numeric
-            indices appended to maintain uniqueness.
         """
         # It's hard to validate the complete output, just checking some basic
         # things, but even that is not terribly stable.
@@ -267,19 +258,11 @@ class MermaidTestCase(unittest.TestCase):
 
         # Select the reference set based on naming style.
         namingRef = {
-            "generic": {
-                "edge1": "DATASET_B --> TASK_1",
-                "edge2": "TASK_2 --> DATASET_F",
-                "classDef": "class DATASET_E ds;",
-                "metadata": "TASK_4 --> DATASET_task4_metadata",
-            },
-            "structured": {
-                "edge1": "B:0 --> task1:2",
-                "edge2": "task2:2 --> F:0",
-                "classDef": "class E:0 dsType;",
-                "metadata": "task4:2 --> task4_metadata:0",
-            },
-        }[naming]
+            "edge1": "B:0 --> task1:2",
+            "edge2": "task2:2 --> F:0",
+            "classDef": "class E:0 dsType;",
+            "metadata": "task4:2 --> task4_metadata:0",
+        }
 
         # Make sure components are connected appropriately.
         self.assertIn(namingRef["edge1"], fileValue)
@@ -303,7 +286,7 @@ class MermaidTestCase(unittest.TestCase):
         # Validate Mermaid source output (mmd format) in a text stream.
         file = io.StringIO()
         vis.show_mermaid(self.graph, file, dataset_types=True, task_classes="full")
-        self.validateMermaidSource(file, naming="structured")
+        self.validateMermaidSource(file)
 
     @unittest.skipIf(not MERMAID_AVAILABLE, "Skipping image rendering tests since `mermaid-py` is missing.")
     def test_show_mermaid_image(self):
