@@ -606,7 +606,18 @@ class ReadEdge(Edge):
                         "type is registered."
                     )
             else:
-                all_current_components = current.storageClass.allComponents()
+                try:
+                    all_current_components = current.storageClass.allComponents()
+                except (KeyError, ImportError):
+                    if visualization_only:
+                        current = DatasetType(
+                            self.parent_dataset_type_name,
+                            dimensions,
+                            storageClass="<UNKNOWN>",
+                            isCalibration=self.is_calibration,
+                        )
+                        return current, is_initial_query_constraint, is_prerequisite
+                    raise
                 if self.component not in all_current_components:
                     raise IncompatibleDatasetTypeError(
                         f"Dataset type {self.parent_dataset_type_name!r} has storage class "
@@ -618,8 +629,10 @@ class ReadEdge(Edge):
                 # for the component the task wants, because we don't have the
                 # parent storage class.
                 current_component = all_current_components[self.component]
+
                 if (
-                    current_component.name != self.storage_class_name
+                    not visualization_only
+                    and current_component.name != self.storage_class_name
                     and not StorageClassFactory()
                     .getStorageClass(self.storage_class_name)
                     .can_convert(current_component)
@@ -652,7 +665,7 @@ class ReadEdge(Edge):
                             "compatible but different, registering the dataset type in the data repository "
                             "in advance will avoid this error."
                         )
-                elif not dataset_type.is_compatible_with(current):
+                elif not visualization_only and not dataset_type.is_compatible_with(current):
                     raise IncompatibleDatasetTypeError(
                         f"Incompatible definition for input dataset type {self.parent_dataset_type_name!r}; "
                         f"task {self.task_label!r} has {dataset_type}, but the definition "
