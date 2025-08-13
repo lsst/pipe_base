@@ -33,15 +33,9 @@ from __future__ import annotations
 
 __all__ = ["graph2mermaid", "pipeline2mermaid"]
 
-import html
-import re
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from lsst.daf.butler import DatasetType, DimensionUniverse
-
-from . import connectionTypes
-from .connections import iterConnections
 from .pipeline import Pipeline
 
 if TYPE_CHECKING:
@@ -141,156 +135,6 @@ def graph2mermaid(qgraph: QuantumGraph, file: Any) -> None:
         file.close()
 
 
-def _expand_dimensions(dimension_list: set[str] | Iterable[str], universe: DimensionUniverse) -> list[str]:
-    """Return expanded list of dimensions, with special skypix treatment.
-
-    Parameters
-    ----------
-    dimension_set : `set` [`str`] or iterable of `str`
-        The original set of dimension names.
-    universe : DimensionUniverse
-        Used to conform the dimension set according to a known schema.
-
-    Returns
-    -------
-    dimensions : `list` [`str`]
-        Expanded list of dimensions.
-    """
-    dimension_set = set(dimension_list)
-    skypix_dim = []
-    if "skypix" in dimension_set:
-        dimension_set.remove("skypix")
-        skypix_dim = ["skypix"]
-    dimensions = universe.conform(dimension_set)
-    return list(dimensions.names) + skypix_dim
-
-
-def _format_dimensions(dims: list[str]) -> str:
-    """Format and sort dimension names as a comma-separated list inside curly
-    braces.
-
-    For example, if dims=["detector", "visit"], returns "{detector, visit}".
-
-    Parameters
-    ----------
-    dims : list of str
-        The dimension names to format and sort.
-
-    Returns
-    -------
-    str
-        The formatted dimension string, or an empty string if no dimensions.
-    """
-    if not dims:
-        return ""
-    sorted_dims = sorted(dims)
-    return "{" + ",&nbsp;".join(sorted_dims) + "}"
-
-
-def _render_task_node(
-    task_id: str,
-    taskDef: TaskDef,
-    universe: DimensionUniverse,
-    file: Any,
-    show_dimensions: bool,
-    expand_dimensions: bool,
-) -> None:
-    """Render a single task node in the Mermaid diagram.
-
-    Parameters
-    ----------
-    task_id : str
-        Unique Mermaid node identifier for this task.
-    taskDef : TaskDef
-        The pipeline task definition, which includes the task label, task name,
-        and connections.
-    universe : DimensionUniverse
-        Used to conform and sort the task's dimensions.
-    file : file-like
-        The output file-like object to write the Mermaid node definition.
-    show_dimensions : bool
-        If True, display the task's dimensions after conforming them.
-    expand_dimensions : bool
-        If True, expand dimension names to include all components.
-    """
-    # Basic info: bold label, then task name.
-    lines = [
-        f"<b>{html.escape(taskDef.label)}</b>",
-        html.escape(taskDef.taskName),
-    ]
-
-    # If requested, display the task's conformed dimensions.
-    if show_dimensions and taskDef.connections and taskDef.connections.dimensions:
-        if expand_dimensions:
-            task_dims = _expand_dimensions(taskDef.connections.dimensions, universe)
-        else:
-            task_dims = list(taskDef.connections.dimensions)
-        if task_dims:
-            dim_str = _format_dimensions(task_dims)
-            lines.append(f"<i>dimensions:</i>&nbsp;{dim_str}")
-
-    # Join with <br> for line breaks and define the node with the label.
-    label = "<br>".join(lines)
-    print(f'{task_id}["{label}"]', file=file)
-    print(f"class {task_id} task;", file=file)
-
-
-def _render_dataset_node(
-    ds_id: str,
-    ds_name: str,
-    connection: connectionTypes.BaseConnection,
-    universe: DimensionUniverse,
-    file: Any,
-    show_dimensions: bool,
-    expand_dimensions: bool,
-    show_storage: bool,
-) -> None:
-    """Render a dataset-type node in the Mermaid diagram.
-
-    Parameters
-    ----------
-    ds_id : str
-        Unique Mermaid node identifier for this dataset.
-    ds_name : str
-        The dataset type name.
-    connection : BaseConnection
-        The dataset connection object, potentially dimensioned and having a
-        storage class.
-    universe : DimensionUniverse
-        Used to conform and sort the dataset's dimensions if it is dimensioned.
-    file : file-like
-        The output file-like object to write the Mermaid node definition.
-    show_dimensions : bool
-        If True, display the dataset's conformed dimensions.
-    expand_dimensions : bool
-        If True, expand dimension names to include all components.
-    show_storage : bool
-        If True, display the dataset's storage class if available.
-    """
-    # Start with the dataset name in bold.
-    lines = [f"<b>{html.escape(ds_name)}</b>"]
-
-    # If dimensioned and requested, show conformed dimensions.
-    ds_dims = []
-    if show_dimensions and isinstance(connection, connectionTypes.DimensionedConnection):
-        if expand_dimensions:
-            ds_dims = _expand_dimensions(connection.dimensions, universe)
-        else:
-            ds_dims = list(connection.dimensions)
-
-    if ds_dims:
-        dim_str = _format_dimensions(ds_dims)
-        lines.append(f"<i>dimensions:</i>&nbsp;{dim_str}")
-
-    # If storage class is available and requested, display it.
-    if show_storage and getattr(connection, "storageClass", None) is not None:
-        lines.append(f"<i>storage&nbsp;class:</i>&nbsp;{html.escape(str(connection.storageClass))}")
-
-    label = "<br>".join(lines)
-    print(f'{ds_id}["{label}"]', file=file)
-    print(f"class {ds_id} ds;", file=file)
-
-
 def pipeline2mermaid(
     pipeline: Pipeline | Iterable[TaskDef],
     file: Any,
@@ -329,7 +173,7 @@ def pipeline2mermaid(
     ImportError
         Raised if the task class cannot be imported.
     """
-    universe = DimensionUniverse()
+    from .pipeline_graph import PipelineGraph, visualization
 
     # Ensure that pipeline is iterable of task definitions.
     if isinstance(pipeline, Pipeline):
@@ -341,154 +185,29 @@ def pipeline2mermaid(
         file = open(file, "w")
         close = True
 
-    # Begin the Mermaid code block with top-down layout.
-    print("flowchart TD", file=file)
+    if isinstance(pipeline, Pipeline):
+        pg = pipeline.to_graph(visualization_only=True)
+    else:
+        pg = PipelineGraph()
+        for task_def in pipeline:
+            pg.add_task(
+                task_def.label,
+                task_class=task_def.taskClass,
+                config=task_def.config,
+                connections=task_def.connections,
+            )
+        pg.resolve(visualization_only=True)
 
-    # Define classes for tasks and datasets.
-    print(
-        "classDef task fill:#B1F2EF,color:#000,stroke:#000,stroke-width:3px,"
-        "font-family:Monospace,font-size:14px,text-align:left;",
-        file=file,
+    dimensions: Literal["full", "concise"] | None = None
+    if show_dimensions:
+        if expand_dimensions:
+            dimensions = "full"
+        else:
+            dimensions = "concise"
+
+    visualization.show_mermaid(
+        pg, stream=file, dataset_types=True, dimensions=dimensions, storage_classes=show_storage
     )
-    print(
-        "classDef ds fill:#F5F5F5,color:#000,stroke:#00BABC,stroke-width:3px,"
-        "font-family:Monospace,font-size:14px,text-align:left,rx:10,ry:10;",
-        file=file,
-    )
-
-    # Track which datasets have been rendered to avoid duplicates.
-    allDatasets: set[str | tuple[str, str]] = set()
-
-    # Used for linking metadata datasets after tasks are processed.
-    labelToTaskName = {}
-    metadataNodesToLink = set()
-
-    # We'll store edges as (from_node, to_node, is_prerequisite) tuples.
-    edges: list[tuple[str, str, bool]] = []
-
-    def get_task_id(idx: int) -> str:
-        """Generate a safe Mermaid node ID for a task.
-
-        Parameters
-        ----------
-        idx : `int`
-            Task index.
-
-        Returns
-        -------
-        id : `str`
-            Node ID for a task.
-        """
-        return f"TASK_{idx}"
-
-    def get_dataset_id(name: str) -> str:
-        """Generate a safe Mermaid node ID for a dataset.
-
-        Parameters
-        ----------
-        name : `str`
-            Dataset name.
-
-        Returns
-        -------
-        id : `str`
-            Node ID for the dataset.
-        """
-        # Replace non-alphanumerics with underscores.
-        return "DATASET_" + re.sub(r"[^0-9A-Za-z_]", "_", name)
-
-    metadata_pattern = re.compile(r"^(.*)_metadata$")
-
-    # Sort tasks by label for consistent diagram ordering.
-    pipeline_tasks = sorted(pipeline, key=lambda x: x.label)
-
-    # Process each task and its connections.
-    for idx, taskDef in enumerate(pipeline_tasks):
-        task_id = get_task_id(idx)
-        labelToTaskName[taskDef.label] = task_id
-
-        # Render the task node.
-        _render_task_node(task_id, taskDef, universe, file, show_dimensions, expand_dimensions)
-
-        # Handle standard inputs (non-prerequisite).
-        for attr in sorted(iterConnections(taskDef.connections, "inputs"), key=lambda x: x.name):
-            ds_id = get_dataset_id(attr.name)
-            if attr.name not in allDatasets:
-                _render_dataset_node(
-                    ds_id, attr.name, attr, universe, file, show_dimensions, expand_dimensions, show_storage
-                )
-                allDatasets.add(attr.name)
-            edges.append((ds_id, task_id, False))
-
-            # Handle component datasets (composite -> component).
-            nodeName, component = DatasetType.splitDatasetTypeName(attr.name)
-            if component is not None and (nodeName, attr.name) not in allDatasets:
-                ds_id_parent = get_dataset_id(nodeName)
-                if nodeName not in allDatasets:
-                    _render_dataset_node(
-                        ds_id_parent,
-                        nodeName,
-                        attr,
-                        universe,
-                        file,
-                        show_dimensions,
-                        expand_dimensions,
-                        show_storage,
-                    )
-                    allDatasets.add(nodeName)
-                edges.append((ds_id_parent, ds_id, False))
-                allDatasets.add((nodeName, attr.name))
-
-            # If this is a metadata dataset, record it for linking later.
-            if (match := metadata_pattern.match(attr.name)) is not None:
-                matchTaskLabel = match.group(1)
-                metadataNodesToLink.add((matchTaskLabel, attr.name))
-
-        # Handle prerequisite inputs (to be drawn with a dashed line).
-        for attr in sorted(iterConnections(taskDef.connections, "prerequisiteInputs"), key=lambda x: x.name):
-            ds_id = get_dataset_id(attr.name)
-            if attr.name not in allDatasets:
-                _render_dataset_node(
-                    ds_id, attr.name, attr, universe, file, show_dimensions, expand_dimensions, show_storage
-                )
-                allDatasets.add(attr.name)
-            edges.append((ds_id, task_id, True))
-
-            # If this is a metadata dataset, record it for linking later.
-            if (match := metadata_pattern.match(attr.name)) is not None:
-                matchTaskLabel = match.group(1)
-                metadataNodesToLink.add((matchTaskLabel, attr.name))
-
-        # Handle outputs (task -> dataset).
-        for attr in sorted(iterConnections(taskDef.connections, "outputs"), key=lambda x: x.name):
-            ds_id = get_dataset_id(attr.name)
-            if attr.name not in allDatasets:
-                _render_dataset_node(
-                    ds_id, attr.name, attr, universe, file, show_dimensions, expand_dimensions, show_storage
-                )
-                allDatasets.add(attr.name)
-            edges.append((task_id, ds_id, False))
-
-    # Link metadata datasets after all tasks processed.
-    for matchLabel, dsTypeName in metadataNodesToLink:
-        if (result := labelToTaskName.get(matchLabel)) is not None:
-            ds_id = get_dataset_id(dsTypeName)
-            edges.append((result, ds_id, False))
-
-    # Print all edges and track which are prerequisite.
-    prereq_indices = []
-    for i, (f, t, p) in enumerate(edges):
-        print(f"{f} --> {t}", file=file)
-        if p:
-            prereq_indices.append(i)
-
-    # Apply default edge style
-    print("linkStyle default stroke:#000,stroke-width:1.5px,font-family:Monospace,font-size:14px;", file=file)
-
-    # Apply dashed style for all prerequisite edges in one line.
-    if prereq_indices:
-        prereq_str = ",".join(str(i) for i in prereq_indices)
-        print(f"linkStyle {prereq_str} stroke-dasharray:5;", file=file)
 
     if close:
         file.close()
