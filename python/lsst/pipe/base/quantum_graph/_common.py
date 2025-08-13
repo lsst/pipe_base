@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 __all__ = (
+    "BipartiteEdgeInfo",
     "DatasetInfo",
     "HeaderModel",
     "QuantumInfo",
@@ -52,6 +53,7 @@ from lsst.daf.butler import (
 )
 
 from ..pipeline_graph import (
+    Edge,
     NodeBipartite,
     PipelineGraph,
     TaskNode,
@@ -281,6 +283,20 @@ class DatasetInfo(TypedDict):
     """
 
 
+class BipartiteEdgeInfo(TypedDict):
+    """A typed dictionary that annotates the attributes of the NetworkX graph
+    edge data in a bipartite graph.
+    """
+
+    is_read: bool
+    """`True` if this is a dataset -> quantum edge; `False` if it is a
+    quantum -> dataset edge.
+    """
+
+    pipeline_edge: Edge
+    """Corresponding edge in the pipeline graph."""
+
+
 class BaseQuantumGraph(ABC):
     """An abstract base for quantum graphs.
 
@@ -359,8 +375,10 @@ class BaseQuantumGraph(ABC):
         Partial loads may not fully populate this graph, but it can always be
         accessed.
 
-        Node state dictionaries are described by the `DatasetInfo` type
-        (or a subtype thereof).
+        Node state dictionaries are described by the `QuantumInfo` and
+        `DatasetInfo` types (or a subtypes thereof).  Edges are keyed by their
+        connection name, and have state dictionaries described by
+        `BipartiteEdgeInfo`.
 
         The returned object is a read-only view of an internal one.
         """

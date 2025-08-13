@@ -606,17 +606,26 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             self._add_quantum(
                 quantum_datasets.quantum_id, quantum_datasets.task_label, quantum_datasets.data_coordinate
             )
+            task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
             for connection_name, input_datasets in quantum_datasets.inputs.items():
                 for input_dataset in input_datasets:
                     self._add_dataset(input_dataset)
                     self._bipartite_xgraph.add_edge(
-                        input_dataset.dataset_id, quantum_datasets.quantum_id, key=connection_name
+                        input_dataset.dataset_id,
+                        quantum_datasets.quantum_id,
+                        key=connection_name,
+                        is_read=True,
+                        pipeline_edge=task_node.get_input_edge(connection_name),
                     )
             for connection_name, output_datasets in quantum_datasets.outputs.items():
                 for output_dataset in output_datasets:
                     self._add_dataset(output_dataset)
                     self._bipartite_xgraph.add_edge(
-                        quantum_datasets.quantum_id, output_dataset.dataset_id, key=connection_name
+                        quantum_datasets.quantum_id,
+                        output_dataset.dataset_id,
+                        key=connection_name,
+                        is_read=False,
+                        pipeline_edge=task_node.get_output_edge(connection_name),
                     )
         if not components.thin_graph.edges:
             self._quantum_only_xgraph.update(
