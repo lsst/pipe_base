@@ -258,6 +258,7 @@ class Edge(ABC):
         in exported networkx graphs.
         """
         return {
+            "connection_name": self.connection_name,
             "parent_dataset_type_name": self.parent_dataset_type_name,
             "storage_class_name": self.storage_class_name,
             "is_init": bool,
