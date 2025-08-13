@@ -27,12 +27,27 @@
 from __future__ import annotations
 
 __all__ = (
+    "NodeBipartite",
     "NodeKey",
     "NodeType",
 )
 
 import enum
 from typing import NamedTuple
+
+
+class NodeBipartite(enum.IntEnum):
+    """Constants for the 'bipartite' key in NetworkX graph views."""
+
+    DATASET_OR_TYPE = 0
+    """Value for nodes that represent dataset types (in pipeline graphs)
+    or datasets (in quantum graphs).
+    """
+
+    TASK_OR_QUANTUM = 1
+    """Value for nodes that represent tasks (in pipeline graphs) or quanta
+    (in quantum graphs).
+    """
 
 
 class NodeType(enum.Enum):
@@ -43,13 +58,13 @@ class NodeType(enum.Enum):
     TASK = 2
 
     @property
-    def bipartite(self) -> int:
+    def bipartite(self) -> NodeBipartite:
         """The integer used as the "bipartite" key in networkx exports of a
         `PipelineGraph`.
 
         This key is used by the `networkx.algorithms.bipartite` module.
         """
-        return int(self is not NodeType.DATASET_TYPE)
+        return NodeBipartite(self is not NodeType.DATASET_TYPE)
 
     def __lt__(self, other: NodeType) -> bool:
         # We define __lt__ only to be able to provide deterministic tiebreaking
