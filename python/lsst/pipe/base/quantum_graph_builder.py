@@ -364,6 +364,9 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
+            # Add any dimension records not handled by the subclass, and
+            # aggregate any that were added directly to data IDs.
+            full_skeleton.attach_dimension_records(self.butler, self._pipeline_graph.get_all_dimensions())
             if attach_datastore_records:
                 self._attach_datastore_records(full_skeleton)
             # TODO initialize most metadata here instead of in ctrl_mpexec.

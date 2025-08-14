@@ -52,6 +52,7 @@ from lsst.daf.butler import (
     DataIdValue,
     DatasetRef,
     DimensionDataAttacher,
+    DimensionDataExtractor,
     DimensionGroup,
     DimensionRecordSet,
 )
@@ -726,9 +727,17 @@ class QuantumGraphSkeleton:
         return self._xgraph.nodes[key]["data_id"]
 
     def attach_dimension_records(
-        self, butler: Butler, dimensions: DimensionGroup, dimension_records: Iterable[DimensionRecordSet]
+        self,
+        butler: Butler,
+        dimensions: DimensionGroup,
+        dimension_records: Iterable[DimensionRecordSet] = (),
     ) -> None:
         """Attach dimension records to the data IDs in the skeleton.
+
+        This both attaches records to data IDs in the skeleton and aggregates
+        any existing records on data IDS, so `get_dimension_data` returns all
+        dimension records used in the skeleton.  It can be called multiple
+        times.
 
         Parameters
         ----------
@@ -737,7 +746,7 @@ class QuantumGraphSkeleton:
         dimensions : `lsst.daf.butler.DimensionGroup`
             Superset of all of the dimensions of all data IDs.
         dimension_records : `~collections.abc.Iterable` [ \
-                `lsst.daf.butler.DimensionRecordSet` ]
+                `lsst.daf.butler.DimensionRecordSet` ], optional
             Iterable of sets of dimension records to attach.
         """
         for record_set in dimension_records:
@@ -748,10 +757,20 @@ class QuantumGraphSkeleton:
         data_ids_to_expand: defaultdict[DimensionGroup, defaultdict[DataCoordinate, list[Key]]] = defaultdict(
             lambda: defaultdict(list)
         )
+        extractor = DimensionDataExtractor.from_dimension_group(dimensions)
         data_id: DataCoordinate | None
         for node_key in self:
             if data_id := self[node_key].get("data_id"):
-                data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
+                if data_id.hasRecords():
+                    extractor.update([data_id])
+                else:
+                    data_ids_to_expand[data_id.dimensions][data_id].append(node_key)
+        # Add records we extracted from data IDs that were already expanded, in
+        # case other nodes want them.
+        for record_set in extractor.records.values():
+            self._dimension_data.setdefault(
+                record_set.element.name, DimensionRecordSet(record_set.element)
+            ).update(record_set)
         attacher = DimensionDataAttacher(records=self._dimension_data.values(), dimensions=dimensions)
         for dimensions, data_ids in data_ids_to_expand.items():
             with butler.query() as query:
@@ -763,7 +782,7 @@ class QuantumGraphSkeleton:
             for expanded_data_id, node_keys in zip(expanded_data_ids, data_ids.values()):
                 for node_key in node_keys:
                     self.set_data_id(node_key, expanded_data_id)
-        # Hold on to any records that we had to query for.
+        # Hold on to any records that we had to query for or extracted.
         self._dimension_data = attacher.records
 
     def get_dimension_data(self) -> list[DimensionRecordSet]:
