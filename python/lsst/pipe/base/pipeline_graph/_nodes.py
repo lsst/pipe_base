@@ -4,7 +4,7 @@
 # This product includes software developed by the LSST Project
 # (http://www.lsst.org).
 # See the COPYRIGHT file at the top-level directory of this distribution
-# for details of code ownership.
+# for details of code ownership
 #
 # This software is dual licensed under the GNU General Public License and also
 # under a 3-clause BSD license. Recipients may choose which of these licenses
@@ -33,7 +33,8 @@ __all__ = (
 )
 
 import enum
-from typing import NamedTuple
+import sys
+from typing import Any, NamedTuple
 
 
 class NodeBipartite(enum.IntEnum):
@@ -48,6 +49,17 @@ class NodeBipartite(enum.IntEnum):
     """Value for nodes that represent tasks (in pipeline graphs) or quanta
     (in quantum graphs).
     """
+
+    if "sphinx" in sys.modules:
+
+        @classmethod
+        def from_bytes(cls, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+            """See `IntEnum.from_bytes`."""
+            return super().from_bytes(*args, **kwargs)
+
+        def to_bytes(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+            """See `IntEnum.to_bytes`."""
+            return super().to_bytes(self, *args, **kwargs)
 
 
 class NodeType(enum.Enum):
