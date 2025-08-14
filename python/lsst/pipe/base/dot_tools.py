@@ -33,147 +33,27 @@ from __future__ import annotations
 
 __all__ = ["graph2dot", "pipeline2dot"]
 
-# -------------------------------
-#  Imports of standard modules --
-# -------------------------------
-import html
-import io
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
-# -----------------------------
-#  Imports for other modules --
-# -----------------------------
 from .pipeline import Pipeline
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import DatasetRef
-    from lsst.pipe.base import QuantumGraph, QuantumNode, TaskDef
-
-# ----------------------------------
-#  Local non-exported definitions --
-# ----------------------------------
-
-# Attributes applied to directed graph objects.
-_NODELABELPOINTSIZE = "18"
-_ATTRIBS = dict(
-    defaultGraph=dict(splines="ortho", nodesep="0.5", ranksep="0.75", pad="0.5"),
-    defaultNode=dict(shape="box", fontname="Monospace", fontsize="14", margin="0.2,0.1", penwidth="3"),
-    defaultEdge=dict(color="black", arrowsize="1.5", penwidth="1.5"),
-    task=dict(style="filled", color="black", fillcolor="#B1F2EF"),
-    quantum=dict(style="filled", color="black", fillcolor="#B1F2EF"),
-    dsType=dict(style="rounded,filled,bold", color="#00BABC", fillcolor="#F5F5F5"),
-    dataset=dict(style="rounded,filled,bold", color="#00BABC", fillcolor="#F5F5F5"),
-)
+    from .graph import QuantumGraph
+    from .pipeline import TaskDef
+    from .quantum_graph import PredictedQuantumGraph
 
 
-def _renderDefault(type: str, attribs: dict[str, str], file: io.TextIOBase) -> None:
-    """Set default attributes for a given type."""
-    default_attribs = ", ".join([f'{key}="{val}"' for key, val in attribs.items()])
-    print(f"{type} [{default_attribs}];", file=file)
-
-
-def _renderNode(file: io.TextIOBase, nodeName: str, style: str, labels: list[str]) -> None:
-    """Render GV node"""
-    label = r"</TD></TR><TR><TD>".join(labels)
-    attrib_dict = dict(_ATTRIBS[style], label=label)
-    pre = '<<TABLE BORDER="0" CELLPADDING="5"><TR><TD>'
-    post = "</TD></TR></TABLE>>"
-    attrib = ", ".join(
-        [
-            f'{key}="{val}"' if key != "label" else f"{key}={pre}{val}{post}"
-            for key, val in attrib_dict.items()
-        ]
-    )
-    print(f'"{nodeName}" [{attrib}];', file=file)
-
-
-def _renderTaskNode(nodeName: str, taskDef: TaskDef, file: io.TextIOBase, idx: Any = None) -> None:
-    """Render GV node for a task"""
-    labels = [
-        f'<B><FONT POINT-SIZE="{_NODELABELPOINTSIZE}">' + html.escape(taskDef.label) + "</FONT></B>",
-        html.escape(taskDef.taskName),
-    ]
-    if idx is not None:
-        labels.append(f"<I>index:</I>&nbsp;{idx}")
-    if taskDef.connections:
-        # don't print collection of str directly to avoid visually noisy quotes
-        dimensions_str = ", ".join(sorted(taskDef.connections.dimensions))
-        labels.append(f"<I>dimensions:</I>&nbsp;{html.escape(dimensions_str)}")
-    _renderNode(file, nodeName, "task", labels)
-
-
-def _renderQuantumNode(
-    nodeName: str, taskDef: TaskDef, quantumNode: QuantumNode, file: io.TextIOBase
-) -> None:
-    """Render GV node for a quantum"""
-    labels = [f"{quantumNode.nodeId}", html.escape(taskDef.label)]
-    dataId = quantumNode.quantum.dataId
-    assert dataId is not None, "Quantum DataId cannot be None"
-    labels.extend(f"{key} = {dataId[key]}" for key in sorted(dataId.required.keys()))
-    _renderNode(file, nodeName, "quantum", labels)
-
-
-def _renderDSTypeNode(name: str, dimensions: list[str], file: io.TextIOBase) -> None:
-    """Render GV node for a dataset type"""
-    labels = [f'<B><FONT POINT-SIZE="{_NODELABELPOINTSIZE}">' + html.escape(name) + "</FONT></B>"]
-    if dimensions:
-        labels.append("<I>dimensions:</I>&nbsp;" + html.escape(", ".join(sorted(dimensions))))
-    _renderNode(file, name, "dsType", labels)
-
-
-def _renderDSNode(nodeName: str, dsRef: DatasetRef, file: io.TextIOBase) -> None:
-    """Render GV node for a dataset"""
-    labels = [html.escape(dsRef.datasetType.name), f"run: {dsRef.run!r}"]
-    labels.extend(f"{key} = {dsRef.dataId[key]}" for key in sorted(dsRef.dataId.required.keys()))
-    _renderNode(file, nodeName, "dataset", labels)
-
-
-def _renderEdge(fromName: str, toName: str, file: io.TextIOBase, **kwargs: Any) -> None:
-    """Render GV edge"""
-    if kwargs:
-        attrib = ", ".join([f'{key}="{val}"' for key, val in kwargs.items()])
-        print(f'"{fromName}" -> "{toName}" [{attrib}];', file=file)
-    else:
-        print(f'"{fromName}" -> "{toName}";', file=file)
-
-
-def _datasetRefId(dsRef: DatasetRef) -> str:
-    """Make an identifying string for given ref"""
-    dsId = [dsRef.datasetType.name]
-    dsId.extend(f"{key} = {dsRef.dataId[key]}" for key in sorted(dsRef.dataId.required.keys()))
-    return ":".join(dsId)
-
-
-def _makeDSNode(dsRef: DatasetRef, allDatasetRefs: dict[str, str], file: io.TextIOBase) -> str:
-    """Make new node for dataset if  it does not exist.
-
-    Returns node name.
-    """
-    dsRefId = _datasetRefId(dsRef)
-    nodeName = allDatasetRefs.get(dsRefId)
-    if nodeName is None:
-        idx = len(allDatasetRefs)
-        nodeName = f"dsref_{idx}"
-        allDatasetRefs[dsRefId] = nodeName
-        _renderDSNode(nodeName, dsRef, file)
-    return nodeName
-
-
-# ------------------------
-#  Exported definitions --
-# ------------------------
-
-
-def graph2dot(qgraph: QuantumGraph, file: Any) -> None:
+def graph2dot(qgraph: QuantumGraph | PredictedQuantumGraph, file: Any) -> None:
     """Convert QuantumGraph into GraphViz digraph.
 
     This method is mostly for documentation/presentation purposes.
 
     Parameters
     ----------
-    qgraph : `lsst.pipe.base.QuantumGraph`
-        QuantumGraph instance.
+    qgraph : `lsst.pipe.base.QuantumGraph` or \
+            `lsst.pipe.base.quantum_graph.PredictedQuantumGraph`
+        Quantum graph object.
     file : `str` or file object
         File where GraphViz graph (DOT language) is written, can be a file name
         or file object.
@@ -185,38 +65,20 @@ def graph2dot(qgraph: QuantumGraph, file: Any) -> None:
     ImportError
         Raised if the task class cannot be imported.
     """
+    from .quantum_graph import PredictedQuantumGraph, visualization
+
+    if not isinstance(qgraph, PredictedQuantumGraph):
+        qgraph = PredictedQuantumGraph.from_old_quantum_graph(qgraph)
+
     # open a file if needed
     close = False
     if not hasattr(file, "write"):
         file = open(file, "w")
         close = True
 
-    print("digraph QuantumGraph {", file=file)
-    _renderDefault("graph", _ATTRIBS["defaultGraph"], file)
-    _renderDefault("node", _ATTRIBS["defaultNode"], file)
-    _renderDefault("edge", _ATTRIBS["defaultEdge"], file)
+    v = visualization.QuantumGraphDotVisualizer()
+    v.write_bipartite(qgraph, file)
 
-    allDatasetRefs: dict[str, str] = {}
-    for taskId, taskDef in enumerate(qgraph.taskGraph):
-        quanta = qgraph.getNodesForTask(taskDef)
-        for qId, quantumNode in enumerate(quanta):
-            # node for a task
-            taskNodeName = f"task_{taskId}_{qId}"
-            _renderQuantumNode(taskNodeName, taskDef, quantumNode, file)
-
-            # quantum inputs
-            for dsRefs in quantumNode.quantum.inputs.values():
-                for dsRef in dsRefs:
-                    nodeName = _makeDSNode(dsRef, allDatasetRefs, file)
-                    _renderEdge(nodeName, taskNodeName, file)
-
-            # quantum outputs
-            for dsRefs in quantumNode.quantum.outputs.values():
-                for dsRef in dsRefs:
-                    nodeName = _makeDSNode(dsRef, allDatasetRefs, file)
-                    _renderEdge(taskNodeName, nodeName, file)
-
-    print("}", file=file)
     if close:
         file.close()
 
