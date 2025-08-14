@@ -27,12 +27,17 @@
 
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 import uuid
+from io import StringIO
 
 import lsst.utils.tests
 from lsst.pipe.base import QuantumGraph
+from lsst.pipe.base.dot_tools import graph2dot
+from lsst.pipe.base.mermaid_tools import graph2mermaid
 from lsst.pipe.base.quantum_graph import (
     AddressReader,
     PredictedDatasetInfo,
@@ -541,6 +546,26 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             with PredictedQuantumGraph.open(tmpfile, page_size=three_row_page_size) as reader:
                 full_qg = reader.read_all().finish()
                 self.check_quantum_graph(full_qg, dimension_data_deserialized=False)
+
+    def test_dot(self) -> None:
+        """Test visualization via GraphViz dot."""
+        qg = self.builder.finish(attach_datastore_records=False).assemble()
+        stream = StringIO()
+        graph2dot(qg, stream)
+        if (dot_cmd := shutil.which("dot")) is None:
+            raise unittest.SkipTest("Aborting test early; 'dot' command is not available.")
+        # Just check that the dot command can parse what we've given it.
+        result = subprocess.run(
+            [dot_cmd, "-Txdot"], input=stream.getvalue().encode(), stdout=subprocess.DEVNULL
+        )
+        result.check_returncode()
+
+    def test_mermaid(self) -> None:
+        """Test visualization via Mermaid."""
+        qg = self.builder.finish(attach_datastore_records=False).assemble()
+        stream = StringIO()
+        # Just check that it runs without error.
+        graph2mermaid(qg, stream)
 
 
 if __name__ == "__main__":
