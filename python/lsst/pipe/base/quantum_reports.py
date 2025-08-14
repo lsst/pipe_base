@@ -31,6 +31,7 @@ __all__ = ["ExceptionInfo", "ExecutionStatus", "QuantumReport", "Report"]
 
 import enum
 import sys
+import uuid
 from typing import Any
 
 import pydantic
@@ -137,6 +138,8 @@ class QuantumReport(pydantic.BaseModel):
         in-process execution. Negative if process was killed by a signal.
     exceptionInfo : `ExceptionInfo` or `None`, optional
         Exception information if an exception was raised.
+    quantumId : `uuid.UUID`, optional
+        Unique identifier for the quantum.
     """
 
     status: ExecutionStatus = ExecutionStatus.SUCCESS
@@ -156,6 +159,9 @@ class QuantumReport(pydantic.BaseModel):
     exceptionInfo: ExceptionInfo | None = None
     """Exception information if exception was raised."""
 
+    quantumId: uuid.UUID | None = None
+    """Unique identifier for the quantum."""
+
     def __init__(
         self,
         dataId: DataId,
@@ -163,8 +169,10 @@ class QuantumReport(pydantic.BaseModel):
         status: ExecutionStatus = ExecutionStatus.SUCCESS,
         exitCode: int | None = None,
         exceptionInfo: ExceptionInfo | None = None,
+        quantumId: uuid.UUID | None = None,
     ):
         super().__init__(
+            quantumId=quantumId,
             status=status,
             dataId=_serializeDataId(dataId),
             taskLabel=taskLabel,
@@ -180,6 +188,7 @@ class QuantumReport(pydantic.BaseModel):
         taskLabel: str,
         *,
         exitCode: int | None = None,
+        quantumId: uuid.UUID | None = None,
     ) -> QuantumReport:
         """Construct report instance from an exception and other pieces of
         data.
@@ -195,6 +204,8 @@ class QuantumReport(pydantic.BaseModel):
         exitCode : `int`, optional
             Exit code for the process, used when it is known that the process
             will exit with that exit code.
+        quantumId : `uuid.UUID`, optional
+            Unique identifier for the quantum.
         """
         return cls(
             status=ExecutionStatus.FAILURE,
@@ -202,6 +213,7 @@ class QuantumReport(pydantic.BaseModel):
             taskLabel=taskLabel,
             exitCode=exitCode,
             exceptionInfo=ExceptionInfo.from_exception(exception),
+            quantumId=quantumId,
         )
 
     @classmethod
@@ -210,6 +222,7 @@ class QuantumReport(pydantic.BaseModel):
         exitCode: int,
         dataId: DataId,
         taskLabel: str,
+        quantumId: uuid.UUID | None = None,
     ) -> QuantumReport:
         """Construct report instance from an exit code and other pieces of
         data.
@@ -222,12 +235,15 @@ class QuantumReport(pydantic.BaseModel):
             The quantum Data ID.
         taskLabel : `str`
             The task label.
+        quantumId : `uuid.UUID`, optional
+            Unique identifier for the quantum.
         """
         return cls(
             status=ExecutionStatus.SUCCESS if exitCode == 0 else ExecutionStatus.FAILURE,
             dataId=dataId,
             taskLabel=taskLabel,
             exitCode=exitCode,
+            quantumId=quantumId,
         )
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
