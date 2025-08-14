@@ -159,7 +159,7 @@ class _Job:
         quantumExecutor_pickle: bytes,
         task_node_pickle: bytes,
         quantum_pickle: bytes,
-        quantum_id: uuid.UUID | None,
+        quantum_id: uuid.UUID,
         logConfigState: list,
         snd_conn: multiprocessing.connection.Connection,
         fail_fast: bool,
@@ -174,6 +174,8 @@ class _Job:
             Task definition structure, pickled.
         quantum_pickle : `bytes`
             Quantum for this task execution in pickled form.
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
         logConfigState : `list`
             Logging state from parent process.
         snd_conn : `multiprocessing.Connection`
@@ -205,6 +207,7 @@ class _Job:
             _, report = quantumExecutor.execute(task_node, quantum, quantum_id=quantum_id)
         except RepeatableQuantumError as exc:
             report = QuantumReport.from_exception(
+                quantumId=quantum_id,
                 exception=exc,
                 dataId=quantum.dataId,
                 taskLabel=task_node.label,
@@ -220,6 +223,7 @@ class _Job:
             _LOG.fatal("Invalid quantum error for %s (%s): %s", task_node.label, quantum.dataId)
             _LOG.fatal(exc, exc_info=True)
             report = QuantumReport.from_exception(
+                quantumId=quantum_id,
                 exception=exc,
                 dataId=quantum.dataId,
                 taskLabel=task_node.label,
@@ -229,6 +233,7 @@ class _Job:
         except Exception as exc:
             _LOG.debug("exception from task %s dataId %s: %s", task_node.label, quantum.dataId, exc)
             report = QuantumReport.from_exception(
+                quantumId=quantum_id,
                 exception=exc,
                 dataId=quantum.dataId,
                 taskLabel=task_node.label,
@@ -282,6 +287,7 @@ class _Job:
             exitcode = self.process.exitcode if self.process.exitcode is not None else -1
             assert self.qnode.quantum.dataId is not None, "Quantum DataId cannot be None"
             report = QuantumReport.from_exit_code(
+                quantumId=self.qnode.nodeId,
                 exitCode=exitcode,
                 dataId=self.qnode.quantum.dataId,
                 taskLabel=self.qnode.task_node.label,
@@ -539,6 +545,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 )
                 failedNodes.add(qnode)
                 failed_quantum_report = QuantumReport(
+                    quantumId=qnode.nodeId,
                     status=ExecutionStatus.SKIPPED,
                     dataId=qnode.quantum.dataId,
                     taskLabel=task_node.label,
@@ -576,6 +583,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                     raise
             except Exception as exc:
                 quantum_report = QuantumReport.from_exception(
+                    quantumId=qnode.nodeId,
                     exception=exc,
                     dataId=qnode.quantum.dataId,
                     taskLabel=task_node.label,
@@ -722,6 +730,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
                     assert job.qnode.quantum.dataId is not None, "Quantum DataId cannot be None"
                     if jobInputNodes & jobs.failedNodes:
                         quantum_report = QuantumReport(
+                            quantumId=job.qnode.nodeId,
                             status=ExecutionStatus.SKIPPED,
                             dataId=job.qnode.quantum.dataId,
                             taskLabel=job.qnode.task_node.label,
