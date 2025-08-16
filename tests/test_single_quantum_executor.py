@@ -39,8 +39,6 @@ TESTDIR = os.path.abspath(os.path.dirname(__file__))
 class SingleQuantumExecutorTestCase(unittest.TestCase):
     """Tests for SingleQuantumExecutor implementation."""
 
-    instrument = "lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
-
     def test_simple_execute(self) -> None:
         """Run execute() method in simplest setup."""
         helper = InMemoryRepo("base.yaml")
