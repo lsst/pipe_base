@@ -27,12 +27,23 @@
 
 from __future__ import annotations
 
-__all__ = ("InMemoryRepo",)
+__all__ = ("DirectButlerRepo", "InMemoryRepo", "MockRepo")
 
-from collections.abc import Iterable, Mapping
+import tempfile
+from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from typing import Any
 
-from lsst.daf.butler import CollectionType, DataCoordinate, DatasetRef, DatasetType, RegistryConfig
+from lsst.daf.butler import (
+    Butler,
+    CollectionType,
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    LimitedButler,
+    RegistryConfig,
+)
 from lsst.daf.butler.tests.utils import create_populated_sqlite_registry
 from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.sphgeom import RangeSet
@@ -50,16 +61,13 @@ from ._pipeline_task import (
 from ._storage_class import MockDataset, is_mock_name
 
 
-class InMemoryRepo:
-    """A test helper that simulates a butler repository for task execution
-    without any disk I/O.
+class MockRepo(ABC):
+    """A test helper that populates a butler repository for task execution.
 
     Parameters
     ----------
-    *args : `str` or `lsst.resources.ResourcePath`
-        Butler YAML import files to load into the test repository.
-    registry_config : `lsst.daf.butler.RegistryConfig`, optional
-        Registry configuration for the repository.
+    butler : `lsst.daf.butler.Butler`
+        Butler to use for at least quantum graph building.  Must be writeable.
     input_run : `str`, optional
         Name of a `~lsst.daf.butler.CollectionType.RUN` collection that will be
         used as an input to quantum graph generation.  Input datasets created
@@ -68,49 +76,22 @@ class InMemoryRepo:
         Name of a `~lsst.daf.butler.CollectionType.CHAINED` collection that
         will be the direct input to quantum graph generation.  This always
         includes ``input_run``.
-    output_run : `str`, optional
-        Name of a `~lsst.daf.butler.CollectionType.RUN` collection for
-        execution outputs.
-    use_import_collections_as_input : `bool` `str`, or \
-            `~collections.abc.Iterable` [ `str`], optional
-        Additional collections from YAML import files to include in
-        ``input_chain``, or `True` to include all such collections (in
-        chain-flattened lexicographical order).
-    data_root : convertible to `lsst.resources.ResourcePath`, optional
-        Root directory to join to each element in ``*args``.  Defaults to
-        the `lsst.daf.butler.tests.registry_data` package.
-
-    Notes
-    -----
-    This helper maintains an `..pipeline_graph.PipelineGraph` and a
-    no-datastore butler backed by an in-memory SQLite database for use in
-    quantum graph generation.
+    input_children : `str` or `~collections.abc.Iterable` [ `str`], optional
+        Additional collections to include in ``input_chain``.
     """
 
     def __init__(
         self,
-        *args: str | ResourcePath,
-        registry_config: RegistryConfig | None = None,
+        butler: Butler,
         input_run: str = "input_run",
         input_chain: str = "input_chain",
-        output_run: str = "output_run",
-        use_import_collections_as_input: bool | str | Iterable[str] = True,
-        data_root: ResourcePathExpression | None = "resource://lsst.daf.butler/tests/registry_data",
+        input_children: Iterable[str] = (),
     ):
-        if data_root is not None:
-            data_root = ResourcePath(data_root, forceDirectory=True)
-            args = tuple(data_root.join(arg) for arg in args)
-        self.butler = create_populated_sqlite_registry(*args, registry_config=registry_config)
+        self.butler = butler
         input_chain_definition = [input_run]
-        if use_import_collections_as_input:
-            if use_import_collections_as_input is True:
-                use_import_collections_as_input = sorted(
-                    self.butler.collections.query("*", flatten_chains=True)
-                )
-            input_chain_definition += list(use_import_collections_as_input)
+        input_chain_definition.extend(input_children)
         self.input_run = input_run
         self.input_chain = input_chain
-        self.output_run = output_run
         self.butler.collections.register(self.input_run)
         self.butler.collections.register(self.input_chain, CollectionType.CHAINED)
         self.butler.collections.redefine_chain(self.input_chain, input_chain_definition)
@@ -211,6 +192,7 @@ class InMemoryRepo:
         self,
         *,
         output: str | None = None,
+        output_run: str = "output_run",
         insert_mocked_inputs: bool = True,
         register_output_dataset_types: bool = True,
     ) -> PredictedQuantumGraph:
@@ -222,6 +204,10 @@ class InMemoryRepo:
         output : `str` or `None`, optional
             Name of the output chained collection to embed within the quantum
             graph.  Note that this does not actually create this collection.
+        output_run : `str`, optional
+            Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
+            execution outputs.  Note that this does not actually create this
+            collection.
         insert_mocked_inputs : `bool`, optional
             Whether to automatically insert datasets for all overall inputs to
             the pipeline graph whose dataset types have not already been
@@ -241,6 +227,7 @@ class InMemoryRepo:
             self.make_quantum_graph_builder(
                 insert_mocked_inputs=insert_mocked_inputs,
                 register_output_dataset_types=register_output_dataset_types,
+                output_run=output_run,
             )
             .finish(output=output, attach_datastore_records=False)
             .assemble()
@@ -249,6 +236,7 @@ class InMemoryRepo:
     def make_quantum_graph_builder(
         self,
         *,
+        output_run: str = "output_run",
         insert_mocked_inputs: bool = True,
         register_output_dataset_types: bool = True,
     ) -> AllDimensionsQuantumGraphBuilder:
@@ -257,6 +245,10 @@ class InMemoryRepo:
 
         Parameters
         ----------
+        output_run : `str`, optional
+            Name of the `~lsst.daf.butler.CollectionType.RUN` collection for
+            execution outputs.  Note that this does not actually create this
+            collection.
         insert_mocked_inputs : `bool`, optional
             Whether to automatically insert datasets for all overall inputs to
             the pipeline graph whose dataset types have not already been
@@ -284,7 +276,7 @@ class InMemoryRepo:
             self.pipeline_graph,
             self.butler,
             input_collections=[self.input_chain],
-            output_run=self.output_run,
+            output_run=output_run,
         )
         if register_output_dataset_types:
             self.pipeline_graph.register_dataset_types(self.butler)
@@ -351,6 +343,112 @@ class InMemoryRepo:
                 )
         else:
             data_ids = self.butler.query_data_ids(dimensions, *args, **kwargs, explain=False)
+        return self._insert_datasets_impl(dataset_type, data_ids)
+
+    @abstractmethod
+    def _insert_datasets_impl(
+        self, dataset_type: DatasetType, data_ids: list[DataCoordinate]
+    ) -> list[DatasetRef]:
+        """Insert datasets after their data IDs have been generated.
+
+        Parameters
+        ----------
+        dataset_type : `lsst.daf.butler.DatasetType`
+            Type of the datasets.
+        data_ids : `list` [ `lsst.daf.butler.DataCoordinate` ]
+            Data IDs of all datasets.
+
+        Returns
+        -------
+        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
+            References to the new datasets.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def make_single_quantum_executor(
+        self, qg: PredictedQuantumGraph
+    ) -> tuple[SingleQuantumExecutor, LimitedButler]:
+        """Make a single-quantum executor.
+
+        Parameters
+        ----------
+        qg : `..quantum_graph.PredictedQuantumGraph`
+            Graph whose quanta the executor must be capable of executing.
+
+        Returns
+        -------
+        executor : `..single_quantum_executor.SingleQuantumExecutor`
+            An executor for a single quantum.
+        butler : `lsst.daf.butler.LimitedButler`
+            The butler that the executor will write to.
+        """
+        raise NotImplementedError()
+
+
+class InMemoryRepo(MockRepo):
+    """A test helper that simulates a butler repository for task execution
+    without any disk I/O.
+
+    Parameters
+    ----------
+    *args : `str` or `lsst.resources.ResourcePath`
+        Butler YAML import files to load into the test repository.
+    registry_config : `lsst.daf.butler.RegistryConfig`, optional
+        Registry configuration for the repository.
+    input_run : `str`, optional
+        Name of a `~lsst.daf.butler.CollectionType.RUN` collection that will be
+        used as an input to quantum graph generation.  Input datasets created
+        by the helper are added to this collection.
+    input_chain : `str`, optional
+        Name of a `~lsst.daf.butler.CollectionType.CHAINED` collection that
+        will be the direct input to quantum graph generation.  This always
+        includes ``input_run``.
+    use_import_collections_as_input : `bool`, `str`, or \
+            `~collections.abc.Iterable` [ `str`], optional
+        Additional collections from YAML import files to include in
+        ``input_chain``, or `True` to include all such collections (in
+        chain-flattened lexicographical order).
+    data_root : convertible to `lsst.resources.ResourcePath`, optional
+        Root directory to join to each element in ``*args``.  Defaults to
+        the `lsst.daf.butler.tests.registry_data` package.
+
+    Notes
+    -----
+    This helper maintains an `..pipeline_graph.PipelineGraph` and a
+    no-datastore butler backed by an in-memory SQLite database for use in
+    quantum graph generation.  It creates a separate in-memory limited butler
+    for execution as needed.
+    """
+
+    def __init__(
+        self,
+        *args: str | ResourcePath,
+        registry_config: RegistryConfig | None = None,
+        input_run: str = "input_run",
+        input_chain: str = "input_chain",
+        use_import_collections_as_input: bool | str | Iterable[str] = True,
+        data_root: ResourcePathExpression | None = "resource://lsst.daf.butler/tests/registry_data",
+    ):
+        if data_root is not None:
+            data_root = ResourcePath(data_root, forceDirectory=True)
+            args = tuple(data_root.join(arg) for arg in args)
+        butler = create_populated_sqlite_registry(*args, registry_config=registry_config)
+        if use_import_collections_as_input:
+            if use_import_collections_as_input is True:
+                use_import_collections_as_input = sorted(butler.collections.query("*", flatten_chains=True))
+        else:
+            use_import_collections_as_input = ()
+        super().__init__(
+            butler,
+            input_run=input_run,
+            input_chain=input_chain,
+            input_children=list(use_import_collections_as_input),
+        )
+
+    def _insert_datasets_impl(
+        self, dataset_type: DatasetType, data_ids: list[DataCoordinate]
+    ) -> list[DatasetRef]:
         return self.butler.registry.insertDatasets(dataset_type, data_ids, run=self.input_run)
 
     def make_limited_butler(self) -> InMemoryLimitedButler:
@@ -383,8 +481,15 @@ class InMemoryRepo:
                 )
         return butler
 
-    def make_single_quantum_executor(self) -> tuple[SingleQuantumExecutor, InMemoryLimitedButler]:
+    def make_single_quantum_executor(
+        self, qg: PredictedQuantumGraph | None = None
+    ) -> tuple[SingleQuantumExecutor, InMemoryLimitedButler]:
         """Make a single-quantum executor backed by a new limited butler.
+
+        Parameters
+        ----------
+        qg : `..quantum_graph.PredictedQuantumGraph`
+            Ignored by this implementation.
 
         Returns
         -------
@@ -395,3 +500,131 @@ class InMemoryRepo:
         """
         butler = self.make_limited_butler()
         return SingleQuantumExecutor(limited_butler_factory=butler.factory), butler
+
+
+class DirectButlerRepo(MockRepo):
+    """A test helper for task execution backed by a local direct butler.
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.direct_butler.DirectButler`
+        Butler to write to.
+    *args : `str` or `lsst.resources.ResourcePath`
+        Butler YAML import files to load into the test repository.
+    input_run : `str`, optional
+        Name of a `~lsst.daf.butler.CollectionType.RUN` collection that will be
+        used as an input to quantum graph generation.  Input datasets created
+        by the helper are added to this collection.
+    input_chain : `str`, optional
+        Name of a `~lsst.daf.butler.CollectionType.CHAINED` collection that
+        will be the direct input to quantum graph generation.  This always
+        includes ``input_run``.
+    use_import_collections_as_input : `bool`, `str`, or \
+            `~collections.abc.Iterable` [ `str`], optional
+        Additional collections from YAML import files to include in
+        ``input_chain``, or `True` to include all such collections (in
+        chain-flattened lexicographical order).
+    data_root : convertible to `lsst.resources.ResourcePath`, optional
+        Root directory to join to each element in ``*args``.  Defaults to
+        the `lsst.daf.butler.tests.registry_data` package.
+
+    Notes
+    -----
+    This helper maintains an `..pipeline_graph.PipelineGraph` and a
+    no-datastore butler backed by an in-memory SQLite database for use in
+    quantum graph generation.  It creates a separate in-memory limited butler
+    for execution as needed.
+    """
+
+    def __init__(
+        self,
+        butler: Butler,
+        *args: str | ResourcePath,
+        input_run: str = "input_run",
+        input_chain: str = "input_chain",
+        use_import_collections_as_input: bool | str | Iterable[str] = True,
+        data_root: ResourcePathExpression | None = "resource://lsst.daf.butler/tests/registry_data",
+    ):
+        if data_root is not None:
+            data_root = ResourcePath(data_root, forceDirectory=True)
+            args = tuple(data_root.join(arg) for arg in args)
+        for arg in args:
+            butler.import_(filename=arg)
+        if use_import_collections_as_input:
+            if use_import_collections_as_input is True:
+                use_import_collections_as_input = sorted(butler.collections.query("*", flatten_chains=True))
+        else:
+            use_import_collections_as_input = ()
+        super().__init__(
+            butler,
+            input_run=input_run,
+            input_chain=input_chain,
+            input_children=list(use_import_collections_as_input),
+        )
+
+    @classmethod
+    @contextmanager
+    def make_temporary(
+        cls,
+        *args: str | ResourcePath,
+        input_run: str = "input_run",
+        input_chain: str = "input_chain",
+        use_import_collections_as_input: bool | str | Iterable[str] = True,
+        data_root: ResourcePathExpression | None = "resource://lsst.daf.butler/tests/registry_data",
+        **kwargs: Any,
+    ) -> Iterator[tuple[DirectButlerRepo, str]]:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            config = Butler.makeRepo(root, **kwargs)
+            butler = Butler.from_config(config, writeable=True)
+            yield (
+                cls(
+                    butler,
+                    *args,
+                    input_run=input_run,
+                    input_chain=input_chain,
+                    use_import_collections_as_input=use_import_collections_as_input,
+                    data_root=data_root,
+                ),
+                root,
+            )
+
+    def _insert_datasets_impl(
+        self, dataset_type: DatasetType, data_ids: list[DataCoordinate]
+    ) -> list[DatasetRef]:
+        if is_mock_name(dataset_type.storageClass_name):
+            refs: list[DatasetRef] = []
+            for data_id in data_ids:
+                data_id = self.butler.registry.expandDataId(data_id)
+                ref = DatasetRef(dataset_type, data_id, run=self.input_run)
+                self.butler.put(
+                    MockDataset(
+                        dataset_id=ref.id,
+                        dataset_type=ref.datasetType.to_simple(),
+                        data_id=dict(ref.dataId.mapping),
+                        run=ref.run,
+                    ),
+                    ref,
+                )
+                refs.append(ref)
+            return refs
+        else:
+            return self.butler.registry.insertDatasets(dataset_type, data_ids, run=self.input_run)
+
+    def make_single_quantum_executor(
+        self, qg: PredictedQuantumGraph | None = None
+    ) -> tuple[SingleQuantumExecutor, Butler]:
+        """Make a single-quantum executor backed by a new limited butler.
+
+        Parameters
+        ----------
+        qg : `..quantum_graph.PredictedQuantumGraph`
+            Ignored by this implementation.
+
+        Returns
+        -------
+        executor : `..single_quantum_executor.SingleQuantumExecutor`
+            An executor for a single quantum.
+        butler : `lsst.daf.butler.Butler`
+            The butler that the executor will write to.
+        """
+        return SingleQuantumExecutor(limited_butler_factory=None, butler=self.butler), self.butler
