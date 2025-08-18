@@ -32,6 +32,6 @@ See :ref:`testing-pipelines-with-mocks` for details.
 """
 
 from ._data_id_match import *
-from ._in_memory_repo import *
+from ._repo import *
 from ._pipeline_task import *
 from ._storage_class import *
