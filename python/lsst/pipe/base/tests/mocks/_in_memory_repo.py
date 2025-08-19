@@ -330,7 +330,7 @@ class InMemoryRepo:
         during quantum graph generation but absent during execution.
         """
         butler = InMemoryLimitedButler(self.butler.dimensions, self.butler.registry.queryDatasetTypes())
-        for ref in self.butler._query_all_datasets(self.input_chain):
+        for ref in self.butler.query_all_datasets(self.input_chain):
             if is_mock_name(ref.datasetType.storageClass_name):
                 butler.put(
                     MockDataset(
