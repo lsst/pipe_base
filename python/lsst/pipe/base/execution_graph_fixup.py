@@ -27,7 +27,13 @@
 
 __all__ = ["ExecutionGraphFixup"]
 
-from abc import ABC, abstractmethod
+import uuid
+from abc import ABC
+from collections.abc import Mapping
+
+import networkx
+
+from lsst.daf.butler import DataCoordinate
 
 from .graph import QuantumGraph
 
@@ -35,26 +41,25 @@ from .graph import QuantumGraph
 class ExecutionGraphFixup(ABC):
     """Interface for classes which update quantum graphs before execution.
 
-    Primary goal of this class is to modify quanta dependencies which may not
-    be possible to reflect in a quantum graph using standard tools. One known
-    use case for that is to guarantee particular execution order of visits in
-    CI jobs for cases when outcome depends on the processing order of visits
-    (e.g. AP association pipeline).
+    Notes
+    -----
+    The primary goal of this class is to modify quanta dependencies which may
+    not be possible to reflect in a quantum graph using standard tools. One
+    known use case for that is to guarantee particular execution order of
+    visits in CI jobs for cases when outcome depends on the processing order of
+    visits (e.g. AP association pipeline).
 
-    Instances of this class receive pre-ordered sequence of quanta
-    (`.QuantumGraph` instances) and they are allowed to modify quanta data in
-    place, for example update ``dependencies`` field to add additional
-    dependencies. Returned list of quanta will be re-ordered once again by the
-    graph executor to reflect new dependencies.
+    Instances of this class receive a preliminary graph and are allowed to
+    add edges, as long as those edges do not result in a cycle.  Edges and
+    nodes may not be removed.
+
+    New subclasses should implement only `fixup_graph`, which will always be
+    called first.  `fixupQuanta` is only called if `fixup_graph` raises
+    `NotImplementedError`.
     """
 
-    @abstractmethod
     def fixupQuanta(self, graph: QuantumGraph) -> QuantumGraph:
         """Update quanta in a graph.
-
-        Potentially anything in the graph could be changed if it does not
-        break executor assumptions. If modifications result in a dependency
-        cycle the executor will raise an exception.
 
         Parameters
         ----------
@@ -65,5 +70,31 @@ class ExecutionGraphFixup(ABC):
         -------
         graph : `.QuantumGraph`
             Modified graph.
+
+        Notes
+        -----
+        This hook is provided for backwards compatibility only.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
+
+    def fixup_graph(
+        self, xgraph: networkx.DiGraph, quanta_by_task: Mapping[str, Mapping[DataCoordinate, uuid.UUID]]
+    ) -> None:
+        """Update a networkx graph of quanta in place by adding edges to
+        further constrain the ordering.
+
+        Parameters
+        ----------
+        xgraph : `networkx.DiGraph`
+            A directed acyclic graph of quanta to modify in place.  Node keys
+            are quantum UUIDs, and attributes include ``task_label`` (`str`)
+            and ``data_id`` (a full `lsst.daf.butler.DataCoordinate`, without
+            dimension records attached).  Edges may be added, but not removed.
+            Nodes may not be modified.
+        quanta_by_task : `~collections.abc.Mapping` [ `str`,\
+                `~collections.abc.Mapping` [ `lsst.daf.butler.DataCoordinate`,\
+                `uuid.UUID` ] ]
+            All quanta in the graph, grouped first by task label and then by
+            data ID.
+        """
+        raise NotImplementedError()
