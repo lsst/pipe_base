@@ -57,6 +57,7 @@ _OVERFLOW_MAX_LINES = 20
 def show_dot(
     pipeline_graph: PipelineGraph,
     stream: TextIO = sys.stdout,
+    label_edge_connections: bool = False,
     **kwargs: Any,
 ) -> None:
     """Write a DOT representation of the pipeline graph to a stream.
@@ -67,6 +68,8 @@ def show_dot(
         Pipeline graph to show.
     stream : `TextIO`, optional
         Stream to write the DOT representation to.
+    label_edge_connections : `bool`, optional
+        If `True`, label edges with their connection names.
     **kwargs
         Additional keyword arguments to pass to `parse_display_args`.
     """
@@ -96,12 +99,19 @@ def show_dot(
         formatted_overflow_ids = [f'"{overflow_id}"' for overflow_id in overflow_ids]
         print(f"{{rank=sink; {'; '.join(formatted_overflow_ids)};}}", file=stream)
 
-    for from_node, to_node, *_ in xgraph.edges:
-        if xgraph.nodes[from_node].get("is_prerequisite", False):
-            edge_data = dict(style="dashed")
-        else:
-            edge_data = {}
-        _render_edge(from_node.node_id, to_node.node_id, stream, **edge_data)
+    for from_node, to_node, edge_data in xgraph.edges(data=True):
+        edge_kwargs = {}
+        if edge_data.get("is_prerequisite", False):
+            edge_kwargs["style"] = "dashed"
+        if (connection_name := edge_data.get("connection_name", None)) is not None:
+            if (component := edge_data.get("component", None)) is not None:
+                if label_edge_connections:
+                    edge_kwargs["xlabel"] = f"{connection_name} (.{component})"
+                else:
+                    edge_kwargs["xlabel"] = f".{component}"
+            elif label_edge_connections:
+                edge_kwargs["xlabel"] = connection_name
+        _render_edge(from_node.node_id, to_node.node_id, stream, **edge_kwargs)
 
     print("}", file=stream)
 

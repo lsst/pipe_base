@@ -364,6 +364,9 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
+            # Add any dimension records not handled by the subclass, and
+            # aggregate any that were added directly to data IDs.
+            full_skeleton.attach_dimension_records(self.butler, self._pipeline_graph.get_all_dimensions())
             if attach_datastore_records:
                 self._attach_datastore_records(full_skeleton)
             # TODO initialize most metadata here instead of in ctrl_mpexec.
@@ -939,7 +942,7 @@ class QuantumGraphBuilder(ABC):
         inputs: dict[DatasetKey | PrerequisiteDatasetKey, DatasetRef] = {}
         outputs_for_skip: dict[DatasetKey, DatasetRef] = {}
         outputs_in_the_way: dict[DatasetKey, DatasetRef] = {}
-        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions()[self.universe.empty]
+        _, dataset_type_nodes = self._pipeline_graph.group_by_dimensions().get(self.universe.empty, ({}, {}))
         dataset_types = [node.dataset_type for node in dataset_type_nodes.values()]
         dataset_types.extend(self._global_init_output_types.values())
         for dataset_type in dataset_types:

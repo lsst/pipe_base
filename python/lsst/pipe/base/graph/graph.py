@@ -191,10 +191,10 @@ class QuantumGraph:
         """
         # Save packages to metadata
         self._metadata = dict(metadata) if metadata is not None else {}
-        self._metadata["packages"] = Packages.fromSystem()
-        self._metadata["user"] = getpass.getuser()
-        self._metadata["time"] = f"{datetime.datetime.now()}"
-        self._metadata["full_command"] = " ".join(sys.argv)
+        self._metadata.setdefault("packages", Packages.fromSystem())
+        self._metadata.setdefault("user", getpass.getuser())
+        self._metadata.setdefault("time", f"{datetime.datetime.now()}")
+        self._metadata.setdefault("full_command", " ".join(sys.argv))
 
         self._buildId = _buildId if _buildId is not None else BuildId(f"{time.time()}-{os.getpid()}")
         # Data structure used to identify relations between
