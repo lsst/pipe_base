@@ -31,14 +31,18 @@ __all__ = ("QuantumGraphDotVisualizer", "QuantumGraphMermaidVisualizer", "Quantu
 
 import html
 import uuid
-from abc import ABC, abstractmethod
-from typing import IO, ClassVar
+from abc import abstractmethod
+from typing import IO, ClassVar, Generic, TypeVar
 
 from ..pipeline_graph import NodeBipartite
 from ._common import BaseQuantumGraph, BipartiteEdgeInfo, DatasetInfo, QuantumInfo
 
+_G = TypeVar("_G", bound=BaseQuantumGraph, contravariant=True)
+_Q = TypeVar("_Q", bound=QuantumInfo, contravariant=True)
+_D = TypeVar("_D", bound=DatasetInfo, contravariant=True)
 
-class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo](ABC):
+
+class QuantumGraphVisualizer(Generic[_G, _Q, _D]):
     """A base class for exporting quantum graphs to graph-visualization
     languages.
 
@@ -50,7 +54,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
     """
 
     @abstractmethod
-    def render_header(self, qg: G, is_bipartite: bool) -> str:
+    def render_header(self, qg: _G, is_bipartite: bool) -> str:
         """Return the beginning of a graph visualization.
 
         Parameters
@@ -70,7 +74,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
         raise NotImplementedError()
 
     @abstractmethod
-    def render_footer(self, qg: G, is_bipartite: bool) -> str:
+    def render_footer(self, qg: _G, is_bipartite: bool) -> str:
         """Return the ending of a graph visualization.
 
         Parameters
@@ -90,7 +94,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
         raise NotImplementedError()
 
     @abstractmethod
-    def render_quantum(self, quantum_id: uuid.UUID, data: Q, is_bipartite: bool) -> str:
+    def render_quantum(self, quantum_id: uuid.UUID, data: _Q, is_bipartite: bool) -> str:
         """Return the representation of a quantum in a graph visualization.
 
         Parameters
@@ -112,7 +116,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
         raise NotImplementedError()
 
     @abstractmethod
-    def render_dataset(self, dataset_id: uuid.UUID, data: D) -> str:
+    def render_dataset(self, dataset_id: uuid.UUID, data: _D) -> str:
         """Return the representation of a dataset in a graph visualization.
 
         Parameters
@@ -158,7 +162,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
         """
         raise NotImplementedError()
 
-    def write_quantum_only(self, qg: G, stream: IO[str]) -> None:
+    def write_quantum_only(self, qg: _G, stream: IO[str]) -> None:
         """Write a visualization for graph with only quantum nodes.
 
         Parameters
@@ -176,7 +180,7 @@ class QuantumGraphVisualizer[G: BaseQuantumGraph, Q: QuantumInfo, D: DatasetInfo
             print(self.render_edge(a, b, data=None), file=stream)
         print(self.render_footer(qg, is_bipartite=False), file=stream)
 
-    def write_bipartite(self, qg: G, stream: IO[str]) -> None:
+    def write_bipartite(self, qg: _G, stream: IO[str]) -> None:
         """Write a visualization for graph with both quantum and dataset nodes.
 
         Parameters

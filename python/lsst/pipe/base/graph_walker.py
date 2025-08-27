@@ -29,12 +29,14 @@ from __future__ import annotations
 
 __all__ = ("GraphWalker",)
 
-from typing import Self
+from typing import Generic, Self, TypeVar
 
 import networkx
 
+_T = TypeVar("_T")
 
-class GraphWalker[_T]:
+
+class GraphWalker(Generic[_T]):
     """A helper for traversing directed acyclic graphs.
 
     Parameters
