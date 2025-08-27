@@ -1577,6 +1577,7 @@ class PredictedQuantumGraphComponents:
         zstd_dict_size : `int`, optional
             Size of a ZStandard dictionary that shares compression information
             across components.  Set to zero to disable the dictionary.
+            Dictionary compression is always disabled for very small graphs.
 
         Notes
         -----
@@ -1610,6 +1611,13 @@ class PredictedQuantumGraphComponents:
         quantum_address_writer = AddressWriter(self.quantum_indices)
         cdict: zstandard.ZstdCompressionDict | None = None
         quantum_datasets_json: dict[uuid.UUID, bytes] = {}
+        if len(self.quantum_datasets) < 32:
+            # ZStandard will fail if we ask to use a compression dict without
+            # giving it enough data, but I haven't worked out exactly what the
+            # threshold is, except that 32 works with the default
+            # zstd_dict_size, and 2 does not, since those are the values used
+            # in various unit tests (some of which are in ctrl_mpexec).
+            zstd_dict_size = 0
         if zstd_dict_size:
             quantum_datasets_json = {
                 quantum_model.quantum_id: quantum_model.model_dump_json().encode()
