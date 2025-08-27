@@ -40,6 +40,7 @@ import lsst.pipe.base.automatic_connection_constants as acc
 import lsst.utils.tests
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, StorageClassFactory
 from lsst.daf.butler.registry import MissingDatasetTypeError
+from lsst.pipe.base.pipeline import Pipeline
 from lsst.pipe.base.pipeline_graph import (
     ConnectionTypeConsistencyError,
     DuplicateOutputError,
@@ -1823,6 +1824,32 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         with self.assertRaises(Exception) as error:
             graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
+
+    def test_visualization_only_component_resolution(self):
+        """Test resolving component inputs in visualization-only mode."""
+        pipeline = Pipeline.fromString("""
+            description: |
+                Temporary YAML to test functionality of new metric
+            tasks:
+                limitingSurfaceBrightnessCore:
+                    class: lsst.analysis.tools.tasks.limitingSurfaceBrightnessAnalysis.LimitingSurfaceBrightnessTask
+                    config:
+                    connections.detectionTableName: "recalibrated_star"
+                    connections.photoCalibName: "visit_image.photoCalib"
+                    connections.wcsName: "visit_image.wcs"
+                    inputTableDimensions: ["instrument", "visit"]
+                    inputCalibDimensions: ["instrument", "visit"]
+                    outputDataDimensions: ["instrument", "visit"]
+                limitingSurfaceBrightnessAnalysis:
+                    class: lsst.analysis.tools.tasks.limitingSurfaceBrightnessAnalysis.LimitingSurfaceBrightnessAnalysisTask
+                    config:
+                    inputDataDimensions: ["instrument", "visit"]
+                    atools.limitingSurfaceBrightness: LimitingSurfaceBrightnessHistPlot
+                    python: |
+                        from lsst.analysis.tools.atools import *
+        """)
+        pg = pipeline.to_graph()
+        pg.resolve(visualization_only=True)
 
 
 if __name__ == "__main__":
