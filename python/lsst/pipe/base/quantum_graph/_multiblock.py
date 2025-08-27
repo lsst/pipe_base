@@ -47,7 +47,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from io import BytesIO
 from operator import attrgetter
-from typing import IO, TYPE_CHECKING, ClassVar, Protocol
+from typing import IO, TYPE_CHECKING, ClassVar, Protocol, TypeVar
 
 import pydantic
 
@@ -56,6 +56,9 @@ if TYPE_CHECKING:
 
 
 _LOG = logging.getLogger(__name__)
+
+
+_T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
 class Compressor(Protocol):
@@ -632,9 +635,7 @@ class MultiblockReader:
             )
         return data
 
-    def read_model[T: pydantic.BaseModel](
-        self, address: Address, model_type: type[T], decompressor: Decompressor
-    ) -> T | None:
+    def read_model(self, address: Address, model_type: type[_T], decompressor: Decompressor) -> _T | None:
         """Read a single compressed JSON block.
 
         Parameters
