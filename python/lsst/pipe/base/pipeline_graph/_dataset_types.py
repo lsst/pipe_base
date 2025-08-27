@@ -175,11 +175,13 @@ class DatasetTypeNode:
             # we do not want to re-use the inferred dataset type from a prior
             # component, so we instead pass in `None` as the current graph-wide
             # dataset type.
-            try:
-                has_valid_storage_class = (
-                    isinstance(dataset_type, DatasetType) and dataset_type.storageClass is not None
-                )
-            except KeyError:
+            has_valid_storage_class = True
+            if dataset_type is not None:
+                try:
+                    dataset_type.storageClass
+                except KeyError:
+                    has_valid_storage_class = False
+            else:
                 has_valid_storage_class = False
             dataset_type, is_initial_query_constraint, is_prerequisite = consuming_edge._resolve_dataset_type(
                 current=dataset_type if has_valid_storage_class else None,
