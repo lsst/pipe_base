@@ -51,7 +51,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from io import DEFAULT_BUFFER_SIZE
-from typing import TYPE_CHECKING, Any, NotRequired, cast
+from typing import TYPE_CHECKING, Any, NotRequired, TypeVar, cast
 
 import networkx
 import networkx.algorithms.bipartite
@@ -122,6 +122,9 @@ from ._common import (
 )
 
 _LOG = logging.getLogger(__name__)
+
+
+_T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
 class PredictedThinQuantumModel(pydantic.BaseModel):
@@ -1815,9 +1818,9 @@ class PredictedQuantumGraphReader:
         return self.read_init_quanta().read_dimension_data().read_quantum_datasets(quantum_ids)
 
     @staticmethod
-    def _read_single_block_static[T: pydantic.BaseModel](
-        name: str, model_type: type[T], zf: zipfile.ZipFile, decompressor: Decompressor
-    ) -> T:
+    def _read_single_block_static(
+        name: str, model_type: type[_T], zf: zipfile.ZipFile, decompressor: Decompressor
+    ) -> _T:
         """Read a single compressed JSON block from a 'file' in a zip archive.
 
         Parameters
@@ -1840,7 +1843,7 @@ class PredictedQuantumGraphReader:
         json_data = decompressor.decompress(compressed_data)
         return model_type.model_validate_json(json_data)
 
-    def _read_single_block[T: pydantic.BaseModel](self, name: str, model_type: type[T]) -> T:
+    def _read_single_block(self, name: str, model_type: type[_T]) -> _T:
         """Read a single compressed JSON block from a 'file' in a zip archive.
 
         Parameters
