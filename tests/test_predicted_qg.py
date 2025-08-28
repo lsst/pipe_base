@@ -25,6 +25,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import itertools
 import logging
 import os
 import shutil
@@ -566,6 +567,24 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
         stream = StringIO()
         # Just check that it runs without error.
         graph2mermaid(qg, stream)
+
+    def test_update_output_run(self) -> None:
+        """Test the PredictedQuantumGraphComponents.output_run method."""
+        components = self.builder.finish(
+            output="output_chain",
+            metadata={"stuff": "whatever"},
+            attach_datastore_records=False,
+        )
+        components.update_output_run("new_output_run")
+        qg = components.assemble()
+        for ref in qg.get_init_outputs("calibrate").values():
+            self.assertEqual(ref.run, "new_output_run")
+        for quantum in qg.build_execution_quanta().values():
+            for ref in itertools.chain.from_iterable(quantum.outputs.values()):
+                self.assertEqual(ref.run, "new_output_run", msg=str(ref))
+            for ref in itertools.chain.from_iterable(quantum.inputs.values()):
+                if ref.datasetType.name not in ("raw", "references"):
+                    self.assertEqual(ref.run, "new_output_run", msg=str(ref))
 
 
 if __name__ == "__main__":
