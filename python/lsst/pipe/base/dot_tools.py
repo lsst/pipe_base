@@ -38,17 +38,12 @@ __all__ = ["graph2dot", "pipeline2dot"]
 # -------------------------------
 import html
 import io
-import re
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 # -----------------------------
 #  Imports for other modules --
 # -----------------------------
-from lsst.daf.butler import DatasetType, DimensionUniverse
-
-from . import connectionTypes
-from .connections import iterConnections
 from .pipeline import Pipeline
 
 if TYPE_CHECKING:
@@ -234,7 +229,7 @@ def pipeline2dot(pipeline: Pipeline | Iterable[TaskDef], file: Any) -> None:
 
     Parameters
     ----------
-    pipeline : `lsst.pipe.base.Pipeline`
+    pipeline : `.Pipeline` or `~collections.abc.Iterable` [ `.TaskDef` ]
         Pipeline description.
     file : `str` or file object
         File where GraphViz graph (DOT language) is written, can be a file name
@@ -247,30 +242,7 @@ def pipeline2dot(pipeline: Pipeline | Iterable[TaskDef], file: Any) -> None:
     ImportError
         Raised if the task class cannot be imported.
     """
-    universe = DimensionUniverse()
-
-    def expand_dimensions(connection: connectionTypes.BaseConnection) -> list[str]:
-        """Return expanded list of dimensions, with special skypix treatment.
-
-        Parameters
-        ----------
-        connection : `list` [`str`]
-            Connection to examine.
-
-        Returns
-        -------
-        dimensions : `list` [`str`]
-            Expanded list of dimensions.
-        """
-        dimension_set = set()
-        if isinstance(connection, connectionTypes.DimensionedConnection):
-            dimension_set = set(connection.dimensions)
-        skypix_dim = []
-        if "skypix" in dimension_set:
-            dimension_set.remove("skypix")
-            skypix_dim = ["skypix"]
-        dimensions = universe.conform(dimension_set)
-        return list(dimensions.names) + skypix_dim
+    from .pipeline_graph import PipelineGraph, visualization
 
     # open a file if needed
     close = False
@@ -278,76 +250,19 @@ def pipeline2dot(pipeline: Pipeline | Iterable[TaskDef], file: Any) -> None:
         file = open(file, "w")
         close = True
 
-    print("digraph Pipeline {", file=file)
-    _renderDefault("graph", _ATTRIBS["defaultGraph"], file)
-    _renderDefault("node", _ATTRIBS["defaultNode"], file)
-    _renderDefault("edge", _ATTRIBS["defaultEdge"], file)
-
-    allDatasets: set[str | tuple[str, str]] = set()
     if isinstance(pipeline, Pipeline):
-        # TODO: DM-40639 will rewrite this code and finish off the deprecation
-        # of toExpandedPipeline but for now use the compatibility API.
-        pipeline = pipeline.to_graph()._iter_task_defs()
+        pg = pipeline.to_graph(visualization_only=True)
+    else:
+        pg = PipelineGraph()
+        for task_def in pipeline:
+            pg.add_task(
+                task_def.label,
+                task_class=task_def.taskClass,
+                config=task_def.config,
+                connections=task_def.connections,
+            )
+        pg.resolve(visualization_only=True)
+    visualization.show_dot(pg, stream=file, dataset_types=True)
 
-    # The next two lines are a workaround until DM-29658 at which time metadata
-    # connections should start working with the above code
-    labelToTaskName = {}
-    metadataNodesToLink = set()
-
-    for idx, taskDef in enumerate(sorted(pipeline, key=lambda x: x.label)):
-        # node for a task
-        taskNodeName = f"task{idx}"
-
-        # next line is workaround until DM-29658
-        labelToTaskName[taskDef.label] = taskNodeName
-
-        _renderTaskNode(taskNodeName, taskDef, file, None)
-
-        metadataRePattern = re.compile("^(.*)_metadata$")
-        for attr in sorted(iterConnections(taskDef.connections, "inputs"), key=lambda x: x.name):
-            if attr.name not in allDatasets:
-                dimensions = expand_dimensions(attr)
-                _renderDSTypeNode(attr.name, dimensions, file)
-                allDatasets.add(attr.name)
-            nodeName, component = DatasetType.splitDatasetTypeName(attr.name)
-            _renderEdge(attr.name, taskNodeName, file)
-            # connect component dataset types to the composite type that
-            # produced it
-            if component is not None and (nodeName, attr.name) not in allDatasets:
-                _renderEdge(nodeName, attr.name, file)
-                allDatasets.add((nodeName, attr.name))
-                if nodeName not in allDatasets:
-                    dimensions = expand_dimensions(attr)
-                    _renderDSTypeNode(nodeName, dimensions, file)
-            # The next if block is a workaround until DM-29658 at which time
-            # metadata connections should start working with the above code
-            if (match := metadataRePattern.match(attr.name)) is not None:
-                matchTaskLabel = match.group(1)
-                metadataNodesToLink.add((matchTaskLabel, attr.name))
-
-        for attr in sorted(iterConnections(taskDef.connections, "prerequisiteInputs"), key=lambda x: x.name):
-            if attr.name not in allDatasets:
-                dimensions = expand_dimensions(attr)
-                _renderDSTypeNode(attr.name, dimensions, file)
-                allDatasets.add(attr.name)
-            # use dashed line for prerequisite edges to distinguish them
-            _renderEdge(attr.name, taskNodeName, file, style="dashed")
-
-        for attr in sorted(iterConnections(taskDef.connections, "outputs"), key=lambda x: x.name):
-            if attr.name not in allDatasets:
-                dimensions = expand_dimensions(attr)
-                _renderDSTypeNode(attr.name, dimensions, file)
-                allDatasets.add(attr.name)
-            _renderEdge(taskNodeName, attr.name, file)
-
-    # This for loop is a workaround until DM-29658 at which time metadata
-    # connections should start working with the above code
-    for matchLabel, dsTypeName in metadataNodesToLink:
-        # only render an edge to metadata if the label is part of the current
-        # graph
-        if (result := labelToTaskName.get(matchLabel)) is not None:
-            _renderEdge(result, dsTypeName, file)
-
-    print("}", file=file)
     if close:
         file.close()

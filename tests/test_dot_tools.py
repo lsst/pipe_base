@@ -147,9 +147,9 @@ class DotToolsTestCase(unittest.TestCase):
         # things, even that is not terribly stable.
         lines = file.getvalue().strip().split("\n")
         nglobals = 3
-        ndatasets = 10
+        ndatasets = 9  # component variant doesn't count
         ntasks = 6
-        nedges = 16
+        nedges = 15
         nextra = 2  # graph header and closing
         self.assertEqual(len(lines), nglobals + ndatasets + ntasks + nedges + nextra)
 
@@ -171,11 +171,11 @@ class DotToolsTestCase(unittest.TestCase):
                 continue
 
         # make sure components are connected appropriately
-        self.assertIn('"D" -> "D.C"', file.getvalue())
+        self.assertIn('"D:0" -> "task4:2"', file.getvalue())
 
         # make sure there is a connection created for metadata if someone
         # tries to read it in
-        self.assertIn('"task3" -> "task3_metadata"', file.getvalue())
+        self.assertIn('"task3:2" -> "task3_metadata:0"', file.getvalue())
 
 
 class MyMemoryTestCase(lsst.utils.tests.MemoryTestCase):

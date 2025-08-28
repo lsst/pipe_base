@@ -159,7 +159,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             self._butler.registry.refresh()
 
         result = self._execute(task_node, quantum, quantum_id=quantum_id)
-        report = QuantumReport(dataId=quantum.dataId, taskLabel=task_node.label)
+        report = QuantumReport(quantumId=quantum_id, dataId=quantum.dataId, taskLabel=task_node.label)
         return result, report
 
     def _execute(

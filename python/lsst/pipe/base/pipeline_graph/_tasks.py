@@ -806,7 +806,9 @@ class TaskNode:
         edge : `ReadEdge`
             Input edge.
         """
-        return self.inputs[connection_name]
+        if (edge := self.inputs.get(connection_name)) is not None:
+            return edge
+        return self.prerequisite_inputs[connection_name]
 
     def get_output_edge(self, connection_name: str) -> WriteEdge:
         """Look up an output edge by connection name.
