@@ -1471,6 +1471,50 @@ class PredictedQuantumGraphComponents:
             all_dataset_ids.update(quantum_datasets.iter_dataset_ids())
         self.header.n_datasets = len(all_dataset_ids)
 
+    def update_output_run(self, output_run: str) -> None:
+        """Update the output `~lsst.daf.butler.CollectionType.RUN` collection
+        name in all datasets and regenerate all output dataset and quantum
+        UUIDs.
+
+        Parameters
+        ----------
+        output_run : `str`
+            New output `~lsst.daf.butler.CollectionType.RUN` collection name.
+        """
+        uuid_map: dict[uuid.UUID, uuid.UUID] = {}
+        # Do all outputs and then all inputs in separate passes so we don't
+        # need to rely on topological ordering of anything.
+        for quantum_datasets in itertools.chain(self.init_quanta.root, self.quantum_datasets.values()):
+            new_quantum_id = uuid.uuid4()
+            uuid_map[quantum_datasets.quantum_id] = new_quantum_id
+            quantum_datasets.quantum_id = uuid.uuid4()
+            for output_dataset in itertools.chain.from_iterable(quantum_datasets.outputs.values()):
+                assert output_dataset.run == self.header.output_run, (
+                    f"Incorrect run {output_dataset.run} for output dataset {output_dataset.dataset_id}."
+                )
+                new_dataset_id = uuid.uuid4()
+                uuid_map[output_dataset.dataset_id] = new_dataset_id
+                output_dataset.dataset_id = new_dataset_id
+                output_dataset.run = output_run
+        for quantum_datasets in itertools.chain(self.init_quanta.root, self.quantum_datasets.values()):
+            for input_dataset in itertools.chain.from_iterable(quantum_datasets.inputs.values()):
+                if input_dataset.run == self.header.output_run:
+                    input_dataset.run = output_run
+                    input_dataset.dataset_id = uuid_map.get(
+                        input_dataset.dataset_id,
+                        # This dataset isn't necessary an output of the graph
+                        # just because it's in the output run; the graph could
+                        # have been built with extend_run=True.
+                        input_dataset.dataset_id,
+                    )
+        # Update the keys of the quantum_datasets dict.
+        self.quantum_datasets = {qd.quantum_id: qd for qd in self.quantum_datasets.values()}
+        # Since the UUIDs have changed, the indices need to change, too.
+        self.set_quantum_indices()
+        self.set_thin_graph()
+        # Update the header last, since we use it above to get the old run.
+        self.header.output_run = output_run
+
     def assemble(self) -> PredictedQuantumGraph:
         """Construct a `PredictedQuantumGraph` from these components."""
         return PredictedQuantumGraph(self)
