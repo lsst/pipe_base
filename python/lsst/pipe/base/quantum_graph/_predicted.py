@@ -731,20 +731,11 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             A quantum graph that can build execution quanta for all of the
             given IDs.
         """
-        uri = ResourcePath(uri)
-        if uri.getExtension() == ".qgraph":
-            _LOG.warning(
-                f"Reading and converting old quantum graph {uri}.  "
-                "Use the '.qg' extension to write in the new format."
-            )
-            from ..graph import QuantumGraph
-
-            old_qg = QuantumGraph.loadUri(uri, nodes=quantum_ids)
-            return PredictedQuantumGraphComponents.from_old_quantum_graph(old_qg).assemble()
-
-        with cls.open(uri, page_size=page_size) as reader:
-            reader.read_execution_quanta(quantum_ids)
-            return reader.finish()
+        return PredictedQuantumGraphComponents.read_execution_quanta(
+            uri,
+            quantum_ids,
+            page_size=page_size,
+        ).assemble()
 
     @property
     def quanta_by_task(self) -> Mapping[str, Mapping[DataCoordinate, uuid.UUID]]:
@@ -1518,6 +1509,49 @@ class PredictedQuantumGraphComponents:
     def assemble(self) -> PredictedQuantumGraph:
         """Construct a `PredictedQuantumGraph` from these components."""
         return PredictedQuantumGraph(self)
+
+    @classmethod
+    def read_execution_quanta(
+        cls,
+        uri: ResourcePathExpression,
+        quantum_ids: Iterable[uuid.UUID] | None = None,
+        page_size: int = DEFAULT_BUFFER_SIZE,
+    ) -> PredictedQuantumGraphComponents:
+        """Read one or more executable quanta from a quantum graph file.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension for new quantum graph
+            files, or ``.qgraph`` for the old format.
+        quantum_ids : `~collections.abc.Iterable` [ `uuid.UUID` ], optional
+            Iterable of quantum IDs to load.  If not provided, all quanta will
+            be loaded.  The UUIDs of special init quanta will be ignored.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files.
+            Note that this does not set a page size for *all* reads, but it
+            does affect the smallest, most numerous reads.
+
+        Returns
+        -------
+        components : `PredictedQuantumGraphComponents` ]
+            Components for quantum graph that can build execution quanta for
+            all of the given IDs.
+        """
+        uri = ResourcePath(uri)
+        if uri.getExtension() == ".qgraph":
+            _LOG.warning(
+                f"Reading and converting old quantum graph {uri}.  "
+                "Use the '.qg' extension to write in the new format."
+            )
+            from ..graph import QuantumGraph
+
+            old_qg = QuantumGraph.loadUri(uri, nodes=quantum_ids)
+            return PredictedQuantumGraphComponents.from_old_quantum_graph(old_qg)
+
+        with PredictedQuantumGraph.open(uri, page_size=page_size) as reader:
+            reader.read_execution_quanta(quantum_ids)
+            return reader.components
 
     @classmethod
     def from_old_quantum_graph(cls, old_quantum_graph: QuantumGraph) -> PredictedQuantumGraphComponents:
