@@ -404,11 +404,19 @@ class QuantumGraphBuilder(ABC):
                 self.log.verbose("Subgraph tasks: [%s]", ", ".join(label for label in subgraph.tasks))
                 subgraph_skeleton = self.process_subgraph(subgraph)
                 full_skeleton.update(subgraph_skeleton)
-            # Loop over tasks.  The pipeline graph must be topologically
-            # sorted, so a quantum is only processed after any quantum that
-            # provides its inputs has been processed.
+            # Loop over tasks to apply skip-existing logic and add missing
+            # prerequisites.  The pipeline graph must be topologically sorted,
+            # so a quantum is only processed after any quantum that provides
+            # its inputs has been processed.
+            skipped_quanta: dict[str, list[QuantumKey]] = {}
             for task_node in self._pipeline_graph.tasks.values():
-                self._resolve_task_quanta(task_node, full_skeleton)
+                skipped_quanta[task_node.label] = self._resolve_task_quanta(task_node, full_skeleton)
+            # Add any dimension records not handled by the subclass, and
+            # aggregate any that were added directly to data IDs.
+            full_skeleton.attach_dimension_records(self.butler, self._pipeline_graph.get_all_dimensions())
+            # Loop over tasks again to run the adjust hooks.
+            for task_node in self._pipeline_graph.tasks.values():
+                self._adjust_task_quanta(task_node, full_skeleton, skipped_quanta[task_node.label])
             # Add global init-outputs to the skeleton.
             for dataset_type in self._global_init_output_types.values():
                 dataset_key = full_skeleton.add_dataset_node(
@@ -424,9 +432,6 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
-            # Add any dimension records not handled by the subclass, and
-            # aggregate any that were added directly to data IDs.
-            full_skeleton.attach_dimension_records(self.butler, self._pipeline_graph.get_all_dimensions())
             if attach_datastore_records:
                 self._attach_datastore_records(full_skeleton)
         return full_skeleton
@@ -487,9 +492,9 @@ class QuantumGraphBuilder(ABC):
 
     @final
     @timeMethod
-    def _resolve_task_quanta(self, task_node: TaskNode, skeleton: QuantumGraphSkeleton) -> None:
+    def _resolve_task_quanta(self, task_node: TaskNode, skeleton: QuantumGraphSkeleton) -> list[QuantumKey]:
         """Process the quanta for one task in a skeleton graph to skip those
-        that have already completed and adjust those that request it.
+        that have already completed and add missing prerequisite inputs.
 
         Parameters
         ----------
@@ -497,6 +502,12 @@ class QuantumGraphBuilder(ABC):
             Node for this task in the pipeline graph.
         skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
+
+        Returns
+        -------
+        skipped_quanta : `list` [ `.quantum_skeleton_graph.QuantumKey` ]
+            Keys of quanta that were already skipped because their metadata
+            already exists in a ``skip_existing_in`` collections.
 
         Notes
         -----
@@ -506,26 +517,11 @@ class QuantumGraphBuilder(ABC):
           and drops input dataset nodes that do not have a
           `lsst.daf.butler.DatasetRef` already.  This ensures producing and
           consuming tasks start from the same `lsst.daf.butler.DatasetRef`.
-        - It adds "inputs", "outputs", and "init_inputs" attributes to the
-          quantum nodes, holding the same `NamedValueMapping` objects needed to
-          construct an actual `Quantum` instances.
         - It removes quantum nodes that are to be skipped because their outputs
           already exist in `skip_existing_in`.  It also marks their outputs
           as no longer in the way.
         - It adds prerequisite dataset nodes and edges that connect them to the
           quanta that consume them.
-        - It removes quantum nodes whose
-          `~PipelineTaskConnections.adjustQuantum` calls raise `NoWorkFound` or
-          predict no outputs;
-        - It removes the nodes of output datasets that are "adjusted away".
-        - It removes the edges of input datasets that are "adjusted away".
-
-        The difference between how adjusted inputs and outputs are handled
-        reflects the fact that many quanta can share the same input, but only
-        one produces each output.  This can lead to the graph having
-        superfluous isolated nodes after processing is complete, but these
-        should only be removed after all the quanta from all tasks have been
-        processed.
         """
         # Extract the helper object for the prerequisite inputs of this task,
         # and tell it to prepare to construct skypix bounds and timespans for
@@ -552,6 +548,46 @@ class QuantumGraphBuilder(ABC):
             )
         for skipped_quantum in skipped_quanta:
             skeleton.remove_quantum_node(skipped_quantum, remove_outputs=False)
+        return skipped_quanta
+
+    @final
+    @timeMethod
+    def _adjust_task_quanta(
+        self, task_node: TaskNode, skeleton: QuantumGraphSkeleton, skipped_quanta: list[QuantumKey]
+    ) -> None:
+        """Process the quanta for one task in a skeleton graph by calling the
+        ``adjust_all_quanta`` and ``adjustQuantum`` hooks.
+
+        Parameters
+        ----------
+        task_node : `pipeline_graph.TaskNode`
+            Node for this task in the pipeline graph.
+        skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
+            Preliminary quantum graph, to be modified in-place.
+        skipped_quanta : `list` [ `.quantum_skeleton_graph.QuantumKey` ]
+            Keys of quanta that were already skipped because their metadata
+            already exists in a ``skip_existing_in`` collections.
+
+        Notes
+        -----
+        This method modifies ``skeleton`` in-place in several ways:
+
+        - It adds "inputs", "outputs", and "init_inputs" attributes to the
+          quantum nodes, holding the same `NamedValueMapping` objects needed to
+          construct an actual `Quantum` instances.
+        - It removes quantum nodes whose
+          `~PipelineTaskConnections.adjustQuantum` calls raise `NoWorkFound` or
+          predict no outputs;
+        - It removes the nodes of output datasets that are "adjusted away".
+        - It removes the edges of input datasets that are "adjusted away".
+
+        The difference between how adjusted inputs and outputs are handled
+        reflects the fact that many quanta can share the same input, but only
+        one produces each output.  This can lead to the graph having
+        superfluous isolated nodes after processing is complete, but these
+        should only be removed after all the quanta from all tasks have been
+        processed.
+        """
         # Give the task a chance to adjust all quanta together.  This
         # operates directly on the skeleton (via a the 'adjuster', which
         # is just an interface adapter).
@@ -745,7 +781,7 @@ class QuantumGraphBuilder(ABC):
         """
         dataset_key: DatasetKey | PrerequisiteDatasetKey
         for dataset_key in skeleton.iter_outputs_of(quantum_key):
-            dataset_data_id = skeleton[dataset_key]["data_id"]
+            dataset_data_id = skeleton.get_data_id(dataset_key)
             dataset_type_node = self._pipeline_graph.dataset_types[dataset_key.parent_dataset_type_name]
             if (ref := skeleton.get_output_in_the_way(dataset_key)) is None:
                 ref = DatasetRef(dataset_type_node.dataset_type, dataset_data_id, run=self.output_run)
@@ -761,7 +797,7 @@ class QuantumGraphBuilder(ABC):
             skypix_bounds_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             timespan_builder.handle_dataset(dataset_key.parent_dataset_type_name, dataset_data_id)
             skeleton.set_dataset_ref(ref, dataset_key)
-        quantum_data_id = skeleton[quantum_key]["data_id"]
+        quantum_data_id = skeleton.get_data_id(quantum_key)
         # Process inputs already present in the skeleton - this should include
         # all regular inputs (including intermediates) and may include some
         # prerequisites.
