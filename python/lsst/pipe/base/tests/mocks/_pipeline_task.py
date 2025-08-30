@@ -202,6 +202,13 @@ class BaseTestPipelineTaskConfig(PipelineTaskConfig, pipelineConnections=BaseTes
         doc="Time to sleep (seconds) before mock execution reading inputs or failing.",
     )
 
+    int_value = Field[int](
+        "Arbitrary integer value to write into mock output datasets", dtype=int, optional=True, default=None
+    )
+    str_value = Field[str](
+        "Arbitrary string value to write into mock output datasets", dtype=str, optional=True, default=None
+    )
+
     def data_id_match(self) -> DataIdMatch | None:
         if not self.fail_condition:
             return None
@@ -294,6 +301,8 @@ class BaseTestPipelineTask(PipelineTask):
                 run=None,  # task also has no way to get this
                 quantum=mock_dataset_quantum,
                 output_connection_name=connection_name,
+                int_value=self.config.int_value,
+                str_value=self.config.str_value,
             )
             setattr(self, connection_name, output_dataset)
 
@@ -373,6 +382,8 @@ class BaseTestPipelineTask(PipelineTask):
                     run=ref.run,
                     quantum=mock_dataset_quantum,
                     output_connection_name=name,
+                    int_value=self.config.int_value,
+                    str_value=self.config.str_value,
                 )
                 butlerQC.put(output, ref)
 
