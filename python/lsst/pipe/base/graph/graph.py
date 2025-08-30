@@ -806,11 +806,18 @@ class QuantumGraph:
         uri : convertible to `~lsst.resources.ResourcePath`
             URI to where the graph should be saved.
         """
-        buffer = self._buildSaveObject()
         path = ResourcePath(uri)
-        if path.getExtension() not in (".qgraph"):
-            raise TypeError(f"Can currently only save a graph in qgraph format not {uri}")
-        path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
+        match path.getExtension():
+            case ".qgraph":
+                buffer = self._buildSaveObject()
+                path.write(buffer)  # type: ignore  # Ignore because bytearray is safe to use in place of bytes
+            case ".qg":
+                from ..quantum_graph import PredictedQuantumGraphComponents
+
+                pqg = PredictedQuantumGraphComponents.from_old_quantum_graph(self)
+                pqg.write(path)
+            case ext:
+                raise TypeError(f"Can currently only save a graph in .qgraph or .qg format, not {ext!r}.")
 
     @property
     def metadata(self) -> MappingProxyType[str, Any]:
@@ -962,11 +969,23 @@ class QuantumGraph:
             the graph.
         """
         uri = ResourcePath(uri)
-        if uri.getExtension() in {".qgraph"}:
-            with LoadHelper(uri, minimumVersion, fullRead=(nodes is None)) as loader:
-                qgraph = loader.load(universe, nodes, graphID)
-        else:
-            raise ValueError(f"Only know how to handle files saved as `.qgraph`, not {uri}")
+        match uri.getExtension():
+            case ".qgraph":
+                with LoadHelper(uri, minimumVersion, fullRead=(nodes is None)) as loader:
+                    qgraph = loader.load(universe, nodes, graphID)
+            case ".qg":
+                from ..quantum_graph import PredictedQuantumGraphReader
+
+                with PredictedQuantumGraphReader.open(uri, page_size=100000) as qgr:
+                    quantum_ids = (
+                        [uuid.UUID(q) if not isinstance(q, uuid.UUID) else q for q in nodes]
+                        if nodes is not None
+                        else None
+                    )
+                    qgr.read_execution_quanta(quantum_ids)
+                    qgraph = qgr.finish().to_old_quantum_graph()
+            case _:
+                raise ValueError(f"Only know how to handle files saved as `.qgraph`, not {uri}")
         if not isinstance(qgraph, QuantumGraph):
             raise TypeError(f"QuantumGraph file {uri} contains unexpected object type: {type(qgraph)}")
         return qgraph
