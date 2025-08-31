@@ -41,6 +41,7 @@ from lsst.daf.butler import (
     DataCoordinate,
     DatasetRef,
     DatasetType,
+    DimensionConfig,
     LimitedButler,
     RegistryConfig,
 )
@@ -396,6 +397,8 @@ class InMemoryRepo(MockRepo):
         Butler YAML import files to load into the test repository.
     registry_config : `lsst.daf.butler.RegistryConfig`, optional
         Registry configuration for the repository.
+    dimension_config : `lsst.daf.butler.DimensionConfig`, optional
+        Dimension universe configuration for the repository.
     input_run : `str`, optional
         Name of a `~lsst.daf.butler.CollectionType.RUN` collection that will be
         used as an input to quantum graph generation.  Input datasets created
@@ -425,6 +428,7 @@ class InMemoryRepo(MockRepo):
         self,
         *args: str | ResourcePath,
         registry_config: RegistryConfig | None = None,
+        dimension_config: DimensionConfig | None = None,
         input_run: str = "input_run",
         input_chain: str = "input_chain",
         use_import_collections_as_input: bool | str | Iterable[str] = True,
@@ -433,7 +437,9 @@ class InMemoryRepo(MockRepo):
         if data_root is not None:
             data_root = ResourcePath(data_root, forceDirectory=True)
             args = tuple(data_root.join(arg) for arg in args)
-        butler = create_populated_sqlite_registry(*args, registry_config=registry_config)
+        butler = create_populated_sqlite_registry(
+            *args, registry_config=registry_config, dimension_config=dimension_config
+        )
         if use_import_collections_as_input:
             if use_import_collections_as_input is True:
                 use_import_collections_as_input = sorted(butler.collections.query("*", flatten_chains=True))
