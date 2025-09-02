@@ -140,7 +140,7 @@ def zip_from_graph(**kwargs: Any) -> None:
     "--include-outputs/--no-include-outputs",
     is_flag=True,
     default=True,
-    help="Whether to include outut datasets in retrieval.",
+    help="Whether to include output datasets in retrieval.",
 )
 @options_file_option()
 def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
@@ -153,3 +153,106 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     """
     artifacts = script.retrieve_artifacts_for_quanta(**kwargs)
     print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")
+
+
+@click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
+@click.argument("predicted_graph", required=True)
+@repo_argument(required=True, help="Path to the central butler repository.")
+@click.option("-d", "--db-dir", help="Directory for the scanner's SQLite database files (POSIX only).")
+@click.option("-o", "--output", "output_path", help="Path to the output provenance quantum graph.")
+@click.option(
+    "--checkpoint-dir",
+    help=(
+        "Path to a persistent storage location to copy the scanner databases "
+        "to periodically, if --db-dir is not persistent."
+    ),
+)
+@click.option(
+    "--processes",
+    "-j",
+    "n_processes",
+    default=1,
+    type=click.IntRange(min=1),
+    help="Number of processes to use.",
+)
+@click.option(
+    "--complete/--incomplete",
+    "assume_complete",
+    default=True,
+    help="Whether execution has completed (and failures cannot be retried).",
+)
+@click.option("--dry-run", is_flag=True, help="Do not actually perform any central database ingests.")
+@click.option(
+    "--interactive-status/--no-interactive-status",
+    "interactive_status",
+    help="Use progress bars for status reporting instead of periodic logging.",
+)
+@click.option(
+    "--log-status-interval",
+    type=int,
+    help="Interval (in seconds) between periodic logger status updates.",
+)
+@click.option(
+    "--register-dataset-types/--no-register-dataset-types",
+    default=True,
+    help="Register output dataset types.",
+)
+@click.option(
+    "--update-output-chain/--no-update-output-chain",
+    default=True,
+    help="Prepend the output RUN collection to the output CHAINED collection.",
+)
+@click.option(
+    "--worker-log-dir",
+    type=str,
+    help="Path to a directory (POSIX only) for parallel worker logs.",
+)
+@click.option(
+    "--worker-log-level",
+    type=str,
+    default="VERBOSE",
+    help="Log level for worker processes/threads (use DEBUG for per-quantum messages).",
+)
+@click.option(
+    "--zstd-level",
+    type=int,
+    default=10,
+    help="Compression level for the provenance quantum graph file.",
+)
+@click.option(
+    "--zstd-dict-size",
+    type=int,
+    default=32768,
+    help="Size (in bytes) of the ZStandard compression dictionary.",
+)
+@click.option(
+    "--zstd-dict-n-inputs",
+    type=int,
+    default=512,
+    help=("Number of samples of each type to include in ZStandard compression dictionary training."),
+)
+@click.option(
+    "--mock-storage-classes/--no-mock-storage-classes",
+    help="Enable support for storage classes created by the lsst.pipe.base.tests.mocks package.",
+)
+def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
+    """Scan for quantum graph's outputs to gather provenance, ingest datasets
+    into the central butler repository, and delete datasets that are no
+    longer needed.
+    """
+    from ...quantum_graph.aggregator import AggregatorConfig
+    from ...quantum_graph.aggregator import aggregate_graph as aggregate_graph_py
+
+    # It'd be nice to allow to the user to provide a path to an
+    # AggregatorConfig JSON file for options that weren't provided, but Click
+    # 8.1 fundamentally cannot handle flag options that default to None rather
+    # than True or False (i.e. so they fall back to the config value when not
+    # set).  It's not clear whether Click 8.2.x has actually fixed this; Click
+    # 8.2.0 tried but caused new problems.
+    #
+    # This also means that for now, the defaults above override the defaults in
+    # the AggregatorConfig, which is unfortunate (the values should be the
+    # same).
+
+    config = AggregatorConfig(**kwargs)
+    aggregate_graph_py(predicted_graph, repo, config)
