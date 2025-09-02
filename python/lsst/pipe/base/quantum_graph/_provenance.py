@@ -1,0 +1,1018 @@
+# This file is part of pipe_base.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This software is dual licensed under the GNU General Public License and also
+# under a 3-clause BSD license. Recipients may choose which of these licenses
+# to use; please see the files gpl-3.0.txt and/or bsd_license.txt,
+# respectively.  If you choose the GPL option then the following text applies
+# (but note that there is still no warranty even if you opt for BSD instead):
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+__all__ = (
+    "ProvenanceDatasetInfo",
+    "ProvenanceDatasetModel",
+    "ProvenanceInitQuantumInfo",
+    "ProvenanceInitQuantumModel",
+    "ProvenanceQuantumGraph",
+    "ProvenanceQuantumGraphReader",
+    "ProvenanceQuantumGraphWriter",
+    "ProvenanceQuantumInfo",
+    "ProvenanceQuantumModel",
+)
+
+
+import dataclasses
+import operator
+import sys
+import uuid
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Self, TypedDict
+
+import networkx
+import pydantic
+
+from lsst.daf.butler import DataCoordinate
+from lsst.resources import ResourcePathExpression
+
+from .._status import QuantumSuccessCaveats
+from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
+from ..quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
+from ._common import (
+    BaseQuantumGraph,
+    BaseQuantumGraphReader,
+    BaseQuantumGraphWriter,
+    ConnectionName,
+    DataCoordinateValues,
+    DatasetIndex,
+    DatasetInfo,
+    DatasetTypeName,
+    HeaderModel,
+    QuantumIndex,
+    QuantumInfo,
+    TaskLabel,
+)
+from ._multiblock import AddressReader, MultiblockReader, MultiblockWriter
+from ._predicted import (
+    PredictedDatasetModel,
+    PredictedInitQuantaModel,
+    PredictedQuantumDatasetsModel,
+    PredictedQuantumGraphReader,
+)
+
+if TYPE_CHECKING:
+    from lsst.daf.butler.logging import ButlerLogRecords
+
+    from .._task_metadata import TaskMetadata
+
+_DATASET_ADDRESS_INDEX = 0
+_QUANTUM_ADDRESS_INDEX = 1
+_LOG_ADDRESS_INDEX = 2
+_METADATA_ADDRESS_INDEX = 3
+
+_DATASET_MB_NAME = "datasets"
+_QUANTUM_MB_NAME = "quanta"
+_LOG_MB_NAME = "logs"
+_METADATA_MB_NAME = "metadata"
+
+
+class ProvenanceDatasetInfo(DatasetInfo):
+    """A typed dictionary that annotates the attributes of the NetworkX graph
+    node data for a provenance dataset.
+
+    Since NetworkX types are not generic over their node mapping type, this has
+    to be used explicitly, e.g.::
+
+        node_data: ProvenanceDatasetInfo = xgraph.nodes[dataset_id]
+
+    where ``xgraph`` is `ProvenanceQuantumGraphReader.xgraph`.
+    """
+
+    dataset_id: uuid.UUID
+    """Unique identifier for the dataset."""
+
+    exists: bool
+    """Whether this dataset existed immediately after the quantum graph was
+    run.
+
+    This is always `True` for overall input datasets (this should be guaranteed
+    by the predicted quantum graph).  It is also `True` for datasets that were
+    produced and then removed before/during transfer back to the central butler
+    repository.
+    """
+
+    producer: uuid.UUID | None
+    """ID of the quantum that produced this dataset.
+
+    This is `None` for overall inputs to the graph.
+    """
+
+
+class ProvenanceQuantumInfo(QuantumInfo):
+    """A typed dictionary that annotates the attributes of the NetworkX graph
+    node data for a provenance quantum.
+
+    Since NetworkX types are not generic over their node mapping type, this has
+    to be used explicitly, e.g.::
+
+        node_data: ProvenanceQuantumInfo = xgraph.nodes[quantum_id]
+
+    where ``xgraph`` is `ProvenanceQuantumGraphReader.xgraph`.
+    """
+
+    status: QuantumRunStatus
+    """Enumerated status for the quantum."""
+
+    caveats: QuantumSuccessCaveats | None
+    """Flags indicating caveats on successful quanta."""
+
+    exception: ExceptionInfo | None
+    """Information about an exception raised when the quantum was executing."""
+
+
+class ProvenanceInitQuantumInfo(TypedDict):
+    """A typed dictionary that annotates the attributes of the NetworkX graph
+    node data for a provenance init quantum.
+
+    Since NetworkX types are not generic over their node mapping type, this has
+    to be used explicitly, e.g.::
+
+        node_data: ProvenanceInitQuantumInfo = xgraph.nodes[quantum_id]
+
+    where ``xgraph`` is `ProvenanceQuantumGraphReader.xgraph`.
+    """
+
+    data_id: DataCoordinate
+    """Data ID of the quantum."""
+
+    task_label: str
+    """Label of the task for this quantum."""
+
+    pipeline_node: TaskInitNode
+    """Node in the pipeline graph for this task's init-only step."""
+
+
+class ProvenanceDatasetModel(PredictedDatasetModel):
+    """Data model for the datasets in a provenance quantum graph file."""
+
+    exists: bool
+    """Whether this dataset existed immediately after the quantum graph was
+    run.
+
+    This is always `True` for overall input datasets (this should be guaranteed
+    by the predicted quantum graph).  It is also `True` for datasets that were
+    produced and then removed before/during transfer back to the central butler
+    repository.
+    """
+
+    producer: QuantumIndex | None = None
+    """Internal integer ID of the quantum that produced this dataset.
+
+    This is `None` for overall inputs to the graph.
+    """
+
+    consumers: list[QuantumIndex] = dataclasses.field(default_factory=list)
+    """Internal integer IDs of quanta that were predicted to consume this
+    dataset.
+    """
+
+    @property
+    def node_id(self) -> uuid.UUID:
+        """Alias for the dataset ID."""
+        return self.dataset_id
+
+    @classmethod
+    def from_predicted(
+        cls,
+        predicted: PredictedDatasetModel,
+        producer: QuantumIndex | None = None,
+        consumers: Iterable[QuantumIndex] = (),
+    ) -> ProvenanceDatasetModel:
+        """Construct from a predicted dataset model.
+
+        Parameters
+        ----------
+        predicted : `PredictedDatasetModel`
+            Information about the dataset from the predicted graph.
+        producer : `int` or `None`, optional
+            Internal ID of the quantum that was predicted to produce this
+            dataset.
+        consumers : `~collections.abc.Iterable` [`int`], optional
+            Internal IDs of the quanta that were predicted to produce this
+            dataset.
+
+        Returns
+        -------
+        provenance : `ProvenanceDatasetModel`
+            Provenance dataset model.
+
+        Notes
+        -----
+        This initializes `exists` to `True` when ``producer is None`` and
+        `False` otherwise, on the assumption that it will be updated later.
+        """
+        return cls.model_construct(
+            dataset_id=predicted.dataset_id,
+            dataset_type_name=predicted.dataset_type_name,
+            data_coordinate=predicted.data_coordinate,
+            run=predicted.run,
+            exists=(producer is None),  # if it's not produced by this QG, it's an overall input
+            producer=producer,
+            consumers=list(consumers),
+        )
+
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+        dataset_type_node = graph.pipeline_graph.dataset_types[self.dataset_type_name]
+        data_id = DataCoordinate.from_full_values(dataset_type_node.dimensions, tuple(self.data_coordinate))
+        graph._bipartite_xgraph.add_node(
+            self.dataset_id,
+            data_id=data_id,
+            dataset_type_name=self.dataset_type_name,
+            pipeline_node=dataset_type_node,
+            run=self.run,
+            exists=self.exists,
+        )
+        producer_id: uuid.UUID | None = None
+        if self.producer is not None:
+            producer_id = address_reader.find(self.producer).key
+            graph._bipartite_xgraph.add_edge(producer_id, self.dataset_id)
+        for consumer_index in self.consumers:
+            consumer_id = address_reader.find(consumer_index).key
+            graph._bipartite_xgraph.add_edge(self.dataset_id, consumer_id)
+            if producer_id is not None:
+                graph._quantum_only_xgraph.add_edge(producer_id, consumer_id)
+        graph._datasets_by_type[self.dataset_type_name][data_id] = self.dataset_id
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+
+class ProvenanceQuantumModel(pydantic.BaseModel):
+    """Data model for the quanta in a provenance quantum graph file."""
+
+    quantum_id: uuid.UUID
+    """Unique identifier for the quantum."""
+
+    task_label: TaskLabel
+    """Name of the type of this dataset.
+
+    This is always a parent dataset type name, not a component.
+
+    Note that full dataset type definitions are stored in the pipeline graph.
+    """
+
+    data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
+    """The full values (required and implied) of this dataset's data ID."""
+
+    status: QuantumRunStatus = QuantumRunStatus.METADATA_MISSING
+    """Enumerated status for the quantum."""
+
+    caveats: QuantumSuccessCaveats | None = None
+    """Flags indicating caveats on successful quanta."""
+
+    exception: ExceptionInfo | None = None
+    """Information about an exception raised when the quantum was executing."""
+
+    inputs: dict[ConnectionName, list[DatasetIndex]] = dataclasses.field(default_factory=dict)
+    """Internal integer IDs of the datasets predicted to be consumed by this
+    quantum, grouped by connection name.
+    """
+
+    outputs: dict[ConnectionName, list[DatasetIndex]] = dataclasses.field(default_factory=dict)
+    """Internal integer IDs of the datasets predicted to be produced by this
+    quantum, grouped by connection name.
+    """
+
+    @property
+    def node_id(self) -> uuid.UUID:
+        """Alias for the quantum ID."""
+        return self.quantum_id
+
+    @classmethod
+    def from_predicted(
+        cls, predicted: PredictedQuantumDatasetsModel, indices: Mapping[uuid.UUID, int]
+    ) -> ProvenanceQuantumModel:
+        """Construct from a predicted quantum model.
+
+        Parameters
+        ----------
+        predicted : `PredictedQuantumDatasetsModel`
+            Information about the quantum from the predicted graph.
+        indices : `~collections.abc.Mapping [`uuid.UUID`, `int`]
+            Mapping from quantum or dataset UUID to internal integer ID.
+
+        Returns
+        -------
+        provenance : `ProvenanceQuantumModel`
+            Provenance quantum model.
+        """
+        inputs = {
+            connection_name: [indices[d.dataset_id] for d in predicted_inputs]
+            for connection_name, predicted_inputs in predicted.inputs.items()
+        }
+        outputs = {
+            connection_name: [indices[d.dataset_id] for d in predicted_outputs]
+            for connection_name, predicted_outputs in predicted.outputs.items()
+        }
+        return cls(
+            quantum_id=predicted.quantum_id,
+            task_label=predicted.task_label,
+            data_coordinate=predicted.data_coordinate,
+            inputs=inputs,
+            outputs=outputs,
+        )
+
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+        task_node = graph.pipeline_graph.tasks[self.task_label]
+        data_id = DataCoordinate.from_full_values(task_node.dimensions, tuple(self.data_coordinate))
+        graph._bipartite_xgraph.add_node(
+            self.quantum_id,
+            data_id=data_id,
+            task_label=self.task_label,
+            pipeline_node=task_node,
+            status=self.status,
+            caveats=self.caveats,
+            exception=self.exception,
+        )
+        for connection_name, dataset_indices in self.inputs.items():
+            read_edge = task_node.get_input_edge(connection_name)
+            for dataset_index in dataset_indices:
+                dataset_id = address_reader.find(dataset_index).key
+                graph._bipartite_xgraph.add_edge(dataset_id, self.quantum_id, is_read=True)
+                graph._bipartite_xgraph.edges[dataset_id, self.quantum_id].setdefault(
+                    "pipeline_edges", []
+                ).append(read_edge)
+        for connection_name, dataset_indices in self.outputs.items():
+            write_edge = task_node.get_output_edge(connection_name)
+            for dataset_index in dataset_indices:
+                dataset_id = address_reader.find(dataset_index).key
+                graph._bipartite_xgraph.add_edge(
+                    self.quantum_id,
+                    dataset_id,
+                    is_read=False,
+                    # There can only be one pipeline edge for an output.
+                    pipeline_edges=[write_edge],
+                )
+        graph._quanta_by_task_label[self.task_label][data_id] = self.quantum_id
+        graph._quantum_only_xgraph.add_node(self.quantum_id, **graph._bipartite_xgraph.nodes[self.quantum_id])
+        for dataset_id in graph._bipartite_xgraph.predecessors(self.quantum_id):
+            for upstream_quantum_id in graph._bipartite_xgraph.predecessors(dataset_id):
+                graph._quantum_only_xgraph.add_edge(upstream_quantum_id, self.quantum_id)
+        for dataset_id in graph._bipartite_xgraph.successors(self.quantum_id):
+            for downstream_quantum_id in graph._bipartite_xgraph.successors(dataset_id):
+                graph._quantum_only_xgraph.add_edge(self.quantum_id, downstream_quantum_id)
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+
+class ProvenanceInitQuantumModel(pydantic.BaseModel):
+    """Data model for the special "init" quanta in a provenance quantum graph
+    file.
+    """
+
+    quantum_id: uuid.UUID
+    """Unique identifier for the quantum."""
+
+    task_label: TaskLabel
+    """Name of the type of this dataset.
+
+    This is always a parent dataset type name, not a component.
+
+    Note that full dataset type definitions are stored in the pipeline graph.
+    """
+
+    inputs: dict[ConnectionName, DatasetIndex] = dataclasses.field(default_factory=dict)
+    """Internal integer IDs of the datasets predicted to be consumed by this
+    quantum, grouped by connection name.
+    """
+
+    outputs: dict[ConnectionName, DatasetIndex] = dataclasses.field(default_factory=dict)
+    """Internal integer IDs of the datasets predicted to be produced by this
+    quantum, grouped by connection name.
+    """
+
+    @classmethod
+    def from_predicted(
+        cls, predicted: PredictedQuantumDatasetsModel, indices: Mapping[uuid.UUID, int]
+    ) -> ProvenanceInitQuantumModel:
+        """Construct from a predicted quantum model.
+
+        Parameters
+        ----------
+        predicted : `PredictedQuantumDatasetsModel`
+            Information about the quantum from the predicted graph.
+        indices : `~collections.abc.Mapping [`uuid.UUID`, `int`]
+            Mapping from quantum or dataset UUID to internal integer ID.
+
+        Returns
+        -------
+        provenance : `ProvenanceInitQuantumModel`
+            Provenance init quantum model.
+        """
+        inputs = {
+            connection_name: indices[predicted_inputs[0].dataset_id]
+            for connection_name, predicted_inputs in predicted.inputs.items()
+        }
+        outputs = {
+            connection_name: indices[predicted_outputs[0].dataset_id]
+            for connection_name, predicted_outputs in predicted.outputs.items()
+        }
+        return cls(
+            quantum_id=predicted.quantum_id,
+            task_label=predicted.task_label,
+            inputs=inputs,
+            outputs=outputs,
+        )
+
+    def _add_to_graph(
+        self,
+        graph: ProvenanceQuantumGraph,
+        address_reader: AddressReader,
+        empty_data_id: DataCoordinate,
+    ) -> None:
+        task_init_node = graph.pipeline_graph.tasks[self.task_label].init
+        graph._bipartite_xgraph.add_node(
+            self.quantum_id, data_id=empty_data_id, task_label=self.task_label, pipeline_node=task_init_node
+        )
+        for connection_name, dataset_index in self.inputs.items():
+            read_edge = task_init_node.get_input_edge(connection_name)
+            dataset_id = address_reader.find(dataset_index).key
+            graph._bipartite_xgraph.add_edge(dataset_id, self.quantum_id, is_read=True)
+            graph._bipartite_xgraph.edges[dataset_id, self.quantum_id].setdefault(
+                "pipeline_edges", []
+            ).append(read_edge)
+        for connection_name, dataset_index in self.outputs.items():
+            write_edge = task_init_node.get_output_edge(connection_name)
+            dataset_id = address_reader.find(dataset_index).key
+            graph._bipartite_xgraph.add_edge(
+                self.quantum_id,
+                dataset_id,
+                is_read=False,
+                # There can only be one pipeline edge for an output.
+                pipeline_edges=[write_edge],
+            )
+        graph._init_quanta[self.task_label] = self.quantum_id
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+
+class ProvenanceInitQuantaModel(pydantic.RootModel):
+    """Data model for the init quanta in a provenance graph."""
+
+    root: list[ProvenanceInitQuantumModel] = pydantic.Field(default_factory=list)
+    """List of special "init" quanta, one for each task."""
+
+    @classmethod
+    def from_predicted(
+        cls, predicted: PredictedInitQuantaModel, indices: Mapping[uuid.UUID, int]
+    ) -> ProvenanceInitQuantaModel:
+        result = cls()
+        for predicted_quantum in predicted.root[1:]:
+            result.root.append(ProvenanceInitQuantumModel.from_predicted(predicted_quantum, indices))
+        return result
+
+    def __bool__(self) -> bool:
+        return bool(self.root)
+
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+        empty_data_id = DataCoordinate.make_empty(graph.pipeline_graph.universe)
+        for init_quantum in self.root:
+            init_quantum._add_to_graph(graph, address_reader, empty_data_id=empty_data_id)
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+
+class ProvenanceQuantumGraph(BaseQuantumGraph):
+    def __init__(self, header: HeaderModel, pipeline_graph: PipelineGraph) -> None:
+        super().__init__(header, pipeline_graph)
+        self._init_quanta: dict[TaskLabel, uuid.UUID] = {}
+        self._quantum_only_xgraph = networkx.DiGraph()
+        self._quantum_only_xgraph_dirty: bool = False
+        self._bipartite_xgraph = networkx.DiGraph()
+        self._quanta_by_task_label: dict[str, dict[DataCoordinate, uuid.UUID]] = {
+            task_label: {} for task_label in self.pipeline_graph.tasks.keys()
+        }
+        self._datasets_by_type: dict[str, dict[DataCoordinate, uuid.UUID]] = {
+            dataset_type_name: {} for dataset_type_name in self.pipeline_graph.dataset_types.keys()
+        }
+        self._datasets_by_type[self.pipeline_graph.packages_dataset_type.name] = {}
+
+    @property
+    def init_quanta(self) -> Mapping[TaskLabel, uuid.UUID]:
+        """A mapping from task label to the ID of the special init quantum for
+        that task.
+
+        This is populated by the ``init_quanta`` component.
+        """
+        return self._init_quanta
+
+    @property
+    def quanta_by_task(self) -> Mapping[TaskLabel, Mapping[DataCoordinate, uuid.UUID]]:
+        """A nested mapping of all quanta, keyed first by task name and then by
+        data ID.
+
+        Notes
+        -----
+        This is populated one quantum at a time as they are read.  All tasks in
+        the pipeline graph are included, even if none of their quanta were
+        loaded (i.e. nested mappings may be empty).
+
+        The returned object may be an internal dictionary; as the type
+        annotation indicates, it should not be modified in place.
+        """
+        return self._quanta_by_task_label
+
+    @property
+    def datasets_by_type(self) -> Mapping[DatasetTypeName, Mapping[DataCoordinate, uuid.UUID]]:
+        """A nested mapping of all datasets, keyed first by dataset type name
+        and then by data ID.
+
+        Notes
+        -----
+        This is populated one dataset at a time as they are read. All dataset
+        types in the pipeline graph are included, even if none of their
+        datasets were loaded (i.e. nested mappings may be empty).
+
+        The returned object may be an internal dictionary; as the type
+        annotation indicates, it should not be modified in place.
+        """
+        return self._datasets_by_type
+
+    @property
+    def quantum_only_xgraph(self) -> networkx.DiGraph:
+        """A directed acyclic graph with quanta as nodes and datasets elided.
+
+        Notes
+        -----
+        Node keys are quantum UUIDs, and are populated one quantum at a time as
+        they are loaded.  Edges are populated one dataset at a time as they are
+        loaded (this may add a quantum node without filling in its attributes).
+
+        Node state dictionaries are described by the
+        `ProvenanceQuantumInfo` types.
+
+        This graph does not include special "init" quanta.
+
+        The returned object is a read-only view of an internal one.
+        """
+        return self._quantum_only_xgraph.copy(as_view=True)
+
+    @property
+    def bipartite_xgraph(self) -> networkx.DiGraph:
+        """A directed acyclic graph with quantum and dataset nodes.
+
+        Notes
+        -----
+        Node keys are quantum or dataset UUIDs, and are populated one quantum
+        or dataset at a time as they are loaded.  Adding any nodes adds its
+        edges, which adds the adjacent nodes without filling in their
+        attributes.  Edge attributes are only populated by loading quanta.
+
+        Node state dictionaries are described by the
+        `ProvenanceQuantumInfo`, `ProvenanceInitQuantumInfo`, and
+        `ProvenanceDatasetInfo` types.
+
+        This graph includes init-input and init-output datasets, but it does
+        *not* reflect the dependency between each task's special "init" quantum
+        and its runtime quanta.
+
+        The returned object is a read-only view of an internal one.
+        """
+        return self._bipartite_xgraph.copy(as_view=True)
+
+
+@dataclasses.dataclass
+class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
+    """A helper class for writing provenance quantum graphs."""
+
+    @classmethod
+    @contextmanager
+    def from_predicted_reader(
+        cls, path: ResourcePathExpression, reader: PredictedQuantumGraphReader
+    ) -> Iterator[Self]:
+        """Initialize the writer from a predict quantum graph reader.
+
+        Parameters
+        ----------
+        path : convertible to `lsst.resources.ResourcePath`
+            Path of the new provenance quantum file.
+        reader : `PredictedQuantumGraphReader`
+            Reader for the predicted graph.
+
+        Returns
+        -------
+        context : `AbstractContextManager`
+            A context manager that returns a `ProvenanceQuantumGraphWriter`
+            when entered.
+        """
+        reader.read_quantum_datasets()
+        reader.read_init_quanta()
+        header = reader.header.model_copy()
+        header.graph_type = "provenance"
+        indices = cls._gather_indices(reader)
+        compressor, cdict_data = reader.make_compressor()
+        with cls.open(
+            path,
+            header,
+            reader.pipeline_graph,
+            indices,
+            address_filename="nodes",
+            compressor=compressor,
+            cdict_data=cdict_data,
+        ) as self:
+            self.address_writer.addresses = [{} for i in range(4)]
+            self.write_single_model(
+                "init_quanta",
+                ProvenanceInitQuantaModel.from_predicted(reader.components.init_quanta, indices),
+            )
+            yield self
+
+    @contextmanager
+    def datasets(self) -> Iterator[MultiblockWriter]:
+        """Return a context manager for writing the graph's dataset nodes."""
+        with MultiblockWriter.open_in_zip(self.zf, name="datasets", int_size=self.int_size) as mb_writer:
+            yield mb_writer
+            self.address_writer.addresses[_DATASET_ADDRESS_INDEX] = mb_writer.addresses
+
+    @contextmanager
+    def quanta(self) -> Iterator[MultiblockWriter]:
+        """Return a context manager for writing the graph's quantum nodes."""
+        with MultiblockWriter.open_in_zip(self.zf, name="quanta", int_size=self.int_size) as mb_writer:
+            yield mb_writer
+            self.address_writer.addresses[_QUANTUM_ADDRESS_INDEX] = mb_writer.addresses
+
+    @contextmanager
+    def logs(self) -> Iterator[MultiblockWriter]:
+        """Return a context manager for writing log dataset content."""
+        with MultiblockWriter.open_in_zip(self.zf, name="logs", int_size=self.int_size) as mb_writer:
+            yield mb_writer
+            self.address_writer.addresses[_LOG_ADDRESS_INDEX] = mb_writer.addresses
+
+    @contextmanager
+    def metadata(self) -> Iterator[MultiblockWriter]:
+        """Return a context manager for writing metadata dataset content."""
+        with MultiblockWriter.open_in_zip(self.zf, name="metadata", int_size=self.int_size) as mb_writer:
+            yield mb_writer
+            self.address_writer.addresses[_METADATA_ADDRESS_INDEX] = mb_writer.addresses
+
+    @staticmethod
+    def _gather_indices(reader: PredictedQuantumGraphReader) -> dict[uuid.UUID, int]:
+        """Gather the UUIDs of all datasets and quanta in the predicted graph
+        and return a dictionary that maps those IDs to integer IDs.
+
+        Parameters
+        ----------
+        reader : `PredictedQuantumGraphReader`
+            Reader for the predicted quantum graph.
+
+        Returns
+        -------
+        indices : `dict` [ `uuid.UUID`, `int` ]
+            Dictionary mapping quantum and dataset UUIDs to their integer IDs
+            ("indexes").
+
+        Notes
+        -----
+        As required by the multi-block address file format, the integer IDs
+        correspond to the sort order of the UUIDs.  They do *not* correspond to
+        the integer IDs in the predicted quantum graph (which are only for
+        quanta).
+        """
+        all_uuids = set(reader.components.quantum_indices.keys())
+        for quantum in reader.components.quantum_datasets.values():
+            all_uuids.update(quantum.iter_dataset_ids())
+        for quantum in reader.components.init_quanta.root:
+            all_uuids.update(quantum.iter_dataset_ids())
+        return {
+            node_id: node_index
+            for node_index, node_id in enumerate(sorted(all_uuids, key=operator.attrgetter("int")))
+        }
+
+
+@dataclasses.dataclass
+class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
+    """A helper class for reading provenance quantum graphs.
+
+    Unlike the readers for other quantum graphs, this reader directly populates
+    NetworkX graphs, and uses integer indices instead of UUIDs for the node
+    keys of those graphs.  This is intended to allow the reader to be used to
+    efficiently implement provenance queries that require walking the graph and
+    reading additional information from just [a subset of] the traversed nodes.
+    """
+
+    graph: ProvenanceQuantumGraph = dataclasses.field(init=False)
+    """Loaded provenance graph, populated in place as components are read."""
+
+    @classmethod
+    @contextmanager
+    def open(
+        cls,
+        uri: ResourcePathExpression,
+        *,
+        page_size: int | None = None,
+        import_mode: TaskImportMode = TaskImportMode.DO_NOT_IMPORT,
+    ) -> Iterator[ProvenanceQuantumGraphReader]:
+        """Construct a reader from a URI.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files and
+            multi-block files. Note that this does not set a page size for
+            *all* reads, but it does affect the smallest, most numerous reads.
+        import_mode : `..pipeline_graph.TaskImportMode`, optional
+            How to handle importing the task classes referenced in the pipeline
+            graph.
+
+        Returns
+        -------
+        reader : `contextlib.AbstractContextManager` [ \
+                `ProvenanceQuantumGraphReader` ]
+            A context manager that returns the reader when entered.
+        """
+        with cls._open(
+            uri,
+            graph_type="provenance",
+            address_filename="nodes",
+            page_size=page_size,
+            import_mode=import_mode,
+        ) as self:
+            yield self
+
+    def __post_init__(self) -> None:
+        self.graph = ProvenanceQuantumGraph(self.header, self.pipeline_graph)
+
+    def read_init_quanta(self) -> Self:
+        """Read the thin graph, with all edge information and categorization of
+        quanta by task label.
+        """
+        init_quanta = self._read_single_block("init_quanta", ProvenanceInitQuantaModel)
+        for init_quantum in init_quanta.root:
+            self.graph._init_quanta[init_quantum.task_label] = init_quantum.quantum_id
+        init_quanta._add_to_graph(self.graph, self.address_reader)
+        return self
+
+    def read_full_graph(self) -> Self:
+        """Read all bipartite edges and all quantum and dataset node
+        attributes, fully populating the `bipartite_xgraph` attribute.
+        """
+        self.read_init_quanta()
+        self.read_datasets()
+        self.read_quanta()
+        return self
+
+    def read_datasets(
+        self,
+        datasets: Iterable[uuid.UUID | DatasetIndex] | None = None,
+    ) -> Self:
+        """Read information about the given datasets.
+
+        Parameters
+        ----------
+        datasets : `~collections.abc.Iterable` [`uuid.UUID` or `int`], optional
+            Iterable of dataset IDs or indices to load.  If not provided, all
+            datasets will be loaded.  The UUIDs and indices of quanta will be
+            ignored.
+        """
+        return self._read_nodes(datasets, _DATASET_ADDRESS_INDEX, _DATASET_MB_NAME, ProvenanceDatasetModel)
+
+    def read_quanta(self, quanta: Iterable[uuid.UUID | QuantumIndex] | None = None) -> Self:
+        """Read information about the given quanta.
+
+        Parameters
+        ----------
+        quanta : `~collections.abc.Iterable` [`uuid.UUID` or `int`], optional
+            Iterable of quantum IDs or indices to load.  If not provided, all
+            quanta will be loaded.  The UUIDs and indices of datasets and
+            special init quanta will be ignored.
+        """
+        return self._read_nodes(quanta, _QUANTUM_ADDRESS_INDEX, _QUANTUM_MB_NAME, ProvenanceQuantumModel)
+
+    def _read_nodes(
+        self,
+        nodes: Iterable[uuid.UUID | int] | None,
+        address_index: int,
+        mb_name: str,
+        model_type: type[ProvenanceDatasetModel] | type[ProvenanceQuantumModel],
+    ) -> Self:
+        if nodes is None:
+            self.address_reader.read_all()
+            nodes = self.address_reader.rows.keys()
+            for node in MultiblockReader.read_all_models_in_zip(
+                self.zf,
+                mb_name,
+                model_type,
+                self.decompressor,
+                int_size=self.header.int_size,
+                page_size=self.page_size,
+            ):
+                if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(node.node_id, {}):
+                    # Use the old node to reduce memory usage (since it might
+                    # also have other outstanding reference holders).
+                    continue
+                node._add_to_graph(self.graph, self.address_reader)
+        with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
+            for node_id_or_index in nodes:
+                address_row = self.address_reader.find(node_id_or_index)
+                if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(address_row.key, {}):
+                    # Use the old node to reduce memory usage (since it might
+                    # also have other outstanding reference holders).
+                    continue
+                node = mb_reader.read_model(
+                    address_row.addresses[address_index], model_type, self.decompressor
+                )
+                if node is not None:
+                    node._add_to_graph(self.graph, self.address_reader)
+        return self
+
+    def fetch_logs(
+        self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
+    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, ButlerLogRecords]:
+        """Fetch log datasets.
+
+        Parameters
+        ----------
+        nodes : `~collections.abc.Iterable` [ `uuid.UUID` or `int` ]
+            UUIDs or indexes of the log datasets themselves or of the quanta
+            they correspond to.
+
+        Returns
+        -------
+        logs : `dict` [ `uuid.UUID` or `int`, `ButlerLogRecords`]
+            Logs for the given IDs.
+        """
+        from lsst.daf.butler.logging import ButlerLogRecords
+
+        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, ButlerLogRecords] = {}
+        with MultiblockReader.open_in_zip(self.zf, _LOG_MB_NAME, int_size=self.header.int_size) as mb_reader:
+            for node_id_or_index in nodes:
+                address_row = self.address_reader.find(node_id_or_index)
+                log = mb_reader.read_model(
+                    address_row.addresses[_LOG_ADDRESS_INDEX], ButlerLogRecords, self.decompressor
+                )
+                if log is not None:
+                    result[node_id_or_index] = log
+        return result
+
+    def fetch_metadata(
+        self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
+    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, TaskMetadata]:
+        """Fetch metadata datasets.
+
+        Parameters
+        ----------
+        nodes : `~collections.abc.Iterable` [ `uuid.UUID` or `int` ]
+            UUIDs or indexes of the metadata datasets themselves or of the
+            quanta they correspond to.
+
+        Returns
+        -------
+        metadata : `dict` [ `uuid.UUID` or `int`, `TaskMetadata`]
+            Metadata for the given IDs.
+        """
+        from .._task_metadata import TaskMetadata
+
+        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, TaskMetadata] = {}
+        with MultiblockReader.open_in_zip(
+            self.zf, _METADATA_MB_NAME, int_size=self.header.int_size
+        ) as mb_reader:
+            for node_id_or_index in nodes:
+                address_row = self.address_reader.find(node_id_or_index)
+                metadata = mb_reader.read_model(
+                    address_row.addresses[_METADATA_ADDRESS_INDEX], TaskMetadata, self.decompressor
+                )
+                if metadata is not None:
+                    result[node_id_or_index] = metadata
+        return result
