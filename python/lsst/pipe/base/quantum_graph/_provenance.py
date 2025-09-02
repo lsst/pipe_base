@@ -715,6 +715,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
 class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
     """A helper class for writing provenance quantum graphs."""
 
+    output_dataset_ids: set[uuid.UUID] = dataclasses.field(default_factory=set)
+
     @classmethod
     @contextmanager
     def from_predicted_reader(
@@ -739,7 +741,7 @@ class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
         reader.read_init_quanta()
         header = reader.header.model_copy()
         header.graph_type = "provenance"
-        indices = cls._gather_indices(reader)
+        indices, output_dataset_ids = cls._gather_indices_and_outputs(reader)
         compressor, cdict_data = reader.make_compressor()
         with cls.open(
             path,
@@ -750,6 +752,7 @@ class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
             compressor=compressor,
             cdict_data=cdict_data,
         ) as self:
+            self.output_dataset_ids = output_dataset_ids
             self.address_writer.addresses = [{} for i in range(4)]
             self.write_single_model(
                 "init_quanta",
@@ -758,35 +761,45 @@ class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
             yield self
 
     @contextmanager
-    def datasets(self) -> Iterator[MultiblockWriter]:
+    def datasets(self, use_tempfile: bool) -> Iterator[MultiblockWriter]:
         """Return a context manager for writing the graph's dataset nodes."""
-        with MultiblockWriter.open_in_zip(self.zf, name="datasets", int_size=self.int_size) as mb_writer:
+        with MultiblockWriter.open_in_zip(
+            self.zf, name="datasets", int_size=self.int_size, use_tempfile=use_tempfile
+        ) as mb_writer:
             yield mb_writer
             self.address_writer.addresses[_DATASET_ADDRESS_INDEX] = mb_writer.addresses
 
     @contextmanager
-    def quanta(self) -> Iterator[MultiblockWriter]:
+    def quanta(self, use_tempfile: bool) -> Iterator[MultiblockWriter]:
         """Return a context manager for writing the graph's quantum nodes."""
-        with MultiblockWriter.open_in_zip(self.zf, name="quanta", int_size=self.int_size) as mb_writer:
+        with MultiblockWriter.open_in_zip(
+            self.zf, name="quanta", int_size=self.int_size, use_tempfile=use_tempfile
+        ) as mb_writer:
             yield mb_writer
             self.address_writer.addresses[_QUANTUM_ADDRESS_INDEX] = mb_writer.addresses
 
     @contextmanager
-    def logs(self) -> Iterator[MultiblockWriter]:
+    def logs(self, use_tempfile: bool) -> Iterator[MultiblockWriter]:
         """Return a context manager for writing log dataset content."""
-        with MultiblockWriter.open_in_zip(self.zf, name="logs", int_size=self.int_size) as mb_writer:
+        with MultiblockWriter.open_in_zip(
+            self.zf, name="logs", int_size=self.int_size, use_tempfile=use_tempfile
+        ) as mb_writer:
             yield mb_writer
             self.address_writer.addresses[_LOG_ADDRESS_INDEX] = mb_writer.addresses
 
     @contextmanager
-    def metadata(self) -> Iterator[MultiblockWriter]:
+    def metadata(self, use_tempfile: bool) -> Iterator[MultiblockWriter]:
         """Return a context manager for writing metadata dataset content."""
-        with MultiblockWriter.open_in_zip(self.zf, name="metadata", int_size=self.int_size) as mb_writer:
+        with MultiblockWriter.open_in_zip(
+            self.zf, name="metadata", int_size=self.int_size, use_tempfile=use_tempfile
+        ) as mb_writer:
             yield mb_writer
             self.address_writer.addresses[_METADATA_ADDRESS_INDEX] = mb_writer.addresses
 
     @staticmethod
-    def _gather_indices(reader: PredictedQuantumGraphReader) -> dict[uuid.UUID, int]:
+    def _gather_indices_and_outputs(
+        reader: PredictedQuantumGraphReader,
+    ) -> tuple[dict[uuid.UUID, int], set[uuid.UUID]]:
         """Gather the UUIDs of all datasets and quanta in the predicted graph
         and return a dictionary that maps those IDs to integer IDs.
 
@@ -800,6 +813,8 @@ class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
         indices : `dict` [ `uuid.UUID`, `int` ]
             Dictionary mapping quantum and dataset UUIDs to their integer IDs
             ("indexes").
+        output_dataset_ids : `set` [ `uuid.UUID` ]
+            IDs of datasets that are produced by quanta in this graph.
 
         Notes
         -----
@@ -809,14 +824,18 @@ class ProvenanceQuantumGraphWriter(BaseQuantumGraphWriter):
         quanta).
         """
         all_uuids = set(reader.components.quantum_indices.keys())
+        outputs: set[uuid.UUID] = set()
         for quantum in reader.components.quantum_datasets.values():
-            all_uuids.update(quantum.iter_dataset_ids())
+            all_uuids.update(quantum.iter_input_dataset_ids())
+            outputs.update(quantum.iter_output_dataset_ids())
         for quantum in reader.components.init_quanta.root:
-            all_uuids.update(quantum.iter_dataset_ids())
+            all_uuids.update(quantum.iter_input_dataset_ids())
+            outputs.update(quantum.iter_output_dataset_ids())
+        all_uuids.update(outputs)
         return {
             node_id: node_index
             for node_index, node_id in enumerate(sorted(all_uuids, key=operator.attrgetter("int")))
-        }
+        }, outputs
 
 
 @dataclasses.dataclass
@@ -927,6 +946,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         mb_name: str,
         model_type: type[ProvenanceDatasetModel] | type[ProvenanceQuantumModel],
     ) -> Self:
+        node: ProvenanceDatasetModel | ProvenanceQuantumModel | None
         if nodes is None:
             self.address_reader.read_all()
             nodes = self.address_reader.rows.keys()

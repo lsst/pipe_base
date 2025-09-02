@@ -1,0 +1,387 @@
+# This file is part of pipe_base.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This software is dual licensed under the GNU General Public License and also
+# under a 3-clause BSD license. Recipients may choose which of these licenses
+# to use; please see the files gpl-3.0.txt and/or bsd_license.txt,
+# respectively.  If you choose the GPL option then the following text applies
+# (but note that there is still no warranty even if you opt for BSD instead):
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+__all__ = ("Scanner",)
+
+import asyncio
+import dataclasses
+import itertools
+import pickle
+import time
+import uuid
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from typing import Literal
+
+from lsst.daf.butler import ButlerLogRecords, QuantumBackedButler
+from lsst.utils.iteration import ensure_iterable
+
+from ... import automatic_connection_constants as acc
+from ..._status import QuantumSuccessCaveats
+from ..._task_metadata import TaskMetadata
+from ...pipeline_graph import PipelineGraph, TaskImportMode
+from ...quantum_provenance_graph import ExceptionInfo
+from .._predicted import (
+    PredictedDatasetModel,
+    PredictedQuantumDatasetsModel,
+    PredictedQuantumGraph,
+    PredictedQuantumGraphReader,
+)
+from . import utils
+from ._communicators import CancelError, ScannerCommunicator
+from ._config import AggregatorConfig, ScannerTimeConfigDict
+from ._progress import Activity, BaseProgress, WorkerProgress
+from ._storage import Storage
+from ._structs import IngestConfirmation, IngestRequest, ScanReport, ScanResult, ScanStatus
+
+
+@dataclasses.dataclass
+class Scanner:
+    """A helper class for the provenance scanner that handles work that is (or
+    could be in the future) done by separate processes.
+    """
+
+    reader: PredictedQuantumGraphReader
+    """Reader for the predicted quantum graph."""
+
+    config: AggregatorConfig
+    """Configuration for the scanner."""
+
+    progress: BaseProgress
+
+    comms: ScannerCommunicator
+
+    storage: Storage | None
+
+    qbb: QuantumBackedButler = dataclasses.field(init=False)
+    """A quantum-backed butler used for log and metadata reads, existence
+    checks for other outputs (when necessary), and deleting datasets that
+    are not needed anymore.
+    """
+
+    no_ingest_dataset_types: set[str] = dataclasses.field(default_factory=set)
+
+    init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
+
+    @classmethod
+    @contextmanager
+    def open(
+        cls, config: AggregatorConfig, progress: BaseProgress, comms: ScannerCommunicator
+    ) -> Iterator[Scanner]:
+        """Construct a scanner worker in a context manager.
+
+        Parameters
+        ----------
+        config : `ScannerConfig`
+            Configuration for the scanner.
+        progress : `BaseProgress`
+            Progress reporting helper.
+        """
+        with ExitStack() as exit_stack:
+            reader = exit_stack.enter_context(
+                PredictedQuantumGraph.open(config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
+            )
+            storage: Storage | None = None
+            if config.db_dir is not None:
+                storage = exit_stack.enter_context(
+                    Storage(config, comms.scanner_id, progress=progress, trust_local=True)
+                )
+            yield cls(reader=reader, config=config, progress=progress, comms=comms, storage=storage)
+
+    def __post_init__(self) -> None:
+        if self.config.enable_mocks:
+            import lsst.pipe.base.tests.mocks  # noqa: F401
+        self.reader.read_dimension_data()
+        self.reader.read_init_quanta()
+        self.qbb = utils.make_qbb(self.config.butler_path, self.reader.pipeline_graph)
+        self.compressor, _ = self.reader.make_compressor(self.config.zstd_level)
+        self.no_ingest_dataset_types.update(self.config.delete_dataset_types)
+        for task_node in self.reader.pipeline_graph.tasks.values():
+            if self.config.aggregate_metadata:
+                self.no_ingest_dataset_types.add(task_node.metadata_output.dataset_type_name)
+            if self.config.aggregate_logs:
+                assert task_node.log_output is not None, "Aggregator cannot work without task log outputs."
+                self.no_ingest_dataset_types.add(task_node.log_output.dataset_type_name)
+        self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root[1:]}
+
+    @property
+    def pipeline_graph(self) -> PipelineGraph:
+        """Graph of tasks and dataset types."""
+        return self.reader.pipeline_graph
+
+    def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
+        """Scan for a dataset's existence.
+
+        Parameters
+        ----------
+        predicted : `.PredictedDatasetModel`
+            Information about the dataset from the predicted graph.
+
+        Returns
+        -------
+        exists : `bool``
+            Whether the dataset exists
+        """
+        ref = self.reader.make_dataset_ref(predicted)
+        return self.qbb.stored(ref)
+
+    async def scan_quantum(self, quantum_id: uuid.UUID) -> ScanResult:
+        """Scan for a quantum's completion and error status, and its output
+        datasets' existence.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
+
+        Returns
+        -------
+        result : `ScanResult`
+            Scan result struct.
+        """
+        self.progress.log.debug("Started scan for %s.", quantum_id)
+        if (predicted_quantum := self.init_quanta.get(quantum_id)) is not None:
+            result = ScanResult(predicted_quantum.quantum_id, status=ScanStatus.INIT)
+        else:
+            self.reader.read_quantum_datasets([quantum_id])
+            predicted_quantum = self.reader.components.quantum_datasets[quantum_id]
+            result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
+            del self.reader.components.quantum_datasets[quantum_id]
+            times_for_task = self.config.get_times_for_task(predicted_quantum.task_label)
+            wait_interval: float = times_for_task["wait"]
+            while True:
+                log_id = self._read_and_compress_log(predicted_quantum, result)
+                if self.config.assume_complete or result.log:
+                    break
+                wait_interval = await self._wait_for_quantum(times_for_task, wait_interval)
+            first_failure_time: float | None = None
+            while True:
+                metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
+                if result.metadata:
+                    result.status = ScanStatus.SUCCESSFUL
+                    break
+                elif self.config.assume_complete:
+                    result.status = ScanStatus.FAILED
+                    break
+                else:
+                    # We found the log dataset, but no metadata; this means the
+                    # quantum failed, but a retry might still happen that could
+                    # turn it into a success if we can't yet assume the run is
+                    # complete.
+                    if first_failure_time is None:
+                        first_failure_time = time.time()
+                    else:
+                        if time.time() - first_failure_time > times_for_task["retry_timeout"]:
+                            # Give up on scanning this quantum and all that
+                            # follow it. A later invocation of the scanner with
+                            # assume_complete=True will recover it in the
+                            # unlikely event it's still retrying, but
+                            # (according to timeout configuration) that should
+                            # have already happened if it was going to.
+                            self.progress.log.debug("Abandoning scan for %s.", quantum_id)
+                            result.status = ScanStatus.ABANDONED
+                            self.comms.return_scan(ScanReport(result.quantum_id, result.status))
+                            return result
+                    wait_interval = await self._wait_for_quantum(times_for_task, wait_interval)
+            if result.metadata:
+                result.existing_outputs.add(metadata_id)
+            if result.log:
+                result.existing_outputs.add(log_id)
+        for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+            if predicted_output.dataset_id not in result.existing_outputs and self.scan_dataset(
+                predicted_output
+            ):
+                result.existing_outputs.add(predicted_output.dataset_id)
+        predicted_outputs_by_id = {
+            d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
+        }
+        to_ingest: list[PredictedDatasetModel] = []
+        for dataset_id in result.existing_outputs:
+            predicted_output = predicted_outputs_by_id[dataset_id]
+            if predicted_output.dataset_type_name not in self.no_ingest_dataset_types:
+                to_ingest.append(predicted_output)
+        if self.storage is not None:
+            pickled_ingests = self.storage.save_quantum(result, to_ingest=to_ingest)
+        elif to_ingest:
+            pickled_ingests = pickle.dumps(to_ingest)
+        else:
+            pickled_ingests = b""
+        self.comms.return_scan(ScanReport(result.quantum_id, result.status))
+        assert result.status is not ScanStatus.INCOMPLETE
+        assert result.status is not ScanStatus.ABANDONED
+        if self.config.output_path is not None:
+            self.comms.request_write(result)
+        self.comms.request_ingest(IngestRequest(self.comms.scanner_id, result.quantum_id, pickled_ingests))
+        self.progress.log.debug("Finished scan for %s.", quantum_id)
+        return result
+
+    @staticmethod
+    async def _wait_for_quantum(times_for_task: ScannerTimeConfigDict, wait_interval: float) -> float:
+        await asyncio.sleep(wait_interval)
+        wait_interval *= times_for_task["wait_factor"]
+        if wait_interval > times_for_task["wait_max"]:
+            wait_interval = times_for_task["wait_max"]
+        return wait_interval
+
+    def _read_and_compress_metadata(
+        self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
+    ) -> uuid.UUID:
+        """Attempt to read the metadata dataset for a quantum to extract
+        provenance information from it.
+        """
+        assert not result.metadata, "We shouldn't be scanning again if we already read the metadata."
+        (predicted_dataset,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
+        ref = self.reader.make_dataset_ref(predicted_dataset)
+        try:
+            # This assumes QBB metadata writes are atomic, which should be the
+            # case. If it's not we'll probably get pydantic validation errors
+            # here.
+            with self.progress.working_on(Activity.READING_METADATA):
+                content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
+        except FileNotFoundError:
+            if not self.config.assume_complete:
+                return ref.id
+        else:
+            try:
+                # Int conversion guards against spurious conversion to
+                # float that can apparently sometimes happen in
+                # TaskMetadata.
+                result.caveats = QuantumSuccessCaveats(int(content["quantum"]["caveats"]))
+            except LookupError:
+                pass
+            try:
+                result.exception = ExceptionInfo._from_metadata(
+                    content[predicted_quantum.task_label]["failure"]
+                )
+            except LookupError:
+                pass
+            try:
+                result.existing_outputs = {
+                    uuid.UUID(id_str) for id_str in ensure_iterable(content["quantum"].getArray("outputs"))
+                }
+            except LookupError:
+                pass
+            result.metadata = self.compressor.compress(content.model_dump_json().encode())
+        return ref.id
+
+    def _read_and_compress_log(
+        self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
+    ) -> uuid.UUID:
+        """Attempt to read the log dataset for a quantum to test for the
+        quantum's completion (the log is always written last) and aggregate
+        the log content in the provenance quantum graph.
+        """
+        (predicted_dataset,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
+        ref = self.reader.make_dataset_ref(predicted_dataset)
+        try:
+            # This assumes QBB log writes are atomic, which should be the case.
+            # If it's not we'll probably get pydantic validation errors here.
+            with self.progress.working_on(Activity.READING_LOGS):
+                content: ButlerLogRecords = self.qbb.get(ref)
+        except FileNotFoundError:
+            if not self.config.assume_complete:
+                return ref.id
+        else:
+            result.log = self.compressor.compress(content.model_dump_json().encode())
+        return ref.id
+
+    async def _loop(self) -> bool:
+        n_ingests_loaded = 0
+        n_quanta_loaded = 0
+        if self.storage is not None:
+            self.progress.log.debug("Sending any past ingests that may not have completed.")
+            for producer_id, pickled_datasets in self.storage.fetch_ingests():
+                self.comms.request_ingest(IngestRequest(self.comms.scanner_id, producer_id, pickled_datasets))
+                n_ingests_loaded += 1
+            self.progress.log.debug("Loading and returning past scans.")
+            for scan_return, write_request in self.storage.resume():
+                self.comms.return_scan(scan_return)
+                n_quanta_loaded += 1
+                if write_request is not None:
+                    self.comms.request_write(write_request)
+        self.comms.report_resume_completed(n_quanta_loaded, n_ingests_loaded)
+        asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
+        pending: set[asyncio.Task[ScanResult]] = set()
+        try:
+            for scan_request, ingest_return in self.comms.poll_for_scan_requests():
+                self.progress.log.debug("Scan request loop iteration beginning.")
+                pending = await self._do_work(scan_request, ingest_return, pending)
+                self.progress.periodically_write_times()
+            self.progress.log.debug("Waiting for pending tasks to complete.")
+            pending = await self._do_work(None, None, pending, return_when="ALL_COMPLETED")
+            assert not pending, "No scans should be pending at this point."
+            for ingest_return in self.comms.poll_for_ingest_returns():
+                self.progress.log.debug("Ingest return loop iteration beginning.")
+                await self._do_work(None, ingest_return, pending)
+            if self.storage is not None and self.storage.needs_checkpoint:
+                self.progress.log.debug("Performing final checkpoint.")
+                self.storage.checkpoint()
+            return True
+        except CancelError:
+            self.progress.log.debug("Cancel event set.")
+            for task in pending:
+                task.cancel()
+            return False
+
+    async def _do_work(
+        self,
+        requested_quantum_id: uuid.UUID | None,
+        ingest_confirmation: IngestConfirmation | None,
+        pending: set[asyncio.Task[ScanResult]],
+        return_when: Literal["FIRST_COMPLETED", "ALL_COMPLETED"] = "FIRST_COMPLETED",
+    ) -> set[asyncio.Task[ScanResult]]:
+        timeout: float = self.config.worker_sleep
+        if requested_quantum_id is not None:
+            self.progress.log.debug("Creating scan task for %s.", requested_quantum_id)
+            pending.add(asyncio.create_task(self.scan_quantum(requested_quantum_id)))
+            timeout = 0.0
+        if ingest_confirmation is not None:
+            self.progress.log.debug("Finishing %d ingest returns.", len(ingest_confirmation.producer_ids))
+            if self.storage is not None:
+                self.storage.finish_ingests(ingest_confirmation.producer_ids)
+            timeout = 0.0
+        if pending:
+            self.progress.log.debug("Awaiting %d pending scans.", len(pending))
+            _, pending = await asyncio.wait(pending, timeout=timeout, return_when=return_when)
+        else:
+            self.progress.log.debug("Nothing to do; sleeping for %fs.", timeout)
+            await asyncio.sleep(timeout)
+        if self.storage is not None and self.storage.should_checkpoint_now:
+            self.progress.log.debug("Running periodic checkpoint.", timeout)
+            self.storage.checkpoint()
+        self.progress.periodically_write_times()
+        return pending
+
+    @staticmethod
+    def run(config: AggregatorConfig, comms: ScannerCommunicator) -> None:
+        with WorkerProgress(f"worker-{comms.scanner_id:03d}", config) as progress:
+            with comms.handling_errors():
+                with Scanner.open(config, progress, comms) as worker:
+                    asyncio.run(worker._loop())
+            progress.log.debug("Shutting down worker.")

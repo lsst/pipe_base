@@ -140,7 +140,7 @@ def zip_from_graph(**kwargs: Any) -> None:
     "--include-outputs/--no-include-outputs",
     is_flag=True,
     default=True,
-    help="Whether to include outut datasets in retrieval.",
+    help="Whether to include output datasets in retrieval.",
 )
 @options_file_option()
 def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
@@ -153,3 +153,85 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     """
     artifacts = script.retrieve_artifacts_for_quanta(**kwargs)
     print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")
+
+
+@click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
+@repo_argument(required=False, help="Path to the central butler repository.")
+@click.option("-g", "--predicted-graph", help="Path to the predicted quantum graph file.")
+@click.option("-d", "--db-dir", help="Directory for the scanner's SQLite database files (POSIX only).")
+@click.option("-o", "--output", help="Path to the output provenance quantum graph.")
+@click.option(
+    "--checkpoint-dir",
+    help=(
+        "Path to a persistent storage location to copy the scanner databases "
+        "to periodically, if --db-dir is not persistent."
+    ),
+)
+@click.option("-c", "--config", help="Path to a scanner configuration JSON file.")
+@click.option(
+    "-j",
+    "--processes",
+    type=click.IntRange(min=1),
+    help="Number of processes to use.",
+)
+@click.option(
+    "--assume-complete",
+    "-a",
+    "assume_complete",
+    flag_value=True,
+    default=None,
+    help="Assume the quantum graph has been executed to completion.",
+)
+@click.option(
+    "--assume-incomplete",
+    "assume_complete",
+    flag_value=False,
+    help="Do not assume the quantum graph has been executed to completion (failures may be retried).",
+)
+@click.option(
+    "--dry-run",
+    flag_value=True,
+    default=None,
+    help="Do not actually perform any central database ingests or dataset artifact deletions.",
+)
+@click.option(
+    "--interactive-status",
+    "interactive_status",
+    flag_value=True,
+    default=None,
+    help="Use progress bars for status reporting.",
+)
+@click.option(
+    "--no-interactive-status",
+    "interactive_status",
+    flag_value=False,
+    default=None,
+    help="Use periodic logging for status reporting.",
+)
+@click.option(
+    "--mock-storage-classes",
+    "mock_storage_classes",
+    flag_value=True,
+    default=None,
+    help="Enable support for storage classes by created by the lsst.pipe.base.tests.mocks package.",
+)
+@click.option(
+    "--no-mock-storage-classes",
+    "mock_storage_classes",
+    flag_value=False,
+    default=None,
+    help="Do not support for storage classes by created by the lsst.pipe.base.tests.mocks package.",
+)
+def aggregate_graph(**kwargs: Any) -> None:
+    """Scan for quantum graph's outputs to gather provenance, ingest datasets
+    into the central butler repository, and delete datasets that are no
+    longer needed.
+
+    REPO is the path to the central data repository.
+
+    If a configuration file path is not provided via -c/--config, the
+    --predicted-graph, --db-dir, and --output options are required.
+    """
+    from ...script.aggregate_graph import aggregate_graph
+
+    aggregate_graph(**kwargs)

@@ -1,0 +1,282 @@
+# This file is part of pipe_base.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (http://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This software is dual licensed under the GNU General Public License and also
+# under a 3-clause BSD license. Recipients may choose which of these licenses
+# to use; please see the files gpl-3.0.txt and/or bsd_license.txt,
+# respectively.  If you choose the GPL option then the following text applies
+# (but note that there is still no warranty even if you opt for BSD instead):
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+__all__ = ("AggregatorConfig", "ScannerTimeConfigDict", "ScannerTimeOverrideDict")
+
+from collections import ChainMap
+from typing import TypedDict
+
+import pydantic
+
+from .._common import TaskLabel
+
+
+class ScannerTimeConfigDict(TypedDict):
+    """Configuration for how long the provenance scanner should wait between
+    attempts to read a quantum's metadata and log datasets.
+
+    This waiting logic is only applied if `ScannerConfig.assume_complete` is
+    `False`; when that is `True`, all quanta are expected to have either failed
+    or succeed, the absence of metadata and log datasets is assumed to indicate
+    a hard failure.
+    """
+
+    wait: float
+    """Wait time (s) between the first attempt to scan for a quantum's
+    completion and the second attempt.
+
+    Scanning attempts can start as soon as a quantum is unblocked by upstream
+    quanta finishing (the scanner generally has no knowledge of when a quantum
+    is actually scheduled for execution by a workflow system), so this wait
+    time should account for any expected delay in the start of execution as
+    well as the time it takes to start a quantum.
+    """
+
+    wait_factor: float
+    """Multiplier for `wait` applied on each attempt after the second.
+    """
+
+    wait_max: float
+    """Maximum wait interval (s) for scans.
+
+    Quanta that have not produced a log dataset are continually scanned until
+    this threshold is reached.
+    """
+
+    retry_timeout: float
+    """Maximum total wait time since the first scan with a log dataset present
+    before giving up.
+
+    Quanta with log and no metadata have failed at least once, but may be
+    retried and hence turn into successes if we wait.
+    """
+
+
+def make_scanner_time_defaults() -> ScannerTimeConfigDict:
+    """Make a `ScannerTimeConfigDict` with default values."""
+    return dict(
+        wait=60.0,
+        wait_factor=1.2,
+        wait_max=600.0,
+        retry_timeout=600.0,
+    )
+
+
+class ScannerTimeOverrideDict(ScannerTimeConfigDict, total=False):
+    """A variance of `ScannerTimeConfigDict` that does not require all keys
+    to be present, for use in per-task configurations.
+
+    Missing keys fall back to the task-independent default.
+    """
+
+
+class AggregatorConfig(pydantic.BaseModel):
+    """Configuration for the provenance aggregator."""
+
+    predicted_path: str
+    """Path to the predicted quantum graph."""
+
+    butler_path: str
+    """Path or alias to the central butler repository."""
+
+    db_dir: str | None = None
+    """Path to a directory holding the SQLite scanner databases.
+
+    This must be a POSIX filesystem path.  On systems with no persistent POSIX
+    storage, this should be a temporary path and `checkpoint_dir` should be
+    set to a persistent non-POSIX location where the SQLite databases will be
+    copied periodically.
+
+    If this is `None`, no scanner state will be stored, and a restarted scanner
+    will start from the beginning.
+    """
+
+    output_path: str | None = None
+    """Path for the output provenance quantum graph file.
+
+    If `None`, the provenance graph will not be written (yet).
+    """
+
+    checkpoint_dir: str | None = None
+    """Optional path to a persistent location that the scanner SQLite database
+    files should be copied to for fault tolerance.-
+
+    If not set, the scanner's checkpoints will only involve ensuring the SQLite
+    write-ahead log is synced back to the main database.  The scanner
+    guarantees that no destructive writes (e.g. log and metadata deletions)
+    will occur until a version of the scanner database with the to-be-deleted
+    content is saved durably via one of these checkpoint methods.
+    """
+
+    worker_log_dir: str | None = None
+    """Path to a directory (POSIX only) for parallel scanner debug logs.
+
+    When this is not `None`, the worker logging is automatically set to the
+    DEBUG level (which is the only kind of log workers ever emit).  This option
+    is ignored when running in a single process.
+    """
+
+    timer_dir: str | None = None
+    """Path to a directory (POSIX only) for CSV files that summarize the time
+    spent on various activities.
+    """
+
+    timer_interval: float = 60.0
+    """How often timing summaries are written.
+
+    Ignored if timer_dir is `None`.
+    """
+
+    vacuum_on_checkpoint: bool = False
+    """If `True`, VACUUM the database before checkpointing.
+
+    This is expected to be useful primarily when checkpointing to an separate
+    external path (`checkpoint_path` is not `None`), since it will shrink the
+    size of the database file before copying it.
+    """
+
+    n_processes: int = 1
+    """Number of processes the scanner should use."""
+
+    zstd_level: int = 10
+    """ZStandard compression level to use for all compressed-JSON blocks."""
+
+    assume_complete: bool = False
+    """If `True`, the scanner can assume all quanta have run to completion
+    (including any automatic retries).  If `False`, only successes can be
+    considered final, and quanta that appear to have failed or to have not been
+    are waited on until a timeout is reached.
+    """
+
+    default_times: ScannerTimeConfigDict = pydantic.Field(default_factory=make_scanner_time_defaults)
+    """Default wait times for all tasks."""
+
+    task_times: dict[TaskLabel, ScannerTimeOverrideDict] = pydantic.Field(default_factory=dict)
+    """Per-task overrides for wait times."""
+
+    idle_timeout: float = 600.0
+    """Minimum time to wait (s) before shutting down the scanner when no
+    progress is being made at all.
+
+    This timeout is necessary for ``assume_complete=False`` runs to prevent
+    quanta with hard failures that prevent the writing of logs from keeping the
+    scanner waiting indefinitely, since these quanta are otherwise
+    indistinguishable from quanta that are never started.
+
+    The timeout should not matter when ``assume_complete=True`` unless there
+    are major performance problems scanning datasets or writing to the scanner
+    database.
+    """
+
+    checkpoint_interval: float = 1200.0
+    """Time (s) between checkpoints that flush the local database to persistent
+    storage.
+    """
+
+    ingest_batch_size: int = 10000
+    """Number of butler datasets that must accumulate to trigger an ingest."""
+
+    delete_dataset_types: list[str] = pydantic.Field(default_factory=list)
+    """Dataset types that should be deleted after their consuming quanta have
+    been processed.
+
+    Note that the scanner can only reason about consuming quanta that are in
+    the same graph; if there is a chance a dataset could be consumed in another
+    graph, it should not be deleted.
+    """
+
+    aggregate_metadata: bool = False
+    """Whether to aggregate task metadata into the provenance graph and delete
+    the original files.
+    """
+
+    aggregate_logs: bool = False
+    """Whether to aggregate task logs into the provenance graph and delete the
+    original files.
+    """
+
+    dry_run: bool = False
+    """If `True`, do not actually perform any deletions or central butler
+    ingests.
+
+    Most log messages concerning deletions and ingests will still be emitted in
+    order to provide a better emulation of a real run.
+    """
+
+    interactive_status: bool | None = None
+    """Whether to use an interactive status display with progress bars.
+
+    If this is `True`, the `tqdm` module must be available.  If this is
+    `False`, a periodic logger will be used to display status at a fixed
+    interval instead (see `log_status_interval`).
+
+    The default (`None`) uses an interactive status display if STDOUT is an
+    interactive terminal and DEBUG logging is not enabled.
+    """
+
+    log_status_interval: float | None = None
+    """Interval (in seconds) between periodic logger status updates."""
+
+    max_launch_factor: int = 100
+    """Multiplier for n_processes to get the maximum number of quanta to launch
+    scans for at once.
+    """
+
+    query_batch_size: int = 8192
+    """Number of rows and IN clause terms in SQLite insert and delete queries.
+    """
+
+    worker_sleep: float = 0.01
+    """Time (in seconds) a worker should wait when there are no requests from
+    the main scanner process.
+    """
+
+    enable_mocks: bool = False
+    """Enable support for storage classes by created by the
+    lsst.pipe.base.tests.mocks package.
+    """
+
+    def get_times_for_task(self, task_label: TaskLabel) -> ScannerTimeConfigDict:
+        """Apply the time overrides for a task by merging them with the
+        defaults.
+
+        Parameters
+        ----------
+        task_label : `str`
+            Label of the task.
+
+        Returns
+        -------
+        times : `dict`
+            Dictionary of times, guaranteed to have all required keys.
+        """
+        if task_label in self.task_times:
+            return ChainMap(self.task_times[task_label], self.default_times)  # type: ignore
+        else:
+            return self.default_times

@@ -42,7 +42,6 @@ __all__ = (
 import dataclasses
 import itertools
 import logging
-import os
 import tempfile
 import uuid
 from collections.abc import Iterator, Mapping
@@ -564,14 +563,10 @@ class MultiblockWriter:
         """
         filename = f"{name}.mb"
         if use_tempfile:
-            tmpfile = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix=filename, delete_on_close=False) as tmpfile:
-                    yield MultiblockWriter(tempfile, int_size)
-                zf.write(tmpfile.name, filename)
-            finally:
-                if tmpfile is None:
-                    os.remove(tmpfile.name)
+            with tempfile.NamedTemporaryFile(suffix=filename) as tmp:
+                yield MultiblockWriter(tmp, int_size)
+                tmp.flush()
+                zf.write(tmp.name, filename)
         else:
             with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
                 yield MultiblockWriter(stream, int_size)
