@@ -82,6 +82,7 @@ if TYPE_CHECKING:
 TaskLabel: TypeAlias = str
 DatasetTypeName: TypeAlias = str
 ConnectionName: TypeAlias = str
+DatasetIndex: TypeAlias = int
 QuantumIndex: TypeAlias = int
 DatastoreName: TypeAlias = str
 DimensionElementName: TypeAlias = str
