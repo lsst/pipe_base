@@ -1810,6 +1810,30 @@ class PredictedQuantumGraphReader:
         """Construct a `PredictedQuantumGraph` instance from this reader."""
         return self.components.assemble()
 
+    def make_compressor(self, zstd_level: int = 10) -> tuple[Compressor, bytes | None]:
+        """Make a new compressor that utilizes this graph's compression
+        dictionary, if there is one.
+
+        Parameters
+        ----------
+        zstd_level : `int`, optional
+            ZStandard compression level to use on JSON blocks.
+
+        Returns
+        -------
+        compressor : `Compressor`
+            Object that can be used to compress bytes.
+        dict_data : `bytes` or `None`
+            Raw bytes holding the compression dictionary.
+        """
+        if (cdict_path := zipfile.Path(self.zf, "compression_dict")).exists():
+            data = cdict_path.read_bytes()
+            cdict = zstandard.ZstdCompressionDict(data)
+        else:
+            data = None
+            cdict = None
+        return zstandard.ZstdCompressor(zstd_level, dict_data=cdict), data
+
     def read_all(self) -> PredictedQuantumGraphReader:
         """Read all components in full."""
         return self.read_thin_graph().read_execution_quanta()
