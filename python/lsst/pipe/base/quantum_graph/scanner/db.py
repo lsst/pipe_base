@@ -31,11 +31,8 @@ __all__ = ()
 
 import uuid
 
-import networkx
 import sqlalchemy
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
-
-from .._common import QuantumIndex
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class DatabaseModel(DeclarativeBase):
@@ -46,59 +43,34 @@ class Dataset(DatabaseModel):
     __tablename__ = "dataset"
     dataset_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     exists: Mapped[bool] = mapped_column()
-    producer: Mapped[QuantumIndex | None] = mapped_column()
+    producer: Mapped[uuid.UUID | None] = mapped_column()
     provenance: Mapped[bytes] = mapped_column()
+
+
+class InitQuantum(DatabaseModel):
+    __tablename__ = "init_quantum"
+    quantum_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    task_label: Mapped[str] = mapped_column()
 
 
 class Quantum(DatabaseModel):
     __tablename__ = "quantum"
-    quantum_index: Mapped[QuantumIndex] = mapped_column(primary_key=True)
-    succeeded: Mapped[bool] = mapped_column()
+    quantum_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    successful: Mapped[bool] = mapped_column()
     provenance: Mapped[bytes] = mapped_column()
     log_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"))
-    log_data: Mapped[bytes] = mapped_column()
+    log_content: Mapped[bytes] = mapped_column()
     metadata_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"))
-    metadata_data: Mapped[bytes] = mapped_column()
-
-
-class InitReadEdge(DatabaseModel):
-    __tablename__ = "init_read_edge"
-    dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
-    quantum_index: Mapped[QuantumIndex] = mapped_column(
-        sqlalchemy.ForeignKey("quantum.index"), primary_key=True
-    )
-    connection_name: Mapped[str] = mapped_column()
-
-
-class ReadEdge(DatabaseModel):
-    __tablename__ = "read_edge"
-    dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
-    quantum_index: Mapped[QuantumIndex] = mapped_column(
-        sqlalchemy.ForeignKey("quantum.index"), primary_key=True
-    )
-    connection_name: Mapped[str] = mapped_column()
-    ignored: Mapped[bool] = mapped_column()
+    metadata_content: Mapped[bytes] = mapped_column()
 
 
 class ToIngest(DatabaseModel):
     __tablename__ = "to_ingest"
     dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
+    ref: Mapped[bytes] = mapped_column()
 
 
 class ToDelete(DatabaseModel):
     __tablename__ = "to_delete"
     dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
     path: Mapped[str] = mapped_column()
-
-
-def read_progress(
-    engine: sqlalchemy.Engine, init_quanta_done: set[QuantumIndex], quantum_only_xgraph: networkx.DiGraph
-) -> set[uuid.UUID]:
-    with Session(engine) as session:
-        for row in session.execute(sqlalchemy.select(Quantum.quantum_index, Quantum.succeeded)):
-            if row.quantum_index in quantum_only_xgraph:
-                quantum_only_xgraph.nodes[row.quantum_index]["succeeded"] = row.succeeded
-            else:
-                init_quanta_done.add(row.quantum_index)
-        datasets_done = {row.dataset_id for row in session.execute(sqlalchemy.select(Dataset.dataset_id))}
-    return datasets_done

@@ -32,292 +32,168 @@ __all__ = ()
 import asyncio
 import concurrent.futures
 import dataclasses
-import itertools
-import logging
 import multiprocessing
 import time
 import uuid
-from collections.abc import Callable
-from typing import ParamSpec, TypeVar
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import networkx
 import sqlalchemy
 from sqlalchemy.orm import Session
 
-from lsst.resources import ResourcePath, ResourcePathExpression
+from lsst.daf.butler import Butler
 
 from ...graph_walker import GraphWalker
-from ...quantum_provenance_graph import QuantumRunStatus
-from .._common import QuantumIndex
-from .._provenance import ProvenanceDatasetModel, ProvenanceQuantumModel
 from . import db
-from ._worker import (
-    QuantumScanResult,
-    QuantumScanStatus,
-    ScannerWorker,
-    ScannerWorkerConfig,
-)
-
-_LOG = logging.getLogger(__name__)
-
-_T = TypeVar("_T")
-_P = ParamSpec("_P")
-
-
-class SequentialExecutor(concurrent.futures.Executor):
-    def submit(
-        self, fn: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs
-    ) -> concurrent.futures.Future[_T]:
-        f = concurrent.futures.Future[_T]()
-        try:
-            result = fn(*args, **kwargs)
-        except BaseException as e:
-            f.set_exception(e)
-        else:
-            f.set_result(result)
-        return f
-
-    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
-        pass
+from ._config import ScannerConfig
+from ._results import QuantumScanResult, QuantumScanStatus
+from ._worker import ScannerWorker
+from ._writer import ScannerWriter
 
 
 @dataclasses.dataclass
 class Scanner:
-    config: ScannerWorkerConfig
-    db_path: ResourcePath
-    checkpoint_path: ResourcePath | None
-    init_quanta_done: set[QuantumIndex] = dataclasses.field(default_factory=set)
-    quantum_only_xgraph: networkx.DiGraph = dataclasses.field(default_factory=networkx.DiGraph)
-    quantum_indices: dict[uuid.UUID, QuantumIndex] = dataclasses.field(default_factory=dict)
-    datasets_done: set[uuid.UUID] = dataclasses.field(default_factory=set)
-    db: sqlalchemy.Engine = dataclasses.field(init=False)
+    worker: ScannerWorker
+    walker: GraphWalker[uuid.UUID]
+    engine: sqlalchemy.Engine
+    butler: Butler
+    executor: concurrent.futures.Executor
+    writer: ScannerWriter = dataclasses.field(default_factory=ScannerWriter)
+
+    @property
+    def config(self) -> ScannerConfig:
+        return self.worker.config
 
     @classmethod
-    async def scan(
-        cls,
-        *,
-        predicted_path: ResourcePathExpression,
-        butler_path: ResourcePathExpression,
-        db_path: ResourcePathExpression,
-        checkpoint_path: ResourcePathExpression | None,
-        n_processes: int = 1,
-        config: ScannerWorkerConfig,
-    ) -> None:
-        predicted_path = ResourcePath(predicted_path)
-        butler_path = ResourcePath(butler_path)
-        db_path = ResourcePath(db_path)
-        checkpoint_path = ResourcePath(checkpoint_path) if checkpoint_path is not None else None
-        with ScannerWorker.open(predicted_path, butler_path, config=config) as worker:
-            new: bool = False
-            if checkpoint_path is not None and checkpoint_path.exists():
-                db_path.transfer_from(checkpoint_path, "copy")
-            elif not db_path.exists():
-                new = True
-            self = cls(config, db_path, checkpoint_path)
-            self._load_predicted_quanta(worker)
-            if new:
-                db.DatabaseModel.metadata.create_all(self.db)
-            else:
-                self.datasets_done = db.read_progress(
-                    self.db, self.init_quanta_done, self.quantum_only_xgraph
-                )
-            self.scan_init_outputs(worker)
+    @contextmanager
+    def open(cls, config: ScannerConfig) -> Iterator[Scanner]:
+        with ScannerWorker.open(config) as worker:
+            walker = cls._make_walker(worker)
+            if config.checkpoint_path is not None and config.checkpoint_path.exists():
+                config.db_path.transfer_from(config.checkpoint_path, "copy")
+            elif not config.db_path.exists():
+                raise FileNotFoundError(f"Scanner database {config.db_path} does not exist.")
             executor: concurrent.futures.Executor
-            if n_processes > 1:
+            if config.n_processes > 1:
                 executor = concurrent.futures.ProcessPoolExecutor(
-                    max_workers=n_processes - 1,
+                    max_workers=config.n_processes - 1,
                     mp_context=multiprocessing.get_context("spawn"),
                     initializer=ScannerWorker._initialize_for_pool,
-                    initargs=(predicted_path, butler_path, config),
+                    initargs=(config,),
                 )
             else:
+                from .utils import SequentialExecutor
+
                 executor = SequentialExecutor()
                 ScannerWorker.instance = worker
             with executor:
-                await self.scan_graph(executor)
+                yield cls(
+                    worker,
+                    walker,
+                    Butler.from_config(config.butler_path, writeable=True),
+                    config.create_db_engine(),
+                    executor,
+                )
 
-    def __post_init__(self) -> None:
-        self.db = sqlalchemy.create_engine(
-            f"sqlite:///{self.db_path.ospath}", connect_args={"autocommit": False}
-        )
-
-    def _load_predicted_quanta(self, worker: ScannerWorker) -> None:
+    @staticmethod
+    def _make_walker(worker: ScannerWorker) -> GraphWalker[uuid.UUID]:
         worker.reader.read_thin_graph()
-        worker.reader.read_init_quanta()
-        self.quantum_only_xgraph.add_edges_from(worker.reader.components.thin_graph.edges)
-        self.quantum_indices = worker.reader.components.quantum_indices
-        for quantum_id, quantum_index in self.quantum_indices.items():
-            self.quantum_only_xgraph.nodes[quantum_index]["quantum_id"] = quantum_id
-        for task_label, thin_quanta in worker.reader.components.thin_graph.quanta.items():
-            for thin_quantum in thin_quanta:
-                self.quantum_only_xgraph.nodes[thin_quantum.quantum_index]["task_label"] = task_label
+        uuid_by_index = {
+            quantum_index: quantum_id
+            for quantum_id, quantum_index in worker.reader.components.quantum_indices.items()
+        }
+        xgraph = networkx.DiGraph(
+            [(uuid_by_index[a], uuid_by_index[b]) for a, b in worker.reader.components.thin_graph.edges]
+        )
+        return GraphWalker(xgraph)
 
-    def scan_init_outputs(self, worker: ScannerWorker) -> None:
-        db_datasets: dict[uuid.UUID, db.Dataset] = {}
-        db_quanta: dict[QuantumIndex, db.Quantum] = {}
-        db_reads: list[db.InitReadEdge] = []
-        for predicted_quantum in worker.reader.components.init_quanta.root:
-            quantum_index = self.quantum_indices[predicted_quantum.quantum_id]
-            if quantum_index in self.init_quanta_done:
-                continue
-            all_exist: bool = True
-            for connection_name, predicted_datasets in predicted_quantum.inputs.items():
-                for predicted_dataset in predicted_datasets:
-                    dataset_id = predicted_dataset.dataset_id
-                    if dataset_id not in self.datasets_done and dataset_id not in db_datasets:
-                        # This was an overall init-input, and we assume those
-                        # exist because they must exist for the QG to be built.
-                        provenance_dataset = ProvenanceDatasetModel.from_predicted(predicted_dataset)
-                        db_datasets[dataset_id] = db.Dataset(
-                            dataset_id=dataset_id,
-                            exists=provenance_dataset.exists,
-                            provenance=worker.compressor.compress(
-                                provenance_dataset.model_dump_json().encode()
-                            ),
-                            producer=None,
-                        )
-                    db_reads.append(
-                        db.InitReadEdge(
-                            dataset_id=dataset_id,
-                            quantum_index=quantum_index,
-                            connection_name=connection_name,
-                        )
-                    )
-            for predicted_dataset in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-                scan_result = worker.scan_dataset(predicted_dataset, producer=predicted_quantum.quantum_id)
-                db_datasets[predicted_dataset.dataset_id] = scan_result.to_db()
-                if not scan_result.exists:
-                    all_exist = False
-            provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum)
-            provenance_quantum.status = QuantumRunStatus.SUCCESSFUL if all_exist else QuantumRunStatus.FAILED
-            db_quanta[quantum_index] = db.Quantum(
-                quantum_index=quantum_index,
-                succeeded=all_exist,
-                provenance=worker.compressor.compress(provenance_quantum.model_dump_json().encode()),
+    def _load_progress(self) -> None:
+        with Session(self.engine) as session:
+            quanta = {
+                row.quantum_id: row.succeeded
+                for row in session.execute(sqlalchemy.select(db.Quantum.quantum_id, db.Quantum.successful))
+            }
+            self.writer.n_uningested = session.execute(
+                sqlalchemy.select(sqlalchemy.sql.count()).select_from(db.ToIngest)
             )
-        with Session(self.db) as session:
-            with session.begin():
-                session.add_all(db_datasets.values())
-                session.add_all(db_quanta.values())
-                session.add_all(db_reads)
-            self.datasets_done.update(db_datasets.keys())
-            self.init_quanta_done.update(db_quanta.keys())
+        for ready in self.walker:
+            progressing = False
+            for quantum_id in ready:
+                match quanta.pop(quantum_id, None):
+                    case True:
+                        self.walker.finish(quantum_id)
+                        progressing = True
+                    case False:
+                        self.walker.fail(quantum_id)
+                        progressing = True
+                    case None:
+                        self.walker.defer(quantum_id)
+                    case unexpected:
+                        raise AssertionError(
+                            f"Unexpected status {unexpected!r} in database for {quantum_id}."
+                        )
+            if not progressing:
+                break
+        assert not quanta, f"Logic error in loading graph progress from database: {quanta} not in walker."
 
-    async def scan_graph(self, executor: concurrent.futures.Executor) -> None:
-        walker = GraphWalker[QuantumIndex](self.quantum_only_xgraph.copy())
-        pending: set[asyncio.Task[QuantumScanResult]] = set()
-        scan_results: list[QuantumScanResult] = []
-        last_progress_time = last_write_time = last_checkpoint_time = time.time()
+    async def scan_graph(self) -> None:
+        pending: set[asyncio.Future[QuantumScanResult]] = set()
+        last_progress_time = time.time()
         exiting = False
-        for ready in walker:
-            for quantum_index in ready:
-                # Check to see if this quantum was already processed in a
-                # previous invocation of this tool.
-                succeeded = self.quantum_only_xgraph.nodes[quantum_index].get("succeeded", None)
-                if succeeded:
-                    walker.finish(quantum_index)
-                elif succeeded is not None:
-                    for blocked_quantum_index in walker.fail(quantum_index):
-                        blocked_quantum_info = self.quantum_only_xgraph.nodes[blocked_quantum_index]
-                        if "succeeded" not in blocked_quantum_info:
-                            # The blocking quantum was processed in the last
-                            # invocation, but this blocked quantum was not.
-                            pending.add(
-                                asyncio.create_task(
-                                    self.process_blocked_quantum(executor, blocked_quantum_info["quantum_id"])
-                                )
-                            )
-                else:
-                    # This quantum has not been processed before (it may have
-                    # been scanned, but it didn't make it into the DB and/or
-                    # checkpoint).
-                    quantum_info = self.quantum_only_xgraph.nodes[quantum_index]
-                    pending.add(asyncio.create_task(self.scan_quantum(executor, quantum_info["quantum_id"])))
+        for ready in self.walker:
+            for quantum_id in ready:
+                pending.add(self._submit_quantum_scan(quantum_id))
             if pending:
                 done, pending = await asyncio.wait(pending, return_when="FIRST_COMPLETED")
                 for scan_task in done:
-                    quantum_result = scan_task.result()
-                    quantum_index = self.quantum_indices[quantum_result.quantum_id]
-                    match quantum_result.scan_status:
-                        case QuantumScanStatus.RESCAN:
+                    result = scan_task.result()
+                    quantum_id = result.quantum_id
+                    match result.status:
+                        case QuantumScanStatus.INCOMPLETE:
                             # Wait a while and scan for this quantum again
                             # later.
-                            quantum_info = self.quantum_only_xgraph.nodes[quantum_index]
-                            pending.add(asyncio.create_task(self.rescan_quantum(executor, quantum_result)))
-                        case QuantumScanStatus.ABANDON:
+                            pending.add(self._submit_quantum_rescan(result))
+                        case QuantumScanStatus.ABANDONED:
                             # This quantum has failed and has stayed that way
                             # for long enough we should stop checking on it.
                             # Leave it unscanned, for a later invocation with
                             # assume_complete=True to act on it.
-                            walker.fail(quantum_index)
-                        case QuantumScanStatus.DONE:
-                            # This quantum either succeeded or we're configured
-                            # to consider any failures final.
-                            if quantum_result.quantum_status.blocks_downstream:
-                                for blocked_quantum_index in walker.fail(quantum_index):
-                                    blocked_quantum_info = self.quantum_only_xgraph.nodes[
-                                        blocked_quantum_index
-                                    ]
-                                    pending.add(
-                                        asyncio.create_task(
-                                            self.process_blocked_quantum(
-                                                executor, blocked_quantum_info["quantum_id"]
-                                            )
-                                        )
-                                    )
-                            else:
-                                walker.finish(quantum_index)
-                            scan_results.append(quantum_result)
+                            self.walker.fail(quantum_id)
+                        case QuantumScanStatus.SUCCESSFUL:
+                            self.walker.finish(quantum_id)
+                            self.writer.add_quantum_scan(result, self.worker)
                             last_progress_time = time.time()
-                        case QuantumScanStatus.BLOCKED:
-                            # Something upstream of this quantum failed, so we
-                            # didn't really scan it, and we don't need to
-                            # update the walker.
-                            scan_results.append(quantum_result)
+                        case QuantumScanStatus.FAILED:
+                            # We ignore the blocked quanta for now, because
+                            # generating their provenance does not require any
+                            # I/O or existence checks and we want to keep the
+                            # progress DB compact.
+                            self.walker.fail(quantum_id)
+                            self.writer.add_quantum_scan(result, self.worker)
                             last_progress_time = time.time()
+                        case unexpected:
+                            raise AssertionError(
+                                f"Unexpected status {unexpected!r} in scanner loop for {quantum_id}."
+                            )
             if time.time() - last_progress_time > self.config.idle_timeout:
                 exiting = True
-            if scan_results:
-                if (
-                    (len(scan_results) > self.config.write_max_quanta)
-                    or (time.time() - last_write_time > self.config.write_interval)
-                    or exiting
-                ):
-                    raise NotImplementedError("TODO: write to local DB")
-                    last_write_time = time.time()
-                    scan_results.clear()
-                    if (
-                        self.checkpoint_path
-                        and time.time() - last_checkpoint_time > self.config.checkpoint_interval
-                    ):
-                        raise NotImplementedError("TODO: save to checkpoint")
-                        last_checkpoint_time = time.time()
+            self.writer.write_if_ready(self.config, self.engine, self.butler, self.worker, force_all=exiting)
             if exiting:
                 raise NotImplementedError("TODO: cancel running jobs, insert database rows and shut down")
 
-    async def scan_quantum(
-        self, executor: concurrent.futures.Executor, quantum_id: uuid.UUID
-    ) -> QuantumScanResult:
+    def _submit_quantum_scan(self, quantum_id: uuid.UUID) -> asyncio.Future[QuantumScanResult]:
         loop = asyncio.get_running_loop()
-        quantum_scan = loop.run_in_executor(executor, ScannerWorker.scan_quantum_in_pool, quantum_id, None)
-        return await quantum_scan
+        return loop.run_in_executor(self.executor, ScannerWorker.scan_quantum_in_pool, quantum_id, None)
 
-    async def rescan_quantum(
-        self, executor: concurrent.futures.Executor, result: QuantumScanResult
-    ) -> QuantumScanResult:
+    def _submit_quantum_rescan(self, result: QuantumScanResult) -> asyncio.Future[QuantumScanResult]:
+        return asyncio.create_task(self._rescan_quantum(result))
+
+    async def _rescan_quantum(self, result: QuantumScanResult) -> QuantumScanResult:
         assert result.wait_interval is not None, "wait_interval should be set before submitting rescan."
         await asyncio.sleep(result.wait_interval)
         loop = asyncio.get_running_loop()
         quantum_scan = loop.run_in_executor(
-            executor, ScannerWorker.scan_quantum_in_pool, result.quantum_id, result
-        )
-        return await quantum_scan
-
-    async def process_blocked_quantum(
-        self, executor: concurrent.futures.Executor, quantum_id: uuid.UUID
-    ) -> QuantumScanResult:
-        loop = asyncio.get_running_loop()
-        quantum_scan = loop.run_in_executor(
-            executor, ScannerWorker.process_blocked_quantum_in_pool, quantum_id
+            self.executor, ScannerWorker.scan_quantum_in_pool, result.quantum_id, result
         )
         return await quantum_scan
