@@ -1891,14 +1891,15 @@ class PredictedQuantumGraphReader:
             self.zf, "quantum_datasets", self.components.header.int_size
         ) as mb_reader:
             for quantum_id in quantum_ids:
+                if quantum_id in self.components.quantum_datasets:
+                    continue
                 address_row = self.address_reader.find(quantum_id)
                 self.components.quantum_indices[address_row.key] = address_row.index
-                if address_row.key not in self.components.quantum_datasets:
-                    quantum_datasets = mb_reader.read_model(
-                        address_row.addresses[0], PredictedQuantumDatasetsModel, self.decompressor
-                    )
-                    if quantum_datasets is not None:
-                        self.components.quantum_datasets[address_row.key] = quantum_datasets
+                quantum_datasets = mb_reader.read_model(
+                    address_row.addresses[0], PredictedQuantumDatasetsModel, self.decompressor
+                )
+                if quantum_datasets is not None:
+                    self.components.quantum_datasets[address_row.key] = quantum_datasets
         return self
 
     def read_execution_quanta(
