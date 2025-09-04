@@ -58,7 +58,7 @@ class ScannerWriter:
     last_checkpoint: float = dataclasses.field(default_factory=time.time)
     last_ingest: float = dataclasses.field(default_factory=time.time)
     datasets: list[db.Dataset] = dataclasses.field(default_factory=list)
-    quanta: list[db.Quantum | db.InitQuantum] = dataclasses.field(default_factory=list)
+    quanta: list[db.Quantum] = dataclasses.field(default_factory=list)
     to_ingest: list[db.ToIngest] = dataclasses.field(default_factory=list)
     to_delete: list[db.ToDelete] = dataclasses.field(default_factory=list)
     deleted: list[uuid.UUID] = dataclasses.field(default_factory=list)

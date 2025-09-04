@@ -47,12 +47,6 @@ class Dataset(DatabaseModel):
     provenance: Mapped[bytes] = mapped_column()
 
 
-class InitQuantum(DatabaseModel):
-    __tablename__ = "init_quantum"
-    quantum_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    task_label: Mapped[str] = mapped_column()
-
-
 class Quantum(DatabaseModel):
     __tablename__ = "quantum"
     quantum_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)

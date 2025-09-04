@@ -80,8 +80,12 @@ class Scanner:
             )
             if config.checkpoint_path is not None and config.checkpoint_path.exists():
                 config.db_path.transfer_from(config.checkpoint_path, "copy")
+                engine = config.create_db_engine()
             elif not config.db_path.exists():
-                raise FileNotFoundError(f"Scanner database {config.db_path} does not exist.")
+                engine = config.create_db_engine()
+                db.DatabaseModel.metadata.create_all(engine)
+            else:
+                engine = config.create_db_engine()
             executor: concurrent.futures.Executor
             if config.n_processes > 1:
                 executor = concurrent.futures.ProcessPoolExecutor(
@@ -100,7 +104,7 @@ class Scanner:
                     worker,
                     walker,
                     deletion_tracker,
-                    config.create_db_engine(),
+                    engine,
                     Butler.from_config(config.butler_path, writeable=True),
                     executor,
                 )
