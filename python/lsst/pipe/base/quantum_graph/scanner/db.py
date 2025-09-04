@@ -67,10 +67,10 @@ class Quantum(DatabaseModel):
 class ToIngest(DatabaseModel):
     __tablename__ = "to_ingest"
     dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
-    ref: Mapped[bytes] = mapped_column()
+    ref_json: Mapped[bytes] = mapped_column()
 
 
 class ToDelete(DatabaseModel):
     __tablename__ = "to_delete"
     dataset_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.ForeignKey("dataset.id"), primary_key=True)
-    path: Mapped[str] = mapped_column()
+    ref_json: Mapped[bytes] = mapped_column()

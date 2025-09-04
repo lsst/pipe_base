@@ -88,8 +88,8 @@ class QuantumScanStatus(enum.Enum):
 @dataclasses.dataclass
 class QuantumScanResult:
     predicted: PredictedQuantumDatasetsModel
-    metadata: MetadataScanResult = dataclasses.field(default=MetadataScanResult)
-    log: LogScanResult = dataclasses.field(default=LogScanResult)
+    metadata: MetadataScanResult
+    log: LogScanResult
     provenance: bytes = b""
     status: QuantumScanStatus = QuantumScanStatus.INCOMPLETE
     outputs: list[DatasetScanResult] | None = None

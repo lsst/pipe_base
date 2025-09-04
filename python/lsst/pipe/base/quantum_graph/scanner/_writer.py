@@ -35,6 +35,7 @@ import time
 import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from typing import cast
 
 import sqlalchemy
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ from lsst.resources import ResourcePath
 from .._predicted import PredictedQuantumDatasetsModel
 from . import db
 from ._config import ScannerConfig
+from ._deletion_tracker import DeletionTracker
 from ._results import DatasetScanResult, QuantumScanResult
 from ._worker import ScannerWorker
 
@@ -58,24 +60,30 @@ class ScannerWriter:
     datasets: list[db.Dataset] = dataclasses.field(default_factory=list)
     quanta: list[db.Quantum | db.InitQuantum] = dataclasses.field(default_factory=list)
     to_ingest: list[db.ToIngest] = dataclasses.field(default_factory=list)
+    to_delete: list[db.ToDelete] = dataclasses.field(default_factory=list)
+    deleted: list[uuid.UUID] = dataclasses.field(default_factory=list)
     n_uningested: int = 0
 
-    def add_quantum_scan(self, quantum_scan: QuantumScanResult, worker: ScannerWorker) -> None:
+    def add_quantum_scan(
+        self, quantum_scan: QuantumScanResult, worker: ScannerWorker, deletion_tracker: DeletionTracker
+    ) -> None:
         self.quanta.append(quantum_scan.to_db())
         assert quantum_scan.outputs is not None, (
             f"Cannot write incomplete scan for {quantum_scan.quantum_id} with not outputs."
         )
         self.add_dataset_scans(
             quantum_scan.predicted,
-            itertools.chain(quantum_scan.outputs, quantum_scan.metadata, quantum_scan.log),
+            itertools.chain(quantum_scan.outputs, [quantum_scan.metadata, quantum_scan.log]),
             worker,
         )
+        self.to_delete.extend(deletion_tracker.mark_quantum_complete(quantum_scan.quantum_id))
 
     def add_dataset_scans(
         self,
         predicted_quantum: PredictedQuantumDatasetsModel,
         dataset_scans: Iterable[DatasetScanResult],
         worker: ScannerWorker,
+        deletion_tracker: DeletionTracker | None = None,
     ) -> None:
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
@@ -90,7 +98,12 @@ class ScannerWriter:
                         ref=ref.to_simple().model_dump_json().encode(),
                     )
                 )
+                if deletion_tracker is not None:
+                    self.to_delete.extend(deletion_tracker.mark_dataset_complete(ref))
                 self.n_uningested += 1
+
+    def add_deletion(self, dataset_id: uuid.UUID) -> None:
+        self.deleted.append(dataset_id)
 
     def write_if_ready(
         self,
@@ -99,7 +112,7 @@ class ScannerWriter:
         butler: Butler,
         worker: ScannerWorker,
         force_all: bool = False,
-    ) -> None:
+    ) -> list[db.ToDelete]:
         start = time.time()
         ready_for_ingest = (
             force_all
@@ -127,20 +140,25 @@ class ScannerWriter:
                     self.quanta.clear()
                     session.add_all(self.to_ingest)
                     self.to_ingest.clear()
+                    session.add_all(self.to_delete)
+                    self.to_delete.clear()
+                    session.execute(
+                        sqlalchemy.delete(db.ToDelete).where(db.ToDelete.dataset_id.in_(self.deleted))
+                    )
+                    self.deleted.clear()
                 self.last_write = time.time()
                 if ready_for_checkpoint and config.vacuum_on_checkpoint:
                     session.execute(sqlalchemy.text("VACUUM"))
         if ready_for_checkpoint:
+            assert config.checkpoint_path is not None, "Guaranteed by ready_for_checkpoint=True"
             config.checkpoint_path.transfer_from(config.db_path, "copy")
             self.last_checkpoint = time.time()
         if ready_for_ingest:
             refs = []
             with Session(engine) as session:
                 with session.begin():
-                    for to_ingest in session.scalars(sqlalchemy.select(db.ToIngest)):
-                        refs.append(DatasetRef.from_json(to_ingest.ref, universe=worker.qbb.dimensions))
-                    for to_ingest in self.to_ingest:
-                        refs.append(DatasetRef.from_json(to_ingest.ref, universe=worker.qbb.dimensions))
+                    for to_ingest in session.execute(sqlalchemy.select(db.ToIngest)).scalars():
+                        refs.append(DatasetRef.from_json(to_ingest.ref_json, universe=worker.qbb.dimensions))
                     assert len(refs) == self.n_uningested, (
                         f"Mismatch in uningested dataset counts: {len(refs)} != {self.n_uningested}."
                     )
@@ -148,11 +166,21 @@ class ScannerWriter:
                     # artifacts exist (without checking) since we're only
                     # asking to transfer things whose existence we've already
                     # checked, and we *really* don't want to check again.
-                    with ScannedFileTransferSource.wrap(worker.qbb):
+                    # This ultimately involves asking the datastore to generate
+                    # each URI twice, but fixing that would require untangling
+                    # a lot of deeply-nested and heavily-used datastore code.
+                    with ScannedFileTransferSource.wrap(worker.qbb, refs):
                         butler.transfer_from(worker.qbb, refs, transfer_dimensions=False)
                     session.execute(sqlalchemy.delete(db.ToIngest))
             self.n_uningested = 0
             self.last_ingest = time.time()
+        if ready_for_checkpoint or config.checkpoint_path is None:
+            # We only schedule deletes after they've been checkpointed to
+            # ensure we can always recover from failures.
+            with Session(engine) as session:
+                return list(session.execute(sqlalchemy.select(db.ToDelete)).scalars())
+        else:
+            return []
 
 
 class ScannedFileTransferSource(FileTransferSource):
@@ -160,15 +188,24 @@ class ScannedFileTransferSource(FileTransferSource):
 
     @classmethod
     @contextmanager
-    def wrap(cls, qbb: QuantumBackedButler) -> Iterator[None]:
+    def wrap(cls, qbb: QuantumBackedButler, refs: Iterable[DatasetRef]) -> Iterator[None]:
+        artifact_existence: dict[ResourcePath, bool] = {}
+        for paths in qbb.get_many_uris(refs, predict=True).values():
+            if paths.primaryURI is not None:
+                artifact_existence[paths.primaryURI] = True
+            for path in paths.componentURIs.values():
+                artifact_existence[path] = True
         try:
-            qbb._file_transfer_source = ScannedFileTransferSource(qbb._file_transfer_source)
+            qbb._file_transfer_source = ScannedFileTransferSource(
+                qbb._file_transfer_source, artifact_existence
+            )
             yield
         finally:
-            qbb._file_transfer_source = qbb._file_transfer_source._base
+            qbb._file_transfer_source = cast(ScannedFileTransferSource, qbb._file_transfer_source)._base
 
-    def __init__(self, base: FileTransferSource):
+    def __init__(self, base: FileTransferSource, artifact_existence: dict[ResourcePath, bool]):
         self._base = base
+        self._artifact_existence = artifact_existence
 
     def get_file_info_for_transfer(self, dataset_ids: Iterable[uuid.UUID]) -> FileTransferMap:
         return self._base.get_file_info_for_transfer(dataset_ids)
@@ -176,7 +213,5 @@ class ScannedFileTransferSource(FileTransferSource):
     def locate_missing_files_for_transfer(
         self, refs: Iterable[DatasetRef], artifact_existence: dict[ResourcePath, bool]
     ) -> FileTransferMap:
-        refs = list(refs)
-        for ref in refs:
-            artifact_existence[ref.id] = True
+        artifact_existence.update(self._artifact_existence)
         return self._base.locate_missing_files_for_transfer(refs, artifact_existence)

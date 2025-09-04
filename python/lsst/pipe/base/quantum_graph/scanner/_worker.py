@@ -174,6 +174,11 @@ class ScannerWorker:
         result.set_provenance(self.compressor, blocked=True)
         return result
 
+    def delete_dataset(self, ref_json: bytes) -> uuid.UUID:
+        ref: DatasetRef = DatasetRef.from_json(ref_json)
+        self.qbb.pruneDatasets([ref], purge=True, unstore=True)
+        return ref.id
+
     @staticmethod
     def scan_quantum_in_pool(quantum_id: uuid.UUID, result: QuantumScanResult | None) -> QuantumScanResult:
         return ScannerWorker.instance.scan_quantum(quantum_id, result)
@@ -181,6 +186,10 @@ class ScannerWorker:
     @staticmethod
     def process_blocked_quantum_in_pool(quantum_id: uuid.UUID) -> QuantumScanResult:
         return ScannerWorker.instance.process_blocked_quantum(quantum_id)
+
+    @staticmethod
+    def delete_dataset_in_pool(ref_json: bytes) -> uuid.UUID:
+        return ScannerWorker.instance.delete_dataset(ref_json)
 
     def make_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
         try:

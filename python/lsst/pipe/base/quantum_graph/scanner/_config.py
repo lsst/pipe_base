@@ -135,6 +135,12 @@ class ScannerConfig(pydantic.BaseModel):
     central butler database.
     """
 
+    delete_dataset_types: list[str] = pydantic.Field(default_factory=list)
+
+    delete_metadata: bool = True
+
+    delete_log: bool = True
+
     def get_times_for_task(self, task_label: TaskLabel) -> ScannerTimeConfigDict:
         if task_label in self.task_times:
             return ChainMap(self.task_times[task_label], self.default_times)  # type: ignore
