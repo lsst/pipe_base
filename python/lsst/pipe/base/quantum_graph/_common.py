@@ -28,40 +28,54 @@
 from __future__ import annotations
 
 __all__ = (
+    "BaseQuantumGraph",
+    "BaseQuantumGraphReader",
     "BipartiteEdgeInfo",
     "DatasetInfo",
     "HeaderModel",
     "QuantumInfo",
 )
-
+import dataclasses
 import datetime
 import getpass
 import sys
 import uuid
+import zipfile
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypeAlias, TypedDict
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from io import DEFAULT_BUFFER_SIZE
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    NotRequired,
+    Self,
+    TypeAlias,
+    TypedDict,
+    TypeVar,
+)
 
 import networkx
 import networkx.algorithms.bipartite
 import pydantic
+import zstandard
 
 from lsst.daf.butler import (
     DataCoordinate,
     DataIdValue,
     DatasetType,
 )
+from lsst.resources import ResourcePath, ResourcePathExpression
 
-from ..pipeline_graph import (
-    Edge,
-    NodeBipartite,
-    PipelineGraph,
-    TaskNode,
+from ..pipeline_graph import Edge, NodeBipartite, PipelineGraph, TaskImportMode, TaskNode
+from ..pipeline_graph.io import SerializedPipelineGraph
+from ._multiblock import (
+    AddressReader,
+    AddressWriter,
+    Compressor,
+    Decompressor,
 )
-
-if TYPE_CHECKING:
-    from ..graph import QuantumGraph
-
 
 if TYPE_CHECKING:
     from ..graph import QuantumGraph
@@ -79,17 +93,20 @@ DimensionElementName: TypeAlias = str
 DataCoordinateValues: TypeAlias = list[DataIdValue]
 
 
+_T = TypeVar("_T", bound=pydantic.BaseModel)
+
+
 class IncompleteQuantumGraphError(RuntimeError):
     pass
 
 
 class HeaderModel(pydantic.BaseModel):
-    """Data model for the header of a predicted quantum graph file."""
+    """Data model for the header of a quantum graph file."""
 
     version: int = 0
     """File format / data model version number."""
 
-    graph_type: str = "predicted"
+    graph_type: str = ""
     """Type of quantum graph stored in this file."""
 
     inputs: list[str] = pydantic.Field(default_factory=list)
@@ -383,3 +400,212 @@ class BaseQuantumGraph(ABC):
         The returned object is a read-only view of an internal one.
         """
         raise NotImplementedError()
+
+
+@dataclasses.dataclass
+class BaseQuantumGraphWriter:
+    """A helper class for writing quantum graphs."""
+
+    zf: zipfile.ZipFile
+    """The zip archive that represents the quantum graph on disk."""
+
+    compressor: Compressor
+    """A compressor for all compressed JSON blocks."""
+
+    address_writer: AddressWriter
+    """A helper object for reading addresses into the multi-block files."""
+
+    int_size: int
+    """Size (in bytes) used to write integers to binary files."""
+
+    @classmethod
+    @contextmanager
+    def open(
+        cls,
+        uri: ResourcePathExpression,
+        header: HeaderModel,
+        pipeline_graph: PipelineGraph,
+        indices: dict[uuid.UUID, int],
+        *,
+        address_filename: str,
+        compressor: Compressor,
+        cdict_data: bytes | None = None,
+    ) -> Iterator[Self]:
+        uri = ResourcePath(uri)
+        address_writer = AddressWriter(indices)
+        with uri.open(mode="wb") as stream:
+            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
+                self = cls(zf, compressor, address_writer, header.int_size)
+                self.write_single_model("header", header)
+                if cdict_data is not None:
+                    zf.writestr("compression_dict", cdict_data)
+                self.write_single_model("pipeline_graph", SerializedPipelineGraph.serialize(pipeline_graph))
+                yield self
+                address_writer.write_to_zip(zf, address_filename, int_size=self.int_size)
+
+    def write_single_model(self, name: str, model: pydantic.BaseModel) -> None:
+        """Write a single compressed JSON block as a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model : `pydantic.BaseModel`
+            Pydantic model to convert to JSON.
+        """
+        json_data = model.model_dump_json().encode()
+        self.write_single_block(name, json_data)
+
+    def write_single_block(self, name: str, json_data: bytes) -> None:
+        """Write a single compressed JSON block as a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        name : `str`
+            Base name of the file.  An extension will be added.
+        json_data : `bytes`
+            Raw JSON to compress and write.
+        """
+        json_data = self.compressor.compress(json_data)
+        self.zf.writestr(f"{name}.json.zst", json_data)
+
+
+@dataclasses.dataclass
+class BaseQuantumGraphReader:
+    """A helper class for reading quantum graphs."""
+
+    header: HeaderModel
+    """Header metadata for the quantum graph."""
+
+    pipeline_graph: PipelineGraph
+    """Graph of tasks and dataset type names that appear in the quantum
+    graph.
+    """
+
+    zf: zipfile.ZipFile
+    """The zip archive that represents the quantum graph on disk."""
+
+    decompressor: Decompressor
+    """A decompressor for all compressed JSON blocks."""
+
+    address_reader: AddressReader
+    """A helper object for reading addresses into the multi-block files."""
+
+    @classmethod
+    @contextmanager
+    def _open(
+        cls,
+        uri: ResourcePathExpression,
+        *,
+        address_filename: str,
+        graph_type: str,
+        page_size: int = DEFAULT_BUFFER_SIZE,
+        import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
+    ) -> Iterator[Self]:
+        """Construct a reader from a URI.
+
+        Parameters
+        ----------
+        uri : convertible to `lsst.resources.ResourcePath`
+            URI to open.  Should have a ``.qg`` extension.
+        address_filename : `str`
+            Base filename for the address file.
+        graph_type : `str`
+            Value to expect for `HeaderModel.graph_type`.
+        page_size : `int`, optional
+            Approximate number of bytes to read at once from address files.
+            Note that this does not set a page size for *all* reads, but it
+            does affect the smallest, most numerous reads.
+        import_mode : `..pipeline_graph.TaskImportMode`, optional
+            How to handle importing the task classes referenced in the pipeline
+            graph.
+
+        Returns
+        -------
+        reader : `contextlib.AbstractContextManager` [ \
+                `PredictedQuantumGraphReader` ]
+            A context manager that returns the reader when entered.
+        """
+        uri = ResourcePath(uri)
+        cdict: zstandard.ZstdCompressionDict | None = None
+        with uri.open(mode="rb") as zf_stream:
+            with zipfile.ZipFile(zf_stream, "r") as zf:
+                if (cdict_path := zipfile.Path(zf, "compression_dict")).exists():
+                    cdict = zstandard.ZstdCompressionDict(cdict_path.read_bytes())
+                decompressor = zstandard.ZstdDecompressor(cdict)
+                header = cls._read_single_block_static("header", HeaderModel, zf, decompressor)
+                if not header.graph_type == graph_type:
+                    raise TypeError(f"Header is for a {header.graph_type!r} graph, not {graph_type!r} graph.")
+                serialized_pipeline_graph = cls._read_single_block_static(
+                    "pipeline_graph", SerializedPipelineGraph, zf, decompressor
+                )
+                pipeline_graph = serialized_pipeline_graph.deserialize(import_mode)
+                with AddressReader.open_in_zip(
+                    zf, address_filename, page_size=page_size, int_size=header.int_size
+                ) as address_reader:
+                    yield cls(
+                        header=header,
+                        pipeline_graph=pipeline_graph,
+                        zf=zf,
+                        decompressor=decompressor,
+                        address_reader=address_reader,
+                    )
+
+    @staticmethod
+    def _read_single_block_static(
+        name: str, model_type: type[_T], zf: zipfile.ZipFile, decompressor: Decompressor
+    ) -> _T:
+        """Read a single compressed JSON block from a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to read the file from.
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model_type : `type` [ `pydantic.BaseModel` ]
+            Pydantic model to validate JSON with.
+        decompressor : `Decompressor`
+            Object with a `decompress` method that takes and returns `bytes`.
+
+        Returns
+        -------
+        model : `pydantic.BaseModel`
+            Validated model.
+        """
+        compressed_data = zf.read(f"{name}.json.zst")
+        json_data = decompressor.decompress(compressed_data)
+        return model_type.model_validate_json(json_data)
+
+    def _read_single_block(self, name: str, model_type: type[_T]) -> _T:
+        """Read a single compressed JSON block from a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        name : `str`
+            Base name of the file.  An extension will be added.
+        model_type : `type` [ `pydantic.BaseModel` ]
+            Pydantic model to validate JSON with.
+
+        Returns
+        -------
+        model : `pydantic.BaseModel`
+            Validated model.
+        """
+        return self._read_single_block_static(name, model_type, self.zf, self.decompressor)
+
+    def _read_single_block_raw(self, name: str) -> bytes:
+        """Read a single compressed block from a 'file' in a zip archive.
+
+        Parameters
+        ----------
+        name : `str`
+            Base name of the file.  An extension will be added.
+
+        Returns
+        -------
+        data : `bytes`
+            Decompressed bytes.
+        """
+        compressed_data = self.zf.read(f"{name}.json.zst")
+        return self.decompressor.decompress(compressed_data)

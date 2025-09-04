@@ -46,7 +46,6 @@ import logging
 import operator
 import sys
 import uuid
-import zipfile
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
@@ -89,26 +88,10 @@ from ..pipeline_graph import (
     compare_packages,
     log_config_mismatch,
 )
-
-if TYPE_CHECKING:
-    from ..graph import QgraphSummary, QuantumGraph
-
-from ..pipeline_graph.io import SerializedPipelineGraph
-from ._multiblock import (
-    AddressReader,
-    AddressWriter,
-    Compressor,
-    Decompressor,
-    MultiblockReader,
-    MultiblockWriter,
-)
-
-if TYPE_CHECKING:
-    from ..config import PipelineTaskConfig
-    from ..graph import QgraphSummary, QuantumGraph
-
 from ._common import (
     BaseQuantumGraph,
+    BaseQuantumGraphReader,
+    BaseQuantumGraphWriter,
     ConnectionName,
     DataCoordinateValues,
     DatasetInfo,
@@ -120,6 +103,11 @@ from ._common import (
     QuantumInfo,
     TaskLabel,
 )
+from ._multiblock import MultiblockReader, MultiblockWriter
+
+if TYPE_CHECKING:
+    from ..config import PipelineTaskConfig
+    from ..graph import QgraphSummary, QuantumGraph
 
 _LOG = logging.getLogger(__name__)
 
@@ -1367,6 +1355,9 @@ class PredictedQuantumGraphComponents:
     ID sorting, etc.), but it does provide methods that can satisfy them.
     """
 
+    def __post_init__(self) -> None:
+        self.header.graph_type = "predicted"
+
     header: HeaderModel = dataclasses.field(default_factory=HeaderModel)
     """Basic metadata about the graph."""
 
@@ -1653,8 +1644,8 @@ class PredictedQuantumGraphComponents:
                     f"Unsupported extension {ext!r} for quantum graph; "
                     "expected '.qg' (or '.qgraph' to force the old format)."
                 )
-        quantum_address_writer = AddressWriter(self.quantum_indices)
         cdict: zstandard.ZstdCompressionDict | None = None
+        cdict_data: bytes | None = None
         quantum_datasets_json: dict[uuid.UUID, bytes] = {}
         if len(self.quantum_datasets) < 32:
             # ZStandard will fail if we ask to use a compression dict without
@@ -1673,101 +1664,54 @@ class PredictedQuantumGraphComponents:
                 list(quantum_datasets_json.values()),
                 level=zstd_level,
             )
+            cdict_data = cdict.as_bytes()
         compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
-        with uri.open(mode="wb") as stream:
-            with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
-                self._write_single_model(zf, "header", self.header, compressor)
-                if cdict is not None:
-                    zf.writestr("compression_dict", cdict.as_bytes())
-                self._write_single_model(
-                    zf, "pipeline_graph", SerializedPipelineGraph.serialize(self.pipeline_graph), compressor
+        with BaseQuantumGraphWriter.open(
+            uri,
+            header=self.header,
+            pipeline_graph=self.pipeline_graph,
+            indices=self.quantum_indices,
+            address_filename="quanta",
+            compressor=compressor,
+            cdict_data=cdict_data,
+        ) as writer:
+            writer.write_single_model("thin_graph", self.thin_graph)
+            if self.dimension_data is None:
+                raise IncompleteQuantumGraphError(
+                    "Cannot save predicted quantum graph with no dimension data."
                 )
-                self._write_single_model(zf, "thin_graph", self.thin_graph, compressor)
-                if self.dimension_data is None:
-                    raise IncompleteQuantumGraphError(
-                        "Cannot save predicted quantum graph with no dimension data."
-                    )
-                serialized_dimension_data = self.dimension_data.serialized()
-                self._write_single_model(zf, "dimension_data", serialized_dimension_data, compressor)
-                del serialized_dimension_data
-                self._write_single_model(zf, "init_quanta", self.init_quanta, compressor)
-                with MultiblockWriter.open_in_zip(
-                    zf, "quantum_datasets", self.header.int_size
-                ) as quantum_datasets_mb:
-                    for quantum_model in self.quantum_datasets.values():
-                        if json_data := quantum_datasets_json.get(quantum_model.quantum_id):
-                            quantum_datasets_mb.write_bytes(
-                                quantum_model.quantum_id, compressor.compress(json_data)
-                            )
-                        else:
-                            quantum_datasets_mb.write_model(
-                                quantum_model.quantum_id, quantum_model, compressor
-                            )
-                quantum_address_writer.addresses.append(quantum_datasets_mb.addresses)
-                quantum_address_writer.write_to_zip(zf, "quanta", int_size=self.header.int_size)
-
-    def _write_single_model(
-        self, zf: zipfile.ZipFile, name: str, model: pydantic.BaseModel, compressor: Compressor
-    ) -> None:
-        """Write a single compressed JSON block as a 'file' in a zip archive.
-
-        Parameters
-        ----------
-        zf : `zipfile.ZipFile`
-            Zip archive to add the file to.
-        name : `str`
-            Base name of the file.  An extension will be added.
-        model : `pydantic.BaseModel`
-            Pydantic model to convert to JSON.
-        compressor : `Compressor`
-            Object with a `compress` method that takes and returns `bytes`.
-        """
-        json_data = model.model_dump_json().encode()
-        self._write_single_block(zf, name, json_data, compressor)
-
-    def _write_single_block(
-        self, zf: zipfile.ZipFile, name: str, json_data: bytes, compressor: Compressor
-    ) -> None:
-        """Write a single compressed JSON block as a 'file' in a zip archive.
-
-        Parameters
-        ----------
-        zf : `zipfile.ZipFile`
-            Zip archive to add the file to.
-        name : `str`
-            Base name of the file.  An extension will be added.
-        json_data : `bytes`
-            Raw JSON to compress and write.
-        compressor : `Compressor`
-            Object with a `compress` method that takes and returns `bytes`.
-        """
-        compressed_data = compressor.compress(json_data)
-        zf.writestr(f"{name}.json.zst", compressed_data)
+            serialized_dimension_data = self.dimension_data.serialized()
+            writer.write_single_model("dimension_data", serialized_dimension_data)
+            del serialized_dimension_data
+            writer.write_single_model("init_quanta", self.init_quanta)
+            with MultiblockWriter.open_in_zip(
+                writer.zf, "quantum_datasets", writer.int_size
+            ) as quantum_datasets_mb:
+                for quantum_model in self.quantum_datasets.values():
+                    if json_data := quantum_datasets_json.get(quantum_model.quantum_id):
+                        quantum_datasets_mb.write_bytes(
+                            quantum_model.quantum_id, writer.compressor.compress(json_data)
+                        )
+                    else:
+                        quantum_datasets_mb.write_model(
+                            quantum_model.quantum_id, quantum_model, writer.compressor
+                        )
+            writer.address_writer.addresses.append(quantum_datasets_mb.addresses)
 
 
 @dataclasses.dataclass
-class PredictedQuantumGraphReader:
+class PredictedQuantumGraphReader(BaseQuantumGraphReader):
     """A helper class for reading predicted quantum graphs."""
 
-    components: PredictedQuantumGraphComponents
+    components: PredictedQuantumGraphComponents = dataclasses.field(init=False)
     """Quantum graph components populated by this reader's methods."""
-
-    zf: zipfile.ZipFile
-    """The zip archive that represents the quantum graph on disk."""
-
-    decompressor: Decompressor
-    """A decompressor for all compressed JSON blocks."""
-
-    address_reader: AddressReader
-    """A helper object for reading addresses into the full-quantum multi-block
-    files.
-    """
 
     @classmethod
     @contextmanager
     def open(
         cls,
         uri: ResourcePathExpression,
+        *,
         page_size: int = DEFAULT_BUFFER_SIZE,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[PredictedQuantumGraphReader]:
@@ -1791,31 +1735,19 @@ class PredictedQuantumGraphReader:
                 `PredictedQuantumGraphReader` ]
             A context manager that returns the reader when entered.
         """
-        uri = ResourcePath(uri)
-        cdict: zstandard.ZstdCompressionDict | None = None
-        with uri.open(mode="rb") as zf_stream:
-            with zipfile.ZipFile(zf_stream, "r") as zf:
-                if (cdict_path := zipfile.Path(zf, "compression_dict")).exists():
-                    cdict = zstandard.ZstdCompressionDict(cdict_path.read_bytes())
-                decompressor = zstandard.ZstdDecompressor(cdict)
-                header = cls._read_single_block_static("header", HeaderModel, zf, decompressor)
-                if not header.graph_type == "predicted":
-                    raise TypeError(f"Header is for a {header.graph_type!r} graph, not 'predicted'.")
-                serialized_pipeline_graph = cls._read_single_block_static(
-                    "pipeline_graph", SerializedPipelineGraph, zf, decompressor
-                )
-                pipeline_graph = serialized_pipeline_graph.deserialize(import_mode)
-                with AddressReader.open_in_zip(
-                    zf, "quanta", page_size=page_size, int_size=header.int_size
-                ) as address_reader:
-                    yield cls(
-                        components=PredictedQuantumGraphComponents(
-                            header=header, pipeline_graph=pipeline_graph
-                        ),
-                        zf=zf,
-                        decompressor=decompressor,
-                        address_reader=address_reader,
-                    )
+        with cls._open(
+            uri,
+            graph_type="predicted",
+            address_filename="quanta",
+            page_size=page_size,
+            import_mode=import_mode,
+        ) as self:
+            yield self
+
+    def __post_init__(self) -> None:
+        self.components = PredictedQuantumGraphComponents(
+            header=self.header, pipeline_graph=self.pipeline_graph
+        )
 
     def finish(self) -> PredictedQuantumGraph:
         """Construct a `PredictedQuantumGraph` instance from this reader."""
@@ -1914,50 +1846,3 @@ class PredictedQuantumGraphReader:
             be loaded.  The UUIDs of special init quanta will be ignored.
         """
         return self.read_init_quanta().read_dimension_data().read_quantum_datasets(quantum_ids)
-
-    @staticmethod
-    def _read_single_block_static(
-        name: str, model_type: type[_T], zf: zipfile.ZipFile, decompressor: Decompressor
-    ) -> _T:
-        """Read a single compressed JSON block from a 'file' in a zip archive.
-
-        Parameters
-        ----------
-        zf : `zipfile.ZipFile`
-            Zip archive to read the file from.
-        name : `str`
-            Base name of the file.  An extension will be added.
-        model_type : `type` [ `pydantic.BaseModel` ]
-            Pydantic model to validate JSON with.
-        decompressor : `Decompressor`
-            Object with a `decompress` method that takes and returns `bytes`.
-
-        Returns
-        -------
-        model : `pydantic.BaseModel`
-            Validated model.
-        """
-        compressed_data = zf.read(f"{name}.json.zst")
-        json_data = decompressor.decompress(compressed_data)
-        return model_type.model_validate_json(json_data)
-
-    def _read_single_block(self, name: str, model_type: type[_T]) -> _T:
-        """Read a single compressed JSON block from a 'file' in a zip archive.
-
-        Parameters
-        ----------
-        zf : `zipfile.ZipFile`
-            Zip archive to read the file from.
-        name : `str`
-            Base name of the file.  An extension will be added.
-        model_type : `type` [ `pydantic.BaseModel` ]
-            Pydantic model to validate JSON with.
-        decompressor : `Decompressor`
-            Object with a `decompress` method that takes and returns `bytes`.
-
-        Returns
-        -------
-        model : `pydantic.BaseModel`
-            Validated model.
-        """
-        return self._read_single_block_static(name, model_type, self.zf, self.decompressor)
