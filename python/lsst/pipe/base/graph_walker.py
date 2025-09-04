@@ -74,6 +74,18 @@ class GraphWalker(Generic[_T]):
         self._ready.clear()
         return new_active
 
+    def defer(self, key: _T) -> None:
+        """Put a key back into the iterator, causing it to be yielded again at
+        the next iteration.
+
+        Parameters
+        ----------
+        key : unspecified
+            NetworkX key of the node to return to the iterator.
+        """
+        self._active.remove(key)
+        self._ready.add(key)
+
     def finish(self, key: _T) -> None:
         """Mark a node as successfully processed, unblocking (at least in part)
         iteration over successor nodes.
