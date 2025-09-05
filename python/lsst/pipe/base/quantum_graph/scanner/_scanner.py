@@ -32,6 +32,7 @@ __all__ = ()
 import asyncio
 import concurrent.futures
 import dataclasses
+import itertools
 import multiprocessing
 import time
 import uuid
@@ -39,18 +40,15 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 
 import networkx
-import sqlalchemy
-from sqlalchemy.orm import Session
 
-from lsst.daf.butler import Butler
+from lsst.daf.butler import Butler, DatasetRef
 
 from ...graph_walker import GraphWalker
-from . import db
+from . import _storage, utils
 from ._config import ScannerConfig
 from ._deletion_tracker import DeletionTracker
-from ._results import QuantumScanResult, QuantumScanStatus
+from ._results import QuantumScanStatus
 from ._worker import ScannerWorker
-from ._writer import ScannerWriter
 
 
 @dataclasses.dataclass
@@ -58,13 +56,9 @@ class Scanner:
     worker: ScannerWorker
     walker: GraphWalker[uuid.UUID]
     deletion_tracker: DeletionTracker
-    engine: sqlalchemy.Engine
     butler: Butler
     executor: concurrent.futures.Executor
-    writer: ScannerWriter = dataclasses.field(default_factory=ScannerWriter)
-    scans_pending: set[asyncio.Future[QuantumScanResult]] = set()
-    deletes_pending: set[asyncio.Future[uuid.UUID]] = set()
-    last_progress_time = time.time()
+    storage: _storage.ScannerStorage
     blocked_quanta: set[uuid.UUID] = set()
 
     @property
@@ -82,14 +76,6 @@ class Scanner:
                 all_metadata=config.delete_metadata,
                 all_log=config.delete_log,
             )
-            if config.checkpoint_path is not None and config.checkpoint_path.exists():
-                config.db_path.transfer_from(config.checkpoint_path, "copy")
-                engine = config.create_db_engine()
-            elif not config.db_path.exists():
-                engine = config.create_db_engine()
-                db.DatabaseModel.metadata.create_all(engine)
-            else:
-                engine = config.create_db_engine()
             executor: concurrent.futures.Executor
             if config.n_processes > 1:
                 executor = concurrent.futures.ProcessPoolExecutor(
@@ -99,19 +85,18 @@ class Scanner:
                     initargs=(config,),
                 )
             else:
-                from .utils import SequentialExecutor
-
-                executor = SequentialExecutor()
+                executor = utils.SequentialExecutor()
                 ScannerWorker.instance = worker
-            with executor:
-                yield cls(
-                    worker,
-                    walker,
-                    deletion_tracker,
-                    engine,
-                    Butler.from_config(config.butler_path, writeable=True),
-                    executor,
-                )
+            with _storage.ScannerStorage(config) as storage:
+                with executor:
+                    yield cls(
+                        worker,
+                        walker,
+                        deletion_tracker,
+                        Butler.from_config(config.butler_path, writeable=True),
+                        executor,
+                        storage,
+                    )
 
     @staticmethod
     def _make_walker(worker: ScannerWorker) -> GraphWalker[uuid.UUID]:
@@ -125,15 +110,8 @@ class Scanner:
         )
         return GraphWalker(xgraph)
 
-    def _load_progress(self) -> None:
-        with Session(self.engine) as session:
-            quanta = {
-                row.quantum_id: row.succeeded
-                for row in session.execute(sqlalchemy.select(db.Quantum.quantum_id, db.Quantum.successful))
-            }
-            self.writer.n_uningested = session.execute(
-                sqlalchemy.select(sqlalchemy.sql.func.count()).select_from(db.ToIngest)
-            ).scalar_one()
+    def _load_progress(self) -> set[asyncio.Task[None]]:
+        quanta = self.storage.load_progress()
         for ready in self.walker:
             progressing = False
             for quantum_id in ready:
@@ -160,96 +138,94 @@ class Scanner:
             if not progressing:
                 break
         assert not quanta, f"Logic error in loading graph progress from database: {quanta} not in walker."
+        # Initialize our pending task list by deleting any datasets we'd
+        # cleared for deletion in a previous invocation that was interrupted.
+        pending: set[asyncio.Task[None]] = {
+            asyncio.create_task(self._delete_datasets(self.storage.start_deletions(reset=True)))
+        }
+        # Ingest any datasets that were left in the queue by that previous run.
+        self._ingest_to_central_butler()
+        return pending
 
     async def scan_graph(self) -> None:
+        pending = self._load_progress()
+        last_checkpoint = time.time()
+        last_ingest = time.time()
         try:
-            for ready in self.walker:
-                for quantum_id in ready:
-                    self._submit_quantum_scan(quantum_id)
-                    self.last_progress_time = time.time()
-                await self._process_pending()
-            while self.scans_pending or self.deletes_pending:
-                await self._process_pending()
+            # Main loop: schedule scans for quanta
+            while (ready := next(self.walker, None)) is not None or pending:
+                if ready is not None:
+                    for quantum_id in ready:
+                        pending.add(asyncio.create_task(self._scan_quantum(quantum_id)))
+                done, pending = await asyncio.wait(
+                    pending, return_when="FIRST_COMPLETED", timeout=self.config.idle_timeout
+                )
+                if not done:
+                    raise TimeoutError(f"No progress made for {self.config.idle_timeout}s.")
+                if time.time() - last_checkpoint > self.config.checkpoint_interval:
+                    self.storage.checkpoint()
+                    pending.add(asyncio.create_task(self._delete_datasets(self.storage.start_deletions())))
+                if time.time() - last_ingest > self.config.ingest_interval:
+                    self._ingest_to_central_butler()
         finally:
-            self.writer.write_if_ready(self.config, self.engine, self.butler, self.worker, force_all=True)
+            self._ingest_to_central_butler()
+            self.storage.checkpoint()
 
-    async def _process_pending(self) -> None:
-        if self.scans_pending:
-            scans_done, self.scans_pending = await asyncio.wait(
-                self.scans_pending, return_when="FIRST_COMPLETED"
+    async def _scan_quantum(self, quantum_id: uuid.UUID) -> None:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            self.executor, ScannerWorker.scan_quantum_in_pool, quantum_id, None
+        )
+        while result.status is QuantumScanStatus.INCOMPLETE:
+            assert result.wait_interval is not None, "wait_interval should be set by initial scan"
+            await asyncio.sleep(result.wait_interval)
+            result = await loop.run_in_executor(
+                self.executor, ScannerWorker.scan_quantum_in_pool, result.quantum_id, result
             )
-            for scan_future in scans_done:
-                scan_result = scan_future.result()
-                quantum_id = scan_result.quantum_id
-                match scan_result.status:
-                    case QuantumScanStatus.INCOMPLETE:
-                        # Wait a while and scan for this quantum again
-                        # later.
-                        self._submit_quantum_rescan(scan_result)
-                    case QuantumScanStatus.ABANDONED:
-                        # This quantum has failed and has stayed that way
-                        # for long enough we should stop checking on it.
-                        # Leave it unscanned, for a later invocation with
-                        # assume_complete=True to act on it.
-                        self.walker.fail(quantum_id)
-                    case QuantumScanStatus.SUCCESSFUL:
-                        self.walker.finish(quantum_id)
-                        self.writer.add_quantum_scan(scan_result, self.worker, self.deletion_tracker)
-                        self.last_progress_time = time.time()
-                    case QuantumScanStatus.FAILED:
-                        # We ignore the blocked quanta for now, because
-                        # generating their provenance does not require any
-                        # I/O or existence checks and we want to keep the
-                        # progress DB compact.
-                        self.blocked_quanta.update(self.walker.fail(quantum_id))
-                        self.writer.add_quantum_scan(scan_result, self.worker, self.deletion_tracker)
-                        self.last_progress_time = time.time()
-                    case unexpected:
-                        raise AssertionError(
-                            f"Unexpected status {unexpected!r} in scanner loop for {quantum_id}."
-                        )
-        if self.deletes_pending:
-            # We gather the completed deletes in order to remove rows from
-            # the ToDelete table, so we ideally don't try to delete
-            # anything again if we fail and have to restart.  But we don't
-            # guarantee that transactionally; at some level we rely on the
-            # QBB deletion code just succeeded if a file is already gone.
-            deletes_done, self.deletes_pending = await asyncio.wait(
-                self.deletes_pending, return_when="FIRST_COMPLETED"
-            )
-            for delete_future in deletes_done:
-                dataset_id = delete_future.result()
-                self.writer.add_deletion(dataset_id)
+        if result.status is QuantumScanStatus.ABANDONED:
+            # This quantum has failed and has stayed that way for long
+            # enough we should stop checking on it. Leave it unscanned, for
+            # a later invocation with assume_complete=True to act on it.
+            self.walker.fail(result.quantum_id)
+            return
+        match result.status:
+            case QuantumScanStatus.SUCCESSFUL:
+                self.walker.finish(result.quantum_id)
+            case QuantumScanStatus.FAILED:
                 self.last_progress_time = time.time()
-        if time.time() - self.last_progress_time > self.config.idle_timeout:
-            raise TimeoutError(f"No progress made for {self.config.idle_timeout}s.")
-        to_delete_now = self.writer.write_if_ready(self.config, self.engine, self.butler, self.worker)
-        self._submit_dataset_deletions(to_delete_now)
-
-    def _submit_quantum_scan(self, quantum_id: uuid.UUID) -> None:
-        loop = asyncio.get_running_loop()
-        self.scans_pending.add(
-            loop.run_in_executor(self.executor, ScannerWorker.scan_quantum_in_pool, quantum_id, None)
-        )
-
-    def _submit_quantum_rescan(self, result: QuantumScanResult) -> None:
-        self.scans_pending.add(asyncio.create_task(self._rescan_quantum(result)))
-
-    def _submit_dataset_deletions(self, to_delete: Iterable[db.ToDelete]) -> None:
-        loop = asyncio.get_running_loop()
-        for row in to_delete:
-            self.deletes_pending.add(
-                loop.run_in_executor(self.executor, ScannerWorker.delete_dataset_in_pool, row.ref_json)
+            case unexpected:
+                raise AssertionError(f"Unexpected status {unexpected!r} in scanner loop for {quantum_id}.")
+        predicted_outputs_by_id = {
+            d.dataset_id: d for d in itertools.chain.from_iterable(result.predicted.outputs.values())
+        }
+        to_delete = self.deletion_tracker.mark_quantum_complete(result.quantum_id)
+        to_ingest: list[bytes] = []
+        for dataset in result.iter_all_outputs():
+            ref = self.worker.make_ref(predicted_outputs_by_id[dataset.dataset_id])
+            json_ref = ref.to_json().encode()
+            to_delete.update(
+                self.deletion_tracker.mark_dataset_complete(
+                    ref.datasetType.name, dataset.dataset_id, json_ref
+                )
             )
+            to_ingest.append(json_ref)
+        self.storage.save_quantum(result, to_ingest, to_delete.items())
+        self.last_progress_time = time.time()
 
-    async def _rescan_quantum(self, result: QuantumScanResult) -> QuantumScanResult:
-        assert result.wait_interval is not None, "wait_interval should be set before submitting rescan."
-        await asyncio.sleep(result.wait_interval)
+    async def _delete_datasets(self, to_delete: Iterable[bytes]) -> None:
         loop = asyncio.get_running_loop()
-        quantum_scan = loop.run_in_executor(
-            self.executor, ScannerWorker.scan_quantum_in_pool, result.quantum_id, result
-        )
-        return await quantum_scan
+        pending = {
+            loop.run_in_executor(self.executor, ScannerWorker.delete_dataset_in_pool, json_ref)
+            for json_ref in to_delete
+        }
+        deleted_dataset_ids = [f.result() for f in asyncio.as_completed(pending)]
+        self.storage.finish_deletions(deleted_dataset_ids)
+
+    def _ingest_to_central_butler(self) -> None:
+        with self.storage.flush_ingest_queue() as json_refs:
+            refs = [DatasetRef.from_json(json_ref) for json_ref in json_refs]
+            with utils.ScannedFileTransferSource.wrap(self.worker.qbb, refs):
+                self.butler.transfer_from(self.worker.qbb, refs, transfer_dimensions=False)
 
     async def finish(self) -> None:
         raise NotImplementedError("TODO")

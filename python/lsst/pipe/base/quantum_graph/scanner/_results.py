@@ -32,6 +32,7 @@ __all__ = ()
 import dataclasses
 import enum
 import uuid
+from collections.abc import Iterable
 
 from ... import automatic_connection_constants as acc
 from ..._status import QuantumSuccessCaveats
@@ -41,7 +42,6 @@ from .._predicted import (
     PredictedQuantumDatasetsModel,
 )
 from .._provenance import ProvenanceQuantumModel
-from . import db
 from ._config import ScannerTimeConfigDict
 
 
@@ -51,11 +51,6 @@ class DatasetScanResult:
     producer: uuid.UUID | None
     exists: bool = False
     provenance: bytes = b""
-
-    def to_db(self) -> db.Dataset:
-        return db.Dataset(
-            dataset_id=self.dataset_id, exists=self.exists, provenance=self.provenance, producer=self.producer
-        )
 
 
 @dataclasses.dataclass
@@ -106,27 +101,15 @@ class QuantumScanResult:
             LogScanResult(dataset_id=predicted_log.dataset_id, producer=predicted.quantum_id),
         )
 
-    def to_db(self) -> db.Quantum:
-        if self.status is QuantumScanStatus.SUCCESSFUL:
-            successful = True
-        else:
-            assert self.status is QuantumScanStatus.FAILED, (
-                f"Cannot write incomplete scan for {self.quantum_id} with status {self.status}."
-            )
-            successful = False
-        return db.Quantum(
-            quantum_id=self.quantum_id,
-            successful=successful,
-            provenance=self.provenance,
-            log_id=self.log.dataset_id,
-            log_content=self.log.content,
-            metadata_id=self.metadata.dataset_id,
-            metadata_content=self.metadata.content,
-        )
-
     @property
     def quantum_id(self) -> uuid.UUID:
         return self.predicted.quantum_id
+
+    def iter_all_outputs(self) -> Iterable[DatasetScanResult]:
+        assert self.outputs is not None
+        yield from self.outputs
+        yield self.log
+        yield self.metadata
 
     def update_wait_interval(self, times_for_task: ScannerTimeConfigDict) -> None:
         if not self.wait_interval:

@@ -30,16 +30,13 @@ from __future__ import annotations
 __all__ = ()
 
 from collections import ChainMap
-from typing import TYPE_CHECKING, TypedDict
+from typing import TypedDict
 
 import pydantic
 
 from lsst.resources import ResourcePath
 
 from .._common import TaskLabel
-
-if TYPE_CHECKING:
-    import sqlalchemy
 
 
 class ScannerTimeConfigDict(TypedDict):
@@ -85,6 +82,7 @@ class ScannerConfig(pydantic.BaseModel):
     predicted_path: ResourcePath
     butler_path: ResourcePath
     db_path: ResourcePath
+    output_path: ResourcePath
     checkpoint_path: ResourcePath | None = None
     vacuum_on_checkpoint: bool = True
     n_processes: int = 1
@@ -101,39 +99,13 @@ class ScannerConfig(pydantic.BaseModel):
     of all pending work is used.
     """
 
-    write_interval: float = 300.0
-    """Time (s) between writes to the local database.
-    """
-
-    write_max_quanta: float = 10000
-    """Number of quanta fully scanned (as either successes or conclusive
-    failures) between writes to the local database.
-    """
-
-    write_max_datasets: float = 10000
-    """Number of output datasets fully scanned between writes to the local
-    database.
-    """
-
     checkpoint_interval: float = 1200.0
-    """Time (s) between checkpoints that copy the local database to persistent
+    """Time (s) between checkpoints that flush the local database to persistent
     storage.
-
-    This is ignored if there is no separate checkpoint path.
     """
 
     ingest_interval: float = 1200.0
     """Time (s) between ingests into the central butler database."""
-
-    ingest_min_datasets: float = 100
-    """Number of output datasets that must be fully scanned before ingesting
-    them into the central butler database.
-    """
-
-    ingest_max_datasets: float = 20000
-    """Number of output datasets fully scanned to trigger ingestion into the
-    central butler database.
-    """
 
     delete_dataset_types: list[str] = pydantic.Field(default_factory=list)
 
@@ -146,12 +118,3 @@ class ScannerConfig(pydantic.BaseModel):
             return ChainMap(self.task_times[task_label], self.default_times)  # type: ignore
         else:
             return self.default_times
-
-    def create_db_engine(self) -> sqlalchemy.Engine:
-        import sqlalchemy
-
-        return sqlalchemy.create_engine(
-            f"sqlite:///{self.db_path.ospath}",
-            connect_args={"autocommit": False},
-            poolclass=sqlalchemy.NullPool,
-        )

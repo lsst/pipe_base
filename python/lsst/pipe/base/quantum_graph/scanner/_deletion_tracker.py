@@ -35,10 +35,7 @@ from collections.abc import Iterable
 
 import networkx
 
-from lsst.daf.butler import DatasetRef
-
 from .._common import DatasetTypeName
-from . import db
 from ._worker import ScannerWorker
 
 
@@ -81,25 +78,28 @@ class DeletionTracker:
                 for quantum_id in consuming_quanta:
                     predicted_quantum_datasets = worker.reader.components.quantum_datasets[quantum_id]
                     for predicted_dataset in predicted_quantum_datasets.inputs[read_edge.connection_name]:
-                        xgraph.add_node(predicted_dataset.dataset_id, ref=worker.make_ref(predicted_dataset))
+                        xgraph.add_node(
+                            predicted_dataset.dataset_id,
+                            json_ref=worker.make_ref(predicted_dataset).to_json().encode(),
+                        )
                         xgraph.add_edge(predicted_dataset.dataset_id, quantum_id)
         return cls(xgraph, dataset_types)
 
-    def mark_dataset_complete(self, ref: DatasetRef) -> list[db.ToDelete]:
-        safe_to_delete: list[db.ToDelete] = []
-        if ref.datasetType.name in self.dataset_types and ref.id not in self.xgraph:
-            safe_to_delete.append(db.ToDelete(dataset_id=ref.id, ref=ref.to_json().encode()))
+    def mark_dataset_complete(
+        self, dataset_type_name: str, dataset_id: uuid.UUID, json_ref: bytes
+    ) -> dict[uuid.UUID, bytes]:
+        safe_to_delete: dict[uuid.UUID, bytes] = {}
+        if dataset_type_name in self.dataset_types and dataset_id not in self.xgraph:
+            safe_to_delete[dataset_id] = json_ref
         return safe_to_delete
 
-    def mark_quantum_complete(self, quantum_id: uuid.UUID) -> list[db.ToDelete]:
-        safe_to_delete: list[db.ToDelete] = []
+    def mark_quantum_complete(self, quantum_id: uuid.UUID) -> dict[uuid.UUID, bytes]:
+        safe_to_delete: dict[uuid.UUID, bytes] = {}
         if quantum_id not in self.xgraph:
             return safe_to_delete
         consumed_dataset_ids = list(self.xgraph.predecessors(quantum_id))
         self.xgraph.remove_node(quantum_id)
         for dataset_id in consumed_dataset_ids:
             if not self.xgraph.out_degree(dataset_id):
-                safe_to_delete.append(
-                    db.ToDelete(dataset_id=dataset_id, ref=self.xgraph.nodes[dataset_id]["ref"])
-                )
+                safe_to_delete[dataset_id] = self.xgraph.nodes[dataset_id]["json_ref"]
         return safe_to_delete

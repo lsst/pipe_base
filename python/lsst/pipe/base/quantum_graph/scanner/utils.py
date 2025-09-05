@@ -30,8 +30,14 @@ from __future__ import annotations
 __all__ = ("SequentialExecutor",)
 
 import concurrent.futures
-from collections.abc import Callable
-from typing import ParamSpec, TypeVar
+import uuid
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from typing import ParamSpec, TypeVar, cast
+
+from lsst.daf.butler import DatasetRef, QuantumBackedButler
+from lsst.daf.butler.datastore import FileTransferMap, FileTransferSource
+from lsst.resources import ResourcePath
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
@@ -56,3 +62,37 @@ class SequentialExecutor(concurrent.futures.Executor):
 
     def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
         pass
+
+
+class ScannedFileTransferSource(FileTransferSource):
+    name: str = "scanned output datasets"
+
+    @classmethod
+    @contextmanager
+    def wrap(cls, qbb: QuantumBackedButler, refs: Iterable[DatasetRef]) -> Iterator[None]:
+        artifact_existence: dict[ResourcePath, bool] = {}
+        for paths in qbb.get_many_uris(refs, predict=True).values():
+            if paths.primaryURI is not None:
+                artifact_existence[paths.primaryURI] = True
+            for path in paths.componentURIs.values():
+                artifact_existence[path] = True
+        try:
+            qbb._file_transfer_source = ScannedFileTransferSource(
+                qbb._file_transfer_source, artifact_existence
+            )
+            yield
+        finally:
+            qbb._file_transfer_source = cast(ScannedFileTransferSource, qbb._file_transfer_source)._base
+
+    def __init__(self, base: FileTransferSource, artifact_existence: dict[ResourcePath, bool]):
+        self._base = base
+        self._artifact_existence = artifact_existence
+
+    def get_file_info_for_transfer(self, dataset_ids: Iterable[uuid.UUID]) -> FileTransferMap:
+        return self._base.get_file_info_for_transfer(dataset_ids)
+
+    def locate_missing_files_for_transfer(
+        self, refs: Iterable[DatasetRef], artifact_existence: dict[ResourcePath, bool]
+    ) -> FileTransferMap:
+        artifact_existence.update(self._artifact_existence)
+        return self._base.locate_missing_files_for_transfer(refs, artifact_existence)
