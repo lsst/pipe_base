@@ -127,7 +127,7 @@ class PredictedThinQuantumModel(pydantic.BaseModel):
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
-    if "sphinx" in sys.modules:
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
 
         def copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.copy`."""
@@ -169,7 +169,7 @@ class PredictedThinGraphModel(pydantic.BaseModel):
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
-    if "sphinx" in sys.modules:
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
 
         def copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.copy`."""
@@ -242,7 +242,7 @@ class PredictedDatasetModel(pydantic.BaseModel):
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
-    if "sphinx" in sys.modules:
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
 
         def copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.copy`."""
@@ -412,7 +412,7 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
-    if "sphinx" in sys.modules:
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
 
         def copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.copy`."""
@@ -473,7 +473,7 @@ class PredictedInitQuantaModel(pydantic.RootModel):
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
-    if "sphinx" in sys.modules:
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
 
         def copy(self, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.copy`."""
