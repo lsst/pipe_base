@@ -43,11 +43,11 @@ import dataclasses
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from io import BufferedReader, BytesIO
 from operator import attrgetter
-from typing import IO, TYPE_CHECKING, ClassVar, Protocol, TypeVar
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar
 
 import pydantic
 
@@ -280,6 +280,9 @@ class AddressReader:
     rows: dict[uuid.UUID, AddressRow]
     """Rows that have already been read."""
 
+    rows_by_index: dict[int, AddressRow]
+    """Rows that have already been read, keyed by integer index."""
+
     rows_per_page: int
     """Minimum number of rows to read at once."""
 
@@ -320,6 +323,7 @@ class AddressReader:
             n_addresses=n_addresses,
             start_index=start_index,
             rows={},
+            rows_by_index={},
             rows_per_page=rows_per_page,
             unread_pages=unread_pages,
         )
@@ -439,38 +443,46 @@ class AddressReader:
             self.unread_pages.clear()
         return self.rows
 
-    def find(self, key: uuid.UUID) -> AddressRow:
+    def find(self, key: uuid.UUID | int) -> AddressRow:
         """Read the row for the given UUID.
 
         Parameters
         ----------
-        key : `uuid.UUID`
-            UUID to find.
+        key : `uuid.UUID` or `int`
+            UUID or integer index to find.
 
         Returns
         -------
         row : `AddressRow`
             Addresses for the given UUID.
         """
-        if (row := self.rows.get(key)) is not None:
+        row_map: Mapping[Any, AddressRow]
+        guess_index: int | float
+        match key:
+            case uuid.UUID():
+                row_map = self.rows
+                guess_index = (key.int / self.MAX_UUID_INT) * self.n_rows + self.start_index
+            case int():
+                row_map = self.rows_by_index
+                guess_index = key
+        if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
             return row
-        guess_index_float = (key.int / self.MAX_UUID_INT) * self.n_rows + self.start_index
-        guess_page_float = (guess_index_float - self.start_index) / self.rows_per_page
+        guess_page_float = (guess_index - self.start_index) / self.rows_per_page
         guess_page = int(guess_page_float)
         _LOG.debug(
             "Searching for %s, starting at index %s of %s (%s rows per page).",
             key,
-            guess_index_float,
+            guess_index,
             self.n_rows,
             self.rows_per_page,
         )
         for page in self._page_search_path(guess_page):
             if page in self.unread_pages:
                 self._read_page(page)
-                if (row := self.rows.get(key)) is not None:
+                if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
                     return row
             elif not self.unread_pages:
-                raise LookupError(f"Address for UUID {key} not found.")
+                raise LookupError(f"Address for {key} not found.")
         raise AssertionError("Logic error in page tracking.")
 
     def _read_page(self, page_index: int) -> None:
@@ -491,6 +503,7 @@ class AddressReader:
     def _read_row(self, page_stream: BytesIO) -> AddressRow:
         row = AddressRow.read(page_stream, self.n_addresses, self.int_size)
         self.rows[row.key] = row
+        self.rows_by_index[row.index] = row
         _LOG.debug("Read address row %s.", row)
         return row
 
