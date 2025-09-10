@@ -74,6 +74,11 @@ class GraphWalker(Generic[_T]):
         self._ready.clear()
         return new_active
 
+    @property
+    def is_exhausted(self) -> bool:
+        """Test whether the walker has covered the entire graph."""
+        return not self._incomplete
+
     def defer(self, key: _T) -> None:
         """Put a key back into the iterator, causing it to be yielded again at
         the next iteration.
