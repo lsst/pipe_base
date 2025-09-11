@@ -142,6 +142,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
                 "input_image": DynamicConnectionConfig(
                     dataset_type_name="warp",
                     dimensions=["patch", "visit"],
+                    multiple=True,
                 )
             },
             outputs={
@@ -154,7 +155,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
                     dimensions=["patch", "band"],
                     # Like all other (defaulted) storage classes here,
                     # 'ArrowAstropy' below will be mocked; we pick it so we can
-                    # try a component inpuy, and because we know its pytype is
+                    # try a component input, and because we know its pytype is
                     # safe to import here.
                     storage_class="ArrowAstropy",
                 ),
