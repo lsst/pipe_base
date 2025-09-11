@@ -1821,11 +1821,23 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             Iterable of quantum IDs to load.  If not provided, all quanta will
             be loaded.  The UUIDs of special init quanta will be ignored.
         """
+        quantum_datasets: PredictedQuantumDatasetsModel | None
         if quantum_ids is None:
-            self.address_reader.read_all()
-            quantum_ids = self.address_reader.rows.keys()
+            if len(self.components.quantum_datasets) != self.header.n_quanta:
+                for quantum_datasets in MultiblockReader.read_all_models_in_zip(
+                    self.zf,
+                    "quantum_datasets",
+                    PredictedQuantumDatasetsModel,
+                    self.decompressor,
+                    int_size=self.components.header.int_size,
+                ):
+                    self.components.quantum_datasets.setdefault(quantum_datasets.quantum_id, quantum_datasets)
+                self.address_reader.read_all()
+                for address_row in self.address_reader.rows.values():
+                    self.components.quantum_indices[address_row.key] = address_row.index
+            return self
         with MultiblockReader.open_in_zip(
-            self.zf, "quantum_datasets", self.components.header.int_size
+            self.zf, "quantum_datasets", int_size=self.components.header.int_size
         ) as mb_reader:
             for quantum_id in quantum_ids:
                 if quantum_id in self.components.quantum_datasets:

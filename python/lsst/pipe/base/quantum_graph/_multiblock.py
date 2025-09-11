@@ -45,7 +45,7 @@ import logging
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from io import BytesIO
+from io import BufferedReader, BytesIO
 from operator import attrgetter
 from typing import IO, TYPE_CHECKING, ClassVar, Protocol, TypeVar
 
@@ -590,7 +590,7 @@ class MultiblockReader:
 
     @classmethod
     @contextmanager
-    def open_in_zip(cls, zf: zipfile.ZipFile, name: str, int_size: int) -> Iterator[MultiblockReader]:
+    def open_in_zip(cls, zf: zipfile.ZipFile, name: str, *, int_size: int) -> Iterator[MultiblockReader]:
         """Open a reader for a file in a zip archive.
 
         Parameters
@@ -609,6 +609,67 @@ class MultiblockReader:
         """
         with zf.open(f"{name}.mb", mode="r") as stream:
             yield MultiblockReader(stream, int_size)
+
+    @classmethod
+    def read_all_bytes_in_zip(cls, zf: zipfile.ZipFile, name: str, *, int_size: int) -> Iterator[bytes]:
+        """Iterate over all of the byte blocks in a file in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to read the file from.
+        name : `str`
+            Base name for the multi-block file; an extension will be added.
+        int_size : `int`
+            Number of bytes to use for all integers.
+
+        Returns
+        -------
+        byte_iter : `~collections.abc.Iterator` [ `bytes` ]
+            Iterator over blocks.
+        """
+        with zf.open(f"{name}.mb", mode="r") as zf_stream:
+            # The standard library typing of IO[bytes] tiers isn't consistent.
+            buffered_stream = BufferedReader(zf_stream)  # type: ignore[type-var]
+            size_data = buffered_stream.read(int_size)
+            while size_data:
+                internal_size = int.from_bytes(size_data)
+                yield buffered_stream.read(internal_size)
+                size_data = buffered_stream.read(int_size)
+
+    @classmethod
+    def read_all_models_in_zip(
+        cls,
+        zf: zipfile.ZipFile,
+        name: str,
+        model_type: type[_T],
+        decompressor: Decompressor,
+        *,
+        int_size: int,
+    ) -> Iterator[_T]:
+        """Iterate over all of the models in a file in a zip archive.
+
+        Parameters
+        ----------
+        zf : `zipfile.ZipFile`
+            Zip archive to read the file from.
+        name : `str`
+            Base name for the multi-block file; an extension will be added.
+        model_type : `type` [ `pydantic.BaseModel` ]
+            Pydantic model to validate JSON with.
+        decompressor : `Decompressor`
+            Object with a `decompress` method that takes and returns `bytes`.
+        int_size : `int`
+            Number of bytes to use for all integers.
+
+        Returns
+        -------
+        model_iter : `~collections.abc.Iterator` [ `pydantic.BaseModel` ]
+            Iterator over model instances.
+        """
+        for compressed_data in cls.read_all_bytes_in_zip(zf, name, int_size=int_size):
+            json_data = decompressor.decompress(compressed_data)
+            yield model_type.model_validate_json(json_data)
 
     def read_bytes(self, address: Address) -> bytes | None:
         """Read raw bytes from the multi-block file.
@@ -644,7 +705,7 @@ class MultiblockReader:
             Size and offset of the block.
         model_type : `type` [ `pydantic.BaseModel` ]
             Pydantic model to validate JSON with.
-        decompressor : `Deompressor`
+        decompressor : `Decompressor`
             Object with a `decompress` method that takes and returns `bytes`.
 
         Returns
