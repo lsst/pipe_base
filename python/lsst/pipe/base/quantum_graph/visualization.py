@@ -34,7 +34,7 @@ import uuid
 from abc import abstractmethod
 from typing import IO, ClassVar, Generic, TypeVar
 
-from ..pipeline_graph import NodeBipartite
+from ..pipeline_graph import NodeType
 from ._common import BaseQuantumGraph, BipartiteEdgeInfo, DatasetInfo, QuantumInfo
 
 _G = TypeVar("_G", bound=BaseQuantumGraph, contravariant=True)
@@ -193,10 +193,10 @@ class QuantumGraphVisualizer(Generic[_G, _Q, _D]):
         print(self.render_header(qg, is_bipartite=True), file=stream)
         xgraph = qg.bipartite_xgraph
         for node_id, node_data in xgraph.nodes.items():
-            match node_data["bipartite"]:
-                case NodeBipartite.TASK_OR_QUANTUM:
+            match node_data["pipeline_node"].key.node_type:
+                case NodeType.TASK:
                     print(self.render_quantum(node_id, node_data, is_bipartite=True), file=stream)
-                case NodeBipartite.DATASET_OR_TYPE:
+                case NodeType.DATASET_TYPE:
                     print(self.render_dataset(node_id, node_data), file=stream)
         for a, b, edge_data in xgraph.edges(data=True):
             print(self.render_edge(a, b, edge_data), file=stream)
@@ -226,7 +226,7 @@ class QuantumGraphDotVisualizer(QuantumGraphVisualizer[BaseQuantumGraph, Quantum
         return self._render_node(self._make_node_id(quantum_id), "quantum", labels)
 
     def render_dataset(self, dataset_id: uuid.UUID, data: DatasetInfo) -> str:
-        labels = [html.escape(data["dataset_type"].name), f"run: {data['run']!r}"]
+        labels = [html.escape(data["dataset_type_name"]), f"run: {data['run']!r}"]
         data_id = data["data_id"]
         labels.extend(f"{key} = {value}" for key, value in data_id.required.items())
         return self._render_node(self._make_node_id(dataset_id), "dataset", labels)
@@ -286,7 +286,7 @@ class QuantumGraphMermaidVisualizer(QuantumGraphVisualizer[BaseQuantumGraph, Qua
 
     def render_dataset(self, dataset_id: uuid.UUID, data: DatasetInfo) -> str:
         label_lines = [
-            f"**{data['dataset_type'].name}**",
+            f"**{data['dataset_type_name']}**",
             f"ID: {dataset_id}",
             f"run: {data['run']}",
         ]

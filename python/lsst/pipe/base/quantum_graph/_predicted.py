@@ -50,7 +50,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from io import DEFAULT_BUFFER_SIZE
-from typing import TYPE_CHECKING, Any, NotRequired, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import networkx
 import networkx.algorithms.bipartite
@@ -80,7 +80,6 @@ from lsst.utils.packages import Packages
 from .. import automatic_connection_constants as acc
 from ..pipeline import TaskDef
 from ..pipeline_graph import (
-    NodeBipartite,
     PipelineGraph,
     TaskImportMode,
     TaskInitNode,
@@ -516,7 +515,7 @@ class PredictedQuantumInfo(QuantumInfo):
     or `PredictedQuantumGraph.bipartite_xgraph`.
     """
 
-    quantum: NotRequired[Quantum]
+    quantum: Quantum
     """Quantum object that can be passed directly to an executor.
 
     This attribute is only present if
@@ -561,7 +560,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             raise TypeError(f"Header is for a {components.header.graph_type!r} graph, not 'predicted'.")
         super().__init__(components.header, components.pipeline_graph)
         self._quantum_only_xgraph = networkx.DiGraph()
-        self._bipartite_xgraph = networkx.MultiDiGraph()
+        self._bipartite_xgraph = networkx.DiGraph()
         self._quanta_by_task_label: dict[str, dict[DataCoordinate, uuid.UUID]] = {
             task_label: {} for task_label in self.pipeline_graph.tasks.keys()
         }
@@ -631,6 +630,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         )
         task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
         for connection_name, input_datasets in quantum_datasets.inputs.items():
+            pipeline_edge = task_node.get_input_edge(connection_name)
             for input_dataset in input_datasets:
                 self._add_dataset(input_dataset)
                 self._bipartite_xgraph.add_edge(
@@ -638,9 +638,14 @@ class PredictedQuantumGraph(BaseQuantumGraph):
                     quantum_datasets.quantum_id,
                     key=connection_name,
                     is_read=True,
-                    pipeline_edge=task_node.get_input_edge(connection_name),
                 )
+                # There might be multiple input connections for the same
+                # dataset type.
+                self._bipartite_xgraph.edges[
+                    input_dataset.dataset_id, quantum_datasets.quantum_id
+                ].setdefault("pipeline_edges", []).append(pipeline_edge)
         for connection_name, output_datasets in quantum_datasets.outputs.items():
+            pipeline_edges = [task_node.get_output_edge(connection_name)]
             for output_dataset in output_datasets:
                 self._add_dataset(output_dataset)
                 self._bipartite_xgraph.add_edge(
@@ -648,17 +653,15 @@ class PredictedQuantumGraph(BaseQuantumGraph):
                     output_dataset.dataset_id,
                     key=connection_name,
                     is_read=False,
-                    pipeline_edge=task_node.get_output_edge(connection_name),
+                    pipeline_edges=pipeline_edges,
                 )
 
     def _add_quantum(
         self, quantum_id: uuid.UUID, task_label: str, data_coordinate_values: Sequence[DataIdValue]
     ) -> None:
         task_node = self.pipeline_graph.tasks[task_label]
-        self._quantum_only_xgraph.add_node(quantum_id, task_label=task_label, task_node=task_node)
-        self._bipartite_xgraph.add_node(
-            quantum_id, task_label=task_label, task_node=task_node, bipartite=NodeBipartite.TASK_OR_QUANTUM
-        )
+        self._quantum_only_xgraph.add_node(quantum_id, task_label=task_label, pipeline_node=task_node)
+        self._bipartite_xgraph.add_node(quantum_id, task_label=task_label, pipeline_node=task_node)
         data_coordinate_values = tuple(data_coordinate_values)
         dimensions = self.pipeline_graph.tasks[task_label].dimensions
         data_id = DataCoordinate.from_full_values(dimensions, tuple(data_coordinate_values))
@@ -667,15 +670,14 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         self._quanta_by_task_label[task_label][data_id] = quantum_id
 
     def _add_dataset(self, model: PredictedDatasetModel) -> None:
+        dataset_type_node = self.pipeline_graph.dataset_types[model.dataset_type_name]
+        data_id = DataCoordinate.from_full_values(dataset_type_node.dimensions, tuple(model.data_coordinate))
         self._bipartite_xgraph.add_node(
             model.dataset_id,
-            dataset_type=self.pipeline_graph.dataset_types[model.dataset_type_name].dataset_type,
+            dataset_type_name=dataset_type_node.name,
+            pipeline_node=dataset_type_node,
             run=model.run,
-            bipartite=NodeBipartite.DATASET_OR_TYPE,
         )
-        data_coordinate_values = tuple(model.data_coordinate)
-        dimensions = self.pipeline_graph.dataset_types[model.dataset_type_name].dimensions
-        data_id = DataCoordinate.from_full_values(dimensions, data_coordinate_values)
         self._bipartite_xgraph.nodes[model.dataset_id].setdefault("data_id", data_id)
         self._datasets_by_type[model.dataset_type_name][data_id] = model.dataset_id
 
@@ -783,9 +785,8 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         Notes
         -----
         Node keys are quantum UUIDs, and are populated by the ``thin_graph``
-        component (all nodes) and ``quantum_datasets`` component (only those
-        that were loaded).  If any quantum is present in the graph its
-        immediate edges will be.
+        component (all nodes and edges) and ``quantum_datasets`` component
+        (only those that were loaded).
 
         Node state dictionaries are described by the
         `PredictedQuantumInfo` type.
@@ -958,7 +959,11 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             if "quantum" in quantum_node_dict:
                 result[quantum_id] = quantum_node_dict["quantum"]
                 continue
-            try:
+            # We've declare the info dict keys to all be required because that
+            # saves a lot of casting, but the reality is that they can either
+            # be fully populated or totally unpopulated.  But that makes mypy
+            # think the check above always succeeds.
+            try:  # type:ignore [unreachable]
                 quantum_datasets = self._quantum_datasets[quantum_id]
             except KeyError:
                 raise IncompleteQuantumGraphError(

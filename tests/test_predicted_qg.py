@@ -284,6 +284,22 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             self.assertEqual(len(qg.datasets_by_type["coadd"]), 10)
             self.assertEqual(len(qg.datasets_by_type["object"]), 10)
             self.assertEqual(len(qg.datasets_by_type["matches"]), 2)
+            # Spot-check some edges and graph structure.
+            for data_id, dataset_id in qg.datasets_by_type["source_detector"].items():
+                for producer_id, _, edge_data in qg.bipartite_xgraph.in_edges(dataset_id, data=True):
+                    self.assertIn(producer_id, qg.quanta_by_task["calibrate"].values())
+                    self.assertFalse(edge_data["is_read"])
+                    self.assertEqual(
+                        edge_data["pipeline_edges"],
+                        [qg.pipeline_graph.tasks["calibrate"].get_output_edge("output_table")],
+                    )
+                for _, consumer_id, edge_data in qg.bipartite_xgraph.out_edges(dataset_id, data=True):
+                    self.assertIn(consumer_id, qg.quanta_by_task["consolidate"].values())
+                    self.assertTrue(edge_data["is_read"])
+                    self.assertEqual(
+                        edge_data["pipeline_edges"],
+                        [qg.pipeline_graph.tasks["consolidate"].get_input_edge("input_table")],
+                    )
         # We use 'is' checks instead of just equality because we don't want
         # duplicates of these objects floating around wasting memory.
         for task_label, quanta_for_task in qg.quanta_by_task.items():
@@ -291,11 +307,11 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
                 d1: PredictedQuantumInfo = qg.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(d1["task_label"], task_label)
                 self.assertIs(d1["data_id"], data_id)
-                self.assertIs(d1["task_node"], qg.pipeline_graph.tasks[task_label])
+                self.assertIs(d1["pipeline_node"], qg.pipeline_graph.tasks[task_label])
                 d2: PredictedQuantumInfo = qg.bipartite_xgraph.nodes[quantum_id]
                 self.assertEqual(d2["task_label"], task_label)
                 self.assertIs(d2["data_id"], data_id)
-                self.assertIs(d2["task_node"], qg.pipeline_graph.tasks[task_label])
+                self.assertIs(d2["pipeline_node"], qg.pipeline_graph.tasks[task_label])
         for dataset_type_name, datasets_for_type in qg.datasets_by_type.items():
             if (
                 dataset_type_name == "source_schema"
@@ -306,9 +322,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             for data_id, dataset_id in datasets_for_type.items():
                 d3: PredictedDatasetInfo = qg.bipartite_xgraph.nodes[dataset_id]
                 self.assertIs(d3["data_id"], data_id)
-                self.assertIs(
-                    d3["dataset_type"], qg.pipeline_graph.dataset_types[dataset_type_name].dataset_type
-                )
+                self.assertIs(d3["pipeline_node"], qg.pipeline_graph.dataset_types[dataset_type_name])
         if dimension_data_loaded:
             self.assertIsNotNone(qg.dimension_data)
             if dimension_data_deserialized and not converting_partial:

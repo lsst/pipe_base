@@ -52,7 +52,7 @@ from .execution_graph_fixup import ExecutionGraphFixup
 from .graph import QuantumGraph
 from .graph_walker import GraphWalker
 from .pipeline_graph import TaskNode
-from .quantum_graph import PredictedQuantumGraph
+from .quantum_graph import PredictedQuantumGraph, PredictedQuantumInfo
 from .quantum_graph_executor import QuantumExecutor, QuantumGraphExecutor
 from .quantum_reports import ExecutionStatus, QuantumReport, Report
 
@@ -348,7 +348,7 @@ class _JobList:
             quantum_id: _Job(
                 quantum_id=quantum_id,
                 quantum=xgraph.nodes[quantum_id]["quantum"],
-                task_node=xgraph.nodes[quantum_id]["task_node"],
+                task_node=xgraph.nodes[quantum_id]["pipeline_node"],
             )
             for quantum_id in xgraph
         }
@@ -583,7 +583,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
         ----------
         xgraph : `networkx.DiGraph`
             DAG to execute.  Should have quantum IDs for nodes and ``quantum``
-            (`lsst.daf.butler.Quantum`) and ``task_node``
+            (`lsst.daf.butler.Quantum`) and ``pipeline_node``
             (`lsst.pipe.base.pipeline_graph.TaskNode`) attributes in addition
             to those provided by
             `.quantum_graph.PredictedQuantumGraph.quantum_only_xgraph`.
@@ -599,10 +599,10 @@ class MPGraphExecutor(QuantumGraphExecutor):
         walker = GraphWalker[uuid.UUID](xgraph.copy())
         for unblocked_quanta in walker:
             for quantum_id in sorted(unblocked_quanta, key=tiebreaker_sort_key):
-                node_state = xgraph.nodes[quantum_id]
-                data_id: DataCoordinate = node_state["data_id"]
-                task_node: TaskNode = node_state["task_node"]
-                quantum: Quantum = node_state["quantum"]
+                node_state: PredictedQuantumInfo = xgraph.nodes[quantum_id]
+                data_id = node_state["data_id"]
+                task_node = node_state["pipeline_node"]
+                quantum = node_state["quantum"]
 
                 _LOG.debug("Executing %s (%s@%s)", quantum_id, task_node.label, data_id)
                 fail_exit_code: int | None = None

@@ -651,7 +651,7 @@ class SimplePipelineExecutor:
         # between.
         return (
             single_quantum_executor.execute(
-                nodes_map[quantum_id]["task_node"],
+                nodes_map[quantum_id]["pipeline_node"],
                 nodes_map[quantum_id]["quantum"],
                 quantum_id,
             )[0]

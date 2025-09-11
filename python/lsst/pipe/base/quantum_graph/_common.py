@@ -48,8 +48,6 @@ from io import DEFAULT_BUFFER_SIZE
 from typing import (
     TYPE_CHECKING,
     Any,
-    Literal,
-    NotRequired,
     Self,
     TypeAlias,
     TypedDict,
@@ -61,14 +59,10 @@ import networkx.algorithms.bipartite
 import pydantic
 import zstandard
 
-from lsst.daf.butler import (
-    DataCoordinate,
-    DataIdValue,
-    DatasetType,
-)
+from lsst.daf.butler import DataCoordinate, DataIdValue
 from lsst.resources import ResourcePath, ResourcePathExpression
 
-from ..pipeline_graph import Edge, NodeBipartite, PipelineGraph, TaskImportMode, TaskNode
+from ..pipeline_graph import DatasetTypeNode, Edge, PipelineGraph, TaskImportMode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 from ._multiblock import (
     AddressReader,
@@ -254,14 +248,8 @@ class QuantumInfo(TypedDict):
     task_label: str
     """Label of the task for this quantum."""
 
-    task_node: TaskNode
+    pipeline_node: TaskNode
     """Node in the pipeline graph for this quantum's task."""
-
-    bipartite: NotRequired[Literal[NodeBipartite.TASK_OR_QUANTUM]]
-    """Whether this is a quantum node or a dataset type node/
-
-    This attribute is only present on the nodes of bipartite graphs.
-    """
 
 
 class DatasetInfo(TypedDict):
@@ -279,8 +267,8 @@ class DatasetInfo(TypedDict):
     data_id: DataCoordinate
     """Data ID of the dataset."""
 
-    dataset_type: DatasetType
-    """Type of this dataset.
+    dataset_type_name: DatasetTypeName
+    """Name of the type of this dataset.
 
     This is always the general dataset type that matches the data repository
     storage class, which may differ from any particular task-adapted dataset
@@ -293,11 +281,8 @@ class DatasetInfo(TypedDict):
     or will hold this dataset.
     """
 
-    bipartite: NotRequired[Literal[NodeBipartite.DATASET_OR_TYPE]]
-    """Whether this is a quantum node or a dataset type node/
-
-    This attribute is only present on the nodes of bipartite graphs.
-    """
+    pipeline_node: DatasetTypeNode
+    """Node in the pipeline graph for this dataset's type."""
 
 
 class BipartiteEdgeInfo(TypedDict):
@@ -310,8 +295,12 @@ class BipartiteEdgeInfo(TypedDict):
     quantum -> dataset edge.
     """
 
-    pipeline_edge: Edge
-    """Corresponding edge in the pipeline graph."""
+    pipeline_edges: list[Edge]
+    """Corresponding edges in the pipeline graph.
+
+    Note that there may be more than one pipeline edge since a quantum can
+    consume a particular dataset via multiple connections.
+    """
 
 
 class BaseQuantumGraph(ABC):
@@ -382,10 +371,8 @@ class BaseQuantumGraph(ABC):
 
     @property
     @abstractmethod
-    def bipartite_xgraph(self) -> networkx.MultiDiGraph:
+    def bipartite_xgraph(self) -> networkx.DiGraph:
         """A directed acyclic graph with quantum and dataset nodes.
-
-        This graph never includes init-input and init-output datasets.
 
         Notes
         -----
@@ -393,9 +380,8 @@ class BaseQuantumGraph(ABC):
         accessed.
 
         Node state dictionaries are described by the `QuantumInfo` and
-        `DatasetInfo` types (or a subtypes thereof).  Edges are keyed by their
-        connection name, and have state dictionaries described by
-        `BipartiteEdgeInfo`.
+        `DatasetInfo` types (or a subtypes thereof).  Edges have state
+        dictionaries described by `BipartiteEdgeInfo`.
 
         The returned object is a read-only view of an internal one.
         """
