@@ -647,6 +647,7 @@ class MultiblockWriter:
         address : `Address`
             Address of the bytes just written.
         """
+        assert id not in self.addresses, "Duplicate write to multi-block file detected."
         self.stream.write(len(data).to_bytes(self.int_size))
         self.stream.write(data)
         block_size = len(data) + self.int_size
