@@ -29,6 +29,13 @@
 
 from __future__ import annotations
 
+__all__ = ("check_output_run", "patch_deterministic_uuid4")
+
+import random
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from lsst.daf.butler import DatasetRef
 
 from ..graph import QuantumGraph
@@ -111,3 +118,27 @@ def get_output_refs(graph: QuantumGraph) -> list[DatasetRef]:
             result += [ref for ref in init_refs if ref in output_refs]
 
     return result
+
+
+@contextmanager
+def patch_deterministic_uuid4(seed: int) -> Iterator[None]:
+    """Return a context manager that replaces the standard library's
+    `uuid.uuid4` function with one that generates random numbers with a
+    deterministic sequence.
+
+    Parameters
+    ----------
+    seed : `int
+        Integer seed for the random number generator.
+    """
+    random.seed(seed)
+    original = uuid.uuid4
+    uuid.uuid4 = _deterministic_uuid
+    try:
+        yield
+    finally:
+        uuid.uuid4 = original
+
+
+def _deterministic_uuid() -> uuid.UUID:
+    return uuid.UUID(int=random.getrandbits(128))
