@@ -530,7 +530,7 @@ class MultiblockWriter:
         writer : `contextlib.AbstractContextManager` [ `MultiblockWriter` ]
             Context manager that returns a writer when entered.
         """
-        with zf.open(f"{name}.mb", mode="w") as stream:
+        with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
             yield MultiblockWriter(stream, int_size)
 
     def write_bytes(self, id: uuid.UUID, data: bytes) -> Address:
