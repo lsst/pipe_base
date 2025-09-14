@@ -46,6 +46,7 @@ import logging
 import operator
 import sys
 import uuid
+import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
@@ -1606,7 +1607,8 @@ class PredictedQuantumGraphComponents:
         uri: ResourcePathExpression,
         *,
         zstd_level: int = 10,
-        zstd_dict_size: int = 2048,
+        zstd_dict_size: int = 32768,
+        zstd_dict_n_inputs: int = 512,
     ) -> None:
         """Write the graph to a file.
 
@@ -1620,7 +1622,11 @@ class PredictedQuantumGraphComponents:
         zstd_dict_size : `int`, optional
             Size of a ZStandard dictionary that shares compression information
             across components.  Set to zero to disable the dictionary.
-            Dictionary compression is always disabled for very small graphs.
+            Dictionary compression is automatically disabled if the number of
+            quanta is smaller than ``zstd_dict_n_inputs``.
+        zstd_dict_n_inputs : `int`, optional
+            Maximum number of `PredictedQuantumDatasetsModel` JSON
+            representations to feed the ZStandard dictionary training routine.
 
         Notes
         -----
@@ -1652,24 +1658,27 @@ class PredictedQuantumGraphComponents:
         cdict: zstandard.ZstdCompressionDict | None = None
         cdict_data: bytes | None = None
         quantum_datasets_json: dict[uuid.UUID, bytes] = {}
-        if len(self.quantum_datasets) < 32:
+        if len(self.quantum_datasets) < zstd_dict_n_inputs:
             # ZStandard will fail if we ask to use a compression dict without
-            # giving it enough data, but I haven't worked out exactly what the
-            # threshold is, except that 32 works with the default
-            # zstd_dict_size, and 2 does not, since those are the values used
-            # in various unit tests (some of which are in ctrl_mpexec).
+            # giving it enough data, and it only helps if we have a lot of
+            # quanta.
             zstd_dict_size = 0
         if zstd_dict_size:
             quantum_datasets_json = {
                 quantum_model.quantum_id: quantum_model.model_dump_json().encode()
-                for quantum_model in self.quantum_datasets.values()
+                for quantum_model in itertools.islice(self.quantum_datasets.values(), zstd_dict_n_inputs)
             }
-            cdict = zstandard.train_dictionary(
-                zstd_dict_size,
-                list(quantum_datasets_json.values()),
-                level=zstd_level,
-            )
-            cdict_data = cdict.as_bytes()
+            try:
+                cdict = zstandard.train_dictionary(
+                    zstd_dict_size,
+                    list(quantum_datasets_json.values()),
+                    level=zstd_level,
+                )
+            except zstandard.ZstdError as err:
+                warnings.warn(f"Not using a compression dictionary: {err}.")
+                cdict = None
+            else:
+                cdict_data = cdict.as_bytes()
         compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
         with BaseQuantumGraphWriter.open(
             uri,

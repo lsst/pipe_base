@@ -508,7 +508,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
         three_row_page_size = AddressReader.compute_row_size(int_size=8, n_addresses=1) * 3
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             tmpfile = os.path.join(tmpdir, "new.qg")
-            components.write(tmpfile)
+            components.write(tmpfile, zstd_dict_n_inputs=24)  # enable dict compression code path
             # Test a full read with the new class.
             with PredictedQuantumGraph.open(tmpfile, page_size=three_row_page_size) as reader:
                 full_qg = reader.read_all().finish()
