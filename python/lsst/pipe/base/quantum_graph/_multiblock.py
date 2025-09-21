@@ -42,6 +42,8 @@ __all__ = (
 import dataclasses
 import itertools
 import logging
+import os
+import tempfile
 import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -536,7 +538,9 @@ class MultiblockWriter:
 
     @classmethod
     @contextmanager
-    def open_in_zip(cls, zf: zipfile.ZipFile, name: str, int_size: int) -> Iterator[MultiblockWriter]:
+    def open_in_zip(
+        cls, zf: zipfile.ZipFile, name: str, int_size: int, use_tempfile: bool = False
+    ) -> Iterator[MultiblockWriter]:
         """Open a writer for a file in a zip archive.
 
         Parameters
@@ -547,14 +551,30 @@ class MultiblockWriter:
             Base name for the multi-block file; an extension will be added.
         int_size : `int`
             Number of bytes to use for all integers.
+        use_tempfile : `bool`, optional
+            If `True`, send writes to a temporary file and only add the file to
+            the zip archive when the context manager closes.  This involves
+            more overall I/O, but it permits multiple multi-block files to be
+            open for writing in the same zip archive at once.
 
         Returns
         -------
         writer : `contextlib.AbstractContextManager` [ `MultiblockWriter` ]
             Context manager that returns a writer when entered.
         """
-        with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
-            yield MultiblockWriter(stream, int_size)
+        filename = f"{name}.mb"
+        if use_tempfile:
+            tmpfile = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=filename, delete_on_close=False) as tmpfile:
+                    yield MultiblockWriter(tempfile, int_size)
+                zf.write(tmpfile.name, filename)
+            finally:
+                if tmpfile is None:
+                    os.remove(tmpfile.name)
+        else:
+            with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
+                yield MultiblockWriter(stream, int_size)
 
     def write_bytes(self, id: uuid.UUID, data: bytes) -> Address:
         """Write raw bytes to the multi-block file.
