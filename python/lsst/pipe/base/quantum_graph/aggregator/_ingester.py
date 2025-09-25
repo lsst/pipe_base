@@ -124,7 +124,7 @@ class Ingester:
                 self.progress.log.debug("Ingesting %d final datasets.", len(self.datasets_pending))
                 self.ingest()
             self.progress.log.debug("Informing workers that ingests are complete.")
-            self.comms.send_no_more_ingest_returns()
+            self.comms.send_no_more_ingest_confirmations()
             return True
         except CancelError:
             self.progress.log.debug("Cancel event set.")

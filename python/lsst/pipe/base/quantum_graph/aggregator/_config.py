@@ -164,9 +164,6 @@ class AggregatorConfig(pydantic.BaseModel):
     n_processes: int = 1
     """Number of processes the scanner should use."""
 
-    zstd_level: int = 10
-    """ZStandard compression level to use for all compressed-JSON blocks."""
-
     assume_complete: bool = False
     """If `True`, the scanner can assume all quanta have run to completion
     (including any automatic retries).  If `False`, only successes can be
@@ -243,11 +240,6 @@ class AggregatorConfig(pydantic.BaseModel):
     log_status_interval: float | None = None
     """Interval (in seconds) between periodic logger status updates."""
 
-    max_launch_factor: int = 100
-    """Multiplier for n_processes to get the maximum number of quanta to launch
-    scans for at once.
-    """
-
     query_batch_size: int = 8192
     """Number of rows and IN clause terms in SQLite insert and delete queries.
     """
@@ -255,6 +247,21 @@ class AggregatorConfig(pydantic.BaseModel):
     worker_sleep: float = 0.01
     """Time (in seconds) a worker should wait when there are no requests from
     the main scanner process.
+    """
+
+    zstd_level: int = 10
+    """ZStandard compression level to use for all compressed-JSON blocks."""
+
+    zstd_dict_size: int = 32768
+    """Size (in bytes) of the ZStandard compression dictionary."""
+
+    zstd_dict_n_inputs: int = 512
+    """Number of samples of each type (see below) to include in ZStandard
+    compression dictionary training.
+
+    Training is run on a random subset of the `PredictedQuantumDatasetsModel`
+    objects in the predicted graph, as well as the first provenance quanta,
+    logs, and metadata blocks encountered.
     """
 
     enable_mocks: bool = False

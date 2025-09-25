@@ -39,6 +39,8 @@ from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from typing import Literal
 
+import zstandard
+
 from lsst.daf.butler import ButlerLogRecords, QuantumBackedButler
 from lsst.utils.iteration import ensure_iterable
 
@@ -47,6 +49,7 @@ from ..._status import QuantumSuccessCaveats
 from ..._task_metadata import TaskMetadata
 from ...pipeline_graph import PipelineGraph, TaskImportMode
 from ...quantum_provenance_graph import ExceptionInfo
+from .._multiblock import Compressor
 from .._predicted import (
     PredictedDatasetModel,
     PredictedQuantumDatasetsModel,
@@ -85,6 +88,8 @@ class Scanner:
     are not needed anymore.
     """
 
+    compressor: Compressor | None = None
+
     no_ingest_dataset_types: set[str] = dataclasses.field(default_factory=set)
 
     init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
@@ -120,7 +125,6 @@ class Scanner:
         self.reader.read_dimension_data()
         self.reader.read_init_quanta()
         self.qbb = utils.make_qbb(self.config.butler_path, self.reader.pipeline_graph)
-        self.compressor, _ = self.reader.make_compressor(self.config.zstd_level)
         self.no_ingest_dataset_types.update(self.config.delete_dataset_types)
         for task_node in self.reader.pipeline_graph.tasks.values():
             if self.config.aggregate_metadata:
@@ -129,6 +133,8 @@ class Scanner:
                 assert task_node.log_output is not None, "Aggregator cannot work without task log outputs."
                 self.no_ingest_dataset_types.add(task_node.log_output.dataset_type_name)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root[1:]}
+        if self.config.zstd_dict_size == 0:
+            self.compressor = zstandard.ZstdCompressor(self.config.zstd_level)
 
     @property
     def pipeline_graph(self) -> PipelineGraph:
@@ -287,7 +293,10 @@ class Scanner:
                 }
             except LookupError:
                 pass
-            result.metadata = self.compressor.compress(content.model_dump_json().encode())
+            result.metadata = content.model_dump_json().encode()
+            if self.compressor is not None:
+                result.metadata = self.compressor.compress(result.metadata)
+                result.is_compressed = True
         return ref.id
 
     def _read_and_compress_log(
@@ -308,7 +317,10 @@ class Scanner:
             if not self.config.assume_complete:
                 return ref.id
         else:
-            result.log = self.compressor.compress(content.model_dump_json().encode())
+            result.log = content.model_dump_json().encode()
+            if self.compressor is not None:
+                result.log = self.compressor.compress(result.log)
+                result.is_compressed = True
         return ref.id
 
     async def _loop(self) -> bool:
@@ -329,19 +341,24 @@ class Scanner:
         asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
         pending: set[asyncio.Task[ScanResult]] = set()
         try:
-            for scan_request, ingest_return in self.comms.poll_for_scan_requests():
-                self.progress.log.debug("Scan request loop iteration beginning.")
-                pending = await self._do_work(scan_request, ingest_return, pending)
+            self.progress.log.debug("Scan request loop beginning.")
+            for scan_request, ingest_confirmation in self.comms.poll_for_scan_requests():
+                if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
+                    self.compressor = zstandard.ZstdCompressor(
+                        self.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
+                    )
+                pending = await self._do_work(scan_request, ingest_confirmation, pending)
                 self.progress.periodically_write_times()
             self.progress.log.debug("Waiting for pending tasks to complete.")
             pending = await self._do_work(None, None, pending, return_when="ALL_COMPLETED")
             assert not pending, "No scans should be pending at this point."
-            for ingest_return in self.comms.poll_for_ingest_returns():
-                self.progress.log.debug("Ingest return loop iteration beginning.")
-                await self._do_work(None, ingest_return, pending)
+            self.progress.log.debug("Ingest conifrmation loop beginning.")
+            for ingest_confirmation in self.comms.poll_for_ingest_confirmations():
+                await self._do_work(None, ingest_confirmation, pending)
             if self.storage is not None and self.storage.needs_checkpoint:
                 self.progress.log.debug("Performing final checkpoint.")
                 self.storage.checkpoint()
+            self.comms.shutdown()
             return True
         except CancelError:
             self.progress.log.debug("Cancel event set.")

@@ -112,6 +112,7 @@ class ScanResult:
     existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
     metadata: bytes = b""
     log: bytes = b""
+    is_compressed: bool = False
 
     def get_run_status(self) -> QuantumRunStatus:
         if self.status is ScanStatus.BLOCKED:

@@ -90,6 +90,7 @@ class Tables:
             sqlalchemy.Column("exception", sqlalchemy.LargeBinary, nullable=True),
             sqlalchemy.Column("log", sqlalchemy.LargeBinary, nullable=False),
             sqlalchemy.Column("metadata", sqlalchemy.LargeBinary, nullable=False),
+            sqlalchemy.Column("is_compressed", sqlalchemy.Boolean, nullable=False),
         )
         self.to_ingest = sqlalchemy.Table(
             "to_ingest",
@@ -284,6 +285,7 @@ class Storage(AbstractContextManager):
             ),
             "log": scan_result.log,
             "metadata": scan_result.metadata,
+            "is_compressed": scan_result.is_compressed,
         }
         dataset_rows = [
             {"dataset_id": dataset_id, "producer_id": scan_result.quantum_id}
@@ -330,6 +332,7 @@ class Storage(AbstractContextManager):
                         existing_outputs=datasets_by_producer[row.quantum_id],
                         log=row.log,
                         metadata=row.metadata,
+                        is_compressed=row.is_compressed,
                     )
                 yield scan_report, scan_result
 

@@ -29,20 +29,36 @@ from __future__ import annotations
 
 __all__ = ("Writer",)
 
+import dataclasses
+import enum
 import itertools
+import operator
 import uuid
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from types import TracebackType
+from typing import Self
 
 import networkx
+import zstandard
 
 from ... import automatic_connection_constants as acc
 from ...pipeline_graph import TaskImportMode
+from .._common import BaseQuantumGraphWriter
 from .._multiblock import Compressor, MultiblockWriter
 from .._predicted import PredictedQuantumGraphReader
 from .._provenance import (
+    DATASET_ADDRESS_INDEX,
+    DATASET_MB_NAME,
+    LOG_ADDRESS_INDEX,
+    LOG_MB_NAME,
+    METADATA_ADDRESS_INDEX,
+    METADATA_MB_NAME,
+    QUANTUM_ADDRESS_INDEX,
+    QUANTUM_MB_NAME,
     ProvenanceDatasetModel,
-    ProvenanceQuantumGraphWriter,
+    ProvenanceInitQuantaModel,
+    ProvenanceInitQuantumModel,
     ProvenanceQuantumModel,
 )
 from ._communicators import CancelError, WriterCommunicator
@@ -51,188 +67,327 @@ from ._progress import WorkerProgress
 from ._structs import ScanResult
 
 
-class Writer:
-    def __init__(
-        self,
-        config: AggregatorConfig,
-        progress: WorkerProgress,
-        comms: WriterCommunicator,
-        predicted_reader: PredictedQuantumGraphReader,
-        provenance_writer: ProvenanceQuantumGraphWriter,
-        datasets_writer: MultiblockWriter,
-        quanta_writer: MultiblockWriter,
-        metadata_writer: MultiblockWriter | None = None,
-        logs_writer: MultiblockWriter | None = None,
-    ):
-        self._config = config
-        self._progress = progress
-        self._comms = comms
-        self._predicted_reader = predicted_reader
-        self._provenance_writer = provenance_writer
-        self._datasets_writer = datasets_writer
-        self._quanta_writer = quanta_writer
-        self._metadata_writer = metadata_writer
-        self._logs_writer = logs_writer
-        self._predicted_reader.read_init_quanta()
-        self._existing_init_outputs: dict[uuid.UUID, set[uuid.UUID]] = {
-            q.quantum_id: set() for q in self._predicted_reader.components.init_quanta.root
-        }
-        self._xgraph = networkx.DiGraph()
-        self._populate_xgraph()
+class CompressionState(enum.Enum):
+    NOT_COMPRESSED = enum.auto()
+    LOG_AND_METADATA_COMPRESSED = enum.auto()
+    ALL_COMPRESSED = enum.auto()
+
+
+@dataclasses.dataclass
+class _ScanData:
+    quantum_id: uuid.UUID
+    log_id: uuid.UUID
+    metadata_id: uuid.UUID
+    quantum: bytes = b""
+    datasets: dict[uuid.UUID, bytes] = dataclasses.field(default_factory=dict)
+    log: bytes = b""
+    metadata: bytes = b""
+    compression: CompressionState = CompressionState.NOT_COMPRESSED
+
+    def compress(self, compressor: Compressor) -> None:
+        if self.compression is CompressionState.NOT_COMPRESSED:
+            self.metadata = compressor.compress(self.metadata)
+            self.log = compressor.compress(self.log)
+            self.compression = CompressionState.LOG_AND_METADATA_COMPRESSED
+        if self.compression is CompressionState.LOG_AND_METADATA_COMPRESSED:
+            self.quantum = compressor.compress(self.quantum)
+            for key in self.datasets.keys():
+                self.datasets[key] = compressor.compress(self.datasets[key])
+        self.compression = CompressionState.ALL_COMPRESSED
+
+
+@dataclasses.dataclass
+class DataWriters:
+    graph: BaseQuantumGraphWriter
+    datasets: MultiblockWriter
+    quanta: MultiblockWriter
+    metadata: MultiblockWriter | None = None
+    logs: MultiblockWriter | None = None
 
     @classmethod
     @contextmanager
     def open(
-        cls, config: AggregatorConfig, progress: WorkerProgress, comms: WriterCommunicator
-    ) -> Iterator[Writer]:
-        """Construct a scanner worker in a context manager.
-
-        Parameters
-        ----------
-        config : `ScannerConfig`
-            Configuration for the scanner.
-        progress : `BaseProgress`
-            Progress reporting helper.
-        comms : `WriterCommunicator`
-            Helper object for communicated with the supervisor and other
-            workers.
-        """
-        assert config.output_path is not None, "Writer should not be used if writing is disabled."
-        with PredictedQuantumGraphReader.open(
-            config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-        ) as reader:
-            with ExitStack() as exit_stack:
-                writer = exit_stack.enter_context(
-                    ProvenanceQuantumGraphWriter.from_predicted_reader(config.output_path, reader)
+        cls,
+        reader: PredictedQuantumGraphReader,
+        output_path: str,
+        indices: dict[uuid.UUID, int],
+        *,
+        compressor: Compressor,
+        cdict_data: bytes | None = None,
+        aggregate_logs: bool,
+        aggregate_metadata: bool,
+    ) -> Iterator[DataWriters]:
+        header = reader.header.model_copy()
+        header.graph_type = "provenance"
+        with ExitStack() as exit_stack:
+            graph = exit_stack.enter_context(
+                BaseQuantumGraphWriter.open(
+                    output_path,
+                    header,
+                    reader.pipeline_graph,
+                    indices,
+                    address_filename="nodes",
+                    compressor=compressor,
+                    cdict_data=cdict_data,
                 )
-                if config.aggregate_logs:
-                    logs_writer = exit_stack.enter_context(writer.logs(use_tempfile=True))
-                else:
-                    logs_writer = None
-                if config.aggregate_metadata:
-                    metadata_writer = exit_stack.enter_context(writer.metadata(use_tempfile=True))
-                else:
-                    metadata_writer = None
-                datasets_writer = exit_stack.enter_context(writer.datasets(use_tempfile=True))
-                quanta_writer = exit_stack.enter_context(writer.quanta(use_tempfile=True))
-                yield cls(
-                    config,
-                    progress,
-                    comms,
-                    reader,
-                    writer,
-                    datasets_writer=datasets_writer,
-                    quanta_writer=quanta_writer,
-                    metadata_writer=metadata_writer,
-                    logs_writer=logs_writer,
+            )
+            graph.address_writer.addresses = [{}, {}, {}, {}]
+            logs: MultiblockWriter | None = None
+            if aggregate_logs:
+                logs = exit_stack.enter_context(
+                    MultiblockWriter.open_in_zip(graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True)
                 )
+                graph.address_writer.addresses[LOG_ADDRESS_INDEX] = logs.addresses
+            metadata: MultiblockWriter | None = None
+            if aggregate_metadata:
+                metadata = exit_stack.enter_context(
+                    MultiblockWriter.open_in_zip(
+                        graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
+                    )
+                )
+                graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = metadata.addresses
+            datasets = exit_stack.enter_context(
+                MultiblockWriter.open_in_zip(graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True)
+            )
+            graph.address_writer.addresses[DATASET_ADDRESS_INDEX] = datasets.addresses
+            quanta = exit_stack.enter_context(
+                MultiblockWriter.open_in_zip(graph.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True)
+            )
+            graph.address_writer.addresses[QUANTUM_ADDRESS_INDEX] = quanta.addresses
+            yield cls(
+                graph,
+                datasets=datasets,
+                quanta=quanta,
+                metadata=metadata,
+                logs=logs,
+            )
 
     @property
     def compressor(self) -> Compressor:
-        return self._provenance_writer.compressor
+        return self.graph.compressor
 
-    @property
-    def indices(self) -> dict[uuid.UUID, int]:
-        return self._provenance_writer.address_writer.indices
+
+class Writer:
+    def __init__(self, config: AggregatorConfig, comms: WriterCommunicator):
+        self._config = config
+        self._comms = comms
+        self._progress: WorkerProgress
+        self._existing_init_outputs: dict[uuid.UUID, set[uuid.UUID]] = {}
+        self._indices: dict[uuid.UUID, int] = {}
+        self._output_dataset_ids: set[uuid.UUID] = set()
+        self._xgraph = networkx.DiGraph()
+        self._pending_compression_training: list[_ScanData] = []
+        self._exit_stack = ExitStack()
+
+    def __enter__(self) -> Self:
+        assert self._config.output_path is not None, "Writer should not be used if writing is disabled."
+        self._exit_stack.enter_context(self._comms.handling_errors())
+        self._progress = self._exit_stack.enter_context(WorkerProgress("writer", self._config))
+        self._predicted_reader = self._exit_stack.enter_context(
+            PredictedQuantumGraphReader.open(
+                self._config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
+            )
+        )
+        self._predicted_reader.read_init_quanta()
+        self._predicted_reader.read_quantum_datasets()
+        for predicted_init_quantum in self._predicted_reader.components.init_quanta.root:
+            self._existing_init_outputs[predicted_init_quantum.quantum_id] = set()
+        self._populate_indices_and_outputs()
+        self._populate_xgraph()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return self._exit_stack.__exit__(exc_type, exc_value, traceback)
+
+    def _populate_indices_and_outputs(self) -> None:
+        all_uuids = set(self._predicted_reader.components.quantum_indices.keys())
+        for quantum in itertools.chain(
+            self._predicted_reader.components.init_quanta.root[1:],
+            self._predicted_reader.components.quantum_datasets.values(),
+        ):
+            all_uuids.update(quantum.iter_input_dataset_ids())
+            self._output_dataset_ids.update(quantum.iter_output_dataset_ids())
+        all_uuids.update(self._output_dataset_ids)
+        self._indices = {
+            node_id: node_index
+            for node_index, node_id in enumerate(sorted(all_uuids, key=operator.attrgetter("int")))
+        }
 
     def _populate_xgraph(self) -> None:
         for predicted_quantum in itertools.chain(
             self._predicted_reader.components.init_quanta.root[1:],
             self._predicted_reader.components.quantum_datasets.values(),
         ):
-            quantum_index = self.indices[predicted_quantum.quantum_id]
+            quantum_index = self._indices[predicted_quantum.quantum_id]
             for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
-                self._xgraph.add_edge(self.indices[predicted_input.dataset_id], quantum_index)
+                self._xgraph.add_edge(self._indices[predicted_input.dataset_id], quantum_index)
             for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-                self._xgraph.add_edge(quantum_index, self.indices[predicted_output.dataset_id])
+                self._xgraph.add_edge(quantum_index, self._indices[predicted_output.dataset_id])
 
-    def write_init_outputs(self) -> None:
+    def make_data_writers(self) -> DataWriters:
+        cdict = self.make_compression_dictionary()
+        self._comms.send_compression_dict(cdict.as_bytes())
+        assert self._config.output_path is not None
+        data_writers = self._exit_stack.enter_context(
+            DataWriters.open(
+                self._predicted_reader,
+                self._config.output_path,
+                self._indices,
+                compressor=zstandard.ZstdCompressor(self._config.zstd_level, cdict),
+                cdict_data=cdict.as_bytes(),
+                aggregate_logs=self._config.aggregate_logs,
+                aggregate_metadata=self._config.aggregate_metadata,
+            )
+        )
+        for scan_data in self._pending_compression_training:
+            self.write_scan_data(scan_data, data_writers)
+        return data_writers
+
+    def loop(self) -> bool:
+        try:
+            data_writers: DataWriters | None = None
+            if not self._config.zstd_dict_size:
+                data_writers = self.make_data_writers()
+            for request in self._comms.poll():
+                if data_writers is None:
+                    self._pending_compression_training.extend(self.make_scan_data(request))
+                    if len(self._pending_compression_training) >= self._config.zstd_dict_n_inputs:
+                        data_writers = self.make_data_writers()
+                else:
+                    for scan_data in self.make_scan_data(request):
+                        self.write_scan_data(scan_data, data_writers)
+            if data_writers is None:
+                data_writers = self.make_data_writers()
+            self.write_overall_inputs(data_writers)
+            self.write_init_outputs(data_writers)
+            self._comms.send_writer_done()
+            self._progress.log.debug("Shutting down writer.")
+            return True
+        except CancelError:
+            self._progress.log.debug("Cancel event set.")
+            return False
+
+    def make_compression_dictionary(self) -> zstandard.ZstdCompressionDict:
+        if not self._config.zstd_dict_size:
+            return zstandard.ZstdCompressionDict(b"")
+        training_inputs: list[bytes] = []
+        # We start the dictionary training with *predicted* quantum dataset
+        # models, since those have almost all of the same attributes as the
+        # provenance quantum and dataset models, and we can get a nice random
+        # sample from just the first N, since they're ordered by UUID.  We
+        # chop out the datastore records since those don't appear in the
+        # provenance graph.
+        for predicted_quantum in self._predicted_reader.components.quantum_datasets.values():
+            if len(training_inputs) == self._config.zstd_dict_n_inputs:
+                break
+            predicted_quantum.datastore_records.clear()
+            training_inputs.append(predicted_quantum.model_dump_json().encode())
+        # Add the provenance quanta, metadata, and logs we've accumulated.
+        for scan_data in self._pending_compression_training:
+            assert scan_data.compression is CompressionState.NOT_COMPRESSED
+            training_inputs.append(scan_data.quantum)
+            training_inputs.append(scan_data.metadata)
+            training_inputs.append(scan_data.log)
+        return zstandard.train_dictionary(self._config.zstd_dict_size, training_inputs)
+
+    def write_init_outputs(self, data_writers: DataWriters) -> None:
         self._progress.log.verbose("Writing init outputs.")
+        init_quanta = ProvenanceInitQuantaModel()
         for predicted_init_quantum in self._predicted_reader.components.init_quanta.root[1:]:
             existing_outputs = self._existing_init_outputs[predicted_init_quantum.quantum_id]
             for predicted_output in itertools.chain.from_iterable(predicted_init_quantum.outputs.values()):
-                dataset_index = self.indices[predicted_output.dataset_id]
+                dataset_index = self._indices[predicted_output.dataset_id]
                 provenance_output = ProvenanceDatasetModel.from_predicted(
                     predicted_output,
-                    producer=self.indices[predicted_init_quantum.quantum_id],
+                    producer=self._indices[predicted_init_quantum.quantum_id],
                     consumers=self._xgraph.successors(dataset_index),
                 )
                 provenance_output.exists = predicted_output.dataset_id in existing_outputs
-                self._datasets_writer.write_model(
-                    provenance_output.dataset_id, provenance_output, self.compressor
+                data_writers.datasets.write_model(
+                    provenance_output.dataset_id, provenance_output, data_writers.compressor
                 )
+            init_quanta.root.append(
+                ProvenanceInitQuantumModel.from_predicted(predicted_init_quantum, self._indices)
+            )
+        data_writers.graph.write_single_model("init_quanta", init_quanta)
 
-    def write_overall_inputs(self) -> None:
+    def write_overall_inputs(self, data_writers: DataWriters) -> None:
         self._progress.log.verbose("Writing overall inputs.")
         for predicted_quantum in itertools.chain(
             self._predicted_reader.components.init_quanta.root[1:],
             self._predicted_reader.components.quantum_datasets.values(),
         ):
             for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
-                if predicted_input.dataset_id not in self._provenance_writer.output_dataset_ids:
-                    if predicted_input.dataset_id not in self._datasets_writer.addresses:
-                        dataset_index = self.indices[predicted_input.dataset_id]
-                        self._datasets_writer.write_model(
+                if predicted_input.dataset_id not in self._output_dataset_ids:
+                    if predicted_input.dataset_id not in data_writers.datasets.addresses:
+                        dataset_index = self._indices[predicted_input.dataset_id]
+                        data_writers.datasets.write_model(
                             predicted_input.dataset_id,
                             ProvenanceDatasetModel.from_predicted(
                                 predicted_input,
                                 producer=None,
                                 consumers=self._xgraph.successors(dataset_index),
                             ),
-                            self.compressor,
+                            data_writers.compressor,
                         )
 
-    def _loop(self) -> bool:
-        try:
-            self.write_overall_inputs()
-            for request in self._comms.poll():
-                self._handle_request(request)
-            self.write_init_outputs()
-            self._comms.send_writer_done()
-            return True
-        except CancelError:
-            self._progress.log.debug("Cancel event set.")
-            return False
-
-    def _handle_request(self, request: ScanResult) -> None:
+    def make_scan_data(self, request: ScanResult) -> list[_ScanData]:
         if (existing_init_outputs := self._existing_init_outputs.get(request.quantum_id)) is not None:
             existing_init_outputs.update(request.existing_outputs)
             self._comms.report_write()
-            return
+            return []
         predicted_quantum = self._predicted_reader.components.quantum_datasets[request.quantum_id]
-        quantum_index = self.indices[predicted_quantum.quantum_id]
+        quantum_index = self._indices[predicted_quantum.quantum_id]
         (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
         (log_output,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
+        data = _ScanData(
+            request.quantum_id,
+            metadata_id=metadata_output.dataset_id,
+            log_id=log_output.dataset_id,
+            compression=(
+                CompressionState.LOG_AND_METADATA_COMPRESSED
+                if request.is_compressed
+                else CompressionState.NOT_COMPRESSED
+            ),
+        )
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-            dataset_index = self.indices[predicted_output.dataset_id]
+            dataset_index = self._indices[predicted_output.dataset_id]
             provenance_output = ProvenanceDatasetModel.from_predicted(
                 predicted_output,
                 producer=quantum_index,
                 consumers=self._xgraph.successors(dataset_index),
             )
             provenance_output.exists = provenance_output.dataset_id in request.existing_outputs
-            self._datasets_writer.write_model(
-                provenance_output.dataset_id, provenance_output, self.compressor
-            )
-        provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum, self.indices)
+            data.datasets[provenance_output.dataset_id] = provenance_output.model_dump_json().encode()
+        provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum, self._indices)
         provenance_quantum.status = request.get_run_status()
         provenance_quantum.caveats = request.caveats
         provenance_quantum.exception = request.exception
-        self._quanta_writer.write_model(
-            provenance_quantum.quantum_id, provenance_quantum, compressor=self.compressor
-        )
-        if request.metadata and self._metadata_writer is not None:
-            address = self._metadata_writer.write_bytes(predicted_quantum.quantum_id, request.metadata)
-            self._metadata_writer.addresses[metadata_output.dataset_id] = address
-        if request.log and self._logs_writer is not None:
-            address = self._logs_writer.write_bytes(predicted_quantum.quantum_id, request.log)
-            self._logs_writer.addresses[log_output.dataset_id] = address
+        data.quantum = provenance_quantum.model_dump_json().encode()
+        data.metadata = request.metadata
+        data.log = request.log
+        return [data]
+
+    def write_scan_data(self, scan_data: _ScanData, data_writers: DataWriters) -> None:
+        scan_data.compress(data_writers.compressor)
+        data_writers.quanta.write_bytes(scan_data.quantum_id, scan_data.quantum)
+        for dataset_id, dataset_data in scan_data.datasets.items():
+            data_writers.datasets.write_bytes(dataset_id, dataset_data)
+        if scan_data.metadata and data_writers.metadata is not None:
+            address = data_writers.metadata.write_bytes(scan_data.quantum_id, scan_data.metadata)
+            data_writers.metadata.addresses[scan_data.metadata_id] = address
+        if scan_data.log and data_writers.logs is not None:
+            address = data_writers.logs.write_bytes(scan_data.quantum_id, scan_data.log)
+            data_writers.logs.addresses[scan_data.log_id] = address
         self._comms.report_write()
 
     @staticmethod
     def run(config: AggregatorConfig, comms: WriterCommunicator) -> None:
-        with WorkerProgress("writer", config) as progress:
-            with comms.handling_errors():
-                with Writer.open(config, progress, comms) as writer:
-                    writer._loop()
-            progress.log.debug("Shutting down writer.")
+        with comms.handling_errors():
+            with Writer(config, comms) as writer:
+                writer.loop()

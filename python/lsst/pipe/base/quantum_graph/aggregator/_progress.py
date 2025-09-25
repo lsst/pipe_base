@@ -75,7 +75,7 @@ class Activity(enum.Enum):
 _ACTIVITY_POSTFIX_TEMPLATE: str = "{:>" + str(max(len(str(m)) for m in Activity)) + "}"
 
 
-class BaseProgress(AbstractContextManager):
+class BaseProgress:
     def __init__(self, name: str, config: AggregatorConfig):
         self.log = getLogger(name)
         self.name = name
