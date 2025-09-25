@@ -61,7 +61,9 @@ class PrescannedFileTransferSource(FileTransferSource):
 
     @classmethod
     @contextmanager
-    def wrap_qbb(cls, qbb: QuantumBackedButler, refs: Iterable[DatasetRef]) -> Iterator[None]:
+    def wrap_qbb(
+        cls, qbb: QuantumBackedButler, artifact_existence: dict[ResourcePath, bool]
+    ) -> Iterator[None]:
         """Temporarily install this proxy as the file transfer source for a
         quantum-backed butler.
 
@@ -69,9 +71,8 @@ class PrescannedFileTransferSource(FileTransferSource):
         ----------
         qbb : `lsst.daf.butler.QuantumBackedButler`
             Quantum-backed butler to temporarily modify in place.
-        refs : `~collections.abc.Iterable` [`lsst.daf.butler.DatasetRef`]
-            Datasets that are already known to exist, with datastore records
-            that can be predicted by the quantum-backed butler.
+        artifact_existence : `dict` [`lsst.resources.ResourcePath`, `bool`]
+        Mapping from dataset artifact path to whether that artifact exists.
 
         Returns
         -------
@@ -79,12 +80,6 @@ class PrescannedFileTransferSource(FileTransferSource):
             Context manager that manages the duration of the modification to
             the quantum-backed butler.  Returns `None` when entered.
         """
-        artifact_existence: dict[ResourcePath, bool] = {}
-        for paths in qbb.get_many_uris(refs, predict=True).values():
-            if paths.primaryURI is not None:
-                artifact_existence[paths.primaryURI] = True
-            for path in paths.componentURIs.values():
-                artifact_existence[path] = True
         try:
             qbb._file_transfer_source = PrescannedFileTransferSource(
                 qbb._file_transfer_source, artifact_existence

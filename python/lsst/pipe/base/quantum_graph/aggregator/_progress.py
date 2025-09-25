@@ -27,113 +27,24 @@
 
 from __future__ import annotations
 
-__all__ = ("Activity", "BaseProgress", "SupervisorProgress", "WorkerProgress")
+__all__ = ("Progress", "make_worker_log")
 
-import csv
-import enum
 import logging
 import os
 import sys
-import time
-from abc import abstractmethod
 from collections.abc import Iterable, Iterator
-from contextlib import AbstractContextManager, contextmanager
-from typing import IO, Any, Self, TypeVar
+from contextlib import contextmanager
+from types import TracebackType
+from typing import Self, TypeVar
 
-from lsst.utils.logging import PeriodicLogger, getLogger
+from lsst.utils.logging import TRACE, VERBOSE, LsstLogAdapter, PeriodicLogger, getLogger
 
 from ._config import AggregatorConfig
-from .utils import Timer
 
 _T = TypeVar("_T")
 
 
-class Activity(enum.Enum):
-    _ = enum.auto()
-    READING_METADATA = enum.auto()
-    READING_LOGS = enum.auto()
-    READING_PREDICTED = enum.auto()
-    CHECKING_EXISTENCE = enum.auto()
-    WRITING_TO_STORAGE = enum.auto()
-    QUERYING_STORAGE = enum.auto()
-    CHECKPOINTING = enum.auto()
-    INGESTING = enum.auto()
-    DELETING = enum.auto()
-    SENDING_WORK = enum.auto()
-    RECEIVING_WORK = enum.auto()
-    RETURNING_WORK = enum.auto()
-    FINISHING_WORK = enum.auto()
-    CLOSING_WORKERS = enum.auto()
-
-    def __str__(self) -> str:
-        return self.name.lower().replace("_", " ")
-
-    def as_postfix(self) -> str:
-        return _ACTIVITY_POSTFIX_TEMPLATE.format(self)
-
-
-_ACTIVITY_POSTFIX_TEMPLATE: str = "{:>" + str(max(len(str(m)) for m in Activity)) + "}"
-
-
-class BaseProgress:
-    def __init__(self, name: str, config: AggregatorConfig):
-        self.log = getLogger(name)
-        self.name = name
-        self.config = config
-        self._activity = Activity._
-        self._timers = {m: Timer() for m in Activity}
-        self._last_timer_write = time.time()
-        self._timer_writer: csv.DictWriter | None = None
-        self._timer_file: IO[str] | None = None
-
-    def __enter__(self) -> Self:
-        if self.config.timer_dir is not None:
-            os.makedirs(self.config.timer_dir, exist_ok=True)
-            self._timer_file = open(os.path.join(self.config.timer_dir, f"{self.name}.csv"), "w")
-            self._timer_file.__enter__()
-            self._timer_writer = csv.DictWriter(self._timer_file, fieldnames=[m.name for m in Activity])
-        return self
-
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
-        if self._timer_file is not None:
-            self._timer_file.__exit__(exc_type, exc_value, traceback)
-
-    @property
-    def activity(self) -> Activity:
-        return self._activity
-
-    @contextmanager
-    def working_on(self, activity: Activity) -> Iterator[None]:
-        if activity is self._activity:
-            yield
-            return
-        old_activity = self._activity
-        if activity is not Activity._:
-            self.log.debug("Started %s.", activity)
-        self._activity = activity
-        with self._timers[activity].activate():
-            yield
-        self._activity = old_activity
-        if old_activity is not Activity._:
-            self.log.debug("Resumed %s.", old_activity)
-        else:
-            self.log.debug("Finished %s.", activity)
-
-    @abstractmethod
-    def wrap_iterable(
-        self, iterable: Iterable[_T], desc: str, total: int | None = None, *, unit: str
-    ) -> AbstractContextManager[Iterable[_T]]:
-        raise NotImplementedError()
-
-    def periodically_write_times(self) -> None:
-        if (
-            self._timer_writer is not None
-            and time.time() - self._last_timer_write > self.config.timer_interval
-        ):
-            self._timer_writer.writerow({m.name: self._timers[m].total for m in Activity})
-
-
-class SupervisorProgress(BaseProgress):
+class Progress:
     """A helper class for the provenance scanner than handles reporting
     progress to the user.
 
@@ -142,9 +53,9 @@ class SupervisorProgress(BaseProgress):
     """
 
     def __init__(self, config: AggregatorConfig):
-        super().__init__("scanner", config)
+        self.log = getLogger("aggregate-graph")
+        self.config = config
         self._periodic_log = PeriodicLogger(self.log, config.log_status_interval)
-        self._activity = Activity._
         self._n_scanned: int = 0
         self._n_ingested: int = 0
         self._n_written: int = 0
@@ -154,11 +65,25 @@ class SupervisorProgress(BaseProgress):
             if config.interactive_status is not None
             else sys.stdout.isatty() and not self.log.isEnabledFor(logging.DEBUG)
         )
+        self._log_template = "%s quanta scanned, %s datasets ingested, %s provenance quanta written"
+
+    def __enter__(self) -> Self:
         if self.interactive:
             from tqdm.contrib.logging import logging_redirect_tqdm
 
             self._logging_redirect = logging_redirect_tqdm()
-        self._log_template = "%s quanta scanned, %s datasets ingested, %s provenance quanta written"
+            self._logging_redirect.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        if self.interactive:
+            self._logging_redirect.__exit__(exc_type, exc_value, traceback)
+        return None
 
     @contextmanager
     def quanta(self, n_quanta: int) -> Iterator[None]:
@@ -168,8 +93,11 @@ class SupervisorProgress(BaseProgress):
             from tqdm.contrib.logging import logging_redirect_tqdm
 
             self._scan_progress = tqdm(desc="Scanning", total=n_quanta, leave=True, unit="quanta")
-            self._ingest_progress = tqdm(desc="Ingesting", total=n_quanta, leave=True, unit="quanta")
-            self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=True, unit="quanta")
+            self._ingest_progress = tqdm(
+                desc="Ingesting", total=n_quanta, leave=True, smoothing=0.6, unit="quanta"
+            )
+            if self.config.output_path is not None:
+                self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=True, unit="quanta")
             with logging_redirect_tqdm(tqdm_class=tqdm):
                 yield
         else:
@@ -208,6 +136,13 @@ class SupervisorProgress(BaseProgress):
             self._write_progress.update(1)
         else:
             self.log_status()
+
+    def finish_resuming(self) -> None:
+        if self.interactive:
+            # Reset the timing in the progress bars so quickly resuming doesn't
+            # affect future timing estimates.
+            self._scan_progress.unpause()
+            self._ingest_progress.unpause()
 
     @contextmanager
     def wrap_iterable(
@@ -250,23 +185,22 @@ class SupervisorProgress(BaseProgress):
             yield generator()
 
 
-class WorkerProgress(BaseProgress):
-    def __init__(self, name: str, config: AggregatorConfig):
-        super().__init__(name, config)
-        if config.worker_log_dir is not None:
-            os.makedirs(config.worker_log_dir, exist_ok=True)
-            self.log.setLevel(logging.DEBUG)
-            logging.basicConfig(
-                filename=os.path.join(config.worker_log_dir, f"{name}.log"),
-                format="%(levelname)s %(asctime)s.%(msecs)03d %(message)s",
-                datefmt="%Y-%m-%dT%H:%M:%S",
-            )
-        else:
-            self.log.addHandler(logging.NullHandler())
-
-    @contextmanager
-    def wrap_iterable(
-        self, iterable: Iterable[_T], desc: str, total: int | None = None, *, unit: str
-    ) -> Iterator[Iterable[_T]]:
-        self.log.verbose("%s.", desc)
-        yield iterable
+def make_worker_log(name: str, config: AggregatorConfig) -> LsstLogAdapter:
+    log = getLogger(f"aggregate-graph.{name}")
+    if config.worker_log_dir is not None:
+        os.makedirs(config.worker_log_dir, exist_ok=True)
+        match config.worker_log_level.upper():
+            case "VERBOSE":
+                log.setLevel(VERBOSE)
+            case "TRACE":
+                log.setLevel(TRACE)
+            case std:
+                log.setLevel(getattr(logging, std))
+        handler = logging.FileHandler(os.path.join(config.worker_log_dir, f"{name}.log"))
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s %(asctime)s.%(msecs)03d %(message)s", "%Y-%m-%dT%H:%M:%S")
+        )
+        log.addHandler(handler)
+    else:
+        log.addHandler(logging.NullHandler())
+    return log

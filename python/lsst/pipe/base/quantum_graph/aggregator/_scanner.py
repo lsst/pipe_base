@@ -32,7 +32,6 @@ __all__ = ("Scanner",)
 import asyncio
 import dataclasses
 import itertools
-import pickle
 import time
 import uuid
 from collections.abc import Iterator
@@ -41,7 +40,8 @@ from typing import Literal
 
 import zstandard
 
-from lsst.daf.butler import ButlerLogRecords, QuantumBackedButler
+from lsst.daf.butler import ButlerLogRecords, DatasetRef, QuantumBackedButler
+from lsst.resources import ResourcePath
 from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
@@ -53,13 +53,11 @@ from .._multiblock import Compressor
 from .._predicted import (
     PredictedDatasetModel,
     PredictedQuantumDatasetsModel,
-    PredictedQuantumGraph,
     PredictedQuantumGraphReader,
 )
 from . import utils
-from ._communicators import CancelError, ScannerCommunicator
-from ._config import AggregatorConfig, ScannerTimeConfigDict
-from ._progress import Activity, BaseProgress, WorkerProgress
+from ._communicators import ScannerCommunicator
+from ._config import ScannerTimeConfigDict
 from ._storage import Storage
 from ._structs import IngestConfirmation, IngestRequest, ScanReport, ScanResult, ScanStatus
 
@@ -70,15 +68,10 @@ class Scanner:
     could be in the future) done by separate processes.
     """
 
+    comms: ScannerCommunicator
+
     reader: PredictedQuantumGraphReader
     """Reader for the predicted quantum graph."""
-
-    config: AggregatorConfig
-    """Configuration for the scanner."""
-
-    progress: BaseProgress
-
-    comms: ScannerCommunicator
 
     storage: Storage | None
 
@@ -96,50 +89,107 @@ class Scanner:
 
     @classmethod
     @contextmanager
-    def open(
-        cls, config: AggregatorConfig, progress: BaseProgress, comms: ScannerCommunicator
-    ) -> Iterator[Scanner]:
-        """Construct a scanner worker in a context manager.
-
-        Parameters
-        ----------
-        config : `ScannerConfig`
-            Configuration for the scanner.
-        progress : `BaseProgress`
-            Progress reporting helper.
-        """
+    def open(cls, comms: ScannerCommunicator) -> Iterator[Scanner]:
         with ExitStack() as exit_stack:
             reader = exit_stack.enter_context(
-                PredictedQuantumGraph.open(config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
+                PredictedQuantumGraphReader.open(
+                    comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
+                )
             )
             storage: Storage | None = None
-            if config.db_dir is not None:
-                storage = exit_stack.enter_context(
-                    Storage(config, comms.scanner_id, progress=progress, trust_local=True)
-                )
-            yield cls(reader=reader, config=config, progress=progress, comms=comms, storage=storage)
+            if comms.config.db_dir is not None:
+                storage = exit_stack.enter_context(Storage(comms.config, comms.scanner_id, trust_local=True))
+            yield cls(comms, reader=reader, storage=storage)
 
     def __post_init__(self) -> None:
-        if self.config.enable_mocks:
+        if self.comms.config.enable_mocks:
             import lsst.pipe.base.tests.mocks  # noqa: F401
         self.reader.read_dimension_data()
         self.reader.read_init_quanta()
-        self.qbb = utils.make_qbb(self.config.butler_path, self.reader.pipeline_graph)
-        self.no_ingest_dataset_types.update(self.config.delete_dataset_types)
+        self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
+        self.no_ingest_dataset_types.update(self.comms.config.delete_dataset_types)
         for task_node in self.reader.pipeline_graph.tasks.values():
-            if self.config.aggregate_metadata:
+            if self.comms.config.aggregate_metadata:
                 self.no_ingest_dataset_types.add(task_node.metadata_output.dataset_type_name)
-            if self.config.aggregate_logs:
+            if self.comms.config.aggregate_logs:
                 assert task_node.log_output is not None, "Aggregator cannot work without task log outputs."
                 self.no_ingest_dataset_types.add(task_node.log_output.dataset_type_name)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root[1:]}
-        if self.config.zstd_dict_size == 0:
-            self.compressor = zstandard.ZstdCompressor(self.config.zstd_level)
 
     @property
     def pipeline_graph(self) -> PipelineGraph:
         """Graph of tasks and dataset types."""
         return self.reader.pipeline_graph
+
+    @staticmethod
+    def run(comms: ScannerCommunicator) -> None:
+        with comms, Scanner.open(comms) as scanner:
+            scanner.resume()
+            asyncio.run(scanner.loop())
+
+    def resume(self) -> None:
+        n_ingests_loaded = 0
+        n_quanta_loaded = 0
+        if self.storage is not None:
+            self.comms.log.info("Sending any past ingests that may not have completed.")
+            for ingest_request in self.storage.fetch_ingests(self.comms.scanner_id):
+                self.comms.request_ingest(ingest_request)
+                n_ingests_loaded += 1
+            self.comms.log.info("Loading and returning past scans.")
+            for scan_return, write_request in self.storage.resume():
+                self.comms.return_scan(scan_return)
+                n_quanta_loaded += 1
+                if write_request is not None:
+                    self.comms.request_write(write_request)
+        self.comms.report_resume_completed(n_quanta_loaded, n_ingests_loaded)
+
+    async def loop(self) -> None:
+        asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
+        pending: set[asyncio.Task[ScanResult]] = set()
+        self.comms.log.info("Scan request loop beginning.")
+        for scan_request, ingest_confirmation in self.comms.poll_for_scan_requests():
+            if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
+                self.compressor = zstandard.ZstdCompressor(
+                    self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
+                )
+            pending = await self.scan_or_wait(scan_request, ingest_confirmation, pending)
+        self.comms.log.info("Waiting for pending tasks to complete.")
+        pending = await self.scan_or_wait(None, None, pending, return_when="ALL_COMPLETED")
+        assert not pending, "No scans should be pending at this point."
+        self.comms.log.info("Ingest confirmation loop beginning.")
+        for ingest_confirmation in self.comms.poll_for_ingest_confirmations():
+            await self.scan_or_wait(None, ingest_confirmation, pending)
+        if self.storage is not None and self.storage.needs_checkpoint:
+            self.comms.log.info("Performing final checkpoint.")
+            self.storage.checkpoint()
+
+    async def scan_or_wait(
+        self,
+        requested_quantum_id: uuid.UUID | None,
+        ingest_confirmation: IngestConfirmation | None,
+        pending: set[asyncio.Task[ScanResult]],
+        return_when: Literal["FIRST_COMPLETED", "ALL_COMPLETED"] = "FIRST_COMPLETED",
+    ) -> set[asyncio.Task[ScanResult]]:
+        timeout: float = self.comms.config.worker_sleep
+        if requested_quantum_id is not None:
+            self.comms.log.debug("Creating scan task for %s.", requested_quantum_id)
+            pending.add(asyncio.create_task(self.scan_quantum(requested_quantum_id)))
+            timeout = 0.0
+        if ingest_confirmation is not None:
+            self.comms.log.debug("Finishing %d ingest returns.", len(ingest_confirmation.producer_ids))
+            if self.storage is not None:
+                self.storage.finish_ingests(ingest_confirmation.producer_ids)
+            timeout = 0.0
+        if pending:
+            self.comms.log.debug("Awaiting %d pending scans.", len(pending))
+            _, pending = await asyncio.wait(pending, timeout=timeout, return_when=return_when)
+        else:
+            self.comms.log.debug("Nothing to do; sleeping for %fs.", timeout)
+            await asyncio.sleep(timeout)
+        if self.storage is not None and self.storage.should_checkpoint_now:
+            self.comms.log.debug("Running periodic checkpoint.", timeout)
+            self.storage.checkpoint()
+        return pending
 
     def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
         """Scan for a dataset's existence.
@@ -171,7 +221,7 @@ class Scanner:
         result : `ScanResult`
             Scan result struct.
         """
-        self.progress.log.debug("Started scan for %s.", quantum_id)
+        self.comms.log.debug("Started scan for %s.", quantum_id)
         if (predicted_quantum := self.init_quanta.get(quantum_id)) is not None:
             result = ScanResult(predicted_quantum.quantum_id, status=ScanStatus.INIT)
         else:
@@ -179,11 +229,11 @@ class Scanner:
             predicted_quantum = self.reader.components.quantum_datasets[quantum_id]
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
-            times_for_task = self.config.get_times_for_task(predicted_quantum.task_label)
+            times_for_task = self.comms.config.get_times_for_task(predicted_quantum.task_label)
             wait_interval: float = times_for_task["wait"]
             while True:
                 log_id = self._read_and_compress_log(predicted_quantum, result)
-                if self.config.assume_complete or result.log:
+                if self.comms.config.assume_complete or result.log:
                     break
                 wait_interval = await self._wait_for_quantum(times_for_task, wait_interval)
             first_failure_time: float | None = None
@@ -192,7 +242,7 @@ class Scanner:
                 if result.metadata:
                     result.status = ScanStatus.SUCCESSFUL
                     break
-                elif self.config.assume_complete:
+                elif self.comms.config.assume_complete:
                     result.status = ScanStatus.FAILED
                     break
                 else:
@@ -210,7 +260,7 @@ class Scanner:
                             # unlikely event it's still retrying, but
                             # (according to timeout configuration) that should
                             # have already happened if it was going to.
-                            self.progress.log.debug("Abandoning scan for %s.", quantum_id)
+                            self.comms.log.debug("Abandoning scan for %s.", quantum_id)
                             result.status = ScanStatus.ABANDONED
                             self.comms.return_scan(ScanReport(result.quantum_id, result.status))
                             return result
@@ -227,24 +277,31 @@ class Scanner:
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
-        to_ingest: list[PredictedDatasetModel] = []
+        to_ingest_predicted: list[PredictedDatasetModel] = []
+        to_ingest_refs: list[DatasetRef] = []
         for dataset_id in result.existing_outputs:
             predicted_output = predicted_outputs_by_id[dataset_id]
             if predicted_output.dataset_type_name not in self.no_ingest_dataset_types:
-                to_ingest.append(predicted_output)
+                to_ingest_predicted.append(predicted_output)
+                to_ingest_refs.append(self.reader.make_dataset_ref(predicted_output))
+        to_ingest_artifacts: list[ResourcePath] = []
+        for ref_uris in self.qbb.get_many_uris(to_ingest_refs, predict=True).values():
+            if ref_uris.primaryURI is not None:
+                to_ingest_artifacts.append(ref_uris.primaryURI.replace(fragment=""))  # drop '#predicted'
+            for path in ref_uris.componentURIs.values():
+                to_ingest_artifacts.append(path.replace(fragment=""))
+        to_ingest = IngestRequest.pack(
+            self.comms.scanner_id, quantum_id, to_ingest_predicted, to_ingest_artifacts
+        )
         if self.storage is not None:
-            pickled_ingests = self.storage.save_quantum(result, to_ingest=to_ingest)
-        elif to_ingest:
-            pickled_ingests = pickle.dumps(to_ingest)
-        else:
-            pickled_ingests = b""
+            self.storage.save_quantum(result, to_ingest=to_ingest)
         self.comms.return_scan(ScanReport(result.quantum_id, result.status))
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
-        if self.config.output_path is not None:
+        if self.comms.config.output_path is not None:
             self.comms.request_write(result)
-        self.comms.request_ingest(IngestRequest(self.comms.scanner_id, result.quantum_id, pickled_ingests))
-        self.progress.log.debug("Finished scan for %s.", quantum_id)
+        self.comms.request_ingest(to_ingest)
+        self.comms.log.debug("Finished scan for %s.", quantum_id)
         return result
 
     @staticmethod
@@ -268,10 +325,9 @@ class Scanner:
             # This assumes QBB metadata writes are atomic, which should be the
             # case. If it's not we'll probably get pydantic validation errors
             # here.
-            with self.progress.working_on(Activity.READING_METADATA):
-                content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
+            content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
         except FileNotFoundError:
-            if not self.config.assume_complete:
+            if not self.comms.config.assume_complete:
                 return ref.id
         else:
             try:
@@ -311,10 +367,9 @@ class Scanner:
         try:
             # This assumes QBB log writes are atomic, which should be the case.
             # If it's not we'll probably get pydantic validation errors here.
-            with self.progress.working_on(Activity.READING_LOGS):
-                content: ButlerLogRecords = self.qbb.get(ref)
+            content: ButlerLogRecords = self.qbb.get(ref)
         except FileNotFoundError:
-            if not self.config.assume_complete:
+            if not self.comms.config.assume_complete:
                 return ref.id
         else:
             result.log = content.model_dump_json().encode()
@@ -322,83 +377,3 @@ class Scanner:
                 result.log = self.compressor.compress(result.log)
                 result.is_compressed = True
         return ref.id
-
-    async def _loop(self) -> bool:
-        n_ingests_loaded = 0
-        n_quanta_loaded = 0
-        if self.storage is not None:
-            self.progress.log.debug("Sending any past ingests that may not have completed.")
-            for producer_id, pickled_datasets in self.storage.fetch_ingests():
-                self.comms.request_ingest(IngestRequest(self.comms.scanner_id, producer_id, pickled_datasets))
-                n_ingests_loaded += 1
-            self.progress.log.debug("Loading and returning past scans.")
-            for scan_return, write_request in self.storage.resume():
-                self.comms.return_scan(scan_return)
-                n_quanta_loaded += 1
-                if write_request is not None:
-                    self.comms.request_write(write_request)
-        self.comms.report_resume_completed(n_quanta_loaded, n_ingests_loaded)
-        asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
-        pending: set[asyncio.Task[ScanResult]] = set()
-        try:
-            self.progress.log.debug("Scan request loop beginning.")
-            for scan_request, ingest_confirmation in self.comms.poll_for_scan_requests():
-                if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
-                    self.compressor = zstandard.ZstdCompressor(
-                        self.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
-                    )
-                pending = await self._do_work(scan_request, ingest_confirmation, pending)
-                self.progress.periodically_write_times()
-            self.progress.log.debug("Waiting for pending tasks to complete.")
-            pending = await self._do_work(None, None, pending, return_when="ALL_COMPLETED")
-            assert not pending, "No scans should be pending at this point."
-            self.progress.log.debug("Ingest conifrmation loop beginning.")
-            for ingest_confirmation in self.comms.poll_for_ingest_confirmations():
-                await self._do_work(None, ingest_confirmation, pending)
-            if self.storage is not None and self.storage.needs_checkpoint:
-                self.progress.log.debug("Performing final checkpoint.")
-                self.storage.checkpoint()
-            self.comms.shutdown()
-            return True
-        except CancelError:
-            self.progress.log.debug("Cancel event set.")
-            for task in pending:
-                task.cancel()
-            return False
-
-    async def _do_work(
-        self,
-        requested_quantum_id: uuid.UUID | None,
-        ingest_confirmation: IngestConfirmation | None,
-        pending: set[asyncio.Task[ScanResult]],
-        return_when: Literal["FIRST_COMPLETED", "ALL_COMPLETED"] = "FIRST_COMPLETED",
-    ) -> set[asyncio.Task[ScanResult]]:
-        timeout: float = self.config.worker_sleep
-        if requested_quantum_id is not None:
-            self.progress.log.debug("Creating scan task for %s.", requested_quantum_id)
-            pending.add(asyncio.create_task(self.scan_quantum(requested_quantum_id)))
-            timeout = 0.0
-        if ingest_confirmation is not None:
-            self.progress.log.debug("Finishing %d ingest returns.", len(ingest_confirmation.producer_ids))
-            if self.storage is not None:
-                self.storage.finish_ingests(ingest_confirmation.producer_ids)
-            timeout = 0.0
-        if pending:
-            self.progress.log.debug("Awaiting %d pending scans.", len(pending))
-            _, pending = await asyncio.wait(pending, timeout=timeout, return_when=return_when)
-        else:
-            self.progress.log.debug("Nothing to do; sleeping for %fs.", timeout)
-            await asyncio.sleep(timeout)
-        if self.storage is not None and self.storage.should_checkpoint_now:
-            self.progress.log.debug("Running periodic checkpoint.", timeout)
-            self.storage.checkpoint()
-        self.progress.periodically_write_times()
-        return pending
-
-    @staticmethod
-    def run(config: AggregatorConfig, comms: ScannerCommunicator) -> None:
-        with WorkerProgress(f"worker-{comms.scanner_id:03d}", config) as progress:
-            with comms.handling_errors():
-                with Scanner.open(config, progress, comms) as worker:
-                    asyncio.run(worker._loop())
-            progress.log.debug("Shutting down worker.")

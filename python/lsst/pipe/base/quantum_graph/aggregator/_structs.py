@@ -37,10 +37,14 @@ __all__ = (
 
 import dataclasses
 import enum
+import pickle
 import uuid
+
+from lsst.resources import ResourcePath
 
 from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
+from .._predicted import PredictedDatasetModel
 
 
 class ScanStatus(enum.Enum):
@@ -94,7 +98,28 @@ class ScanReport:
 class IngestRequest:
     scanner_id: int
     producer_id: uuid.UUID
-    pickled_datasets: bytes
+    data: bytes
+
+    @classmethod
+    def pack(
+        cls,
+        scanner_id: int,
+        producer_id: uuid.UUID,
+        datasets: list[PredictedDatasetModel],
+        artifacts: list[ResourcePath],
+    ) -> IngestRequest:
+        data = b""
+        if datasets or artifacts:
+            data = pickle.dumps((datasets, artifacts))
+        return cls(scanner_id, producer_id, data)
+
+    def unpack(self) -> tuple[list[PredictedDatasetModel], list[ResourcePath]]:
+        if not self.data:
+            return [], []
+        return pickle.loads(self.data)
+
+    def __bool__(self) -> bool:
+        return bool(self.data)
 
 
 @dataclasses.dataclass

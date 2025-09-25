@@ -32,13 +32,12 @@ __all__ = ("Storage", "Tables")
 import dataclasses
 import itertools
 import os
-import pickle
 import sqlite3
 import time
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, ExitStack, closing, contextmanager
+from contextlib import AbstractContextManager, closing, contextmanager
 from typing import ClassVar, Literal
 
 import sqlalchemy
@@ -48,10 +47,8 @@ from lsst.resources import ResourcePath
 
 from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo
-from .._predicted import PredictedDatasetModel
 from ._config import AggregatorConfig
-from ._progress import Activity, BaseProgress
-from ._structs import ScanReport, ScanResult, ScanStatus
+from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
 
 @dataclasses.dataclass
@@ -96,7 +93,7 @@ class Tables:
             "to_ingest",
             self.schema,
             sqlalchemy.Column("producer_id", sqlalchemy.Uuid, primary_key=True),
-            sqlalchemy.Column("pickled_datasets", sqlalchemy.LargeBinary, nullable=False),
+            sqlalchemy.Column("data", sqlalchemy.LargeBinary, nullable=False),
         )
 
 
@@ -126,11 +123,9 @@ class Storage(AbstractContextManager):
         self,
         config: AggregatorConfig,
         worker_id: int,
-        progress: BaseProgress,
         trust_local: bool,
     ):
         self._config = config
-        self._progress = progress
         assert self._config.db_dir, "Storage should not be instantiated."
         os.makedirs(self._config.db_dir, exist_ok=True)
         filename = f"scanner-{worker_id:03d}"
@@ -148,10 +143,6 @@ class Storage(AbstractContextManager):
             and not (trust_local and self._db_path.exists())
             and self._checkpoint_path.exists()
         ):
-            if progress is not None:
-                progress.log.verbose(
-                    "Retrieving scanner database from checkpoint at %s.", self._checkpoint_path
-                )
             self._db_path.transfer_from(self._checkpoint_path, "copy")
         elif not self._db_path.exists():
             is_new = True
@@ -173,7 +164,6 @@ class Storage(AbstractContextManager):
         # on the class to provide an external context manager interface.
         self._connect()
         if is_new:
-            progress.log.verbose("Creating new scanner database.")
             # In write-ahead log mode with synchronous=1 (which we have to set
             # on each connection), transaction overhead is lower and hard
             # failures (e.g. power loss) can lead to lost commits but not
@@ -188,19 +178,6 @@ class Storage(AbstractContextManager):
                 self.tables.schema.create_all(connection)
 
     tables: ClassVar[Tables] = Tables()
-
-    @classmethod
-    @contextmanager
-    def open_all(
-        cls, config: AggregatorConfig, trust_local: bool, progress: BaseProgress
-    ) -> Iterator[list[Storage]]:
-        results = []
-        with ExitStack() as exit_stack:
-            for worker_id in range(config.n_processes):
-                results.append(
-                    exit_stack.enter_context(Storage(config, worker_id, progress, trust_local=trust_local))
-                )
-            yield results
 
     def __enter__(self) -> Storage:
         return self
@@ -239,16 +216,15 @@ class Storage(AbstractContextManager):
         """Checkpoint the database, ensuring all transactions so far are
         durable.
         """
-        with self._progress.working_on(Activity.CHECKPOINTING):
-            if self._config.vacuum_on_checkpoint:
-                self._execute_raw("VACUUM")
-            self._execute_raw("PRAGMA wal_checkpoint(TRUNCATE)")
-            if self._checkpoint_path is not None:
-                self._connection.close()
-                self._checkpoint_path.transfer_from(self._db_path, "copy")
-                self._connect()
-            self._needs_checkpoint = False
-            self._last_checkpoint = time.time()
+        if self._config.vacuum_on_checkpoint:
+            self._execute_raw("VACUUM")
+        self._execute_raw("PRAGMA wal_checkpoint(TRUNCATE)")
+        if self._checkpoint_path is not None:
+            self._connection.close()
+            self._checkpoint_path.transfer_from(self._db_path, "copy")
+            self._connect()
+        self._needs_checkpoint = False
+        self._last_checkpoint = time.time()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlalchemy.Connection]:
@@ -256,9 +232,10 @@ class Storage(AbstractContextManager):
         with self._connection.begin():
             yield self._connection
 
-    def fetch_ingests(self) -> Iterator[tuple[uuid.UUID, bytes]]:
+    def fetch_ingests(self, scanner_id: int) -> Iterator[IngestRequest]:
         with self.transaction() as connection:
-            yield from connection.execute(self.tables.to_ingest.select())  # type: ignore[misc]
+            for row in connection.execute(self.tables.to_ingest.select()):
+                yield IngestRequest(scanner_id, row.producer_id, row.data)
 
     def finish_ingests(self, producer_ids: list[uuid.UUID]) -> None:
         """Mark ingests as having been completed."""
@@ -271,11 +248,7 @@ class Storage(AbstractContextManager):
                 )
         self._needs_checkpoint = True
 
-    def save_quantum(
-        self,
-        scan_result: ScanResult,
-        to_ingest: list[PredictedDatasetModel],
-    ) -> bytes:
+    def save_quantum(self, scan_result: ScanResult, to_ingest: IngestRequest) -> None:
         quantum_row = {
             "quantum_id": scan_result.quantum_id,
             "status": scan_result.status.value,
@@ -291,7 +264,6 @@ class Storage(AbstractContextManager):
             {"dataset_id": dataset_id, "producer_id": scan_result.quantum_id}
             for dataset_id in scan_result.existing_outputs
         ]
-        pickled_ingests = pickle.dumps(to_ingest)
         with self.transaction() as connection:
             if dataset_rows:
                 for dataset_batch in itertools.batched(dataset_rows, self._config.query_batch_size):
@@ -299,12 +271,11 @@ class Storage(AbstractContextManager):
             if to_ingest:
                 connection.execute(
                     self.tables.to_ingest.insert().values(
-                        {"producer_id": scan_result.quantum_id, "pickled_datasets": pickled_ingests}
+                        {"producer_id": scan_result.quantum_id, "data": to_ingest.data}
                     )
                 )
             connection.execute(self.tables.quantum.insert().values(quantum_row))
         self._needs_checkpoint = True
-        return pickled_ingests
 
     def resume(self) -> Iterator[tuple[ScanReport, ScanResult | None]]:
         with self.transaction() as connection:

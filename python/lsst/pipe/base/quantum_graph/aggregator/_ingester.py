@@ -30,20 +30,18 @@ from __future__ import annotations
 __all__ = ("Ingester",)
 
 import dataclasses
-import pickle
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from lsst.daf.butler import Butler, DatasetRef, QuantumBackedButler
+from lsst.resources import ResourcePath
 
 from ...pipeline_graph import TaskImportMode
 from .._predicted import PredictedQuantumGraphReader
 from . import utils
-from ._communicators import CancelError, IngesterCommunicator
-from ._config import AggregatorConfig
-from ._progress import BaseProgress, WorkerProgress
+from ._communicators import IngesterCommunicator
 
 
 @dataclasses.dataclass
@@ -56,14 +54,9 @@ class Ingester:
     are complete.
     """
 
-    reader: PredictedQuantumGraphReader
-
-    config: AggregatorConfig
-    """Configuration for the scanner."""
-
-    progress: BaseProgress
-
     comms: IngesterCommunicator
+
+    reader: PredictedQuantumGraphReader
 
     qbb: QuantumBackedButler = dataclasses.field(init=False)
     """A quantum-backed butler used for log and metadata reads, existence
@@ -75,65 +68,63 @@ class Ingester:
 
     returns_pending: dict[int, list[uuid.UUID]] = dataclasses.field(init=False)
     datasets_pending: list[DatasetRef] = dataclasses.field(default_factory=list)
+    artifacts_pending: dict[ResourcePath, bool] = dataclasses.field(default_factory=dict)
 
     @classmethod
     @contextmanager
-    def open(
-        cls, config: AggregatorConfig, progress: BaseProgress, comms: IngesterCommunicator
-    ) -> Iterator[Ingester]:
-        """Construct a scanner worker in a context manager.
-
-        Parameters
-        ----------
-        config : `AggregatorConfig`
-            Configuration for the scanner.
-        progress : `BaseProgress`
-            Progress reporting helper.
-        comms : `IngesterCommunicator`
-            Helper for communicating with other workers.
-        """
+    def open(cls, comms: IngesterCommunicator) -> Iterator[Ingester]:
         with PredictedQuantumGraphReader.open(
-            config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
+            comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
         ) as reader:
             reader.read_dimension_data()
-            yield cls(reader=reader, config=config, progress=progress, comms=comms)
+            yield cls(comms, reader)
 
     def __post_init__(self) -> None:
-        with PredictedQuantumGraphReader.open(
-            self.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-        ) as reader:
-            self.qbb = utils.make_qbb(self.config.butler_path, reader.pipeline_graph)
-        self.butler = Butler.from_config(self.config.butler_path, writeable=not self.config.dry_run)
+        if self.comms.config.enable_mocks:
+            import lsst.pipe.base.tests.mocks  # noqa: F401
+        self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
+        self.butler = Butler.from_config(
+            self.comms.config.butler_path, writeable=not self.comms.config.dry_run
+        )
         self.returns_pending = defaultdict(list)
 
-    def _loop(self) -> bool:
-        try:
-            for ingest_request in self.comms.poll():
-                producer_ids_from_worker = self.returns_pending[ingest_request.scanner_id]
-                self.progress.log.debug(
-                    f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
-                )
-                producer_ids_from_worker.append(ingest_request.producer_id)
-                for dataset in pickle.loads(ingest_request.pickled_datasets):
-                    ref = self.reader.make_dataset_ref(dataset)
-                    self.datasets_pending.append(ref)
-                if len(self.datasets_pending) > self.config.ingest_batch_size:
-                    self.progress.log.debug("Ingesting %d datasets.", len(self.datasets_pending))
-                    self.ingest()
-            if self.datasets_pending:
-                self.progress.log.debug("Ingesting %d final datasets.", len(self.datasets_pending))
+    @staticmethod
+    def run(comms: IngesterCommunicator) -> None:
+        with comms, Ingester.open(comms) as ingester:
+            ingester.loop()
+
+    def loop(self) -> None:
+        self.comms.log.info("Starting ingester.")
+        for ingest_request in self.comms.poll():
+            producer_ids_from_worker = self.returns_pending[ingest_request.scanner_id]
+            self.comms.log.debug(
+                f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
+            )
+            producer_ids_from_worker.append(ingest_request.producer_id)
+            predicted_datasets, artifacts = ingest_request.unpack()
+            for predicted_dataset in predicted_datasets:
+                ref = self.reader.make_dataset_ref(predicted_dataset)
+                self.datasets_pending.append(ref)
+            self.artifacts_pending.update(dict.fromkeys(artifacts, True))
+            if len(self.datasets_pending) > self.comms.config.ingest_batch_size:
+                self.comms.log.verbose("Ingesting %d datasets.", len(self.datasets_pending))
                 self.ingest()
-            self.progress.log.debug("Informing workers that ingests are complete.")
-            self.comms.send_no_more_ingest_confirmations()
-            return True
-        except CancelError:
-            self.progress.log.debug("Cancel event set.")
-            return False
+        self.comms.log.info("All ingest requests received.")
+        if self.datasets_pending:
+            self.comms.log.verbose("Ingesting %d final datasets.", len(self.datasets_pending))
+            self.ingest()
+        self.comms.log.info("Informing workers that ingests are complete.")
 
     def ingest(self) -> None:
-        if not self.config.dry_run:
-            with utils.PrescannedFileTransferSource.wrap_qbb(self.qbb, self.datasets_pending):
-                self.butler.transfer_from(self.qbb, self.datasets_pending, transfer_dimensions=False)
+        with utils.PrescannedFileTransferSource.wrap_qbb(self.qbb, self.artifacts_pending):
+            self.butler.transfer_from(
+                self.qbb,
+                self.datasets_pending,
+                transfer=None,
+                transfer_dimensions=False,
+                register_dataset_types=True,
+                dry_run=self.comms.config.dry_run,
+            )
         n_producers = 0
         for worker_id, producer_ids_from_worker in self.returns_pending.items():
             self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
@@ -141,11 +132,4 @@ class Ingester:
         self.comms.report_ingest(n_producers)
         self.datasets_pending.clear()
         self.returns_pending.clear()
-
-    @staticmethod
-    def run(config: AggregatorConfig, comms: IngesterCommunicator) -> None:
-        with WorkerProgress("ingester", config) as progress:
-            with comms.handling_errors():
-                with Ingester.open(config, progress, comms) as ingester:
-                    ingester._loop()
-            progress.log.debug("Shutting down ingester.")
+        self.artifacts_pending.clear()

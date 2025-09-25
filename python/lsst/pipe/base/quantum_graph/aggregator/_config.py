@@ -142,6 +142,9 @@ class AggregatorConfig(pydantic.BaseModel):
     is ignored when running in a single process.
     """
 
+    worker_log_level: str = "VERBOSE"
+    """Log level for workers processes/threads."""
+
     timer_dir: str | None = None
     """Path to a directory (POSIX only) for CSV files that summarize the time
     spent on various activities.
