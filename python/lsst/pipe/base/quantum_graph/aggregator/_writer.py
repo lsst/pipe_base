@@ -335,11 +335,11 @@ class Writer:
 
     def make_scan_data(self, request: ScanResult) -> list[_ScanData]:
         if (existing_init_outputs := self.existing_init_outputs.get(request.quantum_id)) is not None:
-            self.comms.log.info("Handling init-output scan for %s.", request.quantum_id)
+            self.comms.log.debug("Handling init-output scan for %s.", request.quantum_id)
             existing_init_outputs.update(request.existing_outputs)
             self.comms.report_write()
             return []
-        self.comms.log.info("Handling quantum scan for %s.", request.quantum_id)
+        self.comms.log.debug("Handling quantum scan for %s.", request.quantum_id)
         predicted_quantum = self._predicted_reader.components.quantum_datasets[request.quantum_id]
         quantum_index = self.indices[predicted_quantum.quantum_id]
         (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
