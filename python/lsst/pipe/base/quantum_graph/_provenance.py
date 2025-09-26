@@ -42,10 +42,12 @@ __all__ = (
 import dataclasses
 import sys
 import uuid
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Self, TypedDict
 
+import astropy.table
 import networkx
 import pydantic
 
@@ -614,7 +616,6 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         super().__init__(header, pipeline_graph)
         self._init_quanta: dict[TaskLabel, uuid.UUID] = {}
         self._quantum_only_xgraph = networkx.DiGraph()
-        self._quantum_only_xgraph_dirty: bool = False
         self._bipartite_xgraph = networkx.DiGraph()
         self._quanta_by_task_label: dict[str, dict[DataCoordinate, uuid.UUID]] = {
             task_label: {} for task_label in self.pipeline_graph.tasks.keys()
@@ -706,6 +707,79 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         The returned object is a read-only view of an internal one.
         """
         return self._bipartite_xgraph.copy(as_view=True)
+
+    def make_quantum_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with a tabular summary of the
+        quanta.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table view of the quantum information.  This only includes
+            counts of status categories and caveats, not any per-data-ID
+            detail.
+
+        Notes
+        -----
+        Success caveats in the table are represented by their
+        `~QuantumSuccessCaveats.concise` form, so when pretty-printing this
+        table for users, the `~QuantumSuccessCaveats.legend` should generally
+        be printed as well.
+        """
+        rows = []
+        for task_label, quanta_for_task in self.quanta_by_task.items():
+            if not self.header.n_task_quanta[task_label]:
+                continue
+            status_counts = Counter(
+                self._quantum_only_xgraph.nodes[q]["status"] for q in quanta_for_task.values()
+            )
+            caveat_counts = Counter(
+                self._quantum_only_xgraph.nodes[q]["caveats"] for q in quanta_for_task.values()
+            )
+            if len(caveat_counts) > 1:
+                caveats = "(multiple)"
+            elif len(caveat_counts) == 1:
+                ((code, count),) = caveat_counts.items()
+                caveats = f"{code}({count})"
+            else:
+                caveats = ""
+            rows.append(
+                {
+                    "Task": task_label,
+                    "Unknown": status_counts.get(QuantumRunStatus.METADATA_MISSING, 0),
+                    "Successful": status_counts.get(QuantumRunStatus.SUCCESSFUL, 0),
+                    "Caveats": caveats,
+                    "Blocked": status_counts.get(QuantumRunStatus.BLOCKED, 0),
+                    "Failed": status_counts.get(QuantumRunStatus.FAILED, 0),
+                    "TOTAL": len(quanta_for_task),
+                    "EXPECTED": self.header.n_task_quanta[task_label],
+                }
+            )
+        return astropy.table.Table(rows)
+
+    def make_exception_table(self) -> astropy.table.Table:
+        """Construct an `astropy.table.Table` with counts for each exception
+        type raised by each task.
+
+        At present this only includes information from partial-outputs-error
+        successes, since exception information for failures is not tracked.
+        This may change in the future.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table with columns for task label, exception type, and counts.
+        """
+        rows = []
+        for task_label, quanta_for_task in self.quanta_by_task.items():
+            counts_by_type = Counter(
+                exc_info.type_name
+                for q in quanta_for_task.values()
+                if (exc_info := self._quantum_only_xgraph.nodes[q]["exception"]) is not None
+            )
+            for type_name, count in counts_by_type.items():
+                rows.append({"Task": task_label, "Exception": type_name, "Count": count})
+        return astropy.table.Table(rows)
 
 
 @dataclasses.dataclass
