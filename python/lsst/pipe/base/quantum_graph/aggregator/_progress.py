@@ -94,7 +94,7 @@ class Progress:
 
             self._scan_progress = tqdm(desc="Scanning", total=n_quanta, leave=True, unit="quanta")
             self._ingest_progress = tqdm(
-                desc="Ingesting", total=n_quanta, leave=True, smoothing=0.6, unit="quanta"
+                desc="Ingesting", total=n_quanta, leave=True, smoothing=0.1, unit="quanta"
             )
             if self.config.output_path is not None:
                 self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=True, unit="quanta")
