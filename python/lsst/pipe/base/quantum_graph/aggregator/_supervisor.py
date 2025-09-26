@@ -148,10 +148,11 @@ class Supervisor:
             case ScanStatus.FAILED:
                 self.comms.log.debug("Scan complete for %s: quantum failed.", scan_report.quantum_id)
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
-                if self.comms.config.output_path is not None:
-                    for blocked_quantum_id in blocked_quanta:
+                for blocked_quantum_id in blocked_quanta:
+                    if self.comms.config.output_path is not None:
                         comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
-                        self.comms.progress.report_scan()
+                    self.comms.progress.report_scan()
+                self.comms.progress.report_ingests(len(blocked_quanta))
             case ScanStatus.ABANDONED:
                 self.comms.log.debug("Abandoning scan for %s: quantum failed but may be retried.")
                 self.walker.fail(scan_report.quantum_id)
