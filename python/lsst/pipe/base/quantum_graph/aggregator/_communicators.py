@@ -46,9 +46,12 @@ import threading
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from traceback import TracebackException
 from types import TracebackType
 from typing import Any, Literal, Self
+
+from lsst.utils.logging import VERBOSE
 
 from ._config import AggregatorConfig
 from ._progress import Progress, make_worker_log
@@ -154,6 +157,12 @@ class _ResumeCompleted:
 
 
 @dataclasses.dataclass
+class _ProgressLog:
+    message: str
+    level: int
+
+
+@dataclasses.dataclass
 class _CompressionDictionary:
     data: bytes
 
@@ -163,6 +172,7 @@ type Report = (
     | _IngestReport
     | _ResumeCompleted
     | _WorkerError
+    | _ProgressLog
     | Literal[
         _Sentinal.WRITE_REPORT,
         _Sentinal.SCANNER_DONE,
@@ -321,6 +331,8 @@ class SupervisorCommunicator:
                 self.progress.report_ingests(n_producers)
             case _Sentinal.WRITE_REPORT:
                 self.progress.report_write()
+            case _ProgressLog(message=message, level=level):
+                self.progress.log.log(level, message)
             case _:
                 return report
         return None
@@ -339,6 +351,7 @@ class WorkerCommunicator:
 
     def __enter__(self) -> Self:
         self.log = make_worker_log(self.name, self.config)
+        self._exit_stack = ExitStack().__enter__()
         return self
 
     def __exit__(
@@ -352,7 +365,30 @@ class WorkerCommunicator:
                 assert exc_type is not None and traceback is not None
                 self._reports.put(_WorkerError(self.name, TracebackException(exc_type, exc_value, traceback)))
             return True
-        return None
+        return self._exit_stack.__exit__(exc_type, exc_value, traceback)
+
+    def log_progress(self, level: int, message: str) -> None:
+        self._reports.put(_ProgressLog(message=message, level=level))
+
+    def enter[T](
+        self,
+        cm: AbstractContextManager[T],
+        on_close: str | None = None,
+        level: int = VERBOSE,
+        is_progress_log: bool = False,
+    ) -> T:
+        if on_close is None:
+            return self._exit_stack.enter_context(cm)
+
+        @contextmanager
+        def wrapper() -> Iterator[T]:
+            with cm as result:
+                yield result
+                self.log.log(level, on_close)
+                if is_progress_log:
+                    self.log_progress(level, on_close)
+
+        return self._exit_stack.enter_context(wrapper())
 
 
 class ScannerCommunicator(WorkerCommunicator):

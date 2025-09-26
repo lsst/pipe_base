@@ -34,10 +34,6 @@ import enum
 import itertools
 import operator
 import uuid
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
-from types import TracebackType
-from typing import Self
 
 import networkx
 import zstandard
@@ -102,63 +98,59 @@ class DataWriters:
     metadata: MultiblockWriter | None = None
     logs: MultiblockWriter | None = None
 
-    @classmethod
-    @contextmanager
-    def open(
-        cls,
+    def __init__(
+        self,
+        comms: WriterCommunicator,
         reader: PredictedQuantumGraphReader,
-        output_path: str,
         indices: dict[uuid.UUID, int],
-        *,
         compressor: Compressor,
         cdict_data: bytes | None = None,
-        aggregate_logs: bool,
-        aggregate_metadata: bool,
-    ) -> Iterator[DataWriters]:
+    ) -> None:
+        assert comms.config.output_path is not None
         header = reader.header.model_copy()
         header.graph_type = "provenance"
-        with ExitStack() as exit_stack:
-            graph = exit_stack.enter_context(
-                BaseQuantumGraphWriter.open(
-                    output_path,
-                    header,
-                    reader.pipeline_graph,
-                    indices,
-                    address_filename="nodes",
-                    compressor=compressor,
-                    cdict_data=cdict_data,
-                )
+        self.graph = comms.enter(
+            BaseQuantumGraphWriter.open(
+                comms.config.output_path,
+                header,
+                reader.pipeline_graph,
+                indices,
+                address_filename="nodes",
+                compressor=compressor,
+                cdict_data=cdict_data,
+            ),
+            on_close="Closing zip archive.",
+            is_progress_log=True,
+        )
+        self.graph.address_writer.addresses = [{}, {}, {}, {}]
+        if comms.config.aggregate_logs:
+            self.logs = comms.enter(
+                MultiblockWriter.open_in_zip(self.graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True),
+                on_close="Copying logs into zip archive.",
+                is_progress_log=True,
             )
-            graph.address_writer.addresses = [{}, {}, {}, {}]
-            logs: MultiblockWriter | None = None
-            if aggregate_logs:
-                logs = exit_stack.enter_context(
-                    MultiblockWriter.open_in_zip(graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True)
-                )
-                graph.address_writer.addresses[LOG_ADDRESS_INDEX] = logs.addresses
-            metadata: MultiblockWriter | None = None
-            if aggregate_metadata:
-                metadata = exit_stack.enter_context(
-                    MultiblockWriter.open_in_zip(
-                        graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
-                    )
-                )
-                graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = metadata.addresses
-            datasets = exit_stack.enter_context(
-                MultiblockWriter.open_in_zip(graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True)
+            self.graph.address_writer.addresses[LOG_ADDRESS_INDEX] = self.logs.addresses
+        if comms.config.aggregate_metadata:
+            self.metadata = comms.enter(
+                MultiblockWriter.open_in_zip(
+                    self.graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                on_close="Copying metadata into zip archive.",
+                is_progress_log=True,
             )
-            graph.address_writer.addresses[DATASET_ADDRESS_INDEX] = datasets.addresses
-            quanta = exit_stack.enter_context(
-                MultiblockWriter.open_in_zip(graph.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True)
-            )
-            graph.address_writer.addresses[QUANTUM_ADDRESS_INDEX] = quanta.addresses
-            yield cls(
-                graph,
-                datasets=datasets,
-                quanta=quanta,
-                metadata=metadata,
-                logs=logs,
-            )
+            self.graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = self.metadata.addresses
+        self.datasets = comms.enter(
+            MultiblockWriter.open_in_zip(self.graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True),
+            on_close="Copying dataset provenance into zip archive.",
+            is_progress_log=True,
+        )
+        self.graph.address_writer.addresses[DATASET_ADDRESS_INDEX] = self.datasets.addresses
+        self.quanta = comms.enter(
+            MultiblockWriter.open_in_zip(self.graph.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True),
+            on_close="Copying quantum provenance into zip archive.",
+            is_progress_log=True,
+        )
+        self.graph.address_writer.addresses[QUANTUM_ADDRESS_INDEX] = self.quanta.addresses
 
     @property
     def compressor(self) -> Compressor:
@@ -173,11 +165,10 @@ class Writer:
     output_dataset_ids: set[uuid.UUID] = dataclasses.field(default_factory=set)
     xgraph: networkx.DiGraph = dataclasses.field(default_factory=networkx.DiGraph)
     pending_compression_training: list[_ScanData] = dataclasses.field(default_factory=list)
-    exit_stack: ExitStack = dataclasses.field(default_factory=ExitStack)
 
-    def __enter__(self) -> Self:
+    def __post_init__(self) -> None:
         assert self.comms.config.output_path is not None, "Writer should not be used if writing is disabled."
-        self._predicted_reader = self.exit_stack.enter_context(
+        self._predicted_reader = self.comms.enter(
             PredictedQuantumGraphReader.open(
                 self.comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
             )
@@ -188,17 +179,6 @@ class Writer:
             self.existing_init_outputs[predicted_init_quantum.quantum_id] = set()
         self._populate_indices_and_outputs()
         self._populate_xgraph()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None:
-        if exc_value is not None:
-            self.comms.log.info("Moving multi-block files into zip archive and writing address file.")
-        return self.exit_stack.__exit__(exc_type, exc_value, traceback)
 
     def _populate_indices_and_outputs(self) -> None:
         all_uuids = set(self._predicted_reader.components.quantum_indices.keys())
@@ -227,7 +207,8 @@ class Writer:
 
     @staticmethod
     def run(comms: WriterCommunicator) -> None:
-        with comms, Writer(comms) as writer:
+        with comms:
+            writer = Writer(comms)
             writer.loop()
 
     def loop(self) -> None:
@@ -244,7 +225,6 @@ class Writer:
                     self.write_scan_data(scan_data, data_writers)
         if data_writers is None:
             data_writers = self.make_data_writers()
-        self.write_overall_inputs(data_writers)
         self.write_init_outputs(data_writers)
 
     def make_data_writers(self) -> DataWriters:
@@ -252,19 +232,16 @@ class Writer:
         self.comms.send_compression_dict(cdict.as_bytes())
         assert self.comms.config.output_path is not None
         self.comms.log.info("Opening output files.")
-        data_writers = self.exit_stack.enter_context(
-            DataWriters.open(
-                self._predicted_reader,
-                self.comms.config.output_path,
-                self.indices,
-                compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
-                cdict_data=cdict.as_bytes(),
-                aggregate_logs=self.comms.config.aggregate_logs,
-                aggregate_metadata=self.comms.config.aggregate_metadata,
-            )
+        data_writers = DataWriters(
+            self.comms,
+            self._predicted_reader,
+            self.indices,
+            compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
+            cdict_data=cdict.as_bytes(),
         )
         for scan_data in self.pending_compression_training:
             self.write_scan_data(scan_data, data_writers)
+        self.write_overall_inputs(data_writers)
         return data_writers
 
     def make_compression_dictionary(self) -> zstandard.ZstdCompressionDict:

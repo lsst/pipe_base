@@ -34,8 +34,6 @@ import dataclasses
 import itertools
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
 from typing import Literal
 
 import zstandard
@@ -70,10 +68,8 @@ class Scanner:
 
     comms: ScannerCommunicator
 
-    reader: PredictedQuantumGraphReader
+    reader: PredictedQuantumGraphReader = dataclasses.field(init=False)
     """Reader for the predicted quantum graph."""
-
-    storage: Storage | None
 
     qbb: QuantumBackedButler = dataclasses.field(init=False)
     """A quantum-backed butler used for log and metadata reads, existence
@@ -81,31 +77,29 @@ class Scanner:
     are not needed anymore.
     """
 
+    storage: Storage | None = None
+
     compressor: Compressor | None = None
 
     no_ingest_dataset_types: set[str] = dataclasses.field(default_factory=set)
 
     init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
 
-    @classmethod
-    @contextmanager
-    def open(cls, comms: ScannerCommunicator) -> Iterator[Scanner]:
-        with ExitStack() as exit_stack:
-            reader = exit_stack.enter_context(
-                PredictedQuantumGraphReader.open(
-                    comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-                )
-            )
-            storage: Storage | None = None
-            if comms.config.db_dir is not None:
-                storage = exit_stack.enter_context(Storage(comms.config, comms.scanner_id, trust_local=True))
-            yield cls(comms, reader=reader, storage=storage)
-
     def __post_init__(self) -> None:
         if self.comms.config.enable_mocks:
             import lsst.pipe.base.tests.mocks  # noqa: F401
+        self.reader = self.comms.enter(
+            PredictedQuantumGraphReader.open(
+                self.comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
+            )
+        )
         self.reader.read_dimension_data()
         self.reader.read_init_quanta()
+        if self.comms.config.db_dir is not None:
+            self.storage = self.comms.enter(
+                Storage(self.comms.config, self.comms.scanner_id, trust_local=False),
+                "Closing scanner storage.",
+            )
         self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
         self.no_ingest_dataset_types.update(self.comms.config.delete_dataset_types)
         for task_node in self.reader.pipeline_graph.tasks.values():
@@ -123,7 +117,8 @@ class Scanner:
 
     @staticmethod
     def run(comms: ScannerCommunicator) -> None:
-        with comms, Scanner.open(comms) as scanner:
+        with comms:
+            scanner = Scanner(comms)
             scanner.resume()
             asyncio.run(scanner.loop())
 

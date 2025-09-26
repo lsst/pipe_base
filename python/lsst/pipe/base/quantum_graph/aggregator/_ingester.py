@@ -32,8 +32,6 @@ __all__ = ("Ingester",)
 import dataclasses
 import uuid
 from collections import defaultdict
-from collections.abc import Iterator
-from contextlib import contextmanager
 
 from lsst.daf.butler import Butler, DatasetRef, QuantumBackedButler
 from lsst.resources import ResourcePath
@@ -56,7 +54,7 @@ class Ingester:
 
     comms: IngesterCommunicator
 
-    reader: PredictedQuantumGraphReader
+    reader: PredictedQuantumGraphReader = dataclasses.field(init=False)
 
     qbb: QuantumBackedButler = dataclasses.field(init=False)
     """A quantum-backed butler used for log and metadata reads, existence
@@ -70,16 +68,13 @@ class Ingester:
     datasets_pending: list[DatasetRef] = dataclasses.field(default_factory=list)
     artifacts_pending: dict[ResourcePath, bool] = dataclasses.field(default_factory=dict)
 
-    @classmethod
-    @contextmanager
-    def open(cls, comms: IngesterCommunicator) -> Iterator[Ingester]:
-        with PredictedQuantumGraphReader.open(
-            comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-        ) as reader:
-            reader.read_dimension_data()
-            yield cls(comms, reader)
-
     def __post_init__(self) -> None:
+        self.reader = self.comms.enter(
+            PredictedQuantumGraphReader.open(
+                self.comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
+            )
+        )
+        self.reader.read_dimension_data()
         if self.comms.config.enable_mocks:
             import lsst.pipe.base.tests.mocks  # noqa: F401
         self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
@@ -90,7 +85,8 @@ class Ingester:
 
     @staticmethod
     def run(comms: IngesterCommunicator) -> None:
-        with comms, Ingester.open(comms) as ingester:
+        with comms:
+            ingester = Ingester(comms)
             ingester.loop()
 
     def loop(self) -> None:

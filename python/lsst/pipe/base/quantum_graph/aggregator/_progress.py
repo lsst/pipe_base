@@ -126,14 +126,16 @@ class Progress:
             self.log_status()
 
     def report_ingests(self, n_quanta: int) -> None:
+        self._n_ingested += n_quanta
         if self.interactive:
             self._ingest_progress.update(n_quanta)
         else:
             self.log_status()
 
     def report_write(self) -> None:
+        self._n_written += 1
         if self.interactive:
-            self._write_progress.update(1)
+            self._write_progress.update()
         else:
             self.log_status()
 
@@ -186,7 +188,9 @@ class Progress:
 
 
 def make_worker_log(name: str, config: AggregatorConfig) -> LsstLogAdapter:
-    log = getLogger(f"aggregate-graph.{name}")
+    base_log = logging.getLogger(f"aggregate-graph.{name}")
+    base_log.propagate = False
+    log = getLogger(logger=base_log)
     if config.worker_log_dir is not None:
         os.makedirs(config.worker_log_dir, exist_ok=True)
         match config.worker_log_level.upper():
