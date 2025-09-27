@@ -269,6 +269,21 @@ class Scanner:
                 predicted_output
             ):
                 result.existing_outputs.add(predicted_output.dataset_id)
+        to_ingest = self._make_ingest_request(predicted_quantum, result)
+        if self.storage is not None:
+            self.storage.save_quantum(result, to_ingest=to_ingest)
+        self.comms.return_scan(ScanReport(result.quantum_id, result.status))
+        assert result.status is not ScanStatus.INCOMPLETE
+        assert result.status is not ScanStatus.ABANDONED
+        if self.comms.config.output_path is not None:
+            self.comms.request_write(result)
+        self.comms.request_ingest(to_ingest)
+        self.comms.log.debug("Finished scan for %s.", quantum_id)
+        return result
+
+    def _make_ingest_request(
+        self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
+    ) -> IngestRequest:
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
@@ -285,19 +300,9 @@ class Scanner:
                 to_ingest_artifacts.append(ref_uris.primaryURI.replace(fragment=""))  # drop '#predicted'
             for path in ref_uris.componentURIs.values():
                 to_ingest_artifacts.append(path.replace(fragment=""))
-        to_ingest = IngestRequest.pack(
-            self.comms.scanner_id, quantum_id, to_ingest_predicted, to_ingest_artifacts
+        return IngestRequest.pack(
+            self.comms.scanner_id, result.quantum_id, to_ingest_predicted, to_ingest_artifacts
         )
-        if self.storage is not None:
-            self.storage.save_quantum(result, to_ingest=to_ingest)
-        self.comms.return_scan(ScanReport(result.quantum_id, result.status))
-        assert result.status is not ScanStatus.INCOMPLETE
-        assert result.status is not ScanStatus.ABANDONED
-        if self.comms.config.output_path is not None:
-            self.comms.request_write(result)
-        self.comms.request_ingest(to_ingest)
-        self.comms.log.debug("Finished scan for %s.", quantum_id)
-        return result
 
     @staticmethod
     async def _wait_for_quantum(times_for_task: ScannerTimeConfigDict, wait_interval: float) -> float:
