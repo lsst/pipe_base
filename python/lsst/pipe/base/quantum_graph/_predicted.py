@@ -1618,8 +1618,7 @@ class PredictedQuantumGraphComponents:
         ----------
         uri : convertible to `lsst.resources.ResourcePath`
             Path to write to.  Should have a ``.qg`` extension, or ``.qgraph``
-            to force writing the old format.  If there is no extension, ``.qg``
-            will be added.
+            to force writing the old format.
         zstd_level : `int`, optional
             ZStandard compression level to use on JSON blocks.
         zstd_dict_size : `int`, optional
@@ -1649,8 +1648,6 @@ class PredictedQuantumGraphComponents:
                 old_qg = self.assemble().to_old_quantum_graph()
                 old_qg.saveUri(uri)
                 return
-            case "":
-                uri = uri.updatedExtension(".qg")
             case ext:
                 raise ValueError(
                     f"Unsupported extension {ext!r} for quantum graph; "
