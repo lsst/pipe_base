@@ -39,8 +39,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Mapping
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 import networkx
 
@@ -104,29 +103,6 @@ class _Job:
         self.started: float = 0.0
         self._rcv_conn: multiprocessing.connection.Connection | None = None
         self._terminated = False
-
-    @classmethod
-    def from_mapping(cls, quantum_id: uuid.UUID, mapping: Mapping[str, Any]) -> _Job:
-        """Construct from a mapping that has keys for the quantum and task
-        node.
-
-        Parameters
-        ----------
-        quantum_id : `uuid.UUID`
-            ID of the quantum this job executes.
-        mapping : `~collections.abc.Mapping`
-            Mapping with ``quantum`` and ``task_node`` keys.
-
-        Returns
-        -------
-        job : `_Job`
-            Job instance.
-        """
-        return cls(
-            quantum_id=quantum_id,
-            quantum=mapping["quantum"],
-            task_node=mapping["task_node"],
-        )
 
     @property
     def state(self) -> JobState:
@@ -369,7 +345,12 @@ class _JobList:
 
     def __init__(self, xgraph: networkx.DiGraph):
         self.jobs = {
-            quantum_id: _Job.from_mapping(quantum_id, xgraph.nodes[quantum_id]) for quantum_id in xgraph
+            quantum_id: _Job(
+                quantum_id=quantum_id,
+                quantum=xgraph.nodes[quantum_id]["quantum"],
+                task_node=xgraph.nodes[quantum_id]["task_node"],
+            )
+            for quantum_id in xgraph
         }
         self.walker: GraphWalker[uuid.UUID] = GraphWalker(xgraph.copy())
         self.pending = set(next(self.walker, ()))
