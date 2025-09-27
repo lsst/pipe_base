@@ -327,6 +327,13 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
             for dataset in datasets:
                 yield dataset.dataset_id
 
+    def deserialize_datastore_records(self) -> dict[DatastoreName, DatastoreRecordData]:
+        """Deserialize the mapping of datastore records."""
+        return {
+            datastore_name: DatastoreRecordData.from_simple(serialized_records)
+            for datastore_name, serialized_records in self.datastore_records.items()
+        }
+
     @classmethod
     def from_execution_quantum(
         cls, task_node: TaskNode, quantum: Quantum, quantum_id: uuid.UUID
@@ -574,63 +581,15 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             dataset_type_name: {} for dataset_type_name in self.pipeline_graph.dataset_types.keys()
         }
         self._datasets_by_type[self.pipeline_graph.packages_dataset_type.name] = {}
-        uuid_by_index = {v: k for k, v in components.quantum_indices.items()}
         self._dimension_data = components.dimension_data
-        self._init_quanta: dict[str, PredictedQuantumDatasetsModel] = {
-            q.task_label: q for q in components.init_quanta.root
-        }
-        empty_data_id = DataCoordinate.make_empty(self.pipeline_graph.universe)
-        for quantum_datasets in self._init_quanta.values():
-            for connection_name, init_datasets in itertools.chain(
-                quantum_datasets.inputs.items(), quantum_datasets.outputs.items()
-            ):
-                for init_dataset in init_datasets:
-                    self._datasets_by_type[init_dataset.dataset_type_name][empty_data_id] = (
-                        init_dataset.dataset_id
-                    )
-            _LOG.debug(
-                "%s: %s @ init",
-                quantum_datasets.quantum_id,
-                quantum_datasets.task_label,
-            )
+        self._add_init_quanta(components.init_quanta)
         self._quantum_datasets: dict[uuid.UUID, PredictedQuantumDatasetsModel] = {}
         self._expanded_data_ids: dict[DataCoordinate, DataCoordinate] = {}
-        for index1, index2 in components.thin_graph.edges:
-            self._quantum_only_xgraph.add_edge(uuid_by_index[index1], uuid_by_index[index2])
-        for task_label, thin_quanta_for_task in components.thin_graph.quanta.items():
-            for thin_quantum in thin_quanta_for_task:
-                self._add_quantum(
-                    uuid_by_index[thin_quantum.quantum_index],
-                    task_label,
-                    thin_quantum.data_coordinate,
-                )
+        self._add_thin_graph(components.thin_graph, components.quantum_indices)
         for quantum_datasets in components.quantum_datasets.values():
-            self._quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
-            self._add_quantum(
-                quantum_datasets.quantum_id, quantum_datasets.task_label, quantum_datasets.data_coordinate
-            )
-            task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
-            for connection_name, input_datasets in quantum_datasets.inputs.items():
-                for input_dataset in input_datasets:
-                    self._add_dataset(input_dataset)
-                    self._bipartite_xgraph.add_edge(
-                        input_dataset.dataset_id,
-                        quantum_datasets.quantum_id,
-                        key=connection_name,
-                        is_read=True,
-                        pipeline_edge=task_node.get_input_edge(connection_name),
-                    )
-            for connection_name, output_datasets in quantum_datasets.outputs.items():
-                for output_dataset in output_datasets:
-                    self._add_dataset(output_dataset)
-                    self._bipartite_xgraph.add_edge(
-                        quantum_datasets.quantum_id,
-                        output_dataset.dataset_id,
-                        key=connection_name,
-                        is_read=False,
-                        pipeline_edge=task_node.get_output_edge(connection_name),
-                    )
+            self._add_quantum_datasets(quantum_datasets)
         if not components.thin_graph.edges:
+            # If we loaded the thin_graph, we've already populated this graph.
             self._quantum_only_xgraph.update(
                 networkx.algorithms.bipartite.projected_graph(
                     networkx.DiGraph(self._bipartite_xgraph),
@@ -644,6 +603,64 @@ class PredictedQuantumGraph(BaseQuantumGraph):
                     quantum_id,
                     self._quantum_only_xgraph.nodes[quantum_id]["task_label"],
                     self._quantum_only_xgraph.nodes[quantum_id]["data_id"].required,
+                )
+
+    def _add_init_quanta(self, component: PredictedInitQuantaModel) -> None:
+        self._init_quanta = {q.task_label: q for q in component.root}
+        empty_data_id = DataCoordinate.make_empty(self.pipeline_graph.universe)
+        for quantum_datasets in self._init_quanta.values():
+            for init_datasets in itertools.chain(
+                quantum_datasets.inputs.values(), quantum_datasets.outputs.values()
+            ):
+                for init_dataset in init_datasets:
+                    self._datasets_by_type[init_dataset.dataset_type_name][empty_data_id] = (
+                        init_dataset.dataset_id
+                    )
+            _LOG.debug(
+                "%s: %s @ init",
+                quantum_datasets.quantum_id,
+                quantum_datasets.task_label,
+            )
+
+    def _add_thin_graph(
+        self, component: PredictedThinGraphModel, indices: Mapping[uuid.UUID, QuantumIndex]
+    ) -> None:
+        uuid_by_index = {v: k for k, v in indices.items()}
+        for index1, index2 in component.edges:
+            self._quantum_only_xgraph.add_edge(uuid_by_index[index1], uuid_by_index[index2])
+        for task_label, thin_quanta_for_task in component.quanta.items():
+            for thin_quantum in thin_quanta_for_task:
+                self._add_quantum(
+                    uuid_by_index[thin_quantum.quantum_index],
+                    task_label,
+                    thin_quantum.data_coordinate,
+                )
+
+    def _add_quantum_datasets(self, quantum_datasets: PredictedQuantumDatasetsModel) -> None:
+        self._quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
+        self._add_quantum(
+            quantum_datasets.quantum_id, quantum_datasets.task_label, quantum_datasets.data_coordinate
+        )
+        task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
+        for connection_name, input_datasets in quantum_datasets.inputs.items():
+            for input_dataset in input_datasets:
+                self._add_dataset(input_dataset)
+                self._bipartite_xgraph.add_edge(
+                    input_dataset.dataset_id,
+                    quantum_datasets.quantum_id,
+                    key=connection_name,
+                    is_read=True,
+                    pipeline_edge=task_node.get_input_edge(connection_name),
+                )
+        for connection_name, output_datasets in quantum_datasets.outputs.items():
+            for output_dataset in output_datasets:
+                self._add_dataset(output_dataset)
+                self._bipartite_xgraph.add_edge(
+                    quantum_datasets.quantum_id,
+                    output_dataset.dataset_id,
+                    key=connection_name,
+                    is_read=False,
+                    pipeline_edge=task_node.get_output_edge(connection_name),
                 )
 
     def _add_quantum(
@@ -936,17 +953,61 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             raise IncompleteQuantumGraphError(
                 "Cannot build execution quanta without loading the ``init_quanta`` component."
             )
-        if self._dimension_data is None:
-            raise IncompleteQuantumGraphError(
-                "Cannot build execution quanta without loading the ``dimension_data`` component."
-            )
         if quantum_ids is None:
             if task_label is not None:
                 quantum_ids = self._quanta_by_task_label[task_label].values()
             else:
                 quantum_ids = self._quantum_only_xgraph.nodes.keys()
-            del task_label  # make sure we don't accidentally use this.
+        else:
+            # Guard against single-pass iterators.
+            quantum_ids = list(quantum_ids)
+        del task_label  # make sure we don't accidentally use this.
         result: dict[uuid.UUID, Quantum] = {}
+        self._expand_execution_quantum_data_ids(quantum_ids)
+        task_init_datastore_records: dict[TaskLabel, dict[DatastoreName, DatastoreRecordData]] = {}
+        for quantum_id in quantum_ids:
+            quantum_node_dict: PredictedQuantumInfo = self._quantum_only_xgraph.nodes[quantum_id]
+            if "quantum" in quantum_node_dict:
+                result[quantum_id] = quantum_node_dict["quantum"]
+                continue
+            try:
+                quantum_datasets = self._quantum_datasets[quantum_id]
+            except KeyError:
+                raise IncompleteQuantumGraphError(
+                    f"Full quantum information for {quantum_id} was not loaded."
+                ) from None
+            task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
+            quantum_data_id = self._expanded_data_ids[self._bipartite_xgraph.nodes[quantum_id]["data_id"]]
+            inputs = self._build_execution_quantum_refs(task_node, quantum_datasets.inputs)
+            outputs = self._build_execution_quantum_refs(task_node, quantum_datasets.outputs)
+            if task_node.label not in task_init_datastore_records:
+                task_init_datastore_records[task_node.label] = self._init_quanta[
+                    task_node.label
+                ].deserialize_datastore_records()
+            quantum = Quantum(
+                taskName=task_node.task_class_name,
+                taskClass=task_node.task_class,
+                dataId=quantum_data_id,
+                initInputs={
+                    ref.datasetType: ref for ref in self.get_init_inputs(quantum_datasets.task_label).values()
+                },
+                inputs=inputs,
+                outputs=outputs,
+                datastore_records=DatastoreRecordData.merge_mappings(
+                    quantum_datasets.deserialize_datastore_records(),
+                    task_init_datastore_records[task_node.label],
+                ),
+            )
+            self._quantum_only_xgraph.nodes[quantum_id]["quantum"] = quantum
+            self._bipartite_xgraph.nodes[quantum_id]["quantum"] = quantum
+            result[quantum_id] = quantum
+        return result
+
+    def _expand_execution_quantum_data_ids(self, quantum_ids: Iterable[uuid.UUID]) -> None:
+        if self._dimension_data is None:
+            raise IncompleteQuantumGraphError(
+                "Cannot build execution quanta without loading the ``dimension_data`` component."
+            )
         data_ids_to_expand: dict[DimensionGroup, set[DataCoordinate]] = defaultdict(set)
         for quantum_id in quantum_ids:
             data_id: DataCoordinate = self._bipartite_xgraph.nodes[quantum_id]["data_id"]
@@ -967,65 +1028,18 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             self._expanded_data_ids.update(
                 (d, d) for d in self._dimension_data.attach(dimensions, data_ids_for_dimensions)
             )
-        task_init_datastore_records: dict[TaskLabel, dict[DatastoreName, DatastoreRecordData]] = {}
-        for quantum_id in quantum_ids:
-            quantum_node_dict: PredictedQuantumInfo = self._quantum_only_xgraph.nodes[quantum_id]
-            if "quantum" in quantum_node_dict:
-                result[quantum_id] = quantum_node_dict["quantum"]
-                continue
-            try:
-                quantum_datasets = self._quantum_datasets[quantum_id]
-            except KeyError:
-                raise IncompleteQuantumGraphError(
-                    f"Full quantum information for {quantum_id} was not loaded."
-                ) from None
-            task_node = self.pipeline_graph.tasks[quantum_datasets.task_label]
-            quantum_data_id = self._expanded_data_ids[self._bipartite_xgraph.nodes[quantum_id]["data_id"]]
-            inputs: dict[DatasetType, list[DatasetRef]] = {}
-            for connection_name, input_datasets in quantum_datasets.inputs.items():
-                read_edge = task_node.get_input_edge(connection_name)
-                dataset_type = read_edge.adapt_dataset_type(
-                    self.pipeline_graph.dataset_types[read_edge.parent_dataset_type_name].dataset_type
-                )
-                inputs[dataset_type] = [
-                    self._make_general_ref(dataset_type, d.dataset_id) for d in input_datasets
-                ]
-            outputs: dict[DatasetType, list[DatasetRef]] = {}
-            for connection_name, output_datasets in quantum_datasets.outputs.items():
-                write_edge = task_node.get_output_edge(connection_name)
-                dataset_type = write_edge.adapt_dataset_type(
-                    self.pipeline_graph.dataset_types[write_edge.parent_dataset_type_name].dataset_type
-                )
-                outputs[dataset_type] = [
-                    self._make_general_ref(dataset_type, d.dataset_id) for d in output_datasets
-                ]
-            if task_node.label not in task_init_datastore_records:
-                init_quantum_datasets = self._init_quanta[task_node.label]
-                task_init_datastore_records[task_node.label] = {
-                    datastore_name: DatastoreRecordData.from_simple(serialized_records)
-                    for datastore_name, serialized_records in init_quantum_datasets.datastore_records.items()
-                }
-            datastore_records = {
-                datastore_name: DatastoreRecordData.from_simple(serialized_records)
-                for datastore_name, serialized_records in quantum_datasets.datastore_records.items()
-            }
-            quantum = Quantum(
-                taskName=task_node.task_class_name,
-                taskClass=task_node.task_class,
-                dataId=quantum_data_id,
-                initInputs={
-                    ref.datasetType: ref for ref in self.get_init_inputs(quantum_datasets.task_label).values()
-                },
-                inputs=inputs,
-                outputs=outputs,
-                datastore_records=DatastoreRecordData.merge_mappings(
-                    datastore_records, task_init_datastore_records[task_node.label]
-                ),
+
+    def _build_execution_quantum_refs(
+        self, task_node: TaskNode, model_mapping: dict[ConnectionName, list[PredictedDatasetModel]]
+    ) -> dict[DatasetType, list[DatasetRef]]:
+        results: dict[DatasetType, list[DatasetRef]] = {}
+        for connection_name, datasets in model_mapping.items():
+            edge = task_node.get_edge(connection_name)
+            dataset_type = edge.adapt_dataset_type(
+                self.pipeline_graph.dataset_types[edge.parent_dataset_type_name].dataset_type
             )
-            self._quantum_only_xgraph.nodes[quantum_id]["quantum"] = quantum
-            self._bipartite_xgraph.nodes[quantum_id]["quantum"] = quantum
-            result[quantum_id] = quantum
-        return result
+            results[dataset_type] = [self._make_general_ref(dataset_type, d.dataset_id) for d in datasets]
+        return results
 
     def _make_general_ref(self, dataset_type: DatasetType, dataset_id: uuid.UUID) -> DatasetRef:
         node_state = self._bipartite_xgraph.nodes[dataset_id]
