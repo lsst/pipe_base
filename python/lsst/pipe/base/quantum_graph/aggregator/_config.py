@@ -167,7 +167,7 @@ class AggregatorConfig(pydantic.BaseModel):
     n_processes: int = 1
     """Number of processes the scanner should use."""
 
-    assume_complete: bool = False
+    assume_complete: bool = True
     """If `True`, the scanner can assume all quanta have run to completion
     (including any automatic retries).  If `False`, only successes can be
     considered final, and quanta that appear to have failed or to have not been
