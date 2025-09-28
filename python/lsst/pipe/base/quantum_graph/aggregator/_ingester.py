@@ -30,14 +30,17 @@ from __future__ import annotations
 __all__ = ("Ingester",)
 
 import dataclasses
+import logging
 import uuid
 from collections import defaultdict
 
-from lsst.daf.butler import Butler, DatasetRef, QuantumBackedButler
-from lsst.resources import ResourcePath
+from lsst.daf.butler import Butler, DatasetRef, DimensionGroup, QuantumBackedButler
+from lsst.daf.butler.datastore.record_data import DatastoreRecordData
+from lsst.daf.butler.registry import ConflictingDefinitionError
 
 from ...pipeline_graph import TaskImportMode
-from .._predicted import PredictedQuantumGraphReader
+from .._common import DatastoreName
+from .._predicted import PredictedDatasetModel, PredictedQuantumGraphReader
 from . import utils
 from ._communicators import IngesterCommunicator
 
@@ -65,8 +68,11 @@ class Ingester:
     butler: Butler = dataclasses.field(init=False)
 
     returns_pending: dict[int, list[uuid.UUID]] = dataclasses.field(init=False)
-    datasets_pending: list[DatasetRef] = dataclasses.field(default_factory=list)
-    artifacts_pending: dict[ResourcePath, bool] = dataclasses.field(default_factory=dict)
+    refs_pending: defaultdict[DimensionGroup, list[DatasetRef]] = dataclasses.field(
+        default_factory=lambda: defaultdict(list)
+    )
+    records_pending: dict[DatastoreName, DatastoreRecordData] = dataclasses.field(default_factory=dict)
+    already_ingested: set[uuid.UUID] | None = None
 
     def __post_init__(self) -> None:
         self.reader = self.comms.enter(
@@ -74,7 +80,6 @@ class Ingester:
                 self.comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
             )
         )
-        self.reader.read_dimension_data()
         if self.comms.config.enable_mocks:
             import lsst.pipe.base.tests.mocks  # noqa: F401
         self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
@@ -82,6 +87,10 @@ class Ingester:
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )
         self.returns_pending = defaultdict(list)
+
+    @property
+    def n_datasets_pending(self) -> int:
+        return sum(len(v) for v in self.refs_pending.values())
 
     @staticmethod
     def run(comms: IngesterCommunicator) -> None:
@@ -91,41 +100,101 @@ class Ingester:
 
     def loop(self) -> None:
         self.comms.log.info("Starting ingester.")
+        self.butler.collections.register(self.reader.header.output_run)
+        if self.comms.config.defensive_ingest:
+            self.fetch_already_ingested()
         for ingest_request in self.comms.poll():
             producer_ids_from_worker = self.returns_pending[ingest_request.scanner_id]
             self.comms.log.debug(
                 f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
             )
             producer_ids_from_worker.append(ingest_request.producer_id)
-            predicted_datasets, artifacts = ingest_request.unpack()
-            for predicted_dataset in predicted_datasets:
-                ref = self.reader.make_dataset_ref(predicted_dataset)
-                self.datasets_pending.append(ref)
-            self.artifacts_pending.update(dict.fromkeys(artifacts, True))
-            if len(self.datasets_pending) > self.comms.config.ingest_batch_size:
-                self.comms.log.verbose("Ingesting %d datasets.", len(self.datasets_pending))
+            datasets, datastore_records = ingest_request.unpack()
+            self.update_pending(datasets, datastore_records)
+            if self.n_datasets_pending > self.comms.config.ingest_batch_size:
+                self.comms.log.verbose("Ingesting %d datasets.", self.n_datasets_pending)
                 self.ingest()
         self.comms.log.info("All ingest requests received.")
-        if self.datasets_pending:
-            self.comms.log.verbose("Ingesting %d final datasets.", len(self.datasets_pending))
+        # We use 'while' in case this fails with a conflict and we switch to
+        # switch to defensive mode (should be at most two iterations).
+        while self.n_datasets_pending:
+            self.comms.log.verbose("Ingesting %d final datasets.", self.n_datasets_pending)
             self.ingest()
+        if self.returns_pending:
+            # We can finish with returns pending if we filtered out all of
+            # the datasets we started with as already existing.
+            n_producers = 0
+            for worker_id, producer_ids_from_worker in self.returns_pending.items():
+                self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
+                n_producers += len(producer_ids_from_worker)
+            self.comms.report_ingest(n_producers)
         self.comms.log.info("Informing workers that ingests are complete.")
 
     def ingest(self) -> None:
-        with utils.PrescannedFileTransferSource.wrap_qbb(self.qbb, self.artifacts_pending):
-            self.butler.transfer_from(
-                self.qbb,
-                self.datasets_pending,
-                transfer=None,
-                transfer_dimensions=False,
-                register_dataset_types=True,
-                dry_run=self.comms.config.dry_run,
-            )
+        try:
+            if not self.comms.config.dry_run:
+                with self.butler.registry.transaction():
+                    for refs in self.refs_pending.values():
+                        self.butler.registry._importDatasets(refs, expand=False, assume_new=True)
+                    self.butler._datastore.import_records(self.records_pending)
+        except ConflictingDefinitionError:
+            if self.already_ingested is None:
+                self.comms.log_progress(
+                    logging.WARNING,
+                    "Conflict in ingest attempt; querying for existing datasets and "
+                    "switching to defensive ingest mode.",
+                )
+                self.fetch_already_ingested()
+                # We just return instead of trying again immediately because we
+                # might have just shrunk the number of pending datasets below
+                # the batch threshold.
+                return
+            else:
+                raise
         n_producers = 0
         for worker_id, producer_ids_from_worker in self.returns_pending.items():
             self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
             n_producers += len(producer_ids_from_worker)
         self.comms.report_ingest(n_producers)
-        self.datasets_pending.clear()
+        self.refs_pending.clear()
+        self.records_pending.clear()
         self.returns_pending.clear()
-        self.artifacts_pending.clear()
+
+    def fetch_already_ingested(self) -> None:
+        self.comms.log.info("Fetching all UUIDs in output collection %r.", self.reader.header.output_run)
+        self.already_ingested = set(
+            self.butler.registry._fetch_run_dataset_ids(self.reader.header.output_run)
+        )
+        kept: set[uuid.UUID] = set()
+        for dimensions, refs in self.refs_pending.items():
+            filtered_refs: list[DatasetRef] = []
+            for ref in refs:
+                if ref.id not in self.already_ingested:
+                    kept.add(ref.id)
+                    filtered_refs.append(ref)
+            self.refs_pending[dimensions] = filtered_refs
+        for datastore_name, datastore_records in list(self.records_pending.items()):
+            if (filtered_records := datastore_records.subset(kept)) is not None:
+                self.records_pending[datastore_name] = filtered_records
+            else:
+                del self.records_pending[datastore_name]
+
+    def update_pending(
+        self, datasets: list[PredictedDatasetModel], records: dict[DatastoreName, DatastoreRecordData]
+    ) -> None:
+        if self.already_ingested is not None:
+            datasets = [d for d in datasets if d.dataset_id not in self.already_ingested]
+            kept = {d.dataset_id for d in datasets}
+            records = {
+                datastore_name: filtered_records
+                for datastore_name, original_records in records.items()
+                if (filtered_records := original_records.subset(kept)) is not None
+            }
+        for dataset in datasets:
+            ref = self.reader.make_dataset_ref(dataset)
+            self.refs_pending[ref.datasetType.dimensions].append(ref)
+        for datastore_name, datastore_records in records.items():
+            if (existing_records := self.records_pending.get(datastore_name)) is not None:
+                existing_records.update(datastore_records)
+            else:
+                self.records_pending[datastore_name] = datastore_records

@@ -40,10 +40,11 @@ import enum
 import pickle
 import uuid
 
-from lsst.resources import ResourcePath
+from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
 from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
+from .._common import DatastoreName
 from .._predicted import PredictedDatasetModel
 
 
@@ -106,16 +107,16 @@ class IngestRequest:
         scanner_id: int,
         producer_id: uuid.UUID,
         datasets: list[PredictedDatasetModel],
-        artifacts: list[ResourcePath],
+        records: dict[DatastoreName, DatastoreRecordData],
     ) -> IngestRequest:
         data = b""
-        if datasets or artifacts:
-            data = pickle.dumps((datasets, artifacts))
+        if datasets or records:
+            data = pickle.dumps((datasets, records))
         return cls(scanner_id, producer_id, data)
 
-    def unpack(self) -> tuple[list[PredictedDatasetModel], list[ResourcePath]]:
+    def unpack(self) -> tuple[list[PredictedDatasetModel], dict[DatastoreName, DatastoreRecordData]]:
         if not self.data:
-            return [], []
+            return [], {}
         return pickle.loads(self.data)
 
     def __bool__(self) -> bool:

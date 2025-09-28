@@ -39,7 +39,6 @@ from typing import Literal
 import zstandard
 
 from lsst.daf.butler import ButlerLogRecords, DatasetRef, QuantumBackedButler
-from lsst.resources import ResourcePath
 from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
@@ -294,14 +293,9 @@ class Scanner:
             if predicted_output.dataset_type_name not in self.no_ingest_dataset_types:
                 to_ingest_predicted.append(predicted_output)
                 to_ingest_refs.append(self.reader.make_dataset_ref(predicted_output))
-        to_ingest_artifacts: list[ResourcePath] = []
-        for ref_uris in self.qbb.get_many_uris(to_ingest_refs, predict=True).values():
-            if ref_uris.primaryURI is not None:
-                to_ingest_artifacts.append(ref_uris.primaryURI.replace(fragment=""))  # drop '#predicted'
-            for path in ref_uris.componentURIs.values():
-                to_ingest_artifacts.append(path.replace(fragment=""))
+        to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         return IngestRequest.pack(
-            self.comms.scanner_id, result.quantum_id, to_ingest_predicted, to_ingest_artifacts
+            self.comms.scanner_id, result.quantum_id, to_ingest_predicted, to_ingest_records
         )
 
     @staticmethod

@@ -174,6 +174,18 @@ class AggregatorConfig(pydantic.BaseModel):
     are waited on until a timeout is reached.
     """
 
+    defensive_ingest: bool = False
+    """If `True`, guard against datasets having already been ingested into the
+    central butler repository.
+
+    Defensive ingest mode is automatically turned on (with a warning emitted)
+    if an ingest attempt fails due to a database constraint violation..
+
+    Defensive mode does not guard against race conditions from multiple ingest
+    processes running simultaneously, as it relies on a one-time query to
+    determine what is already present in the central repository.
+    """
+
     default_times: ScannerTimeConfigDict = pydantic.Field(default_factory=make_scanner_time_defaults)
     """Default wait times for all tasks."""
 
