@@ -34,14 +34,13 @@ import logging
 import uuid
 from collections import defaultdict
 
-from lsst.daf.butler import Butler, DatasetRef, DimensionGroup, QuantumBackedButler
+from lsst.daf.butler import Butler, DatasetRef, DimensionGroup
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
 
 from ...pipeline_graph import TaskImportMode
 from .._common import DatastoreName
 from .._predicted import PredictedDatasetModel, PredictedQuantumGraphReader
-from . import utils
 from ._communicators import IngesterCommunicator
 
 
@@ -58,12 +57,6 @@ class Ingester:
     comms: IngesterCommunicator
 
     reader: PredictedQuantumGraphReader = dataclasses.field(init=False)
-
-    qbb: QuantumBackedButler = dataclasses.field(init=False)
-    """A quantum-backed butler used for log and metadata reads, existence
-    checks for other outputs (when necessary), and deleting datasets that
-    are not needed anymore.
-    """
 
     butler: Butler = dataclasses.field(init=False)
 
@@ -82,7 +75,6 @@ class Ingester:
         )
         if self.comms.config.enable_mocks:
             import lsst.pipe.base.tests.mocks  # noqa: F401
-        self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
         self.butler = Butler.from_config(
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )

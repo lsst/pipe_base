@@ -52,7 +52,6 @@ from .._predicted import (
     PredictedQuantumDatasetsModel,
     PredictedQuantumGraphReader,
 )
-from . import utils
 from ._communicators import ScannerCommunicator
 from ._config import ScannerTimeConfigDict
 from ._storage import Storage
@@ -99,7 +98,7 @@ class Scanner:
                 Storage(self.comms.config, self.comms.scanner_id, trust_local=False),
                 "Closing scanner storage.",
             )
-        self.qbb = utils.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
+        self.qbb = self.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
         self.no_ingest_dataset_types.update(self.comms.config.delete_dataset_types)
         for task_node in self.reader.pipeline_graph.tasks.values():
             if self.comms.config.aggregate_metadata:
@@ -108,6 +107,20 @@ class Scanner:
                 assert task_node.log_output is not None, "Aggregator cannot work without task log outputs."
                 self.no_ingest_dataset_types.add(task_node.log_output.dataset_type_name)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root[1:]}
+
+    @staticmethod
+    def make_qbb(butler_config: str, pipeline_graph: PipelineGraph) -> QuantumBackedButler:
+        return QuantumBackedButler.from_predicted(
+            butler_config,
+            predicted_inputs=[],
+            predicted_outputs=[],
+            dimensions=pipeline_graph.universe,
+            # We don't need the datastore records in the QG because we're
+            # only going to read metadata and logs, and those are never
+            # overall inputs.
+            datastore_records={},
+            dataset_types={node.name: node.dataset_type for node in pipeline_graph.dataset_types.values()},
+        )
 
     @property
     def pipeline_graph(self) -> PipelineGraph:
