@@ -199,15 +199,8 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     "--interactive-status",
     "interactive_status",
     flag_value=True,
-    default=None,
-    help="Use progress bars for status reporting.",
-)
-@click.option(
-    "--no-interactive-status",
-    "interactive_status",
-    flag_value=False,
-    default=None,
-    help="Use periodic logging for status reporting.",
+    default=False,
+    help="Use progress bars for status reporting instead of periodic logging.",
 )
 @click.option(
     "--mock-storage-classes",

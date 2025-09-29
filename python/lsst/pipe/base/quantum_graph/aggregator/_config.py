@@ -222,15 +222,12 @@ class AggregatorConfig(pydantic.BaseModel):
     order to provide a better emulation of a real run.
     """
 
-    interactive_status: bool | None = None
+    interactive_status: bool = False
     """Whether to use an interactive status display with progress bars.
 
     If this is `True`, the `tqdm` module must be available.  If this is
     `False`, a periodic logger will be used to display status at a fixed
     interval instead (see `log_status_interval`).
-
-    The default (`None`) uses an interactive status display if STDOUT is an
-    interactive terminal and DEBUG logging is not enabled.
     """
 
     log_status_interval: float | None = None

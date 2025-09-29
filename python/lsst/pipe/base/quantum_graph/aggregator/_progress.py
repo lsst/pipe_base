@@ -31,7 +31,6 @@ __all__ = ("Progress", "make_worker_log")
 
 import logging
 import os
-import sys
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from types import TracebackType
@@ -60,11 +59,7 @@ class Progress:
         self._n_ingested: int = 0
         self._n_written: int = 0
         self._n_quanta: int | None = None
-        self.interactive = (
-            config.interactive_status
-            if config.interactive_status is not None
-            else sys.stdout.isatty() and self._logging_to_stderr()
-        )
+        self.interactive = config.interactive_status
         self._log_template = "%s quanta scanned, %s datasets ingested, %s provenance quanta written"
 
     def __enter__(self) -> Self:
@@ -85,12 +80,6 @@ class Progress:
         if self.interactive:
             self._logging_redirect.__exit__(exc_type, exc_value, traceback)
         return None
-
-    def _logging_to_stderr(self) -> bool:
-        for handler in logging.getLogger().handlers:
-            if isinstance(handler, logging.StreamHandler):
-                return True
-        return False
 
     @contextmanager
     def quanta(self, n_quanta: int) -> Iterator[None]:
