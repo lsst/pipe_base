@@ -34,7 +34,7 @@ import logging
 import uuid
 from collections import defaultdict
 
-from lsst.daf.butler import Butler, DatasetRef, DimensionGroup
+from lsst.daf.butler import Butler, CollectionType, DatasetRef, DimensionGroup
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
 
@@ -60,7 +60,7 @@ class Ingester:
 
     butler: Butler = dataclasses.field(init=False)
 
-    returns_pending: dict[int, list[uuid.UUID]] = dataclasses.field(init=False)
+    confirmations_pending: dict[int, list[uuid.UUID]] = dataclasses.field(init=False)
     refs_pending: defaultdict[DimensionGroup, list[DatasetRef]] = dataclasses.field(
         default_factory=lambda: defaultdict(list)
     )
@@ -78,7 +78,7 @@ class Ingester:
         self.butler = Butler.from_config(
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )
-        self.returns_pending = defaultdict(list)
+        self.confirmations_pending = defaultdict(list)
 
     @property
     def n_datasets_pending(self) -> int:
@@ -93,10 +93,18 @@ class Ingester:
     def loop(self) -> None:
         self.comms.log.info("Starting ingester.")
         self.butler.collections.register(self.reader.header.output_run)
+        if self.comms.config.register_dataset_types:
+            self.reader.pipeline_graph.register_dataset_types(
+                self.butler,
+                include_inputs=False,
+                include_packages=True,
+                include_configs=True,
+                include_logs=True,
+            )
         if self.comms.config.defensive_ingest:
             self.fetch_already_ingested()
         for ingest_request in self.comms.poll():
-            producer_ids_from_worker = self.returns_pending[ingest_request.scanner_id]
+            producer_ids_from_worker = self.confirmations_pending[ingest_request.scanner_id]
             self.comms.log.debug(
                 f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
             )
@@ -112,14 +120,12 @@ class Ingester:
         while self.n_datasets_pending:
             self.comms.log.verbose("Ingesting %d final datasets.", self.n_datasets_pending)
             self.ingest()
-        if self.returns_pending:
+        if self.confirmations_pending:
             # We can finish with returns pending if we filtered out all of
             # the datasets we started with as already existing.
-            n_producers = 0
-            for worker_id, producer_ids_from_worker in self.returns_pending.items():
-                self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
-                n_producers += len(producer_ids_from_worker)
-            self.comms.report_ingest(n_producers)
+            self.confirm_and_report()
+        if self.comms.config.update_output_chain:
+            self.update_output_chain()
         self.comms.log.info("Informing workers that ingests are complete.")
 
     def ingest(self) -> None:
@@ -143,14 +149,17 @@ class Ingester:
                 return
             else:
                 raise
+        self.confirm_and_report()
+        self.refs_pending.clear()
+        self.records_pending.clear()
+
+    def confirm_and_report(self) -> None:
         n_producers = 0
-        for worker_id, producer_ids_from_worker in self.returns_pending.items():
+        for worker_id, producer_ids_from_worker in self.confirmations_pending.items():
             self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
             n_producers += len(producer_ids_from_worker)
         self.comms.report_ingest(n_producers)
-        self.refs_pending.clear()
-        self.records_pending.clear()
-        self.returns_pending.clear()
+        self.confirmations_pending.clear()
 
     def fetch_already_ingested(self) -> None:
         self.comms.log.info("Fetching all UUIDs in output collection %r.", self.reader.header.output_run)
@@ -190,3 +199,14 @@ class Ingester:
                 existing_records.update(datastore_records)
             else:
                 self.records_pending[datastore_name] = datastore_records
+
+    def update_output_chain(self) -> None:
+        if self.reader.header.output is None:
+            return
+        if self.butler.collections.register(self.reader.header.output, CollectionType.CHAINED):
+            # Chain is new; need to add inputs, but we want to flatten them
+            # first.
+            if self.reader.header.inputs:
+                flattened = self.butler.collections.query(self.reader.header.inputs, flatten_chains=True)
+                self.butler.collections.extend_chain(self.reader.header.output, flattened)
+        self.butler.collections.prepend_chain(self.reader.header.output, self.reader.header.output_run)

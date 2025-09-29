@@ -95,8 +95,8 @@ class DataWriters:
     graph: BaseQuantumGraphWriter
     datasets: MultiblockWriter
     quanta: MultiblockWriter
-    metadata: MultiblockWriter | None = None
-    logs: MultiblockWriter | None = None
+    metadata: MultiblockWriter
+    logs: MultiblockWriter
 
     def __init__(
         self,
@@ -123,22 +123,18 @@ class DataWriters:
             is_progress_log=True,
         )
         self.graph.address_writer.addresses = [{}, {}, {}, {}]
-        if comms.config.aggregate_logs:
-            self.logs = comms.enter(
-                MultiblockWriter.open_in_zip(self.graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True),
-                on_close="Copying logs into zip archive.",
-                is_progress_log=True,
-            )
-            self.graph.address_writer.addresses[LOG_ADDRESS_INDEX] = self.logs.addresses
-        if comms.config.aggregate_metadata:
-            self.metadata = comms.enter(
-                MultiblockWriter.open_in_zip(
-                    self.graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
-                ),
-                on_close="Copying metadata into zip archive.",
-                is_progress_log=True,
-            )
-            self.graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = self.metadata.addresses
+        self.logs = comms.enter(
+            MultiblockWriter.open_in_zip(self.graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True),
+            on_close="Copying logs into zip archive.",
+            is_progress_log=True,
+        )
+        self.graph.address_writer.addresses[LOG_ADDRESS_INDEX] = self.logs.addresses
+        self.metadata = comms.enter(
+            MultiblockWriter.open_in_zip(self.graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True),
+            on_close="Copying metadata into zip archive.",
+            is_progress_log=True,
+        )
+        self.graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = self.metadata.addresses
         self.datasets = comms.enter(
             MultiblockWriter.open_in_zip(self.graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True),
             on_close="Copying dataset provenance into zip archive.",
@@ -183,9 +179,12 @@ class Writer:
     def _populate_indices_and_outputs(self) -> None:
         all_uuids = set(self._predicted_reader.components.quantum_indices.keys())
         for quantum in itertools.chain(
-            self._predicted_reader.components.init_quanta.root[1:],
+            self._predicted_reader.components.init_quanta.root,
             self._predicted_reader.components.quantum_datasets.values(),
         ):
+            if not quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
             all_uuids.update(quantum.iter_input_dataset_ids())
             self.output_dataset_ids.update(quantum.iter_output_dataset_ids())
         all_uuids.update(self.output_dataset_ids)
@@ -196,9 +195,12 @@ class Writer:
 
     def _populate_xgraph(self) -> None:
         for predicted_quantum in itertools.chain(
-            self._predicted_reader.components.init_quanta.root[1:],
+            self._predicted_reader.components.init_quanta.root,
             self._predicted_reader.components.quantum_datasets.values(),
         ):
+            if not predicted_quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
             quantum_index = self.indices[predicted_quantum.quantum_id]
             for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
                 self.xgraph.add_edge(self.indices[predicted_input.dataset_id], quantum_index)
@@ -272,7 +274,10 @@ class Writer:
     def write_init_outputs(self, data_writers: DataWriters) -> None:
         self.comms.log.info("Writing init outputs.")
         init_quanta = ProvenanceInitQuantaModel()
-        for predicted_init_quantum in self._predicted_reader.components.init_quanta.root[1:]:
+        for predicted_init_quantum in self._predicted_reader.components.init_quanta.root:
+            if not predicted_init_quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
             existing_outputs = self.existing_init_outputs[predicted_init_quantum.quantum_id]
             for predicted_output in itertools.chain.from_iterable(predicted_init_quantum.outputs.values()):
                 dataset_index = self.indices[predicted_output.dataset_id]
@@ -293,7 +298,7 @@ class Writer:
     def write_overall_inputs(self, data_writers: DataWriters) -> None:
         self.comms.log.info("Writing overall inputs.")
         for predicted_quantum in itertools.chain(
-            self._predicted_reader.components.init_quanta.root[1:],
+            self._predicted_reader.components.init_quanta.root,
             self._predicted_reader.components.quantum_datasets.values(),
         ):
             for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
@@ -355,10 +360,10 @@ class Writer:
         data_writers.quanta.write_bytes(scan_data.quantum_id, scan_data.quantum)
         for dataset_id, dataset_data in scan_data.datasets.items():
             data_writers.datasets.write_bytes(dataset_id, dataset_data)
-        if scan_data.metadata and data_writers.metadata is not None:
+        if scan_data.metadata:
             address = data_writers.metadata.write_bytes(scan_data.quantum_id, scan_data.metadata)
             data_writers.metadata.addresses[scan_data.metadata_id] = address
-        if scan_data.log and data_writers.logs is not None:
+        if scan_data.log:
             address = data_writers.logs.write_bytes(scan_data.quantum_id, scan_data.log)
             data_writers.logs.addresses[scan_data.log_id] = address
         self.comms.report_write()

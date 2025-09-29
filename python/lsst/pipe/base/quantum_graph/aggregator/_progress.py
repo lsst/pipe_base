@@ -63,12 +63,13 @@ class Progress:
         self.interactive = (
             config.interactive_status
             if config.interactive_status is not None
-            else sys.stdout.isatty() and not self.log.isEnabledFor(logging.DEBUG)
+            else sys.stdout.isatty() and self._logging_to_stderr()
         )
         self._log_template = "%s quanta scanned, %s datasets ingested, %s provenance quanta written"
 
     def __enter__(self) -> Self:
         if self.interactive:
+            logging.getLogger().handlers
             from tqdm.contrib.logging import logging_redirect_tqdm
 
             self._logging_redirect = logging_redirect_tqdm()
@@ -84,6 +85,12 @@ class Progress:
         if self.interactive:
             self._logging_redirect.__exit__(exc_type, exc_value, traceback)
         return None
+
+    def _logging_to_stderr(self) -> bool:
+        for handler in logging.getLogger().handlers:
+            if isinstance(handler, logging.StreamHandler):
+                return True
+        return False
 
     @contextmanager
     def quanta(self, n_quanta: int) -> Iterator[None]:

@@ -70,7 +70,6 @@ class Supervisor:
             comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
         ) as reader:
             reader.read_thin_graph()
-            reader.address_reader.read_all()
             reader.read_init_quanta()
             reader.read_dimension_data()
             yield cls(comms, reader)
@@ -85,6 +84,9 @@ class Supervisor:
         xgraph = networkx.DiGraph(
             [(uuid_by_index[a], uuid_by_index[b]) for a, b in self.reader.components.thin_graph.edges]
         )
+        # Make sure all quanta are in the graph, even if they don't have any
+        # quantum-only edges.
+        xgraph.add_nodes_from(uuid_by_index.values())
         # Add init quanta as nodes without edges, because the scanner should
         # only be run after init outputs are all written and hence we don't
         # care when we process them.
@@ -120,7 +122,7 @@ class Supervisor:
     def loop(self) -> None:
         """Scan the outputs of the quantum graph to gather provenance."""
         with self.comms.progress.quanta(
-            self.reader.header.n_quanta + len(self.reader.components.init_quanta.root) - 1  # no 'packages'
+            self.reader.header.n_quanta + len(self.reader.components.init_quanta.root)
         ):
             self.comms.progress.log.info("Waiting for scanners to load any previous scans.")
             for scan_return in self.comms.poll_resuming():

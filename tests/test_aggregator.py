@@ -573,8 +573,6 @@ class AggregatorTestCase(unittest.TestCase):
         """
         with self.make_test_repo() as (butler, config, qg):
             config.assume_complete = False
-            config.aggregate_logs = True
-            config.aggregate_metadata = True
             executed_quanta = list(
                 self.iter_graph_execution(config.butler_path, qg, raise_on_partial_outputs=False)
             )
@@ -588,8 +586,6 @@ class AggregatorTestCase(unittest.TestCase):
         assume_complete=False, then finishing the graph and scanning again.
         """
         with self.make_test_repo() as (butler, config, qg):
-            config.aggregate_logs = True
-            config.aggregate_metadata = True
             execution_iter = self.iter_graph_execution(config.butler_path, qg, raise_on_partial_outputs=False)
             executed_quanta = list(itertools.islice(execution_iter, 9))
             self.assertEqual(len(executed_quanta), 9)
@@ -604,7 +600,7 @@ class AggregatorTestCase(unittest.TestCase):
             assert config.db_dir is not None
             db = sqlite3.connect(os.path.join(config.db_dir, "scanner-000"))
             (n_quanta,) = db.execute("SELECT COUNT(*) FROM quantum").fetchone()
-            self.assertLessEqual(n_quanta, 9 + len(qg.pipeline_graph.tasks))
+            self.assertLessEqual(n_quanta, 9 + len(qg.pipeline_graph.tasks) + 1)
             if not n_quanta:
                 warnings.warn(
                     "Scanner in test timed out too early for this test to be useful.  "
@@ -626,8 +622,6 @@ class AggregatorTestCase(unittest.TestCase):
         """
         with self.make_test_repo() as (butler, config, qg):
             config.assume_complete = True
-            config.aggregate_logs = True
-            config.aggregate_metadata = True
             for _ in self.iter_graph_execution(config.butler_path, qg, raise_on_partial_outputs=True):
                 pass
             Supervisor.run(config)
@@ -640,8 +634,6 @@ class AggregatorTestCase(unittest.TestCase):
         assume_complete=True.
         """
         with self.make_test_repo() as (butler, config, qg):
-            config.aggregate_logs = True
-            config.aggregate_metadata = True
             for _ in self.iter_graph_execution(config.butler_path, qg, raise_on_partial_outputs=True):
                 pass
             config.assume_complete = False
@@ -653,7 +645,7 @@ class AggregatorTestCase(unittest.TestCase):
             assert config.db_dir is not None
             db = sqlite3.connect(os.path.join(config.db_dir, "scanner-000"))
             (n_quanta,) = db.execute("SELECT COUNT(*) FROM quantum").fetchone()
-            self.assertLessEqual(n_quanta, 21 + len(qg.pipeline_graph.tasks))
+            self.assertLessEqual(n_quanta, 21 + len(qg.pipeline_graph.tasks) + 1)
             if not n_quanta:
                 warnings.warn(
                     "Scanner in test timed out too early for this test to be useful.  "

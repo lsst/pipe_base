@@ -79,8 +79,6 @@ class Scanner:
 
     compressor: Compressor | None = None
 
-    no_ingest_dataset_types: set[str] = dataclasses.field(default_factory=set)
-
     init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
@@ -99,14 +97,7 @@ class Scanner:
                 "Closing scanner storage.",
             )
         self.qbb = self.make_qbb(self.comms.config.butler_path, self.reader.pipeline_graph)
-        self.no_ingest_dataset_types.update(self.comms.config.delete_dataset_types)
-        for task_node in self.reader.pipeline_graph.tasks.values():
-            if self.comms.config.aggregate_metadata:
-                self.no_ingest_dataset_types.add(task_node.metadata_output.dataset_type_name)
-            if self.comms.config.aggregate_logs:
-                assert task_node.log_output is not None, "Aggregator cannot work without task log outputs."
-                self.no_ingest_dataset_types.add(task_node.log_output.dataset_type_name)
-        self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root[1:]}
+        self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
 
     @staticmethod
     def make_qbb(butler_config: str, pipeline_graph: PipelineGraph) -> QuantumBackedButler:
@@ -228,12 +219,18 @@ class Scanner:
         result : `ScanResult`
             Scan result struct.
         """
-        self.comms.log.debug("Started scan for %s.", quantum_id)
         if (predicted_quantum := self.init_quanta.get(quantum_id)) is not None:
             result = ScanResult(predicted_quantum.quantum_id, status=ScanStatus.INIT)
+            self.comms.log.debug("Created init scan for %s (%s)", quantum_id, predicted_quantum.task_label)
         else:
             self.reader.read_quantum_datasets([quantum_id])
             predicted_quantum = self.reader.components.quantum_datasets[quantum_id]
+            self.comms.log.debug(
+                "Scanning %s (%s@%s)",
+                quantum_id,
+                predicted_quantum.task_label,
+                predicted_quantum.data_coordinate,
+            )
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
             times_for_task = self.comms.config.get_times_for_task(predicted_quantum.task_label)
@@ -303,9 +300,8 @@ class Scanner:
         to_ingest_refs: list[DatasetRef] = []
         for dataset_id in result.existing_outputs:
             predicted_output = predicted_outputs_by_id[dataset_id]
-            if predicted_output.dataset_type_name not in self.no_ingest_dataset_types:
-                to_ingest_predicted.append(predicted_output)
-                to_ingest_refs.append(self.reader.make_dataset_ref(predicted_output))
+            to_ingest_predicted.append(predicted_output)
+            to_ingest_refs.append(self.reader.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         return IngestRequest.pack(
             self.comms.scanner_id, result.quantum_id, to_ingest_predicted, to_ingest_records

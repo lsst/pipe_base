@@ -185,6 +185,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
 @click.option(
     "--assume-incomplete",
     "assume_complete",
+    default=None,
     flag_value=False,
     help="Do not assume the quantum graph has been executed to completion (failures may be retried).",
 )
@@ -221,6 +222,34 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     flag_value=False,
     default=None,
     help="Do not support for storage classes by created by the lsst.pipe.base.tests.mocks package.",
+)
+@click.option(
+    "--register-dataset-types",
+    "register_dataset_types",
+    flag_value=True,
+    default=None,
+    help="Register output dataset types before starting ingest.",
+)
+@click.option(
+    "--no-register-dataset-types",
+    "register_dataset_types",
+    flag_value=False,
+    default=None,
+    help="Do not register output dataset types before starting ingest.",
+)
+@click.option(
+    "--update-output-chain",
+    "update_output_chain",
+    flag_value=True,
+    default=None,
+    help="Prepend the output RUN collection to the output CHAINED collection after finishing ingest",
+)
+@click.option(
+    "--no-update-output-chain",
+    "update_output_chain",
+    flag_value=False,
+    default=None,
+    help="Do not prepend the output RUN collection to the output CHAINED collection after finishing ingest",
 )
 def aggregate_graph(**kwargs: Any) -> None:
     """Scan for quantum graph's outputs to gather provenance, ingest datasets

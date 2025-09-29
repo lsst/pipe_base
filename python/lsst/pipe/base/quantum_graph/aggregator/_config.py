@@ -120,7 +120,7 @@ class AggregatorConfig(pydantic.BaseModel):
     output_path: str | None = None
     """Path for the output provenance quantum graph file.
 
-    If `None`, the provenance graph will not be written (yet).
+    At present this option is intended only for debugging.
     """
 
     checkpoint_dir: str | None = None
@@ -144,17 +144,6 @@ class AggregatorConfig(pydantic.BaseModel):
 
     worker_log_level: str = "VERBOSE"
     """Log level for workers processes/threads."""
-
-    timer_dir: str | None = None
-    """Path to a directory (POSIX only) for CSV files that summarize the time
-    spent on various activities.
-    """
-
-    timer_interval: float = 60.0
-    """How often timing summaries are written.
-
-    Ignored if timer_dir is `None`.
-    """
 
     vacuum_on_checkpoint: bool = False
     """If `True`, VACUUM the database before checkpointing.
@@ -214,23 +203,15 @@ class AggregatorConfig(pydantic.BaseModel):
     ingest_batch_size: int = 10000
     """Number of butler datasets that must accumulate to trigger an ingest."""
 
-    delete_dataset_types: list[str] = pydantic.Field(default_factory=list)
-    """Dataset types that should be deleted after their consuming quanta have
-    been processed.
-
-    Note that the scanner can only reason about consuming quanta that are in
-    the same graph; if there is a chance a dataset could be consumed in another
-    graph, it should not be deleted.
+    register_dataset_types: bool = True
+    """Whether to register output dataset types in the central butler
+    repository before starting ingest.
     """
 
-    aggregate_metadata: bool = False
-    """Whether to aggregate task metadata into the provenance graph and delete
-    the original files.
-    """
-
-    aggregate_logs: bool = False
-    """Whether to aggregate task logs into the provenance graph and delete the
-    original files.
+    update_output_chain: bool = True
+    """Whether to prepend the output `~lsst.daf.butler.CollectionType.RUN` to
+    the output `~lsst.daf.butler.CollectionType.CHAINED` collection after
+    ingestion is complete.
     """
 
     dry_run: bool = False

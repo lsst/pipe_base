@@ -46,7 +46,10 @@ def aggregate_graph(
     assume_complete: bool | None = None,
     dry_run: bool | None = None,
     interactive_status: bool | None = None,
-    mock_storage_classes: bool = False,
+    mock_storage_classes: bool | None = None,
+    write_provenance: bool | None = None,
+    register_dataset_types: bool | None = None,
+    update_output_chain: bool | None = None,
 ) -> None:
     """Run the provenance scanner with common configuration options split out
     into keyword arguments.
@@ -63,6 +66,8 @@ def aggregate_graph(
         dry_run=dry_run,
         interactive_status=interactive_status,
         mock_storage_classes=mock_storage_classes,
+        register_dataset_types=register_dataset_types,
+        update_output_chain=update_output_chain,
     )
     try:
         Supervisor.run(scanner_config)
@@ -89,6 +94,8 @@ def _assemble_config(
     dry_run: bool | None,
     interactive_status: bool | None,
     mock_storage_classes: bool | None,
+    register_dataset_types: bool | None,
+    update_output_chain: bool | None,
 ) -> AggregatorConfig:
     if config is not None:
         config = ResourcePath(config)
@@ -97,10 +104,6 @@ def _assemble_config(
             aggregator_config.butler_path = repo
         if predicted_graph is not None:
             aggregator_config.predicted_path = predicted_graph
-        if db_dir is not None:
-            aggregator_config.db_dir = db_dir
-        if output is not None:
-            aggregator_config.output_path = output
     else:
         if repo is None:
             raise ValueError("No config path and no butler path provided.")
@@ -127,4 +130,8 @@ def _assemble_config(
         aggregator_config.interactive_status = interactive_status
     if mock_storage_classes is not None:
         aggregator_config.enable_mocks = mock_storage_classes
+    if register_dataset_types is not None:
+        aggregator_config.register_dataset_types = register_dataset_types
+    if update_output_chain is not None:
+        aggregator_config.update_output_chain = update_output_chain
     return aggregator_config
