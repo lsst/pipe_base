@@ -363,7 +363,7 @@ class Writer:
         return [data]
 
     def write_scan_data(self, scan_data: _ScanData, data_writers: DataWriters) -> None:
-        self.comms.log.info("Writing quantum %s.", scan_data.quantum_id)
+        self.comms.log.debug("Writing quantum %s.", scan_data.quantum_id)
         scan_data.compress(data_writers.compressor)
         data_writers.quanta.write_bytes(scan_data.quantum_id, scan_data.quantum)
         for dataset_id, dataset_data in scan_data.datasets.items():
