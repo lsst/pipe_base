@@ -355,11 +355,14 @@ class WorkerCommunicator:
     def __enter__(self) -> Self:
         self.log = make_worker_log(self.name, self.config)
         self._exit_stack = ExitStack().__enter__()
-        if self.config.worker_profile_dir is not None and self.config.n_processes > 1:
-            # We use time.time because we're interested in wall-clock time, not
-            # just CPU effort, since this is I/O-bound work.
-            self._profiler = cProfile.Profile(timer=time.time)
-            self._profiler.enable()
+        if self.config.n_processes > 1:
+            # Multiprocessing: ignore interrupts so we can shut down cleanly.
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            if self.config.worker_profile_dir is not None:
+                # We use time.time because we're interested in wall-clock time,
+                # not just CPU effort, since this is I/O-bound work.
+                self._profiler = cProfile.Profile(timer=time.time)
+                self._profiler.enable()
         return self
 
     def __exit__(
