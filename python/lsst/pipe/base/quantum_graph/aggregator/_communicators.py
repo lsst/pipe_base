@@ -59,7 +59,7 @@ from lsst.utils.logging import VERBOSE
 
 from ._config import AggregatorConfig
 from ._progress import Progress, make_worker_log
-from ._structs import IngestConfirmation, IngestRequest, ScanReport, ScanResult
+from ._structs import IngestRequest, ScanReport, ScanResult
 
 type Queue[_T] = queue.Queue[_T] | multiprocessing.Queue[_T]
 
@@ -113,7 +113,7 @@ class SpawnProcessContext(WorkerContext):
         return self._ctx.Process(target=target, args=args, name=name)
 
 
-def _get_from_queue[_T](q: Queue[_T], block: bool = False, timeout: float | None = None) -> _T | None:
+def _get_from_queue[T](q: Queue[T], block: bool = False, timeout: float | None = None) -> T | None:
     try:
         return q.get(block=block, timeout=timeout)
     except queue.Empty:
@@ -128,7 +128,6 @@ class _Sentinal(enum.Enum):
     NO_MORE_SCAN_REQUESTS = enum.auto()
     NO_MORE_INGEST_REQUESTS = enum.auto()
     NO_MORE_WRITE_REQUESTS = enum.auto()
-    NO_MORE_INGEST_CONFIRMATIONS = enum.auto()
     WRITE_REPORT = enum.auto()
     SCANNER_DONE = enum.auto()
     INGESTER_DONE = enum.auto()
@@ -190,6 +189,7 @@ class SupervisorCommunicator:
     def __init__(self, n_scanners: int, context: WorkerContext, config: AggregatorConfig) -> None:
         self.config = config
         self.progress = Progress(config)
+        self.n_scanners = n_scanners
         self._scan_requests: Queue[_ScanRequest | Literal[_Sentinal.NO_MORE_SCAN_REQUESTS]] = (
             context.make_queue()
         )
@@ -200,16 +200,8 @@ class SupervisorCommunicator:
             context.make_queue() if config.output_path is not None else None
         )
         self._reports: Queue[Report] = context.make_queue()
-        self._ingest_confirmations: dict[
-            int,
-            Queue[IngestConfirmation | Literal[_Sentinal.NO_MORE_INGEST_CONFIRMATIONS]],
-        ] = {scanner_id: context.make_queue() for scanner_id in range(n_scanners)}
         self._compression_dict: Queue[_CompressionDictionary] = context.make_queue()
         self._cancel_event: Event = context.make_event()
-
-    @property
-    def n_scanners(self) -> int:
-        return len(self._ingest_confirmations)
 
     def __enter__(self) -> Self:
         self.progress.__enter__()
@@ -235,7 +227,7 @@ class SupervisorCommunicator:
             writer_done = False
         ingester_done = False
         n_scanners_done = 0
-        while not (ingester_done and writer_done and n_scanners_done == len(self._ingest_confirmations)):
+        while not (ingester_done and writer_done and n_scanners_done == self.n_scanners):
             self.log.verbose(
                 "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
                 ingester_done,
@@ -261,8 +253,6 @@ class SupervisorCommunicator:
         self._expect_empty_queue(self._ingest_requests)
         if self._write_requests is not None:
             self._expect_empty_queue(self._write_requests)
-        for q in self._ingest_confirmations.values():
-            self._expect_empty_queue(q)
         self._expect_empty_queue(self._reports)
         self._expect_empty_queue(self._compression_dict)
         # We emit the final INFO-level message here, because we need to squeeze
@@ -285,7 +275,7 @@ class SupervisorCommunicator:
                 case _ResumeCompleted(n_quanta_loaded=n_quanta_loaded, n_ingests_loaded=n_ingests_loaded):
                     self.progress.report_ingests(n_quanta_loaded - n_ingests_loaded)
                     n_done += 1
-                    if n_done == len(self._ingest_confirmations):
+                    if n_done == self.n_scanners:
                         self.progress.finish_resuming()
                         return
                 case unexpected:
@@ -416,10 +406,8 @@ class ScannerCommunicator(WorkerCommunicator):
         self._scan_requests = supervisor._scan_requests
         self._ingest_requests = supervisor._ingest_requests
         self._write_requests = supervisor._write_requests
-        self._ingest_confirmations = supervisor._ingest_confirmations[scanner_id]
         self._compression_dict = supervisor._compression_dict
         self._got_no_more_scan_requests: bool = False
-        self._got_no_more_ingest_confirmations: bool = False
         self._sent_no_more_ingest_requests: bool = False
 
     def return_scan(self, msg: ScanReport) -> None:
@@ -443,45 +431,15 @@ class ScannerCommunicator(WorkerCommunicator):
             return cdict.data
         return None
 
-    def poll_for_scan_requests(self) -> Iterator[tuple[uuid.UUID | None, IngestConfirmation | None]]:
+    def poll(self) -> Iterator[uuid.UUID | None]:
         while True:
             if self._cancel_event.is_set():
                 raise CancelError()
-            ingest_confirmation: IngestConfirmation | None = None
-            match _get_from_queue(self._ingest_confirmations):
-                case None:
-                    pass
-                case IngestConfirmation() as ingest_confirmation:
-                    assert ingest_confirmation.scanner_id == self.scanner_id
-                case unexpected:
-                    raise AssertionError(f"Unexpected value in to_scanner queue: {unexpected}.")
             scan_request = _get_from_queue(self._scan_requests)
             if scan_request is _Sentinal.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
-                if ingest_confirmation is not None:
-                    yield None, ingest_confirmation
                 return
-            yield (scan_request.quantum_id if scan_request is not None else None, ingest_confirmation)
-
-    def poll_for_ingest_confirmations(self) -> Iterator[IngestConfirmation]:
-        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
-        self._sent_no_more_ingest_requests = True
-        if self._write_requests is not None:
-            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
-        while True:
-            if self._cancel_event.is_set():
-                raise CancelError()
-            match _get_from_queue(self._ingest_confirmations, block=True, timeout=_TINY_TIMEOUT):
-                case IngestConfirmation() as ingest_confirmation:
-                    assert ingest_confirmation.scanner_id == self.scanner_id
-                    yield ingest_confirmation
-                case _Sentinal.NO_MORE_INGEST_CONFIRMATIONS:
-                    self._got_no_more_ingest_confirmations = True
-                    return
-                case None:
-                    pass
-                case unexpected:
-                    raise AssertionError(f"Unexpected value in to_scanner queue: {unexpected}.")
+            yield (scan_request.quantum_id if scan_request is not None else None)
 
     def __exit__(
         self,
@@ -490,28 +448,19 @@ class ScannerCommunicator(WorkerCommunicator):
         traceback: TracebackType | None,
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
-        if not self._sent_no_more_ingest_requests:
-            self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
-            self._sent_no_more_ingest_requests = True
-        while not (self._got_no_more_scan_requests and self._got_no_more_ingest_confirmations):
-            self.log.debug(
-                "Clearing scan request queue (done=%s) and ingest confirmation queue (done=%s).",
-                self._got_no_more_scan_requests,
-                self._got_no_more_ingest_confirmations,
-            )
+        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
+        if self._write_requests is not None:
+            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
+        while not self._got_no_more_scan_requests:
+            self.log.debug("Clearing scan request queue (~%d remaining)", self._scan_requests.qsize())
             if (
                 not self._got_no_more_scan_requests
                 and self._scan_requests.get() is _Sentinal.NO_MORE_SCAN_REQUESTS
             ):
                 self._got_no_more_scan_requests = True
-            if (
-                not self._got_no_more_ingest_confirmations
-                and self._ingest_confirmations.get() is _Sentinal.NO_MORE_INGEST_CONFIRMATIONS
-            ):
-                self._got_no_more_ingest_confirmations = True
         # We let the supervisor clear out the compression dict queue, because
         # a single scanner can't know if it ever got sent out or not.
-        self.log.debug("Sending done sentinal.")
+        self.log.verbose("Sending done sentinal.")
         self._reports.put(_Sentinal.SCANNER_DONE, block=False)
         return result
 
@@ -519,13 +468,9 @@ class ScannerCommunicator(WorkerCommunicator):
 class IngesterCommunicator(WorkerCommunicator):
     def __init__(self, supervisor: SupervisorCommunicator):
         super().__init__(supervisor, "ingester")
+        self.n_scanners = supervisor.n_scanners
         self._ingest_requests = supervisor._ingest_requests
-        self._ingest_confirmations = supervisor._ingest_confirmations
         self._n_requesters_done = 0
-
-    @property
-    def n_scanners(self) -> int:
-        return len(self._ingest_confirmations)
 
     def __exit__(
         self,
@@ -542,14 +487,9 @@ class IngesterCommunicator(WorkerCommunicator):
             )
             if self._ingest_requests.get(block=True) is _Sentinal.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-        for q in self._ingest_confirmations.values():
-            q.put(_Sentinal.NO_MORE_INGEST_CONFIRMATIONS, block=False)
-        self.log.debug("Sending done sentinal.")
+        self.log.verbose("Sending done sentinal.")
         self._reports.put(_Sentinal.INGESTER_DONE, block=False)
         return result
-
-    def confirm_ingest(self, scanner_id: int, producer_ids: list[uuid.UUID]) -> None:
-        self._ingest_confirmations[scanner_id].put(IngestConfirmation(scanner_id, producer_ids), block=False)
 
     def report_ingest(self, n_producers: int) -> None:
         self._reports.put(_IngestReport(n_producers), block=False)
@@ -561,7 +501,7 @@ class IngesterCommunicator(WorkerCommunicator):
             ingest_request = _get_from_queue(self._ingest_requests, block=True, timeout=_TINY_TIMEOUT)
             if ingest_request is _Sentinal.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-                if self._n_requesters_done == len(self._ingest_confirmations):
+                if self._n_requesters_done == self.n_scanners:
                     return
                 else:
                     continue
@@ -587,7 +527,15 @@ class WriterCommunicator(WorkerCommunicator):
         traceback: TracebackType | None,
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
-        self.log.debug("Sending done sentinal.")
+        while self._n_requesters_done != self._n_requesters:
+            self.log.debug(
+                "Waiting for %d requesters to be done (currently %d).",
+                self._n_requesters,
+                self._n_requesters_done,
+            )
+            if self._write_requests.get(block=True) is _Sentinal.NO_MORE_WRITE_REQUESTS:
+                self._n_requesters_done += 1
+        self.log.verbose("Sending done sentinal.")
         self._reports.put(_Sentinal.WRITER_DONE, block=False)
         return result
 
@@ -597,6 +545,7 @@ class WriterCommunicator(WorkerCommunicator):
                 raise CancelError()
             write_request = _get_from_queue(self._write_requests, block=True, timeout=_TINY_TIMEOUT)
             if write_request is _Sentinal.NO_MORE_WRITE_REQUESTS:
+                self._got_no_more_write_requests = True
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self._n_requesters:
                     return

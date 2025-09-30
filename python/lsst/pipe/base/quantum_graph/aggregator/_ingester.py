@@ -61,7 +61,7 @@ class Ingester:
 
     butler: Butler = dataclasses.field(init=False)
 
-    confirmations_pending: dict[int, list[uuid.UUID]] = dataclasses.field(init=False)
+    n_producers_pending: int = 0
     refs_pending: defaultdict[DimensionGroup, list[DatasetRef]] = dataclasses.field(
         default_factory=lambda: defaultdict(list)
     )
@@ -80,7 +80,6 @@ class Ingester:
         self.butler = Butler.from_config(
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )
-        self.confirmations_pending = defaultdict(list)
 
     @property
     def n_datasets_pending(self) -> int:
@@ -108,24 +107,14 @@ class Ingester:
         self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
         self.last_ingest_time = time.time()
         for ingest_request in self.comms.poll():
-            producer_ids_from_worker = self.confirmations_pending[ingest_request.scanner_id]
+            self.n_producers_pending += 1
             self.comms.log.debug(
                 f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
             )
-            producer_ids_from_worker.append(ingest_request.producer_id)
             datasets, datastore_records = ingest_request.unpack()
             self.update_pending(datasets, datastore_records)
-            n_datasets = self.n_datasets_pending
-            if n_datasets > self.comms.config.ingest_batch_size:
-                ingest_start_time = time.time()
+            if self.n_datasets_pending > self.comms.config.ingest_batch_size:
                 self.ingest()
-                self.comms.log.verbose(
-                    "Gathered %d datasets in %ss and ingested them in %ss.",
-                    n_datasets,
-                    ingest_start_time - self.last_ingest_time,
-                    time.time() - ingest_start_time,
-                )
-                self.last_ingest_time = time.time()
         self.comms.log.info("All ingest requests received.")
         # We use 'while' in case this fails with a conflict and we switch to
         # switch to defensive mode (should be at most two iterations).
@@ -139,21 +128,35 @@ class Ingester:
                 ingest_start_time - self.last_ingest_time,
                 time.time() - ingest_start_time,
             )
-        if self.confirmations_pending:
+        if self.n_producers_pending:
             # We can finish with returns pending if we filtered out all of
             # the datasets we started with as already existing.
-            self.confirm_and_report()
+            self.report()
         if self.comms.config.update_output_chain:
             self.update_output_chain()
         self.comms.log.info("Informing workers that ingests are complete.")
 
     def ingest(self) -> None:
+        ingest_start_time = time.time()
+        self.comms.log.verbose(
+            "Gathered %d datasets from %d quanta in %ss.",
+            self.n_datasets_pending,
+            self.n_producers_pending,
+            ingest_start_time - self.last_ingest_time,
+        )
         try:
             if not self.comms.config.dry_run:
                 with self.butler.registry.transaction():
                     for refs in self.refs_pending.values():
                         self.butler.registry._importDatasets(refs, expand=False, assume_new=True)
                     self.butler._datastore.import_records(self.records_pending)
+            self.last_ingest_time = time.time()
+            self.comms.log.verbose(
+                "Ingested %d datasets from %d quanta in %ss.",
+                self.n_datasets_pending,
+                self.n_producers_pending,
+                self.last_ingest_time - ingest_start_time,
+            )
         except ConflictingDefinitionError:
             if self.already_ingested is None:
                 self.comms.log_progress(
@@ -168,17 +171,13 @@ class Ingester:
                 return
             else:
                 raise
-        self.confirm_and_report()
-        self.refs_pending.clear()
+        self.report()
         self.records_pending.clear()
+        self.refs_pending.clear()
 
-    def confirm_and_report(self) -> None:
-        n_producers = 0
-        for worker_id, producer_ids_from_worker in self.confirmations_pending.items():
-            self.comms.confirm_ingest(worker_id, producer_ids_from_worker)
-            n_producers += len(producer_ids_from_worker)
-        self.comms.report_ingest(n_producers)
-        self.confirmations_pending.clear()
+    def report(self) -> None:
+        self.comms.report_ingest(self.n_producers_pending)
+        self.n_producers_pending = 0
 
     def fetch_already_ingested(self) -> None:
         self.comms.log.info("Fetching all UUIDs in output collection %r.", self.reader.header.output_run)

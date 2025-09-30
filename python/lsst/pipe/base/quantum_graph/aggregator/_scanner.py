@@ -55,7 +55,7 @@ from .._predicted import (
 from ._communicators import ScannerCommunicator
 from ._config import ScannerTimeConfigDict
 from ._storage import Storage
-from ._structs import IngestConfirmation, IngestRequest, ScanReport, ScanResult, ScanStatus
+from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
 
 @dataclasses.dataclass
@@ -145,18 +145,15 @@ class Scanner:
         asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
         pending: set[asyncio.Task[ScanResult]] = set()
         self.comms.log.info("Scan request loop beginning.")
-        for scan_request, ingest_confirmation in self.comms.poll_for_scan_requests():
+        for scan_request in self.comms.poll():
             if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
                 self.compressor = zstandard.ZstdCompressor(
                     self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
                 )
-            pending = await self.scan_or_wait(scan_request, ingest_confirmation, pending)
+            pending = await self.scan_or_wait(scan_request, pending)
         self.comms.log.info("Waiting for pending tasks to complete.")
-        pending = await self.scan_or_wait(None, None, pending, return_when="ALL_COMPLETED")
+        pending = await self.scan_or_wait(None, pending, return_when="ALL_COMPLETED")
         assert not pending, "No scans should be pending at this point."
-        self.comms.log.info("Ingest confirmation loop beginning.")
-        for ingest_confirmation in self.comms.poll_for_ingest_confirmations():
-            await self.scan_or_wait(None, ingest_confirmation, pending)
         if self.storage is not None and self.storage.needs_checkpoint:
             self.comms.log.info("Performing final checkpoint.")
             self.storage.checkpoint()
@@ -164,7 +161,6 @@ class Scanner:
     async def scan_or_wait(
         self,
         requested_quantum_id: uuid.UUID | None,
-        ingest_confirmation: IngestConfirmation | None,
         pending: set[asyncio.Task[ScanResult]],
         return_when: Literal["FIRST_COMPLETED", "ALL_COMPLETED"] = "FIRST_COMPLETED",
     ) -> set[asyncio.Task[ScanResult]]:
@@ -172,11 +168,6 @@ class Scanner:
         if requested_quantum_id is not None:
             self.comms.log.debug("Creating scan task for %s.", requested_quantum_id)
             pending.add(asyncio.create_task(self.scan_quantum(requested_quantum_id)))
-            timeout = 0.0
-        if ingest_confirmation is not None:
-            self.comms.log.debug("Finishing %d ingest returns.", len(ingest_confirmation.producer_ids))
-            if self.storage is not None:
-                self.storage.finish_ingests(ingest_confirmation.producer_ids)
             timeout = 0.0
         if pending:
             self.comms.log.debug("Awaiting %d pending scans.", len(pending))
