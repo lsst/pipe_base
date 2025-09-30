@@ -621,7 +621,9 @@ class MultiblockReader:
             yield MultiblockReader(stream, int_size)
 
     @classmethod
-    def read_all_bytes_in_zip(cls, zf: zipfile.ZipFile, name: str, *, int_size: int) -> Iterator[bytes]:
+    def read_all_bytes_in_zip(
+        cls, zf: zipfile.ZipFile, name: str, *, int_size: int, page_size: int
+    ) -> Iterator[bytes]:
         """Iterate over all of the byte blocks in a file in a zip archive.
 
         Parameters
@@ -632,6 +634,8 @@ class MultiblockReader:
             Base name for the multi-block file; an extension will be added.
         int_size : `int`
             Number of bytes to use for all integers.
+        page_size : `int`
+            Approximate number of bytes to read at a time.
 
         Returns
         -------
@@ -656,6 +660,7 @@ class MultiblockReader:
         decompressor: Decompressor,
         *,
         int_size: int,
+        page_size: int,
     ) -> Iterator[_T]:
         """Iterate over all of the models in a file in a zip archive.
 
@@ -671,13 +676,15 @@ class MultiblockReader:
             Object with a `decompress` method that takes and returns `bytes`.
         int_size : `int`
             Number of bytes to use for all integers.
+        page_size : `int`
+            Approximate number of bytes to read at a time.
 
         Returns
         -------
         model_iter : `~collections.abc.Iterator` [ `pydantic.BaseModel` ]
             Iterator over model instances.
         """
-        for compressed_data in cls.read_all_bytes_in_zip(zf, name, int_size=int_size):
+        for compressed_data in cls.read_all_bytes_in_zip(zf, name, int_size=int_size, page_size=page_size):
             json_data = decompressor.decompress(compressed_data)
             yield model_type.model_validate_json(json_data)
 

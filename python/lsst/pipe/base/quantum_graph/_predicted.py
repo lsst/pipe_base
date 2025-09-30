@@ -1838,6 +1838,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                     PredictedQuantumDatasetsModel,
                     self.decompressor,
                     int_size=self.components.header.int_size,
+                    page_size=self.page_size,
                 ):
                     self.components.quantum_datasets.setdefault(quantum_datasets.quantum_id, quantum_datasets)
                 self.address_reader.read_all()

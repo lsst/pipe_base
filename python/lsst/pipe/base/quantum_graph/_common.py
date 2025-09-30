@@ -477,6 +477,13 @@ class BaseQuantumGraphReader:
     address_reader: AddressReader
     """A helper object for reading addresses into the multi-block files."""
 
+    page_size: int
+    """Approximate number of bytes to read at a time.
+
+    Note that this does not set a page size for *all* reads, but it
+    does affect the smallest, most numerous reads.
+    """
+
     @classmethod
     @contextmanager
     def _open(
@@ -535,6 +542,7 @@ class BaseQuantumGraphReader:
                         zf=zf,
                         decompressor=decompressor,
                         address_reader=address_reader,
+                        page_size=page_size,
                     )
 
     @staticmethod
