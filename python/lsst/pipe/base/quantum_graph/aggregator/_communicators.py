@@ -93,7 +93,7 @@ class ThreadingContext(WorkerContext):
     def make_worker(
         self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
     ) -> Worker:
-        return threading.Thread(target=target, args=args, name=name, daemon=True)
+        return threading.Thread(target=target, args=args, name=name)
 
 
 class SpawnProcessContext(WorkerContext):
@@ -109,7 +109,7 @@ class SpawnProcessContext(WorkerContext):
     def make_worker(
         self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
     ) -> Worker:
-        return self._ctx.Process(target=target, args=args, name=name, daemon=True)
+        return self._ctx.Process(target=target, args=args, name=name)
 
 
 def _get_from_queue[_T](q: Queue[_T], block: bool = False, timeout: float | None = None) -> _T | None:
