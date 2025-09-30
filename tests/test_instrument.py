@@ -31,9 +31,9 @@ import datetime
 import math
 import unittest
 
-from lsst.daf.butler import DataCoordinate, DimensionPacker, DimensionUniverse, RegistryConfig
+from lsst.daf.butler import DataCoordinate, DimensionPacker, DimensionUniverse
 from lsst.daf.butler.formatters.json import JsonFormatter
-from lsst.daf.butler.registry.sql_registry import SqlRegistry
+from lsst.daf.butler.tests.utils import create_populated_sqlite_registry
 from lsst.pex.config import Config
 from lsst.pipe.base import Instrument
 from lsst.utils.introspection import get_full_type_name
@@ -133,9 +133,7 @@ class InstrumentTestCase(unittest.TestCase):
 
     def test_register(self):
         """Test that register() sets appropriate Dimensions."""
-        registryConfig = RegistryConfig()
-        registryConfig["db"] = "sqlite://"
-        registry = SqlRegistry.createFromConfig(registryConfig)
+        registry = create_populated_sqlite_registry().registry
         # Check that the registry starts out empty.
         self.instrument.importAll(registry)
         self.assertFalse(list(registry.queryDimensionRecords("instrument")))
@@ -242,9 +240,7 @@ class InstrumentTestCase(unittest.TestCase):
         systems for constructing it, in the case where the Instrument-defined
         default is used.
         """
-        registry_config = RegistryConfig()
-        registry_config["db"] = "sqlite://"
-        registry = SqlRegistry.createFromConfig(registry_config)
+        registry = create_populated_sqlite_registry().registry
         self.instrument.register(registry)
         config = DimensionPackerTestConfig()
         instrument_data_id = registry.expandDataId(instrument=self.name)
@@ -275,9 +271,7 @@ class InstrumentTestCase(unittest.TestCase):
         systems for constructing it, in the case where configuration overrides
         the Instrument's default.
         """
-        registry_config = RegistryConfig()
-        registry_config["db"] = "sqlite://"
-        registry = SqlRegistry.createFromConfig(registry_config)
+        registry = create_populated_sqlite_registry().registry
         # Intentionally do not register instrument or insert any other
         # dimension records to ensure we don't need them in this mode.
         config = DimensionPackerTestConfig()
