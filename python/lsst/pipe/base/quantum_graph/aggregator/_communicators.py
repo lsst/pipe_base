@@ -37,12 +37,15 @@ __all__ = (
     "WorkerContext",
 )
 
+import cProfile
 import dataclasses
 import enum
 import multiprocessing.context
 import multiprocessing.synchronize
+import os
 import queue
 import threading
+import time
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
@@ -352,6 +355,11 @@ class WorkerCommunicator:
     def __enter__(self) -> Self:
         self.log = make_worker_log(self.name, self.config)
         self._exit_stack = ExitStack().__enter__()
+        if self.config.worker_profile_dir is not None and self.config.n_processes > 1:
+            # We use time.time because we're interested in wall-clock time, not
+            # just CPU effort, since this is I/O-bound work.
+            self._profiler = cProfile.Profile(timer=time.time)
+            self._profiler.enable()
         return self
 
     def __exit__(
@@ -360,6 +368,10 @@ class WorkerCommunicator:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
+        if self.config.worker_profile_dir is not None and self.config.n_processes > 1:
+            self._profiler.disable()
+            os.makedirs(self.config.worker_profile_dir, exist_ok=True)
+            self._profiler.dump_stats(os.path.join(self.config.worker_profile_dir, f"{self.name}.profile"))
         if exc_value is not None:
             if exc_type is not CancelError:
                 assert exc_type is not None and traceback is not None

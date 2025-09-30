@@ -135,15 +135,18 @@ class AggregatorConfig(pydantic.BaseModel):
     """
 
     worker_log_dir: str | None = None
-    """Path to a directory (POSIX only) for parallel scanner debug logs.
-
-    When this is not `None`, the worker logging is automatically set to the
-    DEBUG level (which is the only kind of log workers ever emit).  This option
-    is ignored when running in a single process.
+    """Path to a directory (POSIX only) for parallel scanner worker logs.
     """
 
     worker_log_level: str = "VERBOSE"
     """Log level for workers processes/threads."""
+
+    worker_profile_dir: str | None = None
+    """Path to a directory (POSIX only) for parallel scanner worker profiling
+    dumps.
+
+    This option is ignored when `n_processes` is `1`.
+    """
 
     vacuum_on_checkpoint: bool = False
     """If `True`, VACUUM the database before checkpointing.
