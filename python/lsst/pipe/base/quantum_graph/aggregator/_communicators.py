@@ -44,6 +44,7 @@ import multiprocessing.context
 import multiprocessing.synchronize
 import os
 import queue
+import signal
 import threading
 import time
 import uuid
@@ -227,10 +228,10 @@ class SupervisorCommunicator:
         else:
             self.progress.log.verbose("Waiting for workers to finish.")
         for _ in range(self.n_scanners):
-            self._scan_requests.put(_Sentinal.NO_MORE_SCAN_REQUESTS)
+            self._scan_requests.put(_Sentinal.NO_MORE_SCAN_REQUESTS, block=False)
         writer_done = True
         if self._write_requests is not None:
-            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS)
+            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
             writer_done = False
         ingester_done = False
         n_scanners_done = 0
@@ -291,11 +292,11 @@ class SupervisorCommunicator:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
-        self._scan_requests.put(_ScanRequest(quantum_id))
+        self._scan_requests.put(_ScanRequest(quantum_id), block=False)
 
     def request_write(self, scan_result: ScanResult) -> None:
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_result)
+        self._write_requests.put(scan_result, block=False)
 
     def poll_scanning(self, timeout: float) -> Iterator[ScanReport]:
         block = True
@@ -378,12 +379,14 @@ class WorkerCommunicator:
         if exc_value is not None:
             if exc_type is not CancelError:
                 assert exc_type is not None and traceback is not None
-                self._reports.put(_WorkerError(self.name, TracebackException(exc_type, exc_value, traceback)))
+                self._reports.put(
+                    _WorkerError(self.name, TracebackException(exc_type, exc_value, traceback)), block=False
+                )
             return True
         return self._exit_stack.__exit__(exc_type, exc_value, traceback)
 
     def log_progress(self, level: int, message: str) -> None:
-        self._reports.put(_ProgressLog(message=message, level=level))
+        self._reports.put(_ProgressLog(message=message, level=level), block=False)
 
     def enter[T](
         self,
@@ -420,20 +423,20 @@ class ScannerCommunicator(WorkerCommunicator):
         self._sent_no_more_ingest_requests: bool = False
 
     def return_scan(self, msg: ScanReport) -> None:
-        self._reports.put(msg)
+        self._reports.put(msg, block=False)
 
     def report_resume_completed(self, n_quanta_loaded: int, n_ingests_loaded: int) -> None:
-        self._reports.put(_ResumeCompleted(n_quanta_loaded, n_ingests_loaded))
+        self._reports.put(_ResumeCompleted(n_quanta_loaded, n_ingests_loaded), block=False)
 
     def request_ingest(self, request: IngestRequest) -> None:
         if request:
-            self._ingest_requests.put(request)
+            self._ingest_requests.put(request, block=False)
         else:
-            self._reports.put(_IngestReport(1))
+            self._reports.put(_IngestReport(1), block=False)
 
     def request_write(self, scan_results: ScanResult) -> None:
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_results)
+        self._write_requests.put(scan_results, block=False)
 
     def get_compression_dict(self) -> bytes | None:
         if (cdict := _get_from_queue(self._compression_dict)) is not None:
@@ -461,10 +464,10 @@ class ScannerCommunicator(WorkerCommunicator):
             yield (scan_request.quantum_id if scan_request is not None else None, ingest_confirmation)
 
     def poll_for_ingest_confirmations(self) -> Iterator[IngestConfirmation]:
-        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS)
+        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
         self._sent_no_more_ingest_requests = True
         if self._write_requests is not None:
-            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS)
+            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
         while True:
             if self._cancel_event.is_set():
                 raise CancelError()
@@ -488,7 +491,7 @@ class ScannerCommunicator(WorkerCommunicator):
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
         if not self._sent_no_more_ingest_requests:
-            self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS)
+            self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
             self._sent_no_more_ingest_requests = True
         while not (self._got_no_more_scan_requests and self._got_no_more_ingest_confirmations):
             self.log.debug(
@@ -509,7 +512,7 @@ class ScannerCommunicator(WorkerCommunicator):
         # We let the supervisor clear out the compression dict queue, because
         # a single scanner can't know if it ever got sent out or not.
         self.log.debug("Sending done sentinal.")
-        self._reports.put(_Sentinal.SCANNER_DONE)
+        self._reports.put(_Sentinal.SCANNER_DONE, block=False)
         return result
 
 
@@ -540,16 +543,16 @@ class IngesterCommunicator(WorkerCommunicator):
             if self._ingest_requests.get(block=True) is _Sentinal.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
         for q in self._ingest_confirmations.values():
-            q.put(_Sentinal.NO_MORE_INGEST_CONFIRMATIONS)
+            q.put(_Sentinal.NO_MORE_INGEST_CONFIRMATIONS, block=False)
         self.log.debug("Sending done sentinal.")
-        self._reports.put(_Sentinal.INGESTER_DONE)
+        self._reports.put(_Sentinal.INGESTER_DONE, block=False)
         return result
 
     def confirm_ingest(self, scanner_id: int, producer_ids: list[uuid.UUID]) -> None:
-        self._ingest_confirmations[scanner_id].put(IngestConfirmation(scanner_id, producer_ids))
+        self._ingest_confirmations[scanner_id].put(IngestConfirmation(scanner_id, producer_ids), block=False)
 
     def report_ingest(self, n_producers: int) -> None:
-        self._reports.put(_IngestReport(n_producers))
+        self._reports.put(_IngestReport(n_producers), block=False)
 
     def poll(self) -> Iterator[IngestRequest]:
         while True:
@@ -585,7 +588,7 @@ class WriterCommunicator(WorkerCommunicator):
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
         self.log.debug("Sending done sentinal.")
-        self._reports.put(_Sentinal.WRITER_DONE)
+        self._reports.put(_Sentinal.WRITER_DONE, block=False)
         return result
 
     def poll(self) -> Iterator[ScanResult]:
@@ -605,8 +608,8 @@ class WriterCommunicator(WorkerCommunicator):
     def send_compression_dict(self, cdict_data: bytes) -> None:
         self.log.debug("Sending compression dictionary.")
         for _ in range(self.n_scanners):
-            self._compression_dict.put(_CompressionDictionary(cdict_data))
+            self._compression_dict.put(_CompressionDictionary(cdict_data), block=False)
         self._sent_compression_dict = True
 
     def report_write(self) -> None:
-        self._reports.put(_Sentinal.WRITE_REPORT)
+        self._reports.put(_Sentinal.WRITE_REPORT, block=False)
