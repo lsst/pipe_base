@@ -64,7 +64,6 @@ class Progress:
 
     def __enter__(self) -> Self:
         if self.interactive:
-            logging.getLogger().handlers
             from tqdm.contrib.logging import logging_redirect_tqdm
 
             self._logging_redirect = logging_redirect_tqdm()
