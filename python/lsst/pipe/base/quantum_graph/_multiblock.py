@@ -61,6 +61,16 @@ _LOG = logging.getLogger(__name__)
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
+DEFAULT_PAGE_SIZE: int = 5_000_000
+"""Default page size for reading chunks of quantum graph files.
+
+This is intended to be large enough to avoid any possibility of individual
+reads suffering from per-seek overheads, especially in network file access,
+while still being small enough to only minimally slow down tiny reads of
+individual quanta (especially for execution).
+"""
+
+
 class Compressor(Protocol):
     """A protocol for objects with a `compress` method that takes and returns
     `bytes`.

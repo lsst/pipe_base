@@ -44,7 +44,6 @@ import zipfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from io import DEFAULT_BUFFER_SIZE
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -65,6 +64,7 @@ from lsst.resources import ResourcePath, ResourcePathExpression
 from ..pipeline_graph import DatasetTypeNode, Edge, PipelineGraph, TaskImportMode, TaskNode
 from ..pipeline_graph.io import SerializedPipelineGraph
 from ._multiblock import (
+    DEFAULT_PAGE_SIZE,
     AddressReader,
     AddressWriter,
     Compressor,
@@ -485,7 +485,7 @@ class BaseQuantumGraphReader:
         *,
         address_filename: str,
         graph_type: str,
-        page_size: int = DEFAULT_BUFFER_SIZE,
+        page_size: int = DEFAULT_PAGE_SIZE,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[Self]:
         """Construct a reader from a URI.

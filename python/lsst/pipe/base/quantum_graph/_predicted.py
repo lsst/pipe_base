@@ -50,7 +50,6 @@ import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from io import DEFAULT_BUFFER_SIZE
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import networkx
@@ -103,7 +102,7 @@ from ._common import (
     QuantumInfo,
     TaskLabel,
 )
-from ._multiblock import MultiblockReader, MultiblockWriter
+from ._multiblock import DEFAULT_PAGE_SIZE, MultiblockReader, MultiblockWriter
 
 if TYPE_CHECKING:
     from ..config import PipelineTaskConfig
@@ -686,7 +685,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
     def open(
         cls,
         uri: ResourcePathExpression,
-        page_size: int = DEFAULT_BUFFER_SIZE,
+        page_size: int = DEFAULT_PAGE_SIZE,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> AbstractContextManager[PredictedQuantumGraphReader]:
         """Open a quantum graph and return a reader to load from it.
@@ -716,7 +715,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         cls,
         uri: ResourcePathExpression,
         quantum_ids: Iterable[uuid.UUID] | None = None,
-        page_size: int = DEFAULT_BUFFER_SIZE,
+        page_size: int = DEFAULT_PAGE_SIZE,
     ) -> PredictedQuantumGraph:
         """Read one or more executable quanta from a quantum graph file.
 
@@ -1526,7 +1525,7 @@ class PredictedQuantumGraphComponents:
         cls,
         uri: ResourcePathExpression,
         quantum_ids: Iterable[uuid.UUID] | None = None,
-        page_size: int = DEFAULT_BUFFER_SIZE,
+        page_size: int = DEFAULT_PAGE_SIZE,
     ) -> PredictedQuantumGraphComponents:
         """Read one or more executable quanta from a quantum graph file.
 
@@ -1726,7 +1725,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
         cls,
         uri: ResourcePathExpression,
         *,
-        page_size: int = DEFAULT_BUFFER_SIZE,
+        page_size: int = DEFAULT_PAGE_SIZE,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[PredictedQuantumGraphReader]:
         """Construct a reader from a URI.
