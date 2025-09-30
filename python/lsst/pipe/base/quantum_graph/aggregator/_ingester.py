@@ -31,6 +31,7 @@ __all__ = ("Ingester",)
 
 import dataclasses
 import logging
+import time
 import uuid
 from collections import defaultdict
 
@@ -66,6 +67,7 @@ class Ingester:
     )
     records_pending: dict[DatastoreName, DatastoreRecordData] = dataclasses.field(default_factory=dict)
     already_ingested: set[uuid.UUID] | None = None
+    last_ingest_time: float = dataclasses.field(default_factory=time.time)
 
     def __post_init__(self) -> None:
         self.reader = self.comms.enter(
@@ -103,6 +105,8 @@ class Ingester:
             )
         if self.comms.config.defensive_ingest:
             self.fetch_already_ingested()
+        self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
+        self.last_ingest_time = time.time()
         for ingest_request in self.comms.poll():
             producer_ids_from_worker = self.confirmations_pending[ingest_request.scanner_id]
             self.comms.log.debug(
@@ -111,15 +115,30 @@ class Ingester:
             producer_ids_from_worker.append(ingest_request.producer_id)
             datasets, datastore_records = ingest_request.unpack()
             self.update_pending(datasets, datastore_records)
-            if self.n_datasets_pending > self.comms.config.ingest_batch_size:
-                self.comms.log.verbose("Ingesting %d datasets.", self.n_datasets_pending)
+            n_datasets = self.n_datasets_pending
+            if n_datasets > self.comms.config.ingest_batch_size:
+                ingest_start_time = time.time()
                 self.ingest()
+                self.comms.log.verbose(
+                    "Gathered %d datasets in %ss and ingested them in %ss.",
+                    n_datasets,
+                    ingest_start_time - self.last_ingest_time,
+                    time.time() - ingest_start_time,
+                )
+                self.last_ingest_time = time.time()
         self.comms.log.info("All ingest requests received.")
         # We use 'while' in case this fails with a conflict and we switch to
         # switch to defensive mode (should be at most two iterations).
+        ingest_start_time = time.time()
         while self.n_datasets_pending:
-            self.comms.log.verbose("Ingesting %d final datasets.", self.n_datasets_pending)
+            n_datasets = self.n_datasets_pending
             self.ingest()
+            self.comms.log.verbose(
+                "Gathered %d final datasets in %ss and ingested them in %ss.",
+                n_datasets,
+                ingest_start_time - self.last_ingest_time,
+                time.time() - ingest_start_time,
+            )
         if self.confirmations_pending:
             # We can finish with returns pending if we filtered out all of
             # the datasets we started with as already existing.
