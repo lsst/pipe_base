@@ -53,6 +53,7 @@ import pydantic
 
 from lsst.daf.butler import DataCoordinate
 from lsst.resources import ResourcePathExpression
+from lsst.utils.packages import Packages
 
 from .._status import QuantumSuccessCaveats
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
@@ -980,3 +981,8 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                 if metadata is not None:
                     result[node_id_or_index] = metadata
         return result
+
+    def fetch_packages(self) -> Packages:
+        """Fetch package version information."""
+        data = self._read_single_block_raw("packages")
+        return Packages.fromBytes(data, format="json")

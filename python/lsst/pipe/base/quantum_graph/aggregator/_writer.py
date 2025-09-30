@@ -38,6 +38,8 @@ import uuid
 import networkx
 import zstandard
 
+from lsst.utils.packages import Packages
+
 from ... import automatic_connection_constants as acc
 from ...pipeline_graph import TaskImportMode
 from .._common import BaseQuantumGraphWriter
@@ -244,6 +246,7 @@ class Writer:
         for scan_data in self.pending_compression_training:
             self.write_scan_data(scan_data, data_writers)
         self.write_overall_inputs(data_writers)
+        self.write_packages(data_writers)
         return data_writers
 
     def make_compression_dictionary(self) -> zstandard.ZstdCompressionDict:
@@ -314,6 +317,11 @@ class Writer:
                             ),
                             data_writers.compressor,
                         )
+
+    def write_packages(self, data_writers: DataWriters) -> None:
+        packages = Packages.fromSystem(include_all=True)
+        data = packages.toBytes("json")
+        data_writers.graph.write_single_block("packages", data)
 
     def make_scan_data(self, request: ScanResult) -> list[_ScanData]:
         if (existing_init_outputs := self.existing_init_outputs.get(request.quantum_id)) is not None:
