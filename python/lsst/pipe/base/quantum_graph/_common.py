@@ -38,6 +38,7 @@ __all__ = (
 import dataclasses
 import datetime
 import getpass
+import os
 import sys
 import uuid
 import zipfile
@@ -492,7 +493,7 @@ class BaseQuantumGraphReader:
         *,
         address_filename: str,
         graph_type: str,
-        page_size: int = DEFAULT_PAGE_SIZE,
+        page_size: int | None = None,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[Self]:
         """Construct a reader from a URI.
@@ -508,7 +509,9 @@ class BaseQuantumGraphReader:
         page_size : `int`, optional
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
-            does affect the smallest, most numerous reads.
+            does affect the smallest, most numerous reads.  When `None`, the
+            ``LSST_QG_PAGE_SIZE`` environment variable is checked before
+            falling back to a default of 5MB.
         import_mode : `..pipeline_graph.TaskImportMode`, optional
             How to handle importing the task classes referenced in the pipeline
             graph.
@@ -519,6 +522,8 @@ class BaseQuantumGraphReader:
                 `PredictedQuantumGraphReader` ]
             A context manager that returns the reader when entered.
         """
+        if page_size is None:
+            page_size = int(os.environ.get("LSST_QG_PAGE_SIZE", DEFAULT_PAGE_SIZE))
         uri = ResourcePath(uri)
         cdict: zstandard.ZstdCompressionDict | None = None
         with uri.open(mode="rb") as zf_stream:
