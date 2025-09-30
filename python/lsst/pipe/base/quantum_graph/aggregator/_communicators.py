@@ -236,7 +236,7 @@ class SupervisorCommunicator:
         ingester_done = False
         n_scanners_done = 0
         while not (ingester_done and writer_done and n_scanners_done == len(self._ingest_confirmations)):
-            self.log.debug(
+            self.log.verbose(
                 "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
                 ingester_done,
                 writer_done,
@@ -254,9 +254,9 @@ class SupervisorCommunicator:
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
         while _get_from_queue(self._compression_dict) is not None:
-            self.log.debug("Flushing compression dict queue.")
+            self.log.verbose("Flushing compression dict queue.")
             pass
-        self.log.debug("Checking that all queues are empty.")
+        self.log.verbose("Checking that all queues are empty.")
         self._expect_empty_queue(self._scan_requests)
         self._expect_empty_queue(self._ingest_requests)
         if self._write_requests is not None:
