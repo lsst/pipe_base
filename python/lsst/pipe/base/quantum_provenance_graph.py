@@ -73,7 +73,13 @@ from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import PeriodicLogger, getLogger
 
 from ._status import QuantumSuccessCaveats
-from .automatic_connection_constants import LOG_OUTPUT_TEMPLATE, METADATA_OUTPUT_TEMPLATE
+from .automatic_connection_constants import (
+    LOG_OUTPUT_CONNECTION_NAME,
+    LOG_OUTPUT_TEMPLATE,
+    METADATA_OUTPUT_CONNECTION_NAME,
+    METADATA_OUTPUT_STORAGE_CLASS,
+    METADATA_OUTPUT_TEMPLATE,
+)
 from .graph import QuantumGraph, QuantumNode
 
 if TYPE_CHECKING:
@@ -1612,8 +1618,8 @@ class QuantumProvenanceGraph:
         quantum_info.setdefault("status", QuantumInfoStatus.UNKNOWN)
         quantum_info.setdefault("recovered", False)
         self._quanta.setdefault(quantum_key.task_label, set()).add(quantum_key)
-        metadata_ref = node.quantum.outputs[f"{node.taskDef.label}_metadata"][0]
-        log_ref = node.quantum.outputs[f"{node.taskDef.label}_log"][0]
+        metadata_ref = node.quantum.outputs[METADATA_OUTPUT_TEMPLATE.format(label=node.taskDef.label)][0]
+        log_ref = node.quantum.outputs[LOG_OUTPUT_TEMPLATE.format(label=node.taskDef.label)][0]
         # associate run collections with specific quanta. this is important
         # if the same quanta are processed in multiple runs as in recovery
         # workflows.
@@ -1640,10 +1646,10 @@ class QuantumProvenanceGraph:
             # collection combination.
             dataset_runs[output_run] = DatasetRun(id=ref.id)
             # save metadata and logs for easier status interpretation later
-            if dataset_key.dataset_type_name.endswith("_metadata"):
+            if dataset_key.dataset_type_name.endswith(METADATA_OUTPUT_CONNECTION_NAME):
                 quantum_info["metadata"] = dataset_key
                 quantum_runs[output_run].metadata_ref = ref
-            if dataset_key.dataset_type_name.endswith("_log"):
+            if dataset_key.dataset_type_name.endswith(LOG_OUTPUT_CONNECTION_NAME):
                 quantum_info["log"] = dataset_key
                 quantum_runs[output_run].log_ref = ref
         for ref in itertools.chain.from_iterable(node.quantum.inputs.values()):
@@ -1826,7 +1832,7 @@ class QuantumProvenanceGraph:
         quantum_run = quantum_info["runs"][output_run]
 
         def read_metadata() -> None:
-            md = self._butler_get(quantum_run.metadata_ref, storageClass="TaskMetadata")
+            md = self._butler_get(quantum_run.metadata_ref, storageClass=METADATA_OUTPUT_STORAGE_CLASS)
             try:
                 # Int conversion guards against spurious conversion to
                 # float that can apparently sometimes happen in
@@ -1964,7 +1970,10 @@ class QuantumProvenanceGraph:
                             # Avoiding publishing failed logs is difficult
                             # without using tagged collections, so flag them as
                             # merely unsuccessful unless the user requests it.
-                            if dataset_type_name.endswith("_log") and not curse_failed_logs:
+                            if (
+                                dataset_type_name.endswith(LOG_OUTPUT_CONNECTION_NAME)
+                                and not curse_failed_logs
+                            ):
                                 dataset_info["status"] = DatasetInfoStatus.UNSUCCESSFUL
                             else:
                                 dataset_info["status"] = DatasetInfoStatus.CURSED
