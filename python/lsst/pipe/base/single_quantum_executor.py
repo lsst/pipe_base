@@ -33,7 +33,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from itertools import chain
-from typing import Any, cast
+from typing import Any
 
 from lsst.daf.butler import (
     Butler,
@@ -46,7 +46,6 @@ from lsst.daf.butler import (
 )
 from lsst.utils.timer import logInfo
 
-from ._instrument import Instrument
 from ._quantumContext import ExecutionResources, QuantumContext
 from ._status import AnnotatedPartialOutputsError, InvalidQuantumError, NoWorkFound, QuantumSuccessCaveats
 from .connections import AdjustQuantumHelper
@@ -237,9 +236,6 @@ class SingleQuantumExecutor(QuantumExecutor):
                     import debug  # type: ignore # noqa:F401
                 except ImportError:
                     _LOG.warning("No 'debug' module found.")
-
-            # initialize global state
-            self._init_globals(quantum)
 
             # Ensure that we are executing a frozen config
             task_node.config.freeze()
@@ -568,41 +564,6 @@ class SingleQuantumExecutor(QuantumExecutor):
                 " and execution"
             ) from exc
         limited_butler.put(metadata, ref)
-
-    def _init_globals(self, quantum: Quantum) -> None:
-        """Initialize global state needed for task execution.
-
-        Parameters
-        ----------
-        quantum : `~lsst.daf.butler.Quantum`
-            Single Quantum instance.
-
-        Notes
-        -----
-        There is an issue with initializing filters singleton which is done
-        by instrument, to avoid requiring tasks to do it in runQuantum()
-        we do it here when any dataId has an instrument dimension. Also for
-        now we only allow single instrument, verify that all instrument
-        names in all dataIds are identical.
-
-        This will need revision when filter singleton disappears.
-        """
-        # can only work for full butler
-        if self._butler is None:
-            return
-        oneInstrument = None
-        for datasetRefs in chain(quantum.inputs.values(), quantum.outputs.values()):
-            for datasetRef in datasetRefs:
-                dataId = datasetRef.dataId
-                instrument = cast(str, dataId.get("instrument"))
-                if instrument is not None:
-                    if oneInstrument is not None:
-                        assert (  # type: ignore
-                            instrument == oneInstrument
-                        ), "Currently require that only one instrument is used per graph"
-                    else:
-                        oneInstrument = instrument
-                        Instrument.fromName(instrument, self._butler.registry)
 
     def _should_assume_exists(self, quantum: Quantum, ref: DatasetRef) -> bool | None:
         """Report whether the given dataset can be assumed to exist because

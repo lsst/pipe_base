@@ -173,6 +173,12 @@ class MockDataset(pydantic.BaseModel):
     parameters: dict[str, str] | None = None
     """`repr` of all parameters applied when reading this dataset."""
 
+    int_value: int | None = None
+    """An arbitrary integer value stored in the mock dataset."""
+
+    str_value: int | None = None
+    """An arbitrary string value stored in the mock dataset."""
+
     @property
     def storage_class(self) -> str:
         return cast(str, self.dataset_type.storageClass)

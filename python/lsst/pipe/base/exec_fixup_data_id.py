@@ -27,16 +27,17 @@
 
 __all__ = ["ExecutionGraphFixup"]
 
-import contextlib
 import itertools
+import uuid
 from collections import defaultdict
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import networkx as nx
 
+from lsst.daf.butler import DataCoordinate, DataIdValue
+
 from .execution_graph_fixup import ExecutionGraphFixup
-from .graph import QuantumGraph, QuantumNode
+from .graph import QuantumGraph
 
 
 class ExecFixupDataId(ExecutionGraphFixup):
@@ -88,44 +89,16 @@ class ExecFixupDataId(ExecutionGraphFixup):
         else:
             self.dimensions = tuple(self.dimensions)
 
-    def _key(self, qnode: QuantumNode) -> tuple[Any, ...]:
-        """Produce comparison key for quantum data.
-
-        Parameters
-        ----------
-        qnode : `QuantumNode`
-            An individual node in a `~lsst.pipe.base.QuantumGraph`
-
-        Returns
-        -------
-        key : `tuple`
-        """
-        dataId = qnode.quantum.dataId
-        assert dataId is not None, "Quantum DataId cannot be None"
-        key = tuple(dataId[dim] for dim in self.dimensions)
-        return key
-
     def fixupQuanta(self, graph: QuantumGraph) -> QuantumGraph:
-        taskDef = graph.findTaskDefByLabel(self.taskLabel)
-        if taskDef is None:
-            raise ValueError(f"Cannot find task with label {self.taskLabel}")
-        quanta = list(graph.getNodesForTask(taskDef))
-        keyQuanta = defaultdict(list)
-        for q in quanta:
-            key = self._key(q)
-            keyQuanta[key].append(q)
-        keys = sorted(keyQuanta.keys(), reverse=self.reverse)
-        networkGraph = graph.graph
+        raise NotImplementedError()
 
-        for prev_key, key in itertools.pairwise(keys):
-            for prev_node in keyQuanta[prev_key]:
-                for node in keyQuanta[key]:
-                    # remove any existing edges between the two nodes, but
-                    # don't fail if there are not any. Both directions need
-                    # tried because in a directed graph, order maters
-                    for edge in ((node, prev_node), (prev_node, node)):
-                        with contextlib.suppress(nx.NetworkXException):
-                            networkGraph.remove_edge(*edge)
-
-                    networkGraph.add_edge(prev_node, node)
-        return graph
+    def fixup_graph(
+        self, xgraph: nx.DiGraph, quanta_by_task: Mapping[str, Mapping[DataCoordinate, uuid.UUID]]
+    ) -> None:
+        quanta_by_sort_key: defaultdict[tuple[DataIdValue, ...], list[uuid.UUID]] = defaultdict(list)
+        for data_id, quantum_id in quanta_by_task[self.taskLabel].items():
+            key = tuple(data_id[dim] for dim in self.dimensions)
+            quanta_by_sort_key[key].append(quantum_id)
+        sorted_keys = sorted(quanta_by_sort_key.keys(), reverse=self.reverse)
+        for prev_key, key in itertools.pairwise(sorted_keys):
+            xgraph.add_edges_from(itertools.product(quanta_by_sort_key[prev_key], quanta_by_sort_key[key]))

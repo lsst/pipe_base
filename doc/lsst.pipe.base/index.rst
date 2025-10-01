@@ -100,6 +100,10 @@ Python API reference
 
 .. automodapi:: lsst.pipe.base.separable_pipeline_executor
 
+.. automodapi:: lsst.pipe.base.quantum_graph
+
+.. automodapi:: lsst.pipe.base.quantum_graph.visualization
+
 QuantumGraph generation API reference
 -------------------------------------
 

@@ -39,16 +39,20 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Iterable
-from typing import Literal
+from typing import Literal, cast
 
+import networkx
+
+from lsst.daf.butler import DataCoordinate, Quantum
 from lsst.daf.butler.cli.cliLog import CliLog
 from lsst.utils.threads import disable_implicit_threading
 
 from ._status import InvalidQuantumError, RepeatableQuantumError
 from .execution_graph_fixup import ExecutionGraphFixup
-from .graph import QuantumGraph, QuantumNode
+from .graph import QuantumGraph
+from .graph_walker import GraphWalker
 from .pipeline_graph import TaskNode
+from .quantum_graph import PredictedQuantumGraph, PredictedQuantumInfo
 from .quantum_graph_executor import QuantumExecutor, QuantumGraphExecutor
 from .quantum_reports import ExecutionStatus, QuantumReport, Report
 
@@ -82,13 +86,18 @@ class _Job:
 
     Parameters
     ----------
-    qnode: `QuantumNode`
-        Quantum and some associated information.
+    quantum_id : `uuid.UUID`
+        ID of the quantum this job executes.
+    quantum : `lsst.daf.butler.Quantum`
+        Description of the inputs and outputs.
+    task_node : `.pipeline_graph.TaskNode`
+        Description of the task and configuration.
     """
 
-    def __init__(self, qnode: QuantumNode, fail_fast: bool = False):
-        self.qnode = qnode
-        self._fail_fast = fail_fast
+    def __init__(self, quantum_id: uuid.UUID, quantum: Quantum, task_node: TaskNode):
+        self.quantum_id = quantum_id
+        self.quantum = quantum
+        self.task_node = task_node
         self.process: multiprocessing.process.BaseProcess | None = None
         self._state = JobState.PENDING
         self.started: float = 0.0
@@ -115,6 +124,7 @@ class _Job:
         self,
         quantumExecutor: QuantumExecutor,
         startMethod: Literal["spawn"] | Literal["forkserver"],
+        fail_fast: bool,
     ) -> None:
         """Start process which runs the task.
 
@@ -124,13 +134,15 @@ class _Job:
             Executor for single quantum.
         startMethod : `str`, optional
             Start method from `multiprocessing` module.
+        fail_fast : `bool`, optional
+            If `True` then kill subprocess on RepeatableQuantumError.
         """
         # Unpickling of quantum has to happen after butler/executor, also we
         # want to setup logging before unpickling anything that can generate
         # messages, this is why things are pickled manually here.
         qe_pickle = pickle.dumps(quantumExecutor)
-        task_node_pickle = pickle.dumps(self.qnode.task_node)
-        quantum_pickle = pickle.dumps(self.qnode.quantum)
+        task_node_pickle = pickle.dumps(self.task_node)
+        quantum_pickle = pickle.dumps(self.quantum)
         self._rcv_conn, snd_conn = multiprocessing.Pipe(False)
         logConfigState = CliLog.configState
 
@@ -141,12 +153,12 @@ class _Job:
                 qe_pickle,
                 task_node_pickle,
                 quantum_pickle,
-                self.qnode.nodeId,
+                self.quantum_id,
                 logConfigState,
                 snd_conn,
-                self._fail_fast,
+                fail_fast,
             ),
-            name=f"task-{self.qnode.quantum.dataId}",
+            name=f"task-{self.quantum.dataId}",
         )
         # mypy is getting confused by multiprocessing.
         assert self.process is not None
@@ -285,12 +297,12 @@ class _Job:
             # Likely due to the process killed, but there may be other reasons.
             # Exit code should not be None, this is to keep mypy happy.
             exitcode = self.process.exitcode if self.process.exitcode is not None else -1
-            assert self.qnode.quantum.dataId is not None, "Quantum DataId cannot be None"
+            assert self.quantum.dataId is not None, "Quantum DataId cannot be None"
             report = QuantumReport.from_exit_code(
-                quantumId=self.qnode.nodeId,
+                quantumId=self.quantum_id,
                 exitCode=exitcode,
-                dataId=self.qnode.quantum.dataId,
-                taskLabel=self.qnode.task_node.label,
+                dataId=self.quantum.dataId,
+                taskLabel=self.task_node.label,
             )
         if self.terminated:
             # Means it was killed, assume it's due to timeout
@@ -319,7 +331,7 @@ class _Job:
         return msg
 
     def __str__(self) -> str:
-        return f"<{self.qnode.task_node.label} dataId={self.qnode.quantum.dataId}>"
+        return f"<{self.task_node.label} dataId={self.quantum.dataId}>"
 
 
 class _JobList:
@@ -327,42 +339,55 @@ class _JobList:
 
     Parameters
     ----------
-    iterable : ~collections.abc.Iterable` [ `QuantumNode` ]
-        Sequence of Quanta to execute. This has to be ordered according to
-        task dependencies.
+    xgraph : `networkx.DiGraph`
+        Directed acyclic graph of quantum IDs.
     """
 
-    def __init__(self, iterable: Iterable[QuantumNode]):
-        self.jobs = [_Job(qnode) for qnode in iterable]
-        self.pending = self.jobs[:]
-        self.running: list[_Job] = []
-        self.finishedNodes: set[QuantumNode] = set()
-        self.failedNodes: set[QuantumNode] = set()
-        self.timedOutNodes: set[QuantumNode] = set()
+    def __init__(self, xgraph: networkx.DiGraph):
+        self.jobs = {
+            quantum_id: _Job(
+                quantum_id=quantum_id,
+                quantum=xgraph.nodes[quantum_id]["quantum"],
+                task_node=xgraph.nodes[quantum_id]["pipeline_node"],
+            )
+            for quantum_id in xgraph
+        }
+        self.walker: GraphWalker[uuid.UUID] = GraphWalker(xgraph.copy())
+        self.pending = set(next(self.walker, ()))
+        self.running: set[uuid.UUID] = set()
+        self.finished: set[uuid.UUID] = set()
+        self.failed: set[uuid.UUID] = set()
+        self.timed_out: set[uuid.UUID] = set()
 
     def submit(
         self,
-        job: _Job,
         quantumExecutor: QuantumExecutor,
         startMethod: Literal["spawn"] | Literal["forkserver"],
-    ) -> None:
-        """Submit one more job for execution.
+        fail_fast: bool = False,
+    ) -> _Job:
+        """Submit a pending job for execution.
 
         Parameters
         ----------
-        job : `_Job`
-            Job to submit.
         quantumExecutor : `QuantumExecutor`
             Executor for single quantum.
         startMethod : `str`, optional
             Start method from `multiprocessing` module.
-        """
-        # this will raise if job is not in pending list
-        self.pending.remove(job)
-        job.start(quantumExecutor, startMethod)
-        self.running.append(job)
+        fail_fast : `bool`, optional
+            If `True` then kill subprocess on RepeatableQuantumError.
 
-    def setJobState(self, job: _Job, state: JobState) -> None:
+        Returns
+        -------
+        job : `_Job`
+            The job that was submitted.
+        """
+        quantum_id = self.pending.pop()
+        job = self.jobs[quantum_id]
+        job.start(quantumExecutor, startMethod, fail_fast=fail_fast)
+        self.running.add(job.quantum_id)
+        return job
+
+    def setJobState(self, job: _Job, state: JobState) -> list[_Job]:
         """Update job state.
 
         Parameters
@@ -370,36 +395,49 @@ class _JobList:
         job : `_Job`
             Job to submit.
         state : `JobState`
-            New job state, note that only FINISHED, FAILED, TIMED_OUT, or
-            FAILED_DEP state is acceptable.
+            New job state; note that only the FINISHED, FAILED, and TIMED_OUT
+            states are acceptable.
+
+        Returns
+        -------
+        blocked : `list` [ `_Job` ]
+            Additional jobs that have been marked as failed because this job
+            was upstream of them and failed or timed out.
         """
-        allowedStates = (JobState.FINISHED, JobState.FAILED, JobState.TIMED_OUT, JobState.FAILED_DEP)
+        allowedStates = (JobState.FINISHED, JobState.FAILED, JobState.TIMED_OUT)
         assert state in allowedStates, f"State {state} not allowed here"
 
         # remove job from pending/running lists
         if job.state == JobState.PENDING:
-            self.pending.remove(job)
+            self.pending.remove(job.quantum_id)
         elif job.state == JobState.RUNNING:
-            self.running.remove(job)
+            self.running.remove(job.quantum_id)
 
-        qnode = job.qnode
+        quantum_id = job.quantum_id
         # it should not be in any of these, but just in case
-        self.finishedNodes.discard(qnode)
-        self.failedNodes.discard(qnode)
-        self.timedOutNodes.discard(qnode)
-
+        self.finished.discard(quantum_id)
+        self.failed.discard(quantum_id)
+        self.timed_out.discard(quantum_id)
         job._state = state
-        if state == JobState.FINISHED:
-            self.finishedNodes.add(qnode)
-        elif state == JobState.FAILED:
-            self.failedNodes.add(qnode)
-        elif state == JobState.FAILED_DEP:
-            self.failedNodes.add(qnode)
-        elif state == JobState.TIMED_OUT:
-            self.failedNodes.add(qnode)
-            self.timedOutNodes.add(qnode)
-        else:
-            raise ValueError(f"Unexpected state value: {state}")
+        match job.state:
+            case JobState.FINISHED:
+                self.finished.add(quantum_id)
+                self.walker.finish(quantum_id)
+                self.pending.update(next(self.walker, ()))
+                return []
+            case JobState.FAILED:
+                self.failed.add(quantum_id)
+            case JobState.TIMED_OUT:
+                self.failed.add(quantum_id)
+                self.timed_out.add(quantum_id)
+            case _:
+                raise ValueError(f"Unexpected state value: {state}")
+        blocked: list[_Job] = []
+        for downstream_quantum_id in self.walker.fail(quantum_id):
+            self.failed.add(downstream_quantum_id)
+            blocked.append(self.jobs[downstream_quantum_id])
+            self.jobs[downstream_quantum_id]._state = JobState.FAILED_DEP
+        return blocked
 
     def cleanup(self) -> None:
         """Do periodic cleanup for jobs that did not finish correctly.
@@ -408,8 +446,10 @@ class _JobList:
         cleanup will not work for them. Here we check all timed out jobs
         periodically and do cleanup if they managed to die by this time.
         """
-        for job in self.jobs:
-            if job.state == JobState.TIMED_OUT and job.process is not None:
+        for quantum_id in self.timed_out:
+            job = self.jobs[quantum_id]
+            assert job.state == JobState.TIMED_OUT, "Job state should be consistent with the set it's in."
+            if job.process is not None:
                 job.cleanup()
 
 
@@ -475,31 +515,43 @@ class MPGraphExecutor(QuantumGraphExecutor):
             start_method = "spawn"
         self._start_method = start_method
 
-    def execute(self, graph: QuantumGraph) -> None:
+    def execute(self, graph: QuantumGraph | PredictedQuantumGraph) -> None:
         # Docstring inherited from QuantumGraphExecutor.execute
-        graph = self._fixupQuanta(graph)
-        self._report = Report(qgraphSummary=graph.getSummary())
+        old_graph: QuantumGraph | None = None
+        if isinstance(graph, QuantumGraph):
+            old_graph = graph
+            new_graph = PredictedQuantumGraph.from_old_quantum_graph(old_graph)
+        else:
+            new_graph = graph
+        xgraph = self._make_xgraph(new_graph, old_graph)
+        self._report = Report(qgraphSummary=new_graph._make_summary())
         try:
             if self._num_proc > 1:
-                self._executeQuantaMP(graph, self._report)
+                self._execute_quanta_mp(xgraph, self._report)
             else:
-                self._executeQuantaInProcess(graph, self._report)
+                self._execute_quanta_in_process(xgraph, self._report)
         except Exception as exc:
             self._report.set_exception(exc)
             raise
 
-    def _fixupQuanta(self, graph: QuantumGraph) -> QuantumGraph:
-        """Call fixup code to modify execution graph.
+    def _make_xgraph(
+        self, new_graph: PredictedQuantumGraph, old_graph: QuantumGraph | None
+    ) -> networkx.DiGraph:
+        """Obtain a networkx DAG from a quantum graph, applying any fixup and
+        adding `lsst.daf.butler.Quantum` and `~.pipeline_graph.TaskNode`
+        attributes.
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
-            `.QuantumGraph` to modify.
+        new_graph : `.quantum_graph.PredictedQuantumGraph`
+            New quantum graph object.
+        old_graph : `.QuantumGraph` or `None`
+            Equivalent old quantum graph object.
 
         Returns
         -------
-        graph : `.QuantumGraph`
-            Modified `.QuantumGraph`.
+        xgraph : `networkx.DiGraph`
+            NetworkX DAG with quantum IDs as node keys.
 
         Raises
         ------
@@ -507,147 +559,171 @@ class MPGraphExecutor(QuantumGraphExecutor):
             Raised if execution graph cannot be ordered after modification,
             i.e. it has dependency cycles.
         """
-        if not self._execution_graph_fixup:
-            return graph
+        new_graph.build_execution_quanta()
+        xgraph = new_graph.quantum_only_xgraph.copy()
+        if self._execution_graph_fixup:
+            try:
+                self._execution_graph_fixup.fixup_graph(xgraph, new_graph.quanta_by_task)
+            except NotImplementedError:
+                # Backwards compatibility.
+                if old_graph is None:
+                    old_graph = new_graph.to_old_quantum_graph()
+                old_graph = self._execution_graph_fixup.fixupQuanta(old_graph)
+                # Adding all of the edges from old_graph is overkill, but the
+                # only option we really have to make sure we add any new ones.
+                xgraph.update([(a.nodeId, b.nodeId) for a, b in old_graph.graph.edges])
+            if networkx.dag.has_cycle(xgraph):
+                raise MPGraphExecutorError("Updated execution graph has dependency cycle.")
+        return xgraph
 
-        _LOG.debug("Call execution graph fixup method")
-        graph = self._execution_graph_fixup.fixupQuanta(graph)
-
-        # Detect if there is now a cycle created within the graph
-        if graph.findCycle():
-            raise MPGraphExecutorError("Updated execution graph has dependency cycle.")
-
-        return graph
-
-    def _executeQuantaInProcess(self, graph: QuantumGraph, report: Report) -> None:
+    def _execute_quanta_in_process(self, xgraph: networkx.DiGraph, report: Report) -> None:
         """Execute all Quanta in current process.
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
-            `.QuantumGraph` that is to be executed.
+        xgraph : `networkx.DiGraph`
+            DAG to execute.  Should have quantum IDs for nodes and ``quantum``
+            (`lsst.daf.butler.Quantum`) and ``pipeline_node``
+            (`lsst.pipe.base.pipeline_graph.TaskNode`) attributes in addition
+            to those provided by
+            `.quantum_graph.PredictedQuantumGraph.quantum_only_xgraph`.
         report : `Report`
             Object for reporting execution status.
         """
-        successCount, totalCount = 0, len(graph)
-        failedNodes: set[QuantumNode] = set()
-        for qnode in graph:
-            assert qnode.quantum.dataId is not None, "Quantum DataId cannot be None"
-            task_node = qnode.task_node
 
-            # Any failed inputs mean that the quantum has to be skipped.
-            inputNodes = graph.determineInputsToQuantumNode(qnode)
-            if inputNodes & failedNodes:
-                _LOG.error(
-                    "Upstream job failed for task <%s dataId=%s>, skipping this task.",
-                    task_node.label,
-                    qnode.quantum.dataId,
-                )
-                failedNodes.add(qnode)
-                failed_quantum_report = QuantumReport(
-                    quantumId=qnode.nodeId,
-                    status=ExecutionStatus.SKIPPED,
-                    dataId=qnode.quantum.dataId,
-                    taskLabel=task_node.label,
-                )
-                report.quantaReports.append(failed_quantum_report)
-                continue
+        def tiebreaker_sort_key(quantum_id: uuid.UUID) -> tuple:
+            node_state = xgraph.nodes[quantum_id]
+            return (node_state["task_label"],) + node_state["data_id"].required_values
 
-            _LOG.debug("Executing %s", qnode)
-            fail_exit_code: int | None = None
-            try:
-                # For some exception types we want to exit immediately with
-                # exception-specific exit code, but we still want to start
-                # debugger before exiting if debugging is enabled.
+        success_count, failed_count, total_count = 0, 0, len(xgraph.nodes)
+        walker = GraphWalker[uuid.UUID](xgraph.copy())
+        for unblocked_quanta in walker:
+            for quantum_id in sorted(unblocked_quanta, key=tiebreaker_sort_key):
+                node_state: PredictedQuantumInfo = xgraph.nodes[quantum_id]
+                data_id = node_state["data_id"]
+                task_node = node_state["pipeline_node"]
+                quantum = node_state["quantum"]
+
+                _LOG.debug("Executing %s (%s@%s)", quantum_id, task_node.label, data_id)
+                fail_exit_code: int | None = None
                 try:
-                    _, quantum_report = self._quantum_executor.execute(
-                        task_node, qnode.quantum, quantum_id=qnode.nodeId
-                    )
-                    if quantum_report:
-                        report.quantaReports.append(quantum_report)
-                    successCount += 1
-                except RepeatableQuantumError as exc:
-                    if self._fail_fast:
-                        _LOG.warning(
-                            "Caught repeatable quantum error for %s (%s):",
-                            task_node.label,
-                            qnode.quantum.dataId,
-                        )
-                        _LOG.warning(exc, exc_info=True)
-                        fail_exit_code = exc.EXIT_CODE
-                    raise
-                except InvalidQuantumError as exc:
-                    _LOG.fatal("Invalid quantum error for %s (%s):", task_node.label, qnode.quantum.dataId)
-                    _LOG.fatal(exc, exc_info=True)
-                    fail_exit_code = exc.EXIT_CODE
-                    raise
-            except Exception as exc:
-                quantum_report = QuantumReport.from_exception(
-                    quantumId=qnode.nodeId,
-                    exception=exc,
-                    dataId=qnode.quantum.dataId,
-                    taskLabel=task_node.label,
-                )
-                report.quantaReports.append(quantum_report)
-
-                if self._pdb and sys.stdin.isatty() and sys.stdout.isatty():
-                    _LOG.error(
-                        "Task <%s dataId=%s> failed; dropping into pdb.",
-                        task_node.label,
-                        qnode.quantum.dataId,
-                        exc_info=exc,
-                    )
+                    # For some exception types we want to exit immediately with
+                    # exception-specific exit code, but we still want to start
+                    # debugger before exiting if debugging is enabled.
                     try:
-                        pdb = importlib.import_module(self._pdb)
-                    except ImportError as imp_exc:
-                        raise MPGraphExecutorError(
-                            f"Unable to import specified debugger module ({self._pdb}): {imp_exc}"
-                        ) from exc
-                    if not hasattr(pdb, "post_mortem"):
-                        raise MPGraphExecutorError(
-                            f"Specified debugger module ({self._pdb}) can't debug with post_mortem",
-                        ) from exc
-                    pdb.post_mortem(exc.__traceback__)
-                failedNodes.add(qnode)
-                report.status = ExecutionStatus.FAILURE
-
-                # If exception specified an exit code then just exit with that
-                # code, otherwise crash if fail-fast option is enabled.
-                if fail_exit_code is not None:
-                    sys.exit(fail_exit_code)
-                if self._fail_fast:
-                    raise MPGraphExecutorError(
-                        f"Task <{task_node.label} dataId={qnode.quantum.dataId}> failed."
-                    ) from exc
-                else:
-                    # Note that there could be exception safety issues, which
-                    # we presently ignore.
-                    _LOG.error(
-                        "Task <%s dataId=%s> failed; processing will continue for remaining tasks.",
-                        task_node.label,
-                        qnode.quantum.dataId,
-                        exc_info=exc,
+                        _, quantum_report = self._quantum_executor.execute(
+                            task_node, quantum, quantum_id=quantum_id
+                        )
+                        if quantum_report:
+                            report.quantaReports.append(quantum_report)
+                        success_count += 1
+                        walker.finish(quantum_id)
+                    except RepeatableQuantumError as exc:
+                        if self._fail_fast:
+                            _LOG.warning(
+                                "Caught repeatable quantum error for %s (%s@%s):",
+                                quantum_id,
+                                task_node.label,
+                                data_id,
+                            )
+                            _LOG.warning(exc, exc_info=True)
+                            fail_exit_code = exc.EXIT_CODE
+                        raise
+                    except InvalidQuantumError as exc:
+                        _LOG.fatal(
+                            "Invalid quantum error for %s (%s@%s):", quantum_id, task_node.label, data_id
+                        )
+                        _LOG.fatal(exc, exc_info=True)
+                        fail_exit_code = exc.EXIT_CODE
+                        raise
+                except Exception as exc:
+                    quantum_report = QuantumReport.from_exception(
+                        exception=exc,
+                        dataId=data_id,
+                        taskLabel=task_node.label,
                     )
+                    report.quantaReports.append(quantum_report)
 
-            _LOG.info(
-                "Executed %d quanta successfully, %d failed and %d remain out of total %d quanta.",
-                successCount,
-                len(failedNodes),
-                totalCount - successCount - len(failedNodes),
-                totalCount,
-            )
+                    if self._pdb and sys.stdin.isatty() and sys.stdout.isatty():
+                        _LOG.error(
+                            "%s (%s@%s) failed; dropping into pdb.",
+                            quantum_id,
+                            task_node.label,
+                            data_id,
+                            exc_info=exc,
+                        )
+                        try:
+                            pdb = importlib.import_module(self._pdb)
+                        except ImportError as imp_exc:
+                            raise MPGraphExecutorError(
+                                f"Unable to import specified debugger module ({self._pdb}): {imp_exc}"
+                            ) from exc
+                        if not hasattr(pdb, "post_mortem"):
+                            raise MPGraphExecutorError(
+                                f"Specified debugger module ({self._pdb}) can't debug with post_mortem",
+                            ) from exc
+                        pdb.post_mortem(exc.__traceback__)
+
+                    report.status = ExecutionStatus.FAILURE
+                    failed_count += 1
+
+                    # If exception specified an exit code then just exit with
+                    # that code, otherwise crash if fail-fast option is
+                    # enabled.
+                    if fail_exit_code is not None:
+                        sys.exit(fail_exit_code)
+                    if self._fail_fast:
+                        raise MPGraphExecutorError(
+                            f"Quantum {quantum_id} ({task_node.label}@{data_id}) failed."
+                        ) from exc
+                    else:
+                        _LOG.error(
+                            "%s (%s@%s) failed; processing will continue for remaining tasks.",
+                            quantum_id,
+                            task_node.label,
+                            data_id,
+                            exc_info=exc,
+                        )
+
+                    for downstream_quantum_id in walker.fail(quantum_id):
+                        downstream_node_state = xgraph.nodes[downstream_quantum_id]
+                        failed_quantum_report = QuantumReport(
+                            status=ExecutionStatus.SKIPPED,
+                            dataId=downstream_node_state["data_id"],
+                            taskLabel=downstream_node_state["task_label"],
+                        )
+                        report.quantaReports.append(failed_quantum_report)
+                        _LOG.error(
+                            "Upstream job failed for task %s (%s@%s), skipping this quantum.",
+                            downstream_quantum_id,
+                            downstream_node_state["task_label"],
+                            downstream_node_state["data_id"],
+                        )
+                        failed_count += 1
+
+                _LOG.info(
+                    "Executed %d quanta successfully, %d failed and %d remain out of total %d quanta.",
+                    success_count,
+                    failed_count,
+                    total_count - success_count - failed_count,
+                    total_count,
+                )
 
         # Raise an exception if there were any failures.
-        if failedNodes:
+        if failed_count:
             raise MPGraphExecutorError("One or more tasks failed during execution.")
 
-    def _executeQuantaMP(self, graph: QuantumGraph, report: Report) -> None:
+    def _execute_quanta_mp(self, xgraph: networkx.DiGraph, report: Report) -> None:
         """Execute all Quanta in separate processes.
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
-            `.QuantumGraph` that is to be executed.
+        xgraph : `networkx.DiGraph`
+            DAG to execute.  Should have quantum IDs for nodes and ``quantum``
+            (`lsst.daf.butler.Quantum`) and ``task_node``
+            (`lsst.pipe.base.pipeline_graph.TaskNode`) attributes in addition
+            to those provided by
+            `.quantum_graph.PredictedQuantumGraph.quantum_only_xgraph`.
         report : `Report`
             Object for reporting execution status.
         """
@@ -656,14 +732,13 @@ class MPGraphExecutor(QuantumGraphExecutor):
         _LOG.debug("Using %r for multiprocessing start method", self._start_method)
 
         # re-pack input quantum data into jobs list
-        jobs = _JobList(graph)
+        jobs = _JobList(xgraph)
 
         # check that all tasks can run in sub-process
-        for job in jobs.jobs:
-            task_node = job.qnode.task_node
-            if not task_node.task_class.canMultiprocess:
+        for job in jobs.jobs.values():
+            if not job.task_node.task_class.canMultiprocess:
                 raise MPGraphExecutorError(
-                    f"Task {task_node.label!r} does not support multiprocessing; use single process"
+                    f"Task {job.task_node.label!r} does not support multiprocessing; use single process"
                 )
 
         finishedCount, failedCount = 0, 0
@@ -672,8 +747,10 @@ class MPGraphExecutor(QuantumGraphExecutor):
             _LOG.debug("#runningJobs: %s", len(jobs.running))
 
             # See if any jobs have finished
-            for job in jobs.running:
+            for quantum_id in list(jobs.running):  # iterate over a copy so we can remove.
+                job = jobs.jobs[quantum_id]
                 assert job.process is not None, "Process cannot be None"
+                blocked: list[_Job] = []
                 if not job.process.is_alive():
                     _LOG.debug("finished: %s", job)
                     # finished
@@ -691,20 +768,21 @@ class MPGraphExecutor(QuantumGraphExecutor):
                                 # Do not override global FAILURE status
                                 report.status = ExecutionStatus.TIMEOUT
                             message = f"Timeout ({self._timeout} sec) for task {job}, task is killed"
-                            jobs.setJobState(job, JobState.TIMED_OUT)
+                            blocked = jobs.setJobState(job, JobState.TIMED_OUT)
                         else:
                             report.status = ExecutionStatus.FAILURE
                             # failMessage() has to be called before cleanup()
                             message = job.failMessage()
-                            jobs.setJobState(job, JobState.FAILED)
+                            blocked = jobs.setJobState(job, JobState.FAILED)
 
                         job.cleanup()
                         _LOG.debug("failed: %s", job)
                         if self._fail_fast or exitcode == InvalidQuantumError.EXIT_CODE:
                             # stop all running jobs
-                            for stopJob in jobs.running:
-                                if stopJob is not job:
-                                    stopJob.stop()
+                            for stop_quantum_id in jobs.running:
+                                stop_job = jobs.jobs[stop_quantum_id]
+                                if stop_job is not job:
+                                    stop_job.stop()
                             if job.state is JobState.TIMED_OUT:
                                 raise MPTimeoutError(f"Timeout ({self._timeout} sec) for task {job}.")
                             else:
@@ -722,42 +800,26 @@ class MPGraphExecutor(QuantumGraphExecutor):
                         _LOG.debug("Terminating job %s due to timeout", job)
                         job.stop()
 
-            # Fail jobs whose inputs failed, this may need several iterations
-            # if the order is not right, will be done in the next loop.
-            if jobs.failedNodes:
-                for job in jobs.pending:
-                    jobInputNodes = graph.determineInputsToQuantumNode(job.qnode)
-                    assert job.qnode.quantum.dataId is not None, "Quantum DataId cannot be None"
-                    if jobInputNodes & jobs.failedNodes:
-                        quantum_report = QuantumReport(
-                            quantumId=job.qnode.nodeId,
-                            status=ExecutionStatus.SKIPPED,
-                            dataId=job.qnode.quantum.dataId,
-                            taskLabel=job.qnode.task_node.label,
-                        )
-                        report.quantaReports.append(quantum_report)
-                        jobs.setJobState(job, JobState.FAILED_DEP)
-                        _LOG.error("Upstream job failed for task %s, skipping this task.", job)
+                for downstream_job in blocked:
+                    quantum_report = QuantumReport(
+                        quantumId=downstream_job.quantum_id,
+                        status=ExecutionStatus.SKIPPED,
+                        dataId=cast(DataCoordinate, downstream_job.quantum.dataId),
+                        taskLabel=downstream_job.task_node.label,
+                    )
+                    report.quantaReports.append(quantum_report)
+                    _LOG.error("Upstream job failed for task %s, skipping this task.", downstream_job)
 
             # see if we can start more jobs
-            if len(jobs.running) < self._num_proc:
-                for job in jobs.pending:
-                    jobInputNodes = graph.determineInputsToQuantumNode(job.qnode)
-                    if jobInputNodes <= jobs.finishedNodes:
-                        # all dependencies have completed, can start new job
-                        if len(jobs.running) < self._num_proc:
-                            _LOG.debug("Submitting %s", job)
-                            jobs.submit(job, self._quantum_executor, self._start_method)
-                        if len(jobs.running) >= self._num_proc:
-                            # Cannot start any more jobs, wait until something
-                            # finishes.
-                            break
+            while len(jobs.running) < self._num_proc and jobs.pending:
+                job = jobs.submit(self._quantum_executor, self._start_method)
+                _LOG.debug("Submitted %s", job)
 
             # Do cleanup for timed out jobs if necessary.
             jobs.cleanup()
 
             # Print progress message if something changed.
-            newFinished, newFailed = len(jobs.finishedNodes), len(jobs.failedNodes)
+            newFinished, newFailed = len(jobs.finished), len(jobs.failed)
             if (finishedCount, failedCount) != (newFinished, newFailed):
                 finishedCount, failedCount = newFinished, newFailed
                 totalCount = len(jobs.jobs)
@@ -775,20 +837,20 @@ class MPGraphExecutor(QuantumGraphExecutor):
             if jobs.running:
                 time.sleep(0.1)
 
-        if jobs.failedNodes:
+        if jobs.failed:
             # print list of failed jobs
             _LOG.error("Failed jobs:")
-            for job in jobs.jobs:
-                if job.state != JobState.FINISHED:
-                    _LOG.error("  - %s: %s", job.state.name, job)
+            for quantum_id in jobs.failed:
+                job = jobs.jobs[quantum_id]
+                _LOG.error("  - %s: %s", job.state.name, job)
 
             # if any job failed raise an exception
-            if jobs.failedNodes == jobs.timedOutNodes:
+            if jobs.failed == jobs.timed_out:
                 raise MPTimeoutError("One or more tasks timed out during execution.")
             else:
                 raise MPGraphExecutorError("One or more tasks failed or timed out during execution.")
 
-    def getReport(self) -> Report | None:
+    def getReport(self) -> Report:
         # Docstring inherited from base class
         if self._report is None:
             raise RuntimeError("getReport() called before execute()")

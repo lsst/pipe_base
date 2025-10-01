@@ -39,39 +39,12 @@ from typing import TYPE_CHECKING, Any, Literal
 from .pipeline import Pipeline
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import DatasetRef
-    from lsst.pipe.base import QuantumGraph, TaskDef
+    from .graph import QuantumGraph
+    from .pipeline import TaskDef
+    from .quantum_graph import PredictedQuantumGraph
 
 
-def _datasetRefId(dsRef: DatasetRef) -> str:
-    """Make a unique identifier string for a dataset ref based on its name and
-    dataId.
-    """
-    dsIdParts = [dsRef.datasetType.name]
-    dsIdParts.extend(f"{key}_{dsRef.dataId[key]}" for key in sorted(dsRef.dataId.required.keys()))
-    return "_".join(dsIdParts)
-
-
-def _makeDatasetNode(dsRef: DatasetRef, allDatasetRefs: dict[str, str], file: Any) -> str:
-    """Create a Mermaid node for a dataset if it doesn't exist, and return its
-    node ID.
-    """
-    dsId = _datasetRefId(dsRef)
-    nodeName = allDatasetRefs.get(dsId)
-    if nodeName is None:
-        nodeName = f"DATASET_{len(allDatasetRefs)}"
-        allDatasetRefs[dsId] = nodeName
-        # Simple label: datasetType name and run.
-        label_lines = [f"**{dsRef.datasetType.name}**", f"run: {dsRef.run}"]
-        # Add dataId info.
-        for k in sorted(dsRef.dataId.required.keys()):
-            label_lines.append(f"{k}={dsRef.dataId[k]}")
-        label = "<br>".join(label_lines)
-        print(f'{nodeName}["{label}"]', file=file)
-    return nodeName
-
-
-def graph2mermaid(qgraph: QuantumGraph, file: Any) -> None:
+def graph2mermaid(qgraph: QuantumGraph | PredictedQuantumGraph, file: Any) -> None:
     """Convert QuantumGraph into a Mermaid flowchart (top-down).
 
     This method is mostly for documentation/presentation purposes.
@@ -91,45 +64,19 @@ def graph2mermaid(qgraph: QuantumGraph, file: Any) -> None:
     ImportError
         Raised if the task class cannot be imported.
     """
+    from .quantum_graph import PredictedQuantumGraph, visualization
+
+    if not isinstance(qgraph, PredictedQuantumGraph):
+        qgraph = PredictedQuantumGraph.from_old_quantum_graph(qgraph)
+
     # Open a file if needed.
     close = False
     if not hasattr(file, "write"):
         file = open(file, "w")
         close = True
 
-    # Start Mermaid code block with flowchart.
-    print("flowchart TD", file=file)
-
-    # To avoid duplicating dataset nodes, we track them.
-    allDatasetRefs: dict[str, str] = {}
-
-    # Process each task/quantum.
-    for taskId, taskDef in enumerate(qgraph.taskGraph):
-        quanta = qgraph.getNodesForTask(taskDef)
-        for qId, quantumNode in enumerate(quanta):
-            # Create quantum node.
-            taskNodeName = f"TASK_{taskId}_{qId}"
-            taskLabelLines = [f"**{taskDef.label}**", f"Node ID: {quantumNode.nodeId}"]
-            dataId = quantumNode.quantum.dataId
-            if dataId is not None:
-                for k in sorted(dataId.required.keys()):
-                    taskLabelLines.append(f"{k}={dataId[k]}")
-            else:
-                raise ValueError("Quantum DataId cannot be None")
-            taskLabel = "<br>".join(taskLabelLines)
-            print(f'{taskNodeName}["{taskLabel}"]', file=file)
-
-            # Quantum inputs: datasets --> tasks
-            for dsRefs in quantumNode.quantum.inputs.values():
-                for dsRef in dsRefs:
-                    dsNode = _makeDatasetNode(dsRef, allDatasetRefs, file)
-                    print(f"{dsNode} --> {taskNodeName}", file=file)
-
-            # Quantum outputs: tasks --> datasets
-            for dsRefs in quantumNode.quantum.outputs.values():
-                for dsRef in dsRefs:
-                    dsNode = _makeDatasetNode(dsRef, allDatasetRefs, file)
-                    print(f"{taskNodeName} --> {dsNode}", file=file)
+    v = visualization.QuantumGraphMermaidVisualizer()
+    v.write_bipartite(qgraph, file)
 
     if close:
         file.close()

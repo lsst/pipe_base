@@ -47,6 +47,7 @@ from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuild
 from .graph import QuantumGraph
 from .mp_graph_executor import MPGraphExecutor
 from .pipeline import Pipeline
+from .quantum_graph import PredictedQuantumGraph
 from .quantum_graph_builder import QuantumGraphBuilder
 from .quantum_graph_executor import QuantumGraphExecutor
 from .single_quantum_executor import SingleQuantumExecutor
@@ -120,7 +121,7 @@ class SeparablePipelineExecutor:
 
     def pre_execute_qgraph(
         self,
-        graph: QuantumGraph,
+        graph: QuantumGraph | PredictedQuantumGraph,
         register_dataset_types: bool = False,
         save_init_outputs: bool = True,
         save_versions: bool = True,
@@ -133,7 +134,7 @@ class SeparablePipelineExecutor:
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
+        graph : `.QuantumGraph` or `.quantum_graph.PredictedQuantumGraph`
             The quantum graph defining the pipeline and datasets to
             be initialized.
         register_dataset_types : `bool`, optional
@@ -169,6 +170,55 @@ class SeparablePipelineExecutor:
         """
         return Pipeline.from_uri(pipeline_uri)
 
+    def make_quantum_graph_builder(
+        self,
+        pipeline: Pipeline,
+        where: str = "",
+        *,
+        builder_class: type[QuantumGraphBuilder] = AllDimensionsQuantumGraphBuilder,
+        **kwargs: Any,
+    ) -> QuantumGraphBuilder:
+        """Initialize a quantum graph builder from a pipeline and input
+        datasets.
+
+        Parameters
+        ----------
+        pipeline : `.Pipeline`
+            The pipeline for which to generate a quantum graph.
+        where : `str`, optional
+            A data ID query that constrains the quanta generated.  Must not be
+            provided if a custom ``builder_class`` is given and that class does
+            not accept ``where`` as a construction argument.
+        builder_class : `type` [ \
+                `.quantum_graph_builder.QuantumGraphBuilder` ], optional
+            Quantum graph builder implementation.  Ignored if ``builder`` is
+            provided.
+        **kwargs
+            Additional keyword arguments are forwarded to ``builder_class``
+            when a quantum graph builder instance is constructed.  All
+            arguments accepted by the
+            `~.quantum_graph_builder.QuantumGraphBuilder` base
+            class are provided automatically (from explicit arguments to this
+            method and executor attributes) and do not need to be included
+            as keyword arguments.
+
+        Returns
+        -------
+        builder : `.quantum_graph_builder.QuantumGraphBuilder`
+            A quantum graph builder.
+        """
+        if where:
+            # Only pass 'where' if it's actually provided, since some
+            # QuantumGraphBuilder subclasses may not accept it.
+            kwargs["where"] = where
+        return builder_class(
+            pipeline.to_graph(),
+            self._butler,
+            skip_existing_in=self._skip_existing_in,
+            clobber=self._clobber_output,
+            **kwargs,
+        )
+
     def make_quantum_graph(
         self,
         pipeline: Pipeline,
@@ -179,6 +229,10 @@ class SeparablePipelineExecutor:
         **kwargs: Any,
     ) -> QuantumGraph:
         """Build a quantum graph from a pipeline and input datasets.
+
+        This returns an instance of the old `.QuantumGraph` class.  Use
+        `build_quantum_graph` to construct a
+        `.quantum_graph.PredictedQuantumGraph`.
 
         Parameters
         ----------
@@ -225,17 +279,7 @@ class SeparablePipelineExecutor:
             "user": getpass.getuser(),
             "time": str(datetime.datetime.now()),
         }
-        if where:
-            # Only pass 'where' if it's actually provided, since some
-            # QuantumGraphBuilder subclasses may not accept it.
-            kwargs["where"] = where
-        qg_builder = builder_class(
-            pipeline.to_graph(),
-            self._butler,
-            skip_existing_in=self._skip_existing_in,
-            clobber=self._clobber_output,
-            **kwargs,
-        )
+        qg_builder = self.make_quantum_graph_builder(pipeline, where, builder_class=builder_class, **kwargs)
         graph = qg_builder.build(metadata=metadata, attach_datastore_records=attach_datastore_records)
         _LOG.info(
             "QuantumGraph contains %d quanta for %d tasks, graph ID: %r",
@@ -245,9 +289,76 @@ class SeparablePipelineExecutor:
         )
         return graph
 
+    def build_quantum_graph(
+        self,
+        pipeline: Pipeline,
+        where: str = "",
+        *,
+        builder_class: type[QuantumGraphBuilder] = AllDimensionsQuantumGraphBuilder,
+        attach_datastore_records: bool = False,
+        **kwargs: Any,
+    ) -> PredictedQuantumGraph:
+        """Build a quantum graph from a pipeline and input datasets.
+
+        This returns an instance of the new
+        `.quantum_graph.PredictedQuantumGraph` class. Use `make_quantum_graph`
+        to construct a `.QuantumGraph`.
+
+        Parameters
+        ----------
+        pipeline : `.Pipeline`
+            The pipeline for which to generate a quantum graph.
+        where : `str`, optional
+            A data ID query that constrains the quanta generated.  Must not be
+            provided if a custom ``builder_class`` is given and that class does
+            not accept ``where`` as a construction argument.
+        builder_class : `type` [ \
+                `.quantum_graph_builder.QuantumGraphBuilder` ], optional
+            Quantum graph builder implementation.  Ignored if ``builder`` is
+            provided.
+        attach_datastore_records : `bool`, optional
+            Whether to attach datastore records.  These are currently used only
+            by `lsst.daf.butler.QuantumBackedButler`, which is not used by
+            `SeparablePipelineExecutor` for execution.
+        **kwargs
+            Additional keyword arguments are forwarded to ``builder_class``
+            when a quantum graph builder instance is constructed.  All
+            arguments accepted by the
+            `~.quantum_graph_builder.QuantumGraphBuilder` base
+            class are provided automatically (from explicit arguments to this
+            method and executor attributes) and do not need to be included
+            as keyword arguments.
+
+        Returns
+        -------
+        graph : `.QuantumGraph`
+            The quantum graph for ``.Pipeline`` as run on the datasets
+            identified by ``where``.
+
+        Notes
+        -----
+        This method does no special handling of empty quantum graphs. If
+        needed, clients can use `len` to test if the returned graph is empty.
+        """
+        metadata = {
+            "skip_existing_in": self._skip_existing_in,
+            "skip_existing": bool(self._skip_existing_in),
+            "data_query": where,
+        }
+        qg_builder = self.make_quantum_graph_builder(pipeline, where, builder_class=builder_class, **kwargs)
+        graph = qg_builder.finish(
+            metadata=metadata, attach_datastore_records=attach_datastore_records
+        ).assemble()
+        _LOG.info(
+            "PredictedQuantumGraph contains %d quanta for %d tasks.",
+            len(graph),
+            len(graph.quanta_by_task),
+        )
+        return graph
+
     def run_pipeline(
         self,
-        graph: QuantumGraph,
+        graph: QuantumGraph | PredictedQuantumGraph,
         fail_fast: bool = False,
         graph_executor: QuantumGraphExecutor | None = None,
         num_proc: int = 1,
@@ -259,7 +370,7 @@ class SeparablePipelineExecutor:
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
+        graph : `.QuantumGraph` or `.quantum_graph.PredictedQuantumGraph`
             The pipeline and datasets to execute.
         fail_fast : `bool`, optional
             If `True`, abort all execution if any task fails when

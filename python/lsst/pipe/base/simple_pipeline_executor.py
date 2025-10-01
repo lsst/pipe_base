@@ -29,20 +29,15 @@ from __future__ import annotations
 
 __all__ = ("SimplePipelineExecutor",)
 
-import datetime
-import getpass
-import itertools
 import os
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any, cast
+from typing import Any
 
 from lsst.daf.butler import (
     Butler,
     CollectionType,
     DataCoordinate,
     DatasetRef,
-    DimensionDataExtractor,
-    DimensionGroup,
     Quantum,
 )
 from lsst.pex.config import Config
@@ -54,6 +49,7 @@ from .graph import QuantumGraph
 from .pipeline import Pipeline
 from .pipeline_graph import PipelineGraph
 from .pipelineTask import PipelineTask
+from .quantum_graph import PredictedQuantumGraph
 from .single_quantum_executor import SingleQuantumExecutor
 from .taskFactory import TaskFactory
 
@@ -95,12 +91,19 @@ class SimplePipelineExecutor:
 
     def __init__(
         self,
-        quantum_graph: QuantumGraph,
+        quantum_graph: QuantumGraph | PredictedQuantumGraph,
         butler: Butler,
         resources: ExecutionResources | None = None,
         raise_on_partial_outputs: bool = True,
     ):
-        self.quantum_graph = quantum_graph
+        from .graph import QuantumGraph
+
+        self._quantum_graph: QuantumGraph | None = None
+        if isinstance(quantum_graph, QuantumGraph):
+            self._quantum_graph = quantum_graph
+            self.predicted = PredictedQuantumGraph.from_old_quantum_graph(self._quantum_graph)
+        else:
+            self.predicted = quantum_graph
         self.butler = butler
         self.resources = resources
         self.raise_on_partial_outputs = raise_on_partial_outputs
@@ -442,24 +445,28 @@ class SimplePipelineExecutor:
             pipeline_graph, butler, where=where, bind=bind, output_run=output_run
         )
         metadata = {
-            "input": list(butler.collections.defaults),
-            "output": output,
-            "output_run": output_run,
             "skip_existing_in": [],
             "skip_existing": False,
             "data_query": where,
-            "user": getpass.getuser(),
-            "time": str(datetime.datetime.now()),
         }
-        quantum_graph = quantum_graph_builder.build(
-            metadata=metadata, attach_datastore_records=attach_datastore_records
-        )
+        predicted = quantum_graph_builder.finish(
+            output=output,
+            metadata=metadata,
+            attach_datastore_records=attach_datastore_records,
+        ).assemble()
         return cls(
-            quantum_graph=quantum_graph,
+            predicted,
             butler=butler,
             resources=resources,
             raise_on_partial_outputs=raise_on_partial_outputs,
         )
+
+    @property
+    def quantum_graph(self) -> QuantumGraph:
+        """The quantum graph run by this executor."""
+        if self._quantum_graph is None:
+            self._quantum_graph = self.predicted.to_old_quantum_graph()
+        return self._quantum_graph
 
     def use_local_butler(
         self, root: str, register_dataset_types: bool = True, transfer_dimensions: bool = True
@@ -503,9 +510,9 @@ class SimplePipelineExecutor:
             Butler.makeRepo(root)
         out_butler = Butler.from_config(root, writeable=True)
 
-        output_run = self.quantum_graph.metadata["output_run"]
+        output_run = self.predicted.header.output_run
         out_butler.collections.register(output_run, CollectionType.RUN)
-        output = self.quantum_graph.metadata["output"]
+        output = self.predicted.header.output
         inputs: str | None = None
         if output is not None:
             inputs = f"{output}/inputs"
@@ -525,12 +532,12 @@ class SimplePipelineExecutor:
         # into a TAGGED collection.
         refs: set[DatasetRef] = set()
         to_tag_by_type: dict[str, dict[DataCoordinate, DatasetRef | None]] = {}
-        pipeline_graph = self.quantum_graph.pipeline_graph
+        pipeline_graph = self.predicted.pipeline_graph
         for name, dataset_type_node in pipeline_graph.iter_overall_inputs():
             assert dataset_type_node is not None, "PipelineGraph should be resolved."
             to_tag_for_type = to_tag_by_type.setdefault(name, {})
             for task_node in pipeline_graph.consumers_of(name):
-                for quantum in self.quantum_graph.get_task_quanta(task_node.label).values():
+                for quantum in self.predicted.build_execution_quanta(task_label=task_node.label).values():
                     for ref in quantum.inputs[name]:
                         ref = dataset_type_node.generalize_ref(ref)
                         refs.add(ref)
@@ -563,7 +570,7 @@ class SimplePipelineExecutor:
         return self.butler
 
     def run(self, register_dataset_types: bool = False, save_versions: bool = True) -> list[Quantum]:
-        """Run all the quanta in the `.QuantumGraph` in topological order.
+        """Run all the quanta in the quantum graph in topological order.
 
         Use this method to run all quanta in the graph.  Use
         `as_generator` to get a generator to run the quanta one at
@@ -594,7 +601,7 @@ class SimplePipelineExecutor:
     def as_generator(
         self, register_dataset_types: bool = False, save_versions: bool = True
     ) -> Iterator[Quantum]:
-        """Yield quanta in the `.QuantumGraph` in topological order.
+        """Yield quanta in the quantum graph in topological order.
 
         These quanta will be run as the returned generator is iterated
         over.  Use this method to run the quanta one at a time.
@@ -623,11 +630,11 @@ class SimplePipelineExecutor:
         guarantees are made about the order in which quanta are processed.
         """
         if register_dataset_types:
-            self.quantum_graph.pipeline_graph.register_dataset_types(self.butler)
-        self.quantum_graph.write_configs(self.butler, compare_existing=False)
-        self.quantum_graph.write_init_outputs(self.butler, skip_existing=False)
+            self.predicted.pipeline_graph.register_dataset_types(self.butler)
+        self.predicted.write_configs(self.butler, compare_existing=False)
+        self.predicted.write_init_outputs(self.butler, skip_existing=False)
         if save_versions:
-            self.quantum_graph.write_packages(self.butler, compare_existing=False)
+            self.predicted.write_packages(self.butler, compare_existing=False)
         task_factory = TaskFactory()
         single_quantum_executor = SingleQuantumExecutor(
             butler=self.butler,
@@ -635,14 +642,20 @@ class SimplePipelineExecutor:
             resources=self.resources,
             raise_on_partial_outputs=self.raise_on_partial_outputs,
         )
+        self.predicted.build_execution_quanta()
+        nodes_map = self.predicted.quantum_only_xgraph.nodes
         # Important that this returns a generator expression rather than being
         # a generator itself; that is what makes the init stuff above happen
         # immediately instead of when the first quanta is executed, which might
         # be useful for callers who want to check the state of the repo in
         # between.
         return (
-            single_quantum_executor.execute(qnode.task_node, qnode.quantum, qnode.nodeId)[0]
-            for qnode in self.quantum_graph
+            single_quantum_executor.execute(
+                nodes_map[quantum_id]["pipeline_node"],
+                nodes_map[quantum_id]["quantum"],
+                quantum_id,
+            )[0]
+            for quantum_id in self.predicted
         )
 
     def _transfer_qg_dimension_records(self, out_butler: Butler) -> None:
@@ -653,20 +666,8 @@ class SimplePipelineExecutor:
         out_butler : `lsst.daf.butler.Butler`
             Butler to transfer records to.
         """
-        pipeline_graph = self.quantum_graph.pipeline_graph
-        all_dimensions = DimensionGroup.union(
-            *pipeline_graph.group_by_dimensions(prerequisites=True).keys(),
-            universe=self.butler.dimensions,
-        )
-        dimension_data_extractor = DimensionDataExtractor.from_dimension_group(all_dimensions)
-        for task_node in pipeline_graph.tasks.values():
-            task_quanta = self.quantum_graph.get_task_quanta(task_node.label)
-            for quantum in task_quanta.values():
-                dimension_data_extractor.update([cast(DataCoordinate, quantum.dataId)])
-                for refs in itertools.chain(quantum.inputs.values(), quantum.outputs.values()):
-                    dimension_data_extractor.update(ref.dataId for ref in refs)
-        for element_name in all_dimensions.elements:
-            record_set = dimension_data_extractor.records.get(element_name)
+        assert self.predicted.dimension_data is not None, "Dimension data must be present for execution."
+        for record_set in self.predicted.dimension_data.records.values():
             if record_set and record_set.element.has_own_table:
                 out_butler.registry.insertDimensionData(
                     record_set.element,
