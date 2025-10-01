@@ -41,6 +41,7 @@ from lsst.daf.butler import Butler, FileDataset, LimitedButler, Quantum
 from lsst.daf.butler.logging import ButlerLogRecordHandler, ButlerLogRecords, ButlerMDC, JsonLogFormatter
 
 from ._status import InvalidQuantumError
+from .automatic_connection_constants import METADATA_OUTPUT_TEMPLATE
 from .pipeline_graph import TaskNode
 
 _LOG = logging.getLogger(__name__)
@@ -116,8 +117,10 @@ class LogCapture:
         mdc = {"LABEL": task_node.label, "RUN": ""}
         if quantum.dataId:
             mdc["LABEL"] += f":{quantum.dataId}"
-        if self.full_butler is not None:
-            mdc["RUN"] = self.full_butler.run or ""
+
+        metadata_ref = quantum.outputs[METADATA_OUTPUT_TEMPLATE.format(label=task_node.label)][0]
+        mdc["RUN"] = metadata_ref.run
+
         ctx = _LogCaptureFlag()
         log_dataset_name = (
             task_node.log_output.dataset_type_name if task_node.log_output is not None else None

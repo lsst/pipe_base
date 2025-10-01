@@ -49,7 +49,13 @@ from .. import connectionTypes as cT
 from .._instrument import Instrument
 from ..all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from ..all_dimensions_quantum_graph_builder import DatasetQueryConstraintVariant as DSQVariant
-from ..automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
+from ..automatic_connection_constants import (
+    CONFIG_INIT_OUTPUT_CONNECTION_NAME,
+    LOG_OUTPUT_CONNECTION_NAME,
+    METADATA_OUTPUT_CONNECTION_NAME,
+    PACKAGES_INIT_OUTPUT_NAME,
+    PACKAGES_INIT_OUTPUT_STORAGE_CLASS,
+)
 from ..config import PipelineTaskConfig
 from ..connections import PipelineTaskConnections
 from ..graph import QuantumGraph
@@ -361,13 +367,13 @@ def populateButler(
         if run is not None:
             butler.registry.registerRun(run)
         for dsType in dsTypes:
-            if dsType == "packages":
+            if dsType == PACKAGES_INIT_OUTPUT_NAME:
                 # Version is intentionally inconsistent.
                 # Dict is convertible to Packages if Packages is installed.
                 data: Any = {"python": "9.9.99"}
                 butler.put(data, dsType, run=run)
             else:
-                if dsType.endswith("_config"):
+                if dsType.endswith(CONFIG_INIT_OUTPUT_CONNECTION_NAME):
                     # find a config from matching task name or make a new one
                     taskLabel, _, _ = dsType.rpartition("_")
                     task_node = pipeline_graph.tasks.get(taskLabel)
@@ -375,9 +381,9 @@ def populateButler(
                         data = task_node.config
                     else:
                         data = AddTaskConfig()
-                elif dsType.endswith("_metadata"):
+                elif dsType.endswith(METADATA_OUTPUT_CONNECTION_NAME):
                     data = _TASK_FULL_METADATA_TYPE()
-                elif dsType.endswith("_log"):
+                elif dsType.endswith(LOG_OUTPUT_CONNECTION_NAME):
                     data = ButlerLogRecords.from_records([])
                 else:
                     data = numpy.array([0.0, 1.0, 2.0, 5.0])

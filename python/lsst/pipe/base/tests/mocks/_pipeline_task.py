@@ -56,6 +56,7 @@ from lsst.utils.iteration import ensure_iterable
 
 from ... import connectionTypes as cT
 from ..._status import AlgorithmError, AnnotatedPartialOutputsError
+from ...automatic_connection_constants import METADATA_OUTPUT_CONNECTION_NAME, METADATA_OUTPUT_STORAGE_CLASS
 from ...config import PipelineTaskConfig
 from ...connections import InputQuantizedConnection, OutputQuantizedConnection, PipelineTaskConnections
 from ...pipeline_graph import PipelineGraph
@@ -487,7 +488,10 @@ class MockPipelineTaskConnections(BaseTestPipelineTaskConnections, dimensions=()
                 raise ValueError(
                     f"Unmocked dataset type {connection.name!r} cannot be used as an init-output."
                 )
-            elif connection.name.endswith("_metadata") and connection.storageClass == "TaskMetadata":
+            elif (
+                connection.name.endswith(METADATA_OUTPUT_CONNECTION_NAME)
+                and connection.storageClass == METADATA_OUTPUT_STORAGE_CLASS
+            ):
                 # Task metadata does not use a mock storage class, because it's
                 # written by the system, but it does end up with the _mock_*
                 # prefix because the task label does.
