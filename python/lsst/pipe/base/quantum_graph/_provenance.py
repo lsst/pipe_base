@@ -832,6 +832,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
             address_filename="nodes",
             page_size=page_size,
             import_mode=import_mode,
+            n_addresses=4,
         ) as self:
             yield self
 
