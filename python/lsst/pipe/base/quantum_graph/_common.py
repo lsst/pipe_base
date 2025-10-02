@@ -493,6 +493,7 @@ class BaseQuantumGraphReader:
         *,
         address_filename: str,
         graph_type: str,
+        n_addresses: int,
         page_size: int | None = None,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[Self]:
@@ -506,6 +507,8 @@ class BaseQuantumGraphReader:
             Base filename for the address file.
         graph_type : `str`
             Value to expect for `HeaderModel.graph_type`.
+        n_addresses : `int`
+            Number of addresses to expect per row in the address file.
         page_size : `int`, optional
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
@@ -539,7 +542,11 @@ class BaseQuantumGraphReader:
                 )
                 pipeline_graph = serialized_pipeline_graph.deserialize(import_mode)
                 with AddressReader.open_in_zip(
-                    zf, address_filename, page_size=page_size, int_size=header.int_size
+                    zf,
+                    address_filename,
+                    page_size=page_size,
+                    int_size=header.int_size,
+                    n_addresses=n_addresses,
                 ) as address_reader:
                     yield cls(
                         header=header,

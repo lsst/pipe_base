@@ -292,7 +292,7 @@ class AddressReader:
     """
 
     @classmethod
-    def from_stream(cls, stream: IO[bytes], page_size: int) -> AddressReader:
+    def from_stream(cls, stream: IO[bytes], page_size: int, n_addresses: int) -> AddressReader:
         """Construct from a stream by reading the header.
 
         Parameters
@@ -302,10 +302,16 @@ class AddressReader:
         page_size : `int`
             Approximate number of bytes to read at a time when searching for an
             address.
+        n_addresses : `int`
+            Number of addresses to expect per row.
         """
         int_size = int.from_bytes(stream.read(1))
         n_rows = int.from_bytes(stream.read(int_size))
-        n_addresses = int.from_bytes(stream.read(int_size))
+        file_n_addresses = int.from_bytes(stream.read(int_size))
+        if file_n_addresses != n_addresses:
+            raise InvalidQuantumGraphFileError(
+                f"Incorrect number of addresses per row: expected {n_addresses}, got {file_n_addresses}."
+            )
         rows_per_page = max(page_size // cls.compute_row_size(int_size, n_addresses), 1)
         n_full_pages, last_rows_per_page = divmod(n_rows, rows_per_page)
         unread_pages = dict.fromkeys(range(n_full_pages), rows_per_page)
@@ -328,7 +334,9 @@ class AddressReader:
         cls,
         zf: zipfile.ZipFile,
         name: str,
+        *,
         page_size: int,
+        n_addresses: int,
         int_size: int | None = None,
     ) -> Iterator[AddressReader]:
         """Make a reader for an address file in a zip archive.
@@ -342,6 +350,8 @@ class AddressReader:
         page_size : `int`
             Approximate number of bytes to read at a time when searching for an
             address.
+        n_addresses : `int`
+            Number of addresses to expect per row.
         int_size : `int`, optional
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
@@ -352,7 +362,7 @@ class AddressReader:
             Context manager that returns a reader when entered.
         """
         with zf.open(f"{name}.addr", mode="r") as stream:
-            result = cls.from_stream(stream, page_size=page_size)
+            result = cls.from_stream(stream, page_size=page_size, n_addresses=n_addresses)
             if int_size is not None and result.int_size != int_size:
                 raise InvalidQuantumGraphFileError(
                     "int size in address file does not match int size in header."
