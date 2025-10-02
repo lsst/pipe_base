@@ -61,6 +61,7 @@ from lsst.daf.butler import (
 )
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
+from lsst.daf.butler._uuid import generate_uuidv7
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.timer import timeMethod
 
@@ -1255,7 +1256,7 @@ class QuantumGraphBuilder(ABC):
         )
         components.init_quanta.root = [
             PredictedQuantumDatasetsModel.model_construct(
-                quantum_id=uuid.uuid4(),
+                quantum_id=generate_uuidv7(),
                 task_label="",
                 outputs={
                     dataset_key.parent_dataset_type_name: [
@@ -1272,7 +1273,7 @@ class QuantumGraphBuilder(ABC):
                 continue
             task_init_key = TaskInitKey(task_node.label)
             init_quantum_datasets = PredictedQuantumDatasetsModel.model_construct(
-                quantum_id=uuid.uuid4(),
+                quantum_id=generate_uuidv7(),
                 task_label=task_node.label,
                 inputs=self._make_predicted_datasets(
                     skeleton,
@@ -1294,7 +1295,7 @@ class QuantumGraphBuilder(ABC):
             components.init_quanta.root.append(init_quantum_datasets)
             for quantum_key in skeleton.get_quanta(task_node.label):
                 quantum_datasets = PredictedQuantumDatasetsModel.model_construct(
-                    quantum_id=uuid.uuid4(),
+                    quantum_id=generate_uuidv7(),
                     task_label=task_node.label,
                     data_coordinate=list(skeleton.get_data_id(quantum_key).full_values),
                     inputs=self._make_predicted_datasets(
