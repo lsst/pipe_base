@@ -292,7 +292,9 @@ class AddressReader:
     """
 
     @classmethod
-    def from_stream(cls, stream: IO[bytes], page_size: int, n_addresses: int) -> AddressReader:
+    def from_stream(
+        cls, stream: IO[bytes], *, page_size: int, n_addresses: int, int_size: int
+    ) -> AddressReader:
         """Construct from a stream by reading the header.
 
         Parameters
@@ -303,9 +305,17 @@ class AddressReader:
             Approximate number of bytes to read at a time when searching for an
             address.
         n_addresses : `int`
-            Number of addresses to expect per row.
+            Number of addresses to expect per row.  This is checked against
+            the size embedded in the file.
+        int_size : `int`
+            Number of bytes to use for all integers.  This is checked against
+            the size embedded in the file.
         """
-        int_size = int.from_bytes(stream.read(1))
+        file_int_size = int.from_bytes(stream.read(1))
+        if file_int_size != int_size:
+            raise InvalidQuantumGraphFileError(
+                f"int size in address file ({file_int_size}) does not match int size in header ({int_size})."
+            )
         n_rows = int.from_bytes(stream.read(int_size))
         file_n_addresses = int.from_bytes(stream.read(int_size))
         if file_n_addresses != n_addresses:
@@ -337,7 +347,7 @@ class AddressReader:
         *,
         page_size: int,
         n_addresses: int,
-        int_size: int | None = None,
+        int_size: int,
     ) -> Iterator[AddressReader]:
         """Make a reader for an address file in a zip archive.
 
@@ -351,8 +361,9 @@ class AddressReader:
             Approximate number of bytes to read at a time when searching for an
             address.
         n_addresses : `int`
-            Number of addresses to expect per row.
-        int_size : `int`, optional
+            Number of addresses to expect per row.  This is checked against
+            the size embedded in the file.
+        int_size : `int`
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
 
@@ -362,12 +373,7 @@ class AddressReader:
             Context manager that returns a reader when entered.
         """
         with zf.open(f"{name}.addr", mode="r") as stream:
-            result = cls.from_stream(stream, page_size=page_size, n_addresses=n_addresses)
-            if int_size is not None and result.int_size != int_size:
-                raise InvalidQuantumGraphFileError(
-                    "int size in address file does not match int size in header."
-                )
-            yield result
+            yield cls.from_stream(stream, page_size=page_size, n_addresses=n_addresses, int_size=int_size)
 
     @staticmethod
     def compute_header_size(int_size: int) -> int:
