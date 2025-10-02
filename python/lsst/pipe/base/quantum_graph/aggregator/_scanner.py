@@ -36,7 +36,6 @@ import uuid
 import zstandard
 
 from lsst.daf.butler import ButlerLogRecords, DatasetRef, QuantumBackedButler
-from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
 from ..._status import QuantumSuccessCaveats
@@ -317,12 +316,6 @@ class Scanner:
                 result.exception = ExceptionInfo._from_metadata(
                     content[predicted_quantum.task_label]["failure"]
                 )
-            except LookupError:
-                pass
-            try:
-                result.existing_outputs = {
-                    uuid.UUID(id_str) for id_str in ensure_iterable(content["quantum"].getArray("outputs"))
-                }
             except LookupError:
                 pass
             result.resource_usage = QuantumResourceUsage.from_task_metadata(content)
