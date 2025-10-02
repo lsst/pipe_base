@@ -80,7 +80,6 @@ class Ingester:
         self.butler = Butler.from_config(
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )
-        self.comms.enter(self.butler.registry.caching_context())
 
     @property
     def n_datasets_pending(self) -> int:
@@ -103,36 +102,38 @@ class Ingester:
                 include_configs=True,
                 include_logs=True,
             )
-        if self.comms.config.defensive_ingest:
-            self.fetch_already_ingested()
-        self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
-        self.last_ingest_time = time.time()
-        for ingest_request in self.comms.poll():
-            self.n_producers_pending += 1
-            self.comms.log.debug(
-                f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
-            )
-            datasets, datastore_records = ingest_request.unpack()
-            self.update_pending(datasets, datastore_records)
-            if self.n_datasets_pending > self.comms.config.ingest_batch_size:
+        with self.butler.registry.caching_context():
+            if self.comms.config.defensive_ingest:
+                self.fetch_already_ingested()
+            self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
+            self.last_ingest_time = time.time()
+            for ingest_request in self.comms.poll():
+                self.n_producers_pending += 1
+                self.comms.log.debug(
+                    f"Got ingest request for {ingest_request.producer_id} from {ingest_request.scanner_id}."
+                )
+                datasets, datastore_records = ingest_request.unpack()
+                self.update_pending(datasets, datastore_records)
+                if self.n_datasets_pending > self.comms.config.ingest_batch_size:
+                    self.ingest()
+            self.comms.log.info("All ingest requests received.")
+            # We use 'while' in case this fails with a conflict and we switch
+            # to switch to defensive mode (should be at most two iterations).
+            ingest_start_time = time.time()
+            while self.n_datasets_pending:
+                n_datasets = self.n_datasets_pending
                 self.ingest()
-        self.comms.log.info("All ingest requests received.")
-        # We use 'while' in case this fails with a conflict and we switch to
-        # switch to defensive mode (should be at most two iterations).
-        ingest_start_time = time.time()
-        while self.n_datasets_pending:
-            n_datasets = self.n_datasets_pending
-            self.ingest()
-            self.comms.log.verbose(
-                "Gathered %d final datasets in %ss and ingested them in %ss.",
-                n_datasets,
-                ingest_start_time - self.last_ingest_time,
-                time.time() - ingest_start_time,
-            )
-        if self.n_producers_pending:
-            # We can finish with returns pending if we filtered out all of
-            # the datasets we started with as already existing.
-            self.report()
+                self.comms.log.verbose(
+                    "Gathered %d final datasets in %ss and ingested them in %ss.",
+                    n_datasets,
+                    ingest_start_time - self.last_ingest_time,
+                    time.time() - ingest_start_time,
+                )
+            if self.n_producers_pending:
+                # We can finish with returns pending if we filtered out all of
+                # the datasets we started with as already existing.
+                self.report()
+        # Updating the output chain cannot happen inside the caching context.
         if self.comms.config.update_output_chain:
             self.update_output_chain()
         self.comms.log.info("Informing workers that ingests are complete.")
@@ -222,6 +223,11 @@ class Ingester:
     def update_output_chain(self) -> None:
         if self.reader.header.output is None:
             return
+        self.comms.log.info(
+            "Updating output collection %s to include %s.",
+            self.reader.header.output,
+            self.reader.header.output_run,
+        )
         if self.butler.collections.register(self.reader.header.output, CollectionType.CHAINED):
             # Chain is new; need to add inputs, but we want to flatten them
             # first.
