@@ -59,6 +59,7 @@ from lsst.daf.butler import (
     Quantum,
     QuantumBackedButler,
 )
+from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.persistence_context import PersistenceContextVars
 from lsst.daf.butler.registry import ConflictingDefinitionError
@@ -246,7 +247,7 @@ class QuantumGraph:
                             "associated value in the mapping"
                         )
                 else:
-                    nodeId = uuid.uuid4()
+                    nodeId = generate_uuidv7()
 
                 inits = quantum.initInputs.values()
                 inputs = quantum.inputs.values()
