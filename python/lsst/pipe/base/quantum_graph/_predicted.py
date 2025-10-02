@@ -1754,6 +1754,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             address_filename="quanta",
             page_size=page_size,
             import_mode=import_mode,
+            n_addresses=1,
         ) as self:
             yield self
 
