@@ -1487,8 +1487,7 @@ class PredictedQuantumGraphComponents:
         # need to rely on topological ordering of anything.
         for quantum_datasets in itertools.chain(self.init_quanta.root, self.quantum_datasets.values()):
             new_quantum_id = uuid.uuid4()
-            uuid_map[quantum_datasets.quantum_id] = new_quantum_id
-            quantum_datasets.quantum_id = uuid.uuid4()
+            quantum_datasets.quantum_id = new_quantum_id
             for output_dataset in itertools.chain.from_iterable(quantum_datasets.outputs.values()):
                 assert output_dataset.run == self.header.output_run, (
                     f"Incorrect run {output_dataset.run} for output dataset {output_dataset.dataset_id}."
