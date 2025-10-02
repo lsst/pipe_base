@@ -274,9 +274,6 @@ class AddressReader:
     n_addresses: int
     """Number of addresses in each row."""
 
-    start_index: int
-    """Index of the first row."""
-
     rows: dict[uuid.UUID, AddressRow]
     """Rows that have already been read."""
 
@@ -295,7 +292,7 @@ class AddressReader:
     """
 
     @classmethod
-    def from_stream(cls, stream: IO[bytes], page_size: int, start_index: int = 0) -> AddressReader:
+    def from_stream(cls, stream: IO[bytes], page_size: int) -> AddressReader:
         """Construct from a stream by reading the header.
 
         Parameters
@@ -305,8 +302,6 @@ class AddressReader:
         page_size : `int`
             Approximate number of bytes to read at a time when searching for an
             address.
-        start_index : `int`, optional
-            Value of the first index in the file.
         """
         int_size = int.from_bytes(stream.read(1))
         n_rows = int.from_bytes(stream.read(int_size))
@@ -321,7 +316,6 @@ class AddressReader:
             int_size=int_size,
             n_rows=n_rows,
             n_addresses=n_addresses,
-            start_index=start_index,
             rows={},
             rows_by_index={},
             rows_per_page=rows_per_page,
@@ -336,7 +330,6 @@ class AddressReader:
         name: str,
         page_size: int,
         int_size: int | None = None,
-        start_index: int = 0,
     ) -> Iterator[AddressReader]:
         """Make a reader for an address file in a zip archive.
 
@@ -352,8 +345,6 @@ class AddressReader:
         int_size : `int`, optional
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
-        start_index : `int`, optional
-            Value of the first index in the file.
 
         Returns
         -------
@@ -361,7 +352,7 @@ class AddressReader:
             Context manager that returns a reader when entered.
         """
         with zf.open(f"{name}.addr", mode="r") as stream:
-            result = cls.from_stream(stream, page_size=page_size, start_index=start_index)
+            result = cls.from_stream(stream, page_size=page_size)
             if int_size is not None and result.int_size != int_size:
                 raise InvalidQuantumGraphFileError(
                     "int size in address file does not match int size in header."
@@ -461,13 +452,13 @@ class AddressReader:
         match key:
             case uuid.UUID():
                 row_map = self.rows
-                guess_index = (key.int / self.MAX_UUID_INT) * self.n_rows + self.start_index
+                guess_index = (key.int / self.MAX_UUID_INT) * self.n_rows
             case int():
                 row_map = self.rows_by_index
                 guess_index = key
         if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
             return row
-        guess_page_float = (guess_index - self.start_index) / self.rows_per_page
+        guess_page_float = guess_index / self.rows_per_page
         guess_page = int(guess_page_float)
         _LOG.debug(
             "Searching for %s, starting at index %s of %s (%s rows per page).",
