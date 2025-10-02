@@ -166,6 +166,7 @@ class Writer:
 
     def __post_init__(self) -> None:
         assert self.comms.config.output_path is not None, "Writer should not be used if writing is disabled."
+        self.comms.log.info("Reading predicted quantum graph.")
         self._predicted_reader = self.comms.enter(
             PredictedQuantumGraphReader.open(
                 self.comms.config.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
@@ -175,6 +176,7 @@ class Writer:
         self._predicted_reader.read_quantum_datasets()
         for predicted_init_quantum in self._predicted_reader.components.init_quanta.root:
             self.existing_init_outputs[predicted_init_quantum.quantum_id] = set()
+        self.comms.log.info("Generating integer indexes and identifying outputs.")
         self._populate_indices_and_outputs()
         self._populate_xgraph()
 
