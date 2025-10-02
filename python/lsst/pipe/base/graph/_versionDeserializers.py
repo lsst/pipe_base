@@ -50,6 +50,7 @@ from lsst.daf.butler import (
     Quantum,
     SerializedDimensionRecord,
 )
+from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.utils import doImportType
 
 from ..config import PipelineTaskConfig
@@ -242,7 +243,7 @@ class DeserializerV1(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, "nodeId", uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", generate_uuidv7())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
@@ -376,7 +377,7 @@ class DeserializerV2(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, "nodeId", uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", generate_uuidv7())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
