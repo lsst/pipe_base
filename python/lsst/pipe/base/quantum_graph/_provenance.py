@@ -58,6 +58,7 @@ from lsst.utils.packages import Packages
 from .._status import QuantumSuccessCaveats
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
 from ..quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
+from ..resource_usage import QuantumResourceUsage
 from ._common import (
     BaseQuantumGraph,
     BaseQuantumGraphReader,
@@ -147,6 +148,9 @@ class ProvenanceQuantumInfo(QuantumInfo):
 
     exception: ExceptionInfo | None
     """Information about an exception raised when the quantum was executing."""
+
+    resource_usage: QuantumResourceUsage | None
+    """Resource usage information (timing, memory use) for this quantum."""
 
 
 class ProvenanceInitQuantumInfo(TypedDict):
@@ -329,6 +333,9 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     quantum, grouped by connection name.
     """
 
+    resource_usage: QuantumResourceUsage | None = None
+    """Resource usage information (timing, memory use) for this quantum."""
+
     @property
     def node_id(self) -> uuid.UUID:
         """Alias for the quantum ID."""
@@ -379,6 +386,7 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             status=self.status,
             caveats=self.caveats,
             exception=self.exception,
+            resource_usage=self.resource_usage,
         )
         for connection_name, dataset_indices in self.inputs.items():
             read_edge = task_node.get_input_edge(connection_name)
