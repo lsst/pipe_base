@@ -221,6 +221,7 @@ class Writer:
         data_writers: DataWriters | None = None
         if not self.comms.config.zstd_dict_size:
             data_writers = self.make_data_writers()
+        self.comms.log.info("Polling for write requests from scanners.")
         for request in self.comms.poll():
             if data_writers is None:
                 self.pending_compression_training.extend(self.make_scan_data(request))
@@ -245,6 +246,7 @@ class Writer:
             compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
             cdict_data=cdict.as_bytes(),
         )
+        self.comms.log.info("Compressing and writing queued scan requests.")
         for scan_data in self.pending_compression_training:
             self.write_scan_data(scan_data, data_writers)
         self.write_overall_inputs(data_writers)

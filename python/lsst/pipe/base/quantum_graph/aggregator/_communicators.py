@@ -401,7 +401,7 @@ class WorkerCommunicator:
 
 class ScannerCommunicator(WorkerCommunicator):
     def __init__(self, supervisor: SupervisorCommunicator, scanner_id: int):
-        super().__init__(supervisor, f"scanner-{scanner_id:00d}")
+        super().__init__(supervisor, f"scanner-{scanner_id:03d}")
         self.scanner_id = scanner_id
         self._scan_requests = supervisor._scan_requests
         self._ingest_requests = supervisor._ingest_requests
