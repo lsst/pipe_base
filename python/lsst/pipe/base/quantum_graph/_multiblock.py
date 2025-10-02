@@ -39,15 +39,16 @@ __all__ = (
     "MultiblockWriter",
 )
 
+import bisect
 import dataclasses
-import itertools
 import logging
+import operator
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from io import BufferedReader, BytesIO
 from operator import attrgetter
-from typing import IO, TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar
+from typing import IO, TYPE_CHECKING, Protocol, TypeAlias, TypeVar
 
 import pydantic
 
@@ -59,6 +60,11 @@ _LOG = logging.getLogger(__name__)
 
 
 _T = TypeVar("_T", bound=pydantic.BaseModel)
+
+
+UUID_int: TypeAlias = int
+
+MAX_UUID_INT: UUID_int = 2**128
 
 
 DEFAULT_PAGE_SIZE: int = 5_000_000
@@ -256,11 +262,49 @@ class AddressWriter:
 
 
 @dataclasses.dataclass
+class AddressPage:
+    """A page of addresses in the `AddressReader`."""
+
+    file_offset: int
+    """Offset in bytes to this page from the beginning of the file."""
+
+    begin: int
+    """Index of the first row in this page."""
+
+    n_rows: int
+    """Number of rows in this page."""
+
+    read: bool = False
+    """Whether this page has already been read."""
+
+    @property
+    def end(self) -> int:
+        """One past the last row index in this page."""
+        return self.begin + self.n_rows
+
+
+@dataclasses.dataclass
+class PageBounds:
+    """A page index and the UUID interval that page covers."""
+
+    page_index: int
+    """Index into the page array."""
+
+    uuid_int_begin: UUID_int
+    """Integer representation of the smallest UUID in this page."""
+
+    uuid_int_end: UUID_int
+    """One larger than the integer representation of the largest UUID in this
+    page.
+    """
+
+    def __str__(self) -> str:
+        return f"{self.page_index} [{self.uuid_int_begin:x}:{self.uuid_int_end:x}]"
+
+
+@dataclasses.dataclass
 class AddressReader:
     """A helper object for reading address files for multi-block files."""
-
-    MAX_UUID_INT: ClassVar[int] = 2**128
-    """The maximum value of a UUID's integer form."""
 
     stream: IO[bytes]
     """Stream to read from."""
@@ -269,27 +313,19 @@ class AddressReader:
     """Size of each integer in bytes."""
 
     n_rows: int
-    """Number of address rows in the file (also the number of UUIDs)."""
+    """Number of rows in the file."""
 
     n_addresses: int
     """Number of addresses in each row."""
 
-    rows: dict[uuid.UUID, AddressRow]
+    rows: dict[uuid.UUID, AddressRow] = dataclasses.field(default_factory=dict)
     """Rows that have already been read."""
 
-    rows_by_index: dict[int, AddressRow]
+    rows_by_index: dict[int, AddressRow] = dataclasses.field(default_factory=dict)
     """Rows that have already been read, keyed by integer index."""
 
-    rows_per_page: int
-    """Minimum number of rows to read at once."""
-
-    unread_pages: dict[int, int]
-    """Pages that have not yet been read, as a mapping from page index to the
-    number of rows in that page.
-
-    Values are always `rows_per_page` with the possible exception of the last
-    page.
-    """
+    pages: list[AddressPage] = dataclasses.field(default_factory=list)
+    bounds: list[PageBounds] = dataclasses.field(default_factory=list)
 
     @classmethod
     def from_stream(
@@ -311,32 +347,66 @@ class AddressReader:
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
         """
-        file_int_size = int.from_bytes(stream.read(1))
+        # Figure out how much to read initially; we need to read the header,
+        # but we also want to read at least around page_size, and we don't want
+        # to read half of a row at the end.  To reduce spatial-casing we always
+        # read at least one row with the header.
+        header_size = cls.compute_header_size(int_size)
+        row_size = cls.compute_row_size(int_size, n_addresses)
+        n_header_page_rows = (max(page_size, header_size + row_size) - header_size) // row_size
+        # Read the raw header page.
+        header_page_data = stream.read(header_size + n_header_page_rows * row_size)
+        if len(header_page_data) < header_size:
+            raise InvalidQuantumGraphFileError("Address file unexpectedly truncated.")
+        # Interpret the raw header data and initialize the reader instance.
+        header_page_stream = BytesIO(header_page_data)
+        file_int_size = int.from_bytes(header_page_stream.read(1))
         if file_int_size != int_size:
             raise InvalidQuantumGraphFileError(
                 f"int size in address file ({file_int_size}) does not match int size in header ({int_size})."
             )
-        n_rows = int.from_bytes(stream.read(int_size))
-        file_n_addresses = int.from_bytes(stream.read(int_size))
+        n_rows = int.from_bytes(header_page_stream.read(int_size))
+        if n_rows < n_header_page_rows:
+            n_header_page_rows = n_rows
+            if len(header_page_data) != header_size + n_header_page_rows * row_size:
+                raise InvalidQuantumGraphFileError("Address file unexpectedly truncated.")
+        file_n_addresses = int.from_bytes(header_page_stream.read(int_size))
         if file_n_addresses != n_addresses:
             raise InvalidQuantumGraphFileError(
                 f"Incorrect number of addresses per row: expected {n_addresses}, got {file_n_addresses}."
             )
-        rows_per_page = max(page_size // cls.compute_row_size(int_size, n_addresses), 1)
-        n_full_pages, last_rows_per_page = divmod(n_rows, rows_per_page)
-        unread_pages = dict.fromkeys(range(n_full_pages), rows_per_page)
-        if last_rows_per_page := n_rows % rows_per_page:
-            unread_pages[n_full_pages] = last_rows_per_page
-        return cls(
-            stream,
-            int_size=int_size,
-            n_rows=n_rows,
-            n_addresses=n_addresses,
-            rows={},
-            rows_by_index={},
-            rows_per_page=rows_per_page,
-            unread_pages=unread_pages,
+        # Construct an instance.
+        self = cls(stream, int_size, n_rows, n_addresses)
+        if not n_rows:
+            # If there no rows, don't bother with the bounds/pages
+            # infrastructure.
+            return self
+        # Add the header page.
+        header_page = AddressPage(file_offset=header_size, begin=0, n_rows=n_header_page_rows)
+        self.pages.append(header_page)
+        # Construct the remaining pages.
+        rows_per_page = max(page_size // row_size, 1)
+        row_index = n_header_page_rows
+        file_offset = len(header_page_data)
+        while row_index < n_rows:
+            self.pages.append(AddressPage(file_offset=file_offset, begin=row_index, n_rows=rows_per_page))
+            row_index += rows_per_page
+            file_offset += rows_per_page * row_size
+        if row_index != n_rows:
+            # Last page was too big.
+            self.pages[-1].n_rows -= row_index - n_rows
+            assert sum(p.n_rows for p in self.pages) == n_rows, "Bad logic setting page row counts."
+        # Read the header page and add a bounds entry for that page.  This
+        # guarantees that we have one entry in the bounds list, bounding the
+        # UUIDs from below.
+        self._read_page(0, header_page_stream)
+        # Add another bounds entry to bound the UUIDs from above.  This is a
+        # special sentinal with a one-past-the-end page index and a zero-length
+        # UUID range.
+        self.bounds.append(
+            PageBounds(len(self.pages), uuid_int_begin=MAX_UUID_INT, uuid_int_end=MAX_UUID_INT)
         )
+        return self
 
     @classmethod
     @contextmanager
@@ -421,11 +491,6 @@ class AddressReader:
         )
 
     @property
-    def header_size(self) -> int:
-        """The size (in bytes) of the header of this address file."""
-        return self.compute_header_size(self.int_size)
-
-    @property
     def row_size(self) -> int:
         """The size (in bytes) of each row of this address file."""
         return self.compute_row_size(self.int_size, self.n_addresses)
@@ -438,20 +503,30 @@ class AddressReader:
         rows : `dict` [ `uuid.UUID`, `AddressRow` ]
             Mapping of loaded address rows, keyed by UUID.
         """
+        # Skip any pages from the beginning that have already been read; this
+        # nicely handles both the case where we already read everything (or
+        # there was nothing to read) while giving us a page with a file offset
+        # to start from.
+        for page in self.pages:
+            if not page.read:
+                break
+        else:
+            return self.rows
+        # Read the entire rest of the file into memory.
+        self.stream.seek(page.file_offset)
+        data = self.stream.read()
+        buffer = BytesIO(data)
         # Shortcut out if we've already read everything, but don't bother
         # optimizing previous partial reads.
-        if self.unread_pages:
-            self.stream.seek(self.header_size)
-            data = self.stream.read()
-            buffer = BytesIO(data)
-            _LOG.debug("Reading all %d address rows.", self.n_rows)
-            for _ in range(self.n_rows):
-                self._read_row(buffer)
-            self.unread_pages.clear()
+        while len(self.rows) < self.n_rows:
+            self._read_row(buffer)
+        # Delete all pages; they don't matter anymore, and that's easier than
+        # updating them to reflect the reads we've done.
+        self.pages.clear()
         return self.rows
 
     def find(self, key: uuid.UUID | int) -> AddressRow:
-        """Read the row for the given UUID.
+        """Read the row for the given UUID or integer index.
 
         Parameters
         ----------
@@ -463,49 +538,106 @@ class AddressReader:
         row : `AddressRow`
             Addresses for the given UUID.
         """
-        row_map: Mapping[Any, AddressRow]
-        guess_index: int | float
         match key:
             case uuid.UUID():
-                row_map = self.rows
-                guess_index = (key.int / self.MAX_UUID_INT) * self.n_rows
+                return self._find_uuid(key)
             case int():
-                row_map = self.rows_by_index
-                guess_index = key
-        if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
-            return row
-        guess_page_float = guess_index / self.rows_per_page
-        guess_page = int(guess_page_float)
-        _LOG.debug(
-            "Searching for %s, starting at index %s of %s (%s rows per page).",
-            key,
-            guess_index,
-            self.n_rows,
-            self.rows_per_page,
-        )
-        for page in self._page_search_path(guess_page):
-            if page in self.unread_pages:
-                self._read_page(page)
-                if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
-                    return row
-            elif not self.unread_pages:
-                raise LookupError(f"Address for {key} not found.")
-        raise AssertionError("Logic error in page tracking.")
+                return self._find_index(key)
+            case _:
+                raise TypeError(f"Invalid argument: {key}.")
 
-    def _read_page(self, page_index: int) -> None:
-        rows_in_page = self.unread_pages[page_index]
-        _LOG.debug(
-            "Reading page %s (rows %s:%s).",
-            page_index,
-            page_index * self.rows_per_page,
-            page_index * self.rows_per_page + rows_in_page,
+    def _find_uuid(self, target: uuid.UUID) -> AddressRow:
+        while True:
+            if (row := self.rows.get(target)) is not None:
+                return row
+            elif not self.pages:
+                raise LookupError(f"Address for {target} not found.")
+            # Target wasn't in a page we've already loaded.  Determine the
+            # already-loaded pages that bracket the target (and use the final
+            # sentinal entry in bounds if there is no already-loaded upper
+            # bound page).
+            begin_page_index, end_page_index = self._bracket(target)
+            # Load the page in the middle of that bracket, which then updates
+            # self.bounds for the next iteration if the page doesn't actually
+            # cover the range we want.
+            mid_page_index = begin_page_index + (end_page_index - begin_page_index) // 2
+            self._read_page(mid_page_index)
+
+    def _bracket(self, target: uuid.UUID) -> tuple[int, int]:
+        # Find the loaded page whose lower bound strictly above the target;
+        # this brackets the page with that target from above.  Note that this
+        # could be the final sentinal bounds entry (if we haven't actually
+        # loaded any pages with UUIDs larger than the target).  It can also be
+        # the header page...
+        upper_index = bisect.bisect(
+            self.bounds,
+            target.int,
+            key=operator.attrgetter("uuid_int_begin"),
         )
-        self.stream.seek(page_index * self.rows_per_page * self.row_size + self.header_size)
-        data = self.stream.read(self.row_size * rows_in_page)
-        page_stream = BytesIO(data)
-        for _ in range(rows_in_page):
-            self._read_row(page_stream)
-        del self.unread_pages[page_index]
+        upper = self.bounds[upper_index]
+        if upper_index == 0:
+            # ... but only if the given UUID is out of bounds.
+            _LOG.debug("Bracket failed: %s is below smallest page %s.", target.int, upper)
+            raise LookupError(f"Address for {target} not found.")
+        lower_index = upper_index - 1
+        if (lower := self.bounds[lower_index]).uuid_int_end > target.int:
+            _LOG.debug("Bracket failed: %s was not in expected page %s.", target.int, lower)
+            raise LookupError(f"Address for {target} not found.")
+        if upper.page_index - lower.page_index == 1:
+            _LOG.debug(
+                "Bracket failed: %s would be between adjacent pages %s and %s.", target.int, lower, upper
+            )
+            raise LookupError(f"Address for {target} not found.")
+        _LOG.debug("Bracket successful: %s should be between page %s and page %s.", target.int, lower, upper)
+        return lower.page_index, upper.page_index
+
+    def _find_index(self, target: int) -> AddressRow:
+        if (row := self.rows_by_index.get(target)) is not None:
+            return row
+        if target < 0 or target >= self.n_rows:
+            raise LookupError(f"Address for index {target} not found.")
+        # The first page (the header page) and the last page (if it's the
+        # remainder) might have non-uniform sizes.  So we check those first.
+        # This is still sound (albeit a *tiny* bit less efficient) if either of
+        # those happens to have the same size as the others.
+        first_page = self.pages[0]
+        last_page = self.pages[-1]
+        if target >= first_page.begin and target < first_page.begin + first_page.n_rows:
+            _LOG.debug("Index find failed: %s should have been in the header page.", target)
+            raise LookupError(f"Address for {target} not found.")
+        elif target >= last_page.begin and target < last_page.begin + last_page.n_rows:
+            page_index = len(self.pages) - 1
+        else:
+            # It has to be in one of the full interior pages, which are spaced
+            # evenly.
+            interior_start = first_page.begin + first_page.n_rows
+            n_interior_rows = last_page.begin - interior_start
+            n_interior_pages = len(self.pages) - 2
+            page_index = 1 + n_interior_pages * (target - interior_start) // n_interior_rows
+        self._read_page(page_index)
+        try:
+            return self.rows_by_index[target]
+        except KeyError:
+            _LOG.debug("Index find failed: %s should have been in page %s.", target, page_index)
+            raise LookupError(f"Address for {target} not found.") from None
+
+    def _read_page(self, page_index: int, page_stream: BytesIO | None = None) -> bool:
+        page = self.pages[page_index]
+        if page.read:
+            return False
+        if page_stream is None:
+            self.stream.seek(page.file_offset)
+            page_stream = BytesIO(self.stream.read(page.n_rows * self.row_size))
+        row = self._read_row(page_stream)
+        uuid_int_begin = row.key.int
+        for _ in range(1, page.n_rows):
+            row = self._read_row(page_stream)
+        uuid_int_end = row.key.int + 1  # Python's loop scoping rules are actually useful here!
+        page.read = True
+        bounds = PageBounds(page_index=page_index, uuid_int_begin=uuid_int_begin, uuid_int_end=uuid_int_end)
+        _LOG.debug("Read page %s with rows [%s:%s].", bounds, page.begin, page.end)
+        bisect.insort(self.bounds, bounds, key=operator.attrgetter("page_index"))
+        return True
 
     def _read_row(self, page_stream: BytesIO) -> AddressRow:
         row = AddressRow.read(page_stream, self.n_addresses, self.int_size)
@@ -513,12 +645,6 @@ class AddressReader:
         self.rows_by_index[row.index] = row
         _LOG.debug("Read address row %s.", row)
         return row
-
-    def _page_search_path(self, mid: int) -> Iterator[int]:
-        yield mid
-        for abs_offset in itertools.count(1):
-            yield mid + abs_offset
-            yield mid - abs_offset
 
 
 @dataclasses.dataclass
@@ -755,3 +881,12 @@ class MultiblockReader:
             return None
         json_data = decompressor.decompress(compressed_data)
         return model_type.model_validate_json(json_data)
+
+
+def _round_div(a: int, b: int) -> int:
+    """Divide two integers and return the rounded result.
+
+    This always rounds 0.5 up, but it doesn't involve floats at all and hence
+    is safe for really big integers.
+    """
+    return (a + b // 2) // b
