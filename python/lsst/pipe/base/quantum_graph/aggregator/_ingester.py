@@ -80,6 +80,7 @@ class Ingester:
         self.butler = Butler.from_config(
             self.comms.config.butler_path, writeable=not self.comms.config.dry_run
         )
+        self.comms.enter(self.butler.registry.caching_context())
 
     @property
     def n_datasets_pending(self) -> int:
