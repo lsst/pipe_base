@@ -38,7 +38,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 import networkx as nx
 
@@ -50,6 +50,7 @@ from lsst.daf.butler import (
     Quantum,
     SerializedDimensionRecord,
 )
+from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.utils import doImportType
 
 from ..config import PipelineTaskConfig
@@ -242,7 +243,7 @@ class DeserializerV1(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, "nodeId", uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", generate_uuidv7())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
@@ -376,7 +377,7 @@ class DeserializerV2(DeserializerBase):
 
             # reconstruct node
             qNode = pickle.loads(dump)
-            object.__setattr__(qNode, "nodeId", uuid.uuid4())
+            object.__setattr__(qNode, "nodeId", generate_uuidv7())
 
             # read the saved node, name. If it has been loaded, attach it, if
             # not read in the taskDef first, and then load it
@@ -599,11 +600,11 @@ class DeserializerV3(DeserializerBase):
                 # initInputRefs and initOutputRefs are optional
                 if (refs := taskDefDump.get("initInputRefs")) is not None:
                     initInputRefs[recreatedTaskDef.label] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        DatasetRef.from_json(ref, universe=universe) for ref in refs
                     ]
                 if (refs := taskDefDump.get("initOutputRefs")) is not None:
                     initOutputRefs[recreatedTaskDef.label] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        DatasetRef.from_json(ref, universe=universe) for ref in refs
                     ]
 
                 # rebuild the mappings that associate dataset type names with

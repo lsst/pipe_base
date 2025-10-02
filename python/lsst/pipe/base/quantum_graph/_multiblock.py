@@ -43,11 +43,11 @@ import dataclasses
 import itertools
 import logging
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from io import BufferedReader, BytesIO
 from operator import attrgetter
-from typing import IO, TYPE_CHECKING, ClassVar, Protocol, TypeVar
+from typing import IO, TYPE_CHECKING, Any, Protocol, TypeVar
 
 import pydantic
 
@@ -234,7 +234,17 @@ class AddressWriter:
         stream.write(len(self.indices).to_bytes(int_size))
         stream.write(len(self.addresses).to_bytes(int_size))
         empty_address = Address()
-        for key in sorted(self.indices.keys(), key=attrgetter("int")):
+        sorted_keys = sorted(self.indices.keys(), key=attrgetter("int"))
+        if sorted_keys:
+            # Write the maximum UUID first so the reader can determine what
+            # the UUID range is (important for UUID7).
+            last_key = sorted_keys.pop()
+            row = AddressRow(
+                last_key, self.indices[last_key], [m.get(last_key, empty_address) for m in self.addresses]
+            )
+            _LOG.debug("Wrote max-UUID address %s.", row)
+            row.write(stream, int_size)
+        for key in sorted_keys:
             row = AddressRow(key, self.indices[key], [m.get(key, empty_address) for m in self.addresses])
             _LOG.debug("Wrote address %s.", row)
             row.write(stream, int_size)
@@ -259,26 +269,27 @@ class AddressWriter:
 class AddressReader:
     """A helper object for reading address files for multi-block files."""
 
-    MAX_UUID_INT: ClassVar[int] = 2**128
-    """The maximum value of a UUID's integer form."""
-
     stream: IO[bytes]
     """Stream to read from."""
 
     int_size: int
     """Size of each integer in bytes."""
 
-    n_rows: int
-    """Number of address rows in the file (also the number of UUIDs)."""
+    header_page_size: int
+    """Number of bytes read when the file was first opened."""
+
+    n_rows_after_header: int
+    """Number of address rows in the file that were not read with the header.
+    """
 
     n_addresses: int
     """Number of addresses in each row."""
 
-    start_index: int
-    """Index of the first row."""
-
     rows: dict[uuid.UUID, AddressRow]
     """Rows that have already been read."""
+
+    rows_by_index: dict[int, AddressRow]
+    """Rows that have already been read, keyed by integer index."""
 
     rows_per_page: int
     """Minimum number of rows to read at once."""
@@ -291,8 +302,14 @@ class AddressReader:
     page.
     """
 
+    min_uuid_int: int = 0
+
+    max_uuid_int: int = 2**128
+
     @classmethod
-    def from_stream(cls, stream: IO[bytes], page_size: int, start_index: int = 0) -> AddressReader:
+    def from_stream(
+        cls, stream: IO[bytes], *, page_size: int, n_addresses: int, int_size: int
+    ) -> AddressReader:
         """Construct from a stream by reading the header.
 
         Parameters
@@ -302,27 +319,76 @@ class AddressReader:
         page_size : `int`
             Approximate number of bytes to read at a time when searching for an
             address.
-        start_index : `int`, optional
-            Value of the first index in the file.
+        n_addresses : `int`
+            Number of addresses to expect per row.  This is checked against
+            the size embedded in the file.
+        int_size : `int`
+            Number of bytes to use for all integers.  This is checked against
+            the size embedded in the file.
         """
-        int_size = int.from_bytes(stream.read(1))
-        n_rows = int.from_bytes(stream.read(int_size))
-        n_addresses = int.from_bytes(stream.read(int_size))
-        rows_per_page = max(page_size // cls.compute_row_size(int_size, n_addresses), 1)
-        n_full_pages, last_rows_per_page = divmod(n_rows, rows_per_page)
+        # Figure out how much to read initially; we need to read the header and
+        # at least the first two rows, which may be special, but we also want
+        # to read at least page_size, and we don't want to read half of a row
+        # at the end.
+        header_size = cls.compute_header_size(int_size)
+        row_size = cls.compute_row_size(int_size, n_addresses)
+        header_page_size = min(page_size, header_size + row_size * 2)
+        n_header_page_rows = (header_page_size - header_size) // row_size
+        header_page_size = header_size + n_header_page_rows * row_size
+        # Read the raw header page.
+        header_page_data = stream.read(header_page_size)
+        if len(header_page_data) < header_page_size:
+            # This file has zero or one row, because we hit the end of the
+            # file before we could read two rows.
+            if len(header_page_data) == header_size:
+                n_header_page_rows = 0
+            elif len(header_page_data) == header_size + row_size:
+                n_header_page_rows = 1
+            else:
+                raise InvalidQuantumGraphFileError("Address file unexpectedly truncated.")
+        # Interpret the raw header data and initialize the reader instance.
+        page_stream = BytesIO(header_page_data)
+        file_int_size = int.from_bytes(page_stream.read(1))
+        if file_int_size != int_size:
+            raise InvalidQuantumGraphFileError(
+                f"int size in address file ({file_int_size}) does not match int size in header ({int_size})."
+            )
+        n_rows = int.from_bytes(page_stream.read(int_size))
+        file_n_addresses = int.from_bytes(page_stream.read(int_size))
+        if file_n_addresses != n_addresses:
+            raise InvalidQuantumGraphFileError(
+                f"Incorrect number of addresses per row: expected {n_addresses}, got {file_n_addresses}."
+            )
+        n_rows_after_header = max(n_rows - n_header_page_rows, 0)
+        rows_per_page = max(page_size // row_size, 1)
+        n_full_pages, last_rows_per_page = divmod(n_rows_after_header, rows_per_page)
         unread_pages = dict.fromkeys(range(n_full_pages), rows_per_page)
-        if last_rows_per_page := n_rows % rows_per_page:
+        if last_rows_per_page := n_rows_after_header % rows_per_page:
             unread_pages[n_full_pages] = last_rows_per_page
-        return cls(
+        reader = cls(
             stream,
             int_size=int_size,
-            n_rows=n_rows,
+            header_page_size=header_page_size,
+            n_rows_after_header=n_rows_after_header,
             n_addresses=n_addresses,
-            start_index=start_index,
             rows={},
+            rows_by_index={},
             rows_per_page=rows_per_page,
             unread_pages=unread_pages,
         )
+        # Actually read the header page rows.
+        for _ in range(n_header_page_rows):
+            row = reader._read_row(page_stream)
+            if row.index == n_rows - 1:
+                # The maximum UUID was written at the top of the file so we
+                # can adjust the expected UUID range accordingly (this is
+                # important for UUID7).
+                reader.max_uuid_int = row.key.int
+            else:
+                # Every other row should be sorted, so the last one in the
+                # header sets the lower bound on the UUIDs after the header.
+                reader.min_uuid_int = row.key.int
+        return reader
 
     @classmethod
     @contextmanager
@@ -330,9 +396,10 @@ class AddressReader:
         cls,
         zf: zipfile.ZipFile,
         name: str,
+        *,
         page_size: int,
-        int_size: int | None = None,
-        start_index: int = 0,
+        n_addresses: int,
+        int_size: int,
     ) -> Iterator[AddressReader]:
         """Make a reader for an address file in a zip archive.
 
@@ -345,11 +412,12 @@ class AddressReader:
         page_size : `int`
             Approximate number of bytes to read at a time when searching for an
             address.
-        int_size : `int`, optional
+        n_addresses : `int`
+            Number of addresses to expect per row.  This is checked against
+            the size embedded in the file.
+        int_size : `int`
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
-        start_index : `int`, optional
-            Value of the first index in the file.
 
         Returns
         -------
@@ -357,12 +425,7 @@ class AddressReader:
             Context manager that returns a reader when entered.
         """
         with zf.open(f"{name}.addr", mode="r") as stream:
-            result = cls.from_stream(stream, page_size=page_size, start_index=start_index)
-            if int_size is not None and result.int_size != int_size:
-                raise InvalidQuantumGraphFileError(
-                    "int size in address file does not match int size in header."
-                )
-            yield result
+            yield cls.from_stream(stream, page_size=page_size, n_addresses=n_addresses, int_size=int_size)
 
     @staticmethod
     def compute_header_size(int_size: int) -> int:
@@ -410,11 +473,6 @@ class AddressReader:
         )
 
     @property
-    def header_size(self) -> int:
-        """The size (in bytes) of the header of this address file."""
-        return self.compute_header_size(self.int_size)
-
-    @property
     def row_size(self) -> int:
         """The size (in bytes) of each row of this address file."""
         return self.compute_row_size(self.int_size, self.n_addresses)
@@ -430,47 +488,57 @@ class AddressReader:
         # Shortcut out if we've already read everything, but don't bother
         # optimizing previous partial reads.
         if self.unread_pages:
-            self.stream.seek(self.header_size)
+            self.stream.seek(self.header_page_size)
             data = self.stream.read()
             buffer = BytesIO(data)
-            _LOG.debug("Reading all %d address rows.", self.n_rows)
-            for _ in range(self.n_rows):
+            _LOG.debug("Reading all %d address rows.", self.n_rows_after_header)
+            for _ in range(self.n_rows_after_header):
                 self._read_row(buffer)
             self.unread_pages.clear()
         return self.rows
 
-    def find(self, key: uuid.UUID) -> AddressRow:
+    def find(self, key: uuid.UUID | int) -> AddressRow:
         """Read the row for the given UUID.
 
         Parameters
         ----------
-        key : `uuid.UUID`
-            UUID to find.
+        key : `uuid.UUID` or `int`
+            UUID or integer index to find.
 
         Returns
         -------
         row : `AddressRow`
             Addresses for the given UUID.
         """
-        if (row := self.rows.get(key)) is not None:
+        row_map: Mapping[Any, AddressRow]
+        guess_index: int | float
+        match key:
+            case uuid.UUID():
+                row_map = self.rows
+                guess_index = (
+                    (key.int - self.min_uuid_int) / (self.max_uuid_int - self.min_uuid_int)
+                ) * self.n_rows_after_header
+            case int():
+                row_map = self.rows_by_index
+                guess_index = key
+        if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
             return row
-        guess_index_float = (key.int / self.MAX_UUID_INT) * self.n_rows + self.start_index
-        guess_page_float = (guess_index_float - self.start_index) / self.rows_per_page
+        guess_page_float = guess_index / self.rows_per_page
         guess_page = int(guess_page_float)
         _LOG.debug(
             "Searching for %s, starting at index %s of %s (%s rows per page).",
             key,
-            guess_index_float,
-            self.n_rows,
+            guess_index,
+            self.n_rows_after_header,
             self.rows_per_page,
         )
         for page in self._page_search_path(guess_page):
             if page in self.unread_pages:
                 self._read_page(page)
-                if (row := self.rows.get(key)) is not None:
+                if (row := row_map.get(key)) is not None:  # type: ignore[arg-type]
                     return row
             elif not self.unread_pages:
-                raise LookupError(f"Address for UUID {key} not found.")
+                raise LookupError(f"Address for {key} not found.")
         raise AssertionError("Logic error in page tracking.")
 
     def _read_page(self, page_index: int) -> None:
@@ -481,7 +549,7 @@ class AddressReader:
             page_index * self.rows_per_page,
             page_index * self.rows_per_page + rows_in_page,
         )
-        self.stream.seek(page_index * self.rows_per_page * self.row_size + self.header_size)
+        self.stream.seek(page_index * self.rows_per_page * self.row_size + self.header_page_size)
         data = self.stream.read(self.row_size * rows_in_page)
         page_stream = BytesIO(data)
         for _ in range(rows_in_page):
@@ -491,6 +559,7 @@ class AddressReader:
     def _read_row(self, page_stream: BytesIO) -> AddressRow:
         row = AddressRow.read(page_stream, self.n_addresses, self.int_size)
         self.rows[row.key] = row
+        self.rows_by_index[row.index] = row
         _LOG.debug("Read address row %s.", row)
         return row
 
