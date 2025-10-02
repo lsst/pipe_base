@@ -357,6 +357,7 @@ class Writer:
         provenance_quantum.status = request.get_run_status()
         provenance_quantum.caveats = request.caveats
         provenance_quantum.exception = request.exception
+        provenance_quantum.resource_usage = request.resource_usage
         data.quantum = provenance_quantum.model_dump_json().encode()
         data.metadata = request.metadata
         data.log = request.log

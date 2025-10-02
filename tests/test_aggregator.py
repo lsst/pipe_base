@@ -437,6 +437,9 @@ class AggregatorTestCase(unittest.TestCase):
         if caveats & QuantumSuccessCaveats.ALL_OUTPUTS_MISSING:
             for connection_name in info["pipeline_node"].outputs.keys():
                 self._expect_none_exist(existence[connection_name], msg=msg)
+        self.assertIsNotNone(info["resource_usage"], msg=msg)
+        self.assertGreater(info["resource_usage"].total_time, 0, msg=msg)
+        self.assertGreater(info["resource_usage"].memory, 0, msg=msg)
 
     def _expect_failure(
         self, info: ProvenanceQuantumInfo, existence: dict[str, list[bool]], msg: str

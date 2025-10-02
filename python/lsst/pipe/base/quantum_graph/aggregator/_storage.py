@@ -47,6 +47,7 @@ from lsst.resources import ResourcePath
 
 from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo
+from ...resource_usage import QuantumResourceUsage
 from ._config import AggregatorConfig
 from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
@@ -85,6 +86,7 @@ class Tables:
             sqlalchemy.Column("status", sqlalchemy.Integer, nullable=False),
             sqlalchemy.Column("caveats", sqlalchemy.Integer, nullable=True),
             sqlalchemy.Column("exception", sqlalchemy.LargeBinary, nullable=True),
+            sqlalchemy.Column("resource_usage", sqlalchemy.LargeBinary, nullable=True),
             sqlalchemy.Column("log", sqlalchemy.LargeBinary, nullable=False),
             sqlalchemy.Column("metadata", sqlalchemy.LargeBinary, nullable=False),
             sqlalchemy.Column("is_compressed", sqlalchemy.Boolean, nullable=False),
@@ -256,6 +258,9 @@ class Storage(AbstractContextManager):
             "exception": (
                 scan_result.exception.model_dump_json().encode() if scan_result.exception else None
             ),
+            "resource_usage": (
+                scan_result.resource_usage.model_dump_json().encode() if scan_result.resource_usage else None
+            ),
             "log": scan_result.log,
             "metadata": scan_result.metadata,
             "is_compressed": scan_result.is_compressed,
@@ -298,6 +303,11 @@ class Storage(AbstractContextManager):
                         exception=(
                             ExceptionInfo.model_validate_json(row.exception)
                             if row.exception is not None
+                            else None
+                        ),
+                        resource_usage=(
+                            QuantumResourceUsage.model_validate_json(row.resource_usage)
+                            if row.resource_usage is not None
                             else None
                         ),
                         existing_outputs=datasets_by_producer[row.quantum_id],

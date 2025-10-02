@@ -46,6 +46,7 @@ from ..._status import QuantumSuccessCaveats
 from ..._task_metadata import TaskMetadata
 from ...pipeline_graph import PipelineGraph, TaskImportMode
 from ...quantum_provenance_graph import ExceptionInfo
+from ...resource_usage import QuantumResourceUsage
 from .._multiblock import Compressor
 from .._predicted import (
     PredictedDatasetModel,
@@ -343,6 +344,7 @@ class Scanner:
                 }
             except LookupError:
                 pass
+            result.resource_usage = QuantumResourceUsage.from_task_metadata(content)
             result.metadata = content.model_dump_json().encode()
             if self.compressor is not None:
                 result.metadata = self.compressor.compress(result.metadata)

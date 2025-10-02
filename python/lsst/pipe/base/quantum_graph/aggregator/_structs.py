@@ -44,6 +44,7 @@ from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
 from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
+from ...resource_usage import QuantumResourceUsage
 from .._common import DatastoreName
 from .._predicted import PredictedDatasetModel
 
@@ -135,6 +136,7 @@ class ScanResult:
     status: ScanStatus
     caveats: QuantumSuccessCaveats | None = None
     exception: ExceptionInfo | None = None
+    resource_usage: QuantumResourceUsage | None = None
     existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
     metadata: bytes = b""
     log: bytes = b""
