@@ -326,7 +326,7 @@ class BaseQuantumGraph(ABC):
     ----------
     header : `HeaderModel`
         Structured metadata for the graph.
-    pipeline_graph : `..pipeline_graph.PipelineGraph`
+    pipeline_graph : `.pipeline_graph.PipelineGraph`
         Graph of tasks and dataset types.  May contain a superset of the tasks
         and dataset types that actually have quanta and datasets in the quantum
         graph.
