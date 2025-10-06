@@ -28,11 +28,9 @@
 import dataclasses
 import itertools
 import os
-import sqlite3
 import time
 import unittest.mock
 import uuid
-import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -214,9 +212,7 @@ class AggregatorTestCase(unittest.TestCase):
                 # a convenient temporary directory.
                 predicted_path = os.path.join(root, "predicted.qg")
                 pqgc.write(predicted_path)
-                config = AggregatorConfig(
-                    db_dir=os.path.join(root, "db"), output_path=os.path.join(root, "provenance.qg")
-                )
+                config = AggregatorConfig(output_path=os.path.join(root, "provenance.qg"))
                 yield PrepInfo(
                     butler=helper.butler,
                     butler_path=root,
@@ -663,18 +659,6 @@ class AggregatorTestCase(unittest.TestCase):
             prep.config.idle_timeout = 2.0
             with self.assertRaises(TimeoutError):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            # Check that we've made progress in the sqlite DB.
-            assert prep.config.db_dir is not None
-            db = sqlite3.connect(os.path.join(prep.config.db_dir, "scanner-000"))
-            (n_quanta,) = db.execute("SELECT COUNT(*) FROM quantum").fetchone()
-            self.assertLessEqual(n_quanta, 9 + len(prep.predicted.pipeline_graph.tasks) + 1)
-            if not n_quanta:
-                warnings.warn(
-                    "Scanner in test timed out too early for this test to be useful.  "
-                    "This can happen if the compute environment is unusually slow, "
-                    "but if this occurs often, the timeout should be increased.",
-                )
-            db.close()
             # Finish executing the quanta.
             executed_quanta.extend(execution_iter)
             # Scan again, and write the provenance QG.
@@ -718,18 +702,6 @@ class AggregatorTestCase(unittest.TestCase):
             prep.config.default_times["wait"] = 1.0
             with self.assertRaisesRegex(TimeoutError, "1 quantum abandoned"):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            # Check that we've made progress in the sqlite DB.
-            assert prep.config.db_dir is not None
-            db = sqlite3.connect(os.path.join(prep.config.db_dir, "scanner-000"))
-            (n_quanta,) = db.execute("SELECT COUNT(*) FROM quantum").fetchone()
-            self.assertLessEqual(n_quanta, 21 + len(prep.predicted.pipeline_graph.tasks) + 1)
-            if not n_quanta:
-                warnings.warn(
-                    "Scanner in test timed out too early for this test to be useful.  "
-                    "This can happen if the compute environment is unusually slow, "
-                    "but if this occurs often, the timeout should be increased.",
-                )
-            db.close()
             prep.config.assume_complete = True
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:

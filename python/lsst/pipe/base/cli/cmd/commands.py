@@ -158,15 +158,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
 @click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
 @click.argument("predicted_graph", required=True)
 @repo_argument(required=True, help="Path to the central butler repository.")
-@click.option("-d", "--db-dir", help="Directory for the scanner's SQLite database files (POSIX only).")
 @click.option("-o", "--output", "output_path", help="Path to the output provenance quantum graph.")
-@click.option(
-    "--checkpoint-dir",
-    help=(
-        "Path to a persistent storage location to copy the scanner databases "
-        "to periodically, if --db-dir is not persistent."
-    ),
-)
 @click.option(
     "--processes",
     "-j",

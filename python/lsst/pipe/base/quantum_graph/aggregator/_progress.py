@@ -182,14 +182,6 @@ class Progress:
         if self.interactive:
             self._write_progress.close()
 
-    def finish_resuming(self) -> None:
-        """Report that we're done resuming from past saved scans."""
-        if self.interactive:
-            # Reset the timing in the progress bars so quickly resuming doesn't
-            # affect future timing estimates.
-            self._scan_progress.unpause()
-            self._ingest_progress.unpause()
-
 
 def make_worker_log(name: str, config: AggregatorConfig) -> LsstLogAdapter:
     """Make a logger for a worker.
