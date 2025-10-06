@@ -81,10 +81,12 @@ class GraphWalker(Generic[_T]):
         Parameters
         ----------
         key : unspecified
-            NetworkX key of the node to mark finished.
+            NetworkX key of the node to mark finished.  Does not need to have
+            been returned by the iterator yet.
         """
-        self._active.remove(key)
         self._incomplete.remove(key)
+        self._active.discard(key)
+        self._ready.discard(key)
         successors = list(self._xgraph.successors(key))
         for successor in successors:
             assert successor not in self._active, (
@@ -102,7 +104,8 @@ class GraphWalker(Generic[_T]):
         Parameters
         ----------
         key : unspecified
-            NetworkX key of the node to mark as a failure.
+            NetworkX key of the node to mark as a failure.  Does not need to
+            have been returned by the iterator yet.
 
         Returns
         -------
@@ -110,8 +113,9 @@ class GraphWalker(Generic[_T]):
             NetworkX keys of nodes that were recursive descendants of the
             failed node, and will hence never be yielded by the iterator.
         """
-        self._active.remove(key)
         self._incomplete.remove(key)
+        self._active.discard(key)
+        self._ready.discard(key)
         descendants = list(networkx.dag.descendants(self._xgraph, key))
         self._xgraph.remove_node(key)
         self._xgraph.remove_nodes_from(descendants)
