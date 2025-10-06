@@ -774,7 +774,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
             does affect the smallest, most numerous reads.
-        import_mode : `..pipeline_graph.TaskImportMode`, optional
+        import_mode : `.pipeline_graph.TaskImportMode`, optional
             How to handle importing the task classes referenced in the pipeline
             graph.
 
@@ -1813,7 +1813,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
             does affect the smallest, most numerous reads.
-        import_mode : `..pipeline_graph.TaskImportMode`, optional
+        import_mode : `.pipeline_graph.TaskImportMode`, optional
             How to handle importing the task classes referenced in the pipeline
             graph.
 
