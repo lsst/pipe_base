@@ -656,8 +656,7 @@ class AggregatorTestCase(unittest.TestCase):
             # so it just waits for incomplete quanta to finish (and then times
             # out).
             prep.config.assume_complete = False
-            prep.config.idle_timeout = 2.0
-            with self.assertRaises(TimeoutError):
+            with self.assertRaises(RuntimeError):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Finish executing the quanta.
             executed_quanta.extend(execution_iter)
@@ -698,9 +697,7 @@ class AggregatorTestCase(unittest.TestCase):
             ):
                 pass
             prep.config.assume_complete = False
-            prep.config.default_times["retry_timeout"] = 2.0
-            prep.config.default_times["wait"] = 1.0
-            with self.assertRaisesRegex(TimeoutError, "1 quantum abandoned"):
+            with self.assertRaisesRegex(RuntimeError, "1 quantum abandoned"):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             prep.config.assume_complete = True
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
