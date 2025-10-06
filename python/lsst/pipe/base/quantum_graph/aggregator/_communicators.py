@@ -470,13 +470,8 @@ class SupervisorCommunicator:
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
         self._write_requests.put(scan_result, block=False)
 
-    def poll(self, timeout: float) -> Iterator[ScanReport]:
+    def poll(self) -> Iterator[ScanReport]:
         """Poll for reports from workers while sending scan requests.
-
-        Parameters
-        ----------
-        timeout : `float`
-            Timeout for waiting on the report queue.
 
         Yields
         ------
@@ -485,12 +480,11 @@ class SupervisorCommunicator:
 
         Notes
         -----
-        This iterator blocks until the first report is received, and then it
-        continues until the report queue is empty.  If the timeout is exceeded
-        while waiting for the first report, `TimeoutError` is raised.
+        This iterator blocks until the first scan report is received, and then
+        it continues until the report queue is empty.
         """
         block = True
-        msg = _get_from_queue(self._reports, block=block, timeout=timeout)
+        msg = _get_from_queue(self._reports, block=block)
         while msg is not None:
             match self._handle_progress_reports(msg):
                 case ScanReport() as scan_report:
@@ -500,10 +494,7 @@ class SupervisorCommunicator:
                     pass
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
-            msg = _get_from_queue(self._reports, block=block, timeout=timeout)
-        if block:
-            # We still didn't get a real scan return after a timeout.
-            raise TimeoutError(f"No progress made after more than {timeout} seconds.") from None
+            msg = _get_from_queue(self._reports, block=block)
 
     def _handle_progress_reports(
         self, report: Report
@@ -753,14 +744,13 @@ class ScannerCommunicator(WorkerCommunicator):
             return cdict.data
         return None
 
-    def poll(self) -> Iterator[uuid.UUID | None]:
+    def poll(self) -> Iterator[uuid.UUID]:
         """Poll for scan requests to process.
 
         Yields
         ------
-        quantum_id : `uuid.UUID` or `None`
-            ID of a new quantum to scan, or `None` if there was nothing on the
-            queue.
+        quantum_id : `uuid.UUID`
+            ID of a new quantum to scan.
 
         Notes
         -----
@@ -769,11 +759,12 @@ class ScannerCommunicator(WorkerCommunicator):
         """
         while True:
             self.check_for_cancel()
-            scan_request = _get_from_queue(self._scan_requests)
+            scan_request = _get_from_queue(self._scan_requests, block=True, timeout=self.config.worker_sleep)
             if scan_request is _Sentinel.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
                 return
-            yield (scan_request.quantum_id if scan_request is not None else None)
+            if scan_request is not None:
+                yield scan_request.quantum_id
 
     def __exit__(
         self,

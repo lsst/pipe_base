@@ -27,73 +27,10 @@
 
 from __future__ import annotations
 
-__all__ = ("AggregatorConfig", "ScannerTimeConfigDict", "ScannerTimeOverrideDict")
+__all__ = ("AggregatorConfig",)
 
-from collections import ChainMap
-from typing import TypedDict
 
 import pydantic
-
-from .._common import TaskLabel
-
-
-class ScannerTimeConfigDict(TypedDict):
-    """Configuration for how long the provenance scanner should wait between
-    attempts to read a quantum's metadata and log datasets.
-
-    This waiting logic is only applied if `ScannerConfig.assume_complete` is
-    `False`; when that is `True`, all quanta are expected to have either failed
-    or succeed, the absence of metadata and log datasets is assumed to indicate
-    a hard failure.
-    """
-
-    wait: float
-    """Wait time (s) between the first attempt to scan for a quantum's
-    completion and the second attempt.
-
-    Scanning attempts can start as soon as a quantum is unblocked by upstream
-    quanta finishing (the scanner generally has no knowledge of when a quantum
-    is actually scheduled for execution by a workflow system), so this wait
-    time should account for any expected delay in the start of execution as
-    well as the time it takes to start a quantum.
-    """
-
-    wait_factor: float
-    """Multiplier for `wait` applied on each attempt after the second.
-    """
-
-    wait_max: float
-    """Maximum wait interval (s) for scans.
-
-    Quanta that have not produced a log dataset are continually scanned until
-    this threshold is reached.
-    """
-
-    retry_timeout: float
-    """Maximum total wait time since the first scan with a log dataset present
-    before giving up.
-
-    Quanta with log and no metadata have failed at least once, but may be
-    retried and hence turn into successes if we wait.
-    """
-
-
-def make_scanner_time_defaults() -> ScannerTimeConfigDict:
-    """Make a `ScannerTimeConfigDict` with default values."""
-    return dict(
-        wait=60.0,
-        wait_factor=1.2,
-        wait_max=600.0,
-        retry_timeout=600.0,
-    )
-
-
-class ScannerTimeOverrideDict(ScannerTimeConfigDict, total=False):
-    """A variance of `ScannerTimeConfigDict` that does not require all keys
-    to be present, for use in per-task configurations.
-
-    Missing keys fall back to the task-independent default.
-    """
 
 
 class AggregatorConfig(pydantic.BaseModel):
@@ -130,7 +67,7 @@ class AggregatorConfig(pydantic.BaseModel):
     """If `True`, the aggregator can assume all quanta have run to completion
     (including any automatic retries).  If `False`, only successes can be
     considered final, and quanta that appear to have failed or to have not been
-    are waited on until a timeout is reached.
+    executed are ignored.
     """
 
     defensive_ingest: bool = False
@@ -145,32 +82,6 @@ class AggregatorConfig(pydantic.BaseModel):
     Defensive mode does not guard against race conditions from multiple ingest
     processes running simultaneously, as it relies on a one-time query to
     determine what is already present in the central repository.
-    """
-
-    default_times: ScannerTimeConfigDict = pydantic.Field(default_factory=make_scanner_time_defaults)
-    """Default wait times for all tasks.
-
-    This is ignored if `assume_complete` is `True`.
-    """
-
-    task_times: dict[TaskLabel, ScannerTimeOverrideDict] = pydantic.Field(default_factory=dict)
-    """Per-task overrides for wait times.
-
-    This is ignored if `assume_complete` is `True`.
-    """
-
-    idle_timeout: float = 600.0
-    """Minimum time to wait (s) before shutting down the scanner when no
-    progress is being made at all.
-
-    This timeout is necessary for ``assume_complete=False`` runs to prevent
-    quanta with hard failures that prevent the writing of logs from keeping the
-    scanner waiting indefinitely, since these quanta are otherwise
-    indistinguishable from quanta that are never started.
-
-    The timeout should not matter when ``assume_complete=True`` unless there
-    are major performance problems scanning datasets or writing to the scanner
-    database.
     """
 
     ingest_batch_size: int = 10000
@@ -229,22 +140,3 @@ class AggregatorConfig(pydantic.BaseModel):
     """Enable support for storage classes by created by the
     lsst.pipe.base.tests.mocks package.
     """
-
-    def get_times_for_task(self, task_label: TaskLabel) -> ScannerTimeConfigDict:
-        """Apply the time overrides for a task by merging them with the
-        defaults.
-
-        Parameters
-        ----------
-        task_label : `str`
-            Label of the task.
-
-        Returns
-        -------
-        times : `dict`
-            Dictionary of times, guaranteed to have all required keys.
-        """
-        if task_label in self.task_times:
-            return ChainMap(self.task_times[task_label], self.default_times)  # type: ignore
-        else:
-            return self.default_times

@@ -116,7 +116,7 @@ class Supervisor:
             ready_set.update(ready_quanta)
             while ready_set:
                 self.comms.request_scan(ready_set.pop())
-            for scan_return in self.comms.poll(timeout=self.comms.config.idle_timeout):
+            for scan_return in self.comms.poll():
                 self.handle_report(scan_return)
 
     def handle_report(self, scan_report: ScanReport) -> None:
@@ -140,7 +140,7 @@ class Supervisor:
                     self.comms.progress.report_scan()
                 self.comms.progress.report_ingests(len(blocked_quanta))
             case ScanStatus.ABANDONED:
-                self.comms.log.debug("Abandoning scan for %s: quantum failed but may be retried.")
+                self.comms.log.debug("Abandoning scan for %s: quantum has not succeeded (yet).")
                 self.walker.fail(scan_report.quantum_id)
                 self.n_abandoned += 1
             case unexpected:
@@ -201,7 +201,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         )
         comms.wait_for_workers_to_finish()
         if supervisor.n_abandoned:
-            raise TimeoutError(
+            raise RuntimeError(
                 f"{supervisor.n_abandoned} {'quanta' if supervisor.n_abandoned > 1 else 'quantum'} "
                 "abandoned because they did not succeed.  Re-run with assume_complete=True after all retry "
                 "attempts have been exhausted."

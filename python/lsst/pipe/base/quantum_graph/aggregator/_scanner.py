@@ -29,12 +29,9 @@ from __future__ import annotations
 
 __all__ = ("Scanner",)
 
-import asyncio
 import dataclasses
 import itertools
-import time
 import uuid
-from typing import Literal
 
 import zstandard
 
@@ -54,7 +51,6 @@ from .._predicted import (
     PredictedQuantumGraphReader,
 )
 from ._communicators import ScannerCommunicator
-from ._config import ScannerTimeConfigDict
 from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
 
@@ -160,64 +156,17 @@ class Scanner:
         """
         with comms:
             scanner = Scanner(predicted_path, butler_path, comms)
-            asyncio.run(scanner.loop())
+            scanner.loop()
 
-    async def loop(self) -> None:
-        """Run the main loop for the scanner.
-
-        This is an async method to allow us to pause scanning a quantum that
-        may not have completed yet while moving on to others.  This only comes
-        into play when `AggregatorConfig.assume_complete` is `False`.
-        """
-        asyncio.get_running_loop().set_task_factory(asyncio.eager_task_factory)
-        pending: set[asyncio.Task[ScanResult]] = set()
+    def loop(self) -> None:
+        """Run the main loop for the scanner."""
         self.comms.log.info("Scan request loop beginning.")
-        for scan_request in self.comms.poll():
+        for quantum_id in self.comms.poll():
             if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
                 self.compressor = zstandard.ZstdCompressor(
                     self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
                 )
-            pending = await self.scan_or_wait(scan_request, pending)
-        self.comms.log.info("Waiting for pending tasks to complete.")
-        pending = await self.scan_or_wait(None, pending, return_when="ALL_COMPLETED")
-        assert not pending, "No scans should be pending at this point."
-
-    async def scan_or_wait(
-        self,
-        requested_quantum_id: uuid.UUID | None,
-        pending: set[asyncio.Task[ScanResult]],
-        return_when: Literal["FIRST_COMPLETED", "ALL_COMPLETED"] = "FIRST_COMPLETED",
-    ) -> set[asyncio.Task[ScanResult]]:
-        """Handle a scan request (or the absence of one) and do general
-        housekeeping in one of the polling loops.
-
-        Parameters
-        ----------
-        requested_quantum_id : `uuid.UUID` or `None`
-            ID of the quantum to scan.
-        pending : `set` [ `asyncio.Task [ `ScanResult` ] ]
-            Pending async tasks for scanning quanta.
-        return_when : `str`, optional
-            Whether to wait for one pending scan to complete (default) or all
-            of them.
-
-        Returns
-        -------
-        pending : `set` [ `asyncio.Task [ `ScanResult` ] ]
-            The new set of pending tasks.
-        """
-        timeout: float = self.comms.config.worker_sleep
-        if requested_quantum_id is not None:
-            self.comms.log.debug("Creating scan task for %s.", requested_quantum_id)
-            pending.add(asyncio.create_task(self.scan_quantum(requested_quantum_id)))
-            timeout = 0.0
-        if pending:
-            self.comms.log.debug("Awaiting %d pending scans.", len(pending))
-            _, pending = await asyncio.wait(pending, timeout=timeout, return_when=return_when)
-        else:
-            self.comms.log.debug("Nothing to do; sleeping for %fs.", timeout)
-            await asyncio.sleep(timeout)
-        return pending
+            self.scan_quantum(quantum_id)
 
     def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
         """Scan for a dataset's existence.
@@ -235,7 +184,7 @@ class Scanner:
         ref = self.reader.components.make_dataset_ref(predicted)
         return self.qbb.stored(ref)
 
-    async def scan_quantum(self, quantum_id: uuid.UUID) -> ScanResult:
+    def scan_quantum(self, quantum_id: uuid.UUID) -> ScanResult:
         """Scan for a quantum's completion and error status, and its output
         datasets' existence.
 
@@ -263,43 +212,27 @@ class Scanner:
             )
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
-            times_for_task = self.comms.config.get_times_for_task(predicted_quantum.task_label)
-            wait_interval: float = times_for_task["wait"]
-            while True:
-                log_id = self._read_and_compress_log(predicted_quantum, result)
-                if self.comms.config.assume_complete or result.log:
-                    break
-                wait_interval = await self._wait_for_quantum(times_for_task, wait_interval)
-            first_failure_time: float | None = None
-            while True:
-                metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
-                if result.metadata:
-                    result.status = ScanStatus.SUCCESSFUL
-                    result.existing_outputs.add(metadata_id)
-                    break
-                elif self.comms.config.assume_complete:
-                    result.status = ScanStatus.FAILED
-                    break
-                else:
-                    # We found the log dataset, but no metadata; this means the
-                    # quantum failed, but a retry might still happen that could
-                    # turn it into a success if we can't yet assume the run is
-                    # complete.
-                    if first_failure_time is None:
-                        first_failure_time = time.time()
-                    else:
-                        if time.time() - first_failure_time > times_for_task["retry_timeout"]:
-                            # Give up on scanning this quantum and all that
-                            # follow it. A later invocation of the scanner with
-                            # assume_complete=True will recover it in the
-                            # unlikely event it's still retrying, but
-                            # (according to timeout configuration) that should
-                            # have already happened if it was going to.
-                            self.comms.log.debug("Abandoning scan for %s.", quantum_id)
-                            result.status = ScanStatus.ABANDONED
-                            self.comms.report_scan(ScanReport(result.quantum_id, result.status))
-                            return result
-                    wait_interval = await self._wait_for_quantum(times_for_task, wait_interval)
+            log_id = self._read_and_compress_log(predicted_quantum, result)
+            if not self.comms.config.assume_complete and not result.log:
+                self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
+                result.status = ScanStatus.ABANDONED
+                self.comms.report_scan(ScanReport(result.quantum_id, result.status))
+                return result
+            metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
+            if result.metadata:
+                result.status = ScanStatus.SUCCESSFUL
+                result.existing_outputs.add(metadata_id)
+            elif self.comms.config.assume_complete:
+                result.status = ScanStatus.FAILED
+            else:
+                # We found the log dataset, but no metadata; this means the
+                # quantum failed, but a retry might still happen that could
+                # turn it into a success if we can't yet assume the run is
+                # complete.
+                self.comms.log.debug("Abandoning scan for %s.", quantum_id)
+                result.status = ScanStatus.ABANDONED
+                self.comms.report_scan(ScanReport(result.quantum_id, result.status))
+                return result
             if result.log:
                 result.existing_outputs.add(log_id)
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
@@ -345,28 +278,6 @@ class Scanner:
             to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
-
-    @staticmethod
-    async def _wait_for_quantum(times_for_task: ScannerTimeConfigDict, wait_interval: float) -> float:
-        """Wait for a pending quantum by the configured amount.
-
-        Parameters
-        ----------
-        times_for_task : `dict`
-            Dictionary of task wait-time configuration.
-        wait_interval : `float`
-            Last wait interval in seconds.
-
-        Returns
-        -------
-        wait_interval : `float`
-            New wait interval in seconds.
-        """
-        await asyncio.sleep(wait_interval)
-        wait_interval *= times_for_task["wait_factor"]
-        if wait_interval > times_for_task["wait_max"]:
-            wait_interval = times_for_task["wait_max"]
-        return wait_interval
 
     def _read_and_compress_metadata(
         self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
