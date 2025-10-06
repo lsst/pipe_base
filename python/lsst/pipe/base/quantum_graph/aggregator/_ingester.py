@@ -159,8 +159,7 @@ class Ingester:
             for ingest_request in self.comms.poll():
                 self.n_producers_pending += 1
                 self.comms.log.debug(f"Got ingest request for producer {ingest_request.producer_id}.")
-                datasets, datastore_records = ingest_request.unpack()
-                self.update_pending(datasets, datastore_records)
+                self.update_pending(ingest_request.datasets, ingest_request.records)
                 if self.n_datasets_pending > self.comms.config.ingest_batch_size:
                     self.ingest()
             self.comms.log.info("All ingest requests received.")

@@ -102,30 +102,10 @@ class AggregatorConfig(pydantic.BaseModel):
     # Changes to the defaults in this class are not automatically reflected in
     # the CLI; some defaults unfortunately have to be duplicated there.
 
-    db_dir: str | None = None
-    """Path to a directory holding the SQLite scanner databases.
-
-    This must be a POSIX filesystem path.  On systems with no persistent POSIX
-    storage, this should be a temporary path and `checkpoint_dir` should be
-    set to a persistent non-POSIX location where the SQLite databases will be
-    copied periodically.
-
-    If this is `None`, no scanner state will be stored, and a restarted scanner
-    will start from the beginning.
-    """
-
     output_path: str | None = None
     """Path for the output provenance quantum graph file.
 
     At present this option is intended only for debugging.
-    """
-
-    checkpoint_dir: str | None = None
-    """Optional path to a persistent location that the scanner SQLite database
-    files should be copied to for fault tolerance.
-
-    If not set, the scanner's checkpoints will only involve ensuring the SQLite
-    write-ahead log is synced back to the main database.
     """
 
     worker_log_dir: str | None = None
@@ -141,14 +121,6 @@ class AggregatorConfig(pydantic.BaseModel):
     """Path to a directory (POSIX only) for parallel worker profiling dumps.
 
     This option is ignored when `n_processes` is `1`.
-    """
-
-    vacuum_on_checkpoint: bool = False
-    """If `True`, VACUUM the database before checkpointing.
-
-    This is expected to be useful primarily when checkpointing to an separate
-    external path (`checkpoint_path` is not `None`), since it will shrink the
-    size of the database file before copying it.
     """
 
     n_processes: int = 1
@@ -201,11 +173,6 @@ class AggregatorConfig(pydantic.BaseModel):
     database.
     """
 
-    checkpoint_interval: float = 1200.0
-    """Time (s) between checkpoints that flush the local database to persistent
-    storage.
-    """
-
     ingest_batch_size: int = 10000
     """Number of butler datasets that must accumulate to trigger an ingest."""
 
@@ -237,10 +204,6 @@ class AggregatorConfig(pydantic.BaseModel):
 
     log_status_interval: float | None = None
     """Interval (in seconds) between periodic logger status updates."""
-
-    query_batch_size: int = 10000
-    """Number of rows and IN clause terms in SQLite insert and delete queries.
-    """
 
     worker_sleep: float = 0.01
     """Time (in seconds) a worker should wait when there are no requests from

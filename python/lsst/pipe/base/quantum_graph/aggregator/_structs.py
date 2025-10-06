@@ -36,7 +36,6 @@ __all__ = (
 
 import dataclasses
 import enum
-import pickle
 import uuid
 
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
@@ -107,62 +106,14 @@ class IngestRequest:
     producer_id: uuid.UUID
     """ID of the quantum that produced these datasets."""
 
-    data: bytes
-    """Pickled form of the datasets and dimension records.
+    datasets: list[PredictedDatasetModel]
+    """Registry information about the datasets."""
 
-    Guaranteed to be empty if there are no datasets to ingest.
-
-    We store the serialized form in the request so we don't have to do an
-    extra round of pickle/unpickle when going from the scanner database to
-    the ingest request queue.
-    """
-
-    @classmethod
-    def pack(
-        cls,
-        producer_id: uuid.UUID,
-        datasets: list[PredictedDatasetModel],
-        records: dict[DatastoreName, DatastoreRecordData],
-    ) -> IngestRequest:
-        """Construct a request.
-
-        Parameters
-        ----------
-        producer_id : `uuid.UUID`
-            Unique ID of the quantum that produced these datasets.
-        datasets : `list` [ `.PredictedDatasetModel` ]
-            Registry dataset information.
-        records : `dict` [ `str`, \
-                `lsst.daf.butler.datastores.record_data.DatastoreRecordData` ]
-            Datastore dataset information.
-
-        Returns
-        -------
-        request : `IngestRequest`
-            An ingest request with the dataset information already pickled.
-        """
-        data = b""
-        if datasets or records:
-            data = pickle.dumps((datasets, records))
-        return cls(producer_id, data)
-
-    def unpack(self) -> tuple[list[PredictedDatasetModel], dict[DatastoreName, DatastoreRecordData]]:
-        """Unpack the dataset information from the request.
-
-        Returns
-        -------
-        datasets : `list` [ `.PredictedDatasetModel` ]
-            Registry dataset information.
-        records : `dict` [ `str`, \
-                `lsst.daf.butler.datastores.record_data.DatastoreRecordData` ]
-            Datastore dataset information.
-        """
-        if not self.data:
-            return [], {}
-        return pickle.loads(self.data)
+    records: dict[DatastoreName, DatastoreRecordData]
+    """Datastore information about the datasets."""
 
     def __bool__(self) -> bool:
-        return bool(self.data)
+        return bool(self.datasets or self.records)
 
 
 @dataclasses.dataclass

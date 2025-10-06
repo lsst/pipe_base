@@ -110,16 +110,13 @@ class Supervisor:
         self.comms.progress.set_n_quanta(
             self.predicted.header.n_quanta + len(self.predicted.init_quanta.root)
         )
-        self.comms.progress.log.info("Waiting for scanners to load any previous scans.")
-        for scan_return in self.comms.poll_resuming():
-            self.handle_report(scan_return)
         ready_set: set[uuid.UUID] = set()
         for ready_quanta in self.walker:
             self.comms.log.debug("Sending %d new quanta to scan queue.", len(ready_quanta))
             ready_set.update(ready_quanta)
             while ready_set:
                 self.comms.request_scan(ready_set.pop())
-            for scan_return in self.comms.poll_scanning(timeout=self.comms.config.idle_timeout):
+            for scan_return in self.comms.poll(timeout=self.comms.config.idle_timeout):
                 self.handle_report(scan_return)
 
     def handle_report(self, scan_report: ScanReport) -> None:

@@ -55,7 +55,6 @@ from .._predicted import (
 )
 from ._communicators import ScannerCommunicator
 from ._config import ScannerTimeConfigDict
-from ._storage import Storage
 from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
 
@@ -82,9 +81,6 @@ class Scanner:
     checks for other outputs (when necessary).
     """
 
-    storage: Storage | None = None
-    """Object that mediates access to the scanner's SQLite database."""
-
     compressor: Compressor | None = None
     """Object used to compress JSON blocks.
 
@@ -104,12 +100,6 @@ class Scanner:
         )
         self.reader.read_dimension_data()
         self.reader.read_init_quanta()
-        self.comms.log.verbose("Initializing scanner storage.")
-        if self.comms.config.db_dir is not None:
-            self.storage = self.comms.enter(
-                Storage(self.comms.config, self.comms.scanner_id, trust_local=False),
-                "Closing scanner storage.",
-            )
         self.comms.log.verbose("Initializing quantum-backed butler.")
         self.qbb = self.make_qbb(self.butler_path, self.reader.pipeline_graph)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
@@ -170,25 +160,7 @@ class Scanner:
         """
         with comms:
             scanner = Scanner(predicted_path, butler_path, comms)
-            scanner.resume()
             asyncio.run(scanner.loop())
-
-    def resume(self) -> None:
-        """Load previous scans from the SQLite database."""
-        n_ingests_loaded = 0
-        n_quanta_loaded = 0
-        if self.storage is not None:
-            self.comms.log.info("Sending any past ingests that may not have completed.")
-            for ingest_request in self.storage.fetch_ingests():
-                self.comms.request_ingest(ingest_request)
-                n_ingests_loaded += 1
-            self.comms.log.info("Loading and returning past scans.")
-            for scan_return, write_request in self.storage.resume():
-                self.comms.report_scan(scan_return)
-                n_quanta_loaded += 1
-                if write_request is not None:
-                    self.comms.request_write(write_request)
-        self.comms.report_resume_completed(n_quanta_loaded, n_ingests_loaded)
 
     async def loop(self) -> None:
         """Run the main loop for the scanner.
@@ -209,9 +181,6 @@ class Scanner:
         self.comms.log.info("Waiting for pending tasks to complete.")
         pending = await self.scan_or_wait(None, pending, return_when="ALL_COMPLETED")
         assert not pending, "No scans should be pending at this point."
-        if self.storage is not None and self.storage.needs_checkpoint:
-            self.comms.log.info("Performing final checkpoint.")
-            self.storage.checkpoint()
 
     async def scan_or_wait(
         self,
@@ -248,9 +217,6 @@ class Scanner:
         else:
             self.comms.log.debug("Nothing to do; sleeping for %fs.", timeout)
             await asyncio.sleep(timeout)
-        if self.storage is not None and self.storage.should_checkpoint_now:
-            self.comms.log.debug("Running periodic checkpoint.", timeout)
-            self.storage.checkpoint()
         return pending
 
     def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
@@ -342,8 +308,6 @@ class Scanner:
             ):
                 result.existing_outputs.add(predicted_output.dataset_id)
         to_ingest = self._make_ingest_request(predicted_quantum, result)
-        if self.storage is not None:
-            self.storage.save_quantum(result, to_ingest=to_ingest)
         self.comms.report_scan(ScanReport(result.quantum_id, result.status))
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
@@ -380,7 +344,7 @@ class Scanner:
             to_ingest_predicted.append(predicted_output)
             to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
-        return IngestRequest.pack(result.quantum_id, to_ingest_predicted, to_ingest_records)
+        return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
 
     @staticmethod
     async def _wait_for_quantum(times_for_task: ScannerTimeConfigDict, wait_interval: float) -> float:

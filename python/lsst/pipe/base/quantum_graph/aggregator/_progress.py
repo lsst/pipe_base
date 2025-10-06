@@ -100,8 +100,7 @@ class Progress:
 
         Notes
         -----
-        This method must be called before any of the ``report_*`` methods or
-        `finish_resuming`.
+        This method must be called before any of the ``report_*`` methods.
         """
         self._n_quanta = n_quanta
         if self.interactive:
@@ -175,14 +174,6 @@ class Progress:
         """Report that all writes are done."""
         if self.interactive:
             self._write_progress.close()
-
-    def finish_resuming(self) -> None:
-        """Report that we're done resuming from past saved scans."""
-        if self.interactive:
-            # Reset the timing in the progress bars so quickly resuming doesn't
-            # affect future timing estimates.
-            self._scan_progress.unpause()
-            self._ingest_progress.unpause()
 
 
 def make_worker_log(name: str, config: AggregatorConfig) -> LsstLogAdapter:

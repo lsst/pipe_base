@@ -277,23 +277,6 @@ class _IngestReport:
 
 
 @dataclasses.dataclass
-class _ResumeCompleted:
-    """An internal struct passed from a scanner to the supervisor to report
-    that it finished loading previous scan status from its SQLite database and
-    is ready to start accepting scan requests.
-    """
-
-    n_quanta_loaded: int
-    """Number of quanta loaded."""
-
-    n_ingests_loaded: int
-    """Number of ingest requests loaded.
-
-    Note that an ingest request typically has more than one dataset.
-    """
-
-
-@dataclasses.dataclass
 class _ProgressLog:
     """A high-level log message sent from a worker to the supervisor.
 
@@ -322,7 +305,6 @@ class _CompressionDictionary:
 Report: TypeAlias = (
     ScanReport
     | _IngestReport
-    | _ResumeCompleted
     | _WorkerError
     | _ProgressLog
     | Literal[
@@ -466,38 +448,6 @@ class SupervisorCommunicator:
         self.progress.__exit__(exc_type, exc_value, traceback)
         return None
 
-    def poll_resuming(self) -> Iterator[ScanReport]:
-        """Poll for scanners to load previous scans from their SQLite
-        databases.
-
-        Yields
-        ------
-        scan_report : `ScanReport`
-            A report from a scanner that a previously-scanned quantum was
-            loaded.
-
-        Notes
-        -----
-        This is a blocking loop, because there's nothing for the supervisor to
-        do when it doesn't have a report to process.  It exits when all
-        scanners have reported that they are done resuming.
-        """
-        n_done: int = 0
-        while True:
-            match self._handle_progress_reports(self._reports.get(block=True)):
-                case ScanReport() as scan_report:
-                    yield scan_report
-                case None:
-                    pass
-                case _ResumeCompleted(n_quanta_loaded=n_quanta_loaded, n_ingests_loaded=n_ingests_loaded):
-                    self.progress.report_ingests(n_quanta_loaded - n_ingests_loaded)
-                    n_done += 1
-                    if n_done == self.n_scanners:
-                        self.progress.finish_resuming()
-                        return
-                case unexpected:
-                    raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
-
     def request_scan(self, quantum_id: uuid.UUID) -> None:
         """Send a request to the scanners to scan the given quantum.
 
@@ -520,7 +470,7 @@ class SupervisorCommunicator:
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
         self._write_requests.put(scan_result, block=False)
 
-    def poll_scanning(self, timeout: float) -> Iterator[ScanReport]:
+    def poll(self, timeout: float) -> Iterator[ScanReport]:
         """Poll for reports from workers while sending scan requests.
 
         Parameters
@@ -559,7 +509,6 @@ class SupervisorCommunicator:
         self, report: Report
     ) -> (
         ScanReport
-        | _ResumeCompleted
         | Literal[
             _Sentinel.SCANNER_DONE,
             _Sentinel.INGESTER_DONE,
@@ -756,23 +705,6 @@ class ScannerCommunicator(WorkerCommunicator):
             Report to send.
         """
         self._reports.put(msg, block=False)
-
-    def report_resume_completed(self, n_quanta_loaded: int, n_ingests_loaded: int) -> None:
-        """Report that this scanner is done resuming from its SQLite database.
-
-        Parameters
-        ----------
-        n_quanta_loaded: int
-            Number of quanta loaded.
-        n_ingests_loaded: int
-            Number of ingest requests loaded. Note that an ingest request
-            typically has more than one dataset.
-
-        Notes
-        -----
-        This should be called exactly once by each scanner.
-        """
-        self._reports.put(_ResumeCompleted(n_quanta_loaded, n_ingests_loaded), block=False)
 
     def request_ingest(self, request: IngestRequest) -> None:
         """Ask the ingester to ingest a quantum's outputs.
