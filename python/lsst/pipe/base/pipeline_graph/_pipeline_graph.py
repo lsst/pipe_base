@@ -1818,8 +1818,6 @@ class PipelineGraph:
         tasks : `list`
             Constructed `PipelineTask` instances.
         """
-        if not self.is_fully_resolved:
-            raise UnresolvedGraphError("Pipeline graph must be fully resolved before instantiating tasks.")
         empty_data_id = DataCoordinate.make_empty(self.universe)
         labels = set(labels) if labels is not None else self.tasks.keys()
         handles: dict[str, InMemoryDatasetHandle] = {}
