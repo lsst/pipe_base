@@ -38,7 +38,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 import networkx as nx
 
@@ -599,11 +599,11 @@ class DeserializerV3(DeserializerBase):
                 # initInputRefs and initOutputRefs are optional
                 if (refs := taskDefDump.get("initInputRefs")) is not None:
                     initInputRefs[recreatedTaskDef.label] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        DatasetRef.from_json(ref, universe=universe) for ref in refs
                     ]
                 if (refs := taskDefDump.get("initOutputRefs")) is not None:
                     initOutputRefs[recreatedTaskDef.label] = [
-                        cast(DatasetRef, DatasetRef.from_json(ref, universe=universe)) for ref in refs
+                        DatasetRef.from_json(ref, universe=universe) for ref in refs
                     ]
 
                 # rebuild the mappings that associate dataset type names with
