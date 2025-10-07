@@ -39,10 +39,8 @@ __all__ = (
     "MultiblockWriter",
 )
 
-import bisect
 import dataclasses
 import logging
-import operator
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -325,7 +323,8 @@ class AddressReader:
     """Rows that have already been read, keyed by integer index."""
 
     pages: list[AddressPage] = dataclasses.field(default_factory=list)
-    bounds: list[PageBounds] = dataclasses.field(default_factory=list)
+    page_bounds: dict[int, PageBounds] = dataclasses.field(default_factory=dict)
+    """Mapping from page index to page boundary information."""
 
     @classmethod
     def from_stream(
@@ -396,16 +395,6 @@ class AddressReader:
             # Last page was too big.
             self.pages[-1].n_rows -= row_index - n_rows
             assert sum(p.n_rows for p in self.pages) == n_rows, "Bad logic setting page row counts."
-        # Read the header page and add a bounds entry for that page.  This
-        # guarantees that we have one entry in the bounds list, bounding the
-        # UUIDs from below.
-        self._read_page(0, header_page_stream)
-        # Add another bounds entry to bound the UUIDs from above.  This is a
-        # special sentinal with a one-past-the-end page index and a zero-length
-        # UUID range.
-        self.bounds.append(
-            PageBounds(len(self.pages), uuid_int_begin=MAX_UUID_INT, uuid_int_end=MAX_UUID_INT)
-        )
         return self
 
     @classmethod
@@ -547,49 +536,30 @@ class AddressReader:
                 raise TypeError(f"Invalid argument: {key}.")
 
     def _find_uuid(self, target: uuid.UUID) -> AddressRow:
-        while True:
+        if (row := self.rows.get(target)) is not None:
+            return row
+        if self.n_rows == 0 or not self.pages:
+            raise LookupError(f"Address for {target} not found.")
+
+        # Use a binary search to find the page containing the target UUID.
+        left = 0
+        right = len(self.pages) - 1
+        while left <= right:
+            mid = left + ((right - left) // 2)
+            self._read_page(mid)
             if (row := self.rows.get(target)) is not None:
                 return row
-            elif not self.pages:
+            bounds = self.page_bounds[mid]
+            if target.int < bounds.uuid_int_begin:
+                right = mid - 1
+            elif target.int > bounds.uuid_int_end:
+                left = mid + 1
+            else:
+                # Should have been on this page, but it wasn't.
                 raise LookupError(f"Address for {target} not found.")
-            # Target wasn't in a page we've already loaded.  Determine the
-            # already-loaded pages that bracket the target (and use the final
-            # sentinal entry in bounds if there is no already-loaded upper
-            # bound page).
-            begin_page_index, end_page_index = self._bracket(target)
-            # Load the page in the middle of that bracket, which then updates
-            # self.bounds for the next iteration if the page doesn't actually
-            # cover the range we want.
-            mid_page_index = begin_page_index + (end_page_index - begin_page_index) // 2
-            self._read_page(mid_page_index)
 
-    def _bracket(self, target: uuid.UUID) -> tuple[int, int]:
-        # Find the loaded page whose lower bound strictly above the target;
-        # this brackets the page with that target from above.  Note that this
-        # could be the final sentinal bounds entry (if we haven't actually
-        # loaded any pages with UUIDs larger than the target).  It can also be
-        # the header page...
-        upper_index = bisect.bisect(
-            self.bounds,
-            target.int,
-            key=operator.attrgetter("uuid_int_begin"),
-        )
-        upper = self.bounds[upper_index]
-        if upper_index == 0:
-            # ... but only if the given UUID is out of bounds.
-            _LOG.debug("Bracket failed: %s is below smallest page %s.", target.int, upper)
-            raise LookupError(f"Address for {target} not found.")
-        lower_index = upper_index - 1
-        if (lower := self.bounds[lower_index]).uuid_int_end > target.int:
-            _LOG.debug("Bracket failed: %s was not in expected page %s.", target.int, lower)
-            raise LookupError(f"Address for {target} not found.")
-        if upper.page_index - lower.page_index == 1:
-            _LOG.debug(
-                "Bracket failed: %s would be between adjacent pages %s and %s.", target.int, lower, upper
-            )
-            raise LookupError(f"Address for {target} not found.")
-        _LOG.debug("Bracket successful: %s should be between page %s and page %s.", target.int, lower, upper)
-        return lower.page_index, upper.page_index
+        # Ran out of pages to search.
+        raise LookupError(f"Address for {target} not found.")
 
     def _find_index(self, target: int) -> AddressRow:
         if (row := self.rows_by_index.get(target)) is not None:
@@ -635,8 +605,8 @@ class AddressReader:
         uuid_int_end = row.key.int + 1  # Python's loop scoping rules are actually useful here!
         page.read = True
         bounds = PageBounds(page_index=page_index, uuid_int_begin=uuid_int_begin, uuid_int_end=uuid_int_end)
+        self.page_bounds[page_index] = bounds
         _LOG.debug("Read page %s with rows [%s:%s].", bounds, page.begin, page.end)
-        bisect.insort(self.bounds, bounds, key=operator.attrgetter("page_index"))
         return True
 
     def _read_row(self, page_stream: BytesIO) -> AddressRow:
