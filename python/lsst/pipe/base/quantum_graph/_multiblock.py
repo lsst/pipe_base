@@ -316,6 +316,9 @@ class AddressReader:
     n_addresses: int
     """Number of addresses in each row."""
 
+    rows_per_page: int
+    """Number of addresses in each page."""
+
     rows: dict[uuid.UUID, AddressRow] = dataclasses.field(default_factory=dict)
     """Rows that have already been read."""
 
@@ -346,15 +349,10 @@ class AddressReader:
             Number of bytes to use for all integers.  This is checked against
             the size embedded in the file.
         """
-        # Figure out how much to read initially; we need to read the header,
-        # but we also want to read at least around page_size, and we don't want
-        # to read half of a row at the end.  To reduce spatial-casing we always
-        # read at least one row with the header.
         header_size = cls.compute_header_size(int_size)
         row_size = cls.compute_row_size(int_size, n_addresses)
-        n_header_page_rows = (max(page_size, header_size + row_size) - header_size) // row_size
         # Read the raw header page.
-        header_page_data = stream.read(header_size + n_header_page_rows * row_size)
+        header_page_data = stream.read(header_size)
         if len(header_page_data) < header_size:
             raise InvalidQuantumGraphFileError("Address file unexpectedly truncated.")
         # Interpret the raw header data and initialize the reader instance.
@@ -365,28 +363,17 @@ class AddressReader:
                 f"int size in address file ({file_int_size}) does not match int size in header ({int_size})."
             )
         n_rows = int.from_bytes(header_page_stream.read(int_size))
-        if n_rows < n_header_page_rows:
-            n_header_page_rows = n_rows
-            if len(header_page_data) != header_size + n_header_page_rows * row_size:
-                raise InvalidQuantumGraphFileError("Address file unexpectedly truncated.")
         file_n_addresses = int.from_bytes(header_page_stream.read(int_size))
         if file_n_addresses != n_addresses:
             raise InvalidQuantumGraphFileError(
                 f"Incorrect number of addresses per row: expected {n_addresses}, got {file_n_addresses}."
             )
-        # Construct an instance.
-        self = cls(stream, int_size, n_rows, n_addresses)
-        if not n_rows:
-            # If there no rows, don't bother with the bounds/pages
-            # infrastructure.
-            return self
-        # Add the header page.
-        header_page = AddressPage(file_offset=header_size, begin=0, n_rows=n_header_page_rows)
-        self.pages.append(header_page)
-        # Construct the remaining pages.
         rows_per_page = max(page_size // row_size, 1)
-        row_index = n_header_page_rows
-        file_offset = len(header_page_data)
+        # Construct an instance.
+        self = cls(stream, int_size, n_rows, n_addresses, rows_per_page=rows_per_page)
+        # Calculate positions of each page of rows.
+        row_index = 0
+        file_offset = header_size
         while row_index < n_rows:
             self.pages.append(AddressPage(file_offset=file_offset, begin=row_index, n_rows=rows_per_page))
             row_index += rows_per_page
@@ -566,24 +553,7 @@ class AddressReader:
             return row
         if target < 0 or target >= self.n_rows:
             raise LookupError(f"Address for index {target} not found.")
-        # The first page (the header page) and the last page (if it's the
-        # remainder) might have non-uniform sizes.  So we check those first.
-        # This is still sound (albeit a *tiny* bit less efficient) if either of
-        # those happens to have the same size as the others.
-        first_page = self.pages[0]
-        last_page = self.pages[-1]
-        if target >= first_page.begin and target < first_page.begin + first_page.n_rows:
-            _LOG.debug("Index find failed: %s should have been in the header page.", target)
-            raise LookupError(f"Address for {target} not found.")
-        elif target >= last_page.begin and target < last_page.begin + last_page.n_rows:
-            page_index = len(self.pages) - 1
-        else:
-            # It has to be in one of the full interior pages, which are spaced
-            # evenly.
-            interior_start = first_page.begin + first_page.n_rows
-            n_interior_rows = last_page.begin - interior_start
-            n_interior_pages = len(self.pages) - 2
-            page_index = 1 + n_interior_pages * (target - interior_start) // n_interior_rows
+        page_index = target // self.rows_per_page
         self._read_page(page_index)
         try:
             return self.rows_by_index[target]
@@ -851,12 +821,3 @@ class MultiblockReader:
             return None
         json_data = decompressor.decompress(compressed_data)
         return model_type.model_validate_json(json_data)
-
-
-def _round_div(a: int, b: int) -> int:
-    """Divide two integers and return the rounded result.
-
-    This always rounds 0.5 up, but it doesn't involve floats at all and hence
-    is safe for really big integers.
-    """
-    return (a + b // 2) // b
