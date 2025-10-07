@@ -315,6 +315,11 @@ class PipelineGraphTestCase(unittest.TestCase):
         self.assertEqual(self.graph.task_subsets["step2"].dimensions, self.dimensions.empty)
         self.assertEqual(self.graph.get_task_step("a"), "step1")
         self.assertEqual(self.graph.get_task_step("b"), "step2")
+        # Check that step verification round-trips through serialization.
+        with lsst.utils.tests.getTempFilePath(".json.gz") as filename:
+            self.graph._write_uri(filename)
+            roundtripped = PipelineGraph._read_uri(filename)
+        self.assertTrue(roundtripped.is_fully_resolved)
 
     def test_valid_steps_resolved_graph(self) -> None:
         """Test step definitions that are valid, adding them to a graph that

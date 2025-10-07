@@ -650,7 +650,7 @@ class SerializedTaskSubset(pydantic.BaseModel):
         """
         members = set(self.tasks)
         if label in steps:
-            steps.set_dimensions(label, self.dimensions)
+            steps._dimensions_by_label[label] = frozenset(self.dimensions)
         return TaskSubset(xgraph, label, members, self.description, steps)
 
 
