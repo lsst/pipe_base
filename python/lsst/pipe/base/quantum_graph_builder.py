@@ -228,6 +228,9 @@ class QuantumGraphBuilder(ABC):
         }
         with self.butler.registry.caching_context():
             self._pipeline_graph.resolve(self.butler.registry)
+            assert self._pipeline_graph.steps.verified, (
+                "Steps should be verified right after we resolve the graph."
+            )
             self.empty_dimensions_datasets = self._find_empty_dimension_datasets()
             self.prerequisite_info = {
                 task_node.label: PrerequisiteInfo(task_node, self._pipeline_graph)
@@ -1243,6 +1246,9 @@ class QuantumGraphBuilder(ABC):
             PredictedQuantumGraphComponents,
         )
 
+        assert self._pipeline_graph.steps.verified, (
+            "Steps should still be verified when we build the predicted QG components."
+        )
         components = PredictedQuantumGraphComponents(pipeline_graph=self._pipeline_graph)
         components.header.inputs = list(self.input_collections)
         components.header.output_run = self.output_run

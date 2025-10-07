@@ -701,6 +701,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
         `SerializedPipelineGraph`
             Object in serializable form.
         """
+        assert target.steps.verified, "Steps should be verified when we save the pipeline graph."
         result = SerializedPipelineGraph.model_construct(
             description=target.description,
             tasks={label: SerializedTaskNode.serialize(node) for label, node in target.tasks.items()},
