@@ -501,13 +501,13 @@ class AddressReader:
         self.pages.clear()
         return self.rows
 
-    def find(self, key: uuid.UUID | int) -> AddressRow:
-        """Read the row for the given UUID or integer index.
+    def find(self, key: uuid.UUID) -> AddressRow:
+        """Read the row for the given UUID.
 
         Parameters
         ----------
-        key : `uuid.UUID` or `int`
-            UUID or integer index to find.
+        key : `uuid.UUID`
+            UUID to find.
 
         Returns
         -------
@@ -517,8 +517,6 @@ class AddressReader:
         match key:
             case uuid.UUID():
                 return self._find_uuid(key)
-            case int():
-                return self._find_index(key)
             case _:
                 raise TypeError(f"Invalid argument: {key}.")
 
@@ -547,19 +545,6 @@ class AddressReader:
 
         # Ran out of pages to search.
         raise LookupError(f"Address for {target} not found.")
-
-    def _find_index(self, target: int) -> AddressRow:
-        if (row := self.rows_by_index.get(target)) is not None:
-            return row
-        if target < 0 or target >= self.n_rows:
-            raise LookupError(f"Address for index {target} not found.")
-        page_index = target // self.rows_per_page
-        self._read_page(page_index)
-        try:
-            return self.rows_by_index[target]
-        except KeyError:
-            _LOG.debug("Index find failed: %s should have been in page %s.", target, page_index)
-            raise LookupError(f"Address for {target} not found.") from None
 
     def _read_page(self, page_index: int, page_stream: BytesIO | None = None) -> bool:
         page = self.pages[page_index]
