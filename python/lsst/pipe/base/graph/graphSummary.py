@@ -75,6 +75,21 @@ class QgraphTaskSummary(pydantic.BaseModel):
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
 
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
 
 class QgraphSummary(pydantic.BaseModel):
     """Report for the QuantumGraph creation or reading."""
@@ -129,3 +144,18 @@ class QgraphSummary(pydantic.BaseModel):
         def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)

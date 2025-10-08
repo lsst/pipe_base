@@ -12,4 +12,3 @@ lsst-daf-butler @ git+https://github.com/lsst/daf_butler@main
 lsst-utils @ git+https://github.com/lsst/utils@main
 lsst-resources @ git+https://github.com/lsst/resources@main
 lsst-pex-config @ git+https://github.com/lsst/pex_config@main
-lsst-daf-relation @ git+https://github.com/lsst/daf_relation@main

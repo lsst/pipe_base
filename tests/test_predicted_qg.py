@@ -505,12 +505,12 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
         )
         # We use a small page size since this is a tiny graph and hence
         # otherwise all addresses would fit in a single page.
-        three_row_page_size = AddressReader.compute_row_size(int_size=8, n_addresses=1) * 3
+        four_row_page_size = AddressReader.compute_row_size(int_size=8, n_addresses=1) * 4
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             tmpfile = os.path.join(tmpdir, "new.qg")
             components.write(tmpfile, zstd_dict_n_inputs=24)  # enable dict compression code path
             # Test a full read with the new class.
-            with PredictedQuantumGraph.open(tmpfile, page_size=three_row_page_size) as reader:
+            with PredictedQuantumGraph.open(tmpfile, page_size=four_row_page_size) as reader:
                 full_qg = reader.read_all().finish()
                 self.check_quantum_graph(full_qg, dimension_data_deserialized=False)
             # Test a full read with the old class (uses new class and then
@@ -526,7 +526,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
                 converting=True,
             )
             # Test a thin but shallow read with the new class.
-            with PredictedQuantumGraph.open(tmpfile, page_size=three_row_page_size) as reader:
+            with PredictedQuantumGraph.open(tmpfile, page_size=four_row_page_size) as reader:
                 thin_qg = reader.read_thin_graph().finish()
                 self.check_quantum_graph(
                     thin_qg,
@@ -539,7 +539,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             narrow_qg = PredictedQuantumGraph.read_execution_quanta(
                 tmpfile,
                 quantum_ids=quanta,
-                page_size=three_row_page_size,
+                page_size=four_row_page_size,
             )
             self.check_partial_read(narrow_qg, quanta)
 

@@ -229,6 +229,21 @@ class HeaderModel(pydantic.BaseModel):
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
 
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
 
 class QuantumInfo(TypedDict):
     """A typed dictionary that annotates the attributes of the NetworkX graph
@@ -493,6 +508,7 @@ class BaseQuantumGraphReader:
         *,
         address_filename: str,
         graph_type: str,
+        n_addresses: int,
         page_size: int | None = None,
         import_mode: TaskImportMode = TaskImportMode.ASSUME_CONSISTENT_EDGES,
     ) -> Iterator[Self]:
@@ -506,6 +522,8 @@ class BaseQuantumGraphReader:
             Base filename for the address file.
         graph_type : `str`
             Value to expect for `HeaderModel.graph_type`.
+        n_addresses : `int`
+            Number of addresses to expect per row in the address file.
         page_size : `int`, optional
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
@@ -539,7 +557,11 @@ class BaseQuantumGraphReader:
                 )
                 pipeline_graph = serialized_pipeline_graph.deserialize(import_mode)
                 with AddressReader.open_in_zip(
-                    zf, address_filename, page_size=page_size, int_size=header.int_size
+                    zf,
+                    address_filename,
+                    page_size=page_size,
+                    int_size=header.int_size,
+                    n_addresses=n_addresses,
                 ) as address_reader:
                     yield cls(
                         header=header,

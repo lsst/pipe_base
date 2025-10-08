@@ -72,6 +72,7 @@ from lsst.daf.butler import (
     QuantumBackedButler,
     SerializableDimensionData,
 )
+from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData, SerializedDatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -155,6 +156,21 @@ class PredictedThinQuantumModel(pydantic.BaseModel):
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
 
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
 
 class PredictedThinGraphModel(pydantic.BaseModel):
     """Data model for the predicted quantum graph component that maps each
@@ -196,6 +212,21 @@ class PredictedThinGraphModel(pydantic.BaseModel):
         def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
 
 
 class PredictedDatasetModel(pydantic.BaseModel):
@@ -269,6 +300,21 @@ class PredictedDatasetModel(pydantic.BaseModel):
         def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
 
 
 class PredictedQuantumDatasetsModel(pydantic.BaseModel):
@@ -390,7 +436,7 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
         }
         init_input_ids = {ref.id for ref in init_input_refs.values()}
         result: PredictedQuantumDatasetsModel = cls.model_construct(
-            quantum_id=uuid.uuid4(), task_label=task_init_node.label
+            quantum_id=generate_uuidv7(), task_label=task_init_node.label
         )
         for read_edge in task_init_node.iter_all_inputs():
             ref = init_input_refs[read_edge.dataset_type_name]
@@ -440,6 +486,21 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
 
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
 
 class PredictedInitQuantaModel(pydantic.RootModel):
     """Data model for the init-inputs and init-outputs of a predicted quantum
@@ -461,7 +522,7 @@ class PredictedInitQuantaModel(pydantic.RootModel):
             Quantum graph.
         """
         global_init_quantum = PredictedQuantumDatasetsModel.model_construct(
-            quantum_id=uuid.uuid4(), task_label=""
+            quantum_id=generate_uuidv7(), task_label=""
         )
         for ref in old_quantum_graph.globalInitOutputRefs():
             global_init_quantum.outputs[ref.datasetType.name] = [PredictedDatasetModel.from_dataset_ref(ref)]
@@ -500,6 +561,21 @@ class PredictedInitQuantaModel(pydantic.RootModel):
         def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_json_schema`."""
             return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
 
 
 class PredictedQuantumInfo(QuantumInfo):
@@ -1486,14 +1562,13 @@ class PredictedQuantumGraphComponents:
         # Do all outputs and then all inputs in separate passes so we don't
         # need to rely on topological ordering of anything.
         for quantum_datasets in itertools.chain(self.init_quanta.root, self.quantum_datasets.values()):
-            new_quantum_id = uuid.uuid4()
-            uuid_map[quantum_datasets.quantum_id] = new_quantum_id
-            quantum_datasets.quantum_id = uuid.uuid4()
+            new_quantum_id = generate_uuidv7()
+            quantum_datasets.quantum_id = new_quantum_id
             for output_dataset in itertools.chain.from_iterable(quantum_datasets.outputs.values()):
                 assert output_dataset.run == self.header.output_run, (
                     f"Incorrect run {output_dataset.run} for output dataset {output_dataset.dataset_id}."
                 )
-                new_dataset_id = uuid.uuid4()
+                new_dataset_id = generate_uuidv7()
                 uuid_map[output_dataset.dataset_id] = new_dataset_id
                 output_dataset.dataset_id = new_dataset_id
                 output_dataset.run = output_run
@@ -1754,6 +1829,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             address_filename="quanta",
             page_size=page_size,
             import_mode=import_mode,
+            n_addresses=1,
         ) as self:
             yield self
 
