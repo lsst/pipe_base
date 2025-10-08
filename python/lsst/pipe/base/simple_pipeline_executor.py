@@ -667,7 +667,10 @@ class SimplePipelineExecutor:
             Butler to transfer records to.
         """
         assert self.predicted.dimension_data is not None, "Dimension data must be present for execution."
-        for record_set in self.predicted.dimension_data.records.values():
+        records = self.predicted.dimension_data.records
+        dimensions = out_butler.dimensions.sorted(records.keys())
+        for dimension in dimensions:
+            record_set = records[dimension.name]
             if record_set and record_set.element.has_own_table:
                 out_butler.registry.insertDimensionData(
                     record_set.element,
