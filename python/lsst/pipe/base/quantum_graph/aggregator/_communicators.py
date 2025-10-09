@@ -532,7 +532,7 @@ class SupervisorCommunicator:
             case _Sentinal.WRITE_REPORT:
                 self.progress.report_write()
             case _ProgressLog(message=message, level=level):
-                self.progress.log.log(level, "%s %s", message, self.progress.elapsed_time_and_peak_memory)
+                self.progress.log.log(level, "%s [after %0.1fs]", message, self.progress.elapsed_time)
             case _:
                 return report
         return None
