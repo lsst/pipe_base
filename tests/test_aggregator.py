@@ -34,6 +34,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import numpy as np
 from click.testing import CliRunner, Result
 
 import lsst.utils.tests
@@ -63,6 +64,7 @@ from lsst.pipe.base.tests.mocks import (
 )
 from lsst.pipe.base.tests.util import patch_deterministic_uuid4
 from lsst.resources import ResourcePath
+from lsst.utils.packages import Packages
 
 
 @dataclasses.dataclass
@@ -207,12 +209,19 @@ class AggregatorTestCase(unittest.TestCase):
                         ),
                     },
                 )
-                pqgc = helper.make_quantum_graph_builder().finish()
+                pqgc = helper.make_quantum_graph_builder().finish(output="out_chain")
                 # We use the butler root for various QG files just because it's
                 # a convenient temporary directory.
                 predicted_path = os.path.join(root, "predicted.qg")
                 pqgc.write(predicted_path)
-                config = AggregatorConfig(output_path=os.path.join(root, "provenance.qg"))
+                config = AggregatorConfig(
+                    output_path=os.path.join(root, "provenance.qg"),
+                    # Set these small to see logic paths that otherwise only
+                    # affect large graphs.
+                    ingest_batch_size=10,
+                    zstd_dict_size=256,
+                    zstd_dict_n_inputs=16,
+                )
                 yield PrepInfo(
                     butler=helper.butler,
                     butler_path=root,
@@ -298,6 +307,21 @@ class AggregatorTestCase(unittest.TestCase):
         prov = prov_reader.graph
         checked_some_metadata = False
         checked_some_log = False
+        self.maxDiff = None
+        self.assertEqual(
+            list(butler.collections.get_info(prov.header.output).children),
+            [prov.header.output_run]
+            + list(butler.collections.query(prov.header.inputs, flatten_chains=True)),
+        )
+        self.assertEqual(pred.quanta_by_task.keys(), prov.quanta_by_task.keys())
+        for task_label in pred.quanta_by_task:
+            self.assertEqual(pred.quanta_by_task[task_label], prov.quanta_by_task[task_label])
+        self.assertEqual(pred.datasets_by_type.keys() - {"packages"}, prov.datasets_by_type.keys())
+        for dataset_type_name in prov.datasets_by_type:
+            self.assertEqual(
+                pred.datasets_by_type[dataset_type_name], prov.datasets_by_type[dataset_type_name]
+            )
+        self.assertEqual(prov.init_quanta.keys(), pred.quanta_by_task.keys())
         for quantum_id in pred:
             # Check consistency between the predicted and provenance quantum
             # node attributes.
@@ -337,7 +361,7 @@ class AggregatorTestCase(unittest.TestCase):
                     self._expect_none_exist(existence["output_image"], msg=msg)
                     self._expect_none_exist(existence["output_table"], msg=msg)
                     if expect_failure:
-                        self.assertEqual(prov_qinfo["status"], QuantumRunStatus.FAILED)
+                        self._expect_failure(prov_qinfo, existence, msg=msg)
                     else:
                         self._expect_successful(
                             prov_qinfo,
@@ -422,6 +446,9 @@ class AggregatorTestCase(unittest.TestCase):
         self.check_resource_usage_table(
             prov_reader.graph, expect_failure=expect_failure, start_time=start_time
         )
+        self.check_packages(prov_reader)
+        self.check_quantum_table(prov_reader.graph, expect_failure=expect_failure)
+        self.check_exception_table(prov_reader.graph, expect_failure=expect_failure)
 
     def _expect_all_exist(self, existence: list[bool], msg: str) -> None:
         self.assertTrue(all(existence), msg=msg)
@@ -587,6 +614,19 @@ class AggregatorTestCase(unittest.TestCase):
             raise AssertionError("No log connection found.")
         self.assertEqual(log1, log2)
 
+    def check_packages(self, provenance_reader: ProvenanceQuantumGraphReader) -> None:
+        """Check fetching package versions from the provenance graph.
+
+        Parameters
+        ----------
+        provenance_reader : \
+                `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraphReader`
+            Reader for the provenance quantum graph.
+        """
+        packages = provenance_reader.fetch_packages()
+        self.assertIsInstance(packages, Packages)
+        self.assertIn("pipe_base", packages)
+
     def check_resource_usage_table(
         self, prov: ProvenanceQuantumGraph, expect_failure: bool, start_time: float
     ) -> None:
@@ -621,6 +661,80 @@ class AggregatorTestCase(unittest.TestCase):
         for quantum_start_time in tbl["start"]:
             self.assertGreater(quantum_start_time, start_time)
             self.assertLess(quantum_start_time, end_time)
+        self.assertTrue(np.all(tbl["init_time"] >= 0.0))
+        self.assertTrue(np.all(tbl["prep_time"] > 0.0))
+        self.assertTrue(np.all(tbl["run_time"] >= 0.0))
+
+    def check_quantum_table(self, prov: ProvenanceQuantumGraph, expect_failure: bool) -> None:
+        """Check `ProvenanceQuantumGraph.make_quantum_table`.
+
+        Parameters
+        ----------
+        prov : `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph`
+            Reader for the provenance quantum graph.
+        expect_failure : `bool`
+            Whether to expect one quantum of 'calibrate' to fail (`True`) or
+            succeed without writing anything (`False`).
+        """
+        t = prov.make_quantum_table()
+        self.assertTrue(np.all(t["Unknown"] == 0))
+        self.assertEqual(list(t["Task"]), ["calibrate", "consolidate", "resample", "coadd"])
+        self.assertEqual(t["TOTAL"][0], 8)
+        self.assertEqual(t["EXPECTED"][0], 8)
+        self.assertEqual(t["Blocked"][0], 0)
+        self.assertEqual(t["TOTAL"][1], 2)
+        self.assertEqual(t["EXPECTED"][1], 2)
+        self.assertEqual(t["TOTAL"][2], 10)
+        self.assertEqual(t["EXPECTED"][2], 10)
+        if expect_failure:
+            # calibrate
+            self.assertEqual(t["Successful"][0], 7)
+            self.assertEqual(t["Caveats"][0], "")
+            self.assertEqual(t["Failed"][0], 1)
+            # consolidate
+            self.assertEqual(t["Successful"][1], 1)
+            self.assertEqual(t["Caveats"][1], "")
+            self.assertEqual(t["Failed"][1], 0)
+            self.assertEqual(t["Blocked"][1], 1)
+            # resample
+            self.assertEqual(t["Successful"][2], 6)
+            self.assertEqual(t["Caveats"][2], "")
+            self.assertEqual(t["Failed"][2], 0)
+            self.assertEqual(t["Blocked"][2], 4)
+        else:
+            # calibrate
+            self.assertEqual(t["Successful"][0], 8)
+            self.assertEqual(t["Caveats"][0], "*P(1)")
+            self.assertEqual(t["Failed"][0], 0)
+            # consolidate
+            self.assertEqual(t["Successful"][1], 2)
+            self.assertEqual(t["Caveats"][1], "")
+            self.assertEqual(t["Failed"][1], 0)
+            self.assertEqual(t["Blocked"][1], 0)
+            # resample
+            self.assertEqual(t["Successful"][2], 10)
+            self.assertEqual(t["Caveats"][2], "*A(2)")
+            self.assertEqual(t["Failed"][2], 0)
+            self.assertEqual(t["Blocked"][2], 0)
+
+    def check_exception_table(self, prov: ProvenanceQuantumGraph, expect_failure: bool) -> None:
+        """Check `ProvenanceQuantumGraph.make_exception_table`.
+
+        Parameters
+        ----------
+        prov : `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph`
+            Reader for the provenance quantum graph.
+        expect_failure : `bool`
+            Whether to expect one quantum of 'calibrate' to fail (`True`) or
+            succeed without writing anything (`False`).
+        """
+        t = prov.make_exception_table()
+        if expect_failure:
+            self.assertEqual(len(t), 0)
+        else:
+            self.assertEqual(list(t["Task"]), ["calibrate"])
+            self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
+            self.assertEqual(list(t["Count"]), [1])
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the
