@@ -35,10 +35,7 @@ import time
 from types import TracebackType
 from typing import Self
 
-import astropy.units as u
-
 from lsst.utils.logging import TRACE, VERBOSE, LsstLogAdapter, PeriodicLogger, getLogger
-from lsst.utils.usage import get_peak_mem_usage
 
 from ._config import AggregatorConfig
 
@@ -118,23 +115,20 @@ class Progress:
                 self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=False, unit="quanta")
 
     @property
-    def elapsed_time_and_peak_memory(self) -> str:
-        """A logging suffix that includes elapsed time and memory usage."""
-        parent, _ = get_peak_mem_usage()
-        # Child memory usage is reported as zero until after we join the
-        # process, which makes it not very useful.  Hopefully the parent
-        # value already includes that.
-        return f"[{time.time() - self.start:0.1f}s elapsed; {parent.to(u.MB).value:0.2f} MB peak]"
+    def elapsed_time(self) -> float:
+        """The time in seconds since the start of the aggregator."""
+        return time.time() - self.start
 
     def _log_status(self) -> None:
         """Invoke the periodic logger with the current status."""
         self._periodic_log.log(
-            "%s quanta scanned, %s quantum outputs ingested, %s provenance quanta written (of %s). %s",
+            "%s quanta scanned, %s quantum outputs ingested, "
+            "%s provenance quanta written (of %s) after %0.1fs.",
             self._n_scanned,
             self._n_ingested,
             self._n_written,
             self._n_quanta,
-            self.elapsed_time_and_peak_memory,
+            self.elapsed_time,
         )
 
     def report_scan(self) -> None:

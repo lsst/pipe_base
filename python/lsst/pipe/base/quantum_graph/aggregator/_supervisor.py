@@ -32,9 +32,11 @@ __all__ = ("aggregate_graph",)
 import dataclasses
 import uuid
 
+import astropy.units as u
 import networkx
 
 from lsst.utils.logging import getLogger
+from lsst.utils.usage import get_peak_mem_usage
 
 from ...graph_walker import GraphWalker
 from ...pipeline_graph import TaskImportMode
@@ -194,8 +196,8 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         supervisor = Supervisor(predicted_path, comms)
         supervisor.loop()
         log.info(
-            "Scanning complete; waiting for workers to finish. %s",
-            comms.progress.elapsed_time_and_peak_memory,
+            "Scanning complete after %0.1fs; waiting for workers to finish.",
+            comms.progress.elapsed_time,
         )
         comms.wait_for_workers_to_finish()
         if supervisor.n_abandoned:
@@ -210,4 +212,14 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     if writer is not None and writer.is_alive():
         log.info("Waiting for writer process to close (garbage collecting can be very slow).")
         writer.join()
-    log.info("All aggregation tasks complete. %s", comms.progress.elapsed_time_and_peak_memory)
+    # We can't get memory usage for children until they've joined.
+    parent_mem, child_mem = get_peak_mem_usage()
+    # This is actually an upper bound on the peak (since the peaks could be
+    # at different times), but since we expect memory usage to be more smooth
+    # than spiky that's fine.
+    total_mem: u.Quantity = parent_mem + child_mem
+    log.info(
+        "All aggregation tasks complete after %0.1fs; peak memory usage ≤ %0.1f MB.",
+        comms.progress.elapsed_time,
+        total_mem.to(u.MB).value,
+    )
