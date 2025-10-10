@@ -74,11 +74,7 @@ from ._common import (
     TaskLabel,
 )
 from ._multiblock import AddressReader, MultiblockReader
-from ._predicted import (
-    PredictedDatasetModel,
-    PredictedInitQuantaModel,
-    PredictedQuantumDatasetsModel,
-)
+from ._predicted import PredictedDatasetModel, PredictedQuantumDatasetsModel
 
 if TYPE_CHECKING:
     from lsst.daf.butler.logging import ButlerLogRecords
@@ -632,32 +628,6 @@ class ProvenanceInitQuantaModel(pydantic.RootModel):
     root: list[ProvenanceInitQuantumModel] = pydantic.Field(default_factory=list)
     """List of special "init" quanta, one for each task."""
 
-    @classmethod
-    def from_predicted(
-        cls, predicted: PredictedInitQuantaModel, indices: Mapping[uuid.UUID, int]
-    ) -> ProvenanceInitQuantaModel:
-        """Construct from a list of predicted init quanta.
-
-        Parameters
-        ----------
-        predicted : `PredictedInitQuantaModel`
-            Information about the quanta from the predicted graph.
-        indices : `~collections.abc.Mapping [`uuid.UUID`, `int`]
-            Mapping from quantum or dataset UUID to internal integer ID.
-
-        Returns
-        -------
-        provenance : `ProvenanceInitQuantaModel`
-            Provenance init quantum model.
-        """
-        result = cls()
-        for predicted_quantum in predicted.root[1:]:
-            result.root.append(ProvenanceInitQuantumModel.from_predicted(predicted_quantum, indices))
-        return result
-
-    def __bool__(self) -> bool:
-        return bool(self.root)
-
     def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
         """Add this quantum and its edges to datasets to a provenance graph.
 
@@ -735,7 +705,6 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         self._datasets_by_type: dict[str, dict[DataCoordinate, uuid.UUID]] = {
             dataset_type_name: {} for dataset_type_name in self.pipeline_graph.dataset_types.keys()
         }
-        self._datasets_by_type[self.pipeline_graph.packages_dataset_type.name] = {}
 
     @property
     def init_quanta(self) -> Mapping[TaskLabel, uuid.UUID]:
