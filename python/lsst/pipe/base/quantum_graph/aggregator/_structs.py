@@ -98,6 +98,14 @@ class ScanReport:
     status: ScanStatus
     """Combined status of the scan and the execution of the quantum."""
 
+    n_pending_removals: int
+    """Number of output files that need to be deleted."""
+
+    p_pending_ingests: int
+    """Number of output datasets that can only be ingested after the provenance
+    graph is ingested.
+    """
+
 
 @dataclasses.dataclass
 class IngestRequest:
