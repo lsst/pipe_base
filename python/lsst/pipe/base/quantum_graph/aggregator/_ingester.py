@@ -147,6 +147,12 @@ class Ingester:
                 include_logs=True,
             )
         with self.butler.registry.caching_context():
+            if self.butler.get_dataset(self.predicted.header.provenance_dataset_id) is not None:
+                # TODO[DM-52738]: include instructions on what to do instead to
+                # recover from aggregator failures after the graph has been
+                # ingested (and hence deletes have potentially already
+                # happened).
+                raise RuntimeError("Provenance quantum graph has already been ingested.")
             if self.comms.config.defensive_ingest:
                 self.fetch_already_ingested()
             self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
