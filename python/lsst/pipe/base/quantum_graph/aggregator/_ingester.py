@@ -35,7 +35,7 @@ import time
 import uuid
 from collections import defaultdict
 
-from lsst.daf.butler import Butler, CollectionType, DatasetRef, DimensionGroup
+from lsst.daf.butler import Butler, CollectionType, DatasetRef, DimensionGroup, FileDataset
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
 
@@ -157,10 +157,25 @@ class Ingester:
                 self.fetch_already_ingested()
             self.comms.log.info("Startup completed in %ss.", time.time() - self.last_ingest_time)
             self.last_ingest_time = time.time()
-            for ingest_request in self.comms.poll():
+            # In this first polling loop, we're getting regular quantum output
+            # ingest requests from the scanners.
+            for quantum_ingest_request in self.comms.poll_until_qg_written():
                 self.n_producers_pending += 1
-                self.comms.log.debug(f"Got ingest request for producer {ingest_request.producer_id}.")
-                self.update_pending(ingest_request.datasets, ingest_request.records)
+                self.comms.log.debug(f"Got ingest request for producer {quantum_ingest_request.producer_id}.")
+                self.update_pending(quantum_ingest_request.datasets, quantum_ingest_request.records)
+                if self.n_datasets_pending > self.comms.config.ingest_batch_size:
+                    self.ingest()
+            # The Writer is done; ingest the provenance QG immediately to let
+            # scanners start deleting datasets.
+            if self.comms.config.ingest_provenance:
+                self.ingest_provenance_qg()
+            # In the second and final polling loop, we're getting regular
+            # quantum-output ingest requests and deferred ingest requests for
+            # datasets now backed by the provenance quantum graph file.
+            for quantum_ingest_request in self.comms.poll_until_done():
+                self.n_producers_pending += 1
+                self.comms.log.debug(f"Got ingest request for producer {quantum_ingest_request.producer_id}.")
+                self.update_pending(quantum_ingest_request.datasets, quantum_ingest_request.records)
                 if self.n_datasets_pending > self.comms.config.ingest_batch_size:
                     self.ingest()
             self.comms.log.info("All ingest requests received.")
@@ -290,6 +305,17 @@ class Ingester:
                 existing_records.update(datastore_records)
             else:
                 self.records_pending[datastore_name] = datastore_records
+
+    def ingest_provenance_qg(self) -> None:
+        """Ingest the provenance QG dataset."""
+        ref = self.comms.config.get_graph_dataset_ref(self.butler.dimensions, self.predicted.header)
+        path = self.comms.config.get_actual_output_path(self.butler, self.predicted.header, ref=ref)
+        file_dataset = FileDataset([ref], path)  # TODO[DM-52738]: add explicit formatter
+        if not self.comms.config.dry_run:
+            with self.butler.registry.transaction():
+                self.butler.ingest(file_dataset)
+        self.comms.signal_qg_ingested()
+        self.comms.log.info("Ingested provenance quantum graph.")
 
     def update_output_chain(self) -> None:
         """Update the output CHAINED collection to include the output RUN

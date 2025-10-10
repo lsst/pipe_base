@@ -355,15 +355,6 @@ class SupervisorCommunicator:
         self._ingest_requests: Queue[IngestRequest | Literal[_Sentinal.NO_MORE_INGEST_REQUESTS]] = (
             context.make_queue()
         )
-        # The scanners send write requests to the writer on this queue (which
-        # will be `None` if we're not writing).  The supervisor also sends
-        # write requests for blocked quanta (which we don't scan).  Each
-        # scanner and the supervisor send one sentinal when done, and the
-        # writer waits for (n_scanners + 1) sentinals to arrive before it
-        # starts its shutdown.
-        self._write_requests: Queue[ScanResult | Literal[_Sentinal.NO_MORE_WRITE_REQUESTS]] | None = (
-            context.make_queue() if config.writes_provenance else None
-        )
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.
@@ -379,6 +370,25 @@ class SupervisorCommunicator:
         # Worker communicators check this in their polling loops and raise
         # CancelError when they see it set.
         self._cancel_event: Event = context.make_event()
+        # The scanners send write requests to the writer on this queue (which
+        # will be `None` if we're not writing).  The supervisor also sends
+        # write requests for blocked quanta (which we don't scan).  Each
+        # scanner and the supervisor send one sentinal when done, and the
+        # writer waits for (n_scanners + 1) sentinals to arrive before it
+        # starts its shutdown.
+        self._write_requests: Queue[ScanResult | Literal[_Sentinal.NO_MORE_WRITE_REQUESTS]] | None = None
+        # The writer sets this event at shutdown to indicate that the
+        # ingester can ingest the provenance QG dataset.
+        self._provenance_qg_written: Event | None = None
+        # The ingester sets this event after it ingests the provenance QG to
+        # let the scanners know they can delete things and perform deferred
+        # ingests.
+        self._provenance_qg_ingested: Event | None = None
+        # Only set up writer-specific communications if there is a writer.
+        if self.config.writes_provenance:
+            self._write_requests = context.make_queue()
+            self._provenance_qg_written = context.make_event()
+            self._provenance_qg_ingested = context.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
         # we can't rely on a non-exception __exit__ to do any shutdown work
@@ -804,6 +814,8 @@ class IngesterCommunicator(WorkerCommunicator):
         super().__init__(supervisor, "ingester")
         self.n_scanners = supervisor.n_scanners
         self._ingest_requests = supervisor._ingest_requests
+        self._provenance_qg_written = supervisor._provenance_qg_written
+        self._provenance_qg_ingested = supervisor._provenance_qg_ingested
         self._n_requesters_done = 0
 
     def __exit__(
@@ -835,8 +847,39 @@ class IngesterCommunicator(WorkerCommunicator):
         """
         self._reports.put(_IngestReport(n_producers), block=False)
 
-    def poll(self) -> Iterator[IngestRequest]:
-        """Poll for ingest requests from the scanner workers.
+    def signal_qg_ingested(self) -> None:
+        """Signal to all other workers that the provenance QG has been
+        ingested into the central butler repository.
+        """
+        self._provenance_qg_ingested.set()
+
+    def poll_until_qg_written(self) -> Iterator[IngestRequest]:
+        """Poll for ingest requests from the scanner workers until the QQ is
+        written.
+
+        Yields
+        ------
+        request : `IngestRequest`
+            A request to ingest datasets produced by a single quantum.
+
+        Notes
+        -----
+        This iterator ends when the provenance QG is written (or immediately if
+        it is not configured to be written at all).  If all workers finish
+        """
+        if self._provenance_qg_written is None or self._provenance_qg_written.is_set():
+            return
+        for request in self.poll_until_done():
+            yield request
+            if self._provenance_qg_written.is_set():
+                return
+        else:
+            self._provenance_qg_written.wait()
+            return
+
+    def poll_until_done(self) -> Iterator[IngestRequest]:
+        """Poll for ingest requests from the scanner workers until they are
+        done sending ingest requests.
 
         Yields
         ------
@@ -848,16 +891,12 @@ class IngesterCommunicator(WorkerCommunicator):
         This iterator ends when all scanners indicate that they are done making
         ingest requests.
         """
-        while True:
+        while self._n_requesters_done < self.n_scanners:
             self.check_for_cancel()
             ingest_request = _get_from_queue(self._ingest_requests, block=True, timeout=_TINY_TIMEOUT)
             if ingest_request is _Sentinal.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-                if self._n_requesters_done == self.n_scanners:
-                    return
-                else:
-                    continue
-            if ingest_request is not None:
+            elif ingest_request is not None:
                 yield ingest_request
 
 
@@ -876,6 +915,7 @@ class WriterCommunicator(WorkerCommunicator):
         self.n_scanners = supervisor.n_scanners
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
+        self._provenance_qg_written = supervisor._provenance_qg_written
         self._n_requesters = supervisor.n_scanners + 1
         self._n_requesters_done = 0
         self._sent_compression_dict = False
@@ -889,6 +929,7 @@ class WriterCommunicator(WorkerCommunicator):
         result = super().__exit__(exc_type, exc_value, traceback)
         if exc_type is None:
             self.log_progress(logging.INFO, "Provenance quantum graph written successfully.")
+            self._provenance_qg_written.set()
         while self._n_requesters_done != self._n_requesters:
             self.log.debug(
                 "Waiting for %d requesters to be done (currently %d).",
