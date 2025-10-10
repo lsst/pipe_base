@@ -60,7 +60,13 @@ from lsst.utils.logging import VERBOSE, LsstLogAdapter
 
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
-from ._structs import IngestRequest, ScanReport, ScanResult
+from ._structs import (
+    GraphIngestRequest,
+    ProvenanceIngestRequest,
+    QuantumIngestRequest,
+    ScanReport,
+    ScanResult,
+)
 
 _T = TypeVar("_T")
 
@@ -276,6 +282,18 @@ class _IngestReport:
     and/or progress bar to this number.
     """
 
+    n_provenance_datasets: int
+    """Number of special provenance datasets ingested."""
+
+
+@dataclasses.dataclass
+class _RemovalReport:
+    """An internal struct passsed from a scanner to the supervisor to report
+    a completed removal batch.
+    """
+
+    n_files: int
+
 
 @dataclasses.dataclass
 class _ProgressLog:
@@ -307,6 +325,7 @@ Report: TypeAlias = (
     ScanReport
     | _IngestReport
     | _WorkerErrorMessage
+    | _RemovalReport
     | _ProgressLog
     | Literal[
         _Sentinel.WRITE_REPORT,
@@ -352,18 +371,9 @@ class SupervisorCommunicator:
         # scanner sends one sentinal when it is done, and the ingester is
         # careful to wait for n_scanners sentinals to arrive before it starts
         # its shutdown.
-        self._ingest_requests: Queue[IngestRequest | Literal[_Sentinel.NO_MORE_INGEST_REQUESTS]] = (
-            context.make_queue()
-        )
-        # The scanners send write requests to the writer on this queue (which
-        # will be `None` if we're not writing).  The supervisor also sends
-        # write requests for blocked quanta (which we don't scan).  Each
-        # scanner and the supervisor send one sentinal when done, and the
-        # writer waits for (n_scanners + 1) sentinals to arrive before it
-        # starts its shutdown.
-        self._write_requests: Queue[ScanResult | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
-            context.make_queue() if config.write_provenance else None
-        )
+        self._ingest_requests: Queue[
+            ProvenanceIngestRequest | QuantumIngestRequest | Literal[_Sentinel.NO_MORE_INGEST_REQUESTS]
+        ] = context.make_queue()
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.
@@ -379,6 +389,30 @@ class SupervisorCommunicator:
         # Worker communicators check this in their polling loops and raise
         # FatalWorkerError when they see it set.
         self._cancel_event: Event = context.make_event()
+        # The scanners send write requests to the writer on this queue (which
+        # will be `None` if we're not writing).  The supervisor also sends
+        # write requests for blocked quanta (which we don't scan).  Each
+        # scanner and the supervisor send one sentinal when done, and the
+        # writer waits for (n_scanners + 1) sentinals to arrive before it
+        # starts its shutdown.
+        self._write_requests: Queue[ScanResult | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = None
+        # The writer sends the actual path to the provenance QG to the
+        # ingester in this queue, at most once (a pipe would be more
+        # natural but we'd have to emulate that for threads).  We can't
+        # use the ingest queue because we want the ingester to handle it
+        # immediately.
+        self._graph_ingest_request: Queue[GraphIngestRequest] | None = None
+        # The ingester sets this event after it ingests the provenance QG to
+        # let the scanners know they can delete things and perform deferred
+        # ingests.
+        self._graph_ingested: Event | None = None
+        # Only set up writer-specific communications if there is a writer.
+        if self.config.actually_ingest_provenance:
+            self._write_requests = context.make_queue()
+        if self.config.ingest_provenance:
+            # We only set up writer-specific communcations if we have a writer.
+            self._graph_ingest_request = context.make_queue()
+            self._graph_ingested = context.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
         # we can't rely on a non-exception __exit__ to do any shutdown work
@@ -390,7 +424,10 @@ class SupervisorCommunicator:
         self._ingester_done = False
         self._writer_done = self._write_requests is None
 
-    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+    def signal_graph_traversed(self) -> None:
+        """Inform workers that the graph has been traversed and there will be
+        no more scan requests or write requests.
+        """
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
                 self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS, block=False)
@@ -398,18 +435,22 @@ class SupervisorCommunicator:
         if not self._sent_no_more_write_requests and self._write_requests is not None:
             self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
+
+    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+        self.signal_graph_traversed()
         while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
-            match self._handle_progress_reports(
-                self._reports.get(block=True), already_failing=already_failing
-            ):
-                case None | ScanReport() | _IngestReport():
-                    pass
+            match self._handle_progress_reports(self._reports.get(block=True), already_failing):
+                case None | ScanReport():
+                    continue
                 case _Sentinel.INGESTER_DONE:
                     self._ingester_done = True
                     self.progress.quantum_ingests.close()
+                    self.progress.provenance_ingests.close()
                 case _Sentinel.SCANNER_DONE:
                     self._n_scanners_done += 1
-                    self.progress.scans.close()
+                    if self._n_scanners_done == self.n_scanners:
+                        self.progress.scans.close()
+                        self.progress.removals.close()
                 case _Sentinel.WRITER_DONE:
                     self._writer_done = True
                     self.progress.writes.close()
@@ -421,15 +462,6 @@ class SupervisorCommunicator:
                 self._writer_done,
                 self._n_scanners_done,
             )
-        while _get_from_queue(self._compression_dict) is not None:
-            self.log.verbose("Flushing compression dict queue.")
-        self.log.verbose("Checking that all queues are empty.")
-        self._expect_empty_queue(self._scan_requests)
-        self._expect_empty_queue(self._ingest_requests)
-        if self._write_requests is not None:
-            self._expect_empty_queue(self._write_requests)
-        self._expect_empty_queue(self._reports)
-        self._expect_empty_queue(self._compression_dict)
 
     def __enter__(self) -> Self:
         self.progress.__enter__()
@@ -449,6 +481,19 @@ class SupervisorCommunicator:
                 self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
             self._cancel_event.set()
         self.wait_for_workers_to_finish(already_failing=exc_type is not None)
+        while _get_from_queue(self._compression_dict) is not None:
+            self.log.verbose("Flushing compression dict queue.")
+            pass
+        if self._graph_ingest_request is not None:
+            self.log.verbose("Flushing provenance QG file queue.")
+            _get_from_queue(self._graph_ingest_request)
+        self.log.verbose("Checking that all queues are empty.")
+        self._expect_empty_queue(self._scan_requests)
+        self._expect_empty_queue(self._ingest_requests)
+        if self._write_requests is not None:
+            self._expect_empty_queue(self._write_requests)
+        self._expect_empty_queue(self._reports)
+        self._expect_empty_queue(self._compression_dict)
         self.progress.__exit__(exc_type, exc_value, traceback)
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
@@ -529,8 +574,11 @@ class SupervisorCommunicator:
                 self.progress.log.fatal("Exception raised on %s: \n%s", worker, traceback)
                 if not already_failing:
                     raise FatalWorkerError()
-            case _IngestReport(n_producers=n_producers):
+            case _IngestReport(n_producers=n_producers, n_provenance_datasets=n_provenance_datasets):
                 self.progress.quantum_ingests.update(n_producers)
+                self.progress.provenance_ingests.update(n_provenance_datasets)
+            case _RemovalReport(n_files=n_files):
+                self.progress.removals.update(n_files)
             case _Sentinel.WRITE_REPORT:
                 self.progress.writes.update(1)
             case _ProgressLog(message=message, level=level):
@@ -697,8 +745,10 @@ class ScannerCommunicator(WorkerCommunicator):
         self._ingest_requests = supervisor._ingest_requests
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
+        self._graph_ingested = supervisor._graph_ingested
         self._got_no_more_scan_requests: bool = False
         self._sent_no_more_ingest_requests: bool = False
+        self._sent_no_more_write_requests: bool = self._write_requests is None
 
     def report_scan(self, msg: ScanReport) -> None:
         """Report a completed scan to the supervisor.
@@ -710,12 +760,22 @@ class ScannerCommunicator(WorkerCommunicator):
         """
         self._reports.put(msg, block=False)
 
-    def request_ingest(self, request: IngestRequest) -> None:
+    def report_removals(self, n_files: int) -> None:
+        """Report a completed removal batch to the supervisor.
+
+        Parameters
+        ----------
+        n_files : `int`
+            Number of files removed in this batch.
+        """
+        self._reports.put(_RemovalReport(n_files), block=False)
+
+    def request_ingest(self, request: ProvenanceIngestRequest | QuantumIngestRequest) -> None:
         """Ask the ingester to ingest a quantum's outputs.
 
         Parameters
         ----------
-        request : `IngestRequest`
+        request : `ProvenanceIngestRequest` | `IngestRequest`
             Description of the datasets to ingest.
 
         Notes
@@ -726,7 +786,7 @@ class ScannerCommunicator(WorkerCommunicator):
         if request:
             self._ingest_requests.put(request, block=False)
         else:
-            self._reports.put(_IngestReport(1), block=False)
+            self._reports.put(_IngestReport(n_producers=1, n_provenance_datasets=0), block=False)
 
     def request_write(self, scan_result: ScanResult) -> None:
         """Ask the writer to write provenance for a quantum.
@@ -768,16 +828,30 @@ class ScannerCommunicator(WorkerCommunicator):
         Notes
         -----
         This iterator ends when the supervisor reports that it is done
-        traversing the graph.
+        traversing the graph.  This also signals the writer that there will be
+        no more write requests from this scanner.
         """
-        while True:
+        while not self._got_no_more_scan_requests:
             self.check_for_cancel()
             scan_request = _get_from_queue(self._scan_requests, block=True, timeout=self.config.worker_sleep)
             if scan_request is _Sentinel.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
-                return
-            if scan_request is not None:
+            elif scan_request is not None:
                 yield scan_request.quantum_id
+        self._send_no_more_write_requests()
+
+    def _send_no_more_write_requests(self) -> None:
+        if not self._sent_no_more_write_requests:
+            assert self._write_requests is not None, "Guaranteed at construction."
+            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
+            self._sent_no_more_write_requests = True
+
+    def wait_until_qg_ingested(self) -> None:
+        """Wait for the provenance QG to be ingested into the central butler
+        repository.
+        """
+        if self._graph_ingested is not None:
+            self._graph_ingested.wait()
 
     def __exit__(
         self,
@@ -785,10 +859,9 @@ class ScannerCommunicator(WorkerCommunicator):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        result = super().__exit__(exc_type, exc_value, traceback)
+        self._send_no_more_write_requests()
         self._ingest_requests.put(_Sentinel.NO_MORE_INGEST_REQUESTS, block=False)
-        if self._write_requests is not None:
-            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
+        result = super().__exit__(exc_type, exc_value, traceback)
         while not self._got_no_more_scan_requests:
             self.log.debug("Clearing scan request queue (~%d remaining)", self._scan_requests.qsize())
             if (
@@ -816,6 +889,8 @@ class IngesterCommunicator(WorkerCommunicator):
         super().__init__(supervisor, "ingester")
         self.n_scanners = supervisor.n_scanners
         self._ingest_requests = supervisor._ingest_requests
+        self._graph_ingest_request = supervisor._graph_ingest_request
+        self._graph_ingested = supervisor._graph_ingested
         self._n_requesters_done = 0
 
     def __exit__(
@@ -837,39 +912,51 @@ class IngesterCommunicator(WorkerCommunicator):
         self._reports.put(_Sentinel.INGESTER_DONE, block=False)
         return result
 
-    def report_ingest(self, n_producers: int) -> None:
-        """Report to the supervisor that an ingest batch was completed.
+    def report_ingest(self, n_producers: int, n_provenance_datasets: int) -> None:
+        """Report to the supervisor that a quantum ingest batch was completed.
 
         Parameters
         ----------
         n_producers : `int`
             Number of producing quanta whose datasets were ingested.
+        n_provenance_datasets : `int`
+            Number of provenance datasets ingested.
         """
-        self._reports.put(_IngestReport(n_producers), block=False)
+        self._reports.put(_IngestReport(n_producers=n_producers, n_provenance_datasets=0), block=False)
 
-    def poll(self) -> Iterator[IngestRequest]:
-        """Poll for ingest requests from the scanner workers.
+    def report_qg_ingested(self) -> None:
+        """Signal to all other workers that the provenance QG has been
+        ingested into the central butler repository.
+        """
+        assert self._graph_ingested is not None, "Should not be None if QG is to be ingested."
+        self._graph_ingested.set()
+
+    def poll(self) -> Iterator[GraphIngestRequest | ProvenanceIngestRequest | QuantumIngestRequest]:
+        """Poll for ingest requests from the scanner workers until they are
+        done sending ingest requests.
 
         Yields
         ------
-        request : `IngestRequest`
-            A request to ingest datasets produced by a single quantum.
+        request : `GraphIngestRequest`, `ProvenanceIngestRequest` or \
+                `QuantumIngestRequest`
+            A request to ingest datasets.
 
         Notes
         -----
         This iterator ends when all scanners indicate that they are done making
         ingest requests.
         """
-        while True:
+        while self._n_requesters_done < self.n_scanners:
             self.check_for_cancel()
+            if (
+                self._graph_ingest_request is not None
+                and (request := _get_from_queue(self._graph_ingest_request, block=False)) is not None
+            ):
+                yield request
             ingest_request = _get_from_queue(self._ingest_requests, block=True, timeout=_TINY_TIMEOUT)
             if ingest_request is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-                if self._n_requesters_done == self.n_scanners:
-                    return
-                else:
-                    continue
-            if ingest_request is not None:
+            elif ingest_request is not None:
                 yield ingest_request
 
 
@@ -884,10 +971,14 @@ class WriterCommunicator(WorkerCommunicator):
 
     def __init__(self, supervisor: SupervisorCommunicator):
         assert supervisor._write_requests is not None
+        assert supervisor._graph_ingest_request is not None
+        assert supervisor._graph_ingested is not None
         super().__init__(supervisor, "writer")
         self.n_scanners = supervisor.n_scanners
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
+        self._graph_ingest_request = supervisor._graph_ingest_request
+        self._graph_ingested = supervisor._graph_ingested
         self._n_requesters = supervisor.n_scanners + 1
         self._n_requesters_done = 0
         self._sent_compression_dict = False
@@ -912,6 +1003,19 @@ class WriterCommunicator(WorkerCommunicator):
         self.log.verbose("Sending done sentinal.")
         self._reports.put(_Sentinel.WRITER_DONE, block=False)
         return result
+
+    def request_provenance_qg_ingest(self, request: GraphIngestRequest) -> None:
+        """Ask the ingester to ingest the provenance QG file and block until it
+        does so.
+
+        Parameters
+        ----------
+        request : `GraphIngestRequest`
+            Information about the request.
+        """
+        self._graph_ingest_request.put(request)
+        while not self._graph_ingested.wait(timeout=_TINY_TIMEOUT):
+            self.check_for_cancel()
 
     def poll(self) -> Iterator[ScanResult]:
         """Poll for writer requests from the scanner workers and supervisor.

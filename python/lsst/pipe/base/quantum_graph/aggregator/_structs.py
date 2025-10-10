@@ -28,7 +28,9 @@
 from __future__ import annotations
 
 __all__ = (
-    "IngestRequest",
+    "GraphIngestRequest",
+    "ProvenanceIngestRequest",
+    "QuantumIngestRequest",
     "ScanReport",
     "ScanResult",
     "ScanStatus",
@@ -37,7 +39,9 @@ __all__ = (
 import dataclasses
 import enum
 import uuid
+from typing import final
 
+from lsst.daf.butler import DatasetRef, FileDataset
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
 from ..._status import QuantumSuccessCaveats
@@ -87,6 +91,7 @@ class ScanStatus(enum.Enum):
     """
 
 
+@final
 @dataclasses.dataclass
 class ScanReport:
     """Minimal information needed about a completed scan by the supervisor."""
@@ -97,9 +102,18 @@ class ScanReport:
     status: ScanStatus
     """Combined status of the scan and the execution of the quantum."""
 
+    n_pending_removals: int
+    """Number of output files that need to be deleted."""
 
+    n_pending_ingests: int
+    """Number of output datasets that can only be ingested after the provenance
+    graph is ingested.
+    """
+
+
+@final
 @dataclasses.dataclass
-class IngestRequest:
+class QuantumIngestRequest:
     """A request to ingest datasets produced by a single quantum."""
 
     producer_id: uuid.UUID
@@ -115,6 +129,22 @@ class IngestRequest:
         return bool(self.datasets or self.records)
 
 
+@final
+@dataclasses.dataclass
+class ProvenanceIngestRequest:
+    """A request to ingest datasets backed by the provenance graph file."""
+
+    refs: list[DatasetRef]
+    """Dataset references to be ingested."""
+
+
+@dataclasses.dataclass
+class GraphIngestRequest:
+    file_dataset: FileDataset
+    transfer: str
+
+
+@final
 @dataclasses.dataclass
 class ScanResult:
     """A struct that represents the result of scanning a quantum."""

@@ -35,7 +35,7 @@ import uuid
 
 import zstandard
 
-from lsst.daf.butler import ButlerLogRecords, DatasetRef, QuantumBackedButler
+from lsst.daf.butler import ButlerLogRecords, DataCoordinate, DatasetRef, DatasetType, QuantumBackedButler
 from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
@@ -44,6 +44,7 @@ from ..._task_metadata import TaskMetadata
 from ...pipeline_graph import PipelineGraph, TaskImportMode
 from ...quantum_provenance_graph import ExceptionInfo
 from ...resource_usage import QuantumResourceUsage
+from .._common import DatasetTypeName
 from .._multiblock import Compressor
 from .._predicted import (
     PredictedDatasetModel,
@@ -51,7 +52,7 @@ from .._predicted import (
     PredictedQuantumGraphReader,
 )
 from ._communicators import ScannerCommunicator
-from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
+from ._structs import ProvenanceIngestRequest, QuantumIngestRequest, ScanReport, ScanResult, ScanStatus
 
 
 @dataclasses.dataclass
@@ -87,6 +88,33 @@ class Scanner:
     init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
     """Dictionary mapping init quantum IDs to their predicted models."""
 
+    remove_dataset_types: set[DatasetTypeName] = dataclasses.field(default_factory=set)
+    """Set of dataset type names whose original files will be removed.
+
+    This includes datasets that are not being retained as well as datasets that
+    are being aggregated into an ingested provenance graph.
+    """
+
+    provenance_dataset_types: set[DatasetTypeName] = dataclasses.field(default_factory=set)
+    """Set of dataset type names that should be ingested after the provenance
+    graph dataset has been ingested, because they are backed by the same file.
+
+    This is a subset of `remove_dataset_types`.
+    """
+
+    pending_removals: list[DatasetRef] = dataclasses.field(default_factory=list)
+    """List of datasets that should be deleted by this scanner after the
+    provenance graph is ingested.
+    """
+
+    pending_ingests: list[DatasetRef] = dataclasses.field(default_factory=list)
+    """List of datasets that should be sent for ingest by this scanner after
+    the provenance graph is ingested.
+
+    This *almost* a subset of `pending_removals`; it also includes the special
+    quantum provenance datasets.
+    """
+
     def __post_init__(self) -> None:
         if self.comms.config.mock_storage_classes:
             import lsst.pipe.base.tests.mocks  # noqa: F401
@@ -99,6 +127,45 @@ class Scanner:
         self.comms.log.verbose("Initializing quantum-backed butler.")
         self.qbb = self.make_qbb(self.butler_path, self.reader.pipeline_graph)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
+        self.remove_dataset_types = set(self.comms.config.remove_dataset_types)
+        # If we are ingesting provenance, delete original {logs, configs,
+        # packages} and ingest with provenance graph backing (if at all).
+        if self.comms.config.ingest_provenance:
+            for task_node in self.reader.pipeline_graph.tasks.values():
+                self.remove_dataset_types.add(task_node.metadata_output.dataset_type_name)
+                self.provenance_dataset_types.add(task_node.metadata_output.dataset_type_name)
+                self.comms.log.verbose(
+                    "Will remove %s and re-ingest with provenance QG backing.",
+                    task_node.metadata_output.dataset_type_name,
+                )
+                if task_node.log_output is not None:
+                    self.remove_dataset_types.add(task_node.log_output.dataset_type_name)
+                    if self.comms.config.ingest_logs:
+                        self.provenance_dataset_types.add(task_node.log_output.dataset_type_name)
+                        self.comms.log.verbose(
+                            "Will remove %s and re-ingest with provenance QG backing.",
+                            task_node.log_output.dataset_type_name,
+                        )
+                    else:
+                        self.comms.log.verbose("Will remove %s.", task_node.log_output.dataset_type_name)
+                self.remove_dataset_types.add(task_node.init.config_output.dataset_type_name)
+                if self.comms.config.ingest_configs:
+                    self.provenance_dataset_types.add(task_node.init.config_output.dataset_type_name)
+                    self.comms.log.verbose(
+                        "Will remove %s and re-ingest with provenance QG backing.",
+                        task_node.init.config_output.dataset_type_name,
+                    )
+                else:
+                    self.comms.log.verbose("Will remove %s.", task_node.init.config_output.dataset_type_name)
+            self.remove_dataset_types.add(acc.PACKAGES_INIT_OUTPUT_NAME)
+            if self.comms.config.ingest_packages:
+                self.provenance_dataset_types.add(acc.PACKAGES_INIT_OUTPUT_NAME)
+                self.comms.log.verbose(
+                    "Will remove %s and re-ingest with provenance QG backing.",
+                    acc.PACKAGES_INIT_OUTPUT_NAME,
+                )
+            else:
+                self.comms.log.verbose("Will remove %s.", acc.PACKAGES_INIT_OUTPUT_NAME)
 
     @staticmethod
     def make_qbb(butler_config: str, pipeline_graph: PipelineGraph) -> QuantumBackedButler:
@@ -167,6 +234,23 @@ class Scanner:
                     self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
                 )
             self.scan_quantum(quantum_id)
+        if self.comms.config.incomplete:
+            return
+        if self.pending_ingests or self.pending_removals:
+            self.comms.log.info("Waiting for provenance QG to be ingested.")
+            self.comms.wait_until_qg_ingested()
+        if self.pending_ingests:
+            self.comms.log.info("Sending provenance ingest requests.")
+            for ref_batch in itertools.batched(self.pending_ingests, self.comms.config.ingest_batch_size):
+                self.comms.log.verbose("Sending a %d-dataset provenance ingest request.", len(ref_batch))
+                self.comms.request_ingest(ProvenanceIngestRequest(list(ref_batch)))
+        if self.pending_removals:
+            self.comms.log.info("Deleting datasets.")
+            for ref_batch in itertools.batched(self.pending_removals, self.comms.config.delete_batch_size):
+                self.comms.log.verbose("Removing %d datasets.", len(ref_batch))
+                if not self.comms.config.dry_run:
+                    self.qbb.pruneDatasets(ref_batch, unstore=True, purge=True)
+                self.comms.report_removals(len(ref_batch))
 
     def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
         """Scan for a dataset's existence.
@@ -216,7 +300,7 @@ class Scanner:
             if self.comms.config.incomplete and not result.log:
                 self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
                 result.status = ScanStatus.ABANDONED
-                self.comms.report_scan(ScanReport(result.quantum_id, result.status))
+                self.comms.report_scan(ScanReport(result.quantum_id, result.status, 0, 0))
                 return result
             metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
             if result.metadata:
@@ -231,7 +315,7 @@ class Scanner:
                 # complete.
                 self.comms.log.debug("Abandoning scan for %s.", quantum_id)
                 result.status = ScanStatus.ABANDONED
-                self.comms.report_scan(ScanReport(result.quantum_id, result.status))
+                self.comms.report_scan(ScanReport(result.quantum_id, result.status, 0, 0))
                 return result
             if result.log:
                 result.existing_outputs.add(log_id)
@@ -240,20 +324,20 @@ class Scanner:
                 predicted_output
             ):
                 result.existing_outputs.add(predicted_output.dataset_id)
-        to_ingest = self._make_ingest_request(predicted_quantum, result)
-        self.comms.report_scan(ScanReport(result.quantum_id, result.status))
+        to_ingest = self._make_ingest_request_and_report(predicted_quantum, result)
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
-        if self.comms.config.write_provenance:
+        if self.comms.config.actually_ingest_provenance:
             self.comms.request_write(result)
         self.comms.request_ingest(to_ingest)
         self.comms.log.debug("Finished scan for %s.", quantum_id)
         return result
 
-    def _make_ingest_request(
+    def _make_ingest_request_and_report(
         self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
-    ) -> IngestRequest:
-        """Make an ingest request from a quantum scan.
+    ) -> QuantumIngestRequest:
+        """Make an ingest request from a quantum scan, and report that scan
+        to the supervisor.
 
         Parameters
         ----------
@@ -272,12 +356,59 @@ class Scanner:
         }
         to_ingest_predicted: list[PredictedDatasetModel] = []
         to_ingest_refs: list[DatasetRef] = []
+        n_removals: int = 0
+        n_deferred_ingests: int = 0
         for dataset_id in result.existing_outputs:
             predicted_output = predicted_outputs_by_id[dataset_id]
-            to_ingest_predicted.append(predicted_output)
-            to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
+            ref = self.reader.components.make_dataset_ref(predicted_output)
+            if predicted_output.dataset_type_name in self.provenance_dataset_types:
+                self.pending_removals.append(ref)
+                n_removals += 1
+                self.pending_ingests.append(ref)
+                n_deferred_ingests += 1
+            elif predicted_output.dataset_type_name in self.remove_dataset_types:
+                self.pending_removals.append(ref)
+                n_removals += 1
+            else:
+                to_ingest_predicted.append(predicted_output)
+                to_ingest_refs.append(ref)
+        if self.comms.config.ingest_provenance and result.status is not ScanStatus.INIT:
+            self.pending_ingests.append(self._make_provenance_quantum_ref(predicted_quantum))
+            n_deferred_ingests += 1
+        self.comms.log.debug(
+            "Identified %d removals and %d deferred ingests for %s.",
+            n_removals,
+            n_deferred_ingests,
+            predicted_quantum.quantum_id,
+        )
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
-        return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
+        self.comms.report_scan(ScanReport(result.quantum_id, result.status, n_removals, n_deferred_ingests))
+        return QuantumIngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
+
+    def _make_provenance_quantum_ref(self, predicted: PredictedQuantumDatasetsModel) -> DatasetRef:
+        """Make a `DatasetRef` for a quantum provenance dataset.
+
+        Predicted
+        ---------
+        predicted : `PredictedQuantumDatasetsModel`
+            Information about the predicted quantum.
+
+        Returns
+        -------
+        ref : `lsst.daf.butler.DatasetRef`
+            Butler dataset reference.
+        """
+        task_node = self.reader.pipeline_graph.tasks[predicted.task_label]
+        return DatasetRef(
+            DatasetType(
+                self.comms.config.quantum_dataset_type_template.format(predicted.task_label),
+                task_node.dimensions,
+                "ProvenanceQuantumGraph",
+            ),
+            DataCoordinate.from_full_values(task_node.dimensions, tuple(predicted.data_coordinate)),
+            run=self.reader.header.output_run,
+            id=predicted.quantum_id,
+        )
 
     def _read_and_compress_metadata(
         self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult

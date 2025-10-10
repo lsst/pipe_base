@@ -173,6 +173,11 @@ _AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
     ),
 )
 @click.option(
+    "--ingest-provenance/--no-ingest-provenance",
+    default=_AGGREGATOR_DEFAULTS.ingest_provenance,
+    help="Whether to write and ingest a provenance quantum graph.",
+)
+@click.option(
     "--processes",
     "-j",
     "n_processes",
