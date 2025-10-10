@@ -852,17 +852,19 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         for task_label, quanta_for_task in self.quanta_by_task.items():
             if not self.header.n_task_quanta[task_label]:
                 continue
-            status_counts = Counter(
+            status_counts = Counter[QuantumRunStatus](
                 self._quantum_only_xgraph.nodes[q]["status"] for q in quanta_for_task.values()
             )
-            caveat_counts = Counter(
+            caveat_counts = Counter[QuantumSuccessCaveats | None](
                 self._quantum_only_xgraph.nodes[q]["caveats"] for q in quanta_for_task.values()
             )
+            caveat_counts.pop(QuantumSuccessCaveats.NO_CAVEATS, None)
+            caveat_counts.pop(None, None)
             if len(caveat_counts) > 1:
                 caveats = "(multiple)"
             elif len(caveat_counts) == 1:
                 ((code, count),) = caveat_counts.items()
-                caveats = f"{code}({count})"
+                caveats = f"{code.concise()}({count})"
             else:
                 caveats = ""
             rows.append(
