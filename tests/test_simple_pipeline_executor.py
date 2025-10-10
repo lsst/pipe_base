@@ -38,6 +38,7 @@ import lsst.utils.tests
 from lsst.pipe.base import PipelineGraph, QuantumSuccessCaveats, RepeatableQuantumError
 from lsst.pipe.base.simple_pipeline_executor import SimplePipelineExecutor
 from lsst.pipe.base.tests.mocks import (
+    DirectButlerRepo,
     DynamicConnectionConfig,
     DynamicTestPipelineTask,
     DynamicTestPipelineTaskConfig,
@@ -192,6 +193,8 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
         """Test generating a local butler repository from a pipeline, then
         running that pipeline using the local butler.
         """
+        # Test a trivial pipeline that has only dataset types with empty
+        # dimensions.
         filename = os.path.join(TESTDIR, "pipelines", "pipeline_simple.yaml")
         executor = SimplePipelineExecutor.from_pipeline_filename(
             filename, butler=self.butler, output="u/someone/pipeline"
@@ -200,6 +203,34 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
             root = os.path.join(tempdir, "butler_root")
             executor.use_local_butler(root)
             self._test_pipeline_file(executor)
+
+        # Test a more complicated pipeline involving dataset types with
+        # non-empty dimensions.  This will require dimension records to be
+        # copied into the destination repository.
+        with (
+            tempfile.TemporaryDirectory() as tempdir,
+            DirectButlerRepo.make_temporary("base.yaml", "spatial.yaml") as (helper, root),
+        ):
+            helper.add_task(dimensions=["visit", "detector"])
+            qg = helper.make_quantum_graph(output="out_chain")
+            executor = SimplePipelineExecutor(qg, helper.butler)
+            output_butler_root = os.path.join(tempdir, "root")
+            executor.use_local_butler(output_butler_root)
+            executor.run(register_dataset_types=True)
+            output_butler = lsst.daf.butler.Butler(output_butler_root)
+            ref = output_butler.find_dataset(
+                "dataset_auto1",
+                collections="out_chain",
+                dimension_records=True,
+                instrument="Cam1",
+                detector=1,
+                visit=1,
+            )
+            self.assertIsNotNone(ref)
+            self.assertIsNotNone(output_butler.get(ref))
+            # Check that dimension records are present in the output Butler.
+            self.assertEqual(ref.dataId.records["visit"].science_program, "test_survey")
+            self.assertTrue(ref.dataId.records["visit_detector_region"].region.contains(0.004, 0.020))
 
     def _test_pipeline_file(self, executor: SimplePipelineExecutor) -> None:
         quanta = executor.run(register_dataset_types=True, save_versions=False)
