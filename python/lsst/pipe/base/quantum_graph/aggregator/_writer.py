@@ -35,11 +35,15 @@ import itertools
 import logging
 import operator
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TypeVar
 
 import networkx
 import zstandard
 
+from lsst.daf.butler import Butler, FileDataset
+from lsst.resources import ResourcePath
 from lsst.utils.packages import Packages
 
 from ... import automatic_connection_constants as acc
@@ -61,8 +65,9 @@ from .._provenance import (
     ProvenanceInitQuantumModel,
     ProvenanceQuantumModel,
 )
+from ..formatter import ProvenanceFormatter
 from ._communicators import WriterCommunicator
-from ._structs import ScanResult
+from ._structs import GraphIngestRequest, ScanResult
 
 
 class _CompressionState(enum.Enum):
@@ -134,6 +139,8 @@ class _DataWriters:
 
     Parameters
     ----------
+    output_path : `lsst.resources.ResourcePath`
+        Path for the provenance quantum graph file.
     comms : `WriterCommunicator`
         Communicator helper object for the writer.
     predicted : `.PredictedQuantumGraphComponents`
@@ -150,18 +157,18 @@ class _DataWriters:
 
     def __init__(
         self,
+        output_path: ResourcePath,
         comms: WriterCommunicator,
         predicted: PredictedQuantumGraphComponents,
         indices: dict[uuid.UUID, int],
         compressor: Compressor,
         cdict_data: bytes | None = None,
     ) -> None:
-        assert comms.config.output_path is not None, "Writer should not be used at all otherwise."
         header = predicted.header.model_copy()
         header.graph_type = "provenance"
         self.graph = comms.enter(
             BaseQuantumGraphWriter.open(
-                comms.config.output_path,
+                output_path,
                 header,
                 predicted.pipeline_graph,
                 indices,
@@ -276,7 +283,6 @@ class Writer:
     """
 
     def __post_init__(self) -> None:
-        assert self.comms.config.write_provenance, "Writer should not be used if writing is disabled."
         self.comms.log.info("Reading predicted quantum graph.")
         with PredictedQuantumGraphReader.open(
             self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
@@ -380,6 +386,32 @@ class Writer:
             data_writers = self.make_data_writers()
         self.write_init_outputs(data_writers)
 
+    @contextmanager
+    def output_path_context(self) -> Iterator[ResourcePath]:
+        """Return context manager for the actual output file.
+
+        This creates a temporary resource path for the output file if necessary
+        and waits for the ingester to actually ingest it when exiting.
+        """
+        butler = Butler.from_config(self.butler_path)
+        ref = self.comms.config.get_graph_dataset_ref(butler.dimensions, self.predicted.header)
+        final_path = butler.getURI(ref, predict=True).replace(fragment="")
+        if self.comms.config.output_path is not None:
+            file_dataset = FileDataset(self.comms.config.output_path, [ref], formatter=ProvenanceFormatter)
+            yield ResourcePath(file_dataset.path)
+            self.comms.request_provenance_qg_ingest(GraphIngestRequest(file_dataset, transfer="copy"))
+        else:
+            # This logic is the same as what FormatterV2 does to ensure writes
+            # are atomic.  We rely on the ingester to do the transfer to the
+            # final location.
+            prefix = final_path.dirname() if final_path.isLocal else None
+            with ResourcePath.temporary_uri(suffix=final_path.getExtension(), prefix=prefix) as temp_path:
+                file_dataset = FileDataset(temp_path, [ref], formatter=ProvenanceFormatter)
+                yield temp_path
+                self.comms.request_provenance_qg_ingest(
+                    GraphIngestRequest(file_dataset, transfer="move" if final_path.isLocal else "copy")
+                )
+
     def make_data_writers(self) -> _DataWriters:
         """Make a compression dictionary, open the low-level writers, and
         write any accumulated scans that were needed to make the compression
@@ -392,9 +424,14 @@ class Writer:
         """
         cdict = self.make_compression_dictionary()
         self.comms.send_compression_dict(cdict.as_bytes())
-        assert self.comms.config.write_provenance
         self.comms.log.info("Opening output files.")
+        output_path = self.comms.enter(
+            self.output_path_context(),
+            on_close="Waiting for provenance quantum graph to be ingested.",
+            is_progress_log=True,
+        )
         data_writers = _DataWriters(
+            output_path,
             self.comms,
             self.predicted,
             self.indices,

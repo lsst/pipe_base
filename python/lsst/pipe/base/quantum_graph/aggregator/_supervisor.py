@@ -78,6 +78,16 @@ class Supervisor:
     we could not assume they had failed.
     """
 
+    n_pending_ingests: int = 0
+    """Number of pending provenance ingests that have been deferred until after
+    the provenance QG has been ingested.
+    """
+
+    n_pending_removals: int = 0
+    """Number of pending dataset removals that have been deferred until after
+    the provenance QG has been ingested.
+    """
+
     def __post_init__(self) -> None:
         self.comms.progress.log.info("Reading predicted quantum graph.")
         with PredictedQuantumGraphReader.open(
@@ -119,6 +129,8 @@ class Supervisor:
                 self.comms.request_scan(ready_set.pop())
             for scan_return in self.comms.poll():
                 self.handle_report(scan_return)
+        self.comms.progress.log.info("Scanning complete after %0.1fs.", self.comms.progress.elapsed_time)
+        self.comms.signal_graph_traversed()
         if self.comms.config.incomplete:
             quantum_or_quanta = "quanta" if self.n_abandoned != 1 else "quantum"
             self.comms.progress.log.info(
@@ -126,10 +138,14 @@ class Supervisor:
                 self.n_abandoned,
                 quantum_or_quanta,
             )
-        self.comms.progress.log.info(
-            "Scanning complete after %0.1fs; waiting for workers to finish.",
-            self.comms.progress.elapsed_time,
-        )
+        else:
+            self.comms.log.verbose(
+                "Expecting %d provenance ingests and %d removals.",
+                self.n_pending_ingests,
+                self.n_pending_removals,
+            )
+            self.comms.progress.provenance_ingests.total = self.n_pending_ingests
+            self.comms.progress.removals.total = self.n_pending_removals
         self.comms.wait_for_workers_to_finish()
 
     def handle_report(self, scan_report: ScanReport) -> None:
@@ -144,11 +160,15 @@ class Supervisor:
             case ScanStatus.SUCCESSFUL | ScanStatus.INIT:
                 self.comms.log.debug("Scan complete for %s: quantum succeeded.", scan_report.quantum_id)
                 self.walker.finish(scan_report.quantum_id)
+                self.n_pending_removals += scan_report.n_pending_removals
+                self.n_pending_ingests += scan_report.n_pending_ingests
             case ScanStatus.FAILED:
                 self.comms.log.debug("Scan complete for %s: quantum failed.", scan_report.quantum_id)
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
+                self.n_pending_removals += scan_report.n_pending_removals
+                self.n_pending_ingests += scan_report.n_pending_ingests
                 for blocked_quantum_id in blocked_quanta:
-                    if self.comms.config.write_provenance:
+                    if self.comms.config.actually_ingest_provenance:
                         self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
                     self.comms.progress.scans.update(1)
                 self.comms.progress.quantum_ingests.update(len(blocked_quanta))
@@ -182,7 +202,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     writer: Worker | None = None
     with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
         comms.progress.log.verbose("Starting workers.")
-        if config.write_provenance:
+        if config.actually_ingest_provenance:
             writer_comms = WriterCommunicator(comms)
             writer = ctx.make_worker(
                 target=Writer.run,

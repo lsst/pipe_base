@@ -135,6 +135,8 @@ class ProgressManager:
         self.scans = ProgressCounter(self, "scanning", "quanta")
         self.writes = ProgressCounter(self, "writing", "quanta")
         self.quantum_ingests = ProgressCounter(self, "ingesting outputs", "quanta")
+        self.provenance_ingests = ProgressCounter(self, "ingesting provenance", "datasets")
+        self.removals = ProgressCounter(self, "removing", "datasets")
         self.interactive = config.interactive_status
 
     def __enter__(self) -> Self:

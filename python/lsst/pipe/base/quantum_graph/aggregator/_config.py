@@ -32,14 +32,83 @@ __all__ = ("AggregatorConfig",)
 
 import pydantic
 
+from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse
+
+from ...pipeline_graph import TaskNode
+from .._common import HeaderModel
+
 
 class AggregatorConfig(pydantic.BaseModel):
     """Configuration for the provenance aggregator."""
 
+    ingest_provenance: bool = False
+    """If `True`, ingest the provenance quantum graph into the central butler
+    repository use it to back any dataset content it includes (e.g. logs and
+    metadata).
+
+    If `False`, the provenance quantum graph is not written at all.
+    """
+
     output_path: str | None = None
     """Path for the output provenance quantum graph file.
 
-    At present this option is intended only for debugging.
+    If not `None`, this just sets the path the provenance quantum graph is
+    originally written to before it is *copied* into its butler location.
+
+    If `None` (default) the file is written to a temporary location and moved
+    (if possible) into its final location.
+
+    This is ignored if `ingest_provenance` is `False`.
+    """
+
+    graph_dataset_type_name: str = "run_provenance"
+    """The name of the provenance graph dataset type.
+
+    This is ignored if `ingest_provenance` is `False`.
+    """
+
+    quantum_dataset_type_template: str = "{}_provenance"
+    """A `str.format` template for the dataset type name used to ingest
+    per-quantum provenance datasets.
+
+    The template string must exactly one string placeholder for the task label.
+
+    This is ignored if `ingest_provenance` is `False`.
+    """
+
+    ingest_logs: bool = True
+    """If `True`, ingest "{task_label}_log" datasets.
+
+    Log content is also available via the graph and quantum provenance datasets
+    if `ingest_provenance` is `True`, so ``ingest_logs=True`` is mostly for
+    backwards compatibility.
+
+    If `ingest_provenance` is `False`, this option must be `True`.
+    """
+
+    ingest_configs: bool = True
+    """If `True`, ingest "{task_label}_config" datasets.
+
+    Config content is also available via the graph provenance dataset if
+    `ingest_provenance` is `True`, so ``ingest_configs=True`` is mostly for
+    backwards compatibility.
+
+   If `ingest_provenance` is `False`, this option must be `True`.
+    """
+
+    ingest_packages: bool = True
+    """If `True`, ingest the "packages" dataset.
+
+    Package version content is also available via the graph provenance dataset
+    if `ingest_provenance` is `True`, so ``ingest_packages=True`` is mostly for
+    backwards compatibility.
+
+    If `ingest_provenance` is `False`, this option must be `True`.
+    """
+
+    remove_dataset_types: list[str] = pydantic.Field(default_factory=list)
+    """Names of dataset types whose files should be deleted instead of being
+    ingested into the central butler repository.
     """
 
     worker_log_dir: str | None = None
@@ -54,7 +123,7 @@ class AggregatorConfig(pydantic.BaseModel):
     worker_profile_dir: str | None = None
     """Path to a directory (POSIX only) for parallel worker profiling dumps.
 
-    This option is ignored when `n_processes` is `1`.
+    This option is ignored when `n_processes` is ``1``.
     """
 
     n_processes: int = 1
@@ -64,27 +133,35 @@ class AggregatorConfig(pydantic.BaseModel):
     """If `True`, do not expect the graph to have been executed to completion
     yet, and only ingest the outputs of successful quanta.
 
-    This disables writing the provenance quantum graph, since this is likely to
-    be wasted effort that just complicates a follow-up run with
-    ``incomplete=False`` later.
+    This disables writing and ingesting the provenance quantum graph, since
+    this is likely to be wasted effort that just complicates a follow-up run
+    with ``incomplete=False`` later.  But the value of `ingest_provenance` is
+    still used in this mode as an indication of whether that follow-up run will
+    ingest provenance, and hence whether metadata, log, config, and packages
+    datasets should ingested with their original files backing them, or skipped
+    until provenance is written later.
     """
 
-    defensive_ingest: bool = False
+    recover: bool = False
     """If `True`, guard against datasets having already been ingested into the
-    central butler repository.
+    central butler repository and datasets already having been deleted.
 
-    Defensive ingest mode is automatically turned on (with a warning emitted)
-    if an ingest attempt fails due to a database constraint violation. Enabling
-    defensive mode up-front avoids this warning and is slightly more efficient
-    when it is already known that some datasets have already been ingested.
+    This mode is automatically turned on (with a warning emitted) if an ingest
+    attempt fails due to a database constraint violation and the provenance
+    quantum graph has not yet been ingested (and hence no datasets should have
+    been deleted).  If the provenance quantum graph has already been ingested,
+    this mode must be enabled up front.
 
-    Defensive mode does not guard against race conditions from multiple ingest
+    This mode does not guard against race conditions from multiple ingest
     processes running simultaneously, as it relies on a one-time query to
     determine what is already present in the central repository.
     """
 
     ingest_batch_size: int = 10000
     """Number of butler datasets that must accumulate to trigger an ingest."""
+
+    delete_batch_size: int = 10000
+    """Number of butler datasets to delete at once."""
 
     register_dataset_types: bool = True
     """Whether to register output dataset types in the central butler
@@ -141,8 +218,82 @@ class AggregatorConfig(pydantic.BaseModel):
     """
 
     @property
-    def write_provenance(self) -> bool:
+    def actually_ingest_provenance(self) -> bool:
         """Whether the aggregator is configured to write the provenance quantum
         graph.
         """
-        return self.output_path is not None and not self.incomplete
+        return self.ingest_provenance and not self.incomplete
+
+    @pydantic.model_validator(mode="after")
+    def _validate_provenance_ingestion(self) -> AggregatorConfig:
+        if not self.ingest_provenance:
+            if not self.ingest_logs:
+                raise ValueError("ingest_logs must be True if ingest_provenance is False.")
+            if not self.ingest_configs:
+                raise ValueError("ingest_configs must be True if ingest_provenance is False.")
+            if not self.ingest_packages:
+                raise ValueError("ingest_packages must be True if ingest_provenance is False.")
+        return self
+
+    def get_graph_dataset_type(self, universe: DimensionUniverse) -> DatasetType:
+        """Return the dataset type that should be used to ingest the
+        provenance quantum graph itself.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions of all dimensions.
+
+        Returns
+        -------
+        dataset_type : `lsst.daf.butler.DatasetType`
+            Dataset type definition.
+        """
+        return DatasetType(
+            self.graph_dataset_type_name,
+            dimensions=universe.empty,
+            storageClass="ProvenanceQuantumGraph",  # TODO[DM-52738]: confirm/update storage class
+        )
+
+    def get_graph_dataset_ref(self, universe: DimensionUniverse, header: HeaderModel) -> DatasetRef:
+        """Return the dataset reference that should be used to ingest the
+        provenance quantum graph itself.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions of all dimensions.
+        header : `.HeaderModel`
+            Header of the predicted or provenance quantum graph.
+
+        Returns
+        -------
+        dataset_ref : `lsst.daf.butler.DatasetRef`
+            Dataset reference.
+        """
+        return DatasetRef(
+            self.get_graph_dataset_type(universe),
+            DataCoordinate.make_empty(universe),
+            run=header.output_run,
+            id=header.provenance_dataset_id,
+        )
+
+    def get_quantum_dataset_type(self, task_node: TaskNode) -> DatasetType:
+        """Return the dataset type that should be used to ingest the
+        provenance for the quanta of a task.
+
+        Parameters
+        ----------
+        task_node : `..pipeline_graph.TaskNode`
+            Node for this task in the pipeline graph.
+
+        Returns
+        -------
+        dataset_type : `lsst.daf.butler.DatasetType`
+            Dataset type definition.
+        """
+        return DatasetType(
+            self.quantum_dataset_type_template.format(task_node.label),
+            dimensions=task_node.dimensions,
+            storageClass="ProvenanceQuantumGraph",  # TODO[DM-52738]: confirm/update storage class
+        )
