@@ -174,7 +174,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
             writer_comms = WriterCommunicator(comms)
             writer = ctx.make_worker(
                 target=Writer.run,
-                args=(predicted_path, writer_comms),
+                args=(predicted_path, butler_path, writer_comms),
                 name=writer_comms.name,
             )
             writer.start()

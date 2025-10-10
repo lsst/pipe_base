@@ -228,6 +228,9 @@ class Writer:
     predicted_path: str
     """Path to the predicted quantum graph."""
 
+    butler_path: str
+    """Path or alias to the central butler repository."""
+
     comms: WriterCommunicator
     """Communicator object for this worker."""
 
@@ -338,13 +341,15 @@ class Writer:
                 self.xgraph.add_edge(quantum_index, self.indices[predicted_output.dataset_id])
 
     @staticmethod
-    def run(predicted_path: str, comms: WriterCommunicator) -> None:
+    def run(predicted_path: str, butler_path: str, comms: WriterCommunicator) -> None:
         """Run the writer.
 
         Parameters
         ----------
         predicted_path : `str`
             Path to the predicted quantum graph.
+        butler_path : `str`
+            Path or alias to the central butler repository.
         comms : `WriterCommunicator`
             Communicator for the writer.
 
@@ -354,7 +359,7 @@ class Writer:
         `WorkerContext.make_worker`.
         """
         with comms:
-            writer = Writer(predicted_path, comms)
+            writer = Writer(predicted_path, butler_path, comms)
             writer.loop()
 
     def loop(self) -> None:
