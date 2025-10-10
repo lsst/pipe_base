@@ -263,7 +263,9 @@ class AggregatorConfig(pydantic.BaseModel):
             id=header.provenance_dataset_id,
         )
 
-    def get_actual_output_path(self, butler: str | Butler, header: HeaderModel) -> ResourcePath:
+    def get_actual_output_path(
+        self, butler: str | Butler, header: HeaderModel, ref: DatasetRef | None = None
+    ) -> ResourcePath:
         """Return the actual output path, selecting between the `output_path`
         field and a butler-generated path as appropriate.
 
@@ -273,6 +275,8 @@ class AggregatorConfig(pydantic.BaseModel):
             Butler client object or path/alias for a butler repository.
         header : `.HeaderModel`
             Header of the predicted or provenance quantum graph.
+        ref : `lsst.daf.butler.DatasetRef`, optional
+            Dataset reference for the provenance QG dataset.
 
         Returns
         -------
@@ -284,7 +288,8 @@ class AggregatorConfig(pydantic.BaseModel):
         elif self.ingest_provenance:
             if not isinstance(butler, Butler):
                 butler = Butler.from_config(butler)
-            ref = self.get_graph_dataset_ref(butler.dimensions, header)
+            if ref is None:
+                ref = self.get_graph_dataset_ref(butler.dimensions, header)
             return butler.getURI(ref, predict=True).replace(fragment="")
         else:
             raise AssertionError("Provenance quantum graph is not being written.")
