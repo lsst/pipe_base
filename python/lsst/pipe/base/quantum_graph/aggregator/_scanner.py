@@ -215,6 +215,9 @@ class Scanner:
                     self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
                 )
             self.scan_quantum(quantum_id)
+        if self.pending_deferred_ingests or self.pending_removals:
+            self.comms.wait_until_qg_ingested()
+            # TODO[DM-52738]: request provenance ingests and delete datasets.
 
     def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
         """Scan for a dataset's existence.

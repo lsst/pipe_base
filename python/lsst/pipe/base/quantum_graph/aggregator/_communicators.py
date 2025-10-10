@@ -695,8 +695,10 @@ class ScannerCommunicator(WorkerCommunicator):
         self._ingest_requests = supervisor._ingest_requests
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
+        self._provenance_qg_ingested = supervisor._provenance_qg_ingested
         self._got_no_more_scan_requests: bool = False
         self._sent_no_more_ingest_requests: bool = False
+        self._sent_no_more_write_requests: bool = self._write_requests is None
 
     def report_scan(self, msg: ScanReport) -> None:
         """Report a completed scan to the supervisor.
@@ -766,16 +768,27 @@ class ScannerCommunicator(WorkerCommunicator):
         Notes
         -----
         This iterator ends when the supervisor reports that it is done
-        traversing the graph.
+        traversing the graph.  This also signals the writer that there will be
+        no more write requests from this scanner.
         """
-        while True:
+        while not self._got_no_more_scan_requests:
             self.check_for_cancel()
             scan_request = _get_from_queue(self._scan_requests, block=True, timeout=self.config.worker_sleep)
             if scan_request is _Sentinal.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
-                return
-            if scan_request is not None:
+            elif scan_request is not None:
                 yield scan_request.quantum_id
+        if not self._sent_no_more_write_requests:
+            assert self._write_requests is not None, "Guaranteed at construction."
+            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
+            self._sent_no_more_write_requests = True
+
+    def wait_until_qg_ingested(self) -> None:
+        """Wait for the provenance QG to be ingested into the central butler
+        repository.
+        """
+        if self._provenance_qg_ingested is not None:
+            self._provenance_qg_ingested.wait()
 
     def __exit__(
         self,
@@ -783,10 +796,12 @@ class ScannerCommunicator(WorkerCommunicator):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        result = super().__exit__(exc_type, exc_value, traceback)
-        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
-        if self._write_requests is not None:
+        if not self._sent_no_more_write_requests:
+            assert self._write_requests is not None, "Guaranteed at construction."
             self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
+            self._sent_no_more_write_requests = True
+        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
+        result = super().__exit__(exc_type, exc_value, traceback)
         while not self._got_no_more_scan_requests:
             self.log.debug("Clearing scan request queue (~%d remaining)", self._scan_requests.qsize())
             if (
