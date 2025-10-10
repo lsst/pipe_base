@@ -32,6 +32,11 @@ __all__ = ("AggregatorConfig",)
 
 import pydantic
 
+from lsst.daf.butler import Butler, DataCoordinate, DatasetRef, DatasetType, DimensionUniverse
+from lsst.resources import ResourcePath
+
+from .._common import HeaderModel
+
 
 class AggregatorConfig(pydantic.BaseModel):
     """Configuration for the provenance aggregator."""
@@ -42,7 +47,75 @@ class AggregatorConfig(pydantic.BaseModel):
     output_path: str | None = None
     """Path for the output provenance quantum graph file.
 
-    At present this option is intended only for debugging.
+    If `ingest_provenance` is `False`, this writes the provenance graph file to
+    the given location on the assumption that it will *never* be ingested, and
+    hence the original dataset files whose content it aggregates (e.g. logs and
+    metadata) should back those datasets and should not be deleted.  If
+    `output_path` and `ingest_provenance` are both `False`, the provenance QG
+    is not written.
+
+    If `ingest_provenance` is `True`, this sets the path to write to prior to
+    ingest, and `output_path` defaults to the position expected by the butler
+    datastore configuration.
+    """
+
+    ingest_provenance: bool = False
+    """If `True`, ingest the provenance quantum graph into the central butler
+    repository use it to back any dataset content it includes (e.g. logs and
+    metadata).
+    """
+
+    graph_dataset_type_name: str = "run_provenance"
+    """The name of the provenance graph dataset type.
+
+    This is ignored if `ingest_provenance` is `False`.
+    """
+
+    quantum_dataset_type_template: str = "{}_provenance"
+    """A `str.format` template for the dataset type name used to ingest
+    per-quantum provenance datasets.
+
+    The template string must exactly one string placeholder for the task label.
+
+    This is ignored if `ingest_provenance` is `False`.
+    """
+
+    ingest_logs: bool = True
+    """If `True`, ingest "{task_label}_log" datasets=.
+
+    Log content is also available via the graph and quantum provenance datasets
+    if `ingest_provenance` is `True`, so ``ingest_logs=True`` is mostly for
+    backwards compatibility.
+
+    If `ingest_provenance` and `ingest_logs` are both `False`, log files are
+    deleted and hence lost entirely.
+    """
+
+    ingest_configs: bool = True
+    """If `True`, ingest "{task_label}_config" datasets.
+
+    Config content is also available via the graph provenance dataset if
+    `ingest_provenance` is `True`, so ``ingest_configs=True`` is mostly for
+    backwards compatibility.
+
+    If `ingest_provenance` and `ingest_configs` are both `False`, config files
+    are deleted and hence lost entirely.
+    """
+
+    ingest_packages: bool = True
+    """If `True`, ingest the "packages" dataset.
+
+    Package version content is also available via the graph provenance dataset
+    if `ingest_provenance` is `True`, so ``ingest_packages=True`` is mostly for
+    backwards compatibility.
+
+    If `ingest_provenance` and `ingest_packages` are both `False`, packages
+    files are deleted and hence lost entirely.
+    """
+
+    remove_dataset_types: list[str] = pydantic.Field(default_factory=list)
+    """Names of dataset types whose files should be deleted instead of being
+    ingested into the central butler repository.
     """
 
     worker_log_dir: str | None = None
@@ -57,7 +130,7 @@ class AggregatorConfig(pydantic.BaseModel):
     worker_profile_dir: str | None = None
     """Path to a directory (POSIX only) for parallel worker profiling dumps.
 
-    This option is ignored when `n_processes` is `1`.
+    This option is ignored when `n_processes` is ``1``.
     """
 
     n_processes: int = 1
@@ -141,3 +214,77 @@ class AggregatorConfig(pydantic.BaseModel):
     """Enable support for storage classes by created by the
     lsst.pipe.base.tests.mocks package.
     """
+
+    @property
+    def writes_provenance(self) -> bool:
+        """Whether this configuration involves writing provenance at all."""
+        return self.output_path is not None or self.ingest_provenance
+
+    def get_graph_dataset_type(self, universe: DimensionUniverse) -> DatasetType:
+        """Return the dataset type that should be used to ingest the
+        provenance quantum graph itself.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions of all dimensions.
+
+        Returns
+        -------
+        dataset_type : `lsst.daf.butler.DatasetType`
+            Dataset type definition.
+        """
+        return DatasetType(
+            self.graph_dataset_type_name,
+            dimensions=universe.empty,
+            storageClass="ProvenanceQuantumGraph",  # TODO[DM-52738]: confirm/update storage class
+        )
+
+    def get_graph_dataset_ref(self, universe: DimensionUniverse, header: HeaderModel) -> DatasetRef:
+        """Return the dataset reference that should be used to ingest the
+        provenance quantum graph itself.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions of all dimensions.
+        header : `.HeaderModel`
+            Header of the predicted or provenance quantum graph.
+
+        Returns
+        -------
+        dataset_ref : `lsst.daf.butler.DatasetRef`
+            Dataset reference.
+        """
+        return DatasetRef(
+            self.get_graph_dataset_type(universe),
+            DataCoordinate.make_empty(universe),
+            run=header.output_run,
+            id=header.provenance_dataset_id,
+        )
+
+    def get_actual_output_path(self, butler: str | Butler, header: HeaderModel) -> ResourcePath:
+        """Return the actual output path, selecting between the `output_path`
+        field and a butler-generated path as appropriate.
+
+        Parameters
+        ----------
+        butler : `lsst.daf.butler.Butler` or `str`
+            Butler client object or path/alias for a butler repository.
+        header : `.HeaderModel`
+            Header of the predicted or provenance quantum graph.
+
+        Returns
+        -------
+        path : `lsst.resources.ResourcePath` or `None`
+            Path for the quantum provenance graph, if it should not be written.
+        """
+        if self.output_path is not None:
+            return ResourcePath(self.output_path)
+        elif self.ingest_provenance:
+            if not isinstance(butler, Butler):
+                butler = Butler.from_config(butler)
+            ref = self.get_graph_dataset_ref(butler.dimensions, header)
+            return butler.getURI(ref, predict=True).replace(fragment="")
+        else:
+            raise AssertionError("Provenance quantum graph is not being written.")

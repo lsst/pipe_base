@@ -135,7 +135,7 @@ class Supervisor:
                 self.comms.log.debug("Scan complete for %s: quantum failed.", scan_report.quantum_id)
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
                 for blocked_quantum_id in blocked_quanta:
-                    if self.comms.config.output_path is not None:
+                    if self.comms.config.writes_provenance:
                         self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
                     self.comms.progress.report_scan()
                 self.comms.progress.report_ingests(len(blocked_quanta))
@@ -169,7 +169,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     writer: Worker | None = None
     with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
         comms.progress.log.verbose("Starting workers.")
-        if config.output_path is not None:
+        if config.writes_provenance:
             writer_comms = WriterCommunicator(comms)
             writer = ctx.make_worker(
                 target=Writer.run,

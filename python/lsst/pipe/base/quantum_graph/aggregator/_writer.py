@@ -40,6 +40,7 @@ from typing import TypeVar
 import networkx
 import zstandard
 
+from lsst.resources import ResourcePath
 from lsst.utils.packages import Packages
 
 from ... import automatic_connection_constants as acc
@@ -134,6 +135,8 @@ class _DataWriters:
 
     Parameters
     ----------
+    output_path : `lsst.resources.ResourcePath`
+        Path for the provenance quantum graph file.
     comms : `WriterCommunicator`
         Communicator helper object for the writer.
     predicted : `.PredictedQuantumGraphComponents`
@@ -150,18 +153,18 @@ class _DataWriters:
 
     def __init__(
         self,
+        output_path: ResourcePath,
         comms: WriterCommunicator,
         predicted: PredictedQuantumGraphComponents,
         indices: dict[uuid.UUID, int],
         compressor: Compressor,
         cdict_data: bytes | None = None,
     ) -> None:
-        assert comms.config.output_path is not None
         header = predicted.header.model_copy()
         header.graph_type = "provenance"
         self.graph = comms.enter(
             BaseQuantumGraphWriter.open(
-                comms.config.output_path,
+                output_path,
                 header,
                 predicted.pipeline_graph,
                 indices,
@@ -237,6 +240,9 @@ class Writer:
     predicted: PredictedQuantumGraphComponents = dataclasses.field(init=False)
     """Components of the predicted quantum graph."""
 
+    output_path: ResourcePath = dataclasses.field(init=False)
+    """Path the provenance quantum graph should be written to."""
+
     existing_init_outputs: dict[uuid.UUID, set[uuid.UUID]] = dataclasses.field(default_factory=dict)
     """Mapping that tracks which init-outputs exist.
 
@@ -276,11 +282,11 @@ class Writer:
     """
 
     def __post_init__(self) -> None:
-        assert self.comms.config.output_path is not None, "Writer should not be used if writing is disabled."
         self.comms.log.info("Reading predicted quantum graph.")
         with PredictedQuantumGraphReader.open(
             self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
         ) as reader:
+            self.output_path = self.comms.config.get_actual_output_path(self.butler_path, reader.header)
             self.comms.check_for_cancel()
             reader.read_init_quanta()
             self.comms.check_for_cancel()
@@ -389,9 +395,9 @@ class Writer:
         """
         cdict = self.make_compression_dictionary()
         self.comms.send_compression_dict(cdict.as_bytes())
-        assert self.comms.config.output_path is not None
         self.comms.log.info("Opening output files.")
         data_writers = _DataWriters(
+            self.output_path,
             self.comms,
             self.predicted,
             self.indices,

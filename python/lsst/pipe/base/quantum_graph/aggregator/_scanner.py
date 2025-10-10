@@ -240,7 +240,7 @@ class Scanner:
         self.comms.report_scan(ScanReport(result.quantum_id, result.status))
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
-        if self.comms.config.output_path is not None:
+        if self.comms.config.writes_provenance:
             self.comms.request_write(result)
         self.comms.request_ingest(to_ingest)
         self.comms.log.debug("Finished scan for %s.", quantum_id)

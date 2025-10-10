@@ -111,7 +111,7 @@ class Progress:
             self._ingest_progress = tqdm(
                 desc="Ingesting", total=n_quanta, leave=False, smoothing=0.1, unit="quanta"
             )
-            if self.config.output_path is not None:
+            if self.config.writes_provenance is not None:
                 self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=False, unit="quanta")
 
     @property
