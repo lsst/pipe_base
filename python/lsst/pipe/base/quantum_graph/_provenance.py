@@ -1588,7 +1588,7 @@ class ProvenanceQuantumGraphWriter:
         """
         predicted_quantum = self._predicted_quanta[quantum_id]
         provenance_models = ProvenanceQuantumScanModels.from_metadata_and_logs(
-            predicted_quantum, metadata, logs, assume_complete=True
+            predicted_quantum, metadata, logs, incomplete=False
         )
         scan_data = provenance_models.to_scan_data(predicted_quantum, compressor=self.compressor)
         self.write_scan_data(scan_data)
@@ -1665,8 +1665,8 @@ class ProvenanceQuantumScanStatus(enum.Enum):
     enough (according to `ScannerTimeConfigDict.retry_timeout`) that it's time
     to stop trying for now.
 
-    This state means a later run with `ScannerConfig.assume_complete` is
-    required.
+    This state means `ProvenanceQuantumScanModels.from_metadata_and_logs` must
+    be run again with ``incomplete=False``.
     """
 
     SUCCESSFUL = enum.auto()
@@ -1721,7 +1721,7 @@ class ProvenanceQuantumScanModels:
         metadata: TaskMetadata | None,
         logs: ButlerLogRecords | None,
         *,
-        assume_complete: bool = True,
+        incomplete: bool = False,
     ) -> ProvenanceQuantumScanModels:
         """Construct provenance information from task metadata and logs.
 
@@ -1733,8 +1733,8 @@ class ProvenanceQuantumScanModels:
             Task metadata.
         logs : `lsst.daf.butler.logging.ButlerLogRecords` or `None`
             Task logs.
-        assume_complete : `bool`, optional
-            If `False`, treat execution failures as possibly-incomplete quanta
+        incomplete : `bool`, optional
+            If `True`, treat execution failures as possibly-incomplete quanta
             and do not fully process them; instead just set the status to
             `ProvenanceQuantumScanStatus.ABANDONED` and return.
 
@@ -1752,8 +1752,8 @@ class ProvenanceQuantumScanModels:
         """
         self = ProvenanceQuantumScanModels(predicted.quantum_id)
         last_attempt = ProvenanceQuantumAttemptModel()
-        self._process_logs(predicted, logs, last_attempt, assume_complete=assume_complete)
-        self._process_metadata(predicted, metadata, last_attempt, assume_complete=assume_complete)
+        self._process_logs(predicted, logs, last_attempt, incomplete=incomplete)
+        self._process_metadata(predicted, metadata, last_attempt, incomplete=incomplete)
         if self.status is ProvenanceQuantumScanStatus.ABANDONED:
             return self
         self._reconcile_attempts(last_attempt)
@@ -1766,15 +1766,15 @@ class ProvenanceQuantumScanModels:
         logs: ButlerLogRecords | None,
         last_attempt: ProvenanceQuantumAttemptModel,
         *,
-        assume_complete: bool,
+        incomplete: bool,
     ) -> None:
         (predicted_log_dataset,) = predicted.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
         if logs is None:
             self.output_existence[predicted_log_dataset.dataset_id] = False
-            if assume_complete:
-                self.status = ProvenanceQuantumScanStatus.FAILED
-            else:
+            if incomplete:
                 self.status = ProvenanceQuantumScanStatus.ABANDONED
+            else:
+                self.status = ProvenanceQuantumScanStatus.FAILED
         else:
             # Set the attempt's run status to FAILED, since the default is
             # UNKNOWN (i.e. logs *and* metadata are missing) and we now know
@@ -1832,15 +1832,15 @@ class ProvenanceQuantumScanModels:
         metadata: TaskMetadata | None,
         last_attempt: ProvenanceQuantumAttemptModel,
         *,
-        assume_complete: bool,
+        incomplete: bool,
     ) -> None:
         (predicted_metadata_dataset,) = predicted.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
         if metadata is None:
             self.output_existence[predicted_metadata_dataset.dataset_id] = False
-            if assume_complete:
-                self.status = ProvenanceQuantumScanStatus.FAILED
-            else:
+            if incomplete:
                 self.status = ProvenanceQuantumScanStatus.ABANDONED
+            else:
+                self.status = ProvenanceQuantumScanStatus.FAILED
         else:
             self.status = ProvenanceQuantumScanStatus.SUCCESSFUL
             self.output_existence[predicted_metadata_dataset.dataset_id] = True

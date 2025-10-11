@@ -804,12 +804,10 @@ class AggregatorTestCase(unittest.TestCase):
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the
-        results with assume_complete=False.
-
-        Because there are no failures, assume_complete should not be necessary.
+        results with incomplete=False.
         """
         with self.make_test_repo() as prep:
-            prep.config.assume_complete = False
+            prep.config.incomplete = False
             start_time = time.time()
             attempted_quanta = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=False)
@@ -830,7 +828,7 @@ class AggregatorTestCase(unittest.TestCase):
 
     def test_all_successful_two_phase(self) -> None:
         """Test running some of a graph with no failures, scanning with
-        assume_complete=False, then finishing the graph and scanning again.
+        incomplete=True, then finishing the graph and scanning again.
         """
         with self.make_test_repo() as prep:
             start_time = time.time()
@@ -839,14 +837,16 @@ class AggregatorTestCase(unittest.TestCase):
             )
             attempted_quanta = list(itertools.islice(execution_iter, 9))
             self.assertEqual(len(attempted_quanta), 9)
-            # Run the scanner while telling it to assume failures might change,
-            # so it just abandons incomplete quanta.
-            prep.config.assume_complete = False
-            with self.assertRaises(RuntimeError):
-                aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            # Run the scanner while telling it execution is incomplete, so it
+            # just abandons incomplete quanta and doesn't write the provenance
+            # QG.
+            prep.config.incomplete = True
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            self.assertFalse(os.path.exists(prep.config.output_path))
             # Finish executing the quanta.
             attempted_quanta.extend(execution_iter)
             # Scan again, and write the provenance QG.
+            prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Run the scanner again.
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
@@ -863,10 +863,10 @@ class AggregatorTestCase(unittest.TestCase):
 
     def test_some_failed(self) -> None:
         """Test running a full graph with some failures, and then scanning the
-        results with assume_complete=True.
+        results with incomplete=False.
         """
         with self.make_test_repo() as prep:
-            prep.config.assume_complete = True
+            prep.config.incomplete = False
             start_time = time.time()
             attempted_quanta = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
@@ -886,18 +886,17 @@ class AggregatorTestCase(unittest.TestCase):
 
     def test_some_failed_two_phase(self) -> None:
         """Test running a full graph with some failures, then scanning the
-        results with assume_complete=False, then scanning again with
-        assume_complete=True.
+        results with incomplete=True, then scanning again with
+        incomplete=False.
         """
         with self.make_test_repo() as prep:
             start_time = time.time()
             attempted_quanta = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
             )
-            prep.config.assume_complete = False
-            with self.assertRaisesRegex(RuntimeError, "1 quantum abandoned"):
-                aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            prep.config.assume_complete = True
+            prep.config.incomplete = True
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
                 prov = self.check_provenance_graph(
@@ -917,7 +916,6 @@ class AggregatorTestCase(unittest.TestCase):
         for provenance.
         """
         with self.make_test_repo() as prep:
-            prep.config.assume_complete = True
             start_time = time.time()
             attempted_quanta_1 = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
@@ -984,7 +982,7 @@ class AggregatorTestCase(unittest.TestCase):
             check(runner.invoke(aggregate_graph_cli, ("pg", "repo", "-j", "4")), n_processes=4)
             check(
                 runner.invoke(aggregate_graph_cli, ("pg", "repo", "--incomplete")),
-                assume_complete=False,
+                incomplete=True,
             )
             check(runner.invoke(aggregate_graph_cli, ("pg", "repo", "--dry-run")), dry_run=True)
             check(

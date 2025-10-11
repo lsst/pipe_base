@@ -364,7 +364,7 @@ class SupervisorCommunicator:
         # starts its shutdown.
         self._write_requests: (
             Queue[ProvenanceQuantumScanData | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None
-        ) = context.make_queue() if config.output_path is not None else None
+        ) = context.make_queue() if config.is_writing_provenance else None
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.

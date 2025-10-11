@@ -117,6 +117,18 @@ class Supervisor:
                 self.comms.request_scan(ready_set.pop())
             for scan_return in self.comms.poll():
                 self.handle_report(scan_return)
+        if self.comms.config.incomplete:
+            quantum_or_quanta = "quanta" if self.n_abandoned != 1 else "quantum"
+            self.comms.progress.log.info(
+                "%d %s incomplete/failed abandoned; re-run with incomplete=False to finish.",
+                self.n_abandoned,
+                quantum_or_quanta,
+            )
+        self.comms.progress.log.info(
+            "Scanning complete after %0.1fs; waiting for workers to finish.",
+            self.comms.progress.elapsed_time,
+        )
+        self.comms.wait_for_workers_to_finish()
 
     def handle_report(self, scan_report: ScanReport) -> None:
         """Handle a report from a scanner.
@@ -134,7 +146,7 @@ class Supervisor:
                 self.comms.log.debug("Scan complete for %s: quantum failed.", scan_report.quantum_id)
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
                 for blocked_quantum_id in blocked_quanta:
-                    if self.comms.config.output_path is not None:
+                    if self.comms.config.is_writing_provenance:
                         self.comms.request_write(
                             ProvenanceQuantumScanData(
                                 blocked_quantum_id, status=ProvenanceQuantumScanStatus.BLOCKED
@@ -172,7 +184,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     writer: Worker | None = None
     with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
         comms.progress.log.verbose("Starting workers.")
-        if config.output_path is not None:
+        if config.is_writing_provenance:
             writer_comms = WriterCommunicator(comms)
             writer = ctx.make_worker(
                 target=Writer.run,
@@ -198,17 +210,6 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         ingester.start()
         supervisor = Supervisor(predicted_path, comms)
         supervisor.loop()
-        log.info(
-            "Scanning complete after %0.1fs; waiting for workers to finish.",
-            comms.progress.elapsed_time,
-        )
-        comms.wait_for_workers_to_finish()
-        if supervisor.n_abandoned:
-            raise RuntimeError(
-                f"{supervisor.n_abandoned} {'quanta' if supervisor.n_abandoned > 1 else 'quantum'} "
-                "abandoned because they did not succeed.  Re-run with assume_complete=True after all retry "
-                "attempts have been exhausted."
-            )
     for w in scanners:
         w.join()
     ingester.join()
