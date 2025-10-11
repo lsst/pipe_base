@@ -60,11 +60,13 @@ class AggregatorConfig(pydantic.BaseModel):
     n_processes: int = 1
     """Number of processes the scanner should use."""
 
-    assume_complete: bool = True
-    """If `True`, the aggregator can assume all quanta have run to completion
-    (including any automatic retries).  If `False`, only successes can be
-    considered final, and quanta that appear to have failed or to have not been
-    executed are ignored.
+    incomplete: bool = False
+    """If `True`, do not expect the graph to have been executed to completion
+    yet, and only ingest the outputs of successful quanta.
+
+    This disables writing the provenance quantum graph, since this is likely to
+    be wasted effort that just complicates a follow-up run with
+    ``incomplete=False`` later.
     """
 
     defensive_ingest: bool = False
@@ -137,3 +139,10 @@ class AggregatorConfig(pydantic.BaseModel):
     """Enable support for storage classes by created by the
     lsst.pipe.base.tests.mocks package.
     """
+
+    @property
+    def write_provenance(self) -> bool:
+        """Whether the aggregator is configured to write the provenance quantum
+        graph.
+        """
+        return self.output_path is not None and not self.incomplete
