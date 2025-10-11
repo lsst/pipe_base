@@ -100,8 +100,7 @@ class Progress:
 
         Notes
         -----
-        This method must be called before any of the ``report_*`` methods or
-        `finish_resuming`.
+        This method must be called before any of the ``report_*`` methods.
         """
         self._n_quanta = n_quanta
         if self.interactive:
