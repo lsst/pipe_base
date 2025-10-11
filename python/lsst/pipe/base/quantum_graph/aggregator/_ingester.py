@@ -163,16 +163,8 @@ class Ingester:
             self.comms.log.info("All ingest requests received.")
             # We use 'while' in case this fails with a conflict and we switch
             # to defensive mode (should be at most two iterations).
-            ingest_start_time = time.time()
             while self.n_datasets_pending:
-                n_datasets = self.n_datasets_pending
                 self.ingest()
-                self.comms.log.verbose(
-                    "Gathered %d final datasets in %ss and ingested them in %ss.",
-                    n_datasets,
-                    ingest_start_time - self.last_ingest_time,
-                    time.time() - ingest_start_time,
-                )
             if self.n_producers_pending:
                 # We can finish with returns pending if we filtered out all of
                 # the datasets we started with as already existing.
@@ -187,7 +179,7 @@ class Ingester:
         """Ingest all pending datasets and report success to the supervisor."""
         ingest_start_time = time.time()
         self.comms.log.verbose(
-            "Gathered %d datasets from %d quanta in %ss.",
+            "Gathered %d datasets from %d quanta in %0.1fs.",
             self.n_datasets_pending,
             self.n_producers_pending,
             ingest_start_time - self.last_ingest_time,
@@ -200,7 +192,7 @@ class Ingester:
                     self.butler._datastore.import_records(self.records_pending)
             self.last_ingest_time = time.time()
             self.comms.log.verbose(
-                "Ingested %d datasets from %d quanta in %ss.",
+                "Ingested %d datasets from %d quanta in %0.1fs.",
                 self.n_datasets_pending,
                 self.n_producers_pending,
                 self.last_ingest_time - ingest_start_time,
