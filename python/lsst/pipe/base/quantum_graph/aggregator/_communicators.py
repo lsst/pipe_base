@@ -362,7 +362,7 @@ class SupervisorCommunicator:
         # writer waits for (n_scanners + 1) sentinals to arrive before it
         # starts its shutdown.
         self._write_requests: Queue[ScanResult | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
-            context.make_queue() if config.output_path is not None else None
+            context.make_queue() if config.write_provenance else None
         )
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal

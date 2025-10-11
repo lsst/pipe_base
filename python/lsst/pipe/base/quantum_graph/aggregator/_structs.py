@@ -65,8 +65,7 @@ class ScanStatus(enum.Enum):
     enough (according to `ScannerTimeConfigDict.retry_timeout`) that it's time
     to stop trying for now.
 
-    This state means a later run with `ScannerConfig.assume_complete` is
-    required.
+    This state is only possible when `AggegatorConfig.incomplete` is `True`.
     """
 
     SUCCESSFUL = enum.auto()

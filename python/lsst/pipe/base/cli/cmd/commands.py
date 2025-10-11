@@ -181,9 +181,9 @@ _AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
     help="Number of processes to use.",
 )
 @click.option(
-    "--complete/--incomplete",
-    "assume_complete",
-    default=_AGGREGATOR_DEFAULTS.assume_complete,
+    "--incomplete/--complete",
+    "incomplete",
+    default=_AGGREGATOR_DEFAULTS.incomplete,
     help="Whether execution has completed (and failures cannot be retried).",
 )
 @click.option(

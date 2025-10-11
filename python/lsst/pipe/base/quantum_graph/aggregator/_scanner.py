@@ -213,7 +213,7 @@ class Scanner:
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
             log_id = self._read_and_compress_log(predicted_quantum, result)
-            if not self.comms.config.assume_complete and not result.log:
+            if self.comms.config.incomplete and not result.log:
                 self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
                 result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
@@ -222,7 +222,7 @@ class Scanner:
             if result.metadata:
                 result.status = ScanStatus.SUCCESSFUL
                 result.existing_outputs.add(metadata_id)
-            elif self.comms.config.assume_complete:
+            elif not self.comms.config.incomplete:
                 result.status = ScanStatus.FAILED
             else:
                 # We found the log dataset, but no metadata; this means the
@@ -244,7 +244,7 @@ class Scanner:
         self.comms.report_scan(ScanReport(result.quantum_id, result.status))
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
-        if self.comms.config.output_path is not None:
+        if self.comms.config.write_provenance:
             self.comms.request_write(result)
         self.comms.request_ingest(to_ingest)
         self.comms.log.debug("Finished scan for %s.", quantum_id)
@@ -306,7 +306,7 @@ class Scanner:
             # here.
             content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
         except FileNotFoundError:
-            if not self.comms.config.assume_complete:
+            if self.comms.config.incomplete:
                 return ref.id
         else:
             try:
@@ -361,7 +361,7 @@ class Scanner:
             # If it's not we'll probably get pydantic validation errors here.
             content: ButlerLogRecords = self.qbb.get(ref)
         except FileNotFoundError:
-            if not self.comms.config.assume_complete:
+            if self.comms.config.incomplete:
                 return ref.id
         else:
             result.log = content.model_dump_json().encode()
