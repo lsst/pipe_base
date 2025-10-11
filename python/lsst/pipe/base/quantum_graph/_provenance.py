@@ -833,7 +833,9 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                 caveats = "(multiple)"
             elif len(caveat_counts) == 1:
                 ((code, count),) = caveat_counts.items()
-                caveats = f"{code.concise()}({count})"
+                # MyPy can't tell that the pop(None, None) above makes None
+                # impossible here.
+                caveats = f"{code.concise()}({count})"  # type: ignore[union-attr]
             else:
                 caveats = ""
             rows.append(
