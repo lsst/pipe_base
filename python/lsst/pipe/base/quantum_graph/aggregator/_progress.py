@@ -27,20 +27,86 @@
 
 from __future__ import annotations
 
-__all__ = ("Progress", "make_worker_log")
+__all__ = ("ProgressCounter", "ProgressManager", "make_worker_log")
 
 import logging
 import os
 import time
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 
 from lsst.utils.logging import TRACE, VERBOSE, LsstLogAdapter, PeriodicLogger, getLogger
 
 from ._config import AggregatorConfig
 
 
-class Progress:
+class ProgressCounter:
+    """A progress tracker for an individual aspect of the aggregation process.
+
+    Parameters
+    ----------
+    parent : `ProgressManager`
+        The parent progress manager object.
+    description : `str`
+        Human-readable description of this aspect.
+    unit : `str`
+        Unit (in plural form) for the items being counted.
+    total : `int`, optional
+        Expected total number of items.  May be set later.
+    """
+
+    def __init__(self, parent: ProgressManager, description: str, unit: str, total: int | None = None):
+        self._parent = parent
+        self.total = total
+        self._description = description
+        self._current = 0
+        self._unit = unit
+        self._bar: Any = None
+
+    def update(self, n: int) -> None:
+        """Report that ``n`` new items have been processed.
+
+        Parameters
+        ----------
+        n : `int`
+            Number of new items processed.
+        """
+        self._current += n
+        if self._parent.interactive:
+            if self._bar is None:
+                if n == self.total:
+                    return
+                from tqdm import tqdm
+
+                self._bar = tqdm(desc=self._description, total=self.total, leave=False, unit=f" {self._unit}")
+            else:
+                self._bar.update(n)
+                if self._current == self.total:
+                    self._bar.close()
+        self._parent._log_status()
+
+    def close(self) -> None:
+        """Close the counter, guaranteeing that `update` will not be called
+        again.
+        """
+        if self._bar is not None:
+            self._bar.close()
+            self._bar = None
+
+    def append_log_terms(self, msg: list[str]) -> None:
+        """Append a log message for this counter to a list if it is active.
+
+        Parameters
+        ----------
+        msg : `list` [ `str` ]
+            List of messages to concatenate into a single line and log
+            together, to be modified in-place.
+        """
+        if self.total is not None and self._current > 0 and self._current < self.total:
+            msg.append(f"{self._description} ({self._current} of {self.total} {self._unit})")
+
+
+class ProgressManager:
     """A helper class for the provenance aggregator that handles reporting
     progress to the user.
 
@@ -66,10 +132,9 @@ class Progress:
         self.log = log
         self.config = config
         self._periodic_log = PeriodicLogger(self.log, config.log_status_interval)
-        self._n_scanned: int = 0
-        self._n_ingested: int = 0
-        self._n_written: int = 0
-        self._n_quanta: int | None = None
+        self.scans = ProgressCounter(self, "scanning", "quanta")
+        self.writes = ProgressCounter(self, "writing", "quanta")
+        self.quantum_ingests = ProgressCounter(self, "ingesting outputs", "quanta")
         self.interactive = config.interactive_status
 
     def __enter__(self) -> Self:
@@ -90,29 +155,6 @@ class Progress:
             self._logging_redirect.__exit__(exc_type, exc_value, traceback)
         return None
 
-    def set_n_quanta(self, n_quanta: int) -> None:
-        """Set the total number of quanta.
-
-        Parameters
-        ----------
-        n_quanta : `int`
-            Total number of quanta, including special "init" quanta.
-
-        Notes
-        -----
-        This method must be called before any of the ``report_*`` methods.
-        """
-        self._n_quanta = n_quanta
-        if self.interactive:
-            from tqdm import tqdm
-
-            self._scan_progress = tqdm(desc="Scanning", total=n_quanta, leave=False, unit="quanta")
-            self._ingest_progress = tqdm(
-                desc="Ingesting", total=n_quanta, leave=False, smoothing=0.1, unit="quanta"
-            )
-            if self.config.output_path is not None:
-                self._write_progress = tqdm(desc="Writing", total=n_quanta, leave=False, unit="quanta")
-
     @property
     def elapsed_time(self) -> float:
         """The time in seconds since the start of the aggregator."""
@@ -120,60 +162,11 @@ class Progress:
 
     def _log_status(self) -> None:
         """Invoke the periodic logger with the current status."""
-        self._periodic_log.log(
-            "%s quanta scanned, %s quantum outputs ingested, "
-            "%s provenance quanta written (of %s) after %0.1fs.",
-            self._n_scanned,
-            self._n_ingested,
-            self._n_written,
-            self._n_quanta,
-            self.elapsed_time,
-        )
-
-    def report_scan(self) -> None:
-        """Report that a quantum was scanned."""
-        self._n_scanned += 1
-        if self.interactive:
-            self._scan_progress.update(1)
-        else:
-            self._log_status()
-
-    def finish_scans(self) -> None:
-        """Report that all scanning is done."""
-        if self.interactive:
-            self._scan_progress.close()
-
-    def report_ingests(self, n_quanta: int) -> None:
-        """Report that ingests for multiple quanta were completed.
-
-        Parameters
-        ----------
-        n_quanta : `int`
-            Number of quanta whose outputs were ingested.
-        """
-        self._n_ingested += n_quanta
-        if self.interactive:
-            self._ingest_progress.update(n_quanta)
-        else:
-            self._log_status()
-
-    def finish_ingests(self) -> None:
-        """Report that all ingests are done."""
-        if self.interactive:
-            self._ingest_progress.close()
-
-    def report_write(self) -> None:
-        """Report that a quantum's provenance was written."""
-        self._n_written += 1
-        if self.interactive:
-            self._write_progress.update()
-        else:
-            self._log_status()
-
-    def finish_writes(self) -> None:
-        """Report that all writes are done."""
-        if self.interactive:
-            self._write_progress.close()
+        log_terms: list[str] = []
+        self.scans.append_log_terms(log_terms)
+        self.writes.append_log_terms(log_terms)
+        self.quantum_ingests.append_log_terms(log_terms)
+        self._periodic_log.log("Status after %0.1fs: %s.", self.elapsed_time, "; ".join(log_terms))
 
 
 def make_worker_log(name: str, config: AggregatorConfig) -> LsstLogAdapter:
