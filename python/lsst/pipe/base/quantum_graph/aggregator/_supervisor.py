@@ -107,9 +107,10 @@ class Supervisor:
         """Scan the outputs of the quantum graph to gather provenance and
         ingest outputs.
         """
-        self.comms.progress.set_n_quanta(
-            self.predicted.header.n_quanta + len(self.predicted.init_quanta.root)
-        )
+        n_quanta = self.predicted.header.n_quanta + len(self.predicted.init_quanta.root)
+        self.comms.progress.scans.total = n_quanta
+        self.comms.progress.writes.total = n_quanta
+        self.comms.progress.quantum_ingests.total = n_quanta
         ready_set: set[uuid.UUID] = set()
         for ready_quanta in self.walker:
             self.comms.log.debug("Sending %d new quanta to scan queue.", len(ready_quanta))
@@ -137,8 +138,8 @@ class Supervisor:
                 for blocked_quantum_id in blocked_quanta:
                     if self.comms.config.output_path is not None:
                         self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
-                    self.comms.progress.report_scan()
-                self.comms.progress.report_ingests(len(blocked_quanta))
+                    self.comms.progress.scans.update(1)
+                self.comms.progress.quantum_ingests.update(len(blocked_quanta))
             case ScanStatus.ABANDONED:
                 self.comms.log.debug("Abandoning scan for %s: quantum has not succeeded (yet).")
                 self.walker.fail(scan_report.quantum_id)
@@ -147,7 +148,7 @@ class Supervisor:
                 raise AssertionError(
                     f"Unexpected status {unexpected!r} in scanner loop for {scan_report.quantum_id}."
                 )
-        self.comms.progress.report_scan()
+        self.comms.progress.scans.update(1)
 
 
 def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorConfig) -> None:
