@@ -1294,19 +1294,19 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     # also have other outstanding reference holders).
                     continue
                 node._add_to_graph(self.graph)
-            return
-        with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
-            for node_id_or_index in nodes:
-                address_row = self.address_reader.find(node_id_or_index)
-                if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(address_row.key, {}):
-                    # Use the old node to reduce memory usage (since it might
-                    # also have other outstanding reference holders).
-                    continue
-                node = mb_reader.read_model(
-                    address_row.addresses[address_index], model_type, self.decompressor
-                )
-                if node is not None:
-                    node._add_to_graph(self.graph)
+        else:
+            with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
+                for node_id_or_index in nodes:
+                    address_row = self.address_reader.find(node_id_or_index)
+                    if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(address_row.key, {}):
+                        # Use the old node to reduce memory usage (since it
+                        # might also have other outstanding reference holders).
+                        continue
+                    node = mb_reader.read_model(
+                        address_row.addresses[address_index], model_type, self.decompressor
+                    )
+                    if node is not None:
+                        node._add_to_graph(self.graph)
 
     def fetch_logs(self, nodes: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[ButlerLogRecords | None]]:
         """Fetch log datasets.
