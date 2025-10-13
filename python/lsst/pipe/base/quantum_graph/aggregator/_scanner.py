@@ -261,15 +261,13 @@ class Scanner(AbstractContextManager):
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
-        to_ingest_predicted: list[PredictedDatasetModel] = []
         to_ingest_refs: list[DatasetRef] = []
         for dataset_id, was_produced in result.output_existence.items():
             if was_produced:
                 predicted_output = predicted_outputs_by_id[dataset_id]
-                to_ingest_predicted.append(predicted_output)
                 to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
-        return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
+        return IngestRequest(result.quantum_id, to_ingest_refs, to_ingest_records)
 
     def _read_metadata(self, predicted_quantum: PredictedQuantumDatasetsModel) -> TaskMetadata | None:
         """Attempt to read the metadata dataset for a quantum.

@@ -32,10 +32,10 @@ __all__ = ("IngestRequest", "ScanReport")
 import dataclasses
 import uuid
 
+from lsst.daf.butler import DatasetRef
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
 from .._common import DatastoreName
-from .._predicted import PredictedDatasetModel
 from .._provenance import ProvenanceQuantumScanStatus
 
 
@@ -57,11 +57,11 @@ class IngestRequest:
     producer_id: uuid.UUID
     """ID of the quantum that produced these datasets."""
 
-    datasets: list[PredictedDatasetModel]
+    refs: list[DatasetRef]
     """Registry information about the datasets."""
 
     records: dict[DatastoreName, DatastoreRecordData]
     """Datastore information about the datasets."""
 
     def __bool__(self) -> bool:
-        return bool(self.datasets or self.records)
+        return bool(self.refs or self.records)
