@@ -48,7 +48,6 @@ from ..._status import QuantumSuccessCaveats
 from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from ...resource_usage import QuantumResourceUsage
 from .._common import DatastoreName
-from .._predicted import PredictedDatasetModel
 
 
 class ScanStatus(enum.Enum):
@@ -119,14 +118,14 @@ class QuantumIngestRequest:
     producer_id: uuid.UUID
     """ID of the quantum that produced these datasets."""
 
-    datasets: list[PredictedDatasetModel]
+    refs: list[DatasetRef]
     """Registry information about the datasets."""
 
     records: dict[DatastoreName, DatastoreRecordData]
     """Datastore information about the datasets."""
 
     def __bool__(self) -> bool:
-        return bool(self.datasets or self.records)
+        return bool(self.refs or self.records)
 
 
 @final
