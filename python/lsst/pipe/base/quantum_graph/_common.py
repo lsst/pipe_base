@@ -442,6 +442,8 @@ class BaseQuantumGraphWriter:
     ) -> Iterator[Self]:
         uri = ResourcePath(uri)
         address_writer = AddressWriter(indices)
+        if uri.isLocal:
+            os.makedirs(uri.dirname().ospath, exist_ok=True)
         with uri.open(mode="wb") as stream:
             with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
                 self = cls(zf, compressor, address_writer, header.int_size)
