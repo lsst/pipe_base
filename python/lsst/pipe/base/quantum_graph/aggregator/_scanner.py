@@ -354,7 +354,6 @@ class Scanner:
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
-        to_ingest_predicted: list[PredictedDatasetModel] = []
         to_ingest_refs: list[DatasetRef] = []
         n_removals: int = 0
         n_deferred_ingests: int = 0
@@ -370,7 +369,6 @@ class Scanner:
                 self.pending_removals.append(ref)
                 n_removals += 1
             else:
-                to_ingest_predicted.append(predicted_output)
                 to_ingest_refs.append(ref)
         if self.comms.config.ingest_provenance and result.status is not ScanStatus.INIT:
             self.pending_ingests.append(self._make_provenance_quantum_ref(predicted_quantum))
@@ -383,7 +381,7 @@ class Scanner:
         )
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         self.comms.report_scan(ScanReport(result.quantum_id, result.status, n_removals, n_deferred_ingests))
-        return QuantumIngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
+        return QuantumIngestRequest(result.quantum_id, to_ingest_refs, to_ingest_records)
 
     def _make_provenance_quantum_ref(self, predicted: PredictedQuantumDatasetsModel) -> DatasetRef:
         """Make a `DatasetRef` for a quantum provenance dataset.

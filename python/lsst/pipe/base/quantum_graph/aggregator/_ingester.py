@@ -42,7 +42,7 @@ from lsst.resources import ResourcePath
 
 from ...pipeline_graph import TaskImportMode
 from .._common import DatastoreName
-from .._predicted import PredictedDatasetModel, PredictedQuantumGraphComponents, PredictedQuantumGraphReader
+from .._predicted import PredictedQuantumGraphComponents, PredictedQuantumGraphReader
 from ..formatter import ProvenanceFormatter
 from ._communicators import IngesterCommunicator
 from ._structs import GraphIngestRequest, ProvenanceIngestRequest, QuantumIngestRequest
@@ -188,9 +188,7 @@ class Ingester:
                     case QuantumIngestRequest():
                         self.n_producers_requested += 1
                         self.comms.log.debug(f"Got ingest request for producer {ingest_request.producer_id}.")
-                        self.update_outputs_pending(
-                            outputs=ingest_request.datasets, records=ingest_request.records
-                        )
+                        self.update_outputs_pending(refs=ingest_request.refs, records=ingest_request.records)
                     case ProvenanceIngestRequest():
                         self.n_provenance_datasets_requested += len(ingest_request.refs)
                         self.comms.log.debug(
@@ -315,31 +313,30 @@ class Ingester:
 
     def update_outputs_pending(
         self,
-        outputs: list[PredictedDatasetModel],
+        refs: list[DatasetRef],
         records: dict[DatastoreName, DatastoreRecordData],
     ) -> None:
         """Add a quantum ingest request to the pending-ingest data structures.
 
         Parameters
         ----------
-        outputs : `list` [ `PredictedDatasetModel` ]
+        refs : `list` [ `lsst.daf.butler.DatasetRef` ]
             Registry information about regular quantum-output datasets.
         records : `dict` [ `str`, \
                 `lsst.daf.butler.datastore.record_data.DatastoreRecordData` ]
             Datastore information about the quantum-output datasets.
         """
-        n_given = len(outputs)
+        n_given = len(refs)
         if self.already_ingested is not None:
-            outputs = [d for d in outputs if d.dataset_id not in self.already_ingested]
-            kept = {d.dataset_id for d in outputs}
+            refs = [ref for ref in refs if ref.id not in self.already_ingested]
+            kept = {ref.id for ref in refs}
             self.n_datasets_skipped += n_given - len(kept)
             records = {
                 datastore_name: filtered_records
                 for datastore_name, original_records in records.items()
                 if (filtered_records := original_records.subset(kept)) is not None
             }
-        for dataset in outputs:
-            ref = self.predicted.make_dataset_ref(dataset)
+        for ref in refs:
             self.output_refs_pending[ref.datasetType.dimensions].append(ref)
         for datastore_name, datastore_records in records.items():
             if (existing_records := self.records_pending.get(datastore_name)) is not None:
