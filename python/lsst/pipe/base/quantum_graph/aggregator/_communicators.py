@@ -349,6 +349,8 @@ class SupervisorCommunicator:
         Abstraction over threading vs. multiprocessing.
     config : `AggregatorConfig`
         Configuration for the aggregator.
+    graph_already_ingested : `bool`
+        Whether the provenance quantum graph has already been ingested.
     """
 
     def __init__(
@@ -357,6 +359,7 @@ class SupervisorCommunicator:
         n_scanners: int,
         context: WorkerContext,
         config: AggregatorConfig,
+        graph_already_ingested: bool,
     ) -> None:
         self.config = config
         self.progress = ProgressManager(log, config)
@@ -405,14 +408,13 @@ class SupervisorCommunicator:
         # The ingester sets this event after it ingests the provenance QG to
         # let the scanners know they can delete things and perform deferred
         # ingests.
-        self._graph_ingested: Event | None = None
+        self._graph_ingested: Event = context.make_event()
         # Only set up writer-specific communications if there is a writer.
-        if self.config.actually_ingest_provenance:
+        if self.config.ingest_provenance and not self.config.incomplete and not graph_already_ingested:
             self._write_requests = context.make_queue()
-        if self.config.ingest_provenance:
-            # We only set up writer-specific communcations if we have a writer.
             self._graph_ingest_request = context.make_queue()
-            self._graph_ingested = context.make_event()
+        if graph_already_ingested:
+            self._graph_ingested.set()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
         # we can't rely on a non-exception __exit__ to do any shutdown work
@@ -423,6 +425,11 @@ class SupervisorCommunicator:
         self._n_scanners_done = 0
         self._ingester_done = False
         self._writer_done = self._write_requests is None
+
+    @property
+    def has_writer(self) -> bool:
+        """Whether a Writer process is needed."""
+        return self._write_requests is not None
 
     def signal_graph_traversed(self) -> None:
         """Inform workers that the graph has been traversed and there will be
@@ -515,8 +522,8 @@ class SupervisorCommunicator:
             Information from scanning a quantum (or knowing you don't have to,
             in the case of blocked quanta).
         """
-        assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_result, block=False)
+        if self._write_requests is not None:
+            self._write_requests.put(scan_result, block=False)
 
     def poll(self) -> Iterator[ScanReport]:
         """Poll for reports from workers while sending scan requests.
@@ -625,6 +632,7 @@ class WorkerCommunicator:
         self.name = name
         self.config = supervisor.config
         self._reports = supervisor._reports
+        self._graph_ingested = supervisor._graph_ingested
         self._cancel_event = supervisor._cancel_event
 
     def __enter__(self) -> Self:
@@ -719,6 +727,11 @@ class WorkerCommunicator:
 
         return self._exit_stack.enter_context(wrapper())
 
+    @property
+    def was_graph_ingested(self) -> bool:
+        """Whether the provenance quantum graph was ingested."""
+        return self._graph_ingested.is_set()
+
     def check_for_cancel(self) -> None:
         """Check for a cancel signal from the supervisor and raise
         `FatalWorkerError` if it is present.
@@ -796,8 +809,8 @@ class ScannerCommunicator(WorkerCommunicator):
         scan_result : `ScanResult`
             Result of scanning a quantum.
         """
-        assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_result, block=False)
+        if self._write_requests is not None:
+            self._write_requests.put(scan_result, block=False)
 
     def get_compression_dict(self) -> bytes | None:
         """Attempt to get the compression dict from the writer.
@@ -846,7 +859,7 @@ class ScannerCommunicator(WorkerCommunicator):
             self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
 
-    def wait_until_qg_ingested(self) -> None:
+    def wait_for_graph_ingest(self) -> None:
         """Wait for the provenance QG to be ingested into the central butler
         repository.
         """
@@ -924,7 +937,7 @@ class IngesterCommunicator(WorkerCommunicator):
         """
         self._reports.put(_IngestReport(n_producers=n_producers, n_provenance_datasets=0), block=False)
 
-    def report_qg_ingested(self) -> None:
+    def report_graph_ingested(self) -> None:
         """Signal to all other workers that the provenance QG has been
         ingested into the central butler repository.
         """
@@ -1004,7 +1017,7 @@ class WriterCommunicator(WorkerCommunicator):
         self._reports.put(_Sentinel.WRITER_DONE, block=False)
         return result
 
-    def request_provenance_qg_ingest(self, request: GraphIngestRequest) -> None:
+    def request_graph_ingest(self, request: GraphIngestRequest) -> None:
         """Ask the ingester to ingest the provenance QG file and block until it
         does so.
 

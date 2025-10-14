@@ -27,7 +27,7 @@
 
 from __future__ import annotations
 
-__all__ = ("Scanner",)
+__all__ = ("BaseScanner", "RecoveryScanner", "Scanner")
 
 import dataclasses
 import itertools
@@ -35,7 +35,7 @@ import uuid
 
 import zstandard
 
-from lsst.daf.butler import ButlerLogRecords, DataCoordinate, DatasetRef, DatasetType, QuantumBackedButler
+from lsst.daf.butler import ButlerLogRecords, DataCoordinate, DatasetRef, QuantumBackedButler
 from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
@@ -51,18 +51,24 @@ from .._predicted import (
     PredictedQuantumDatasetsModel,
     PredictedQuantumGraphReader,
 )
+from .._provenance import ProvenanceDatasetInfo, ProvenanceQuantumGraphReader, ProvenanceQuantumInfo
 from ._communicators import ScannerCommunicator
 from ._structs import ProvenanceIngestRequest, QuantumIngestRequest, ScanReport, ScanResult, ScanStatus
 
 
 @dataclasses.dataclass
-class Scanner:
-    """A helper class for the provenance aggregator that reads metadata and log
-    files and scans for which outputs exist.
+class BaseScanner:
+    """A base class for the `Scanner` aggregator helper and its
+    `RecoveryScanner` variant.
     """
 
-    predicted_path: str
-    """Path to the predicted quantum graph."""
+    graph_path: str
+    """Path to the quantum graph.
+
+    This is the path to the predicted quantum graph if we are in the usual
+    scanning mode, and the path to the provenanceq quantum graph if we are
+    in post-graph-ingest recovery mode.
+    """
 
     butler_path: str
     """Path or alias to the central butler repository."""
@@ -70,23 +76,13 @@ class Scanner:
     comms: ScannerCommunicator
     """Communicator object for this worker."""
 
-    reader: PredictedQuantumGraphReader = dataclasses.field(init=False)
-    """Reader for the predicted quantum graph."""
+    reader: PredictedQuantumGraphReader | ProvenanceQuantumGraphReader = dataclasses.field(init=False)
+    """Reader for the quantum graph."""
 
     qbb: QuantumBackedButler = dataclasses.field(init=False)
     """A quantum-backed butler used for log and metadata reads and existence
     checks for other outputs (when necessary).
     """
-
-    compressor: Compressor | None = None
-    """Object used to compress JSON blocks.
-
-    This is `None` until a compression dictionary is received from the writer
-    process.
-    """
-
-    init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
-    """Dictionary mapping init quantum IDs to their predicted models."""
 
     remove_dataset_types: set[DatasetTypeName] = dataclasses.field(default_factory=set)
     """Set of dataset type names whose original files will be removed.
@@ -118,15 +114,9 @@ class Scanner:
     def __post_init__(self) -> None:
         if self.comms.config.mock_storage_classes:
             import lsst.pipe.base.tests.mocks  # noqa: F401
-        self.comms.log.verbose("Reading from predicted quantum graph.")
-        self.reader = self.comms.enter(
-            PredictedQuantumGraphReader.open(self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
-        )
-        self.reader.read_dimension_data()
-        self.reader.read_init_quanta()
+        self.reader = self.make_reader(self.comms, self.graph_path)
         self.comms.log.verbose("Initializing quantum-backed butler.")
         self.qbb = self.make_qbb(self.butler_path, self.reader.pipeline_graph)
-        self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
         self.remove_dataset_types = set(self.comms.config.remove_dataset_types)
         # If we are ingesting provenance, delete original {logs, configs,
         # packages} and ingest with provenance graph backing (if at all).
@@ -203,16 +193,31 @@ class Scanner:
         """Graph of tasks and dataset types."""
         return self.reader.pipeline_graph
 
+    @classmethod
+    def make_reader(
+        cls, comms: ScannerCommunicator, graph_path: str
+    ) -> PredictedQuantumGraphReader | ProvenanceQuantumGraphReader:
+        """Make a quantum graph reader for this scanner.make_qbb
+
+        Parameters
+        ----------
+        graph_path : `str`
+            Path to the predicted graph.
+        comms : `ScannerCommunicator`
+            Communicator for the scanner.
+        """
+        raise NotImplementedError()
+
     @staticmethod
-    def run(predicted_path: str, butler_path: str, comms: ScannerCommunicator) -> None:
+    def run(graph_path: str, butler_path: str, comms: ScannerCommunicator) -> None:
         """Run the scanner.
 
         Parameters
         ----------
-        predicted_path : `str`
-            Path to the predicted quantum graph.
+        graph_path : `str`
+            Path to the predicted graph.
         butler_path : `str`
-            Path or alias to the central butler repository.
+            Path or alias for the butler repository.
         comms : `ScannerCommunicator`
             Communicator for the scanner.
 
@@ -222,23 +227,34 @@ class Scanner:
         `WorkerContext.make_worker`.
         """
         with comms:
-            scanner = Scanner(predicted_path, butler_path, comms)
+            scanner = (
+                Scanner(graph_path, butler_path, comms)
+                if not comms.was_graph_ingested
+                else RecoveryScanner(graph_path, butler_path, comms)
+            )
             scanner.loop()
+
+    def scan_quantum(self, quantum_id: uuid.UUID) -> None:
+        """Scan for a quantum's completion and error status, and its output
+        datasets' existence.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
+        """
+        raise NotImplementedError()
 
     def loop(self) -> None:
         """Run the main loop for the scanner."""
         self.comms.log.info("Scan request loop beginning.")
         for quantum_id in self.comms.poll():
-            if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
-                self.compressor = zstandard.ZstdCompressor(
-                    self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
-                )
             self.scan_quantum(quantum_id)
         if self.comms.config.incomplete:
             return
         if self.pending_ingests or self.pending_removals:
             self.comms.log.info("Waiting for provenance QG to be ingested.")
-            self.comms.wait_until_qg_ingested()
+            self.comms.wait_for_graph_ingest()
         if self.pending_ingests:
             self.comms.log.info("Sending provenance ingest requests.")
             for ref_batch in itertools.batched(self.pending_ingests, self.comms.config.ingest_batch_size):
@@ -252,36 +268,45 @@ class Scanner:
                     self.qbb.pruneDatasets(ref_batch, unstore=True, purge=True)
                 self.comms.report_removals(len(ref_batch))
 
-    def scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
-        """Scan for a dataset's existence.
 
-        Parameters
-        ----------
-        predicted : `.PredictedDatasetModel`
-            Information about the dataset from the predicted graph.
+class Scanner(BaseScanner):
+    """A helper class for the provenance aggregator that reads metadata and log
+    files and scans for which outputs exist.
+    """
 
-        Returns
-        -------
-        exists : `bool``
-            Whether the dataset exists
-        """
-        ref = self.reader.components.make_dataset_ref(predicted)
-        return self.qbb.stored(ref)
+    reader: PredictedQuantumGraphReader = dataclasses.field(init=False)
+    """Reader for the predicted quantum graph."""
 
-    def scan_quantum(self, quantum_id: uuid.UUID) -> ScanResult:
-        """Scan for a quantum's completion and error status, and its output
-        datasets' existence.
+    compressor: Compressor | None = None
+    """Object used to compress JSON blocks.
 
-        Parameters
-        ----------
-        quantum_id : `uuid.UUID`
-            Unique ID for the quantum.
+    This is `None` until a compression dictionary is received from the writer
+    process.
+    """
 
-        Returns
-        -------
-        result : `ScanResult`
-            Scan result struct.
-        """
+    init_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = dataclasses.field(init=False)
+    """Dictionary mapping init quantum IDs to their predicted models."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.comms.log.verbose("Reading from predicted quantum graph.")
+        self.reader.read_dimension_data()
+        self.reader.read_init_quanta()
+        self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
+
+    @classmethod
+    def make_reader(cls, comms: ScannerCommunicator, graph_path: str) -> PredictedQuantumGraphReader:
+        # Docstring inherited.
+        return comms.enter(
+            PredictedQuantumGraphReader.open(graph_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
+        )
+
+    def scan_quantum(self, quantum_id: uuid.UUID) -> None:
+        # Docstring inherited.
+        if self.compressor is None and (cdict_data := self.comms.get_compression_dict()) is not None:
+            self.compressor = zstandard.ZstdCompressor(
+                self.comms.config.zstd_level, zstandard.ZstdCompressionDict(cdict_data)
+            )
         if (predicted_quantum := self.init_quanta.get(quantum_id)) is not None:
             result = ScanResult(predicted_quantum.quantum_id, status=ScanStatus.INIT)
             self.comms.log.debug("Created init scan for %s (%s)", quantum_id, predicted_quantum.task_label)
@@ -301,7 +326,7 @@ class Scanner:
                 self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
                 result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status, 0, 0))
-                return result
+                return
             metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
             if result.metadata:
                 result.status = ScanStatus.SUCCESSFUL
@@ -316,22 +341,36 @@ class Scanner:
                 self.comms.log.debug("Abandoning scan for %s.", quantum_id)
                 result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status, 0, 0))
-                return result
+                return
             if result.log:
                 result.existing_outputs.add(log_id)
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-            if predicted_output.dataset_id not in result.existing_outputs and self.scan_dataset(
+            if predicted_output.dataset_id not in result.existing_outputs and self._scan_dataset(
                 predicted_output
             ):
                 result.existing_outputs.add(predicted_output.dataset_id)
         to_ingest = self._make_ingest_request_and_report(predicted_quantum, result)
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
-        if self.comms.config.actually_ingest_provenance:
-            self.comms.request_write(result)
+        self.comms.request_write(result)
         self.comms.request_ingest(to_ingest)
         self.comms.log.debug("Finished scan for %s.", quantum_id)
-        return result
+
+    def _scan_dataset(self, predicted: PredictedDatasetModel) -> bool:
+        """Scan for a dataset's existence.
+
+        Parameters
+        ----------
+        predicted : `.PredictedDatasetModel`
+            Information about the dataset from the predicted graph.
+
+        Returns
+        -------
+        exists : `bool``
+            Whether the dataset exists
+        """
+        ref = self.reader.components.make_dataset_ref(predicted)
+        return self.qbb.stored(ref)
 
     def _make_ingest_request_and_report(
         self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
@@ -398,11 +437,7 @@ class Scanner:
         """
         task_node = self.reader.pipeline_graph.tasks[predicted.task_label]
         return DatasetRef(
-            DatasetType(
-                self.comms.config.quantum_dataset_type_template.format(predicted.task_label),
-                task_node.dimensions,
-                "ProvenanceQuantumGraph",
-            ),
+            self.comms.config.get_quantum_dataset_type(task_node),
             DataCoordinate.from_full_values(task_node.dimensions, tuple(predicted.data_coordinate)),
             run=self.reader.header.output_run,
             id=predicted.quantum_id,
@@ -498,3 +533,77 @@ class Scanner:
                 result.log = self.compressor.compress(result.log)
                 result.is_compressed = True
         return ref.id
+
+
+class RecoveryScanner(BaseScanner):
+    """A variant of the `Scanner` that can run after the provenance quantum
+    graph has been ingested and hence datasets may have already occurred.
+    """
+
+    reader: ProvenanceQuantumGraphReader = dataclasses.field(init=False)
+    """Reader for the provenance quantum graph."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.comms.log.verbose("Reading from predicted quantum graph.")
+        self.reader.read_init_quanta()
+
+    @classmethod
+    def make_reader(cls, comms: ScannerCommunicator, graph_path: str) -> ProvenanceQuantumGraphReader:
+        return comms.enter(
+            ProvenanceQuantumGraphReader.open(graph_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
+        )
+
+    def scan_quantum(self, quantum_id: uuid.UUID) -> None:
+        # Docstring inherited.
+        self.comms.log.debug("Loading previous scan for %s.", quantum_id)
+        self.reader.read_quanta([quantum_id])
+        self.reader.read_datasets(self.reader.graph.bipartite_xgraph.successors(quantum_id))
+        to_ingest_refs: list[DatasetRef] = []
+        n_removals: int = 0
+        n_deferred_ingests: int = 0
+        for dataset_id in self.reader.graph.bipartite_xgraph.successors(quantum_id):
+            dataset_info: ProvenanceDatasetInfo = self.reader.graph.bipartite_xgraph.nodes[dataset_id]
+            if not dataset_info["exists"]:
+                continue
+            ref = DatasetRef(
+                dataset_info["pipeline_node"].dataset_type,
+                dataset_info["data_id"],
+                dataset_info["run"],
+                id=dataset_id,
+            )
+            if dataset_info["dataset_type_name"] in self.provenance_dataset_types:
+                self.pending_removals.append(ref)
+                n_removals += 1
+                self.pending_ingests.append(ref)
+                n_deferred_ingests += 1
+            elif dataset_info["dataset_type_name"] in self.remove_dataset_types:
+                self.pending_removals.append(ref)
+                n_removals += 1
+            else:
+                to_ingest_refs.append(ref)
+        quantum_info: ProvenanceQuantumInfo | None
+        if (quantum_info := self.reader.graph.quantum_only_xgraph.nodes.get(quantum_id)) is not None:
+            if self.comms.config.ingest_provenance:
+                self.pending_ingests.append(
+                    DatasetRef(
+                        self.comms.config.get_quantum_dataset_type(quantum_info["pipeline_node"]),
+                        quantum_info["data_id"],
+                        self.reader.header.output_run,
+                        id=quantum_id,
+                    )
+                )
+                n_deferred_ingests += 1
+            scan_status = ScanStatus.from_run_status(quantum_info["status"])
+        else:
+            scan_status = ScanStatus.INIT
+        self.comms.log.debug(
+            "Identified %d removals and %d deferred ingests for %s.",
+            n_removals,
+            n_deferred_ingests,
+            quantum_id,
+        )
+        to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
+        self.comms.report_scan(ScanReport(quantum_id, scan_status, n_removals, n_deferred_ingests))
+        self.comms.request_ingest(QuantumIngestRequest(quantum_id, to_ingest_refs, to_ingest_records))
+        self.comms.log.debug("Finished recovering scan for %s.", quantum_id)

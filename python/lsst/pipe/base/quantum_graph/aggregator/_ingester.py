@@ -40,9 +40,10 @@ from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 from lsst.daf.butler.registry import ConflictingDefinitionError
 from lsst.resources import ResourcePath
 
-from ...pipeline_graph import TaskImportMode
-from .._common import DatastoreName
-from .._predicted import PredictedQuantumGraphComponents, PredictedQuantumGraphReader
+from ...pipeline_graph import PipelineGraph, TaskImportMode
+from .._common import DatastoreName, HeaderModel
+from .._predicted import PredictedQuantumGraphReader
+from .._provenance import ProvenanceQuantumGraphReader
 from ..formatter import ProvenanceFormatter
 from ._communicators import IngesterCommunicator
 from ._structs import GraphIngestRequest, ProvenanceIngestRequest, QuantumIngestRequest
@@ -54,8 +55,8 @@ class Ingester:
     the central butler repository.
     """
 
-    predicted_path: str
-    """Path to the predicted quantum graph."""
+    graph_path: str
+    """Path to the predicted or provenance quantum graph."""
 
     butler_path: str
     """Path or alias to the central butler repository."""
@@ -63,8 +64,11 @@ class Ingester:
     comms: IngesterCommunicator
     """Communicator object for this worker."""
 
-    predicted: PredictedQuantumGraphComponents = dataclasses.field(init=False)
-    """Components of the predicted graph."""
+    header: HeaderModel = dataclasses.field(init=False)
+    """Header of the quantum graph."""
+
+    pipeline_graph: PipelineGraph = dataclasses.field(init=False)
+    """Graph of tasks and dataset types."""
 
     butler: Butler = dataclasses.field(init=False)
     """Client for the central butler repository."""
@@ -105,19 +109,23 @@ class Ingester:
     because a transaction failed due to a dataset already being present.
     """
 
-    provenance_qg_path: ResourcePath | None = None
-    """Path to the provenance QG."""
+    provenance_qraph_path: ResourcePath | None = None
+    """Path to the provenance quantum graph."""
 
     last_ingest_time: float = dataclasses.field(default_factory=time.time)
     """POSIX timestamp since the last ingest transaction concluded."""
 
     def __post_init__(self) -> None:
         self.comms.log.verbose("Reading from predicted quantum graph.")
-        with PredictedQuantumGraphReader.open(
-            self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-        ) as reader:
-            # We only need the header and pipeline graph.
-            self.predicted = reader.components
+        reader_cls: type[PredictedQuantumGraphReader] | type[ProvenanceQuantumGraphReader]
+        if not self.comms.was_graph_ingested:
+            reader_cls = PredictedQuantumGraphReader
+        else:
+            reader_cls = ProvenanceQuantumGraphReader
+            self.provenance_qraph_path = ResourcePath(self.graph_path)
+        with reader_cls.open(self.graph_path, import_mode=TaskImportMode.DO_NOT_IMPORT) as reader:
+            self.header = reader.header
+            self.pipeline_graph = reader.pipeline_graph
         if self.comms.config.mock_storage_classes:
             import lsst.pipe.base.tests.mocks  # noqa: F401
         self.comms.log.verbose("Initializing butler.")
@@ -129,13 +137,13 @@ class Ingester:
         return sum(len(v) for v in self.output_refs_pending.values()) + len(self.provenance_refs_pending)
 
     @staticmethod
-    def run(predicted_path: str, butler_path: str, comms: IngesterCommunicator) -> None:
+    def run(graph_path: str, butler_path: str, comms: IngesterCommunicator) -> None:
         """Run the ingester.
 
         Parameters
         ----------
-        predicted_path : `str`
-            Path to the predicted quantum graph.
+        graph_path : `str`
+            Path to the predicted or provenance quantum graph.
         butler_path : `str`
             Path or alias to the central butler repository.
         comms : `IngesterCommunicator`
@@ -147,15 +155,16 @@ class Ingester:
         `WorkerContext.make_worker`.
         """
         with comms:
-            ingester = Ingester(predicted_path, butler_path, comms)
+            ingester = Ingester(graph_path, butler_path, comms)
             ingester.loop()
 
     def loop(self) -> None:
         """Run the main loop for the ingester."""
         self.comms.log.verbose("Registering collections and dataset types.")
         if not self.comms.config.dry_run:
+            self.butler.collections.register(self.header.output_run)
             if self.comms.config.register_dataset_types:
-                self.predicted.pipeline_graph.register_dataset_types(
+                self.pipeline_graph.register_dataset_types(
                     self.butler,
                     include_inputs=False,
                     include_packages=True,
@@ -165,14 +174,11 @@ class Ingester:
                 self.butler.registry.registerDatasetType(
                     self.comms.config.get_graph_dataset_type(self.butler.dimensions)
                 )
-                for task_label, n_quanta in self.predicted.header.n_task_quanta.items():
+                for task_label, n_quanta in self.header.n_task_quanta.items():
                     if n_quanta:
                         self.butler.registry.registerDatasetType(
-                            self.comms.config.get_quantum_dataset_type(
-                                self.predicted.pipeline_graph.tasks[task_label]
-                            )
+                            self.comms.config.get_quantum_dataset_type(self.pipeline_graph.tasks[task_label])
                         )
-            self.butler.collections.register(self.predicted.header.output_run)
             # Updating the output chain cannot happen inside the caching
             # context.
             if self.comms.config.update_output_chain:
@@ -237,9 +243,9 @@ class Ingester:
                     if self.records_pending:
                         self.butler._datastore.import_records(self.records_pending)
                     if self.provenance_refs_pending:
-                        assert self.provenance_qg_path is not None, "Graph should be ingested already."
+                        assert self.provenance_qraph_path is not None, "Graph should be ingested already."
                         file_dataset = FileDataset(
-                            self.provenance_qg_path,
+                            self.provenance_qraph_path,
                             self.provenance_refs_pending,
                             formatter=ProvenanceFormatter,
                         )
@@ -282,10 +288,8 @@ class Ingester:
         """Query for the UUIDs of all dataset already present in the output
         RUN collection, and filter and pending datasets accordingly.
         """
-        self.comms.log.info("Fetching all UUIDs in output collection %r.", self.predicted.header.output_run)
-        self.already_ingested = set(
-            self.butler.registry._fetch_run_dataset_ids(self.predicted.header.output_run)
-        )
+        self.comms.log.info("Fetching all UUIDs in output collection %r.", self.header.output_run)
+        self.already_ingested = set(self.butler.registry._fetch_run_dataset_ids(self.header.output_run))
         # Filter the regular outputs.
         kept: set[uuid.UUID] = set()
         for dimensions, refs in self.output_refs_pending.items():
@@ -369,8 +373,8 @@ class Ingester:
         if not self.comms.config.dry_run:
             with self.butler.registry.transaction():
                 self.butler.ingest(request.file_dataset, transfer=request.transfer, skip_existing=False)
-            self.provenance_qg_path = self.butler.getURI(request.file_dataset.refs[0])
-        self.comms.report_qg_ingested()
+            self.provenance_qraph_path = self.butler.getURI(request.file_dataset.refs[0])
+        self.comms.report_graph_ingested()
         self.comms.log_progress(logging.INFO, "Ingested provenance quantum graph.")
 
     def update_output_chain(self) -> None:
@@ -382,17 +386,17 @@ class Ingester:
         -----
         This method cannot be called inside the registry caching context.
         """
-        if self.predicted.header.output is None:
+        if self.header.output is None:
             return
         self.comms.log.info(
             "Updating output collection %s to include %s.",
-            self.predicted.header.output,
-            self.predicted.header.output_run,
+            self.header.output,
+            self.header.output_run,
         )
-        if self.butler.collections.register(self.predicted.header.output, CollectionType.CHAINED):
+        if self.butler.collections.register(self.header.output, CollectionType.CHAINED):
             # Chain is new; need to add inputs, but we want to flatten them
             # first.
-            if self.predicted.header.inputs:
-                flattened = self.butler.collections.query(self.predicted.header.inputs, flatten_chains=True)
-                self.butler.collections.extend_chain(self.predicted.header.output, flattened)
-        self.butler.collections.prepend_chain(self.predicted.header.output, self.predicted.header.output_run)
+            if self.header.inputs:
+                flattened = self.butler.collections.query(self.header.inputs, flatten_chains=True)
+                self.butler.collections.extend_chain(self.header.output, flattened)
+        self.butler.collections.prepend_chain(self.header.output, self.header.output_run)
