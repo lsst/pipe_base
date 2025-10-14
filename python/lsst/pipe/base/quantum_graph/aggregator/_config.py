@@ -217,13 +217,6 @@ class AggregatorConfig(pydantic.BaseModel):
     lsst.pipe.base.tests.mocks package.
     """
 
-    @property
-    def actually_ingest_provenance(self) -> bool:
-        """Whether the aggregator is configured to write the provenance quantum
-        graph.
-        """
-        return self.ingest_provenance and not self.incomplete
-
     @pydantic.model_validator(mode="after")
     def _validate_provenance_ingestion(self) -> AggregatorConfig:
         if not self.ingest_provenance:

@@ -89,6 +89,19 @@ class ScanStatus(enum.Enum):
     metadata.
     """
 
+    @staticmethod
+    def from_run_status(run_status: QuantumRunStatus) -> ScanStatus:
+        """Convert from run status."""
+        match run_status:
+            case QuantumRunStatus.SUCCESSFUL:
+                return ScanStatus.SUCCESSFUL
+            case QuantumRunStatus.FAILED | QuantumRunStatus.METADATA_MISSING:
+                return ScanStatus.FAILED
+            case QuantumRunStatus.BLOCKED:
+                return ScanStatus.BLOCKED
+            case _:
+                raise AssertionError(f"Unexpected run status: {run_status}.")
+
 
 @final
 @dataclasses.dataclass

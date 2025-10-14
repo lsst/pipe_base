@@ -399,7 +399,7 @@ class Writer:
         if self.comms.config.output_path is not None:
             file_dataset = FileDataset(self.comms.config.output_path, [ref], formatter=ProvenanceFormatter)
             yield ResourcePath(file_dataset.path)
-            self.comms.request_provenance_qg_ingest(GraphIngestRequest(file_dataset, transfer="copy"))
+            self.comms.request_graph_ingest(GraphIngestRequest(file_dataset, transfer="copy"))
         else:
             # This logic is the same as what FormatterV2 does to ensure writes
             # are atomic.  We rely on the ingester to do the transfer to the
@@ -408,7 +408,7 @@ class Writer:
             with ResourcePath.temporary_uri(suffix=final_path.getExtension(), prefix=prefix) as temp_path:
                 file_dataset = FileDataset(temp_path, [ref], formatter=ProvenanceFormatter)
                 yield temp_path
-                self.comms.request_provenance_qg_ingest(
+                self.comms.request_graph_ingest(
                     GraphIngestRequest(file_dataset, transfer="move" if final_path.isLocal else "copy")
                 )
 

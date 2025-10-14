@@ -35,6 +35,8 @@ import uuid
 import astropy.units as u
 import networkx
 
+from lsst.daf.butler import Butler
+from lsst.resources import ResourcePath
 from lsst.utils.logging import getLogger
 from lsst.utils.usage import get_peak_mem_usage
 
@@ -61,13 +63,10 @@ from ._writer import Writer
 class Supervisor:
     """The main process/thread for the provenance aggregator."""
 
-    predicted_path: str
-    """Path to the predicted quantum graph."""
-
     comms: SupervisorCommunicator
     """Communicator object for the supervisor."""
 
-    predicted: PredictedQuantumGraphComponents = dataclasses.field(init=False)
+    predicted: PredictedQuantumGraphComponents
     """Components of the predicted quantum graph."""
 
     walker: GraphWalker[uuid.UUID] = dataclasses.field(init=False)
@@ -89,13 +88,6 @@ class Supervisor:
     """
 
     def __post_init__(self) -> None:
-        self.comms.progress.log.info("Reading predicted quantum graph.")
-        with PredictedQuantumGraphReader.open(
-            self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
-        ) as reader:
-            reader.read_thin_graph()
-            reader.read_init_quanta()
-            self.predicted = reader.components
         self.comms.progress.log.info("Analyzing predicted graph.")
         uuid_by_index = {
             quantum_index: quantum_id for quantum_id, quantum_index in self.predicted.quantum_indices.items()
@@ -168,8 +160,7 @@ class Supervisor:
                 self.n_pending_removals += scan_report.n_pending_removals
                 self.n_pending_ingests += scan_report.n_pending_ingests
                 for blocked_quantum_id in blocked_quanta:
-                    if self.comms.config.actually_ingest_provenance:
-                        self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
+                    self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
                     self.comms.progress.scans.update(1)
                 self.comms.progress.quantum_ingests.update(len(blocked_quanta))
             case ScanStatus.ABANDONED:
@@ -200,13 +191,28 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     scanners: list[Worker] = []
     ingester: Worker
     writer: Worker | None = None
-    with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
+    graph_already_ingested: bool = False
+    graph_path = ResourcePath(predicted_path)
+    log.info("Reading predicted quantum graph.")
+    with PredictedQuantumGraphReader.open(predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT) as reader:
+        reader.read_thin_graph()
+        reader.read_init_quanta()
+        predicted = reader.components
+    if config.recover:
+        butler = Butler.from_config(butler_path)
+        if (prov_ref := butler.get_dataset(predicted.header.provenance_dataset_id)) is not None:
+            graph_already_ingested = True
+            graph_path = butler.getURI(prov_ref)
+    if graph_already_ingested and config.incomplete:
+        log.warning("Provenance graph has already been ingested, but incomplete=True.")
+        return
+    with SupervisorCommunicator(log, config.n_processes, ctx, config, graph_already_ingested) as comms:
         comms.progress.log.verbose("Starting workers.")
-        if config.actually_ingest_provenance:
+        if comms.has_writer:
             writer_comms = WriterCommunicator(comms)
             writer = ctx.make_worker(
                 target=Writer.run,
-                args=(predicted_path, butler_path, writer_comms),
+                args=(graph_path, butler_path, writer_comms),
                 name=writer_comms.name,
             )
             writer.start()
@@ -214,7 +220,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
             scanner_comms = ScannerCommunicator(comms, scanner_id)
             worker = ctx.make_worker(
                 target=Scanner.run,
-                args=(predicted_path, butler_path, scanner_comms),
+                args=(graph_path, butler_path, scanner_comms),
                 name=scanner_comms.name,
             )
             worker.start()
@@ -222,11 +228,11 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         ingester_comms = IngesterCommunicator(comms)
         ingester = ctx.make_worker(
             target=Ingester.run,
-            args=(predicted_path, butler_path, ingester_comms),
+            args=(graph_path, butler_path, ingester_comms),
             name=ingester_comms.name,
         )
         ingester.start()
-        supervisor = Supervisor(predicted_path, comms)
+        supervisor = Supervisor(comms, predicted)
         supervisor.loop()
     for w in scanners:
         w.join()
