@@ -158,7 +158,15 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
 @click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
 @click.argument("predicted_graph", required=True)
 @repo_argument(required=True, help="Path to the central butler repository.")
-@click.option("-o", "--output", "output_path", help="Path to the output provenance quantum graph.")
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    help=(
+        "Path to the output provenance quantum graph.  THIS OPTION IS FOR "
+        "DEVELOPMENT AND DEBUGGING ONLY.  IT MAY BE REMOVED IN THE FUTURE."
+    ),
+)
 @click.option(
     "--processes",
     "-j",
