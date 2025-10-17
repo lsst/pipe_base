@@ -550,10 +550,13 @@ class AddressReader:
         raise LookupError(f"Address for {target} not found.")
 
     def _find_index(self, target: int) -> AddressRow:
+        # First shortcut if we've already loaded this row.
         if (row := self.rows_by_index.get(target)) is not None:
             return row
         if target < 0 or target >= self.n_rows:
             raise LookupError(f"Address for index {target} not found.")
+        # Since all indexes should be present, we can predict the right page
+        # exactly.
         page_index = target // self.rows_per_page
         self._read_page(page_index)
         try:
