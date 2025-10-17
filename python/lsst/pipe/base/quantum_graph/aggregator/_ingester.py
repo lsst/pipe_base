@@ -209,8 +209,8 @@ class Ingester:
         except ConflictingDefinitionError:
             if self.already_ingested is None:
                 self.comms.log_progress(
-                    logging.WARNING,
-                    "Conflict in ingest attempt; querying for existing datasets and "
+                    logging.INFO,
+                    "Some outputs seem to have already been ingested; querying for existing datasets and "
                     "switching to defensive ingest mode.",
                 )
                 self.fetch_already_ingested()
