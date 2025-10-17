@@ -195,7 +195,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
 @click.option(
     "--register-dataset-types/--no-register-dataset-types",
     default=True,
-    help="Register output dataset types before starting ingest.",
+    help="Register output dataset types.",
 )
 @click.option(
     "--update-output-chain/--no-update-output-chain",
@@ -233,7 +233,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
 )
 @click.option(
     "--mock-storage-classes/--no-mock-storage-classes",
-    help="Enable support for storage classes by created by the lsst.pipe.base.tests.mocks package.",
+    help="Enable support for storage classes created by the lsst.pipe.base.tests.mocks package.",
 )
 def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
     """Scan for quantum graph's outputs to gather provenance, ingest datasets
