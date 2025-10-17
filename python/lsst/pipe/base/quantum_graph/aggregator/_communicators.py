@@ -28,7 +28,7 @@
 from __future__ import annotations
 
 __all__ = (
-    "CancelError",
+    "FatalWorkerError",
     "IngesterCommunicator",
     "ScannerCommunicator",
     "SpawnProcessContext",
@@ -178,46 +178,46 @@ def _get_from_queue(q: Queue[_T], block: bool = False, timeout: float | None = N
         return None
 
 
-class CancelError(BaseException):
+class FatalWorkerError(BaseException):
     """An exception raised by communicators when one worker (including the
     supervisor) has caught an exception in order to signal the others to shut
     down.
     """
 
 
-class _Sentinal(enum.Enum):
-    """Sentinal values used to indicate sequence points or worker shutdown
+class _Sentinel(enum.Enum):
+    """Sentinel values used to indicate sequence points or worker shutdown
     conditions.
     """
 
     NO_MORE_SCAN_REQUESTS = enum.auto()
-    """Sentinal sent from the supervisor to scanners to indicate that there are
+    """Sentinel sent from the supervisor to scanners to indicate that there are
     no more quanta left to be scanned.
     """
 
     NO_MORE_INGEST_REQUESTS = enum.auto()
-    """Sentinal sent from scanners to the ingester to indicate that there are
+    """Sentinel sent from scanners to the ingester to indicate that there are
     will be no more ingest requests from a particular worker.
     """
 
     NO_MORE_WRITE_REQUESTS = enum.auto()
-    """Sentinal sent from scanners and the supervisor to the writer to
+    """Sentinel sent from scanners and the supervisor to the writer to
     indicate that there are will be no more write requests from a particular
     worker.
     """
 
     WRITE_REPORT = enum.auto()
-    """Sentinal sent from the writer to the supervisor to report that a
+    """Sentinel sent from the writer to the supervisor to report that a
     quantum's provenance was written.
     """
 
     SCANNER_DONE = enum.auto()
-    """Sentinal sent from scanners to the supervisor to report that they are
+    """Sentinel sent from scanners to the supervisor to report that they are
     done and shutting down.
     """
 
     INGESTER_DONE = enum.auto()
-    """Sentinal sent from the ingester to the supervisor to report that it is
+    """Sentinel sent from the ingester to the supervisor to report that it is
     done and shutting down.
     """
 
@@ -309,10 +309,10 @@ Report: TypeAlias = (
     | _WorkerError
     | _ProgressLog
     | Literal[
-        _Sentinal.WRITE_REPORT,
-        _Sentinal.SCANNER_DONE,
-        _Sentinal.INGESTER_DONE,
-        _Sentinal.WRITER_DONE,
+        _Sentinel.WRITE_REPORT,
+        _Sentinel.SCANNER_DONE,
+        _Sentinel.INGESTER_DONE,
+        _Sentinel.WRITER_DONE,
     ]
 )
 
@@ -345,14 +345,14 @@ class SupervisorCommunicator:
         # The supervisor sends scan requests to scanners on this queue.
         # When complete, the supervisor sends n_scanners sentinals and each
         # scanner is careful to only take one before it starts its shutdown.
-        self._scan_requests: Queue[_ScanRequest | Literal[_Sentinal.NO_MORE_SCAN_REQUESTS]] = (
+        self._scan_requests: Queue[_ScanRequest | Literal[_Sentinel.NO_MORE_SCAN_REQUESTS]] = (
             context.make_queue()
         )
         # The scanners send ingest requests to the ingester on this queue. Each
         # scanner sends one sentinal when it is done, and the ingester is
         # careful to wait for n_scanners sentinals to arrive before it starts
         # its shutdown.
-        self._ingest_requests: Queue[IngestRequest | Literal[_Sentinal.NO_MORE_INGEST_REQUESTS]] = (
+        self._ingest_requests: Queue[IngestRequest | Literal[_Sentinel.NO_MORE_INGEST_REQUESTS]] = (
             context.make_queue()
         )
         # The scanners send write requests to the writer on this queue (which
@@ -361,7 +361,7 @@ class SupervisorCommunicator:
         # scanner and the supervisor send one sentinal when done, and the
         # writer waits for (n_scanners + 1) sentinals to arrive before it
         # starts its shutdown.
-        self._write_requests: Queue[ScanResult | Literal[_Sentinal.NO_MORE_WRITE_REQUESTS]] | None = (
+        self._write_requests: Queue[ScanResult | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
             context.make_queue() if config.output_path is not None else None
         )
         # All other workers use this queue to send many different kinds of
@@ -377,7 +377,7 @@ class SupervisorCommunicator:
         # The supervisor sets this event when it receives an interrupt request
         # from an exception in the main process (usually KeyboardInterrupt).
         # Worker communicators check this in their polling loops and raise
-        # CancelError when they see it set.
+        # FatalWorkeError when they see it set.
         self._cancel_event: Event = context.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
@@ -393,10 +393,10 @@ class SupervisorCommunicator:
     def wait_for_workers_to_finish(self) -> None:
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
-                self._scan_requests.put(_Sentinal.NO_MORE_SCAN_REQUESTS, block=False)
+                self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS, block=False)
             self._sent_no_more_scan_requests = True
         if not self._sent_no_more_write_requests and self._write_requests is not None:
-            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
+            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
         while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
             self.log.verbose(
@@ -408,13 +408,13 @@ class SupervisorCommunicator:
             match self._handle_progress_reports(self._reports.get(block=True)):
                 case None | ScanReport() | _IngestReport():
                     pass
-                case _Sentinal.INGESTER_DONE:
+                case _Sentinel.INGESTER_DONE:
                     self._ingester_done = True
                     self.progress.finish_ingests()
-                case _Sentinal.SCANNER_DONE:
+                case _Sentinel.SCANNER_DONE:
                     self._n_scanners_done += 1
                     self.progress.finish_scans()
-                case _Sentinal.WRITER_DONE:
+                case _Sentinel.WRITER_DONE:
                     self._writer_done = True
                     self.progress.finish_writes()
                 case unexpected:
@@ -503,9 +503,9 @@ class SupervisorCommunicator:
     ) -> (
         ScanReport
         | Literal[
-            _Sentinal.SCANNER_DONE,
-            _Sentinal.INGESTER_DONE,
-            _Sentinal.WRITER_DONE,
+            _Sentinel.SCANNER_DONE,
+            _Sentinel.INGESTER_DONE,
+            _Sentinel.WRITER_DONE,
         ]
         | None
     ):
@@ -514,7 +514,7 @@ class SupervisorCommunicator:
 
         This includes:
 
-        - exceptions from workers (which raise `CancelError` here to
+        - exceptions from workers (which raise `FatalWorkeError` here to
           trigger ``__exit__``);
         - ingest reports;
         - write reports;
@@ -526,10 +526,10 @@ class SupervisorCommunicator:
         match report:
             case _WorkerError(exception=exception, worker=worker):
                 exception.print()
-                raise CancelError(f"Caught exception from {worker} (traceback above).")
+                raise FatalWorkerError(f"Caught exception from {worker} (traceback above).")
             case _IngestReport(n_producers=n_producers):
                 self.progress.report_ingests(n_producers)
-            case _Sentinal.WRITE_REPORT:
+            case _Sentinel.WRITE_REPORT:
                 self.progress.report_write()
             case _ProgressLog(message=message, level=level):
                 self.progress.log.log(level, "%s [after %0.1fs]", message, self.progress.elapsed_time)
@@ -601,7 +601,7 @@ class WorkerCommunicator:
             os.makedirs(self.config.worker_profile_dir, exist_ok=True)
             self._profiler.dump_stats(os.path.join(self.config.worker_profile_dir, f"{self.name}.profile"))
         if exc_value is not None:
-            if exc_type is not CancelError:
+            if exc_type is not FatalWorkerError:
                 assert exc_type is not None and traceback is not None
                 self._reports.put(
                     _WorkerError(self.name, TracebackException(exc_type, exc_value, traceback)), block=False
@@ -664,7 +664,7 @@ class WorkerCommunicator:
         `FatalWorkerError` if it is present.
         """
         if self._cancel_event.is_set():
-            raise CancelError()
+            raise FatalWorkerError()
 
 
 class ScannerCommunicator(WorkerCommunicator):
@@ -761,7 +761,7 @@ class ScannerCommunicator(WorkerCommunicator):
         while True:
             self.check_for_cancel()
             scan_request = _get_from_queue(self._scan_requests, block=True, timeout=self.config.worker_sleep)
-            if scan_request is _Sentinal.NO_MORE_SCAN_REQUESTS:
+            if scan_request is _Sentinel.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
                 return
             if scan_request is not None:
@@ -774,20 +774,20 @@ class ScannerCommunicator(WorkerCommunicator):
         traceback: TracebackType | None,
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
-        self._ingest_requests.put(_Sentinal.NO_MORE_INGEST_REQUESTS, block=False)
+        self._ingest_requests.put(_Sentinel.NO_MORE_INGEST_REQUESTS, block=False)
         if self._write_requests is not None:
-            self._write_requests.put(_Sentinal.NO_MORE_WRITE_REQUESTS, block=False)
+            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
         while not self._got_no_more_scan_requests:
             self.log.debug("Clearing scan request queue (~%d remaining)", self._scan_requests.qsize())
             if (
                 not self._got_no_more_scan_requests
-                and self._scan_requests.get() is _Sentinal.NO_MORE_SCAN_REQUESTS
+                and self._scan_requests.get() is _Sentinel.NO_MORE_SCAN_REQUESTS
             ):
                 self._got_no_more_scan_requests = True
         # We let the supervisor clear out the compression dict queue, because
         # a single scanner can't know if it ever got sent out or not.
         self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinal.SCANNER_DONE, block=False)
+        self._reports.put(_Sentinel.SCANNER_DONE, block=False)
         return result
 
 
@@ -819,10 +819,10 @@ class IngesterCommunicator(WorkerCommunicator):
                 self.n_scanners,
                 self._n_requesters_done,
             )
-            if self._ingest_requests.get(block=True) is _Sentinal.NO_MORE_INGEST_REQUESTS:
+            if self._ingest_requests.get(block=True) is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
         self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinal.INGESTER_DONE, block=False)
+        self._reports.put(_Sentinel.INGESTER_DONE, block=False)
         return result
 
     def report_ingest(self, n_producers: int) -> None:
@@ -851,7 +851,7 @@ class IngesterCommunicator(WorkerCommunicator):
         while True:
             self.check_for_cancel()
             ingest_request = _get_from_queue(self._ingest_requests, block=True, timeout=_TINY_TIMEOUT)
-            if ingest_request is _Sentinal.NO_MORE_INGEST_REQUESTS:
+            if ingest_request is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self.n_scanners:
                     return
@@ -895,10 +895,10 @@ class WriterCommunicator(WorkerCommunicator):
                 self._n_requesters,
                 self._n_requesters_done,
             )
-            if self._write_requests.get(block=True) is _Sentinal.NO_MORE_WRITE_REQUESTS:
+            if self._write_requests.get(block=True) is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._n_requesters_done += 1
         self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinal.WRITER_DONE, block=False)
+        self._reports.put(_Sentinel.WRITER_DONE, block=False)
         return result
 
     def poll(self) -> Iterator[ScanResult]:
@@ -917,7 +917,7 @@ class WriterCommunicator(WorkerCommunicator):
         while True:
             self.check_for_cancel()
             write_request = _get_from_queue(self._write_requests, block=True, timeout=_TINY_TIMEOUT)
-            if write_request is _Sentinal.NO_MORE_WRITE_REQUESTS:
+            if write_request is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._got_no_more_write_requests = True
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self._n_requesters:
@@ -944,7 +944,7 @@ class WriterCommunicator(WorkerCommunicator):
         """Report to the supervisor that provenance for a quantum was written
         to the graph.
         """
-        self._reports.put(_Sentinal.WRITE_REPORT, block=False)
+        self._reports.put(_Sentinel.WRITE_REPORT, block=False)
 
     def periodically_check_for_cancel(self, iterable: Iterable[_T], n: int = 100) -> Iterator[_T]:
         """Iterate while checking for a cancellation signal every ``n``
