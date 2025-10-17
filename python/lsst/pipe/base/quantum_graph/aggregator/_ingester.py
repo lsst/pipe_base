@@ -137,7 +137,6 @@ class Ingester:
     def loop(self) -> None:
         """Run the main loop for the ingester."""
         self.comms.log.verbose("Registering collections and dataset types.")
-        self.butler.collections.register(self.predicted.header.output_run)
         if self.comms.config.register_dataset_types:
             self.predicted.pipeline_graph.register_dataset_types(
                 self.butler,
@@ -146,6 +145,10 @@ class Ingester:
                 include_configs=True,
                 include_logs=True,
             )
+        self.butler.collections.register(self.predicted.header.output_run)
+        # Updating the output chain cannot happen inside the caching context.
+        if self.comms.config.update_output_chain:
+            self.update_output_chain()
         with self.butler.registry.caching_context():
             if self.comms.config.defensive_ingest:
                 self.fetch_already_ingested()
@@ -174,9 +177,6 @@ class Ingester:
                 # We can finish with returns pending if we filtered out all of
                 # the datasets we started with as already existing.
                 self.report()
-        # Updating the output chain cannot happen inside the caching context.
-        if self.comms.config.update_output_chain:
-            self.update_output_chain()
         self.comms.log_progress(
             logging.INFO,
             f"Ingested {self.n_datasets_ingested} dataset(s); "

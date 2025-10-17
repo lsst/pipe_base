@@ -91,8 +91,7 @@ class AggregatorConfig(pydantic.BaseModel):
 
     update_output_chain: bool = True
     """Whether to prepend the output `~lsst.daf.butler.CollectionType.RUN` to
-    the output `~lsst.daf.butler.CollectionType.CHAINED` collection after
-    ingestion is complete.
+    the output `~lsst.daf.butler.CollectionType.CHAINED` collection.
     """
 
     dry_run: bool = False

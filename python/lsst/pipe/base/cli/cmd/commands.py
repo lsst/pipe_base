@@ -212,7 +212,7 @@ _AGGREGATOR_DEFAULTS = AggregatorConfig()
 @click.option(
     "--update-output-chain/--no-update-output-chain",
     default=_AGGREGATOR_DEFAULTS.update_output_chain,
-    help="Prepend the output RUN collection to the output CHAINED collection after finishing ingest.",
+    help="Prepend the output RUN collection to the output CHAINED collection.",
 )
 @click.option(
     "--worker-log-dir",
