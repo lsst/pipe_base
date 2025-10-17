@@ -28,8 +28,11 @@
 from __future__ import annotations
 
 import os
+import time
 import unittest
 
+import lsst.pipe.base.automatic_connection_constants as acc
+from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
 from lsst.pipe.base.tests.mocks import InMemoryRepo
 
@@ -49,9 +52,23 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         nodes = list(qgraph)
         self.assertEqual(len(nodes), nQuanta)
         node = nodes[0]
+        t1 = time.time()
         executor.execute(node.task_node, node.quantum)
+        t2 = time.time()
         # There must be one dataset of task's output connection
         self.assertEqual(len(butler.get_datasets("dataset_auto1")), 1)
+        # Test that we can construct resource usage information from the
+        # metadata.
+        (md,) = butler.get_datasets(acc.METADATA_OUTPUT_TEMPLATE.format(label="task_auto1")).values()
+        ru = QuantumResourceUsage.from_task_metadata(md)
+        self.assertIsNotNone(ru)
+        self.assertGreater(ru.memory, 0)
+        self.assertGreater(ru.prep_time, 0)
+        self.assertGreater(ru.init_time, 0)
+        self.assertGreater(ru.run_time, 0)
+        self.assertGreater(ru.run_time_cpu, 0)
+        self.assertGreater(ru.total_time, 0)
+        self.assertLess(ru.total_time, t2 - t1)
 
     def test_skip_existing_execute(self) -> None:
         """Run execute() method twice, with skip_existing_in."""
