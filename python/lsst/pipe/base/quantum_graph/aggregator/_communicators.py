@@ -64,6 +64,8 @@ from ._structs import IngestRequest, ScanReport, ScanResult
 
 _T = TypeVar("_T")
 
+_TINY_TIMEOUT = 0.01
+
 # multiprocessing.Queue is a type according to the standard library type stubs,
 # but it's really a function at runtime.  But since the Python <= 3.11 type
 # alias syntax uses the real runtime things we need to use strings, and hence
@@ -227,9 +229,6 @@ class _Sentinel(enum.Enum):
     """
 
 
-_TINY_TIMEOUT = 0.01
-
-
 @dataclasses.dataclass
 class _WorkerError:
     """An internal worker used to pass information about an error that occurred
@@ -377,7 +376,7 @@ class SupervisorCommunicator:
         # The supervisor sets this event when it receives an interrupt request
         # from an exception in the main process (usually KeyboardInterrupt).
         # Worker communicators check this in their polling loops and raise
-        # FatalWorkeError when they see it set.
+        # FatalWorkerError when they see it set.
         self._cancel_event: Event = context.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
@@ -421,7 +420,6 @@ class SupervisorCommunicator:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
         while _get_from_queue(self._compression_dict) is not None:
             self.log.verbose("Flushing compression dict queue.")
-            pass
         self.log.verbose("Checking that all queues are empty.")
         self._expect_empty_queue(self._scan_requests)
         self._expect_empty_queue(self._ingest_requests)
@@ -514,7 +512,7 @@ class SupervisorCommunicator:
 
         This includes:
 
-        - exceptions from workers (which raise `FatalWorkeError` here to
+        - exceptions from workers (which raise `FatalWorkerError` here to
           trigger ``__exit__``);
         - ingest reports;
         - write reports;
@@ -537,7 +535,8 @@ class SupervisorCommunicator:
                 return report
         return None
 
-    def _expect_empty_queue(self, queue: Queue[Any]) -> None:
+    @staticmethod
+    def _expect_empty_queue(queue: Queue[Any]) -> None:
         """Assert that the given queue is empty."""
         if (msg := _get_from_queue(queue, block=False, timeout=0)) is not None:
             raise AssertionError(f"Queue is not empty; found {msg!r}.")
@@ -918,7 +917,6 @@ class WriterCommunicator(WorkerCommunicator):
             self.check_for_cancel()
             write_request = _get_from_queue(self._write_requests, block=True, timeout=_TINY_TIMEOUT)
             if write_request is _Sentinel.NO_MORE_WRITE_REQUESTS:
-                self._got_no_more_write_requests = True
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self._n_requesters:
                     return

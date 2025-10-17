@@ -292,7 +292,10 @@ class Writer:
         self._populate_xgraph_and_inputs()
         self.comms.check_for_cancel()
         self.comms.log_progress(
-            logging.INFO, f"Graph has {len(self.output_dataset_ids)} predicted output dataset(s)."
+            # We add one here for 'packages', which we do ingest but don't
+            # record provenance for.
+            logging.INFO,
+            f"Graph has {len(self.output_dataset_ids) + 1} predicted output dataset(s).",
         )
 
     def _populate_indices_and_outputs(self) -> None:
@@ -493,7 +496,8 @@ class Writer:
                 )
         del self.overall_inputs
 
-    def write_packages(self, data_writers: _DataWriters) -> None:
+    @staticmethod
+    def write_packages(data_writers: _DataWriters) -> None:
         """Write package version information to the provenance graph.
 
         Parameters
@@ -580,8 +584,8 @@ class Writer:
         if scan_data.log:
             address = data_writers.logs.write_bytes(scan_data.quantum_id, scan_data.log)
             data_writers.logs.addresses[scan_data.log_id] = address
-        # We shouldn't need this this predicted quantum anymore; delete it in
-        # the hopes that'll free up some memory.
+        # We shouldn't need this predicted quantum anymore; delete it in the
+        # hopes that'll free up some memory.
         del self.predicted.quantum_datasets[scan_data.quantum_id]
         self.comms.report_write()
 

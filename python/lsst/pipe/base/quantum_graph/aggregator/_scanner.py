@@ -220,6 +220,7 @@ class Scanner:
             metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
             if result.metadata:
                 result.status = ScanStatus.SUCCESSFUL
+                result.existing_outputs.add(metadata_id)
             elif self.comms.config.assume_complete:
                 result.status = ScanStatus.FAILED
             else:
@@ -231,8 +232,6 @@ class Scanner:
                 result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
                 return result
-            if result.metadata:
-                result.existing_outputs.add(metadata_id)
             if result.log:
                 result.existing_outputs.add(log_id)
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):

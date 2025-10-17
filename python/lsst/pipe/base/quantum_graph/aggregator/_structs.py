@@ -70,7 +70,7 @@ class ScanStatus(enum.Enum):
     """
 
     SUCCESSFUL = enum.auto()
-    """The quantum was conclusively scanned and was executed successfuly,
+    """The quantum was conclusively scanned and was executed successfully,
     unblocking scans for downstream quanta.
     """
 
