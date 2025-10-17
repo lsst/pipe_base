@@ -89,7 +89,7 @@ class WorkerContext(ABC):
 
     @abstractmethod
     def make_event(self) -> Event:
-        """Make an empty that can be used to communicate a boolean state change
+        """Make an event that can be used to communicate a boolean state change
         to workers in this context.
         """
         raise NotImplementedError()
@@ -222,7 +222,7 @@ class _Sentinal(enum.Enum):
     """
 
     WRITER_DONE = enum.auto()
-    """Sentinal sent from the writer to the supervistor to report that it is
+    """Sentinel sent from the writer to the supervisor to report that it is
     done and shutting down.
     """
 
@@ -289,7 +289,7 @@ class _ProgressLog:
     """Log message."""
 
     level: int
-    """Log level.  Should be ``VERBOSE`` or higher."""
+    """Log level."""
 
 
 @dataclasses.dataclass
@@ -661,7 +661,7 @@ class WorkerCommunicator:
 
     def check_for_cancel(self) -> None:
         """Check for a cancel signal from the supervisor and raise
-        '`CancelError` if it is present.
+        `FatalWorkerError` if it is present.
         """
         if self._cancel_event.is_set():
             raise CancelError()
@@ -932,7 +932,7 @@ class WriterCommunicator(WorkerCommunicator):
 
         Parameters
         ----------
-        data : `bytes`
+        cdict_data : `bytes`
             The `bytes` representation of the compression dictionary.
         """
         self.log.debug("Sending compression dictionary.")

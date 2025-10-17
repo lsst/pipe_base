@@ -109,7 +109,7 @@ class Scanner:
         butler_config : `str`
             Path or alias for the central butler repository that shares storage
             with the quantum-backed butler.
-        pipeline_graph `..pipeline_graph.PipelineGraph`
+        pipeline_graph : `..pipeline_graph.PipelineGraph`
             Graph of tasks and dataset types.
 
         Returns
@@ -141,6 +141,10 @@ class Scanner:
 
         Parameters
         ----------
+        predicted_path : `str`
+            Path to the predicted quantum graph.
+        butler_path : `str`
+            Path or alias to the central butler repository.
         comms : `ScannerCommunicator`
             Communicator for the scanner.
 

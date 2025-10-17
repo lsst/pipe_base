@@ -159,7 +159,7 @@ class Ingester:
                     self.ingest()
             self.comms.log.info("All ingest requests received.")
             # We use 'while' in case this fails with a conflict and we switch
-            # to switch to defensive mode (should be at most two iterations).
+            # to defensive mode (should be at most two iterations).
             ingest_start_time = time.time()
             while self.n_datasets_pending:
                 n_datasets = self.n_datasets_pending

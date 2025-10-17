@@ -69,7 +69,7 @@ from lsst.utils.packages import Packages
 
 @dataclasses.dataclass
 class PrepInfo:
-    """Struct of of objects used in an aggregator test."""
+    """Struct of objects used in an aggregator test."""
 
     butler: Butler
     butler_path: str
