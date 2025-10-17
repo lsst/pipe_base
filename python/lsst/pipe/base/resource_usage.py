@@ -154,8 +154,8 @@ class QuantumResourceUsage(pydantic.BaseModel):
             "run_time_cpu": np.dtype(np.float32),
         }
 
-    @classmethod
-    def get_units(cls) -> dict[str, str | None]:
+    @staticmethod
+    def get_units() -> dict[str, str | None]:
         """Return a mapping from field name to units.
 
         Units are astropy-compatible strings.
