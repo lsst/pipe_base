@@ -116,9 +116,6 @@ from ._supervisor import aggregate_graph
 #   the tool is complete and we stop wanting to run it from an interactive
 #   terminal, but it's certainly been useful for development so far.
 #
-# - _storage.py: each scanner can optionally have its own SQLite database to
-#   track progress and hence pick up where it left off after an interruption.
-#
 # - _structs.py: simple dataclasses used by multiple workers (most of what we
 #   put on the queues to request scans/ingests/writes);
 #
