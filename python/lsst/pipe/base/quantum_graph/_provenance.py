@@ -690,8 +690,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
     Notes
     -----
     A provenance quantum graph is generally obtained via the
-    `ProvenanceQuantmGraphReader.graph` attribute, which is updated in-place as
-    information is read from disk.
+    `ProvenanceQuantumGraphReader.graph` attribute, which is updated in-place
+    as information is read from disk.
     """
 
     def __init__(self, header: HeaderModel, pipeline_graph: PipelineGraph) -> None:
