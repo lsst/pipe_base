@@ -188,7 +188,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
     This is `None` for overall inputs to the graph.
     """
 
-    consumers: list[QuantumIndex] = dataclasses.field(default_factory=list)
+    consumers: list[QuantumIndex] = pydantic.Field(default_factory=list)
     """Internal integer IDs of quanta that were predicted to consume this
     dataset.
     """
@@ -338,12 +338,12 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     exception: ExceptionInfo | None = None
     """Information about an exception raised when the quantum was executing."""
 
-    inputs: dict[ConnectionName, list[DatasetIndex]] = dataclasses.field(default_factory=dict)
+    inputs: dict[ConnectionName, list[DatasetIndex]] = pydantic.Field(default_factory=dict)
     """Internal integer IDs of the datasets predicted to be consumed by this
     quantum, grouped by connection name.
     """
 
-    outputs: dict[ConnectionName, list[DatasetIndex]] = dataclasses.field(default_factory=dict)
+    outputs: dict[ConnectionName, list[DatasetIndex]] = pydantic.Field(default_factory=dict)
     """Internal integer IDs of the datasets predicted to be produced by this
     quantum, grouped by connection name.
     """
@@ -499,12 +499,12 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
     Note that full dataset type definitions are stored in the pipeline graph.
     """
 
-    inputs: dict[ConnectionName, DatasetIndex] = dataclasses.field(default_factory=dict)
+    inputs: dict[ConnectionName, DatasetIndex] = pydantic.Field(default_factory=dict)
     """Internal integer IDs of the datasets predicted to be consumed by this
     quantum, grouped by connection name.
     """
 
-    outputs: dict[ConnectionName, DatasetIndex] = dataclasses.field(default_factory=dict)
+    outputs: dict[ConnectionName, DatasetIndex] = pydantic.Field(default_factory=dict)
     """Internal integer IDs of the datasets predicted to be produced by this
     quantum, grouped by connection name.
     """
