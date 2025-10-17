@@ -119,16 +119,17 @@ from ._supervisor import aggregate_graph
 # - _structs.py: simple dataclasses used by multiple workers (most of what we
 #   put on the queues to request scans/ingests/writes);
 #
-# The main logger used by the aggregator is called ``aggregate-graph``, and it
-# emits at ``VERBOSE`` and above.  At ``VERBOSE``, it's also used for periodic
-# reporting of status (unless the tqdm progress bars are enabled instead). Each
-# worker also has its own log (including the supervisor) with names like
-# ``aggregate-graph.scanner-012`` that include additional information at
-# ``DEBUG`` and above, but these are *not* propagated up; instead there's a
-# config option to write per-worker logs to separate files in a directory.  It
-# would probably be more idiomatic to set up a QueueHandler to feed all the
-# LogRecords the supervisor and use Python logging configuration to send them
-# wherever desired, but::
+# The main logger used by the aggregator is called
+# ``lsst.pipe.base.quantum_graph.aggregator``, and it emits at ``VERBOSE`` and
+# above.  At ``VERBOSE``, it's also used for periodic reporting of status
+# (unless the tqdm progress bars are enabled instead). Each worker also has its
+# own log (including the supervisor) with names like
+# ``lsst.pipe.base.quantum_graph.aggregator.scanner-012`` that include
+# additional information at ``DEBUG`` and above, but these are *not* propagated
+# up; instead there's a config option to write per-worker logs to separate
+# files in a directory.  It would probably be more idiomatic to set up a
+# QueueHandler to feed all the LogRecords the supervisor and use Python logging
+# configuration to send them wherever desired, but::
 #
 # - that seemed to require more wading into `lsst.daf.butler.cli.cliLog` a lot
 #   more than I cared to (especially considering that we want this to work in
