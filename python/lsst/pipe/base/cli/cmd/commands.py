@@ -176,7 +176,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     help="Number of processes to use.",
 )
 @click.option(
-    "--assume-complete/--incomplete",
+    "--complete/--incomplete",
     "assume_complete",
     default=True,
     help="Whether execution has completed (and failures cannot be retried).",
