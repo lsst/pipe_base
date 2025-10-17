@@ -36,9 +36,6 @@ import pydantic
 class AggregatorConfig(pydantic.BaseModel):
     """Configuration for the provenance aggregator."""
 
-    # Changes to the defaults in this class are not automatically reflected in
-    # the CLI; some defaults unfortunately have to be duplicated there.
-
     output_path: str | None = None
     """Path for the output provenance quantum graph file.
 

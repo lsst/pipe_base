@@ -40,6 +40,7 @@ from lsst.daf.butler.cli.opt import (
 from lsst.daf.butler.cli.utils import ButlerCommand, split_commas, unwrap
 
 from ... import script
+from ...quantum_graph.aggregator import AggregatorConfig
 from ..opt import instrument_argument, update_output_chain_option
 
 
@@ -155,6 +156,9 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")
 
 
+_AGGREGATOR_DEFAULTS = AggregatorConfig()
+
+
 @click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
 @click.argument("predicted_graph", required=True)
 @repo_argument(required=True, help="Path to the central butler repository.")
@@ -162,6 +166,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     "-o",
     "--output",
     "output_path",
+    default=_AGGREGATOR_DEFAULTS.output_path,
     help=(
         "Path to the output provenance quantum graph.  THIS OPTION IS FOR "
         "DEVELOPMENT AND DEBUGGING ONLY.  IT MAY BE REMOVED IN THE FUTURE."
@@ -171,68 +176,77 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     "--processes",
     "-j",
     "n_processes",
-    default=1,
+    default=_AGGREGATOR_DEFAULTS.n_processes,
     type=click.IntRange(min=1),
     help="Number of processes to use.",
 )
 @click.option(
     "--complete/--incomplete",
     "assume_complete",
-    default=True,
+    default=_AGGREGATOR_DEFAULTS.assume_complete,
     help="Whether execution has completed (and failures cannot be retried).",
 )
-@click.option("--dry-run", is_flag=True, help="Do not actually perform any central database ingests.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=_AGGREGATOR_DEFAULTS.dry_run,
+    help="Do not actually perform any central database ingests.",
+)
 @click.option(
     "--interactive-status/--no-interactive-status",
     "interactive_status",
+    default=_AGGREGATOR_DEFAULTS.interactive_status,
     help="Use progress bars for status reporting instead of periodic logging.",
 )
 @click.option(
     "--log-status-interval",
     type=int,
+    default=_AGGREGATOR_DEFAULTS.log_status_interval,
     help="Interval (in seconds) between periodic logger status updates.",
 )
 @click.option(
     "--register-dataset-types/--no-register-dataset-types",
-    default=True,
+    default=_AGGREGATOR_DEFAULTS.register_dataset_types,
     help="Register output dataset types.",
 )
 @click.option(
     "--update-output-chain/--no-update-output-chain",
-    default=True,
+    default=_AGGREGATOR_DEFAULTS.update_output_chain,
     help="Prepend the output RUN collection to the output CHAINED collection.",
 )
 @click.option(
     "--worker-log-dir",
     type=str,
+    default=_AGGREGATOR_DEFAULTS.worker_log_dir,
     help="Path to a directory (POSIX only) for parallel worker logs.",
 )
 @click.option(
     "--worker-log-level",
     type=str,
-    default="VERBOSE",
+    default=_AGGREGATOR_DEFAULTS.worker_log_level,
     help="Log level for worker processes/threads (use DEBUG for per-quantum messages).",
 )
 @click.option(
     "--zstd-level",
     type=int,
-    default=10,
+    default=_AGGREGATOR_DEFAULTS.zstd_level,
     help="Compression level for the provenance quantum graph file.",
 )
 @click.option(
     "--zstd-dict-size",
     type=int,
-    default=32768,
+    default=_AGGREGATOR_DEFAULTS.zstd_dict_size,
     help="Size (in bytes) of the ZStandard compression dictionary.",
 )
 @click.option(
     "--zstd-dict-n-inputs",
     type=int,
-    default=512,
+    default=_AGGREGATOR_DEFAULTS.zstd_dict_n_inputs,
     help=("Number of samples of each type to include in ZStandard compression dictionary training."),
 )
 @click.option(
     "--mock-storage-classes/--no-mock-storage-classes",
+    default=_AGGREGATOR_DEFAULTS.mock_storage_classes,
     help="Enable support for storage classes created by the lsst.pipe.base.tests.mocks package.",
 )
 def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
@@ -249,10 +263,6 @@ def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
     # than True or False (i.e. so they fall back to the config value when not
     # set).  It's not clear whether Click 8.2.x has actually fixed this; Click
     # 8.2.0 tried but caused new problems.
-    #
-    # This also means that for now, the defaults above override the defaults in
-    # the AggregatorConfig, which is unfortunate (the values should be the
-    # same).
 
     config = AggregatorConfig(**kwargs)
     aggregate_graph_py(predicted_graph, repo, config)
