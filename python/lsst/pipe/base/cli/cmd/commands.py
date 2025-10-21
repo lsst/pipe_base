@@ -40,7 +40,7 @@ from lsst.daf.butler.cli.opt import (
 from lsst.daf.butler.cli.utils import ButlerCommand, split_commas, unwrap
 
 from ... import script
-from ...quantum_graph.aggregator import AggregatorConfig
+from ...quantum_graph import aggregator
 from ..opt import instrument_argument, update_output_chain_option
 
 
@@ -156,7 +156,7 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")
 
 
-_AGGREGATOR_DEFAULTS = AggregatorConfig()
+_AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
 
 
 @click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
@@ -254,9 +254,6 @@ def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
     into the central butler repository, and delete datasets that are no
     longer needed.
     """
-    from ...quantum_graph.aggregator import AggregatorConfig
-    from ...quantum_graph.aggregator import aggregate_graph as aggregate_graph_py
-
     # It'd be nice to allow to the user to provide a path to an
     # AggregatorConfig JSON file for options that weren't provided, but Click
     # 8.1 fundamentally cannot handle flag options that default to None rather
@@ -264,5 +261,10 @@ def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
     # set).  It's not clear whether Click 8.2.x has actually fixed this; Click
     # 8.2.0 tried but caused new problems.
 
-    config = AggregatorConfig(**kwargs)
-    aggregate_graph_py(predicted_graph, repo, config)
+    config = aggregator.AggregatorConfig(**kwargs)
+    try:
+        aggregator.aggregate_graph(predicted_graph, repo, config)
+    except aggregator.FatalWorkerError as err:
+        # When this exception is raised, we'll have already logged the relevant
+        # traceback from a separate worker.
+        raise click.ClickException(str(err)) from None

@@ -53,7 +53,7 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceQuantumGraphReader,
     ProvenanceQuantumInfo,
 )
-from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, aggregate_graph
+from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
 from lsst.pipe.base.quantum_provenance_graph import QuantumRunStatus
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
@@ -819,6 +819,14 @@ class AggregatorTestCase(unittest.TestCase):
                 self.check_provenance_graph(
                     prep.predicted, reader, prep.butler, expect_failure=True, start_time=start_time
                 )
+
+    def test_worker_failures(self) -> None:
+        """Test that if failures occur on (multiple) workers we shut down
+        gracefully instead of hanging.
+        """
+        with self.make_test_repo() as prep:
+            with self.assertRaises(FatalWorkerError):
+                aggregate_graph(prep.predicted_path, "nonexistent", prep.config)
 
     def test_cli_overrides(self) -> None:
         """Test that command-line options override config attributes as

@@ -45,10 +45,11 @@ See `AggregatorConfig` for how to enable additional logging by each process.
 
 from __future__ import annotations
 
-__all__ = ("AggregatorConfig", "aggregate_graph")
+__all__ = ("AggregatorConfig", "FatalWorkerError", "aggregate_graph")
 
 from ._config import AggregatorConfig
 from ._supervisor import aggregate_graph
+from ._communicators import FatalWorkerError
 
 #
 # Aggregator Design Notes and Package Layout

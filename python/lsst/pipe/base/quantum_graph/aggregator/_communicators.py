@@ -52,7 +52,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, ExitStack, contextmanager
-from traceback import TracebackException
+from traceback import format_exception
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
 
@@ -230,7 +230,7 @@ class _Sentinel(enum.Enum):
 
 
 @dataclasses.dataclass
-class _WorkerError:
+class _WorkerErrorMessage:
     """An internal worker used to pass information about an error that occurred
     on a worker back to the supervisor.
 
@@ -240,13 +240,14 @@ class _WorkerError:
     worker: str
     """Name of the originating worker."""
 
-    exception: TracebackException
-    """Serializable exception information.
+    traceback: str
+    """A logged exception traceback.
 
-    Note that this is not a `BaseException` subclass; it's something we can
-    print to make the right traceback appear on the screen, but if something
-    silences that printing in favor of its own exception management (pytest!)
-    this information disappears.
+    Note that this is not a `BaseException` subclass that can actually be
+    re-raised on the supervisor; it's just something we can log to make the
+    right traceback appear on the screen.  If something silences that printing
+    in favor of its own exception management (pytest!) this information
+    disappears.
     """
 
 
@@ -305,7 +306,7 @@ class _CompressionDictionary:
 Report: TypeAlias = (
     ScanReport
     | _IngestReport
-    | _WorkerError
+    | _WorkerErrorMessage
     | _ProgressLog
     | Literal[
         _Sentinel.WRITE_REPORT,
@@ -389,7 +390,7 @@ class SupervisorCommunicator:
         self._ingester_done = False
         self._writer_done = self._write_requests is None
 
-    def wait_for_workers_to_finish(self) -> None:
+    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
                 self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS, block=False)
@@ -398,13 +399,9 @@ class SupervisorCommunicator:
             self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
         while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
-            self.log.verbose(
-                "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
-                self._ingester_done,
-                self._writer_done,
-                self._n_scanners_done,
-            )
-            match self._handle_progress_reports(self._reports.get(block=True)):
+            match self._handle_progress_reports(
+                self._reports.get(block=True), already_failing=already_failing
+            ):
                 case None | ScanReport() | _IngestReport():
                     pass
                 case _Sentinel.INGESTER_DONE:
@@ -418,6 +415,12 @@ class SupervisorCommunicator:
                     self.progress.finish_writes()
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
+            self.log.verbose(
+                "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
+                self._ingester_done,
+                self._writer_done,
+                self._n_scanners_done,
+            )
         while _get_from_queue(self._compression_dict) is not None:
             self.log.verbose("Flushing compression dict queue.")
         self.log.verbose("Checking that all queues are empty.")
@@ -442,11 +445,11 @@ class SupervisorCommunicator:
         traceback: TracebackType | None,
     ) -> None:
         if exc_type is not None:
-            self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
+            if exc_type is not FatalWorkerError:
+                self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
             self._cancel_event.set()
-        self.wait_for_workers_to_finish()
+        self.wait_for_workers_to_finish(already_failing=exc_type is not None)
         self.progress.__exit__(exc_type, exc_value, traceback)
-        return None
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
         """Send a request to the scanners to scan the given quantum.
@@ -497,7 +500,7 @@ class SupervisorCommunicator:
             msg = _get_from_queue(self._reports, block=block)
 
     def _handle_progress_reports(
-        self, report: Report
+        self, report: Report, already_failing: bool = False
     ) -> (
         ScanReport
         | Literal[
@@ -522,9 +525,10 @@ class SupervisorCommunicator:
         report is returned.
         """
         match report:
-            case _WorkerError(exception=exception, worker=worker):
-                exception.print()
-                raise FatalWorkerError(f"Caught exception from {worker} (traceback above).")
+            case _WorkerErrorMessage(traceback=traceback, worker=worker):
+                self.progress.log.fatal("Exception raised on %s: \n%s", worker, traceback)
+                if not already_failing:
+                    raise FatalWorkerError()
             case _IngestReport(n_producers=n_producers):
                 self.progress.report_ingests(n_producers)
             case _Sentinel.WRITE_REPORT:
@@ -600,11 +604,20 @@ class WorkerCommunicator:
             os.makedirs(self.config.worker_profile_dir, exist_ok=True)
             self._profiler.dump_stats(os.path.join(self.config.worker_profile_dir, f"{self.name}.profile"))
         if exc_value is not None:
+            assert exc_type is not None, "Should be guaranteed by Python, but MyPy doesn't know that."
             if exc_type is not FatalWorkerError:
+                self.log.warning("Error raised on this worker.", exc_info=(exc_type, exc_value, traceback))
                 assert exc_type is not None and traceback is not None
                 self._reports.put(
-                    _WorkerError(self.name, TracebackException(exc_type, exc_value, traceback)), block=False
+                    _WorkerErrorMessage(
+                        self.name,
+                        "".join(format_exception(exc_type, exc_value, traceback)),
+                    ),
+                    block=False,
                 )
+                self.log.debug("Error message sent to supervisor.")
+            else:
+                self.log.warning("Shutting down due to exception raised on another worker.")
         self._exit_stack.__exit__(exc_type, exc_value, traceback)
         return True
 
