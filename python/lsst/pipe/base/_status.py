@@ -166,7 +166,7 @@ class QuantumSuccessCaveats(enum.Flag):
         """
         return {
             "+": "at least one predicted output was missing, but not all were",
-            "*": "all predicated outputs were missing (besides logs and metadata)",
+            "*": "all predicted outputs were missing (besides logs and metadata)",
             "A": "adjustQuantum raised NoWorkFound; a regenerated QG would not include this quantum",
             "D": "algorithm considers data too bad to be processable",
             "U": "one or more input dataset was incomplete due to an upstream failure",

@@ -124,6 +124,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
     'if "sphinx" in sys.modules:',
+    'if "sphinx" in sys.modules and not TYPE_CHECKING:'
 ]
 
 [tool.pydocstyle]

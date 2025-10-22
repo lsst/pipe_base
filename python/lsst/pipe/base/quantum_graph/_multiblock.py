@@ -41,6 +41,7 @@ __all__ = (
 
 import dataclasses
 import logging
+import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -501,13 +502,13 @@ class AddressReader:
         self.pages.clear()
         return self.rows
 
-    def find(self, key: uuid.UUID) -> AddressRow:
-        """Read the row for the given UUID.
+    def find(self, key: uuid.UUID | int) -> AddressRow:
+        """Read the row for the given UUID or integer index.
 
         Parameters
         ----------
-        key : `uuid.UUID`
-            UUID to find.
+        key : `uuid.UUID` or `int`
+            UUID or integer index to find.
 
         Returns
         -------
@@ -517,6 +518,8 @@ class AddressReader:
         match key:
             case uuid.UUID():
                 return self._find_uuid(key)
+            case int():
+                return self._find_index(key)
             case _:
                 raise TypeError(f"Invalid argument: {key}.")
 
@@ -545,6 +548,22 @@ class AddressReader:
 
         # Ran out of pages to search.
         raise LookupError(f"Address for {target} not found.")
+
+    def _find_index(self, target: int) -> AddressRow:
+        # First shortcut if we've already loaded this row.
+        if (row := self.rows_by_index.get(target)) is not None:
+            return row
+        if target < 0 or target >= self.n_rows:
+            raise LookupError(f"Address for index {target} not found.")
+        # Since all indexes should be present, we can predict the right page
+        # exactly.
+        page_index = target // self.rows_per_page
+        self._read_page(page_index)
+        try:
+            return self.rows_by_index[target]
+        except KeyError:
+            _LOG.debug("Index find failed: %s should have been in page %s.", target, page_index)
+            raise LookupError(f"Address for {target} not found.") from None
 
     def _read_page(self, page_index: int, page_stream: BytesIO | None = None) -> bool:
         page = self.pages[page_index]
@@ -594,7 +613,9 @@ class MultiblockWriter:
 
     @classmethod
     @contextmanager
-    def open_in_zip(cls, zf: zipfile.ZipFile, name: str, int_size: int) -> Iterator[MultiblockWriter]:
+    def open_in_zip(
+        cls, zf: zipfile.ZipFile, name: str, int_size: int, use_tempfile: bool = False
+    ) -> Iterator[MultiblockWriter]:
         """Open a writer for a file in a zip archive.
 
         Parameters
@@ -605,14 +626,26 @@ class MultiblockWriter:
             Base name for the multi-block file; an extension will be added.
         int_size : `int`
             Number of bytes to use for all integers.
+        use_tempfile : `bool`, optional
+            If `True`, send writes to a temporary file and only add the file to
+            the zip archive when the context manager closes.  This involves
+            more overall I/O, but it permits multiple multi-block files to be
+            open for writing in the same zip archive at once.
 
         Returns
         -------
         writer : `contextlib.AbstractContextManager` [ `MultiblockWriter` ]
             Context manager that returns a writer when entered.
         """
-        with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
-            yield MultiblockWriter(stream, int_size)
+        filename = f"{name}.mb"
+        if use_tempfile:
+            with tempfile.NamedTemporaryFile(suffix=filename) as tmp:
+                yield MultiblockWriter(tmp, int_size)
+                tmp.flush()
+                zf.write(tmp.name, filename)
+        else:
+            with zf.open(f"{name}.mb", mode="w", force_zip64=True) as stream:
+                yield MultiblockWriter(stream, int_size)
 
     def write_bytes(self, id: uuid.UUID, data: bytes) -> Address:
         """Write raw bytes to the multi-block file.
@@ -629,6 +662,7 @@ class MultiblockWriter:
         address : `Address`
             Address of the bytes just written.
         """
+        assert id not in self.addresses, "Duplicate write to multi-block file detected."
         self.stream.write(len(data).to_bytes(self.int_size))
         self.stream.write(data)
         block_size = len(data) + self.int_size

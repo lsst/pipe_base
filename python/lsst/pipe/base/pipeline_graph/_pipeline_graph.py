@@ -1697,7 +1697,15 @@ class PipelineGraph:
             PACKAGES_INIT_OUTPUT_NAME, self._universe.empty, PACKAGES_INIT_OUTPUT_STORAGE_CLASS
         )
 
-    def register_dataset_types(self, butler: Butler, include_packages: bool = True) -> None:
+    def register_dataset_types(
+        self,
+        butler: Butler,
+        include_packages: bool = True,
+        *,
+        include_inputs: bool = True,
+        include_configs: bool = True,
+        include_logs: bool = True,
+    ) -> None:
         """Register all dataset types in a data repository.
 
         Parameters
@@ -1709,11 +1717,28 @@ class PipelineGraph:
             software versions (this is not associated with a task and hence is
             not considered part of the pipeline graph in other respects, but it
             does get written with other provenance datasets).
+        include_inputs : `bool`, optional
+            Whether to register overall-input dataset types as well as outputs.
+        include_configs : `bool`, optional
+            Whether to register task config dataset types.
+        include_logs : `bool`, optional
+            Whether to register task log dataset types.
         """
-        dataset_types = [node.dataset_type for node in self.dataset_types.values()]
+        dataset_types = {
+            node.name: node.dataset_type
+            for node in self.dataset_types.values()
+            if include_inputs or self.producer_of(node.name) is not None
+        }
         if include_packages:
-            dataset_types.append(self.packages_dataset_type)
-        for dataset_type in dataset_types:
+            dataset_types[self.packages_dataset_type.name] = self.packages_dataset_type
+        if not include_configs:
+            for task_node in self.tasks.values():
+                del dataset_types[task_node.init.config_output.dataset_type_name]
+        if not include_logs:
+            for task_node in self.tasks.values():
+                if task_node.log_output is not None:
+                    del dataset_types[task_node.log_output.dataset_type_name]
+        for dataset_type in dataset_types.values():
             butler.registry.registerDatasetType(dataset_type)
 
     def check_dataset_type_registrations(self, butler: Butler, include_packages: bool = True) -> None:

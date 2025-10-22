@@ -40,6 +40,7 @@ from lsst.daf.butler.cli.opt import (
 from lsst.daf.butler.cli.utils import ButlerCommand, split_commas, unwrap
 
 from ... import script
+from ...quantum_graph import aggregator
 from ..opt import instrument_argument, update_output_chain_option
 
 
@@ -140,7 +141,7 @@ def zip_from_graph(**kwargs: Any) -> None:
     "--include-outputs/--no-include-outputs",
     is_flag=True,
     default=True,
-    help="Whether to include outut datasets in retrieval.",
+    help="Whether to include output datasets in retrieval.",
 )
 @options_file_option()
 def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
@@ -153,3 +154,117 @@ def retrieve_artifacts_for_quanta(**kwargs: Any) -> None:
     """
     artifacts = script.retrieve_artifacts_for_quanta(**kwargs)
     print(f"Written {len(artifacts)} artifacts to {kwargs['dest']}.")
+
+
+_AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
+
+
+@click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
+@click.argument("predicted_graph", required=True)
+@repo_argument(required=True, help="Path to the central butler repository.")
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    default=_AGGREGATOR_DEFAULTS.output_path,
+    help=(
+        "Path to the output provenance quantum graph.  THIS OPTION IS FOR "
+        "DEVELOPMENT AND DEBUGGING ONLY.  IT MAY BE REMOVED IN THE FUTURE."
+    ),
+)
+@click.option(
+    "--processes",
+    "-j",
+    "n_processes",
+    default=_AGGREGATOR_DEFAULTS.n_processes,
+    type=click.IntRange(min=1),
+    help="Number of processes to use.",
+)
+@click.option(
+    "--complete/--incomplete",
+    "assume_complete",
+    default=_AGGREGATOR_DEFAULTS.assume_complete,
+    help="Whether execution has completed (and failures cannot be retried).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=_AGGREGATOR_DEFAULTS.dry_run,
+    help="Do not actually perform any central database ingests.",
+)
+@click.option(
+    "--interactive-status/--no-interactive-status",
+    "interactive_status",
+    default=_AGGREGATOR_DEFAULTS.interactive_status,
+    help="Use progress bars for status reporting instead of periodic logging.",
+)
+@click.option(
+    "--log-status-interval",
+    type=int,
+    default=_AGGREGATOR_DEFAULTS.log_status_interval,
+    help="Interval (in seconds) between periodic logger status updates.",
+)
+@click.option(
+    "--register-dataset-types/--no-register-dataset-types",
+    default=_AGGREGATOR_DEFAULTS.register_dataset_types,
+    help="Register output dataset types.",
+)
+@click.option(
+    "--update-output-chain/--no-update-output-chain",
+    default=_AGGREGATOR_DEFAULTS.update_output_chain,
+    help="Prepend the output RUN collection to the output CHAINED collection.",
+)
+@click.option(
+    "--worker-log-dir",
+    type=str,
+    default=_AGGREGATOR_DEFAULTS.worker_log_dir,
+    help="Path to a directory (POSIX only) for parallel worker logs.",
+)
+@click.option(
+    "--worker-log-level",
+    type=str,
+    default=_AGGREGATOR_DEFAULTS.worker_log_level,
+    help="Log level for worker processes/threads (use DEBUG for per-quantum messages).",
+)
+@click.option(
+    "--zstd-level",
+    type=int,
+    default=_AGGREGATOR_DEFAULTS.zstd_level,
+    help="Compression level for the provenance quantum graph file.",
+)
+@click.option(
+    "--zstd-dict-size",
+    type=int,
+    default=_AGGREGATOR_DEFAULTS.zstd_dict_size,
+    help="Size (in bytes) of the ZStandard compression dictionary.",
+)
+@click.option(
+    "--zstd-dict-n-inputs",
+    type=int,
+    default=_AGGREGATOR_DEFAULTS.zstd_dict_n_inputs,
+    help=("Number of samples of each type to include in ZStandard compression dictionary training."),
+)
+@click.option(
+    "--mock-storage-classes/--no-mock-storage-classes",
+    default=_AGGREGATOR_DEFAULTS.mock_storage_classes,
+    help="Enable support for storage classes created by the lsst.pipe.base.tests.mocks package.",
+)
+def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
+    """Scan for quantum graph's outputs to gather provenance, ingest datasets
+    into the central butler repository, and delete datasets that are no
+    longer needed.
+    """
+    # It'd be nice to allow to the user to provide a path to an
+    # AggregatorConfig JSON file for options that weren't provided, but Click
+    # 8.1 fundamentally cannot handle flag options that default to None rather
+    # than True or False (i.e. so they fall back to the config value when not
+    # set).  It's not clear whether Click 8.2.x has actually fixed this; Click
+    # 8.2.0 tried but caused new problems.
+
+    config = aggregator.AggregatorConfig(**kwargs)
+    try:
+        aggregator.aggregate_graph(predicted_graph, repo, config)
+    except aggregator.FatalWorkerError as err:
+        # When this exception is raised, we'll have already logged the relevant
+        # traceback from a separate worker.
+        raise click.ClickException(str(err)) from None

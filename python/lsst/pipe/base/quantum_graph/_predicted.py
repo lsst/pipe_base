@@ -347,6 +347,32 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
     the data repository.
     """
 
+    def iter_input_dataset_ids(self) -> Iterator[uuid.UUID]:
+        """Return an iterator over the UUIDs of all datasets consumed by this
+        quantum.
+
+        Returns
+        -------
+        iter : `~collections.abc.Iterator` [ `uuid.UUID` ]
+            Iterator over dataset IDs.
+        """
+        for datasets in self.inputs.values():
+            for dataset in datasets:
+                yield dataset.dataset_id
+
+    def iter_output_dataset_ids(self) -> Iterator[uuid.UUID]:
+        """Return an iterator over the UUIDs of all datasets produced by this
+        quantum.
+
+        Returns
+        -------
+        iter : `~collections.abc.Iterator` [ `uuid.UUID` ]
+            Iterator over dataset IDs.
+        """
+        for datasets in self.outputs.values():
+            for dataset in datasets:
+                yield dataset.dataset_id
+
     def iter_dataset_ids(self) -> Iterator[uuid.UUID]:
         """Return an iterator over the UUIDs of all datasets referenced by this
         quantum.
@@ -356,9 +382,8 @@ class PredictedQuantumDatasetsModel(pydantic.BaseModel):
         iter : `~collections.abc.Iterator` [ `uuid.UUID` ]
             Iterator over dataset IDs.
         """
-        for datasets in itertools.chain(self.inputs.values(), self.outputs.values()):
-            for dataset in datasets:
-                yield dataset.dataset_id
+        yield from self.iter_input_dataset_ids()
+        yield from self.iter_output_dataset_ids()
 
     def deserialize_datastore_records(self) -> dict[DatastoreName, DatastoreRecordData]:
         """Deserialize the mapping of datastore records."""
@@ -774,7 +799,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
             does affect the smallest, most numerous reads.
-        import_mode : `..pipeline_graph.TaskImportMode`, optional
+        import_mode : `.pipeline_graph.TaskImportMode`, optional
             How to handle importing the task classes referenced in the pipeline
             graph.
 
@@ -1498,6 +1523,38 @@ class PredictedQuantumGraphComponents:
     This does include special "init" quanta.
     """
 
+    def make_dataset_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
+        """Make a `lsst.daf.butler.DatasetRef` from information in the
+        predicted quantum graph.
+
+        Parameters
+        ----------
+        predicted : `PredictedDatasetModel`
+            Model for the dataset in the predicted graph.
+
+        Returns
+        -------
+        ref : `lsst.daf.butler.DatasetRef`
+            A dataset reference.  Data ID will be expanded if and only if
+            the dimension data has been loaded.
+        """
+        try:
+            dataset_type = self.pipeline_graph.dataset_types[predicted.dataset_type_name].dataset_type
+        except KeyError:
+            if predicted.dataset_type_name == acc.PACKAGES_INIT_OUTPUT_NAME:
+                dataset_type = self.pipeline_graph.packages_dataset_type
+            else:
+                raise
+        data_id = DataCoordinate.from_full_values(dataset_type.dimensions, tuple(predicted.data_coordinate))
+        if self.dimension_data is not None:
+            (data_id,) = self.dimension_data.attach(dataset_type.dimensions, [data_id])
+        return DatasetRef(
+            dataset_type,
+            data_id,
+            run=predicted.run,
+            id=predicted.dataset_id,
+        )
+
     def set_quantum_indices(self) -> None:
         """Populate the `quantum_indices` component by sorting the UUIDs in the
         `init_quanta` and `quantum_datasets` components (which must both be
@@ -1813,7 +1870,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             Approximate number of bytes to read at once from address files.
             Note that this does not set a page size for *all* reads, but it
             does affect the smallest, most numerous reads.
-        import_mode : `..pipeline_graph.TaskImportMode`, optional
+        import_mode : `.pipeline_graph.TaskImportMode`, optional
             How to handle importing the task classes referenced in the pipeline
             graph.
 
