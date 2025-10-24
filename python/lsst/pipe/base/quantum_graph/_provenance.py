@@ -108,13 +108,13 @@ class ProvenanceDatasetInfo(DatasetInfo):
     dataset_id: uuid.UUID
     """Unique identifier for the dataset."""
 
-    exists: bool
-    """Whether this dataset existed immediately after the quantum graph was
-    run.
+    produced: bool
+    """Whether this dataset was produced (vs. only predicted).
 
     This is always `True` for overall input datasets.  It is also `True` for
     datasets that were produced and then removed before/during transfer back to
-    the central butler repository.
+    the central butler repository, so it may not reflect the continued
+    existence of the dataset.
     """
 
 
@@ -173,13 +173,13 @@ class ProvenanceInitQuantumInfo(TypedDict):
 class ProvenanceDatasetModel(PredictedDatasetModel):
     """Data model for the datasets in a provenance quantum graph file."""
 
-    exists: bool
-    """Whether this dataset existed immediately after the quantum graph was
-    run.
+    produced: bool
+    """Whether this dataset was produced (vs. only predicted).
 
     This is always `True` for overall input datasets.  It is also `True` for
     datasets that were produced and then removed before/during transfer back to
-    the central butler repository.
+    the central butler repository, so it may not reflect the continued
+    existence of the dataset.
     """
 
     producer: QuantumIndex | None = None
@@ -225,7 +225,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
 
         Notes
         -----
-        This initializes `exists` to `True` when ``producer is None`` and
+        This initializes `produced` to `True` when ``producer is None`` and
         `False` otherwise, on the assumption that it will be updated later.
         """
         return cls.model_construct(
@@ -233,7 +233,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             dataset_type_name=predicted.dataset_type_name,
             data_coordinate=predicted.data_coordinate,
             run=predicted.run,
-            exists=(producer is None),  # if it's not produced by this QG, it's an overall input
+            produced=(producer is None),  # if it's not produced by this QG, it's an overall input
             producer=producer,
             consumers=list(consumers),
         )
@@ -268,7 +268,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             dataset_type_name=self.dataset_type_name,
             pipeline_node=dataset_type_node,
             run=self.run,
-            exists=self.exists,
+            produced=self.produced,
         )
         producer_id: uuid.UUID | None = None
         if self.producer is not None:

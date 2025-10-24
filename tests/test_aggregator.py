@@ -540,7 +540,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.assertEqual(pred_info["dataset_type_name"], prov_info["dataset_type_name"])
         self.assertEqual(pred_info["data_id"], prov_info["data_id"])
         self.assertEqual(pred_info["run"], prov_info["run"])
-        exists = prov_info["exists"]
+        exists = prov_info["produced"]
         dataset_type_name = prov_info["dataset_type_name"]
         # We can remove this guard when we ingest QG-backed metadata and logs.
         if not dataset_type_name.endswith("_metadata") and not dataset_type_name.endswith("_log"):
