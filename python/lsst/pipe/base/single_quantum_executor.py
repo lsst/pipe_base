@@ -279,11 +279,13 @@ class SingleQuantumExecutor(QuantumExecutor):
                 # Stringify the UUID for easier compatibility with
                 # PropertyList.
                 quantumMetadata["outputs"] = [str(output) for output in outputsPut]
-            logInfo(None, "end", metadata=quantumMetadata)  # type: ignore[arg-type]
-            fullMetadata = task.getFullMetadata()
-            fullMetadata["quantum"] = quantumMetadata
-            if self._job_metadata is not None:
-                fullMetadata["job"] = self._job_metadata
+            finally:
+                logInfo(None, "end", metadata=quantumMetadata)  # type: ignore[arg-type]
+                fullMetadata = task.getFullMetadata()
+                fullMetadata["quantum"] = quantumMetadata
+                if self._job_metadata is not None:
+                    fullMetadata["job"] = self._job_metadata
+                captureLog.extra.metadata = fullMetadata
             self._write_metadata(quantum, fullMetadata, task_node, limited_butler)
             stopTime = time.time()
             _LOG.info(

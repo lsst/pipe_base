@@ -51,6 +51,7 @@ from lsst.daf.butler.logging import (
 )
 
 from ._status import InvalidQuantumError
+from ._task_metadata import TaskMetadata
 from .automatic_connection_constants import METADATA_OUTPUT_TEMPLATE
 from .pipeline_graph import TaskNode
 from .quantum_provenance_graph import ExceptionInfo
@@ -69,6 +70,15 @@ class _ExecutionLogRecordsExtra(pydantic.BaseModel):
 
     exception: ExceptionInfo | None = None
     """Exception information for this quantum, if it failed.
+    """
+
+    metadata: TaskMetadata | None = None
+    """Metadata for this quantum, if it failed.
+
+    Metadata datasets are written if and only if a quantum succeeds, but we
+    still want to capture metadata from failed attempts, so we store it in the
+    log dataset.  This field is always `None` when the quantum succeeds,
+    because in that case the metadata is already stored separately.
     """
 
     previous_process_quanta: list[uuid.UUID] = pydantic.Field(default_factory=list)
@@ -239,6 +249,13 @@ class LogCapture:
                 try:
                     with ButlerMDC.set_mdc(mdc):
                         yield ctx
+                except:
+                    raise
+                else:
+                    # If the quantum succeeded, we don't need to save the
+                    # metadata in the logs, because we'll have saved them in
+                    # the metadata.
+                    ctx.extra.metadata = None
                 finally:
                     log_handler_memory.records.extra = ctx.extra.model_dump()
                     # Ensure that the logs are stored in butler.
