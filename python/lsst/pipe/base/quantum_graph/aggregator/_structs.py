@@ -154,17 +154,14 @@ class ScanResult:
         """Translate the scan status and metadata/log presence into a run
         status.
         """
-        if self.status is ScanStatus.BLOCKED:
-            return QuantumRunStatus.BLOCKED
-        if self.status is ScanStatus.INIT:
-            return QuantumRunStatus.SUCCESSFUL
-        if self.log:
-            if self.metadata:
+        match self.status:
+            case ScanStatus.BLOCKED:
+                return QuantumRunStatus.BLOCKED
+            case ScanStatus.SUCCESSFUL | ScanStatus.INIT:
                 return QuantumRunStatus.SUCCESSFUL
-            else:
-                return QuantumRunStatus.FAILED
-        else:
-            if self.metadata:
-                return QuantumRunStatus.LOGS_MISSING
-            else:
-                return QuantumRunStatus.METADATA_MISSING
+            case ScanStatus.FAILED:
+                if self.log:
+                    return QuantumRunStatus.FAILED
+                else:
+                    return QuantumRunStatus.METADATA_MISSING
+        raise AssertionError(f"Unexpected scan status: {self.status}")

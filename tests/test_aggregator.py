@@ -645,10 +645,7 @@ class AggregatorTestCase(unittest.TestCase):
             quantum's execution.
         """
         tbl = prov.make_task_resource_usage_table("calibrate", include_data_ids=True)
-        if expect_failure:
-            self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"] - 1)
-        else:
-            self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"])
+        self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"])
         self.assertCountEqual(
             tbl.colnames,
             ["quantum_id"]

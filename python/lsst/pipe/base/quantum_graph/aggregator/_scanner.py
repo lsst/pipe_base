@@ -213,29 +213,26 @@ class Scanner:
             )
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
-            log_id = self._read_and_compress_log(predicted_quantum, result)
-            if not self.comms.config.assume_complete and not result.log:
+            if not self._read_log(predicted_quantum, result):
                 self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
-                result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
                 return result
-            metadata_id = self._read_and_compress_metadata(predicted_quantum, result)
-            if result.metadata:
-                result.status = ScanStatus.SUCCESSFUL
-                result.existing_outputs.add(metadata_id)
-            elif self.comms.config.assume_complete:
-                result.status = ScanStatus.FAILED
-            else:
+            if not self._read_metadata(predicted_quantum, result):
                 # We found the log dataset, but no metadata; this means the
                 # quantum failed, but a retry might still happen that could
                 # turn it into a success if we can't yet assume the run is
                 # complete.
                 self.comms.log.debug("Abandoning scan for %s.", quantum_id)
-                result.status = ScanStatus.ABANDONED
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
                 return result
-            if result.log:
-                result.existing_outputs.add(log_id)
+        assert result.status is not ScanStatus.INCOMPLETE
+        assert result.status is not ScanStatus.ABANDONED
+        if self.compressor is not None:
+            if result.log is not None:
+                result.log = self.compressor.compress(result.log)
+            if result.metadata is not None:
+                result.metadata = self.compressor.compress(result.metadata)
+            result.is_compressed = True
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
             if predicted_output.dataset_id not in result.existing_outputs and self.scan_dataset(
                 predicted_output
@@ -243,8 +240,6 @@ class Scanner:
                 result.existing_outputs.add(predicted_output.dataset_id)
         to_ingest = self._make_ingest_request(predicted_quantum, result)
         self.comms.report_scan(ScanReport(result.quantum_id, result.status))
-        assert result.status is not ScanStatus.INCOMPLETE
-        assert result.status is not ScanStatus.ABANDONED
         if self.comms.config.output_path is not None:
             self.comms.request_write(result)
         self.comms.request_ingest(to_ingest)
@@ -280,9 +275,7 @@ class Scanner:
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
 
-    def _read_and_compress_metadata(
-        self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
-    ) -> uuid.UUID:
+    def _read_metadata(self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult) -> bool:
         """Attempt to read the metadata dataset for a quantum to extract
         provenance information from it.
 
@@ -295,10 +288,9 @@ class Scanner:
 
         Returns
         -------
-        dataset_id : `uuid.UUID`
-            UUID of the metadata dataset.
+        complete : `bool`
+            Whether the quantum is complete.
         """
-        assert not result.metadata, "We shouldn't be scanning again if we already read the metadata."
         (predicted_dataset,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
         ref = self.reader.components.make_dataset_ref(predicted_dataset)
         try:
@@ -307,9 +299,14 @@ class Scanner:
             # here.
             content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
         except FileNotFoundError:
-            if not self.comms.config.assume_complete:
-                return ref.id
+            if self.comms.config.assume_complete:
+                result.status = ScanStatus.FAILED
+            else:
+                result.status = ScanStatus.ABANDONED
+                return False
         else:
+            result.status = ScanStatus.SUCCESSFUL
+            result.existing_outputs.add(ref.id)
             try:
                 # Int conversion guards against spurious conversion to
                 # float that can apparently sometimes happen in
@@ -324,21 +321,16 @@ class Scanner:
             except LookupError:
                 pass
             try:
-                result.existing_outputs = {
+                result.existing_outputs.update(
                     uuid.UUID(id_str) for id_str in ensure_iterable(content["quantum"].getArray("outputs"))
-                }
+                )
             except LookupError:
                 pass
             result.resource_usage = QuantumResourceUsage.from_task_metadata(content)
             result.metadata = content.model_dump_json().encode()
-            if self.compressor is not None:
-                result.metadata = self.compressor.compress(result.metadata)
-                result.is_compressed = True
-        return ref.id
+        return True
 
-    def _read_and_compress_log(
-        self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult
-    ) -> uuid.UUID:
+    def _read_log(self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult) -> bool:
         """Attempt to read the log dataset for a quantum to test for the
         quantum's completion (the log is always written last) and aggregate
         the log content in the provenance quantum graph.
@@ -352,8 +344,8 @@ class Scanner:
 
         Returns
         -------
-        dataset_id : `uuid.UUID`
-            UUID of the log dataset.
+        complete : `bool`
+            Whether the quantum is complete.
         """
         (predicted_dataset,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
         ref = self.reader.components.make_dataset_ref(predicted_dataset)
@@ -362,16 +354,20 @@ class Scanner:
             # If it's not we'll probably get pydantic validation errors here.
             log_records: ButlerLogRecords = self.qbb.get(ref)
         except FileNotFoundError:
-            if not self.comms.config.assume_complete:
-                return ref.id
+            if self.comms.config.assume_complete:
+                result.status = ScanStatus.FAILED
+            else:
+                result.status = ScanStatus.ABANDONED
+                return False
         else:
+            result.existing_outputs.add(ref.id)
             if log_records.extra:
                 log_extra = _ExecutionLogRecordsExtra.model_validate(log_records.extra)
                 if log_extra.exception is not None:
                     result.exception = log_extra.exception
                 result.previous_process_quanta.extend(log_extra.previous_process_quanta)
+                if log_extra.metadata is not None:
+                    result.resource_usage = QuantumResourceUsage.from_task_metadata(log_extra.metadata)
+                    result.metadata = log_extra.metadata.model_dump_json().encode()
             result.log = log_records.to_json_data().encode()
-            if self.compressor is not None:
-                result.log = self.compressor.compress(result.log)
-                result.is_compressed = True
-        return ref.id
+        return True
