@@ -34,6 +34,7 @@ import logging
 import os
 import shutil
 import tempfile
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from logging import FileHandler
@@ -68,6 +69,10 @@ class _ProvenanceLogRecordsExtra(pydantic.BaseModel):
 
     exception: ExceptionInfo | None = None
     """Exception information for this quantum, if it failed.
+    """
+
+    previous_process_quanta: list[uuid.UUID] = pydantic.Field(default_factory=list)
+    """The IDs of other quanta executed in the same process as this one.
     """
 
     logs: list[ButlerLogRecord] = pydantic.Field(default_factory=list)

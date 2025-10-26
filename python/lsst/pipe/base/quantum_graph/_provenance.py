@@ -366,6 +366,11 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     resource_usage: QuantumResourceUsage | None = None
     """Resource usage information (timing, memory use) for this quantum."""
 
+    previous_process_quanta: list[QuantumIndex] = dataclasses.field(default_factory=list)
+    """The internal integer IDs of other quanta previously executed in the same
+    process as this one.
+    """
+
     @property
     def node_id(self) -> uuid.UUID:
         """Alias for the quantum ID."""
