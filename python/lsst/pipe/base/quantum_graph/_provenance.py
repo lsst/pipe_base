@@ -1165,10 +1165,9 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         with MultiblockReader.open_in_zip(self.zf, LOG_MB_NAME, int_size=self.header.int_size) as mb_reader:
             for node_id_or_index in nodes:
                 address_row = self.address_reader.find(node_id_or_index)
-                log = mb_reader.read_model(
-                    address_row.addresses[LOG_ADDRESS_INDEX], ButlerLogRecords, self.decompressor
-                )
-                if log is not None:
+                log_data = mb_reader.read_bytes(address_row.addresses[LOG_ADDRESS_INDEX])
+                if log_data is not None:
+                    log = ButlerLogRecords.from_raw(self.decompressor.decompress(log_data))
                     result[node_id_or_index] = log
         return result
 

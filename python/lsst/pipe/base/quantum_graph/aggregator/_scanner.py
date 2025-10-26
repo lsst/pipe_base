@@ -179,7 +179,7 @@ class Scanner:
         Returns
         -------
         exists : `bool``
-            Whether the dataset exists
+            Whether the dataset exists.
         """
         ref = self.reader.components.make_dataset_ref(predicted)
         return self.qbb.stored(ref)
@@ -359,12 +359,12 @@ class Scanner:
         try:
             # This assumes QBB log writes are atomic, which should be the case.
             # If it's not we'll probably get pydantic validation errors here.
-            content: ButlerLogRecords = self.qbb.get(ref)
+            log_records: ButlerLogRecords = self.qbb.get(ref)
         except FileNotFoundError:
             if not self.comms.config.assume_complete:
                 return ref.id
         else:
-            result.log = content.model_dump_json().encode()
+            result.log = log_records.to_json_data().encode()
             if self.compressor is not None:
                 result.log = self.compressor.compress(result.log)
                 result.is_compressed = True
