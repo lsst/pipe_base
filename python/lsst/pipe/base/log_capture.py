@@ -29,6 +29,7 @@ from __future__ import annotations
 
 __all__ = ["LogCapture"]
 
+import dataclasses
 import logging
 import os
 import shutil
@@ -37,20 +38,81 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from logging import FileHandler
 
+import pydantic
+
 from lsst.daf.butler import Butler, FileDataset, LimitedButler, Quantum
-from lsst.daf.butler.logging import ButlerLogRecordHandler, ButlerLogRecords, ButlerMDC, JsonLogFormatter
+from lsst.daf.butler.logging import (
+    ButlerLogRecord,
+    ButlerLogRecordHandler,
+    ButlerLogRecords,
+    ButlerMDC,
+    JsonLogFormatter,
+)
 
 from ._status import InvalidQuantumError
 from .automatic_connection_constants import METADATA_OUTPUT_TEMPLATE
 from .pipeline_graph import TaskNode
+from .quantum_provenance_graph import ExceptionInfo
 
 _LOG = logging.getLogger(__name__)
 
 
-class _LogCaptureFlag:
-    """Simple flag to enable/disable log-to-butler saving."""
+class _ExecutionLogRecordsExtra(pydantic.BaseModel):
+    """Extra information about a quantum's execution stored with logs.
+
+    This middleware-private model includes information that is not directly
+    available via any public interface, as it is used exclusively for
+    provenance extraction and then made available through the provenance
+    quantum graph.
+    """
+
+    exception: ExceptionInfo | None = None
+    """Exception information for this quantum, if it failed.
+    """
+
+    logs: list[ButlerLogRecord] = pydantic.Field(default_factory=list)
+    """Logs for this attempt.
+
+    This is always empty for the most recent attempt, because that stores logs
+    in the main section of the butler log records.
+    """
+
+    previous_attempts: list[_ExecutionLogRecordsExtra] = pydantic.Field(default_factory=list)
+    """Information about previous attempts to run this task within the same
+    `~lsst.daf.butler.CollectionType.RUN` collection.
+
+    This is always empty for any attempt other than the most recent one,
+    as all previous attempts are flattened into one list.
+    """
+
+    def attach_previous_attempt(self, log_records: ButlerLogRecords) -> None:
+        """Attach logs from a previous attempt to this struct.
+
+        Parameters
+        ----------
+        log_records : `ButlerLogRecords`
+            Logs from a past attempt to run a quantum.
+        """
+        previous = self.model_validate(log_records.extra)
+        previous.logs.extend(log_records)
+        self.previous_attempts.extend(previous.previous_attempts)
+        self.previous_attempts.append(previous)
+        previous.previous_attempts.clear()
+
+
+@dataclasses.dataclass
+class _LogCaptureContext:
+    """Controls for log capture returned by the `LogCapture.capture_logging`
+    context manager.
+    """
 
     store: bool = True
+    """Whether to store logs at all."""
+
+    extra: _ExecutionLogRecordsExtra = dataclasses.field(default_factory=_ExecutionLogRecordsExtra)
+    """Extra information about the quantum's execution to store for provenance
+    extraction.
+    """
 
 
 class LogCapture:
@@ -88,7 +150,7 @@ class LogCapture:
         return cls(butler, butler)
 
     @contextmanager
-    def capture_logging(self, task_node: TaskNode, /, quantum: Quantum) -> Iterator[_LogCaptureFlag]:
+    def capture_logging(self, task_node: TaskNode, /, quantum: Quantum) -> Iterator[_LogCaptureContext]:
         """Configure logging system to capture logs for execution of this task.
 
         Parameters
@@ -121,7 +183,7 @@ class LogCapture:
         metadata_ref = quantum.outputs[METADATA_OUTPUT_TEMPLATE.format(label=task_node.label)][0]
         mdc["RUN"] = metadata_ref.run
 
-        ctx = _LogCaptureFlag()
+        ctx = _LogCaptureContext()
         log_dataset_name = (
             task_node.log_output.dataset_type_name if task_node.log_output is not None else None
         )
@@ -154,6 +216,12 @@ class LogCapture:
                     # Ensure that the logs are stored in butler.
                     logging.getLogger().removeHandler(log_handler_file)
                     log_handler_file.close()
+                    if ctx.extra:
+                        with open(log_file, "a") as log_stream:
+                            ButlerLogRecords.write_streaming_extra(
+                                log_stream,
+                                ctx.extra.model_dump_json(exclude_unset=True, exclude_defaults=True),
+                            )
                     if ctx.store:
                         self._ingest_log_records(quantum, log_dataset_name, log_file)
                     shutil.rmtree(tmpdir, ignore_errors=True)
@@ -166,6 +234,7 @@ class LogCapture:
                     with ButlerMDC.set_mdc(mdc):
                         yield ctx
                 finally:
+                    log_handler_memory.records.extra = ctx.extra.model_dump()
                     # Ensure that the logs are stored in butler.
                     logging.getLogger().removeHandler(log_handler_memory)
                     if ctx.store:

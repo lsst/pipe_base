@@ -491,6 +491,7 @@ class AggregatorTestCase(unittest.TestCase):
         self, info: ProvenanceQuantumInfo, existence: dict[str, list[bool]], msg: str
     ) -> None:
         self.assertEqual(info["status"], QuantumRunStatus.FAILED, msg=msg)
+        self.assertEqual(info["exception"].type_name, "lsst.pipe.base.tests.mocks.MockAlgorithmError")
         self._expect_all_exist(existence[acc.LOG_OUTPUT_CONNECTION_NAME], msg=msg)
         self._expect_none_exist(existence[acc.METADATA_OUTPUT_CONNECTION_NAME], msg=msg)
         for connection_name in info["pipeline_node"].outputs.keys():
@@ -729,12 +730,9 @@ class AggregatorTestCase(unittest.TestCase):
             succeed without writing anything (`False`).
         """
         t = prov.make_exception_table()
-        if expect_failure:
-            self.assertEqual(len(t), 0)
-        else:
-            self.assertEqual(list(t["Task"]), ["calibrate"])
-            self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
-            self.assertEqual(list(t["Count"]), [1])
+        self.assertEqual(list(t["Task"]), ["calibrate"])
+        self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
+        self.assertEqual(list(t["Count"]), [1])
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the

@@ -44,15 +44,17 @@ from lsst.daf.butler import (
     NamedKeyDict,
     Quantum,
 )
+from lsst.utils.introspection import get_full_type_name
 from lsst.utils.timer import logInfo
 
 from ._quantumContext import ExecutionResources, QuantumContext
 from ._status import AnnotatedPartialOutputsError, InvalidQuantumError, NoWorkFound, QuantumSuccessCaveats
 from .connections import AdjustQuantumHelper
-from .log_capture import LogCapture
+from .log_capture import LogCapture, _ExecutionLogRecordsExtra
 from .pipeline_graph import TaskNode
 from .pipelineTask import PipelineTask
 from .quantum_graph_executor import QuantumExecutor
+from .quantum_provenance_graph import ExceptionInfo
 from .quantum_reports import QuantumReport
 from .task import _TASK_FULL_METADATA_TYPE, _TASK_METADATA_TYPE
 from .taskFactory import TaskFactory
@@ -196,7 +198,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             # or raises an exception do not try to store logs, as they may be
             # already in butler.
             captureLog.store = False
-            if self._check_existing_outputs(quantum, task_node, limited_butler):
+            if self._check_existing_outputs(quantum, task_node, limited_butler, captureLog.extra):
                 _LOG.info(
                     "Skipping already-successful quantum for label=%s dataId=%s.",
                     task_node.label,
@@ -261,6 +263,11 @@ class SingleQuantumExecutor(QuantumExecutor):
                     e.__class__.__name__,
                     str(e),
                 )
+                captureLog.extra.exception = ExceptionInfo(
+                    type_name=get_full_type_name(e),
+                    message=str(e),
+                    metadata={},
+                )
                 raise
             else:
                 quantumMetadata["butler_metrics"] = butler_metrics.model_dump()
@@ -284,7 +291,12 @@ class SingleQuantumExecutor(QuantumExecutor):
         return quantum
 
     def _check_existing_outputs(
-        self, quantum: Quantum, task_node: TaskNode, /, limited_butler: LimitedButler
+        self,
+        quantum: Quantum,
+        task_node: TaskNode,
+        /,
+        limited_butler: LimitedButler,
+        log_extra: _ExecutionLogRecordsExtra,
     ) -> bool:
         """Decide whether this quantum needs to be executed.
 
@@ -302,6 +314,8 @@ class SingleQuantumExecutor(QuantumExecutor):
             Task definition structure.
         limited_butler : `~lsst.daf.butler.LimitedButler`
             Butler to use for querying and clobbering.
+        log_extra : `.log_capture.TaskLogRecordsExtra`
+            Extra information to attach to log records.
 
         Returns
         -------
@@ -337,6 +351,15 @@ class SingleQuantumExecutor(QuantumExecutor):
             "Looking for existing outputs in the way for label=%s dataId=%s.", task_node.label, quantum.dataId
         )
         ref_dict = limited_butler.stored_many(chain.from_iterable(quantum.outputs.values()))
+        if task_node.log_output is not None:
+            (log_ref,) = quantum.outputs[task_node.log_output.dataset_type_name]
+            if ref_dict[log_ref]:
+                _LOG.debug(
+                    "Attaching logs from previous attempt on for label=%s dataId=%s.",
+                    task_node.label,
+                    quantum.dataId,
+                )
+                log_extra.attach_previous_attempt(limited_butler.get(log_ref))
         existingRefs = [ref for ref, exists in ref_dict.items() if exists]
         missingRefs = [ref for ref, exists in ref_dict.items() if not exists]
         if existingRefs:

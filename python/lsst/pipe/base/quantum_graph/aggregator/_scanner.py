@@ -41,6 +41,7 @@ from lsst.utils.iteration import ensure_iterable
 from ... import automatic_connection_constants as acc
 from ..._status import QuantumSuccessCaveats
 from ..._task_metadata import TaskMetadata
+from ...log_capture import _ExecutionLogRecordsExtra
 from ...pipeline_graph import PipelineGraph, TaskImportMode
 from ...quantum_provenance_graph import ExceptionInfo
 from ...resource_usage import QuantumResourceUsage
@@ -364,6 +365,10 @@ class Scanner:
             if not self.comms.config.assume_complete:
                 return ref.id
         else:
+            if log_records.extra:
+                log_extra = _ExecutionLogRecordsExtra.model_validate(log_records.extra)
+                if log_extra.exception is not None:
+                    result.exception = log_extra.exception
             result.log = log_records.to_json_data().encode()
             if self.compressor is not None:
                 result.log = self.compressor.compress(result.log)
