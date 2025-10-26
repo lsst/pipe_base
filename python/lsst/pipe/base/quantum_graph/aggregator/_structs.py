@@ -138,6 +138,9 @@ class ScanResult:
     existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
     """Unique IDs of the output datasets that were actually written."""
 
+    previous_process_quanta: list[uuid.UUID] = dataclasses.field(default_factory=list)
+    """Unique IDs of other quanta previously executed in the same process."""
+
     metadata: bytes = b""
     """Raw content of the metadata dataset."""
 

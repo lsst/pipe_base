@@ -369,6 +369,7 @@ class Scanner:
                 log_extra = _ExecutionLogRecordsExtra.model_validate(log_records.extra)
                 if log_extra.exception is not None:
                     result.exception = log_extra.exception
+                result.previous_process_quanta.extend(log_extra.previous_process_quanta)
             result.log = log_records.to_json_data().encode()
             if self.compressor is not None:
                 result.log = self.compressor.compress(result.log)

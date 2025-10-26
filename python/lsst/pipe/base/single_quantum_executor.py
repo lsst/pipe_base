@@ -149,6 +149,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             self._skip_existing = self._butler.run in self._butler.collections.query(
                 skip_existing_in, flatten_chains=True
             )
+        self._previous_process_quanta: list[uuid.UUID] = []
 
     def execute(
         self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
@@ -207,6 +208,9 @@ class SingleQuantumExecutor(QuantumExecutor):
                 return quantum
             captureLog.store = True
 
+            captureLog.extra.previous_process_quanta.extend(self._previous_process_quanta)
+            if quantum_id is not None:
+                self._previous_process_quanta.append(quantum_id)
             try:
                 quantum = self._updated_quantum_inputs(quantum, task_node, limited_butler)
             except NoWorkFound as exc:
