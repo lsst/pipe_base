@@ -37,7 +37,7 @@ from uuid import UUID
 import astropy.time
 
 from lsst.daf.butler import DataId
-from lsst.daf.butler.registry.queries.expressions.parser import Node, TreeVisitor, parse_expression
+from lsst.daf.butler.queries.expressions.parser import Node, TreeVisitor, parse_expression
 
 
 class _DataIdMatchTreeVisitor(TreeVisitor):
