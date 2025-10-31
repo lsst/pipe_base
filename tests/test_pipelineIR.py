@@ -165,7 +165,7 @@ class PipelineIRTestCase(unittest.TestCase):
         pipeline = PipelineIR.from_string(pipeline_str)
         self.assertEqual(set(pipeline.tasks.keys()), {"modA", "modB"})
 
-        # Test that you cant include and exclude a task
+        # Test that you can't include and exclude a task
         pipeline_str = textwrap.dedent(
             """
         description: Test Pipeline
@@ -175,6 +175,112 @@ class PipelineIRTestCase(unittest.TestCase):
               include: modB
               labeledSubsetModifyMode: EDIT
             - $TESTDIR/pipelines/testPipeline2.yaml
+        """
+        )
+
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that you can rename a task
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              rename:
+                modB: modZ
+              labeledSubsetModifyMode: EDIT
+        """
+        )
+
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(set(pipeline.tasks.keys()), {"modA", "modZ"})
+
+        # Test that renaming and including work together
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              include: modB
+              rename:
+                modB: modZ
+              labeledSubsetModifyMode: EDIT
+        """
+        )
+
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(
+            set(pipeline.tasks.keys()),
+            {
+                "modZ",
+            },
+        )
+
+        # Test that renaming an excluded label works, although perhaps it
+        # should emit a warning
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              exclude: modB
+              rename:
+                modB: modZ
+              labeledSubsetModifyMode: EDIT
+        """
+        )
+
+        pipeline = PipelineIR.from_string(pipeline_str)
+        self.assertEqual(
+            set(pipeline.tasks.keys()),
+            {
+                "modA",
+            },
+        )
+
+        # Test that you can't rename a task to an existing task
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              rename:
+                modB: modA
+              labeledSubsetModifyMode: EDIT
+        """
+        )
+
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that you can't rename two tasks to the same new name
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              rename:
+                modA: modC
+                modB: modC
+              labeledSubsetModifyMode: EDIT
+        """
+        )
+
+        with self.assertRaises(ValueError):
+            PipelineIR.from_string(pipeline_str)
+
+        # Test that you can't rename a task back to its old name
+        # This could work but is confusing and pointless
+        pipeline_str = textwrap.dedent(
+            """
+        description: Test Pipeline
+        imports:
+            - location: $TESTDIR/pipelines/testPipeline1.yaml
+              rename:
+                modB: modC
+                modC: modB
+              labeledSubsetModifyMode: EDIT
         """
         )
 

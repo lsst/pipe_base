@@ -387,13 +387,23 @@ paths in a platform agnostic way.
 Alternatively, the elements of the imports list may be yaml mapping. This
 mapping begins with a key named ``location`` who's value is the same as the
 path described above. The mapping can optionally contain the keys
-``include``, ``exclude``, and ``importContracts``. The keys ``include`` and
-``exclude`` can be used to specify which labels (or labeled subsets) to
-include or exclude, respectively, when inheriting a ``Pipeline``. The values
-associated with these keys are specified as a yaml list, and these two keys
-are mutually exclusive, only one can be specified at at time. The
-``importContracts`` key is optional and is associated with a boolean value
-that controls wether ``contracts`` from the imported pipeline should be
+``include``, ``exclude``, ``rename``, and ``importContracts``. The keys
+``include`` and ``exclude`` can be used to specify which labels
+(or labeled subsets) to include or exclude, respectively, when inheriting
+a ``Pipeline``. The values associated with these keys are specified as
+a yaml list, and these two keys are mutually exclusive: only one can be
+specified at at time.
+
+The ``rename`` key is a dictionary mapping existing labels to be renamed to
+new labels. This is particularly useful for renaming tasks with dynamic
+output connections, since changing the output dimensions can also change the
+metadata (config/log) dataset dimensions, which must therefore be renamed to
+avoid conflicting with the original label definitions. Otherwise, when using
+this feature, remember to apply subsequent config overrides to the new label
+rather than the old.
+
+The ``importContracts`` key is optional and is associated with a boolean value
+that controls whether ``contracts`` from the imported pipeline should be
 included when importing, with a default value of true.
 
 A few further notes about including and excluding. When specifying labels
