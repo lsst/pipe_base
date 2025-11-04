@@ -32,10 +32,12 @@ __all__ = (
     "ProvenanceDatasetModel",
     "ProvenanceInitQuantumInfo",
     "ProvenanceInitQuantumModel",
+    "ProvenanceLogRecordsModel",
     "ProvenanceQuantumGraph",
     "ProvenanceQuantumGraphReader",
     "ProvenanceQuantumInfo",
     "ProvenanceQuantumModel",
+    "ProvenanceTaskMetadataModel",
 )
 
 
@@ -45,7 +47,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Self, TypedDict
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeAlias, TypedDict, TypeVar
 
 import astropy.table
 import networkx
@@ -53,10 +55,12 @@ import numpy as np
 import pydantic
 
 from lsst.daf.butler import DataCoordinate
+from lsst.daf.butler.logging import ButlerLogRecord, ButlerLogRecords
 from lsst.resources import ResourcePathExpression
 from lsst.utils.packages import Packages
 
 from .._status import QuantumSuccessCaveats
+from .._task_metadata import TaskMetadata
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
 from ..quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from ..resource_usage import QuantumResourceUsage
@@ -76,12 +80,6 @@ from ._common import (
 from ._multiblock import AddressReader, MultiblockReader
 from ._predicted import PredictedDatasetModel, PredictedQuantumDatasetsModel
 
-if TYPE_CHECKING:
-    from lsst.daf.butler.logging import ButlerLogRecords
-
-    from .._task_metadata import TaskMetadata
-
-
 DATASET_ADDRESS_INDEX = 0
 QUANTUM_ADDRESS_INDEX = 1
 LOG_ADDRESS_INDEX = 2
@@ -91,6 +89,8 @@ DATASET_MB_NAME = "datasets"
 QUANTUM_MB_NAME = "quanta"
 LOG_MB_NAME = "logs"
 METADATA_MB_NAME = "metadata"
+
+_I = TypeVar("_I", bound=uuid.UUID | int)
 
 
 class ProvenanceDatasetInfo(DatasetInfo):
@@ -132,16 +132,37 @@ class ProvenanceQuantumInfo(QuantumInfo):
     """
 
     status: QuantumRunStatus
-    """Enumerated status for the quantum."""
+    """Enumerated status for the quantum.
+
+    This corresponds to the last attempt to run this quantum, or
+    `QuantumRunStatus.BLOCKED` if there were no attempts.
+    """
 
     caveats: QuantumSuccessCaveats | None
-    """Flags indicating caveats on successful quanta."""
+    """Flags indicating caveats on successful quanta.
+
+    This corresponds to the last attempt to run this quantum.
+    """
 
     exception: ExceptionInfo | None
-    """Information about an exception raised when the quantum was executing."""
+    """Information about an exception raised when the quantum was executing.
+
+    This corresponds to the last attempt to run this quantum.
+    """
 
     resource_usage: QuantumResourceUsage | None
-    """Resource usage information (timing, memory use) for this quantum."""
+    """Resource usage information (timing, memory use) for this quantum.
+
+    This corresponds to the last attempt to run this quantum.
+    """
+
+    attempts: list[ProvenanceQuantumAttemptModel]
+    """Information about each attempt to run this quantum.
+
+    An entry is added merely if the quantum *should* have been attempted; an
+    empty `list` is used only for quanta that were blocked by an upstream
+    failure.
+    """
 
 
 class ProvenanceInitQuantumInfo(TypedDict):
@@ -327,22 +348,13 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             return super().model_validate_strings(*args, **kwargs)
 
 
-class ProvenanceQuantumModel(pydantic.BaseModel):
-    """Data model for the quanta in a provenance quantum graph file."""
-
-    quantum_id: uuid.UUID
-    """Unique identifier for the quantum."""
-
-    task_label: TaskLabel
-    """Name of the type of this dataset.
-
-    This is always a parent dataset type name, not a component.
-
-    Note that full dataset type definitions are stored in the pipeline graph.
+class _GenericProvenanceQuantumAttemptModel(pydantic.BaseModel, Generic[_I]):
+    """Data model for a now-superseded attempt to run a quantum in a
+    provenance quantum graph file.
     """
 
-    data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
-    """The full values (required and implied) of this dataset's data ID."""
+    attempt: int = 0
+    """Counter incremented for every attempt to execute this quantum."""
 
     status: QuantumRunStatus = QuantumRunStatus.METADATA_MISSING
     """Enumerated status for the quantum."""
@@ -352,6 +364,212 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
 
     exception: ExceptionInfo | None = None
     """Information about an exception raised when the quantum was executing."""
+
+    resource_usage: QuantumResourceUsage | None = None
+    """Resource usage information (timing, memory use) for this quantum."""
+
+    previous_process_quanta: list[_I] = pydantic.Field(default_factory=list)
+    """The IDs of other quanta previously executed in the same process as this
+    one.
+    """
+
+    def remap_uuids(
+        self: ProvenanceQuantumAttemptModel, indices: Mapping[uuid.UUID, QuantumIndex]
+    ) -> StorageProvenanceQuantumAttemptModel:
+        return StorageProvenanceQuantumAttemptModel(
+            attempt=self.attempt,
+            status=self.status,
+            caveats=self.caveats,
+            exception=self.exception,
+            resource_usage=self.resource_usage,
+            previous_process_quanta=[indices[q] for q in self.previous_process_quanta],
+        )
+
+    def remap_indices(
+        self: StorageProvenanceQuantumAttemptModel, address_reader: AddressReader
+    ) -> ProvenanceQuantumAttemptModel:
+        return ProvenanceQuantumAttemptModel(
+            attempt=self.attempt,
+            status=self.status,
+            caveats=self.caveats,
+            exception=self.exception,
+            resource_usage=self.resource_usage,
+            previous_process_quanta=[address_reader.find(q).key for q in self.previous_process_quanta],
+        )
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
+StorageProvenanceQuantumAttemptModel: TypeAlias = _GenericProvenanceQuantumAttemptModel[QuantumIndex]
+ProvenanceQuantumAttemptModel: TypeAlias = _GenericProvenanceQuantumAttemptModel[uuid.UUID]
+
+
+class ProvenanceLogRecordsModel(pydantic.BaseModel):
+    """Data model for storing execution logs in a provenance quantum graph
+    file.
+    """
+
+    attempts: list[list[ButlerLogRecord] | None] = pydantic.Field(default_factory=list)
+    """Logs from attempts to run this task, ordered chronologically from first
+    to last.
+    """
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
+class ProvenanceTaskMetadataModel(pydantic.BaseModel):
+    """Data model for storing task metadata in a provenance quantum graph
+    file.
+    """
+
+    attempts: list[TaskMetadata | None] = pydantic.Field(default_factory=list)
+    """Metadata from attempts to run this task, ordered chronologically from
+    first to last.
+    """
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
+class ProvenanceQuantumModel(pydantic.BaseModel):
+    """Data model for the quanta in a provenance quantum graph file."""
+
+    quantum_id: uuid.UUID
+    """Unique identifier for the quantum."""
+
+    task_label: TaskLabel
+    """Name of the type of this dataset."""
+
+    data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
+    """The full values (required and implied) of this dataset's data ID."""
 
     inputs: dict[ConnectionName, list[DatasetIndex]] = pydantic.Field(default_factory=dict)
     """Internal integer IDs of the datasets predicted to be consumed by this
@@ -363,12 +581,13 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     quantum, grouped by connection name.
     """
 
-    resource_usage: QuantumResourceUsage | None = None
-    """Resource usage information (timing, memory use) for this quantum."""
+    attempts: list[StorageProvenanceQuantumAttemptModel] = pydantic.Field(default_factory=list)
+    """Provenance for all attempts to execute this quantum, ordered
+    chronologically from first to last.
 
-    previous_process_quanta: list[QuantumIndex] = dataclasses.field(default_factory=list)
-    """The internal integer IDs of other quanta previously executed in the same
-    process as this one.
+    An entry is added merely if the quantum *should* have been attempted; an
+    empty `list` is used only for quanta that were blocked by an upstream
+    failure.
     """
 
     @property
@@ -434,15 +653,21 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
         """
         task_node = graph.pipeline_graph.tasks[self.task_label]
         data_id = DataCoordinate.from_full_values(task_node.dimensions, tuple(self.data_coordinate))
+        last_attempt = (
+            self.attempts[-1]
+            if self.attempts
+            else StorageProvenanceQuantumAttemptModel(status=QuantumRunStatus.BLOCKED)
+        )
         graph._bipartite_xgraph.add_node(
             self.quantum_id,
             data_id=data_id,
             task_label=self.task_label,
             pipeline_node=task_node,
-            status=self.status,
-            caveats=self.caveats,
-            exception=self.exception,
-            resource_usage=self.resource_usage,
+            status=last_attempt.status,
+            caveats=last_attempt.caveats,
+            exception=last_attempt.exception,
+            resource_usage=last_attempt.resource_usage,
+            attempts=[a.remap_indices(address_reader) for a in self.attempts],
         )
         for connection_name, dataset_indices in self.inputs.items():
             read_edge = task_node.get_input_edge(connection_name)
@@ -1150,61 +1375,71 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
 
     def fetch_logs(
         self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
-    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, ButlerLogRecords]:
+    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, list[ButlerLogRecords | None]]:
         """Fetch log datasets.
 
         Parameters
         ----------
         nodes : `~collections.abc.Iterable` [ `uuid.UUID` ]
-            UUIDs of the log datasets themselves or of the quanta they
-            correspond to.
+            UUIDs or internal integer IDS of the log datasets themselves or of
+            the quanta they correspond to.
 
         Returns
         -------
-        logs : `dict` [ `uuid.UUID`, `ButlerLogRecords`]
-            Logs for the given IDs.
+        logs : `dict` [ `uuid.UUID` or `int`, `list` [\
+                `lsst.daf.butler.ButlerLogRecords` or `None`] ]
+            Logs for the given IDs.  Each value is a list of
+            `lsst.daf.butler.ButlerLogRecords` instances representing different
+            execution attempts, ordered chronologically from first to last.
+            Attempts where logs were missing will have `None` in this list.
         """
-        from lsst.daf.butler.logging import ButlerLogRecords
-
-        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, ButlerLogRecords] = {}
+        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, list[ButlerLogRecords | None]] = {}
         with MultiblockReader.open_in_zip(self.zf, LOG_MB_NAME, int_size=self.header.int_size) as mb_reader:
             for node_id_or_index in nodes:
                 address_row = self.address_reader.find(node_id_or_index)
-                log_data = mb_reader.read_bytes(address_row.addresses[LOG_ADDRESS_INDEX])
-                if log_data is not None:
-                    log = ButlerLogRecords.from_raw(self.decompressor.decompress(log_data))
-                    result[node_id_or_index] = log
+                logs_by_attempt = mb_reader.read_model(
+                    address_row.addresses[LOG_ADDRESS_INDEX], ProvenanceLogRecordsModel, self.decompressor
+                )
+                if logs_by_attempt is not None:
+                    result[node_id_or_index] = [
+                        ButlerLogRecords.from_records(attempt_logs) if attempt_logs is not None else None
+                        for attempt_logs in logs_by_attempt.attempts
+                    ]
         return result
 
     def fetch_metadata(
         self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
-    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, TaskMetadata]:
+    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, list[TaskMetadata | None]]:
         """Fetch metadata datasets.
 
         Parameters
         ----------
         nodes : `~collections.abc.Iterable` [ `uuid.UUID` ]
-            UUIDs of the metadata datasets themselves or of the quanta they
-            correspond to.
+            UUIDs or internal integer IDs of the metadata datasets themselves
+            or of the quanta they correspond to.
 
         Returns
         -------
-        metadata : `dict` [ `uuid.UUID`, `TaskMetadata`]
-            Metadata for the given IDs.
+        metadata : `dict` [ `uuid.UUID` or `int`, `list` [`.TaskMetadata`] ]
+            Metadata for the given IDs.  Each value is a list of
+            `.TaskMetadata` instances representing different execution
+            attempts, ordered chronologically from first to last. Attempts
+            where metadata was missing (not written even in the fallback extra
+            provenance in the logs) will have `None` in this list.
         """
-        from .._task_metadata import TaskMetadata
-
-        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, TaskMetadata] = {}
+        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, list[TaskMetadata | None]] = {}
         with MultiblockReader.open_in_zip(
             self.zf, METADATA_MB_NAME, int_size=self.header.int_size
         ) as mb_reader:
             for node_id_or_index in nodes:
                 address_row = self.address_reader.find(node_id_or_index)
-                metadata = mb_reader.read_model(
-                    address_row.addresses[METADATA_ADDRESS_INDEX], TaskMetadata, self.decompressor
+                metadata_by_attempt = mb_reader.read_model(
+                    address_row.addresses[METADATA_ADDRESS_INDEX],
+                    ProvenanceTaskMetadataModel,
+                    self.decompressor,
                 )
-                if metadata is not None:
-                    result[node_id_or_index] = metadata
+                if metadata_by_attempt is not None:
+                    result[node_id_or_index] = metadata_by_attempt.attempts
         return result
 
     def fetch_packages(self) -> Packages:

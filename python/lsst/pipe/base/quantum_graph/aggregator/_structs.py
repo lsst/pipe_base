@@ -40,11 +40,13 @@ import uuid
 
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
-from ..._status import QuantumSuccessCaveats
-from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
-from ...resource_usage import QuantumResourceUsage
 from .._common import DatastoreName
 from .._predicted import PredictedDatasetModel
+from .._provenance import (
+    ProvenanceLogRecordsModel,
+    ProvenanceQuantumAttemptModel,
+    ProvenanceTaskMetadataModel,
+)
 
 
 class ScanStatus(enum.Enum):
@@ -126,42 +128,33 @@ class ScanResult:
     status: ScanStatus
     """Combined status for the scan and the execution of the quantum."""
 
-    caveats: QuantumSuccessCaveats | None = None
-    """Flags indicating caveats on successful quanta."""
-
-    exception: ExceptionInfo | None = None
-    """Information about an exception raised when the quantum was executing."""
-
-    resource_usage: QuantumResourceUsage | None = None
-    """Resource usage information (timing, memory use) for this quantum."""
+    attempts: list[ProvenanceQuantumAttemptModel] = dataclasses.field(default_factory=list)
+    """Provenance information about each attempt to run the quantum."""
 
     existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
     """Unique IDs of the output datasets that were actually written."""
 
-    previous_process_quanta: list[uuid.UUID] = dataclasses.field(default_factory=list)
-    """Unique IDs of other quanta previously executed in the same process."""
+    metadata_model: ProvenanceTaskMetadataModel | None = dataclasses.field(
+        default_factory=ProvenanceTaskMetadataModel
+    )
+    """Task metadata information for each attempt.
 
-    metadata: bytes = b""
-    """Raw content of the metadata dataset."""
+    This is set to `None` to keep the pickle size small after it is saved
+    to `metadata_content`.
+    """
 
-    log: bytes = b""
-    """Raw content of the log dataset."""
+    metadata_content: bytes = b""
+    """Serialized form of `metadata_model`."""
+
+    log_model: ProvenanceLogRecordsModel | None = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
+    """Log records for each attempt.
+
+    This is set to `None` to keep the pickle size small after it is saved
+    to `log_content`.
+    """
+
+    log_content: bytes = b""
+    """Serialized form of `logs_model`."""
 
     is_compressed: bool = False
     """Whether the `metadata` and `log` attributes are compressed."""
-
-    def get_run_status(self) -> QuantumRunStatus:
-        """Translate the scan status and metadata/log presence into a run
-        status.
-        """
-        match self.status:
-            case ScanStatus.BLOCKED:
-                return QuantumRunStatus.BLOCKED
-            case ScanStatus.SUCCESSFUL | ScanStatus.INIT:
-                return QuantumRunStatus.SUCCESSFUL
-            case ScanStatus.FAILED:
-                if self.log:
-                    return QuantumRunStatus.FAILED
-                else:
-                    return QuantumRunStatus.METADATA_MISSING
-        raise AssertionError(f"Unexpected scan status: {self.status}")

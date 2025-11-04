@@ -43,7 +43,7 @@ from ..._status import QuantumSuccessCaveats
 from ..._task_metadata import TaskMetadata
 from ...log_capture import _ExecutionLogRecordsExtra
 from ...pipeline_graph import PipelineGraph, TaskImportMode
-from ...quantum_provenance_graph import ExceptionInfo
+from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from ...resource_usage import QuantumResourceUsage
 from .._multiblock import Compressor
 from .._predicted import (
@@ -51,6 +51,7 @@ from .._predicted import (
     PredictedQuantumDatasetsModel,
     PredictedQuantumGraphReader,
 )
+from .._provenance import ProvenanceQuantumAttemptModel
 from ._communicators import ScannerCommunicator
 from ._structs import IngestRequest, ScanReport, ScanResult, ScanStatus
 
@@ -213,11 +214,12 @@ class Scanner:
             )
             result = ScanResult(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
-            if not self._read_log(predicted_quantum, result):
+            last_attempt = ProvenanceQuantumAttemptModel()
+            if not self._read_log(predicted_quantum, result, last_attempt):
                 self.comms.log.debug("Abandoning scan for %s; no log dataset.", quantum_id)
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
                 return result
-            if not self._read_metadata(predicted_quantum, result):
+            if not self._read_metadata(predicted_quantum, result, last_attempt):
                 # We found the log dataset, but no metadata; this means the
                 # quantum failed, but a retry might still happen that could
                 # turn it into a success if we can't yet assume the run is
@@ -225,14 +227,55 @@ class Scanner:
                 self.comms.log.debug("Abandoning scan for %s.", quantum_id)
                 self.comms.report_scan(ScanReport(result.quantum_id, result.status))
                 return result
+            last_attempt.attempt = len(result.attempts)
+            result.attempts.append(last_attempt)
         assert result.status is not ScanStatus.INCOMPLETE
         assert result.status is not ScanStatus.ABANDONED
+        assert result.log_model is not None, "Only set to None after converting to JSON."
+        assert result.metadata_model is not None, "Only set to None after converting to JSON."
+
+        if len(result.log_model.attempts) < len(result.attempts):
+            # Logs were not found for this attempt; must have been a hard error
+            # that kept the `finally` block from running or otherwise
+            # interrupted the writing of the logs.
+            result.log_model.attempts.append(None)
+            if result.status is ScanStatus.SUCCESSFUL:
+                # But we found the metadata!  Either that hard error happened
+                # at a very unlucky time (in between those two writes), or
+                # something even weirder happened.
+                result.attempts[-1].status = QuantumRunStatus.LOGS_MISSING
+            else:
+                result.attempts[-1].status = QuantumRunStatus.FAILED
+        if len(result.metadata_model.attempts) < len(result.attempts):
+            # Metadata missing usually just means a failure.  In any case, the
+            # status will already be correct, either because it was set to a
+            # failure when we read the logs, or left at METADATA_MISSING if
+            # there were no logs.  Note that scanners never process BLOCKED
+            # quanta at all.
+            result.metadata_model.attempts.append(None)
+        assert len(result.log_model.attempts) == len(result.attempts) or len(
+            result.metadata_model.attempts
+        ) == len(result.attempts), (
+            "The only way we can add more than one quantum attempt is by "
+            "extracting info stored with the logs, and that always appends "
+            "a log attempt and a metadata attempt, so this must be a bug in "
+            "the scanner."
+        )
+        # Now that we're done gathering the log and metadata information into
+        # models, dump them to JSON and delete the originals.
+        result.log_content = result.log_model.model_dump_json().encode()
+        result.log_model = None
+        result.metadata_content = result.metadata_model.model_dump_json().encode()
+        result.metadata_model = None
         if self.compressor is not None:
-            if result.log is not None:
-                result.log = self.compressor.compress(result.log)
-            if result.metadata is not None:
-                result.metadata = self.compressor.compress(result.metadata)
+            if result.log_content is not None:
+                result.log_content = self.compressor.compress(result.log_content)
+            if result.metadata_content is not None:
+                result.metadata_content = self.compressor.compress(result.metadata_content)
             result.is_compressed = True
+        # Scan for output dataset existence, skipping any the metadata reported
+        # as having been definitively written, as well as and the metadata and
+        # logs themselves (since we just checked those).
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
             if predicted_output.dataset_id not in result.existing_outputs and self.scan_dataset(
                 predicted_output
@@ -275,7 +318,12 @@ class Scanner:
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
         return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
 
-    def _read_metadata(self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult) -> bool:
+    def _read_metadata(
+        self,
+        predicted_quantum: PredictedQuantumDatasetsModel,
+        result: ScanResult,
+        last_attempt: ProvenanceQuantumAttemptModel,
+    ) -> bool:
         """Attempt to read the metadata dataset for a quantum to extract
         provenance information from it.
 
@@ -285,6 +333,9 @@ class Scanner:
             Information about the predicted quantum.
         result : `ScanResult`
             Result object to be modified in-place.
+        last_attempt : `ScanningProvenanceQuantumAttemptModel`
+            Structure to fill in with information about the last attempt to
+            run this quantum.
 
         Returns
         -------
@@ -297,7 +348,7 @@ class Scanner:
             # This assumes QBB metadata writes are atomic, which should be the
             # case. If it's not we'll probably get pydantic validation errors
             # here.
-            content: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
+            metadata: TaskMetadata = self.qbb.get(ref, storageClass="TaskMetadata")
         except FileNotFoundError:
             if self.comms.config.assume_complete:
                 result.status = ScanStatus.FAILED
@@ -307,30 +358,37 @@ class Scanner:
         else:
             result.status = ScanStatus.SUCCESSFUL
             result.existing_outputs.add(ref.id)
+            last_attempt.status = QuantumRunStatus.SUCCESSFUL
             try:
                 # Int conversion guards against spurious conversion to
                 # float that can apparently sometimes happen in
                 # TaskMetadata.
-                result.caveats = QuantumSuccessCaveats(int(content["quantum"]["caveats"]))
+                last_attempt.caveats = QuantumSuccessCaveats(int(metadata["quantum"]["caveats"]))
             except LookupError:
                 pass
             try:
-                result.exception = ExceptionInfo._from_metadata(
-                    content[predicted_quantum.task_label]["failure"]
+                last_attempt.exception = ExceptionInfo._from_metadata(
+                    metadata[predicted_quantum.task_label]["failure"]
                 )
             except LookupError:
                 pass
             try:
                 result.existing_outputs.update(
-                    uuid.UUID(id_str) for id_str in ensure_iterable(content["quantum"].getArray("outputs"))
+                    uuid.UUID(id_str) for id_str in ensure_iterable(metadata["quantum"].getArray("outputs"))
                 )
             except LookupError:
                 pass
-            result.resource_usage = QuantumResourceUsage.from_task_metadata(content)
-            result.metadata = content.model_dump_json().encode()
+            last_attempt.resource_usage = QuantumResourceUsage.from_task_metadata(metadata)
+            assert result.metadata_model is not None, "Only set to None after converting to JSON."
+            result.metadata_model.attempts.append(metadata)
         return True
 
-    def _read_log(self, predicted_quantum: PredictedQuantumDatasetsModel, result: ScanResult) -> bool:
+    def _read_log(
+        self,
+        predicted_quantum: PredictedQuantumDatasetsModel,
+        result: ScanResult,
+        last_attempt: ProvenanceQuantumAttemptModel,
+    ) -> bool:
         """Attempt to read the log dataset for a quantum to test for the
         quantum's completion (the log is always written last) and aggregate
         the log content in the provenance quantum graph.
@@ -341,6 +399,9 @@ class Scanner:
             Information about the predicted quantum.
         result : `ScanResult`
             Result object to be modified in-place.
+        last_attempt : `ScanningProvenanceQuantumAttemptModel`
+            Structure to fill in with information about the last attempt to
+            run this quantum.
 
         Returns
         -------
@@ -360,14 +421,54 @@ class Scanner:
                 result.status = ScanStatus.ABANDONED
                 return False
         else:
+            # Set the attempt's run status to FAILED, since the default is
+            # METADATA_MISSING (i.e. logs *and* metadata are missing) and we
+            # now know the logs exist.  This will usually get replaced by
+            # SUCCESSFUL when we look for metadata next.
+            last_attempt.status = QuantumRunStatus.FAILED
             result.existing_outputs.add(ref.id)
             if log_records.extra:
                 log_extra = _ExecutionLogRecordsExtra.model_validate(log_records.extra)
-                if log_extra.exception is not None:
-                    result.exception = log_extra.exception
-                result.previous_process_quanta.extend(log_extra.previous_process_quanta)
-                if log_extra.metadata is not None:
-                    result.resource_usage = QuantumResourceUsage.from_task_metadata(log_extra.metadata)
-                    result.metadata = log_extra.metadata.model_dump_json().encode()
-            result.log = log_records.to_json_data().encode()
+                self._extract_from_log_extra(log_extra, result, last_attempt=last_attempt)
+            assert result.log_model is not None, "Only set to None after converting to JSON."
+            result.log_model.attempts.append(list(log_records))
         return True
+
+    def _extract_from_log_extra(
+        self,
+        log_extra: _ExecutionLogRecordsExtra,
+        result: ScanResult,
+        last_attempt: ProvenanceQuantumAttemptModel | None,
+    ) -> None:
+        for previous_attempt_log_extra in log_extra.previous_attempts:
+            self._extract_from_log_extra(previous_attempt_log_extra, result, last_attempt=None)
+        quantum_attempt: ProvenanceQuantumAttemptModel
+        if last_attempt is None:
+            # This is not the last attempt, so it must be a failure.
+            quantum_attempt = ProvenanceQuantumAttemptModel(
+                attempt=len(result.attempts), status=QuantumRunStatus.FAILED
+            )
+            # We also need to get the logs from this extra provenance, since
+            # they won't be the main section of the log records.
+            assert result.log_model is not None, "Only set to None after converting to JSON."
+            result.log_model.attempts.append(log_extra.logs)
+            # The special last attempt is only appended after we attempt to
+            # read metadata later, but we have to append this one now.
+            result.attempts.append(quantum_attempt)
+        else:
+            assert not log_extra.logs, "Logs for the last attempt should not be stored in the extra JSON."
+            quantum_attempt = last_attempt
+        if log_extra.exception is not None or log_extra.metadata is not None or last_attempt is None:
+            # We won't be getting a separate metadata dataset, so anything we
+            # might get from the metadata has to come from this extra
+            # provenance in the logs.
+            quantum_attempt.exception = log_extra.exception
+            assert result.metadata_model is not None, "Only set to None after converting to JSON."
+            if log_extra.metadata is not None:
+                quantum_attempt.resource_usage = QuantumResourceUsage.from_task_metadata(log_extra.metadata)
+                result.metadata_model.attempts.append(log_extra.metadata)
+            else:
+                result.metadata_model.attempts.append(None)
+        # Regardless of whether this is the last attempt or not, we can only
+        # get the previous_process_quanta from the log extra.
+        quantum_attempt.previous_process_quanta.extend(log_extra.previous_process_quanta)

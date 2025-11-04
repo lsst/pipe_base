@@ -361,7 +361,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             (log_ref,) = quantum.outputs[task_node.log_output.dataset_type_name]
             if ref_dict[log_ref]:
                 _LOG.debug(
-                    "Attaching logs from previous attempt on for label=%s dataId=%s.",
+                    "Attaching logs from previous attempt on label=%s dataId=%s.",
                     task_node.label,
                     quantum.dataId,
                 )
