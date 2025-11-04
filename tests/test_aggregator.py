@@ -256,8 +256,7 @@ class AggregatorTestCase(unittest.TestCase):
         Returns
         -------
         quanta : `~collections.abc.Iterator` [`uuid.UUID`]
-            An iterator over successful quantum IDs.  Failed and blocked quanta
-            are not included.
+            An iterator over all executed quantum IDs (not blocked ones).
         """
         qg.init_output_run(qg.make_init_qbb(repo))
         sqe = SingleQuantumExecutor(
@@ -283,7 +282,7 @@ class AggregatorTestCase(unittest.TestCase):
                     walker.fail(quantum_id)
                 else:
                     walker.finish(quantum_id)
-                    yield quantum_id
+                yield quantum_id
 
     def check_provenance_graph(
         self,
@@ -293,7 +292,7 @@ class AggregatorTestCase(unittest.TestCase):
         expect_failure: bool,
         start_time: float,
         expect_failures_retried: bool = False,
-    ) -> None:
+    ) -> ProvenanceQuantumGraph:
         """Run a batter of tests on a provenance quantum graph produced by
         scanning the graph created by `make_test_repo`.
 
@@ -315,6 +314,11 @@ class AggregatorTestCase(unittest.TestCase):
         expect_failures_retried : `bool`, optional
             If `True`, expect an initial attempt with failures prior to the
             most recent attempt.
+
+        Returns
+        -------
+        prov : `ProvenanceQuantumGraph`
+            The full provenance quantum graph.
         """
         prov_reader.read_full_graph()
         prov = prov_reader.graph
@@ -483,6 +487,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.check_packages(prov_reader)
         self.check_quantum_table(prov_reader.graph, expect_failure=expect_failure)
         self.check_exception_table(prov_reader.graph, expect_failure=expect_failure)
+        return prov
 
     def _expect_all_exist(self, existence: list[bool], msg: str) -> None:
         self.assertTrue(all(existence), msg=msg)
@@ -775,15 +780,22 @@ class AggregatorTestCase(unittest.TestCase):
         with self.make_test_repo() as prep:
             prep.config.assume_complete = False
             start_time = time.time()
-            executed_quanta = list(
+            attempted_quanta = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=False)
             )
-            self.assertCountEqual(executed_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
+            self.assertCountEqual(attempted_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=False, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=False,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_all_successful_two_phase(self) -> None:
         """Test running some of a graph with no failures, scanning with
@@ -794,23 +806,29 @@ class AggregatorTestCase(unittest.TestCase):
             execution_iter = self.iter_graph_execution(
                 prep.butler_path, prep.predicted, raise_on_partial_outputs=False
             )
-            executed_quanta = list(itertools.islice(execution_iter, 9))
-            self.assertEqual(len(executed_quanta), 9)
+            attempted_quanta = list(itertools.islice(execution_iter, 9))
+            self.assertEqual(len(attempted_quanta), 9)
             # Run the scanner while telling it to assume failures might change,
-            # so it just waits for incomplete quanta to finish (and then times
-            # out).
+            # so it just abandons incomplete quanta.
             prep.config.assume_complete = False
             with self.assertRaises(RuntimeError):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Finish executing the quanta.
-            executed_quanta.extend(execution_iter)
+            attempted_quanta.extend(execution_iter)
             # Scan again, and write the provenance QG.
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Run the scanner again.
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=False, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=False,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_some_failed(self) -> None:
         """Test running a full graph with some failures, and then scanning the
@@ -819,15 +837,21 @@ class AggregatorTestCase(unittest.TestCase):
         with self.make_test_repo() as prep:
             prep.config.assume_complete = True
             start_time = time.time()
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
-            ):
-                pass
+            attempted_quanta = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=True, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=True,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_some_failed_two_phase(self) -> None:
         """Test running a full graph with some failures, then scanning the
@@ -836,19 +860,25 @@ class AggregatorTestCase(unittest.TestCase):
         """
         with self.make_test_repo() as prep:
             start_time = time.time()
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
-            ):
-                pass
+            attempted_quanta = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
             prep.config.assume_complete = False
             with self.assertRaisesRegex(RuntimeError, "1 quantum abandoned"):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             prep.config.assume_complete = True
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=True, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=True,
+                    start_time=start_time,
                 )
+                for i, quantum_id in enumerate(attempted_quanta):
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_retry(self) -> None:
         """Test running a full graph with some failures, rerunning the quanta
@@ -858,17 +888,17 @@ class AggregatorTestCase(unittest.TestCase):
         with self.make_test_repo() as prep:
             prep.config.assume_complete = True
             start_time = time.time()
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
-            ):
-                pass
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=False, is_retry=True
-            ):
-                pass
+            attempted_quanta_1 = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
+            attempted_quanta_2 = list(
+                self.iter_graph_execution(
+                    prep.butler_path, prep.predicted, raise_on_partial_outputs=False, is_retry=True
+                )
+            )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
+                prov = self.check_provenance_graph(
                     prep.predicted,
                     reader,
                     prep.butler,
@@ -876,6 +906,22 @@ class AggregatorTestCase(unittest.TestCase):
                     start_time=start_time,
                     expect_failures_retried=True,
                 )
+                for i, quantum_id in enumerate(attempted_quanta_1):
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    self.assertEqual(qinfo["attempts"][0].previous_process_quanta, attempted_quanta_1[:i])
+                expected: list[uuid.UUID] = []
+                for quantum_id in attempted_quanta_2:
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    if (
+                        quantum_id in attempted_quanta_1
+                        and qinfo["attempts"][0].status is QuantumRunStatus.SUCCESSFUL
+                    ):
+                        # These weren't actually attempted twice, since they
+                        # were already successful in the first round.
+                        self.assertEqual(len(qinfo["attempts"]), 1)
+                    else:
+                        self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, expected)
+                        expected.append(quantum_id)
 
     def test_worker_failures(self) -> None:
         """Test that if failures occur on (multiple) workers we shut down
