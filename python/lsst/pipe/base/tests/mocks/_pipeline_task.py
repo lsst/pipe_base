@@ -95,7 +95,7 @@ class ForcedFailure:
 
     memory_required: Quantity | None = None
     """If not `None`, this failure simulates an out-of-memory failure by
-    raising only if this value exceeds `ExecutionResources.max_mem`.f
+    raising only if this value exceeds `ExecutionResources.max_mem`.
     """
 
     def set_config(self, config: MockPipelineTaskConfig) -> None:
