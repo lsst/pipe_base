@@ -59,10 +59,9 @@ from lsst.daf.butler.logging import ButlerLogRecord, ButlerLogRecords
 from lsst.resources import ResourcePathExpression
 from lsst.utils.packages import Packages
 
-from .._status import QuantumSuccessCaveats
+from .._status import ExceptionInfo, QuantumAttemptStatus, QuantumSuccessCaveats
 from .._task_metadata import TaskMetadata
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
-from ..quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from ..resource_usage import QuantumResourceUsage
 from ._common import (
     BaseQuantumGraph,
@@ -131,11 +130,11 @@ class ProvenanceQuantumInfo(QuantumInfo):
     `ProvenanceQuantumGraph.quantum_only_xgraph`
     """
 
-    status: QuantumRunStatus
+    status: QuantumAttemptStatus
     """Enumerated status for the quantum.
 
     This corresponds to the last attempt to run this quantum, or
-    `QuantumRunStatus.BLOCKED` if there were no attempts.
+    `QuantumAttemptStatus.BLOCKED` if there were no attempts.
     """
 
     caveats: QuantumSuccessCaveats | None
@@ -356,7 +355,7 @@ class _GenericProvenanceQuantumAttemptModel(pydantic.BaseModel, Generic[_I]):
     attempt: int = 0
     """Counter incremented for every attempt to execute this quantum."""
 
-    status: QuantumRunStatus = QuantumRunStatus.METADATA_MISSING
+    status: QuantumAttemptStatus = QuantumAttemptStatus.UNKNOWN
     """Enumerated status for the quantum."""
 
     caveats: QuantumSuccessCaveats | None = None
@@ -656,7 +655,7 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
         last_attempt = (
             self.attempts[-1]
             if self.attempts
-            else StorageProvenanceQuantumAttemptModel(status=QuantumRunStatus.BLOCKED)
+            else StorageProvenanceQuantumAttemptModel(status=QuantumAttemptStatus.BLOCKED)
         )
         graph._bipartite_xgraph.add_node(
             self.quantum_id,
@@ -1111,7 +1110,7 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         for task_label, quanta_for_task in self.quanta_by_task.items():
             if not self.header.n_task_quanta[task_label]:
                 continue
-            status_counts = Counter[QuantumRunStatus](
+            status_counts = Counter[QuantumAttemptStatus](
                 self._quantum_only_xgraph.nodes[q]["status"] for q in quanta_for_task.values()
             )
             caveat_counts = Counter[QuantumSuccessCaveats | None](
@@ -1131,11 +1130,11 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
             rows.append(
                 {
                     "Task": task_label,
-                    "Unknown": status_counts.get(QuantumRunStatus.METADATA_MISSING, 0),
-                    "Successful": status_counts.get(QuantumRunStatus.SUCCESSFUL, 0),
+                    "Unknown": status_counts.get(QuantumAttemptStatus.UNKNOWN, 0),
+                    "Successful": status_counts.get(QuantumAttemptStatus.SUCCESSFUL, 0),
                     "Caveats": caveats,
-                    "Blocked": status_counts.get(QuantumRunStatus.BLOCKED, 0),
-                    "Failed": status_counts.get(QuantumRunStatus.FAILED, 0),
+                    "Blocked": status_counts.get(QuantumAttemptStatus.BLOCKED, 0),
+                    "Failed": status_counts.get(QuantumAttemptStatus.FAILED, 0),
                     "TOTAL": len(quanta_for_task),
                     "EXPECTED": self.header.n_task_quanta[task_label],
                 }

@@ -39,11 +39,10 @@ from lsst.daf.butler import ButlerLogRecords, DatasetRef, QuantumBackedButler
 from lsst.utils.iteration import ensure_iterable
 
 from ... import automatic_connection_constants as acc
-from ..._status import QuantumSuccessCaveats
+from ..._status import ExceptionInfo, QuantumAttemptStatus, QuantumSuccessCaveats
 from ..._task_metadata import TaskMetadata
 from ...log_capture import _ExecutionLogRecordsExtra
 from ...pipeline_graph import PipelineGraph, TaskImportMode
-from ...quantum_provenance_graph import ExceptionInfo, QuantumRunStatus
 from ...resource_usage import QuantumResourceUsage
 from .._multiblock import Compressor
 from .._predicted import (
@@ -243,15 +242,14 @@ class Scanner:
                 # But we found the metadata!  Either that hard error happened
                 # at a very unlucky time (in between those two writes), or
                 # something even weirder happened.
-                result.attempts[-1].status = QuantumRunStatus.LOGS_MISSING
+                result.attempts[-1].status = QuantumAttemptStatus.LOGS_MISSING
             else:
-                result.attempts[-1].status = QuantumRunStatus.FAILED
+                result.attempts[-1].status = QuantumAttemptStatus.FAILED
         if len(result.metadata_model.attempts) < len(result.attempts):
             # Metadata missing usually just means a failure.  In any case, the
             # status will already be correct, either because it was set to a
-            # failure when we read the logs, or left at METADATA_MISSING if
-            # there were no logs.  Note that scanners never process BLOCKED
-            # quanta at all.
+            # failure when we read the logs, or left at UNKNOWN if there were
+            # no logs.  Note that scanners never process BLOCKED quanta at all.
             result.metadata_model.attempts.append(None)
         assert len(result.log_model.attempts) == len(result.attempts) or len(
             result.metadata_model.attempts
@@ -358,7 +356,7 @@ class Scanner:
         else:
             result.status = ScanStatus.SUCCESSFUL
             result.existing_outputs.add(ref.id)
-            last_attempt.status = QuantumRunStatus.SUCCESSFUL
+            last_attempt.status = QuantumAttemptStatus.SUCCESSFUL
             try:
                 # Int conversion guards against spurious conversion to
                 # float that can apparently sometimes happen in
@@ -422,10 +420,10 @@ class Scanner:
                 return False
         else:
             # Set the attempt's run status to FAILED, since the default is
-            # METADATA_MISSING (i.e. logs *and* metadata are missing) and we
-            # now know the logs exist.  This will usually get replaced by
-            # SUCCESSFUL when we look for metadata next.
-            last_attempt.status = QuantumRunStatus.FAILED
+            # UNKNOWN (i.e. logs *and* metadata are missing) and we now know
+            # the logs exist.  This will usually get replaced by SUCCESSFUL
+            # when we look for metadata next.
+            last_attempt.status = QuantumAttemptStatus.FAILED
             result.existing_outputs.add(ref.id)
             if log_records.extra:
                 log_extra = _ExecutionLogRecordsExtra.model_validate(log_records.extra)
@@ -446,7 +444,7 @@ class Scanner:
         if last_attempt is None:
             # This is not the last attempt, so it must be a failure.
             quantum_attempt = ProvenanceQuantumAttemptModel(
-                attempt=len(result.attempts), status=QuantumRunStatus.FAILED
+                attempt=len(result.attempts), status=QuantumAttemptStatus.FAILED
             )
             # We also need to get the logs from this extra provenance, since
             # they won't be the main section of the log records.

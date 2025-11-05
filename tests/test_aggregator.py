@@ -39,7 +39,12 @@ from click.testing import CliRunner, Result
 
 import lsst.utils.tests
 from lsst.daf.butler import Butler, ButlerLogRecords, QuantumBackedButler
-from lsst.pipe.base import AlgorithmError, QuantumSuccessCaveats, TaskMetadata
+from lsst.pipe.base import (
+    AlgorithmError,
+    QuantumAttemptStatus,
+    QuantumSuccessCaveats,
+    TaskMetadata,
+)
 from lsst.pipe.base import automatic_connection_constants as acc
 from lsst.pipe.base.cli.cmd.commands import aggregate_graph as aggregate_graph_cli
 from lsst.pipe.base.graph_walker import GraphWalker
@@ -54,7 +59,6 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceQuantumInfo,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
-from lsst.pipe.base.quantum_provenance_graph import QuantumRunStatus
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
 from lsst.pipe.base.tests.mocks import (
@@ -470,12 +474,12 @@ class AggregatorTestCase(unittest.TestCase):
                         self._expect_all_exist(existence[connection_name], msg=msg)
                     self._expect_successful(prov_qinfo, existence, msg=msg)
                     self.assertEqual(len(prov_qinfo["attempts"]), 1)
-            if not checked_some_metadata and prov_qinfo["status"] is QuantumRunStatus.SUCCESSFUL:
+            if not checked_some_metadata and prov_qinfo["status"] is QuantumAttemptStatus.SUCCESSFUL:
                 self.check_metadata(quantum_id, prov_reader, butler)
                 checked_some_metadata = True
             if not checked_some_log and prov_qinfo["status"] in (
-                QuantumRunStatus.SUCCESSFUL,
-                QuantumRunStatus.FAILED,
+                QuantumAttemptStatus.SUCCESSFUL,
+                QuantumAttemptStatus.FAILED,
             ):
                 self.check_log(quantum_id, prov_reader, butler)
                 checked_some_log = True
@@ -507,7 +511,7 @@ class AggregatorTestCase(unittest.TestCase):
         *,
         msg: str,
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.SUCCESSFUL, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.SUCCESSFUL, msg=msg)
         self.assertEqual(info["caveats"], caveats, msg=msg)
         if exception_type is None:
             self.assertIsNone(info["exception"], msg=msg)
@@ -529,7 +533,7 @@ class AggregatorTestCase(unittest.TestCase):
     def _expect_failure(
         self, info: ProvenanceQuantumInfo, existence: dict[str, list[bool]], msg: str
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.FAILED, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.FAILED, msg=msg)
         self.assertEqual(info["exception"].type_name, "lsst.pipe.base.tests.mocks.MockAlgorithmError")
         self._expect_all_exist(existence[acc.LOG_OUTPUT_CONNECTION_NAME], msg=msg)
         self._expect_none_exist(existence[acc.METADATA_OUTPUT_CONNECTION_NAME], msg=msg)
@@ -542,7 +546,7 @@ class AggregatorTestCase(unittest.TestCase):
         existence: dict[str, list[bool]],
         msg: str,
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.BLOCKED, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.BLOCKED, msg=msg)
         self.assertEqual(info["attempts"], [])
         self._expect_none_exist(existence[acc.LOG_OUTPUT_CONNECTION_NAME], msg=msg)
         self._expect_none_exist(existence[acc.METADATA_OUTPUT_CONNECTION_NAME], msg=msg)
@@ -914,7 +918,7 @@ class AggregatorTestCase(unittest.TestCase):
                     qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                     if (
                         quantum_id in attempted_quanta_1
-                        and qinfo["attempts"][0].status is QuantumRunStatus.SUCCESSFUL
+                        and qinfo["attempts"][0].status is QuantumAttemptStatus.SUCCESSFUL
                     ):
                         # These weren't actually attempted twice, since they
                         # were already successful in the first round.

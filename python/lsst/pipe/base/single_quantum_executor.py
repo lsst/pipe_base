@@ -48,13 +48,18 @@ from lsst.utils.introspection import get_full_type_name
 from lsst.utils.timer import logInfo
 
 from ._quantumContext import ExecutionResources, QuantumContext
-from ._status import AnnotatedPartialOutputsError, InvalidQuantumError, NoWorkFound, QuantumSuccessCaveats
+from ._status import (
+    AnnotatedPartialOutputsError,
+    ExceptionInfo,
+    InvalidQuantumError,
+    NoWorkFound,
+    QuantumSuccessCaveats,
+)
 from .connections import AdjustQuantumHelper
 from .log_capture import LogCapture, _ExecutionLogRecordsExtra
 from .pipeline_graph import TaskNode
 from .pipelineTask import PipelineTask
 from .quantum_graph_executor import QuantumExecutor
-from .quantum_provenance_graph import ExceptionInfo
 from .quantum_reports import QuantumReport
 from .task import _TASK_FULL_METADATA_TYPE, _TASK_METADATA_TYPE
 from .taskFactory import TaskFactory

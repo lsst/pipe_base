@@ -50,11 +50,10 @@ from lsst.daf.butler.logging import (
     JsonLogFormatter,
 )
 
-from ._status import InvalidQuantumError
+from ._status import ExceptionInfo, InvalidQuantumError
 from ._task_metadata import TaskMetadata
 from .automatic_connection_constants import METADATA_OUTPUT_TEMPLATE
 from .pipeline_graph import TaskNode
-from .quantum_provenance_graph import ExceptionInfo
 
 _LOG = logging.getLogger(__name__)
 

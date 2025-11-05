@@ -49,7 +49,7 @@ import threading
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, cast
+from typing import Any, ClassVar, Literal, TypedDict, cast
 
 import astropy.table
 import networkx
@@ -72,7 +72,7 @@ from lsst.daf.butler import (
 from lsst.resources import ResourcePathExpression
 from lsst.utils.logging import PeriodicLogger, getLogger
 
-from ._status import QuantumSuccessCaveats
+from ._status import ExceptionInfo, QuantumSuccessCaveats
 from .automatic_connection_constants import (
     LOG_OUTPUT_CONNECTION_NAME,
     LOG_OUTPUT_TEMPLATE,
@@ -81,9 +81,6 @@ from .automatic_connection_constants import (
     METADATA_OUTPUT_TEMPLATE,
 )
 from .graph import QuantumGraph, QuantumNode
-
-if TYPE_CHECKING:
-    from ._task_metadata import TaskMetadata
 
 _LOG = getLogger(__name__)
 
@@ -186,45 +183,6 @@ class QuantumRunStatus(Enum):
     FAILED = -1
     BLOCKED = 0
     SUCCESSFUL = 1
-
-
-class ExceptionInfo(pydantic.BaseModel):
-    """Information about an exception that was raised."""
-
-    type_name: str
-    """Fully-qualified Python type name for the exception raised."""
-
-    message: str
-    """String message included in the exception."""
-
-    metadata: dict[str, float | int | str | bool | None]
-    """Additional metadata included in the exception."""
-
-    @classmethod
-    def _from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
-        """Construct from task metadata.
-
-        Parameters
-        ----------
-        md : `TaskMetadata`
-            Metadata about the error, as written by
-            `AnnotatedPartialOutputsError`.
-
-        Returns
-        -------
-        info : `ExceptionInfo`
-            Information about the exception.
-        """
-        result = cls(type_name=md["type"], message=md["message"], metadata={})
-        if "metadata" in md:
-            raw_err_metadata = md["metadata"].to_dict()
-            for k, v in raw_err_metadata.items():
-                # Guard against error metadata we couldn't serialize later
-                # via Pydantic; don't want one weird value bringing down our
-                # ability to report on an entire run.
-                if isinstance(v, float | int | str | bool):
-                    result.metadata[k] = v
-        return result
 
 
 class QuantumRun(pydantic.BaseModel):
