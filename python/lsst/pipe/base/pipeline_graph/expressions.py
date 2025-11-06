@@ -45,13 +45,13 @@ import dataclasses
 import functools
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from lsst.daf.butler.registry.queries.expressions.parser.ply import lex, yacc
+from lsst.daf.butler.queries.expressions.parser.ply import lex, yacc
 
 from ._exceptions import InvalidExpressionError
 
 if TYPE_CHECKING:
-    from lsst.daf.butler.registry.queries.expressions.parser.parserLex import LexToken
-    from lsst.daf.butler.registry.queries.expressions.parser.parserYacc import YaccProduction
+    from lsst.daf.butler.queries.expressions.parser.parserLex import LexToken
+    from lsst.daf.butler.queries.expressions.parser.parserYacc import YaccProduction
 
 
 class _ParserLex:
