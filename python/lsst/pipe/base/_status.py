@@ -49,13 +49,15 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 import pydantic
 
 from lsst.utils import introspection
+from lsst.utils.logging import LsstLogAdapter, getLogger
 
 from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
 
 if TYPE_CHECKING:
-    from lsst.utils.logging import LsstLogAdapter
-
     from ._task_metadata import TaskMetadata
+
+
+_LOG = getLogger(__name__)
 
 
 class QuantumSuccessCaveats(enum.Flag):
@@ -218,6 +220,10 @@ class ExceptionInfo(pydantic.BaseModel):
                 # our ability to report on an entire run.
                 if isinstance(v, float | int | str | bool):
                     result.metadata[k] = v
+                else:
+                    _LOG.debug(
+                        "Not propagating nested or JSON-incompatible exception metadata key %s=%r.", k, v
+                    )
         return result
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
