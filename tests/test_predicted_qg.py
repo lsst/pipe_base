@@ -511,7 +511,8 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             components.write(tmpfile, zstd_dict_n_inputs=24)  # enable dict compression code path
             # Test a full read with the new class.
             with PredictedQuantumGraph.open(tmpfile, page_size=four_row_page_size) as reader:
-                full_qg = reader.read_all().finish()
+                reader.read_all()
+                full_qg = reader.finish()
                 self.check_quantum_graph(full_qg, dimension_data_deserialized=False)
             # Test a full read with the old class (uses new class and then
             # converts to old, and we convert back to new for the test).
@@ -527,7 +528,8 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             )
             # Test a thin but shallow read with the new class.
             with PredictedQuantumGraph.open(tmpfile, page_size=four_row_page_size) as reader:
-                thin_qg = reader.read_thin_graph().finish()
+                reader.read_thin_graph()
+                thin_qg = reader.finish()
                 self.check_quantum_graph(
                     thin_qg,
                     dimension_data_deserialized=False,
@@ -560,7 +562,8 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
             tmpfile = os.path.join(tmpdir, "new.qg")
             components.write(tmpfile, zstd_dict_size=0)
             with PredictedQuantumGraph.open(tmpfile, page_size=three_row_page_size) as reader:
-                full_qg = reader.read_all().finish()
+                reader.read_all()
+                full_qg = reader.finish()
                 self.check_quantum_graph(full_qg, dimension_data_deserialized=False)
 
     def test_dot(self) -> None:

@@ -47,7 +47,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeAlias, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypedDict, TypeVar
 
 import astropy.table
 import networkx
@@ -1217,7 +1217,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
     the `graph` attribute`.
 
     The various ``read_*`` methods in this class update the `graph` attribute
-    in place and return ``self``.
+    in place.
     """
 
     graph: ProvenanceQuantumGraph = dataclasses.field(init=False)
@@ -1266,29 +1266,18 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
     def __post_init__(self) -> None:
         self.graph = ProvenanceQuantumGraph(self.header, self.pipeline_graph)
 
-    def read_init_quanta(self) -> Self:
+    def read_init_quanta(self) -> None:
         """Read the thin graph, with all edge information and categorization of
         quanta by task label.
-
-        Returns
-        -------
-        self : `ProvenanceQuantumGraphReader`
-            The reader (to permit method-chaining).
         """
         init_quanta = self._read_single_block("init_quanta", ProvenanceInitQuantaModel)
         for init_quantum in init_quanta.root:
             self.graph._init_quanta[init_quantum.task_label] = init_quantum.quantum_id
         init_quanta._add_to_graph(self.graph, self.address_reader)
-        return self
 
-    def read_full_graph(self) -> Self:
+    def read_full_graph(self) -> None:
         """Read all bipartite edges and all quantum and dataset node
         attributes, fully populating the `graph` attribute.
-
-        Returns
-        -------
-        self : `ProvenanceQuantumGraphReader`
-            The reader (to permit method-chaining).
 
         Notes
         -----
@@ -1298,9 +1287,8 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         self.read_init_quanta()
         self.read_datasets()
         self.read_quanta()
-        return self
 
-    def read_datasets(self, datasets: Iterable[uuid.UUID | DatasetIndex] | None = None) -> Self:
+    def read_datasets(self, datasets: Iterable[uuid.UUID | DatasetIndex] | None = None) -> None:
         """Read information about the given datasets.
 
         Parameters
@@ -1309,15 +1297,10 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
             Iterable of dataset IDs or indices to load.  If not provided, all
             datasets will be loaded.  The UUIDs and indices of quanta will be
             ignored.
-
-        Return
-        -------
-        self : `ProvenanceQuantumGraphReader`
-            The reader (to permit method-chaining).
         """
-        return self._read_nodes(datasets, DATASET_ADDRESS_INDEX, DATASET_MB_NAME, ProvenanceDatasetModel)
+        self._read_nodes(datasets, DATASET_ADDRESS_INDEX, DATASET_MB_NAME, ProvenanceDatasetModel)
 
-    def read_quanta(self, quanta: Iterable[uuid.UUID | QuantumIndex] | None = None) -> Self:
+    def read_quanta(self, quanta: Iterable[uuid.UUID | QuantumIndex] | None = None) -> None:
         """Read information about the given quanta.
 
         Parameters
@@ -1326,13 +1309,8 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
             Iterable of quantum IDs or indices to load.  If not provided, all
             quanta will be loaded.  The UUIDs and indices of datasets and
             special init quanta will be ignored.
-
-        Return
-        -------
-        self : `ProvenanceQuantumGraphReader`
-            The reader (to permit method-chaining).
         """
-        return self._read_nodes(quanta, QUANTUM_ADDRESS_INDEX, QUANTUM_MB_NAME, ProvenanceQuantumModel)
+        self._read_nodes(quanta, QUANTUM_ADDRESS_INDEX, QUANTUM_MB_NAME, ProvenanceQuantumModel)
 
     def _read_nodes(
         self,
@@ -1340,7 +1318,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         address_index: int,
         mb_name: str,
         model_type: type[ProvenanceDatasetModel] | type[ProvenanceQuantumModel],
-    ) -> Self:
+    ) -> None:
         node: ProvenanceDatasetModel | ProvenanceQuantumModel | None
         if nodes is None:
             self.address_reader.read_all()
@@ -1371,7 +1349,6 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                 )
                 if node is not None:
                     node._add_to_graph(self.graph, self.address_reader)
-        return self
 
     def fetch_logs(
         self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
