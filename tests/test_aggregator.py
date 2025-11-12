@@ -39,7 +39,12 @@ from click.testing import CliRunner, Result
 
 import lsst.utils.tests
 from lsst.daf.butler import Butler, ButlerLogRecords, QuantumBackedButler
-from lsst.pipe.base import AlgorithmError, QuantumSuccessCaveats, TaskMetadata
+from lsst.pipe.base import (
+    AlgorithmError,
+    QuantumAttemptStatus,
+    QuantumSuccessCaveats,
+    TaskMetadata,
+)
 from lsst.pipe.base import automatic_connection_constants as acc
 from lsst.pipe.base.cli.cmd.commands import aggregate_graph as aggregate_graph_cli
 from lsst.pipe.base.graph_walker import GraphWalker
@@ -54,7 +59,6 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceQuantumInfo,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
-from lsst.pipe.base.quantum_provenance_graph import QuantumRunStatus
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
 from lsst.pipe.base.tests.mocks import (
@@ -231,7 +235,11 @@ class AggregatorTestCase(unittest.TestCase):
                 )
 
     def iter_graph_execution(
-        self, repo: ResourcePath, qg: PredictedQuantumGraph, raise_on_partial_outputs: bool
+        self,
+        repo: ResourcePath,
+        qg: PredictedQuantumGraph,
+        raise_on_partial_outputs: bool,
+        is_retry: bool = False,
     ) -> Iterator[uuid.UUID]:
         """Return an iterator that executes and yields quanta one by one.
 
@@ -245,12 +253,14 @@ class AggregatorTestCase(unittest.TestCase):
         raise_on_partial_outputs : `bool`
             Whether to raise on `lsst.pipe.base.AnnotatedPartialOutputsError`
             or treat it as a success with caveats.
+        is_retry : `bool`, optional
+            If `True`, this is a retry attempt and hence some outputs may
+            already be present; skip successes and reprocess failures.
 
         Returns
         -------
         quanta : `~collections.abc.Iterator` [`uuid.UUID`]
-            An iterator over successful quantum IDs.  Failed and blocked quanta
-            are not included.
+            An iterator over all executed quantum IDs (not blocked ones).
         """
         qg.init_output_run(qg.make_init_qbb(repo))
         sqe = SingleQuantumExecutor(
@@ -259,7 +269,9 @@ class AggregatorTestCase(unittest.TestCase):
                 quantum,
                 qg.pipeline_graph.universe,
             ),
-            assume_no_existing_outputs=True,
+            assume_no_existing_outputs=not is_retry,
+            skip_existing=is_retry,
+            clobber_outputs=is_retry,
             raise_on_partial_outputs=raise_on_partial_outputs,
         )
         qg.build_execution_quanta()
@@ -274,7 +286,7 @@ class AggregatorTestCase(unittest.TestCase):
                     walker.fail(quantum_id)
                 else:
                     walker.finish(quantum_id)
-                    yield quantum_id
+                yield quantum_id
 
     def check_provenance_graph(
         self,
@@ -283,7 +295,8 @@ class AggregatorTestCase(unittest.TestCase):
         butler: Butler,
         expect_failure: bool,
         start_time: float,
-    ) -> None:
+        expect_failures_retried: bool = False,
+    ) -> ProvenanceQuantumGraph:
         """Run a batter of tests on a provenance quantum graph produced by
         scanning the graph created by `make_test_repo`.
 
@@ -302,6 +315,14 @@ class AggregatorTestCase(unittest.TestCase):
         start_time : `float`
             A POSIX timestamp that strictly precedes the start time of any
             quantum's execution.
+        expect_failures_retried : `bool`, optional
+            If `True`, expect an initial attempt with failures prior to the
+            most recent attempt.
+
+        Returns
+        -------
+        prov : `ProvenanceQuantumGraph`
+            The full provenance quantum graph.
         """
         prov_reader.read_full_graph()
         prov = prov_reader.graph
@@ -374,6 +395,14 @@ class AggregatorTestCase(unittest.TestCase):
                             exception_type="lsst.pipe.base.tests.mocks.MockAlgorithmError",
                             msg=msg,
                         )
+                    if expect_failures_retried:
+                        self.assertEqual(len(prov_qinfo["attempts"]), 2)
+                        self.assertEqual(
+                            prov_qinfo["attempts"][0].exception.type_name,
+                            "lsst.pipe.base.tests.mocks.MockAlgorithmError",
+                        )
+                    else:
+                        self.assertEqual(len(prov_qinfo["attempts"]), 1)
                 case "consolidate", {"visit": 2}:
                     # This quantum will succeed (with one predicted input
                     # missing) or be blocked.
@@ -382,6 +411,9 @@ class AggregatorTestCase(unittest.TestCase):
                         self._expect_blocked(prov_qinfo, existence, msg=msg)
                     else:
                         self._expect_successful(prov_qinfo, existence, msg=msg)
+                    self.assertEqual(
+                        len(prov_qinfo["attempts"]), expect_failures_retried or not expect_failure
+                    )
                 case (
                     "resample" | "coadd",
                     {"tract": 1, "patch": 1} | {"tract": 0, "patch": 5},
@@ -403,6 +435,9 @@ class AggregatorTestCase(unittest.TestCase):
                             ),
                             msg=msg,
                         )
+                    self.assertEqual(
+                        len(prov_qinfo["attempts"]), expect_failures_retried or not expect_failure
+                    )
                 case (
                     "resample",
                     {"tract": 0, "patch": 4, "visit": 2} | {"tract": 1, "patch": 0, "visit": 2},
@@ -414,6 +449,9 @@ class AggregatorTestCase(unittest.TestCase):
                         self._expect_blocked(prov_qinfo, existence, msg=msg)
                     else:
                         self._expect_successful(prov_qinfo, existence, msg=msg)
+                    self.assertEqual(
+                        len(prov_qinfo["attempts"]), expect_failures_retried or not expect_failure
+                    )
                 case (
                     "coadd",
                     {"tract": 0, "patch": 4, "band": "r"} | {"tract": 1, "patch": 0, "band": "r"},
@@ -426,18 +464,22 @@ class AggregatorTestCase(unittest.TestCase):
                     else:
                         self._expect_all_exist(existence["input_image"], msg=msg)
                         self._expect_successful(prov_qinfo, existence, msg=msg)
+                    self.assertEqual(
+                        len(prov_qinfo["attempts"]), expect_failures_retried or not expect_failure
+                    )
                 case _:
                     # All other quanta should succeed and have all inputs
                     # present.
                     for connection_name in prov_qinfo["pipeline_node"].inputs.keys():
                         self._expect_all_exist(existence[connection_name], msg=msg)
                     self._expect_successful(prov_qinfo, existence, msg=msg)
-            if not checked_some_metadata and prov_qinfo["status"] is QuantumRunStatus.SUCCESSFUL:
+                    self.assertEqual(len(prov_qinfo["attempts"]), 1)
+            if not checked_some_metadata and prov_qinfo["status"] is QuantumAttemptStatus.SUCCESSFUL:
                 self.check_metadata(quantum_id, prov_reader, butler)
                 checked_some_metadata = True
             if not checked_some_log and prov_qinfo["status"] in (
-                QuantumRunStatus.SUCCESSFUL,
-                QuantumRunStatus.FAILED,
+                QuantumAttemptStatus.SUCCESSFUL,
+                QuantumAttemptStatus.FAILED,
             ):
                 self.check_log(quantum_id, prov_reader, butler)
                 checked_some_log = True
@@ -449,6 +491,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.check_packages(prov_reader)
         self.check_quantum_table(prov_reader.graph, expect_failure=expect_failure)
         self.check_exception_table(prov_reader.graph, expect_failure=expect_failure)
+        return prov
 
     def _expect_all_exist(self, existence: list[bool], msg: str) -> None:
         self.assertTrue(all(existence), msg=msg)
@@ -468,7 +511,7 @@ class AggregatorTestCase(unittest.TestCase):
         *,
         msg: str,
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.SUCCESSFUL, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.SUCCESSFUL, msg=msg)
         self.assertEqual(info["caveats"], caveats, msg=msg)
         if exception_type is None:
             self.assertIsNone(info["exception"], msg=msg)
@@ -490,7 +533,8 @@ class AggregatorTestCase(unittest.TestCase):
     def _expect_failure(
         self, info: ProvenanceQuantumInfo, existence: dict[str, list[bool]], msg: str
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.FAILED, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.FAILED, msg=msg)
+        self.assertEqual(info["exception"].type_name, "lsst.pipe.base.tests.mocks.MockAlgorithmError")
         self._expect_all_exist(existence[acc.LOG_OUTPUT_CONNECTION_NAME], msg=msg)
         self._expect_none_exist(existence[acc.METADATA_OUTPUT_CONNECTION_NAME], msg=msg)
         for connection_name in info["pipeline_node"].outputs.keys():
@@ -502,7 +546,8 @@ class AggregatorTestCase(unittest.TestCase):
         existence: dict[str, list[bool]],
         msg: str,
     ) -> None:
-        self.assertEqual(info["status"], QuantumRunStatus.BLOCKED, msg=msg)
+        self.assertEqual(info["status"], QuantumAttemptStatus.BLOCKED, msg=msg)
+        self.assertEqual(info["attempts"], [])
         self._expect_none_exist(existence[acc.LOG_OUTPUT_CONNECTION_NAME], msg=msg)
         self._expect_none_exist(existence[acc.METADATA_OUTPUT_CONNECTION_NAME], msg=msg)
         for connection_name in info["pipeline_node"].outputs.keys():
@@ -540,7 +585,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.assertEqual(pred_info["dataset_type_name"], prov_info["dataset_type_name"])
         self.assertEqual(pred_info["data_id"], prov_info["data_id"])
         self.assertEqual(pred_info["run"], prov_info["run"])
-        exists = prov_info["exists"]
+        exists = prov_info["produced"]
         dataset_type_name = prov_info["dataset_type_name"]
         # We can remove this guard when we ingest QG-backed metadata and logs.
         if not dataset_type_name.endswith("_metadata") and not dataset_type_name.endswith("_log"):
@@ -571,14 +616,14 @@ class AggregatorTestCase(unittest.TestCase):
             Client for the data repository.
         """
         # Try reading metadata through the quantum ID.
-        (metadata1,) = provenance_reader.fetch_metadata([quantum_id]).values()
+        ((metadata1,),) = provenance_reader.fetch_metadata([quantum_id]).values()
         self.assertIsInstance(metadata1, TaskMetadata)
         for _, dataset_id, pipeline_edges in provenance_reader.graph.bipartite_xgraph.out_edges(
             quantum_id, data="pipeline_edges"
         ):
             if pipeline_edges[0].connection_name == acc.METADATA_OUTPUT_CONNECTION_NAME:
                 # Also try reading metadata through the dataset ID.
-                (metadata2,) = provenance_reader.fetch_metadata([dataset_id]).values()
+                ((metadata2,),) = provenance_reader.fetch_metadata([dataset_id]).values()
                 break
         else:
             raise AssertionError("No metadata connection found.")
@@ -601,14 +646,14 @@ class AggregatorTestCase(unittest.TestCase):
             Client for the data repository.
         """
         # Try reading log through the quantum ID.
-        (log1,) = provenance_reader.fetch_logs([quantum_id]).values()
+        ((log1,),) = provenance_reader.fetch_logs([quantum_id]).values()
         self.assertIsInstance(log1, ButlerLogRecords)
         for _, dataset_id, pipeline_edges in provenance_reader.graph.bipartite_xgraph.out_edges(
             quantum_id, data="pipeline_edges"
         ):
             if pipeline_edges[0].connection_name == acc.LOG_OUTPUT_CONNECTION_NAME:
                 # Also try reading log through the dataset ID.
-                (log2,) = provenance_reader.fetch_logs([dataset_id]).values()
+                ((log2,),) = provenance_reader.fetch_logs([dataset_id]).values()
                 break
         else:
             raise AssertionError("No log connection found.")
@@ -644,10 +689,7 @@ class AggregatorTestCase(unittest.TestCase):
             quantum's execution.
         """
         tbl = prov.make_task_resource_usage_table("calibrate", include_data_ids=True)
-        if expect_failure:
-            self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"] - 1)
-        else:
-            self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"])
+        self.assertEqual(len(tbl), prov.header.n_task_quanta["calibrate"])
         self.assertCountEqual(
             tbl.colnames,
             ["quantum_id"]
@@ -729,12 +771,9 @@ class AggregatorTestCase(unittest.TestCase):
             succeed without writing anything (`False`).
         """
         t = prov.make_exception_table()
-        if expect_failure:
-            self.assertEqual(len(t), 0)
-        else:
-            self.assertEqual(list(t["Task"]), ["calibrate"])
-            self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
-            self.assertEqual(list(t["Count"]), [1])
+        self.assertEqual(list(t["Task"]), ["calibrate"])
+        self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
+        self.assertEqual(list(t["Count"]), [1])
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the
@@ -745,15 +784,22 @@ class AggregatorTestCase(unittest.TestCase):
         with self.make_test_repo() as prep:
             prep.config.assume_complete = False
             start_time = time.time()
-            executed_quanta = list(
+            attempted_quanta = list(
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=False)
             )
-            self.assertCountEqual(executed_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
+            self.assertCountEqual(attempted_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=False, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=False,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_all_successful_two_phase(self) -> None:
         """Test running some of a graph with no failures, scanning with
@@ -764,23 +810,29 @@ class AggregatorTestCase(unittest.TestCase):
             execution_iter = self.iter_graph_execution(
                 prep.butler_path, prep.predicted, raise_on_partial_outputs=False
             )
-            executed_quanta = list(itertools.islice(execution_iter, 9))
-            self.assertEqual(len(executed_quanta), 9)
+            attempted_quanta = list(itertools.islice(execution_iter, 9))
+            self.assertEqual(len(attempted_quanta), 9)
             # Run the scanner while telling it to assume failures might change,
-            # so it just waits for incomplete quanta to finish (and then times
-            # out).
+            # so it just abandons incomplete quanta.
             prep.config.assume_complete = False
             with self.assertRaises(RuntimeError):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Finish executing the quanta.
-            executed_quanta.extend(execution_iter)
+            attempted_quanta.extend(execution_iter)
             # Scan again, and write the provenance QG.
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             # Run the scanner again.
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=False, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=False,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_some_failed(self) -> None:
         """Test running a full graph with some failures, and then scanning the
@@ -789,15 +841,21 @@ class AggregatorTestCase(unittest.TestCase):
         with self.make_test_repo() as prep:
             prep.config.assume_complete = True
             start_time = time.time()
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
-            ):
-                pass
+            attempted_quanta = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=True, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=True,
+                    start_time=start_time,
                 )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_some_failed_two_phase(self) -> None:
         """Test running a full graph with some failures, then scanning the
@@ -806,19 +864,68 @@ class AggregatorTestCase(unittest.TestCase):
         """
         with self.make_test_repo() as prep:
             start_time = time.time()
-            for _ in self.iter_graph_execution(
-                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
-            ):
-                pass
+            attempted_quanta = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
             prep.config.assume_complete = False
             with self.assertRaisesRegex(RuntimeError, "1 quantum abandoned"):
                 aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             prep.config.assume_complete = True
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                self.check_provenance_graph(
-                    prep.predicted, reader, prep.butler, expect_failure=True, start_time=start_time
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=True,
+                    start_time=start_time,
                 )
+                for i, quantum_id in enumerate(attempted_quanta):
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
+
+    def test_retry(self) -> None:
+        """Test running a full graph with some failures, rerunning the quanta
+        that failed or were blocked in the first attempt, and then scanning
+        for provenance.
+        """
+        with self.make_test_repo() as prep:
+            prep.config.assume_complete = True
+            start_time = time.time()
+            attempted_quanta_1 = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
+            attempted_quanta_2 = list(
+                self.iter_graph_execution(
+                    prep.butler_path, prep.predicted, raise_on_partial_outputs=False, is_retry=True
+                )
+            )
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
+                prov = self.check_provenance_graph(
+                    prep.predicted,
+                    reader,
+                    prep.butler,
+                    expect_failure=False,
+                    start_time=start_time,
+                    expect_failures_retried=True,
+                )
+                for i, quantum_id in enumerate(attempted_quanta_1):
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    self.assertEqual(qinfo["attempts"][0].previous_process_quanta, attempted_quanta_1[:i])
+                expected: list[uuid.UUID] = []
+                for quantum_id in attempted_quanta_2:
+                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                    if (
+                        quantum_id in attempted_quanta_1
+                        and qinfo["attempts"][0].status is QuantumAttemptStatus.SUCCESSFUL
+                    ):
+                        # These weren't actually attempted twice, since they
+                        # were already successful in the first round.
+                        self.assertEqual(len(qinfo["attempts"]), 1)
+                    else:
+                        self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, expected)
+                        expected.append(quantum_id)
 
     def test_worker_failures(self) -> None:
         """Test that if failures occur on (multiple) workers we shut down

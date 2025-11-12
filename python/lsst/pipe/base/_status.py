@@ -27,28 +27,37 @@
 
 from __future__ import annotations
 
-import abc
-import enum
-import logging
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
-
-from lsst.utils import introspection
-
-from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
-
-if TYPE_CHECKING:
-    from lsst.utils.logging import LsstLogAdapter
-
 __all__ = (
     "AlgorithmError",
     "AnnotatedPartialOutputsError",
+    "ExceptionInfo",
     "InvalidQuantumError",
     "NoWorkFound",
+    "QuantumAttemptStatus",
     "QuantumSuccessCaveats",
     "RepeatableQuantumError",
     "UnprocessableDataError",
     "UpstreamFailureNoWorkFound",
 )
+
+import abc
+import enum
+import logging
+import sys
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+
+import pydantic
+
+from lsst.utils import introspection
+from lsst.utils.logging import LsstLogAdapter, getLogger
+
+from ._task_metadata import GetSetDictMetadata, NestedMetadataDict
+
+if TYPE_CHECKING:
+    from ._task_metadata import TaskMetadata
+
+
+_LOG = getLogger(__name__)
 
 
 class QuantumSuccessCaveats(enum.Flag):
@@ -173,6 +182,142 @@ class QuantumSuccessCaveats(enum.Flag):
             "P": "task failed but wrote partial outputs; considered a partial success",
             "N": "runQuantum raised NoWorkFound",
         }
+
+
+class ExceptionInfo(pydantic.BaseModel):
+    """Information about an exception that was raised."""
+
+    type_name: str
+    """Fully-qualified Python type name for the exception raised."""
+
+    message: str
+    """String message included in the exception."""
+
+    metadata: dict[str, float | int | str | bool | None]
+    """Additional metadata included in the exception."""
+
+    @classmethod
+    def _from_metadata(cls, md: TaskMetadata) -> ExceptionInfo:
+        """Construct from task metadata.
+
+        Parameters
+        ----------
+        md : `TaskMetadata`
+            Metadata about the error, as written by
+            `AnnotatedPartialOutputsError`.
+
+        Returns
+        -------
+        info : `ExceptionInfo`
+            Information about the exception.
+        """
+        result = cls(type_name=md["type"], message=md["message"], metadata={})
+        if "metadata" in md:
+            raw_err_metadata = md["metadata"].to_dict()
+            for k, v in raw_err_metadata.items():
+                # Guard against error metadata we wouldn't be able to serialize
+                # later via Pydantic; don't want one weird value bringing down
+                # our ability to report on an entire run.
+                if isinstance(v, float | int | str | bool):
+                    result.metadata[k] = v
+                else:
+                    _LOG.debug(
+                        "Not propagating nested or JSON-incompatible exception metadata key %s=%r.", k, v
+                    )
+        return result
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
+class QuantumAttemptStatus(enum.Enum):
+    """Enum summarizing an attempt to run a quantum."""
+
+    UNKNOWN = -3
+    """The status of this attempt is unknown.
+
+    This usually means no logs or metadata were written, and it at least could
+    not be determined whether the quantum was blocked by an upstream failure
+    (if it was definitely blocked, `BLOCKED` is set instead).
+    """
+
+    LOGS_MISSING = -2
+    """Task metadata was written for this attempt but logs were not.
+
+    This is a rare condition that requires a hard failure (i.e. the kind that
+    can prevent a ``finally`` block from running or I/O from being durable) at
+    a very precise time.
+    """
+
+    FAILED = -1
+    """Execution of the quantum failed.
+
+    This is always set if the task metadata dataset was not written but logs
+    were, as is the case when a Python exception is caught and handled by the
+    execution system.  It may also be set in cases where logs were not written
+    either, but other information was available (e.g. from higher-level
+    orchestration tooling) to mark it as a failure.
+    """
+
+    BLOCKED = 0
+    """This quantum was not executed because an upstream quantum failed.
+
+    Upstream quanta with status `UNKNOWN` or `FAILED` are considered blockers;
+    `LOGS_MISSING` is not.
+    """
+
+    SUCCESSFUL = 1
+    """This quantum was successfully executed.
+
+    Quanta may be considered successful even if they do not write any outputs
+    or shortcut early by raising `NoWorkFound` or one of its variants.  They
+    may even be considered successful if they raise
+    `AnnotatedPartialOutputsError` if the executor is configured to treat that
+    exception as a non-failure.  See `QuantumSuccessCaveats` for details on how
+    these "successes with caveats" are reported.
+    """
 
 
 class GetSetDictMetadataHolder(Protocol):

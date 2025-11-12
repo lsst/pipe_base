@@ -464,7 +464,7 @@ class Writer:
                     producer=self.indices[predicted_init_quantum.quantum_id],
                     consumers=self.xgraph.successors(dataset_index),
                 )
-                provenance_output.exists = predicted_output.dataset_id in existing_outputs
+                provenance_output.produced = predicted_output.dataset_id in existing_outputs
                 data_writers.datasets.write_model(
                     provenance_output.dataset_id, provenance_output, data_writers.compressor
                 )
@@ -551,16 +551,13 @@ class Writer:
                 producer=quantum_index,
                 consumers=self.xgraph.successors(dataset_index),
             )
-            provenance_output.exists = provenance_output.dataset_id in request.existing_outputs
+            provenance_output.produced = provenance_output.dataset_id in request.existing_outputs
             data.datasets[provenance_output.dataset_id] = provenance_output.model_dump_json().encode()
         provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum, self.indices)
-        provenance_quantum.status = request.get_run_status()
-        provenance_quantum.caveats = request.caveats
-        provenance_quantum.exception = request.exception
-        provenance_quantum.resource_usage = request.resource_usage
+        provenance_quantum.attempts = [a.remap_uuids(self.indices) for a in request.attempts]
         data.quantum = provenance_quantum.model_dump_json().encode()
-        data.metadata = request.metadata
-        data.log = request.log
+        data.metadata = request.metadata_content
+        data.log = request.log_content
         return [data]
 
     def write_scan_data(self, scan_data: _ScanData, data_writers: _DataWriters) -> None:

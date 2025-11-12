@@ -59,7 +59,7 @@ from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
 from lsst.utils.logging import VERBOSE, LsstLogAdapter
 
 from ._config import AggregatorConfig
-from ._progress import Progress, make_worker_log
+from ._progress import ProgressManager, make_worker_log
 from ._structs import IngestRequest, ScanReport, ScanResult
 
 _T = TypeVar("_T")
@@ -340,7 +340,7 @@ class SupervisorCommunicator:
         config: AggregatorConfig,
     ) -> None:
         self.config = config
-        self.progress = Progress(log, config)
+        self.progress = ProgressManager(log, config)
         self.n_scanners = n_scanners
         # The supervisor sends scan requests to scanners on this queue.
         # When complete, the supervisor sends n_scanners sentinals and each
@@ -406,13 +406,13 @@ class SupervisorCommunicator:
                     pass
                 case _Sentinel.INGESTER_DONE:
                     self._ingester_done = True
-                    self.progress.finish_ingests()
+                    self.progress.quantum_ingests.close()
                 case _Sentinel.SCANNER_DONE:
                     self._n_scanners_done += 1
-                    self.progress.finish_scans()
+                    self.progress.scans.close()
                 case _Sentinel.WRITER_DONE:
                     self._writer_done = True
-                    self.progress.finish_writes()
+                    self.progress.writes.close()
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
             self.log.verbose(
@@ -530,9 +530,9 @@ class SupervisorCommunicator:
                 if not already_failing:
                     raise FatalWorkerError()
             case _IngestReport(n_producers=n_producers):
-                self.progress.report_ingests(n_producers)
+                self.progress.quantum_ingests.update(n_producers)
             case _Sentinel.WRITE_REPORT:
-                self.progress.report_write()
+                self.progress.writes.update(1)
             case _ProgressLog(message=message, level=level):
                 self.progress.log.log(level, "%s [after %0.1fs]", message, self.progress.elapsed_time)
             case _:
@@ -626,10 +626,10 @@ class WorkerCommunicator:
 
         Parameters
         ----------
-        message : `str`
-            Log message.
         level : `int`
             Log level.  Should be ``VERBOSE`` or higher.
+        message : `str`
+            Log message.
         """
         self._reports.put(_ProgressLog(message=message, level=level), block=False)
 

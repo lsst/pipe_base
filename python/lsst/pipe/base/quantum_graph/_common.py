@@ -60,6 +60,7 @@ import pydantic
 import zstandard
 
 from lsst.daf.butler import DataCoordinate, DataIdValue
+from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.resources import ResourcePath, ResourcePathExpression
 
 from ..pipeline_graph import DatasetTypeNode, Edge, PipelineGraph, TaskImportMode, TaskNode
@@ -155,6 +156,11 @@ class HeaderModel(pydantic.BaseModel):
     This does not include special "init" quanta, but it does include quanta
     that were not loaded in a partial read (except when reading from an old
     quantum graph file).
+    """
+
+    provenance_dataset_id: uuid.UUID = pydantic.Field(default_factory=generate_uuidv7)
+    """The dataset ID for provenance quantum graph when it is ingested into
+    a butler repository.
     """
 
     @classmethod

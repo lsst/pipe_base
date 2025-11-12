@@ -1899,11 +1899,12 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
         """Construct a `PredictedQuantumGraph` instance from this reader."""
         return self.components.assemble()
 
-    def read_all(self) -> PredictedQuantumGraphReader:
+    def read_all(self) -> None:
         """Read all components in full."""
-        return self.read_thin_graph().read_execution_quanta()
+        self.read_thin_graph()
+        self.read_execution_quanta()
 
-    def read_thin_graph(self) -> PredictedQuantumGraphReader:
+    def read_thin_graph(self) -> None:
         """Read the thin graph.
 
         The thin graph is a quantum-quantum DAG with internal integer IDs for
@@ -1918,17 +1919,15 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             self.components.quantum_indices.update(
                 {row.key: row.index for row in self.address_reader.rows.values()}
             )
-        return self
 
-    def read_init_quanta(self) -> PredictedQuantumGraphReader:
+    def read_init_quanta(self) -> None:
         """Read the list of special quanta that represent init-inputs and
         init-outputs.
         """
         if not self.components.init_quanta.root:
             self.components.init_quanta = self._read_single_block("init_quanta", PredictedInitQuantaModel)
-        return self
 
-    def read_dimension_data(self) -> PredictedQuantumGraphReader:
+    def read_dimension_data(self) -> None:
         """Read all dimension records.
 
         Record data IDs will be immediately deserialized, while other fields
@@ -1948,11 +1947,8 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                     universe=self.components.pipeline_graph.universe,
                 ),
             )
-        return self
 
-    def read_quantum_datasets(
-        self, quantum_ids: Iterable[uuid.UUID] | None = None
-    ) -> PredictedQuantumGraphReader:
+    def read_quantum_datasets(self, quantum_ids: Iterable[uuid.UUID] | None = None) -> None:
         """Read information about all datasets produced and consumed by the
         given quantum IDs.
 
@@ -1977,7 +1973,7 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                 self.address_reader.read_all()
                 for address_row in self.address_reader.rows.values():
                     self.components.quantum_indices[address_row.key] = address_row.index
-            return self
+            return
         with MultiblockReader.open_in_zip(
             self.zf, "quantum_datasets", int_size=self.components.header.int_size
         ) as mb_reader:
@@ -1991,11 +1987,9 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                 )
                 if quantum_datasets is not None:
                     self.components.quantum_datasets[address_row.key] = quantum_datasets
-        return self
+        return
 
-    def read_execution_quanta(
-        self, quantum_ids: Iterable[uuid.UUID] | None = None
-    ) -> PredictedQuantumGraphReader:
+    def read_execution_quanta(self, quantum_ids: Iterable[uuid.UUID] | None = None) -> None:
         """Read all information needed to execute the given quanta.
 
         Parameters
@@ -2004,4 +1998,6 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
             Iterable of quantum IDs to load.  If not provided, all quanta will
             be loaded.  The UUIDs of special init quanta will be ignored.
         """
-        return self.read_init_quanta().read_dimension_data().read_quantum_datasets(quantum_ids)
+        self.read_init_quanta()
+        self.read_dimension_data()
+        self.read_quantum_datasets(quantum_ids)
