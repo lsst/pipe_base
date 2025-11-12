@@ -27,6 +27,19 @@
 
 from __future__ import annotations
 
+__all__ = (
+    "AlgorithmError",
+    "AnnotatedPartialOutputsError",
+    "ExceptionInfo",
+    "InvalidQuantumError",
+    "NoWorkFound",
+    "QuantumAttemptStatus",
+    "QuantumSuccessCaveats",
+    "RepeatableQuantumError",
+    "UnprocessableDataError",
+    "UpstreamFailureNoWorkFound",
+)
+
 import abc
 import enum
 import logging
@@ -43,20 +56,6 @@ if TYPE_CHECKING:
     from lsst.utils.logging import LsstLogAdapter
 
     from ._task_metadata import TaskMetadata
-
-
-__all__ = (
-    "AlgorithmError",
-    "AnnotatedPartialOutputsError",
-    "ExceptionInfo",
-    "InvalidQuantumError",
-    "NoWorkFound",
-    "QuantumAttemptStatus",
-    "QuantumSuccessCaveats",
-    "RepeatableQuantumError",
-    "UnprocessableDataError",
-    "UpstreamFailureNoWorkFound",
-)
 
 
 class QuantumSuccessCaveats(enum.Flag):
