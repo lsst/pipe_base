@@ -1358,6 +1358,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     # also have other outstanding reference holders).
                     continue
                 node._add_to_graph(self.graph, self.address_reader)
+            return
         with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
             for node_id_or_index in nodes:
                 address_row = self.address_reader.find(node_id_or_index)
