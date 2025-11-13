@@ -88,6 +88,7 @@ from ..pipeline_graph import (
     log_config_mismatch,
 )
 from ._common import (
+    FORMAT_VERSION,
     BaseQuantumGraph,
     BaseQuantumGraphReader,
     BaseQuantumGraphWriter,
@@ -1772,6 +1773,9 @@ class PredictedQuantumGraphComponents:
             raise RuntimeError(
                 "Cannot save graph after partial read of quanta: thin graph is inconsistent with header."
             )
+        # Ensure we record the actual version we're about to write, in case
+        # we're rewriting an old graph in a new format.
+        self.header.version = FORMAT_VERSION
         uri = ResourcePath(uri)
         match uri.getExtension():
             case ".qg":
