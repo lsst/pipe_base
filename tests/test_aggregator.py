@@ -50,6 +50,7 @@ from lsst.pipe.base.cli.cmd.commands import aggregate_graph as aggregate_graph_c
 from lsst.pipe.base.graph_walker import GraphWalker
 from lsst.pipe.base.pipeline_graph import Edge
 from lsst.pipe.base.quantum_graph import (
+    FORMAT_VERSION,
     PredictedDatasetInfo,
     PredictedQuantumGraph,
     PredictedQuantumInfo,
@@ -329,6 +330,7 @@ class AggregatorTestCase(unittest.TestCase):
         checked_some_metadata = False
         checked_some_log = False
         self.maxDiff = None
+        self.assertEqual(prov.header.version, FORMAT_VERSION)
         self.assertEqual(
             list(butler.collections.get_info(prov.header.output).children),
             [prov.header.output_run]
