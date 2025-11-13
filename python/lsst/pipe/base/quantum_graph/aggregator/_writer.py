@@ -30,7 +30,6 @@ from __future__ import annotations
 __all__ = ("Writer",)
 
 import dataclasses
-import enum
 import itertools
 import logging
 import operator
@@ -62,69 +61,7 @@ from .._provenance import (
     ProvenanceQuantumModel,
 )
 from ._communicators import WriterCommunicator
-from ._structs import ScanResult
-
-
-class _CompressionState(enum.Enum):
-    """Enumeration of the possible states of compression in `_ScanData`."""
-
-    NOT_COMPRESSED = enum.auto()
-    """Nothing is compressed."""
-
-    LOG_AND_METADATA_COMPRESSED = enum.auto()
-    """Only the logs and metadata are compressed."""
-
-    ALL_COMPRESSED = enum.auto()
-    """All `bytes` are compressed."""
-
-
-@dataclasses.dataclass
-class _ScanData:
-    """Information from a quantum scan that has been partially processed for
-    writing.
-    """
-
-    quantum_id: uuid.UUID
-    """Unique ID of the quantum."""
-
-    log_id: uuid.UUID
-    """Unique ID of the log dataset."""
-
-    metadata_id: uuid.UUID
-    """Unique ID of the metadata dataset."""
-
-    quantum: bytes = b""
-    """Possibly-compressed JSON representation of the quantum provenance."""
-
-    datasets: dict[uuid.UUID, bytes] = dataclasses.field(default_factory=dict)
-    """Possibly-compressed JSON representation of output dataset provenance."""
-
-    log: bytes = b""
-    """Possibly-compressed log dataset content."""
-
-    metadata: bytes = b""
-    """Possibly-compressed metadata dataset content."""
-
-    compression: _CompressionState = _CompressionState.NOT_COMPRESSED
-    """Which data is compressed, if any."""
-
-    def compress(self, compressor: Compressor) -> None:
-        """Compress all data in place, if it isn't already.
-
-        Parameters
-        ----------
-        compressor : `Compressor`
-            Object that can compress `bytes`.
-        """
-        if self.compression is _CompressionState.NOT_COMPRESSED:
-            self.metadata = compressor.compress(self.metadata)
-            self.log = compressor.compress(self.log)
-            self.compression = _CompressionState.LOG_AND_METADATA_COMPRESSED
-        if self.compression is _CompressionState.LOG_AND_METADATA_COMPRESSED:
-            self.quantum = compressor.compress(self.quantum)
-            for key in self.datasets.keys():
-                self.datasets[key] = compressor.compress(self.datasets[key])
-        self.compression = _CompressionState.ALL_COMPRESSED
+from ._structs import WriteRequest
 
 
 @dataclasses.dataclass
@@ -267,8 +204,8 @@ class Writer:
     with datasets as well as with quanta.
     """
 
-    pending_compression_training: list[_ScanData] = dataclasses.field(default_factory=list)
-    """Partially processed quantum scans that are being accumulated in order to
+    pending_compression_training: list[WriteRequest] = dataclasses.field(default_factory=list)
+    """Unprocessed quantum scans that are being accumulated in order to
     build a compression dictionary.
     """
 
@@ -364,12 +301,11 @@ class Writer:
         self.comms.log.info("Polling for write requests from scanners.")
         for request in self.comms.poll():
             if data_writers is None:
-                self.pending_compression_training.extend(self.make_scan_data(request))
+                self.pending_compression_training.append(request)
                 if len(self.pending_compression_training) >= self.comms.config.zstd_dict_n_inputs:
                     data_writers = self.make_data_writers()
             else:
-                for scan_data in self.make_scan_data(request):
-                    self.write_scan_data(scan_data, data_writers)
+                self.process_request(request, data_writers)
         if data_writers is None:
             data_writers = self.make_data_writers()
         self.write_init_outputs(data_writers)
@@ -397,8 +333,8 @@ class Writer:
         )
         self.comms.check_for_cancel()
         self.comms.log.info("Compressing and writing queued scan requests.")
-        for scan_data in self.pending_compression_training:
-            self.write_scan_data(scan_data, data_writers)
+        for request in self.pending_compression_training:
+            self.process_request(request, data_writers)
         del self.pending_compression_training
         self.comms.check_for_cancel()
         self.write_overall_inputs(data_writers)
@@ -434,11 +370,11 @@ class Writer:
             predicted_quantum.datastore_records.clear()
             training_inputs.append(predicted_quantum.model_dump_json().encode())
         # Add the provenance quanta, metadata, and logs we've accumulated.
-        for scan_data in self.pending_compression_training:
-            assert scan_data.compression is _CompressionState.NOT_COMPRESSED
-            training_inputs.append(scan_data.quantum)
-            training_inputs.append(scan_data.metadata)
-            training_inputs.append(scan_data.log)
+        for write_request in self.pending_compression_training:
+            assert not write_request.is_compressed, "We can't compress without the compression dictionary."
+            training_inputs.append(write_request.quantum)
+            training_inputs.append(write_request.metadata)
+            training_inputs.append(write_request.logs)
         return zstandard.train_dictionary(self.comms.config.zstd_dict_size, training_inputs)
 
     def write_init_outputs(self, data_writers: _DataWriters) -> None:
@@ -504,40 +440,24 @@ class Writer:
         data = packages.toBytes("json")
         data_writers.graph.write_single_block("packages", data)
 
-    def make_scan_data(self, request: ScanResult) -> list[_ScanData]:
-        """Process a `ScanResult` into `_ScanData`.
+    def process_request(self, request: WriteRequest, data_writers: _DataWriters) -> None:
+        """Process a `WriteRequest` into `_ScanData`.
 
         Parameters
         ----------
-        request : `ScanResult`
+        request : `WriteRequest`
             Result of a quantum scan.
-
-        Returns
-        -------
-        data : `list` [ `_ScanData` ]
-            A zero- or single-element list of `_ScanData` to write or save for
-            compression-dict training.  A zero-element list is returned if the
-            scan actually represents an init quantum.
+        data_writers : `_DataWriters`
+            Low-level writers struct.
         """
         if (existing_init_outputs := self.existing_init_outputs.get(request.quantum_id)) is not None:
             self.comms.log.debug("Handling init-output scan for %s.", request.quantum_id)
             existing_init_outputs.update(request.existing_outputs)
             self.comms.report_write()
-            return []
+            return
         self.comms.log.debug("Handling quantum scan for %s.", request.quantum_id)
         predicted_quantum = self.predicted.quantum_datasets[request.quantum_id]
-        (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
-        (log_output,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
-        data = _ScanData(
-            request.quantum_id,
-            metadata_id=metadata_output.dataset_id,
-            log_id=log_output.dataset_id,
-            compression=(
-                _CompressionState.LOG_AND_METADATA_COMPRESSED
-                if request.is_compressed
-                else _CompressionState.NOT_COMPRESSED
-            ),
-        )
+        outputs: dict[uuid.UUID, bytes] = {}
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
             provenance_output = ProvenanceDatasetModel.from_predicted(
                 predicted_output,
@@ -545,38 +465,36 @@ class Writer:
                 consumers=self.xgraph.successors(predicted_output.dataset_id),
             )
             provenance_output.produced = provenance_output.dataset_id in request.existing_outputs
-            data.datasets[provenance_output.dataset_id] = provenance_output.model_dump_json().encode()
-        provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum)
-        provenance_quantum.attempts = request.attempts
-        data.quantum = provenance_quantum.model_dump_json().encode()
-        data.metadata = request.metadata_content
-        data.log = request.log_content
-        return [data]
-
-    def write_scan_data(self, scan_data: _ScanData, data_writers: _DataWriters) -> None:
-        """Write scan data to the provenance graph.
-
-        Parameters
-        ----------
-        scan_data : `_ScanData`
-            Preprocessed information to write.
-        data_writers : `_DataWriters`
-            Low-level writers struct.
-        """
-        self.comms.log.debug("Writing quantum %s.", scan_data.quantum_id)
-        scan_data.compress(data_writers.compressor)
-        data_writers.quanta.write_bytes(scan_data.quantum_id, scan_data.quantum)
-        for dataset_id, dataset_data in scan_data.datasets.items():
+            outputs[provenance_output.dataset_id] = data_writers.compressor.compress(
+                provenance_output.model_dump_json().encode()
+            )
+        if not request.quantum:
+            request.quantum = (
+                ProvenanceQuantumModel.from_predicted(predicted_quantum).model_dump_json().encode()
+            )
+            if request.is_compressed:
+                request.quantum = data_writers.compressor.compress(request.quantum)
+        if not request.is_compressed:
+            request.quantum = data_writers.compressor.compress(request.quantum)
+            if request.metadata:
+                request.metadata = data_writers.compressor.compress(request.metadata)
+            if request.logs:
+                request.logs = data_writers.compressor.compress(request.logs)
+        self.comms.log.debug("Writing quantum %s.", request.quantum_id)
+        data_writers.quanta.write_bytes(request.quantum_id, request.quantum)
+        for dataset_id, dataset_data in outputs.items():
             data_writers.datasets.write_bytes(dataset_id, dataset_data)
-        if scan_data.metadata:
-            address = data_writers.metadata.write_bytes(scan_data.quantum_id, scan_data.metadata)
-            data_writers.metadata.addresses[scan_data.metadata_id] = address
-        if scan_data.log:
-            address = data_writers.logs.write_bytes(scan_data.quantum_id, scan_data.log)
-            data_writers.logs.addresses[scan_data.log_id] = address
+        if request.metadata:
+            (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
+            address = data_writers.metadata.write_bytes(request.quantum_id, request.metadata)
+            data_writers.metadata.addresses[metadata_output.dataset_id] = address
+        if request.logs:
+            (log_output,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
+            address = data_writers.logs.write_bytes(request.quantum_id, request.logs)
+            data_writers.logs.addresses[log_output.dataset_id] = address
         # We shouldn't need this predicted quantum anymore; delete it in the
         # hopes that'll free up some memory.
-        del self.predicted.quantum_datasets[scan_data.quantum_id]
+        del self.predicted.quantum_datasets[request.quantum_id]
         self.comms.report_write()
 
 
