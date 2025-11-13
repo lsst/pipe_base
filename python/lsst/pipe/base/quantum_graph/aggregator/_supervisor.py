@@ -30,6 +30,7 @@ from __future__ import annotations
 __all__ = ("aggregate_graph",)
 
 import dataclasses
+import itertools
 import uuid
 
 import astropy.units as u
@@ -87,15 +88,11 @@ class Supervisor:
             reader.read_init_quanta()
             self.predicted = reader.components
         self.comms.progress.log.info("Analyzing predicted graph.")
-        uuid_by_index = {
-            quantum_index: quantum_id for quantum_id, quantum_index in self.predicted.quantum_indices.items()
-        }
-        xgraph = networkx.DiGraph(
-            [(uuid_by_index[a], uuid_by_index[b]) for a, b in self.predicted.thin_graph.edges]
-        )
+        xgraph = networkx.DiGraph(self.predicted.thin_graph.edges)
         # Make sure all quanta are in the graph, even if they don't have any
         # quantum-only edges.
-        xgraph.add_nodes_from(uuid_by_index.values())
+        for thin_quantum in itertools.chain.from_iterable(self.predicted.thin_graph.quanta.values()):
+            xgraph.add_node(thin_quantum.quantum_id)
         # Add init quanta as nodes without edges, because the scanner should
         # only be run after init outputs are all written and hence we don't
         # care when we process them.

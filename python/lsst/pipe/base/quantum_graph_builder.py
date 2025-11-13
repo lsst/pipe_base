@@ -1315,7 +1315,6 @@ class QuantumGraphBuilder(ABC):
                     },
                 )
                 components.quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
-        components.set_quantum_indices()
         components.set_thin_graph()
         components.set_header_counts()
         return components

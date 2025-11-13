@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 __all__ = (
+    "FORMAT_VERSION",
     "BaseQuantumGraph",
     "BaseQuantumGraphReader",
     "BipartiteEdgeInfo",
@@ -92,6 +93,19 @@ DataCoordinateValues: TypeAlias = list[DataIdValue]
 
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
+FORMAT_VERSION: int = 1
+"""
+File format version number for new files.
+
+This applies to both predicted and provenance QGs, since they usually change
+in concert.
+
+CHANGELOG:
+
+- 0: Initial version.
+- 1: Switched from internal integer IDs to UUIDs in all models.
+"""
+
 
 class IncompleteQuantumGraphError(RuntimeError):
     pass
@@ -100,7 +114,7 @@ class IncompleteQuantumGraphError(RuntimeError):
 class HeaderModel(pydantic.BaseModel):
     """Data model for the header of a quantum graph file."""
 
-    version: int = 0
+    version: int = FORMAT_VERSION
     """File format / data model version number."""
 
     graph_type: str = ""
