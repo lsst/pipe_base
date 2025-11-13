@@ -299,7 +299,7 @@ class Writer:
         )
 
     def _populate_indices_and_outputs(self) -> None:
-        all_uuids = set(self.predicted.quantum_indices.keys())
+        all_uuids = set(self.predicted.quantum_datasets.keys())
         for quantum in self.comms.periodically_check_for_cancel(
             itertools.chain(
                 self.predicted.init_quanta.root,
@@ -329,13 +329,12 @@ class Writer:
             if not predicted_quantum.task_label:
                 # Skip the 'packages' producer quantum.
                 continue
-            quantum_index = self.indices[predicted_quantum.quantum_id]
             for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
-                self.xgraph.add_edge(self.indices[predicted_input.dataset_id], quantum_index)
+                self.xgraph.add_edge(predicted_input.dataset_id, predicted_quantum.quantum_id)
                 if predicted_input.dataset_id not in self.output_dataset_ids:
                     self.overall_inputs.setdefault(predicted_input.dataset_id, predicted_input)
             for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-                self.xgraph.add_edge(quantum_index, self.indices[predicted_output.dataset_id])
+                self.xgraph.add_edge(predicted_quantum.quantum_id, predicted_output.dataset_id)
 
     @staticmethod
     def run(predicted_path: str, comms: WriterCommunicator) -> None:
@@ -458,19 +457,16 @@ class Writer:
                 continue
             existing_outputs = self.existing_init_outputs[predicted_init_quantum.quantum_id]
             for predicted_output in itertools.chain.from_iterable(predicted_init_quantum.outputs.values()):
-                dataset_index = self.indices[predicted_output.dataset_id]
                 provenance_output = ProvenanceDatasetModel.from_predicted(
                     predicted_output,
-                    producer=self.indices[predicted_init_quantum.quantum_id],
-                    consumers=self.xgraph.successors(dataset_index),
+                    producer=predicted_init_quantum.quantum_id,
+                    consumers=self.xgraph.successors(predicted_output.dataset_id),
                 )
                 provenance_output.produced = predicted_output.dataset_id in existing_outputs
                 data_writers.datasets.write_model(
                     provenance_output.dataset_id, provenance_output, data_writers.compressor
                 )
-            init_quanta.root.append(
-                ProvenanceInitQuantumModel.from_predicted(predicted_init_quantum, self.indices)
-            )
+            init_quanta.root.append(ProvenanceInitQuantumModel.from_predicted(predicted_init_quantum))
         data_writers.graph.write_single_model("init_quanta", init_quanta)
 
     def write_overall_inputs(self, data_writers: _DataWriters) -> None:
@@ -484,13 +480,12 @@ class Writer:
         self.comms.log.info("Writing overall inputs.")
         for predicted_input in self.comms.periodically_check_for_cancel(self.overall_inputs.values()):
             if predicted_input.dataset_id not in data_writers.datasets.addresses:
-                dataset_index = self.indices[predicted_input.dataset_id]
                 data_writers.datasets.write_model(
                     predicted_input.dataset_id,
                     ProvenanceDatasetModel.from_predicted(
                         predicted_input,
                         producer=None,
-                        consumers=self.xgraph.successors(dataset_index),
+                        consumers=self.xgraph.successors(predicted_input.dataset_id),
                     ),
                     data_writers.compressor,
                 )
@@ -531,7 +526,6 @@ class Writer:
             return []
         self.comms.log.debug("Handling quantum scan for %s.", request.quantum_id)
         predicted_quantum = self.predicted.quantum_datasets[request.quantum_id]
-        quantum_index = self.indices[predicted_quantum.quantum_id]
         (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
         (log_output,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
         data = _ScanData(
@@ -545,16 +539,15 @@ class Writer:
             ),
         )
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-            dataset_index = self.indices[predicted_output.dataset_id]
             provenance_output = ProvenanceDatasetModel.from_predicted(
                 predicted_output,
-                producer=quantum_index,
-                consumers=self.xgraph.successors(dataset_index),
+                producer=predicted_quantum.quantum_id,
+                consumers=self.xgraph.successors(predicted_output.dataset_id),
             )
             provenance_output.produced = provenance_output.dataset_id in request.existing_outputs
             data.datasets[provenance_output.dataset_id] = provenance_output.model_dump_json().encode()
-        provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum, self.indices)
-        provenance_quantum.attempts = [a.remap_uuids(self.indices) for a in request.attempts]
+        provenance_quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum)
+        provenance_quantum.attempts = request.attempts
         data.quantum = provenance_quantum.model_dump_json().encode()
         data.metadata = request.metadata_content
         data.log = request.log_content
