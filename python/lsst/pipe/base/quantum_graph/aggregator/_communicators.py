@@ -60,7 +60,7 @@ from lsst.utils.logging import VERBOSE, LsstLogAdapter
 
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
-from ._structs import IngestRequest, ScanReport, ScanResult
+from ._structs import IngestRequest, ScanReport, WriteRequest
 
 _T = TypeVar("_T")
 
@@ -361,7 +361,7 @@ class SupervisorCommunicator:
         # scanner and the supervisor send one sentinal when done, and the
         # writer waits for (n_scanners + 1) sentinals to arrive before it
         # starts its shutdown.
-        self._write_requests: Queue[ScanResult | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
+        self._write_requests: Queue[WriteRequest | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
             context.make_queue() if config.output_path is not None else None
         )
         # All other workers use this queue to send many different kinds of
@@ -461,17 +461,17 @@ class SupervisorCommunicator:
         """
         self._scan_requests.put(_ScanRequest(quantum_id), block=False)
 
-    def request_write(self, scan_result: ScanResult) -> None:
+    def request_write(self, request: WriteRequest) -> None:
         """Send a request to the writer to write provenance for the given scan.
 
         Parameters
         ----------
-        scan_result : `ScanResult`
+        request : `WriteRequest`
             Information from scanning a quantum (or knowing you don't have to,
             in the case of blocked quanta).
         """
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_result, block=False)
+        self._write_requests.put(request, block=False)
 
     def poll(self) -> Iterator[ScanReport]:
         """Poll for reports from workers while sending scan requests.
@@ -728,16 +728,16 @@ class ScannerCommunicator(WorkerCommunicator):
         else:
             self._reports.put(_IngestReport(1), block=False)
 
-    def request_write(self, scan_result: ScanResult) -> None:
+    def request_write(self, request: WriteRequest) -> None:
         """Ask the writer to write provenance for a quantum.
 
         Parameters
         ----------
-        scan_result : `ScanResult`
+        request : `WriteRequest`
             Result of scanning a quantum.
         """
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(scan_result, block=False)
+        self._write_requests.put(request, block=False)
 
     def get_compression_dict(self) -> bytes | None:
         """Attempt to get the compression dict from the writer.
@@ -913,12 +913,12 @@ class WriterCommunicator(WorkerCommunicator):
         self._reports.put(_Sentinel.WRITER_DONE, block=False)
         return result
 
-    def poll(self) -> Iterator[ScanResult]:
+    def poll(self) -> Iterator[WriteRequest]:
         """Poll for writer requests from the scanner workers and supervisor.
 
         Yields
         ------
-        request : `ScanResult`
+        request : `WriteRequest`
             The result of a quantum scan.
 
         Notes

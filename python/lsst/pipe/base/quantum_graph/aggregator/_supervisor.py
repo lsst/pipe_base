@@ -54,7 +54,7 @@ from ._communicators import (
 from ._config import AggregatorConfig
 from ._ingester import Ingester
 from ._scanner import Scanner
-from ._structs import ScanReport, ScanResult, ScanStatus
+from ._structs import ScanReport, ScanStatus, WriteRequest
 from ._writer import Writer
 
 
@@ -134,7 +134,7 @@ class Supervisor:
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
                 for blocked_quantum_id in blocked_quanta:
                     if self.comms.config.output_path is not None:
-                        self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
+                        self.comms.request_write(WriteRequest(blocked_quantum_id, status=ScanStatus.BLOCKED))
                     self.comms.progress.scans.update(1)
                 self.comms.progress.quantum_ingests.update(len(blocked_quanta))
             case ScanStatus.ABANDONED:
