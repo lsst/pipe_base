@@ -43,7 +43,6 @@ __all__ = (
 import dataclasses
 import itertools
 import logging
-import operator
 import sys
 import uuid
 import warnings
@@ -89,6 +88,7 @@ from ..pipeline_graph import (
     log_config_mismatch,
 )
 from ._common import (
+    FORMAT_VERSION,
     BaseQuantumGraph,
     BaseQuantumGraphReader,
     BaseQuantumGraphWriter,
@@ -103,7 +103,7 @@ from ._common import (
     QuantumInfo,
     TaskLabel,
 )
-from ._multiblock import DEFAULT_PAGE_SIZE, MultiblockReader, MultiblockWriter
+from ._multiblock import DEFAULT_PAGE_SIZE, AddressRow, MultiblockReader, MultiblockWriter
 
 if TYPE_CHECKING:
     from ..config import PipelineTaskConfig
@@ -115,13 +115,25 @@ _LOG = logging.getLogger(__name__)
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
-class PredictedThinQuantumModel(pydantic.BaseModel):
+class _PredictedThinQuantumModelV0(pydantic.BaseModel):
     """Data model for a quantum data ID and internal integer ID in a predicted
     quantum graph.
     """
 
     quantum_index: QuantumIndex
     """Internal integer ID for this quantum."""
+
+    data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
+    """Full (required and implied) data coordinate values for this quantum."""
+
+
+class PredictedThinQuantumModel(pydantic.BaseModel):
+    """Data model for a quantum data ID and UUID in a predicted
+    quantum graph.
+    """
+
+    quantum_id: uuid.UUID
+    """Universally unique ID for this quantum."""
 
     data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
     """Full (required and implied) data coordinate values for this quantum."""
@@ -172,16 +184,44 @@ class PredictedThinQuantumModel(pydantic.BaseModel):
             return super().model_validate_strings(*args, **kwargs)
 
 
-class PredictedThinGraphModel(pydantic.BaseModel):
+class _PredictedThinGraphModelV0(pydantic.BaseModel):
     """Data model for the predicted quantum graph component that maps each
     task label to the data IDs and internal integer IDs of its quanta.
+    """
+
+    quanta: dict[TaskLabel, list[_PredictedThinQuantumModelV0]] = pydantic.Field(default_factory=dict)
+    """Minimal descriptions of all quanta, grouped by task label."""
+
+    edges: list[tuple[QuantumIndex, QuantumIndex]] = pydantic.Field(default_factory=list)
+    """Pairs of (predecessor, successor) internal integer quantum IDs."""
+
+    def _upgraded(self, address_rows: Mapping[uuid.UUID, AddressRow]) -> PredictedThinGraphModel:
+        """Convert to the v1+ model."""
+        uuid_by_index = {v.index: k for k, v in address_rows.items()}
+        return PredictedThinGraphModel(
+            quanta={
+                task_label: [
+                    PredictedThinQuantumModel(
+                        quantum_id=uuid_by_index[q.quantum_index], data_coordinate=q.data_coordinate
+                    )
+                    for q in quanta
+                ]
+                for task_label, quanta in self.quanta.items()
+            },
+            edges=[(uuid_by_index[index1], uuid_by_index[index2]) for index1, index2 in self.edges],
+        )
+
+
+class PredictedThinGraphModel(pydantic.BaseModel):
+    """Data model for the predicted quantum graph component that maps each
+    task label to the data IDs and UUIDs of its quanta.
     """
 
     quanta: dict[TaskLabel, list[PredictedThinQuantumModel]] = pydantic.Field(default_factory=dict)
     """Minimal descriptions of all quanta, grouped by task label."""
 
-    edges: list[tuple[QuantumIndex, QuantumIndex]] = pydantic.Field(default_factory=list)
-    """Pairs of (predecessor, successor) internal integer quantum IDs."""
+    edges: list[tuple[uuid.UUID, uuid.UUID]] = pydantic.Field(default_factory=list)
+    """Pairs of (predecessor, successor) quantum IDs."""
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
@@ -673,7 +713,7 @@ class PredictedQuantumGraph(BaseQuantumGraph):
         self._add_init_quanta(components.init_quanta)
         self._quantum_datasets: dict[uuid.UUID, PredictedQuantumDatasetsModel] = {}
         self._expanded_data_ids: dict[DataCoordinate, DataCoordinate] = {}
-        self._add_thin_graph(components.thin_graph, components.quantum_indices)
+        self._add_thin_graph(components.thin_graph)
         for quantum_datasets in components.quantum_datasets.values():
             self._add_quantum_datasets(quantum_datasets)
         if not components.thin_graph.edges:
@@ -710,19 +750,11 @@ class PredictedQuantumGraph(BaseQuantumGraph):
                 quantum_datasets.task_label,
             )
 
-    def _add_thin_graph(
-        self, component: PredictedThinGraphModel, indices: Mapping[uuid.UUID, QuantumIndex]
-    ) -> None:
-        uuid_by_index = {v: k for k, v in indices.items()}
-        for index1, index2 in component.edges:
-            self._quantum_only_xgraph.add_edge(uuid_by_index[index1], uuid_by_index[index2])
+    def _add_thin_graph(self, component: PredictedThinGraphModel) -> None:
+        self._quantum_only_xgraph.add_edges_from(component.edges)
         for task_label, thin_quanta_for_task in component.quanta.items():
             for thin_quantum in thin_quanta_for_task:
-                self._add_quantum(
-                    uuid_by_index[thin_quantum.quantum_index],
-                    task_label,
-                    thin_quantum.data_coordinate,
-                )
+                self._add_quantum(thin_quantum.quantum_id, task_label, thin_quantum.data_coordinate)
 
     def _add_quantum_datasets(self, quantum_datasets: PredictedQuantumDatasetsModel) -> None:
         self._quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
@@ -1496,8 +1528,6 @@ class PredictedQuantumGraphComponents:
     thin_graph: PredictedThinGraphModel = dataclasses.field(default_factory=PredictedThinGraphModel)
     """A lightweight quantum-quantum DAG with task labels and data IDs only.
 
-    This uses internal integer IDs ("indexes") for node IDs.
-
     This does not include the special "init" quanta.
     """
 
@@ -1509,18 +1539,6 @@ class PredictedQuantumGraphComponents:
     entries.
 
     This does not include special "init" quanta.
-    """
-
-    quantum_indices: dict[uuid.UUID, QuantumIndex] = dataclasses.field(default_factory=dict)
-    """A mapping from external universal quantum ID to internal integer ID.
-
-    While this `dict` does not need to be sorted, the internal integer IDs do
-    need to correspond exactly to ``enumerate(sorted(uuids))``.
-
-    When used to construct a `PredictedQuantumGraph`, this must be fully
-    populated if `thin_graph` is.  It can be empty otherwise.
-
-    This does include special "init" quanta.
     """
 
     def make_dataset_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
@@ -1555,48 +1573,35 @@ class PredictedQuantumGraphComponents:
             id=predicted.dataset_id,
         )
 
-    def set_quantum_indices(self) -> None:
-        """Populate the `quantum_indices` component by sorting the UUIDs in the
-        `init_quanta` and `quantum_datasets` components (which must both be
-        complete).
-        """
-        all_quantum_ids = [q.quantum_id for q in self.init_quanta.root]
-        all_quantum_ids.extend(self.quantum_datasets.keys())
-        all_quantum_ids.sort(key=operator.attrgetter("int"))
-        self.quantum_indices = {quantum_id: index for index, quantum_id in enumerate(all_quantum_ids)}
-
     def set_thin_graph(self) -> None:
         """Populate the `thin_graph` component from the `pipeline_graph`,
-        `quantum_datasets` and `quantum_indices` components (which must all be
-        complete).
+        `quantum_datasets` components (which must be complete).
         """
         bipartite_xgraph = networkx.DiGraph()
         self.thin_graph.quanta = {task_label: [] for task_label in self.pipeline_graph.tasks}
-        graph_quantum_indices = []
+        graph_quantum_ids: list[uuid.UUID] = []
         for quantum_datasets in self.quantum_datasets.values():
-            quantum_index = self.quantum_indices[quantum_datasets.quantum_id]
             self.thin_graph.quanta[quantum_datasets.task_label].append(
                 PredictedThinQuantumModel.model_construct(
-                    quantum_index=quantum_index,
+                    quantum_id=quantum_datasets.quantum_id,
                     data_coordinate=quantum_datasets.data_coordinate,
                 )
             )
             for dataset in itertools.chain.from_iterable(quantum_datasets.inputs.values()):
-                bipartite_xgraph.add_edge(dataset.dataset_id, quantum_index)
+                bipartite_xgraph.add_edge(dataset.dataset_id, quantum_datasets.quantum_id)
             for dataset in itertools.chain.from_iterable(quantum_datasets.outputs.values()):
-                bipartite_xgraph.add_edge(quantum_index, dataset.dataset_id)
-            graph_quantum_indices.append(quantum_index)
+                bipartite_xgraph.add_edge(quantum_datasets.quantum_id, dataset.dataset_id)
+            graph_quantum_ids.append(quantum_datasets.quantum_id)
         quantum_only_xgraph: networkx.DiGraph = networkx.bipartite.projected_graph(
-            bipartite_xgraph, graph_quantum_indices
+            bipartite_xgraph, graph_quantum_ids
         )
         self.thin_graph.edges = list(quantum_only_xgraph.edges)
 
     def set_header_counts(self) -> None:
         """Populate the quantum and dataset counts in the header from the
-        `quantum_indices`, `thin_graph`, `init_quanta`, and `quantum_datasets`
-        components.
+        `thin_graph`, `init_quanta`, and `quantum_datasets` components.
         """
-        self.header.n_quanta = len(self.quantum_indices) - len(self.init_quanta.root)
+        self.header.n_quanta = len(self.quantum_datasets)
         self.header.n_task_quanta = {
             task_label: len(thin_quanta) for task_label, thin_quanta in self.thin_graph.quanta.items()
         }
@@ -1642,8 +1647,7 @@ class PredictedQuantumGraphComponents:
                     )
         # Update the keys of the quantum_datasets dict.
         self.quantum_datasets = {qd.quantum_id: qd for qd in self.quantum_datasets.values()}
-        # Since the UUIDs have changed, the indices need to change, too.
-        self.set_quantum_indices()
+        # Since the UUIDs have changed, the thin graph needs to be rewritten.
         self.set_thin_graph()
         # Update the header last, since we use it above to get the old run.
         self.header.output_run = output_run
@@ -1728,7 +1732,6 @@ class PredictedQuantumGraphComponents:
             records=dimension_data_extractor.records.values(),
             dimensions=result.pipeline_graph.get_all_dimensions(),
         )
-        result.set_quantum_indices()
         result.set_thin_graph()
         result.set_header_counts()
         return result
@@ -1764,11 +1767,15 @@ class PredictedQuantumGraphComponents:
         Only a complete predicted quantum graph with all components fully
         populated should be written.
         """
-        if self.header.n_quanta + len(self.init_quanta.root) != len(self.quantum_indices):
+        if self.header.n_task_quanta != {
+            task_label: len(quanta) for task_label, quanta in self.thin_graph.quanta.items()
+        }:
             raise RuntimeError(
-                f"Cannot save graph after partial read of quanta: expected {self.header.n_quanta}, "
-                f"got {len(self.quantum_indices)}."
+                "Cannot save graph after partial read of quanta: thin graph is inconsistent with header."
             )
+        # Ensure we record the actual version we're about to write, in case
+        # we're rewriting an old graph in a new format.
+        self.header.version = FORMAT_VERSION
         uri = ResourcePath(uri)
         match uri.getExtension():
             case ".qg":
@@ -1811,11 +1818,12 @@ class PredictedQuantumGraphComponents:
             else:
                 cdict_data = cdict.as_bytes()
         compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
+        indices = {quantum_id: n for n, quantum_id in enumerate(sorted(self.quantum_datasets.keys()))}
         with BaseQuantumGraphWriter.open(
             uri,
             header=self.header,
             pipeline_graph=self.pipeline_graph,
-            indices=self.quantum_indices,
+            indices=indices,
             address_filename="quanta",
             compressor=compressor,
             cdict_data=cdict_data,
@@ -1907,18 +1915,17 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
     def read_thin_graph(self) -> None:
         """Read the thin graph.
 
-        The thin graph is a quantum-quantum DAG with internal integer IDs for
-        nodes and just task labels and data IDs as node attributes.  It always
-        includes all regular quanta, and does not include init-input or
-        init-output information.
+        The thin graph is a quantum-quantum DAG with just task labels and data
+        IDs as node attributes.  It always includes all regular quanta, and
+        does not include init-input or init-output information.
         """
         if not self.components.thin_graph.quanta:
-            self.components.thin_graph = self._read_single_block("thin_graph", PredictedThinGraphModel)
-        if len(self.components.quantum_indices) != self.components.header.n_quanta:
-            self.address_reader.read_all()
-            self.components.quantum_indices.update(
-                {row.key: row.index for row in self.address_reader.rows.values()}
-            )
+            if self.header.version > 0:
+                self.components.thin_graph = self._read_single_block("thin_graph", PredictedThinGraphModel)
+            else:
+                self.address_reader.read_all()
+                thin_graph_v0 = self._read_single_block("thin_graph", _PredictedThinGraphModelV0)
+                self.components.thin_graph = thin_graph_v0._upgraded(self.address_reader.rows)
 
     def read_init_quanta(self) -> None:
         """Read the list of special quanta that represent init-inputs and
@@ -1971,8 +1978,6 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                 ):
                     self.components.quantum_datasets.setdefault(quantum_datasets.quantum_id, quantum_datasets)
                 self.address_reader.read_all()
-                for address_row in self.address_reader.rows.values():
-                    self.components.quantum_indices[address_row.key] = address_row.index
             return
         with MultiblockReader.open_in_zip(
             self.zf, "quantum_datasets", int_size=self.components.header.int_size
@@ -1981,7 +1986,6 @@ class PredictedQuantumGraphReader(BaseQuantumGraphReader):
                 if quantum_id in self.components.quantum_datasets:
                     continue
                 address_row = self.address_reader.find(quantum_id)
-                self.components.quantum_indices[address_row.key] = address_row.index
                 quantum_datasets = mb_reader.read_model(
                     address_row.addresses[0], PredictedQuantumDatasetsModel, self.decompressor
                 )

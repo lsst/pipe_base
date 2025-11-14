@@ -323,10 +323,11 @@ class AddressReader:
     rows: dict[uuid.UUID, AddressRow] = dataclasses.field(default_factory=dict)
     """Rows that have already been read."""
 
-    rows_by_index: dict[int, AddressRow] = dataclasses.field(default_factory=dict)
-    """Rows that have already been read, keyed by integer index."""
-
     pages: list[AddressPage] = dataclasses.field(default_factory=list)
+    """Descriptions of the file offsets and integer row indexes of pages and
+    flags for whether they have been read already.
+    """
+
     page_bounds: dict[int, PageBounds] = dataclasses.field(default_factory=dict)
     """Mapping from page index to page boundary information."""
 
@@ -502,32 +503,23 @@ class AddressReader:
         self.pages.clear()
         return self.rows
 
-    def find(self, key: uuid.UUID | int) -> AddressRow:
+    def find(self, key: uuid.UUID) -> AddressRow:
         """Read the row for the given UUID or integer index.
 
         Parameters
         ----------
-        key : `uuid.UUID` or `int`
-            UUID or integer index to find.
+        key : `uuid.UUID`
+            UUID to find.
 
         Returns
         -------
         row : `AddressRow`
             Addresses for the given UUID.
         """
-        match key:
-            case uuid.UUID():
-                return self._find_uuid(key)
-            case int():
-                return self._find_index(key)
-            case _:
-                raise TypeError(f"Invalid argument: {key}.")
-
-    def _find_uuid(self, target: uuid.UUID) -> AddressRow:
-        if (row := self.rows.get(target)) is not None:
+        if (row := self.rows.get(key)) is not None:
             return row
         if self.n_rows == 0 or not self.pages:
-            raise LookupError(f"Address for {target} not found.")
+            raise LookupError(f"Address for {key} not found.")
 
         # Use a binary search to find the page containing the target UUID.
         left = 0
@@ -535,35 +527,19 @@ class AddressReader:
         while left <= right:
             mid = left + ((right - left) // 2)
             self._read_page(mid)
-            if (row := self.rows.get(target)) is not None:
+            if (row := self.rows.get(key)) is not None:
                 return row
             bounds = self.page_bounds[mid]
-            if target.int < bounds.uuid_int_begin:
+            if key.int < bounds.uuid_int_begin:
                 right = mid - 1
-            elif target.int > bounds.uuid_int_end:
+            elif key.int > bounds.uuid_int_end:
                 left = mid + 1
             else:
                 # Should have been on this page, but it wasn't.
-                raise LookupError(f"Address for {target} not found.")
+                raise LookupError(f"Address for {key} not found.")
 
         # Ran out of pages to search.
-        raise LookupError(f"Address for {target} not found.")
-
-    def _find_index(self, target: int) -> AddressRow:
-        # First shortcut if we've already loaded this row.
-        if (row := self.rows_by_index.get(target)) is not None:
-            return row
-        if target < 0 or target >= self.n_rows:
-            raise LookupError(f"Address for index {target} not found.")
-        # Since all indexes should be present, we can predict the right page
-        # exactly.
-        page_index = target // self.rows_per_page
-        self._read_page(page_index)
-        try:
-            return self.rows_by_index[target]
-        except KeyError:
-            _LOG.debug("Index find failed: %s should have been in page %s.", target, page_index)
-            raise LookupError(f"Address for {target} not found.") from None
+        raise LookupError(f"Address for {key} not found.")
 
     def _read_page(self, page_index: int, page_stream: BytesIO | None = None) -> bool:
         page = self.pages[page_index]
@@ -586,7 +562,6 @@ class AddressReader:
     def _read_row(self, page_stream: BytesIO) -> AddressRow:
         row = AddressRow.read(page_stream, self.n_addresses, self.int_size)
         self.rows[row.key] = row
-        self.rows_by_index[row.index] = row
         _LOG.debug("Read address row %s.", row)
         return row
 
