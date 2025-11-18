@@ -684,8 +684,18 @@ class AggregatorTestCase(unittest.TestCase):
         packages = provenance_reader.fetch_packages()
         self.assertIsInstance(packages, Packages)
         self.assertIn("pipe_base", packages)
-        # Also get the packages from the butler.
-        self.assertEqual(butler.get("packages", collections=[provenance_reader.header.output_run]), packages)
+        # Also check that the packages are available from the butler. They are
+        # unfortunately not easy to compare because one passes include_all=True
+        # and the other passes include_all=False, and latter adds non-portable
+        # EUPS tag information to the versions.
+        butler_packages = butler.get("packages", collections=[provenance_reader.header.output_run])
+        self.assertFalse(
+            [
+                name
+                for name, (ver1, ver2) in packages.difference(butler_packages).items()
+                if not ver1.startswith(ver2)
+            ]
+        )
 
     def check_resource_usage_table(
         self, prov: ProvenanceQuantumGraph, expect_failure: bool, start_time: float
