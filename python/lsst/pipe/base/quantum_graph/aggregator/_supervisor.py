@@ -96,7 +96,7 @@ class Supervisor:
         # Add init quanta as nodes without edges, because the scanner should
         # only be run after init outputs are all written and hence we don't
         # care when we process them.
-        for init_quantum in self.predicted.init_quanta.root[1:]:  # skip 'packages' producer
+        for init_quantum in self.predicted.init_quanta.root:
             xgraph.add_node(init_quantum.quantum_id)
         self.walker = GraphWalker(xgraph)
 
