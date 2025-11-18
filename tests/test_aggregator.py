@@ -490,7 +490,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.check_resource_usage_table(
             prov_reader.graph, expect_failure=expect_failure, start_time=start_time
         )
-        self.check_packages(prov_reader)
+        self.check_packages(prov_reader, butler)
         self.check_quantum_table(prov_reader.graph, expect_failure=expect_failure)
         self.check_exception_table(prov_reader.graph, expect_failure=expect_failure)
         return prov
@@ -630,6 +630,9 @@ class AggregatorTestCase(unittest.TestCase):
         else:
             raise AssertionError("No metadata connection found.")
         self.assertEqual(metadata1, metadata2)
+        # Also get the metadata from the butler.
+        ref = butler.get_dataset(dataset_id)
+        self.assertEqual(butler.get(ref), metadata1)
 
     def check_log(
         self, quantum_id: uuid.UUID, provenance_reader: ProvenanceQuantumGraphReader, butler: Butler
@@ -660,8 +663,14 @@ class AggregatorTestCase(unittest.TestCase):
         else:
             raise AssertionError("No log connection found.")
         self.assertEqual(log1, log2)
+        # Also get the logs from the butler.
+        ref = butler.get_dataset(dataset_id)
+        # We have to compare the logs are lists because the 'extra' data is
+        # different, for now; when the logs are backed by the provenance QG
+        # this will change (but then we might stop ingesting logs at all).
+        self.assertEqual(list(butler.get(ref)), list(log1))
 
-    def check_packages(self, provenance_reader: ProvenanceQuantumGraphReader) -> None:
+    def check_packages(self, provenance_reader: ProvenanceQuantumGraphReader, butler: Butler) -> None:
         """Check fetching package versions from the provenance graph.
 
         Parameters
@@ -669,10 +678,14 @@ class AggregatorTestCase(unittest.TestCase):
         provenance_reader : \
                 `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraphReader`
             Reader for the provenance quantum graph.
+        butler : `lsst.daf.butler.Butler`
+            Client for the data repository.
         """
         packages = provenance_reader.fetch_packages()
         self.assertIsInstance(packages, Packages)
         self.assertIn("pipe_base", packages)
+        # Also get the packages from the butler.
+        self.assertEqual(butler.get("packages", collections=[provenance_reader.header.output_run]), packages)
 
     def check_resource_usage_table(
         self, prov: ProvenanceQuantumGraph, expect_failure: bool, start_time: float
