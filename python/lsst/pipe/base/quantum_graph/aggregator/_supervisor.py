@@ -30,6 +30,7 @@ from __future__ import annotations
 __all__ = ("aggregate_graph",)
 
 import dataclasses
+import itertools
 import uuid
 
 import astropy.units as u
@@ -53,7 +54,7 @@ from ._communicators import (
 from ._config import AggregatorConfig
 from ._ingester import Ingester
 from ._scanner import Scanner
-from ._structs import ScanReport, ScanResult, ScanStatus
+from ._structs import ScanReport, ScanStatus, WriteRequest
 from ._writer import Writer
 
 
@@ -87,19 +88,15 @@ class Supervisor:
             reader.read_init_quanta()
             self.predicted = reader.components
         self.comms.progress.log.info("Analyzing predicted graph.")
-        uuid_by_index = {
-            quantum_index: quantum_id for quantum_id, quantum_index in self.predicted.quantum_indices.items()
-        }
-        xgraph = networkx.DiGraph(
-            [(uuid_by_index[a], uuid_by_index[b]) for a, b in self.predicted.thin_graph.edges]
-        )
+        xgraph = networkx.DiGraph(self.predicted.thin_graph.edges)
         # Make sure all quanta are in the graph, even if they don't have any
         # quantum-only edges.
-        xgraph.add_nodes_from(uuid_by_index.values())
+        for thin_quantum in itertools.chain.from_iterable(self.predicted.thin_graph.quanta.values()):
+            xgraph.add_node(thin_quantum.quantum_id)
         # Add init quanta as nodes without edges, because the scanner should
         # only be run after init outputs are all written and hence we don't
         # care when we process them.
-        for init_quantum in self.predicted.init_quanta.root[1:]:  # skip 'packages' producer
+        for init_quantum in self.predicted.init_quanta.root:
             xgraph.add_node(init_quantum.quantum_id)
         self.walker = GraphWalker(xgraph)
 
@@ -137,7 +134,7 @@ class Supervisor:
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
                 for blocked_quantum_id in blocked_quanta:
                     if self.comms.config.output_path is not None:
-                        self.comms.request_write(ScanResult(blocked_quantum_id, status=ScanStatus.BLOCKED))
+                        self.comms.request_write(WriteRequest(blocked_quantum_id, status=ScanStatus.BLOCKED))
                     self.comms.progress.scans.update(1)
                 self.comms.progress.quantum_ingests.update(len(blocked_quanta))
             case ScanStatus.ABANDONED:

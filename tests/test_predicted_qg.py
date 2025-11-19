@@ -40,6 +40,7 @@ from lsst.pipe.base import QuantumGraph
 from lsst.pipe.base.dot_tools import graph2dot
 from lsst.pipe.base.mermaid_tools import graph2mermaid
 from lsst.pipe.base.quantum_graph import (
+    FORMAT_VERSION,
     AddressReader,
     PredictedDatasetInfo,
     PredictedQuantumGraph,
@@ -231,6 +232,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
         self.assertEqual(qg.header.output, "output_chain")
         self.assertEqual(qg.header.output_run, "output_run")
         self.assertEqual(qg.header.metadata["stuff"], "whatever")
+        self.assertEqual(qg.header.version, FORMAT_VERSION)
         if not converting_partial:
             # When partial-reading an old QG, counts reflect what was loaded.
             # In all other cases they reflect the full original graph.

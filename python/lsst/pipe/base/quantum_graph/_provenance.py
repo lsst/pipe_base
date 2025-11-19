@@ -47,7 +47,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict, TypeVar
 
 import astropy.table
 import networkx
@@ -68,15 +68,13 @@ from ._common import (
     BaseQuantumGraphReader,
     ConnectionName,
     DataCoordinateValues,
-    DatasetIndex,
     DatasetInfo,
     DatasetTypeName,
     HeaderModel,
-    QuantumIndex,
     QuantumInfo,
     TaskLabel,
 )
-from ._multiblock import AddressReader, MultiblockReader
+from ._multiblock import MultiblockReader
 from ._predicted import PredictedDatasetModel, PredictedQuantumDatasetsModel
 
 DATASET_ADDRESS_INDEX = 0
@@ -202,16 +200,14 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
     existence of the dataset.
     """
 
-    producer: QuantumIndex | None = None
-    """Internal integer ID of the quantum that produced this dataset.
+    producer: uuid.UUID | None = None
+    """ID of the quantum that produced this dataset.
 
     This is `None` for overall inputs to the graph.
     """
 
-    consumers: list[QuantumIndex] = pydantic.Field(default_factory=list)
-    """Internal integer IDs of quanta that were predicted to consume this
-    dataset.
-    """
+    consumers: list[uuid.UUID] = pydantic.Field(default_factory=list)
+    """IDs of quanta that were predicted to consume this dataset."""
 
     @property
     def node_id(self) -> uuid.UUID:
@@ -222,8 +218,8 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
     def from_predicted(
         cls,
         predicted: PredictedDatasetModel,
-        producer: QuantumIndex | None = None,
-        consumers: Iterable[QuantumIndex] = (),
+        producer: uuid.UUID | None = None,
+        consumers: Iterable[uuid.UUID] = (),
     ) -> ProvenanceDatasetModel:
         """Construct from a predicted dataset model.
 
@@ -231,12 +227,10 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
         ----------
         predicted : `PredictedDatasetModel`
             Information about the dataset from the predicted graph.
-        producer : `int` or `None`, optional
-            Internal ID of the quantum that was predicted to produce this
-            dataset.
-        consumers : `~collections.abc.Iterable` [`int`], optional
-            Internal IDs of the quanta that were predicted to consume this
-            dataset.
+        producer : `uuid.UUID` or `None`, optional
+            ID of the quantum that was predicted to produce this dataset.
+        consumers : `~collections.abc.Iterable` [`uuid.UUID`], optional
+            IDs of the quanta that were predicted to consume this dataset.
 
         Returns
         -------
@@ -258,16 +252,13 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             consumers=list(consumers),
         )
 
-    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph) -> None:
         """Add this dataset and its edges to quanta to a provenance graph.
 
         Parameters
         ----------
         graph : `ProvenanceQuantumGraph`
             Graph to update in place.
-        address_reader : `AddressReader`
-            Reader object that can be used to look up UUIDs from integer
-            indexes.
 
         Notes
         -----
@@ -290,15 +281,12 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             run=self.run,
             produced=self.produced,
         )
-        producer_id: uuid.UUID | None = None
         if self.producer is not None:
-            producer_id = address_reader.find(self.producer).key
-            graph._bipartite_xgraph.add_edge(producer_id, self.dataset_id)
-        for consumer_index in self.consumers:
-            consumer_id = address_reader.find(consumer_index).key
+            graph._bipartite_xgraph.add_edge(self.producer, self.dataset_id)
+        for consumer_id in self.consumers:
             graph._bipartite_xgraph.add_edge(self.dataset_id, consumer_id)
-            if producer_id is not None:
-                graph._quantum_only_xgraph.add_edge(producer_id, consumer_id)
+            if self.producer is not None:
+                graph._quantum_only_xgraph.add_edge(self.producer, consumer_id)
         graph._datasets_by_type[self.dataset_type_name][data_id] = self.dataset_id
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
@@ -347,7 +335,7 @@ class ProvenanceDatasetModel(PredictedDatasetModel):
             return super().model_validate_strings(*args, **kwargs)
 
 
-class _GenericProvenanceQuantumAttemptModel(pydantic.BaseModel, Generic[_I]):
+class ProvenanceQuantumAttemptModel(pydantic.BaseModel):
     """Data model for a now-superseded attempt to run a quantum in a
     provenance quantum graph file.
     """
@@ -367,34 +355,10 @@ class _GenericProvenanceQuantumAttemptModel(pydantic.BaseModel, Generic[_I]):
     resource_usage: QuantumResourceUsage | None = None
     """Resource usage information (timing, memory use) for this quantum."""
 
-    previous_process_quanta: list[_I] = pydantic.Field(default_factory=list)
+    previous_process_quanta: list[uuid.UUID] = pydantic.Field(default_factory=list)
     """The IDs of other quanta previously executed in the same process as this
     one.
     """
-
-    def remap_uuids(
-        self: ProvenanceQuantumAttemptModel, indices: Mapping[uuid.UUID, QuantumIndex]
-    ) -> StorageProvenanceQuantumAttemptModel:
-        return StorageProvenanceQuantumAttemptModel(
-            attempt=self.attempt,
-            status=self.status,
-            caveats=self.caveats,
-            exception=self.exception,
-            resource_usage=self.resource_usage,
-            previous_process_quanta=[indices[q] for q in self.previous_process_quanta],
-        )
-
-    def remap_indices(
-        self: StorageProvenanceQuantumAttemptModel, address_reader: AddressReader
-    ) -> ProvenanceQuantumAttemptModel:
-        return ProvenanceQuantumAttemptModel(
-            attempt=self.attempt,
-            status=self.status,
-            caveats=self.caveats,
-            exception=self.exception,
-            resource_usage=self.resource_usage,
-            previous_process_quanta=[address_reader.find(q).key for q in self.previous_process_quanta],
-        )
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
@@ -440,10 +404,6 @@ class _GenericProvenanceQuantumAttemptModel(pydantic.BaseModel, Generic[_I]):
         def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
             """See `pydantic.BaseModel.model_validate_strings`."""
             return super().model_validate_strings(*args, **kwargs)
-
-
-StorageProvenanceQuantumAttemptModel: TypeAlias = _GenericProvenanceQuantumAttemptModel[QuantumIndex]
-ProvenanceQuantumAttemptModel: TypeAlias = _GenericProvenanceQuantumAttemptModel[uuid.UUID]
 
 
 class ProvenanceLogRecordsModel(pydantic.BaseModel):
@@ -570,17 +530,17 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
     data_coordinate: DataCoordinateValues = pydantic.Field(default_factory=list)
     """The full values (required and implied) of this dataset's data ID."""
 
-    inputs: dict[ConnectionName, list[DatasetIndex]] = pydantic.Field(default_factory=dict)
-    """Internal integer IDs of the datasets predicted to be consumed by this
-    quantum, grouped by connection name.
+    inputs: dict[ConnectionName, list[uuid.UUID]] = pydantic.Field(default_factory=dict)
+    """IDs of the datasets predicted to be consumed by this quantum, grouped by
+    connection name.
     """
 
-    outputs: dict[ConnectionName, list[DatasetIndex]] = pydantic.Field(default_factory=dict)
-    """Internal integer IDs of the datasets predicted to be produced by this
-    quantum, grouped by connection name.
+    outputs: dict[ConnectionName, list[uuid.UUID]] = pydantic.Field(default_factory=dict)
+    """IDs of the datasets predicted to be produced by this quantum, grouped by
+    connection name.
     """
 
-    attempts: list[StorageProvenanceQuantumAttemptModel] = pydantic.Field(default_factory=list)
+    attempts: list[ProvenanceQuantumAttemptModel] = pydantic.Field(default_factory=list)
     """Provenance for all attempts to execute this quantum, ordered
     chronologically from first to last.
 
@@ -595,17 +555,13 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
         return self.quantum_id
 
     @classmethod
-    def from_predicted(
-        cls, predicted: PredictedQuantumDatasetsModel, indices: Mapping[uuid.UUID, int]
-    ) -> ProvenanceQuantumModel:
+    def from_predicted(cls, predicted: PredictedQuantumDatasetsModel) -> ProvenanceQuantumModel:
         """Construct from a predicted quantum model.
 
         Parameters
         ----------
         predicted : `PredictedQuantumDatasetsModel`
             Information about the quantum from the predicted graph.
-        indices : `~collections.abc.Mapping [`uuid.UUID`, `int`]
-            Mapping from quantum or dataset UUID to internal integer ID.
 
         Returns
         -------
@@ -613,11 +569,11 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             Provenance quantum model.
         """
         inputs = {
-            connection_name: [indices[d.dataset_id] for d in predicted_inputs]
+            connection_name: [d.dataset_id for d in predicted_inputs]
             for connection_name, predicted_inputs in predicted.inputs.items()
         }
         outputs = {
-            connection_name: [indices[d.dataset_id] for d in predicted_outputs]
+            connection_name: [d.dataset_id for d in predicted_outputs]
             for connection_name, predicted_outputs in predicted.outputs.items()
         }
         return cls(
@@ -628,16 +584,13 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             outputs=outputs,
         )
 
-    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph) -> None:
         """Add this quantum and its edges to datasets to a provenance graph.
 
         Parameters
         ----------
         graph : `ProvenanceQuantumGraph`
             Graph to update in place.
-        address_reader : `AddressReader`
-            Reader object that can be used to look up UUIDs from integer
-            indexes.
 
         Notes
         -----
@@ -655,7 +608,7 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
         last_attempt = (
             self.attempts[-1]
             if self.attempts
-            else StorageProvenanceQuantumAttemptModel(status=QuantumAttemptStatus.BLOCKED)
+            else ProvenanceQuantumAttemptModel(status=QuantumAttemptStatus.BLOCKED)
         )
         graph._bipartite_xgraph.add_node(
             self.quantum_id,
@@ -666,20 +619,18 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             caveats=last_attempt.caveats,
             exception=last_attempt.exception,
             resource_usage=last_attempt.resource_usage,
-            attempts=[a.remap_indices(address_reader) for a in self.attempts],
+            attempts=self.attempts,
         )
-        for connection_name, dataset_indices in self.inputs.items():
+        for connection_name, dataset_ids in self.inputs.items():
             read_edge = task_node.get_input_edge(connection_name)
-            for dataset_index in dataset_indices:
-                dataset_id = address_reader.find(dataset_index).key
+            for dataset_id in dataset_ids:
                 graph._bipartite_xgraph.add_edge(dataset_id, self.quantum_id, is_read=True)
                 graph._bipartite_xgraph.edges[dataset_id, self.quantum_id].setdefault(
                     "pipeline_edges", []
                 ).append(read_edge)
-        for connection_name, dataset_indices in self.outputs.items():
+        for connection_name, dataset_ids in self.outputs.items():
             write_edge = task_node.get_output_edge(connection_name)
-            for dataset_index in dataset_indices:
-                dataset_id = address_reader.find(dataset_index).key
+            for dataset_id in dataset_ids:
                 graph._bipartite_xgraph.add_edge(
                     self.quantum_id,
                     dataset_id,
@@ -758,28 +709,24 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
     Note that full dataset type definitions are stored in the pipeline graph.
     """
 
-    inputs: dict[ConnectionName, DatasetIndex] = pydantic.Field(default_factory=dict)
-    """Internal integer IDs of the datasets predicted to be consumed by this
-    quantum, grouped by connection name.
+    inputs: dict[ConnectionName, uuid.UUID] = pydantic.Field(default_factory=dict)
+    """IDs of the datasets predicted to be consumed by this quantum, grouped by
+    connection name.
     """
 
-    outputs: dict[ConnectionName, DatasetIndex] = pydantic.Field(default_factory=dict)
-    """Internal integer IDs of the datasets predicted to be produced by this
-    quantum, grouped by connection name.
+    outputs: dict[ConnectionName, uuid.UUID] = pydantic.Field(default_factory=dict)
+    """IDs of the datasets predicted to be produced by this quantum, grouped by
+    connection name.
     """
 
     @classmethod
-    def from_predicted(
-        cls, predicted: PredictedQuantumDatasetsModel, indices: Mapping[uuid.UUID, int]
-    ) -> ProvenanceInitQuantumModel:
+    def from_predicted(cls, predicted: PredictedQuantumDatasetsModel) -> ProvenanceInitQuantumModel:
         """Construct from a predicted quantum model.
 
         Parameters
         ----------
         predicted : `PredictedQuantumDatasetsModel`
             Information about the quantum from the predicted graph.
-        indices : `~collections.abc.Mapping [`uuid.UUID`, `int`]
-            Mapping from quantum or dataset UUID to internal integer ID.
 
         Returns
         -------
@@ -787,11 +734,11 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
             Provenance init quantum model.
         """
         inputs = {
-            connection_name: indices[predicted_inputs[0].dataset_id]
+            connection_name: predicted_inputs[0].dataset_id
             for connection_name, predicted_inputs in predicted.inputs.items()
         }
         outputs = {
-            connection_name: indices[predicted_outputs[0].dataset_id]
+            connection_name: predicted_outputs[0].dataset_id
             for connection_name, predicted_outputs in predicted.outputs.items()
         }
         return cls(
@@ -801,21 +748,13 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
             outputs=outputs,
         )
 
-    def _add_to_graph(
-        self,
-        graph: ProvenanceQuantumGraph,
-        address_reader: AddressReader,
-        empty_data_id: DataCoordinate,
-    ) -> None:
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph, empty_data_id: DataCoordinate) -> None:
         """Add this quantum and its edges to datasets to a provenance graph.
 
         Parameters
         ----------
         graph : `ProvenanceQuantumGraph`
             Graph to update in place.
-        address_reader : `AddressReader`
-            Reader object that can be used to look up UUIDs from integer
-            indexes.
         empty_data_id : `lsst.daf.butler.DataCoordinate`
             The empty data ID for the appropriate dimension universe.
 
@@ -831,16 +770,14 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
         graph._bipartite_xgraph.add_node(
             self.quantum_id, data_id=empty_data_id, task_label=self.task_label, pipeline_node=task_init_node
         )
-        for connection_name, dataset_index in self.inputs.items():
+        for connection_name, dataset_id in self.inputs.items():
             read_edge = task_init_node.get_input_edge(connection_name)
-            dataset_id = address_reader.find(dataset_index).key
             graph._bipartite_xgraph.add_edge(dataset_id, self.quantum_id, is_read=True)
             graph._bipartite_xgraph.edges[dataset_id, self.quantum_id].setdefault(
                 "pipeline_edges", []
             ).append(read_edge)
-        for connection_name, dataset_index in self.outputs.items():
+        for connection_name, dataset_id in self.outputs.items():
             write_edge = task_init_node.get_output_edge(connection_name)
-            dataset_id = address_reader.find(dataset_index).key
             graph._bipartite_xgraph.add_edge(
                 self.quantum_id,
                 dataset_id,
@@ -902,20 +839,17 @@ class ProvenanceInitQuantaModel(pydantic.RootModel):
     root: list[ProvenanceInitQuantumModel] = pydantic.Field(default_factory=list)
     """List of special "init" quanta, one for each task."""
 
-    def _add_to_graph(self, graph: ProvenanceQuantumGraph, address_reader: AddressReader) -> None:
+    def _add_to_graph(self, graph: ProvenanceQuantumGraph) -> None:
         """Add this quantum and its edges to datasets to a provenance graph.
 
         Parameters
         ----------
         graph : `ProvenanceQuantumGraph`
             Graph to update in place.
-        address_reader : `AddressReader`
-            Reader object that can be used to look up UUIDs from integer
-            indexes.
         """
         empty_data_id = DataCoordinate.make_empty(graph.pipeline_graph.universe)
         for init_quantum in self.root:
-            init_quantum._add_to_graph(graph, address_reader, empty_data_id=empty_data_id)
+            init_quantum._add_to_graph(graph, empty_data_id=empty_data_id)
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
     # when we inherit those docstrings in our public classes.
@@ -1273,7 +1207,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         init_quanta = self._read_single_block("init_quanta", ProvenanceInitQuantaModel)
         for init_quantum in init_quanta.root:
             self.graph._init_quanta[init_quantum.task_label] = init_quantum.quantum_id
-        init_quanta._add_to_graph(self.graph, self.address_reader)
+        init_quanta._add_to_graph(self.graph)
 
     def read_full_graph(self) -> None:
         """Read all bipartite edges and all quantum and dataset node
@@ -1288,33 +1222,32 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         self.read_datasets()
         self.read_quanta()
 
-    def read_datasets(self, datasets: Iterable[uuid.UUID | DatasetIndex] | None = None) -> None:
+    def read_datasets(self, datasets: Iterable[uuid.UUID] | None = None) -> None:
         """Read information about the given datasets.
 
         Parameters
         ----------
-        datasets : `~collections.abc.Iterable` [`uuid.UUID` or `int`], optional
-            Iterable of dataset IDs or indices to load.  If not provided, all
-            datasets will be loaded.  The UUIDs and indices of quanta will be
-            ignored.
+        datasets : `~collections.abc.Iterable` [`uuid.UUID`], optional
+            Iterable of dataset IDs to load.  If not provided, all datasets
+            will be loaded.  The UUIDs and indices of quanta will be ignored.
         """
         self._read_nodes(datasets, DATASET_ADDRESS_INDEX, DATASET_MB_NAME, ProvenanceDatasetModel)
 
-    def read_quanta(self, quanta: Iterable[uuid.UUID | QuantumIndex] | None = None) -> None:
+    def read_quanta(self, quanta: Iterable[uuid.UUID] | None = None) -> None:
         """Read information about the given quanta.
 
         Parameters
         ----------
-        quanta : `~collections.abc.Iterable` [`uuid.UUID` or `int`], optional
-            Iterable of quantum IDs or indices to load.  If not provided, all
-            quanta will be loaded.  The UUIDs and indices of datasets and
-            special init quanta will be ignored.
+        quanta : `~collections.abc.Iterable` [`uuid.UUID`], optional
+            Iterable of quantum IDs to load.  If not provided, all quanta will
+            be loaded.  The UUIDs and indices of datasets and special init
+            quanta will be ignored.
         """
         self._read_nodes(quanta, QUANTUM_ADDRESS_INDEX, QUANTUM_MB_NAME, ProvenanceQuantumModel)
 
     def _read_nodes(
         self,
-        nodes: Iterable[uuid.UUID | int] | None,
+        nodes: Iterable[uuid.UUID] | None,
         address_index: int,
         mb_name: str,
         model_type: type[ProvenanceDatasetModel] | type[ProvenanceQuantumModel],
@@ -1335,7 +1268,7 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     # Use the old node to reduce memory usage (since it might
                     # also have other outstanding reference holders).
                     continue
-                node._add_to_graph(self.graph, self.address_reader)
+                node._add_to_graph(self.graph)
             return
         with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
             for node_id_or_index in nodes:
@@ -1348,29 +1281,27 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     address_row.addresses[address_index], model_type, self.decompressor
                 )
                 if node is not None:
-                    node._add_to_graph(self.graph, self.address_reader)
+                    node._add_to_graph(self.graph)
 
-    def fetch_logs(
-        self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
-    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, list[ButlerLogRecords | None]]:
+    def fetch_logs(self, nodes: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[ButlerLogRecords | None]]:
         """Fetch log datasets.
 
         Parameters
         ----------
         nodes : `~collections.abc.Iterable` [ `uuid.UUID` ]
-            UUIDs or internal integer IDS of the log datasets themselves or of
-            the quanta they correspond to.
+            UUIDs of the log datasets themselves or of the quanta they
+            correspond to.
 
         Returns
         -------
-        logs : `dict` [ `uuid.UUID` or `int`, `list` [\
+        logs : `dict` [ `uuid.UUID`, `list` [\
                 `lsst.daf.butler.ButlerLogRecords` or `None`] ]
             Logs for the given IDs.  Each value is a list of
             `lsst.daf.butler.ButlerLogRecords` instances representing different
             execution attempts, ordered chronologically from first to last.
             Attempts where logs were missing will have `None` in this list.
         """
-        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, list[ButlerLogRecords | None]] = {}
+        result: dict[uuid.UUID, list[ButlerLogRecords | None]] = {}
         with MultiblockReader.open_in_zip(self.zf, LOG_MB_NAME, int_size=self.header.int_size) as mb_reader:
             for node_id_or_index in nodes:
                 address_row = self.address_reader.find(node_id_or_index)
@@ -1384,27 +1315,25 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     ]
         return result
 
-    def fetch_metadata(
-        self, nodes: Iterable[uuid.UUID | DatasetIndex | QuantumIndex]
-    ) -> dict[uuid.UUID | DatasetIndex | QuantumIndex, list[TaskMetadata | None]]:
+    def fetch_metadata(self, nodes: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[TaskMetadata | None]]:
         """Fetch metadata datasets.
 
         Parameters
         ----------
         nodes : `~collections.abc.Iterable` [ `uuid.UUID` ]
-            UUIDs or internal integer IDs of the metadata datasets themselves
-            or of the quanta they correspond to.
+            UUIDs of the metadata datasets themselves or of the quanta they
+            correspond to.
 
         Returns
         -------
-        metadata : `dict` [ `uuid.UUID` or `int`, `list` [`.TaskMetadata`] ]
+        metadata : `dict` [ `uuid.UUID`, `list` [`.TaskMetadata`] ]
             Metadata for the given IDs.  Each value is a list of
             `.TaskMetadata` instances representing different execution
             attempts, ordered chronologically from first to last. Attempts
             where metadata was missing (not written even in the fallback extra
             provenance in the logs) will have `None` in this list.
         """
-        result: dict[uuid.UUID | DatasetIndex | QuantumIndex, list[TaskMetadata | None]] = {}
+        result: dict[uuid.UUID, list[TaskMetadata | None]] = {}
         with MultiblockReader.open_in_zip(
             self.zf, METADATA_MB_NAME, int_size=self.header.int_size
         ) as mb_reader:

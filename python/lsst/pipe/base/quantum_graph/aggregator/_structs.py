@@ -28,10 +28,11 @@
 from __future__ import annotations
 
 __all__ = (
+    "InProgressScan",
     "IngestRequest",
     "ScanReport",
-    "ScanResult",
     "ScanStatus",
+    "WriteRequest",
 )
 
 import dataclasses
@@ -119,8 +120,8 @@ class IngestRequest:
 
 
 @dataclasses.dataclass
-class ScanResult:
-    """A struct that represents the result of scanning a quantum."""
+class InProgressScan:
+    """A struct that represents a quantum that is being scanned."""
 
     quantum_id: uuid.UUID
     """Unique ID for the quantum."""
@@ -131,30 +132,46 @@ class ScanResult:
     attempts: list[ProvenanceQuantumAttemptModel] = dataclasses.field(default_factory=list)
     """Provenance information about each attempt to run the quantum."""
 
+    outputs: dict[uuid.UUID, bool] = dataclasses.field(default_factory=dict)
+    """Unique IDs of the output datasets mapped to whether they were actually
+    produced.
+    """
+
+    metadata: ProvenanceTaskMetadataModel = dataclasses.field(default_factory=ProvenanceTaskMetadataModel)
+    """Task metadata information for each attempt.
+    """
+
+    logs: ProvenanceLogRecordsModel = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
+    """Log records for each attempt.
+    """
+
+
+@dataclasses.dataclass
+class WriteRequest:
+    """A struct that represents a request to write provenance for a quantum."""
+
+    quantum_id: uuid.UUID
+    """Unique ID for the quantum."""
+
+    status: ScanStatus
+    """Combined status for the scan and the execution of the quantum."""
+
     existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
     """Unique IDs of the output datasets that were actually written."""
 
-    metadata_model: ProvenanceTaskMetadataModel | None = dataclasses.field(
-        default_factory=ProvenanceTaskMetadataModel
-    )
-    """Task metadata information for each attempt.
+    quantum: bytes = b""
+    """Serialized quantum provenance model.
 
-    This is set to `None` to keep the pickle size small after it is saved
-    to `metadata_content`.
+    This may be empty for quanta that had no attempts.
     """
 
-    metadata_content: bytes = b""
-    """Serialized form of `metadata_model`."""
+    metadata: bytes = b""
+    """Serialized task metadata."""
 
-    log_model: ProvenanceLogRecordsModel | None = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
-    """Log records for each attempt.
-
-    This is set to `None` to keep the pickle size small after it is saved
-    to `log_content`.
-    """
-
-    log_content: bytes = b""
-    """Serialized form of `logs_model`."""
+    logs: bytes = b""
+    """Serialized logs."""
 
     is_compressed: bool = False
-    """Whether the `metadata` and `log` attributes are compressed."""
+    """Whether the `quantum`, `metadata`, and `log` attributes are
+    compressed.
+    """
