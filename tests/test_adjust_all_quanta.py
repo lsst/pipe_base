@@ -129,6 +129,7 @@ class AdjustAllQuantaTestCase(unittest.TestCase):
         adjust_all_quanta hook, and check that it works as expected.
         """
         butler = self.make_butler()
+        self.enterContext(butler)
         pipeline_graph = PipelineGraph(universe=butler.dimensions)
         pipeline_graph.add_task("grouper", GroupTestTask)
         collections = ["imported_g", "imported_r"]

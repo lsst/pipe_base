@@ -34,6 +34,7 @@ import lsst.daf.butler
 import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config
 import lsst.utils.tests
+from lsst.daf.butler.registry import RegistryDefaults
 from lsst.pipe.base import Instrument, Pipeline, PipelineGraph, QuantumGraph, TaskMetadata
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.pipe.base.automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME
@@ -61,12 +62,14 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             repodir.name, standalone=True, searchPaths=[os.path.join(TESTDIR, "config")]
         )
         butler = lsst.daf.butler.Butler.from_config(config, writeable=True)
+        self.enterContext(butler)
         output = "fake"
         output_run = f"{output}/{Instrument.makeCollectionTimestamp()}"
         butler.registry.registerCollection(output_run, lsst.daf.butler.CollectionType.RUN)
         butler.registry.registerCollection(output, lsst.daf.butler.CollectionType.CHAINED)
         butler.registry.setCollectionChain(output, [output_run])
-        self.butler = lsst.daf.butler.Butler.from_config(butler=butler, collections=[output], run=output_run)
+        butler.registry.defaults = RegistryDefaults(collections=[output], run=output_run)
+        self.butler = butler
 
         butlerTests.addDatasetType(self.butler, "input", set(), "StructuredDataDict")
         butlerTests.addDatasetType(self.butler, "intermediate", set(), "StructuredDataDict")
@@ -345,16 +348,14 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertTrue(self.butler.exists(PACKAGES_INIT_OUTPUT_NAME, {}))
 
     def test_init_badinput(self):
-        butler = lsst.daf.butler.Butler.from_config(butler=self.butler, collections=[], run="foo")
-
-        with self.assertRaises(ValueError):
-            SeparablePipelineExecutor(butler)
+        with lsst.daf.butler.Butler.from_config(butler=self.butler, collections=[], run="foo") as butler:
+            with self.assertRaises(ValueError):
+                SeparablePipelineExecutor(butler)
 
     def test_init_badoutput(self):
-        butler = lsst.daf.butler.Butler.from_config(butler=self.butler, collections=["foo"])
-
-        with self.assertRaises(ValueError):
-            SeparablePipelineExecutor(butler)
+        with lsst.daf.butler.Butler.from_config(butler=self.butler, collections=["foo"]) as butler:
+            with self.assertRaises(ValueError):
+                SeparablePipelineExecutor(butler)
 
     def test_make_pipeline_full(self):
         executor = SeparablePipelineExecutor(self.butler)

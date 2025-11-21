@@ -84,9 +84,9 @@ class InitOutputRunTestCase(unittest.TestCase):
     def make_butler(self) -> Iterator[Butler]:
         """Wrap a temporary local butler repository in a context manager."""
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
-            Butler.makeRepo(root)
-            butler = Butler.from_config(root, writeable=True)
-            yield butler
+            config = Butler.makeRepo(root)
+            with Butler.from_config(config, writeable=True) as butler:
+                yield butler
 
     @contextmanager
     def prep_butler(self, pipeline_graph: PipelineGraph) -> Iterator[Butler]:
@@ -146,6 +146,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             init_output_refs_for_task: list[DatasetRef] = []
             for write_edge in task_node.init.iter_all_outputs():
                 ref = butler.find_dataset(write_edge.dataset_type_name)
+                assert ref is not None  # For linters.
                 # Check that the ref we got back uses the dataset type node's
                 # definition of the dataset type (including storage class).
                 self.assertEqual(
@@ -248,6 +249,7 @@ class InitOutputRunTestCase(unittest.TestCase):
             quantum_graph.write_init_outputs(butler, skip_existing=False)
         # Make a QBB, check that it can see the init outputs.
         qbb = quantum_graph.make_init_qbb(butler._config)
+        self.enterContext(qbb)
         self.check_qbb_consistency(init_output_refs, qbb)
         # Use QBB to initialize again, should be a no-op.
         quantum_graph.init_output_run(qbb)
@@ -299,6 +301,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         pipeline_graph.init_output_run(butler)
         # Make a QBB, check that it can see the init outputs.
         qbb = quantum_graph.make_init_qbb(butler._config)
+        self.enterContext(qbb)
         self.check_qbb_consistency(init_output_refs, qbb)
         # Use QBB to initialize again, should be a no-op.
         quantum_graph.init_output_run(qbb)
@@ -326,6 +329,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         quantum_graph = quantum_graph_builder.finish(metadata={"output_run": run}).assemble()
         # Make a quantum-backed butler and use it to initialize the run.
         qbb = quantum_graph.make_init_qbb(butler._config)
+        self.enterContext(qbb)
         quantum_graph.init_output_run(qbb)
         init_output_refs = self.get_quantum_graph_init_output_refs(quantum_graph)
         self.check_qbb_consistency(init_output_refs, qbb)

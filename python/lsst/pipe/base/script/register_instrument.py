@@ -53,7 +53,7 @@ def register_instrument(repo: str, instrument: list[str], update: bool = False) 
         Raised iff the instrument is not a subclass of
         `lsst.pipe.base.Instrument`.
     """
-    butler = Butler.from_config(repo, writeable=True)
-    for string in instrument:
-        instrument_instance = Instrument.from_string(string, butler.registry)
-        instrument_instance.register(butler.registry, update=update)
+    with Butler.from_config(repo, writeable=True) as butler:
+        for string in instrument:
+            instrument_instance = Instrument.from_string(string, butler.registry)
+            instrument_instance.register(butler.registry, update=update)

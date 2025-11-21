@@ -133,7 +133,9 @@ class InstrumentTestCase(unittest.TestCase):
 
     def test_register(self):
         """Test that register() sets appropriate Dimensions."""
-        registry = create_populated_sqlite_registry().registry
+        butler = create_populated_sqlite_registry()
+        self.enterContext(butler)
+        registry = butler.registry
         # Check that the registry starts out empty.
         self.instrument.importAll(registry)
         self.assertFalse(list(registry.queryDimensionRecords("instrument")))
@@ -240,7 +242,9 @@ class InstrumentTestCase(unittest.TestCase):
         systems for constructing it, in the case where the Instrument-defined
         default is used.
         """
-        registry = create_populated_sqlite_registry().registry
+        butler = create_populated_sqlite_registry()
+        self.enterContext(butler)
+        registry = butler.registry
         self.instrument.register(registry)
         config = DimensionPackerTestConfig()
         instrument_data_id = registry.expandDataId(instrument=self.name)
@@ -271,7 +275,9 @@ class InstrumentTestCase(unittest.TestCase):
         systems for constructing it, in the case where configuration overrides
         the Instrument's default.
         """
-        registry = create_populated_sqlite_registry().registry
+        butler = create_populated_sqlite_registry()
+        self.enterContext(butler)
+        registry = butler.registry
         # Intentionally do not register instrument or insert any other
         # dimension records to ensure we don't need them in this mode.
         config = DimensionPackerTestConfig()

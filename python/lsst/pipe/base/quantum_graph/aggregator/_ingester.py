@@ -133,6 +133,7 @@ class Ingester:
         with comms:
             ingester = Ingester(predicted_path, butler_path, comms)
             ingester.loop()
+            ingester.butler.close()
 
     def loop(self) -> None:
         """Run the main loop for the ingester."""
