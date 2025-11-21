@@ -41,6 +41,7 @@ import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config as pexConfig
 from lsst.daf.butler import Butler, Config, DataId, DatasetRef, DatasetType, Formatter, LimitedButler
 from lsst.daf.butler.logging import ButlerLogRecords
+from lsst.daf.butler.registry import RegistryDefaults
 from lsst.resources import ResourcePath
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
@@ -295,8 +296,8 @@ def makeSimpleButler(
     if not inMemory:
         butler_config["registry", "db"] = f"sqlite:///{root_path.ospath}/gen3.sqlite"
         butler_config["datastore", "cls"] = "lsst.daf.butler.datastores.fileDatastore.FileDatastore"
-    repo = butlerTests.makeTestRepo(str(root_path), {}, config=butler_config)
-    butler = Butler.from_config(butler=repo, run=run)
+    butler = butlerTests.makeTestRepo(str(root_path), {}, config=butler_config)
+    butler.registry.defaults = RegistryDefaults(run=run)
     return butler
 
 
@@ -480,44 +481,51 @@ def makeSimpleQGraph(
         case _:
             raise TypeError(f"Unexpected pipeline object: {pipeline!r}.")
 
+    butler_created = False
     if butler is None:
         if root is None:
             raise ValueError("Must provide `root` when `butler` is None")
         if callPopulateButler is False:
             raise ValueError("populateButler can only be False when butler is supplied as an argument")
         butler = makeSimpleButler(root, run=run, inMemory=inMemory)
+        butler_created = True
 
-    if callPopulateButler:
-        populateButler(pipeline_graph, butler, datasetTypes=datasetTypes, instrument=instrument)
+    try:
+        if callPopulateButler:
+            populateButler(pipeline_graph, butler, datasetTypes=datasetTypes, instrument=instrument)
 
-    # Make the graph
-    _LOG.debug(
-        "Instantiating QuantumGraphBuilder, "
-        "skip_existing_in=%s, input_collections=%r, output_run=%r, where=%r, bind=%s.",
-        skipExistingIn,
-        butler.collections.defaults,
-        run,
-        userQuery,
-        bind,
-    )
-    if not run:
-        assert butler.run is not None, "Butler must have run defined"
-        run = butler.run
-    builder = AllDimensionsQuantumGraphBuilder(
-        pipeline_graph,
-        butler,
-        skip_existing_in=skipExistingIn if skipExistingIn is not None else [],
-        input_collections=butler.collections.defaults,
-        output_run=run,
-        where=userQuery,
-        bind=bind,
-        dataset_query_constraint=datasetQueryConstraint,
-    )
-    _LOG.debug("Calling QuantumGraphBuilder.build.")
-    if not metadata:
-        metadata = {}
-    metadata["output_run"] = run
+        # Make the graph
+        _LOG.debug(
+            "Instantiating QuantumGraphBuilder, "
+            "skip_existing_in=%s, input_collections=%r, output_run=%r, where=%r, bind=%s.",
+            skipExistingIn,
+            butler.collections.defaults,
+            run,
+            userQuery,
+            bind,
+        )
+        if not run:
+            assert butler.run is not None, "Butler must have run defined"
+            run = butler.run
+        builder = AllDimensionsQuantumGraphBuilder(
+            pipeline_graph,
+            butler,
+            skip_existing_in=skipExistingIn if skipExistingIn is not None else [],
+            input_collections=butler.collections.defaults,
+            output_run=run,
+            where=userQuery,
+            bind=bind,
+            dataset_query_constraint=datasetQueryConstraint,
+        )
+        _LOG.debug("Calling QuantumGraphBuilder.build.")
+        if not metadata:
+            metadata = {}
+        metadata["output_run"] = run
 
-    qgraph = builder.build(metadata=metadata, attach_datastore_records=makeDatastoreRecords)
+        qgraph = builder.build(metadata=metadata, attach_datastore_records=makeDatastoreRecords)
+    except Exception:
+        if butler_created:
+            butler.close()
+        raise
 
     return butler, qgraph
