@@ -263,7 +263,9 @@ class AggregatorTestCase(unittest.TestCase):
         quanta : `~collections.abc.Iterator` [`uuid.UUID`]
             An iterator over all executed quantum IDs (not blocked ones).
         """
-        qg.init_output_run(qg.make_init_qbb(repo))
+        qbb = qg.make_init_qbb(repo)
+        self.enterContext(qbb)
+        qg.init_output_run(qbb)
         sqe = SingleQuantumExecutor(
             limited_butler_factory=lambda quantum: QuantumBackedButler.initialize(
                 repo,

@@ -75,6 +75,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         with temporaryDirectory() as root:
             # makeSimpleQGraph calls GraphBuilder.
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
+            self.enterContext(butler)
             # by default makeSimpleQGraph makes a graph with 5 nodes
             self.assertEqual(len(qgraph), 5)
             self._assertGraph(qgraph)
@@ -119,6 +120,7 @@ class GraphBuilderTestCase(unittest.TestCase):
         with temporaryDirectory() as repo_path:
             Butler.makeRepo(repo_path)
             butler = Butler.from_config(repo_path, writeable=True, run="test_empty_qg")
+            self.enterContext(butler)
             MockStorageClass.get_or_register_mock("StructuredDataDict")
             butler.registry.registerDatasetType(
                 DatasetType(
@@ -164,7 +166,10 @@ class GraphBuilderTestCase(unittest.TestCase):
                 nQuanta=5, instrument="lsst.pipe.base.tests.simpleQGraph.SimpleInstrument"
             )
             with self.assertRaises(UserExpressionError):
-                simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery="instrument = 'foo'")
+                butler, _ = simpleQGraph.makeSimpleQGraph(
+                    root=root, pipeline=pipeline, userQuery="instrument = 'foo'"
+                )
+                self.enterContext(butler)
 
     def testUserQueryBind(self):
         """Verify that bind values work for user query."""
@@ -174,12 +179,16 @@ class GraphBuilderTestCase(unittest.TestCase):
         instr = simpleQGraph.SimpleInstrument.getName()
         # With a literal in the user query
         with temporaryDirectory() as root:
-            simpleQGraph.makeSimpleQGraph(root=root, pipeline=pipeline, userQuery=f"instrument = '{instr}'")
+            butler, _ = simpleQGraph.makeSimpleQGraph(
+                root=root, pipeline=pipeline, userQuery=f"instrument = '{instr}'"
+            )
+            self.enterContext(butler)
         # With a bind for the user query
         with temporaryDirectory() as root:
-            simpleQGraph.makeSimpleQGraph(
+            butler, _ = simpleQGraph.makeSimpleQGraph(
                 root=root, pipeline=pipeline, userQuery="instrument = :instr", bind={"instr": instr}
             )
+            self.enterContext(butler)
 
     def test_datastore_records(self):
         """Test for generating datastore records."""
@@ -188,6 +197,7 @@ class GraphBuilderTestCase(unittest.TestCase):
             butler, qgraph1 = simpleQGraph.makeSimpleQGraph(
                 root=root, inMemory=False, makeDatastoreRecords=True
             )
+            self.enterContext(butler)
 
             # save and reload
             buffer = io.BytesIO()

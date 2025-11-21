@@ -32,9 +32,9 @@ import shutil
 import tempfile
 import unittest
 
-import lsst.daf.butler
 import lsst.pipe.base.quantum_provenance_graph as qpg
 import lsst.utils.tests
+from lsst.daf.butler import Butler, DatasetType
 from lsst.pipe.base import PipelineGraph, QuantumSuccessCaveats, RepeatableQuantumError
 from lsst.pipe.base.simple_pipeline_executor import SimplePipelineExecutor
 from lsst.pipe.base.tests.mocks import (
@@ -61,12 +61,11 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.path = tempfile.mkdtemp()
         # standalone parameter forces the returned config to also include
         # the information from the search paths.
-        config = lsst.daf.butler.Butler.makeRepo(
-            self.path, standalone=True, searchPaths=[os.path.join(TESTDIR, "config")]
-        )
+        config = Butler.makeRepo(self.path, standalone=True, searchPaths=[os.path.join(TESTDIR, "config")])
         self.butler = SimplePipelineExecutor.prep_butler(config, [], "fake")
+        self.enterContext(self.butler)
         self.butler.registry.registerDatasetType(
-            lsst.daf.butler.DatasetType(
+            DatasetType(
                 "input",
                 dimensions=self.butler.dimensions.empty,
                 storageClass="StructuredDataDict",
@@ -201,7 +200,8 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
         )
         with tempfile.TemporaryDirectory() as tempdir:
             root = os.path.join(tempdir, "butler_root")
-            executor.use_local_butler(root)
+            local_butler = executor.use_local_butler(root)
+            self.enterContext(local_butler)
             self._test_pipeline_file(executor)
 
         # Test a more complicated pipeline involving dataset types with
@@ -215,9 +215,11 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
             qg = helper.make_quantum_graph(output="out_chain")
             executor = SimplePipelineExecutor(qg, helper.butler)
             output_butler_root = os.path.join(tempdir, "root")
-            executor.use_local_butler(output_butler_root)
+            local_butler = executor.use_local_butler(output_butler_root)
+            self.enterContext(local_butler)
             executor.run(register_dataset_types=True)
-            output_butler = lsst.daf.butler.Butler(output_butler_root)
+            output_butler = Butler.from_config(output_butler_root)
+            self.enterContext(output_butler)
             ref = output_butler.find_dataset(
                 "dataset_auto1",
                 collections="out_chain",
@@ -227,6 +229,7 @@ class SimplePipelineExecutorTests(lsst.utils.tests.TestCase):
                 visit=1,
             )
             self.assertIsNotNone(ref)
+            assert ref is not None  # For linters.
             self.assertIsNotNone(output_butler.get(ref))
             # Check that dimension records are present in the output Butler.
             self.assertEqual(ref.dataId.records["visit"].science_program, "test_survey")

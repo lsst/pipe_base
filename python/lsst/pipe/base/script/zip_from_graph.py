@@ -72,19 +72,18 @@ def zip_from_graph(
     # Get data repository dataset type definitions from the QuantumGraph.
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
 
+    # Filter the refs based on requested dataset types.
+    filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
+
     # Make QBB, its config is the same as output Butler.
-    qbb = QuantumBackedButler.from_predicted(
+    with QuantumBackedButler.from_predicted(
         config=repo,
         predicted_inputs=[ref.id for ref in output_refs],
         predicted_outputs=[],
         dimensions=qgraph.universe,
         datastore_records={},
         dataset_types=dataset_types,
-    )
-
-    # Filter the refs based on requested dataset types.
-    filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
-
-    _LOG.info("Retrieving artifacts for %d datasets and storing in Zip file.", len(filtered_refs))
-    zip = qbb.retrieve_artifacts_zip(filtered_refs, dest)
+    ) as qbb:
+        _LOG.info("Retrieving artifacts for %d datasets and storing in Zip file.", len(filtered_refs))
+        zip = qbb.retrieve_artifacts_zip(filtered_refs, dest)
     return zip

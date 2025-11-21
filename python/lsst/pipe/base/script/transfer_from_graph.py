@@ -85,52 +85,52 @@ def transfer_from_graph(
     # Get data repository dataset type definitions from the QuantumGraph.
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
 
-    # Make QBB, its config is the same as output Butler.
-    qbb = QuantumBackedButler.from_predicted(
-        config=dest,
-        predicted_inputs=[ref.id for ref in output_refs],
-        predicted_outputs=[],
-        dimensions=qgraph.universe,
-        datastore_records={},
-        dataset_types=dataset_types,
-    )
-
     # Filter the refs based on requested dataset types.
     filtered_refs = filter_by_dataset_type_glob(output_refs, dataset_type)
     _LOG.verbose("After filtering by dataset_type, number of datasets to transfer: %d", len(filtered_refs))
 
-    dest_butler = Butler.from_config(dest, writeable=True)
+    # Make QBB, its config is the same as output Butler.
+    with (
+        QuantumBackedButler.from_predicted(
+            config=dest,
+            predicted_inputs=[ref.id for ref in output_refs],
+            predicted_outputs=[],
+            dimensions=qgraph.universe,
+            datastore_records={},
+            dataset_types=dataset_types,
+        ) as qbb,
+        Butler.from_config(dest, writeable=True) as dest_butler,
+    ):
+        # For faster restarts, filter out those the destination already knows.
+        filtered_refs = filter_by_existence(dest_butler, filtered_refs)
 
-    # For faster restarts, filter out those the destination already knows.
-    filtered_refs = filter_by_existence(dest_butler, filtered_refs)
+        # Transfer in chunks
+        chunk_size = 50_000
+        n_chunks = math.ceil(len(filtered_refs) / chunk_size)
+        chunk_num = 0
+        count = 0
+        for chunk in chunk_iterable(filtered_refs, chunk_size=chunk_size):
+            chunk_num += 1
+            if n_chunks > 1:
+                _LOG.verbose("Transferring %d datasets in chunk %d/%d", len(chunk), chunk_num, n_chunks)
+            transferred = dest_butler.transfer_from(
+                qbb,
+                chunk,
+                transfer="auto",
+                register_dataset_types=register_dataset_types,
+                transfer_dimensions=transfer_dimensions,
+                dry_run=dry_run,
+            )
+            count += len(transferred)
 
-    # Transfer in chunks
-    chunk_size = 50_000
-    n_chunks = math.ceil(len(filtered_refs) / chunk_size)
-    chunk_num = 0
-    count = 0
-    for chunk in chunk_iterable(filtered_refs, chunk_size=chunk_size):
-        chunk_num += 1
-        if n_chunks > 1:
-            _LOG.verbose("Transferring %d datasets in chunk %d/%d", len(chunk), chunk_num, n_chunks)
-        transferred = dest_butler.transfer_from(
-            qbb,
-            chunk,
-            transfer="auto",
-            register_dataset_types=register_dataset_types,
-            transfer_dimensions=transfer_dimensions,
-            dry_run=dry_run,
-        )
-        count += len(transferred)
-
-    # If asked to do so, update output chain definition.
-    if update_output_chain and (metadata := qgraph.metadata) is not None:
-        # These are defined in CmdLineFwk.
-        output_run = metadata.get("output_run")
-        output = metadata.get("output")
-        input = metadata.get("input")
-        if output_run is not None and output is not None:
-            _update_chain(dest_butler, output, output_run, input)
+        # If asked to do so, update output chain definition.
+        if update_output_chain and (metadata := qgraph.metadata) is not None:
+            # These are defined in CmdLineFwk.
+            output_run = metadata.get("output_run")
+            output = metadata.get("output")
+            input = metadata.get("input")
+            if output_run is not None and output is not None:
+                _update_chain(dest_butler, output, output_run, input)
 
     return count
 

@@ -42,6 +42,7 @@ class GraphWalkerTestCase(unittest.TestCase):
 
     def test_iteration(self) -> None:
         helper = InMemoryRepo("base.yaml", "spatial.yaml")
+        self.enterContext(helper)
         helper.add_task("a", dimensions=["visit", "detector"])
         helper.add_task("b", dimensions=["visit", "detector"])
         helper.add_task(

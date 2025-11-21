@@ -44,6 +44,7 @@ class CachingLimitedButlerTestCase(unittest.TestCase):
 
     def test_init(self):
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task()
         refs = helper.insert_datasets("dataset_auto0")
         in_memory_butler = helper.make_limited_butler()
