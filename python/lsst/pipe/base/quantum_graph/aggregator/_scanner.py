@@ -158,6 +158,7 @@ class Scanner:
         with comms:
             scanner = Scanner(predicted_path, butler_path, comms)
             scanner.loop()
+            scanner.qbb.close()
 
     def loop(self) -> None:
         """Run the main loop for the scanner."""

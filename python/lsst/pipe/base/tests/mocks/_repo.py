@@ -29,11 +29,12 @@ from __future__ import annotations
 
 __all__ = ("DirectButlerRepo", "InMemoryRepo", "MockRepo")
 
+import logging
 import tempfile
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
-from typing import Any
+from contextlib import AbstractContextManager, contextmanager
+from typing import Any, Literal, Self
 
 from lsst.daf.butler import (
     Butler,
@@ -61,8 +62,10 @@ from ._pipeline_task import (
 )
 from ._storage_class import MockDataset, is_mock_name
 
+_LOG = logging.getLogger(__name__)
 
-class MockRepo(ABC):
+
+class MockRepo(AbstractContextManager):
     """A test helper that populates a butler repository for task execution.
 
     Parameters
@@ -99,6 +102,31 @@ class MockRepo(ABC):
         self.pipeline_graph = PipelineGraph()
         self.last_auto_dataset_type_index = 0
         self.last_auto_task_index = 0
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
+        try:
+            self.close()
+        except Exception:
+            _LOG.exception("An exception occurred during MockRepo.close()")
+        return False
+
+    def close(self) -> None:
+        """Release all resources associated with this mock instance.  The
+        instance may no longer be used after this is called.
+
+        Notes
+        -----
+        Instead of calling ``close()`` directly, you can use the mock object
+        as a context manager.  For example::
+
+          with MockRepo(...) as butler:
+              butler.get(...)
+          # butler is closed after exiting the block.
+        """
+        self.butler.close()
 
     def add_task(
         self,
@@ -581,18 +609,18 @@ class DirectButlerRepo(MockRepo):
     ) -> Iterator[tuple[DirectButlerRepo, str]]:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
             config = Butler.makeRepo(root, **kwargs)
-            butler = Butler.from_config(config, writeable=True)
-            yield (
-                cls(
-                    butler,
-                    *args,
-                    input_run=input_run,
-                    input_chain=input_chain,
-                    use_import_collections_as_input=use_import_collections_as_input,
-                    data_root=data_root,
-                ),
-                root,
-            )
+            with Butler.from_config(config, writeable=True) as butler:
+                yield (
+                    cls(
+                        butler,
+                        *args,
+                        input_run=input_run,
+                        input_chain=input_chain,
+                        use_import_collections_as_input=use_import_collections_as_input,
+                        data_root=data_root,
+                    ),
+                    root,
+                )
 
     def _insert_datasets_impl(
         self, dataset_type: DatasetType, data_ids: list[DataCoordinate]

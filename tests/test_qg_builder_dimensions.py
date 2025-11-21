@@ -63,6 +63,7 @@ class AllDimensionsQuantumGraphBuilderTestCase(unittest.TestCase):
 
     def setUp(self):
         self.butler = self.make_butler()
+        self.enterContext(self.butler)
 
     def tearDown(self):
         del self.butler

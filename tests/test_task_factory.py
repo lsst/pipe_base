@@ -112,6 +112,7 @@ class TaskFactoryTestCase(unittest.TestCase):
 
     def _tempButler(self) -> tuple[Butler, dict[str, DatasetRef]]:
         butler = butlerTests.makeTestCollection(self.repo, uniqueId=self.id())
+        self.enterContext(butler)
         catalog = self._dummyCatalog()
         refs = {}
         for dataset_type in ("fakeInitInput", "fakeInitOutput", "fakeInput", "fakeOutput"):

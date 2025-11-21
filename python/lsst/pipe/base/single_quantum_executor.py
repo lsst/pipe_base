@@ -176,16 +176,34 @@ class SingleQuantumExecutor(QuantumExecutor):
 
         Internal implementation of `execute()`.
         """
-        startTime = time.time()
-
         # Make a limited butler instance if needed.
         limited_butler: LimitedButler
+        used_butler_factory = False
         if self._butler is not None:
             limited_butler = self._butler
         else:
             # We check this in constructor, but mypy needs this check here.
             assert self._limited_butler_factory is not None
             limited_butler = self._limited_butler_factory(quantum)
+            used_butler_factory = True
+
+        try:
+            return self._execute_with_limited_butler(
+                task_node, limited_butler, quantum=quantum, quantum_id=quantum_id
+            )
+        finally:
+            if used_butler_factory:
+                limited_butler.close()
+
+    def _execute_with_limited_butler(
+        self,
+        task_node: TaskNode,
+        limited_butler: LimitedButler,
+        /,
+        quantum: Quantum,
+        quantum_id: uuid.UUID | None = None,
+    ) -> Quantum:
+        startTime = time.time()
 
         if self._butler is not None:
             log_capture = LogCapture.from_full(self._butler)
