@@ -506,7 +506,18 @@ class DeferredDatasetRef:
     datasetRef: DatasetRef
 
     def __getattr__(self, name: str) -> Any:
+        # make sure reduce is called on DeferredDatasetRef and not on
+        # the DatasetRef
+        if name in ("__reduce__", "datasetRef", "__deepcopy__"):
+            object.__getattribute__(self, name)
         return getattr(self.datasetRef, name)
+
+    def __deepcopy__(self, memo: dict) -> DeferredDatasetRef:
+        # dataset refs should be immutable deferred version should be too
+        return self
+
+    def __reduce__(self) -> tuple:
+        return (self.__class__, (self.datasetRef,))
 
 
 class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
