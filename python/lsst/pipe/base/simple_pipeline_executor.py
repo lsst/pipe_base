@@ -40,6 +40,7 @@ from lsst.daf.butler import (
     DatasetRef,
     Quantum,
 )
+from lsst.daf.butler.registry import RegistryDefaults
 from lsst.pex.config import Config
 
 from ._instrument import Instrument
@@ -152,9 +153,9 @@ class SimplePipelineExecutor:
         collections = [output_run]
         collections.extend(inputs)
         butler.registry.setCollectionChain(output, collections)
-        # Remake butler to let it infer default data IDs from collections, now
-        # that those collections exist.
-        return Butler.from_config(butler=butler, collections=[output], run=output_run)
+        # Override the registry defaults. No need to clone.
+        butler.registry.defaults = RegistryDefaults(collections=[output], run=output_run)
+        return butler
 
     @classmethod
     def from_pipeline_filename(
