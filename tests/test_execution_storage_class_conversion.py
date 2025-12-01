@@ -71,6 +71,7 @@ class TestExecutionStorageClassConversion(lsst.utils.tests.TestCase):
             self.path, standalone=True, searchPaths=[os.path.join(TESTDIR, "config")]
         )
         self.butler = SimplePipelineExecutor.prep_butler(config, [], "fake")
+        self.enterContext(self.butler)
         self.butler.registry.registerDatasetType(
             lsst.daf.butler.DatasetType(
                 "input",
@@ -268,7 +269,8 @@ class TestExecutionStorageClassConversion(lsst.utils.tests.TestCase):
         executor = self._make_executor(a_i_storage_class="TaskMetadataLike")
         with tempfile.TemporaryDirectory() as tempdir:
             root = os.path.join(tempdir, "butler_root")
-            executor.use_local_butler(root)
+            local_butler = executor.use_local_butler(root)
+            self.enterContext(local_butler)
             quanta = executor.run(register_dataset_types=True, save_versions=False)
             self.assertEqual(len(quanta), 2)
             self._assert_datasets(a_i_storage_class="TaskMetadataLike", butler=executor.butler)

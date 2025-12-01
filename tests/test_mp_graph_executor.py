@@ -75,6 +75,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_nomp(self) -> None:
         """Make simple graph and execute."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(dimensions=["detector"])
         qgraph = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
@@ -98,6 +99,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_mp(self) -> None:
         """Make simple graph and execute."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(dimensions=["detector"])
         qg = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
@@ -126,6 +128,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_nompsupport(self) -> None:
         """Try to run MP for task that has no MP support which should fail."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(task_class=NoMultiprocessingTask, dimensions=["detector"])
         qg = helper.make_quantum_graph()
         qexec, butler = helper.make_single_quantum_executor()
@@ -140,6 +143,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         code.
         """
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(dimensions=["detector"])
         qg = helper.make_quantum_graph()
         for reverse in (False, True):
@@ -161,6 +165,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         with an ordering fixup.
         """
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(dimensions=["detector"])
         qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
         for reverse in (False, True):
@@ -180,6 +185,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_timeout(self) -> None:
         """Fail due to timeout."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(label="a")
         helper.add_task(
             label="b",
@@ -230,6 +236,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_failure(self) -> None:
         """Failure in one task should not stop other tasks."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"),
             dimensions=["detector"],
@@ -254,6 +261,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_failure_dep(self) -> None:
         """Failure in one task should skip dependents."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             "a", config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"), dimensions=["detector"]
         )
@@ -280,6 +288,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_failure_dep_nomp(self) -> None:
         """Failure in one task should skip dependents, in-process version."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             "a", config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"), dimensions=["detector"]
         )
@@ -316,6 +325,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         failure and raise exception before task 'c'.
         """
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             "a", config=DynamicTestPipelineTaskConfig(fail_condition="detector=2"), dimensions=["detector"]
         )
@@ -341,6 +351,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_crash(self) -> None:
         """Check task crash due to signal."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             config=DynamicTestPipelineTaskConfig(fail_condition="detector=2", fail_signal=signal.SIGILL),
             dimensions=["detector"],
@@ -366,6 +377,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_crash_failfast(self) -> None:
         """Check task crash due to signal with --fail-fast."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task(
             "a",
             config=DynamicTestPipelineTaskConfig(fail_condition="detector=2", fail_signal=signal.SIGILL),
@@ -391,6 +403,7 @@ class MPGraphExecutorTestCase(unittest.TestCase):
     def test_mpexec_num_fd(self) -> None:
         """Check that number of open files stays reasonable."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task("a", task_class=NoMultiprocessingTask, dimensions=["detector", "visit"])
         helper.add_task("b", task_class=NoMultiprocessingTask, dimensions=["detector", "visit"])
         qg = helper.make_quantum_graph()

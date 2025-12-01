@@ -45,6 +45,7 @@ class ExecutionReportsTestCase(unittest.TestCase):
         with temporaryDirectory() as root:
             # make a simple qgraph to make an execution report on
             butler, qgraph = simpleQGraph.makeSimpleQGraph(root=root)
+            self.enterContext(butler)
             report = QuantumGraphExecutionReport.make_reports(butler, qgraph)
             # make a summary dictionary with a certain amount of
             # expected failures and check that they are there
@@ -64,3 +65,7 @@ class ExecutionReportsTestCase(unittest.TestCase):
             self.assertEqual(hr_exp_failures["task3"]["outputs"]["add_dataset4"]["produced"], 0)
             self.assertEqual(hr_exp_failures["task4"]["n_quanta_blocked"], 1)
             self.assertIsNotNone(hr_exp_failures["task0"]["n_expected"])
+
+
+if __name__ == "__main__":
+    unittest.main()

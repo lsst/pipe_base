@@ -34,6 +34,8 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from contextlib import AbstractContextManager
+from typing import Any, Literal, Self
 
 from lsst.daf.butler import Butler, CollectionType, DatasetRef, DimensionGroup
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
@@ -46,7 +48,7 @@ from ._communicators import IngesterCommunicator
 
 
 @dataclasses.dataclass
-class Ingester:
+class Ingester(AbstractContextManager):
     """A helper class for the provenance aggregator that handles ingestion into
     the central butler repository.
     """
@@ -107,6 +109,16 @@ class Ingester:
         self.comms.log.verbose("Initializing butler.")
         self.butler = Butler.from_config(self.butler_path, writeable=not self.comms.config.dry_run)
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
+        try:
+            self.butler.close()
+        except Exception:
+            self.comms.log.exception("An exception occurred during Ingester exit")
+        return False
+
     @property
     def n_datasets_pending(self) -> int:
         """The number of butler datasets currently pending."""
@@ -130,8 +142,7 @@ class Ingester:
         This method is designed to run as the ``target`` in
         `WorkerContext.make_worker`.
         """
-        with comms:
-            ingester = Ingester(predicted_path, butler_path, comms)
+        with comms, Ingester(predicted_path, butler_path, comms) as ingester:
             ingester.loop()
 
     def loop(self) -> None:

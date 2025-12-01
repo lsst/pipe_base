@@ -32,6 +32,8 @@ __all__ = ("Scanner",)
 import dataclasses
 import itertools
 import uuid
+from contextlib import AbstractContextManager
+from typing import Any, Literal, Self
 
 import zstandard
 
@@ -56,7 +58,7 @@ from ._structs import IngestRequest, InProgressScan, ScanReport, ScanStatus, Wri
 
 
 @dataclasses.dataclass
-class Scanner:
+class Scanner(AbstractContextManager):
     """A helper class for the provenance aggregator that reads metadata and log
     files and scans for which outputs exist.
     """
@@ -100,6 +102,16 @@ class Scanner:
         self.comms.log.verbose("Initializing quantum-backed butler.")
         self.qbb = self.make_qbb(self.butler_path, self.reader.pipeline_graph)
         self.init_quanta = {q.quantum_id: q for q in self.reader.components.init_quanta.root}
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
+        try:
+            self.qbb.close()
+        except Exception:
+            self.comms.log.exception("An exception occurred during Ingester exit")
+        return False
 
     @staticmethod
     def make_qbb(butler_config: str, pipeline_graph: PipelineGraph) -> QuantumBackedButler:
@@ -155,8 +167,7 @@ class Scanner:
         This method is designed to run as the ``target`` in
         `WorkerContext.make_worker`.
         """
-        with comms:
-            scanner = Scanner(predicted_path, butler_path, comms)
+        with comms, Scanner(predicted_path, butler_path, comms) as scanner:
             scanner.loop()
 
     def loop(self) -> None:

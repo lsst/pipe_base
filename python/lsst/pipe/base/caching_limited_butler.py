@@ -90,6 +90,9 @@ class CachingLimitedButler(LimitedButler):
         self._cache: dict[str, tuple[DatasetId, InMemoryDatasetHandle]] = {}
         self._no_copy_on_cache = no_copy_on_cache
 
+    def close(self) -> None:
+        self._wrapped.close()
+
     @property
     def _metrics(self) -> ButlerMetrics:
         # Need to always forward from the wrapped metrics object.

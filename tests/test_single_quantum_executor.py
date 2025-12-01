@@ -45,6 +45,7 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
     def test_simple_execute(self) -> None:
         """Run execute() method in simplest setup."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task()
         qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
         executor, butler = helper.make_single_quantum_executor()
@@ -73,6 +74,7 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
     def test_skip_existing_execute(self) -> None:
         """Run execute() method twice, with skip_existing_in."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task()
         qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
         executor, butler = helper.make_single_quantum_executor()
@@ -102,6 +104,7 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
     def test_clobber_outputs_execute(self) -> None:
         """Run execute() method twice, with clobber_outputs."""
         helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
         helper.add_task()
         qgraph = helper.make_quantum_graph_builder().build(attach_datastore_records=False)
         executor, butler = helper.make_single_quantum_executor()

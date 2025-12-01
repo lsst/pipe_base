@@ -65,6 +65,7 @@ class PredictedQuantumGraphTestCase(unittest.TestCase):
 
     def setUp(self):
         self.helper = InMemoryRepo("base.yaml", "spatial.yaml")
+        self.enterContext(self.helper)
         self.helper.add_task(
             "calibrate",
             dimensions=["visit", "detector"],

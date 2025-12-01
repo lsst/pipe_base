@@ -93,16 +93,15 @@ def retrieve_artifacts_for_quanta(
     dataset_types = {dstype.name: dstype for dstype in qgraph.registryDatasetTypes()}
 
     # Make QBB, its config is the same as output Butler.
-    qbb = QuantumBackedButler.from_predicted(
+    with QuantumBackedButler.from_predicted(
         config=repo,
         predicted_inputs=[ref.id for ref in refs],
         predicted_outputs=[],
         dimensions=qgraph.universe,
         datastore_records=datastore_records,
         dataset_types=dataset_types,
-    )
-
-    paths = qbb.retrieve_artifacts(
-        refs, dest, transfer=transfer, overwrite=clobber, preserve_path=preserve_path
-    )
+    ) as qbb:
+        paths = qbb.retrieve_artifacts(
+            refs, dest, transfer=transfer, overwrite=clobber, preserve_path=preserve_path
+        )
     return paths
