@@ -33,11 +33,12 @@ from __future__ import annotations
 
 __all__ = "TrivialQuantumGraphBuilder"
 
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, final, Mapping
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, final
 
 from lsst.daf.butler import (
     Butler,
+    DatasetIdGenEnum,
 )
 from lsst.utils.timer import timeMethod
 
@@ -59,12 +60,14 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         *,
         data_ids: Iterable[DataCoordinate],
         input_refs: Mapping[str, list[DatasetRef]],
+        dataset_id_modes: Mapping[str, DatasetIdGenEnum] | None,
         **kwargs: Any,
-    ):
+    ) -> None:
         super().__init__(pipeline_graph, butler, **kwargs)
         self.data_ids = {d.dimensions: d for d in data_ids}
         self.data_ids[self.empty_data_id.dimensions] = self.empty_data_id
         self.input_refs = input_refs
+        self.dataset_id_modes = dataset_id_modes or {}
 
     @timeMethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
@@ -91,7 +94,15 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
 
             for write_edge in task_node.iter_all_outputs():
                 dataset_type_node = subgraph.dataset_types[write_edge.parent_dataset_type_name]
-                input_key = skeleton.add_dataset_node(
+                output_key = skeleton.add_dataset_node(
                     write_edge.parent_dataset_type_name, self.data_ids[dataset_type_node.dimensions]
                 )
-                skeleton.add_output_edge(quantum_key, input_key)
+                skeleton.add_output_edge(quantum_key, output_key)
+                if mode := self.dataset_id_modes.get(write_edge.parent_dataset_type_name):
+                    skeleton.set_dataset_ref(
+                        DatasetRef(
+                            dataset_type_node.dataset_type, self.data_ids[dataset_type_node.dimensions]
+                        ),
+                        id_generation_mode=mode,
+                        run=self.output_run,
+                    )
