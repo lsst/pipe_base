@@ -81,7 +81,9 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                             prereq_key = skeleton.add_prerequisite_node(input_ref)
                             skeleton.add_input_edge(quantum_key, prereq_key)
                         else:
-                            input_key = skeleton.add_input_node(input_ref)
+                            input_key = skeleton.add_dataset_node(
+                                read_edge.parent_dataset_type_name, input_ref.dataId
+                            )
                             skeleton.add_input_edge(quantum_key, input_key)
 
                 if read_edge.is_prerequisite:
@@ -101,8 +103,10 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                 if mode := self.dataset_id_modes.get(write_edge.parent_dataset_type_name):
                     skeleton.set_dataset_ref(
                         DatasetRef(
-                            dataset_type_node.dataset_type, self.data_ids[dataset_type_node.dimensions]
+                            dataset_type_node.dataset_type,
+                            self.data_ids[dataset_type_node.dimensions],
+                            run=self.output_run,
+                            id_generation_mode=mode,
                         ),
-                        id_generation_mode=mode,
-                        run=self.output_run,
                     )
+        return skeleton
