@@ -36,18 +36,13 @@ __all__ = "TrivialQuantumGraphBuilder"
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from lsst.daf.butler import (
-    Butler,
-    DatasetIdGenEnum,
-)
+from lsst.daf.butler import Butler, DataCoordinate, DatasetIdGenEnum, DatasetRef, DimensionGroup
 from lsst.utils.timer import timeMethod
 
 from .quantum_graph_builder import QuantumGraphBuilder
 from .quantum_graph_skeleton import QuantumGraphSkeleton
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import DataCoordinate, DatasetRef, DimensionGroup
-
     from .pipeline_graph import PipelineGraph
 
 
