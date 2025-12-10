@@ -46,7 +46,7 @@ from .quantum_graph_builder import QuantumGraphBuilder
 from .quantum_graph_skeleton import QuantumGraphSkeleton
 
 if TYPE_CHECKING:
-    from lsst.daf.butler import DataCoordinate, DatasetRef
+    from lsst.daf.butler import DataCoordinate, DatasetRef, DimensionGroup
 
     from .pipeline_graph import PipelineGraph
 
@@ -69,44 +69,79 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         self.input_refs = input_refs
         self.dataset_id_modes = dataset_id_modes or {}
 
+    def _get_data_id(self, dimensions: DimensionGroup, context: str) -> DataCoordinate:
+        try:
+            return self.data_ids[dimensions]
+        except KeyError as e:
+            e.add_note(context)
+            raise
+
     @timeMethod
     def process_subgraph(self, subgraph: PipelineGraph) -> QuantumGraphSkeleton:
         skeleton = QuantumGraphSkeleton(subgraph.tasks)
         for task_node in subgraph.tasks.values():
-            quantum_key = skeleton.add_quantum_node(task_node.label, self.data_ids[task_node.dimensions])
+            quantum_key = skeleton.add_quantum_node(
+                task_node.label, self._get_data_id(task_node.dimensions, context=f"task {task_node.label!r}")
+            )
             for read_edge in task_node.iter_all_inputs():
                 if (input_refs := self.input_refs.get(read_edge.parent_dataset_type_name)) is not None:
                     for input_ref in input_refs:
                         if read_edge.is_prerequisite:
                             prereq_key = skeleton.add_prerequisite_node(input_ref)
                             skeleton.add_input_edge(quantum_key, prereq_key)
+                            self.log.info(
+                                f"Added prereq {task_node.label}.{read_edge.connection_name} "
+                                f"for {input_ref.dataId} from input_refs"
+                            )
                         else:
                             input_key = skeleton.add_dataset_node(
-                                read_edge.parent_dataset_type_name, input_ref.dataId
+                                read_edge.parent_dataset_type_name,
+                                input_ref.dataId,
+                                ref=input_ref,
                             )
                             skeleton.add_input_edge(quantum_key, input_key)
+                            self.log.info(
+                                f"Added regular input {task_node.label}.{read_edge.connection_name} "
+                                f"for {input_ref.dataId} from input_refs"
+                            )
 
                 if read_edge.is_prerequisite:
                     continue
                 dataset_type_node = subgraph.dataset_types[read_edge.parent_dataset_type_name]
+                data_id = self._get_data_id(
+                    dataset_type_node.dimensions,
+                    context=f"input {task_node.label}.{read_edge.connection_name}",
+                )
                 input_key = skeleton.add_dataset_node(
-                    read_edge.parent_dataset_type_name, self.data_ids[dataset_type_node.dimensions]
+                    read_edge.parent_dataset_type_name,
+                    data_id,
                 )
                 skeleton.add_input_edge(quantum_key, input_key)
+                self.log.info(
+                    f"Added regular input {task_node.label}.{read_edge.connection_name} for {data_id}"
+                )
 
             for write_edge in task_node.iter_all_outputs():
                 dataset_type_node = subgraph.dataset_types[write_edge.parent_dataset_type_name]
-                output_key = skeleton.add_dataset_node(
-                    write_edge.parent_dataset_type_name, self.data_ids[dataset_type_node.dimensions]
+                data_id = self._get_data_id(
+                    dataset_type_node.dimensions,
+                    context=f"output {task_node.label}.{write_edge.connection_name}",
                 )
+                output_key = skeleton.add_dataset_node(write_edge.parent_dataset_type_name, data_id)
                 skeleton.add_output_edge(quantum_key, output_key)
+                self.log.info(f"Added output {task_node.label}.{write_edge.connection_name} for {data_id}")
                 if mode := self.dataset_id_modes.get(write_edge.parent_dataset_type_name):
                     skeleton.set_dataset_ref(
                         DatasetRef(
                             dataset_type_node.dataset_type,
-                            self.data_ids[dataset_type_node.dimensions],
+                            data_id,
                             run=self.output_run,
                             id_generation_mode=mode,
                         ),
                     )
+                    self.log.info(
+                        f"Added ref for output {task_node.label}.{write_edge.connection_name} for "
+                        f"{data_id} with {mode=}"
+                    )
+
         return skeleton
