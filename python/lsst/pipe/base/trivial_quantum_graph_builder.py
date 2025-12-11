@@ -33,7 +33,7 @@ from __future__ import annotations
 
 __all__ = "TrivialQuantumGraphBuilder"
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, final
 
 from lsst.daf.butler import Butler, DataCoordinate, DatasetIdGenEnum, DatasetRef, DimensionGroup
@@ -54,14 +54,14 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         butler: Butler,
         *,
         data_ids: Iterable[DataCoordinate],
-        input_refs: Mapping[str, list[DatasetRef]],
+        input_refs: Mapping[str, Mapping[str, Sequence[DatasetRef]]] | None = None,
         dataset_id_modes: Mapping[str, DatasetIdGenEnum] | None,
         **kwargs: Any,
     ) -> None:
         super().__init__(pipeline_graph, butler, **kwargs)
         self.data_ids = {d.dimensions: d for d in data_ids}
         self.data_ids[self.empty_data_id.dimensions] = self.empty_data_id
-        self.input_refs = input_refs
+        self.input_refs = input_refs or {}
         self.dataset_id_modes = dataset_id_modes or {}
 
     def _get_data_id(self, dimensions: DimensionGroup, context: str) -> DataCoordinate:
@@ -78,8 +78,10 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
             quantum_key = skeleton.add_quantum_node(
                 task_node.label, self._get_data_id(task_node.dimensions, context=f"task {task_node.label!r}")
             )
+            input_refs_for_task = self.input_refs.get(task_node.label, {})
+
             for read_edge in task_node.iter_all_inputs():
-                if (input_refs := self.input_refs.get(read_edge.parent_dataset_type_name)) is not None:
+                if (input_refs := input_refs_for_task.get(read_edge.connection_name)) is not None:
                     for input_ref in input_refs:
                         if read_edge.is_prerequisite:
                             prereq_key = skeleton.add_prerequisite_node(input_ref)
@@ -112,6 +114,11 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                     data_id,
                 )
                 skeleton.add_input_edge(quantum_key, input_key)
+                if subgraph.producer_of(read_edge.parent_dataset_type_name) is None:
+                    if skeleton.get_dataset_ref(input_key) is None:
+                        ref = self.butler.find_dataset(dataset_type_node.dataset_type, data_id)
+                        if ref is not None:
+                            skeleton.set_dataset_ref(ref)
                 self.log.info(
                     f"Added regular input {task_node.label}.{read_edge.connection_name} for {data_id}"
                 )
