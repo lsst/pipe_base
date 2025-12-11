@@ -98,15 +98,20 @@ class BlockingLimitedButler(LimitedButler):
         parent_dataset_type_name = ref.datasetType.nameAndComponent()[0]
         timeout = self._timeouts.get(parent_dataset_type_name, 0.0)
         start = time.time()
+        warned = False
         while True:
             try:
-                self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
+                return self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
             except FileNotFoundError as err:
                 if timeout is not None:
                     elapsed = time.time() - start
                     if elapsed > timeout:
                         err.add_note(f"Timed out after {elapsed:03f}s.")
                         raise
+            if not warned:
+                _LOG.warning(f"Dataset {ref.datasetType} not immediately available for {ref.id}.")
+                warned = True
+            time.sleep(0.5)
 
     def getDeferred(
         self,
@@ -133,6 +138,7 @@ class BlockingLimitedButler(LimitedButler):
             if not remaining:
                 return result
             result.update(self._wrapped.stored_many(remaining))
+            time.sleep(0.5)
 
     def isWriteable(self) -> bool:
         return self._wrapped.isWriteable()
