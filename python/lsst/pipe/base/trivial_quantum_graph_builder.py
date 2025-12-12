@@ -33,7 +33,7 @@ from __future__ import annotations
 
 __all__ = "TrivialQuantumGraphBuilder"
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, final
 
 from lsst.daf.butler import Butler, DataCoordinate, DatasetIdGenEnum, DatasetRef, DimensionGroup
@@ -53,13 +53,13 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         pipeline_graph: PipelineGraph,
         butler: Butler,
         *,
-        data_ids: Iterable[DataCoordinate],
+        data_ids: Mapping[DimensionGroup, DataCoordinate],
         input_refs: Mapping[str, Mapping[str, Sequence[DatasetRef]]] | None = None,
-        dataset_id_modes: Mapping[str, DatasetIdGenEnum] | None,
+        dataset_id_modes: Mapping[str, DatasetIdGenEnum] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(pipeline_graph, butler, **kwargs)
-        self.data_ids = {d.dimensions: d for d in data_ids}
+        self.data_ids = dict(data_ids)
         self.data_ids[self.empty_data_id.dimensions] = self.empty_data_id
         self.input_refs = input_refs or {}
         self.dataset_id_modes = dataset_id_modes or {}
@@ -133,14 +133,14 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                 skeleton.add_output_edge(quantum_key, output_key)
                 self.log.info(f"Added output {task_node.label}.{write_edge.connection_name} for {data_id}")
                 if mode := self.dataset_id_modes.get(write_edge.parent_dataset_type_name):
-                    skeleton.set_dataset_ref(
-                        DatasetRef(
-                            dataset_type_node.dataset_type,
-                            data_id,
-                            run=self.output_run,
-                            id_generation_mode=mode,
-                        ),
+                    ref = DatasetRef(
+                        dataset_type_node.dataset_type,
+                        data_id,
+                        run=self.output_run,
+                        id_generation_mode=mode,
                     )
+                    skeleton.set_dataset_ref(ref)
+                    skeleton.set_output_in_the_way(ref)
                     self.log.info(
                         f"Added ref for output {task_node.label}.{write_edge.connection_name} for "
                         f"{data_id} with {mode=}"
