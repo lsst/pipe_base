@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from lsst.daf.butler.logging import ButlerLogRecords
 
+    from ._task_metadata import TaskMetadata
     from .graph import QuantumGraph
     from .pipeline_graph import TaskNode
     from .quantum_graph import PredictedQuantumGraph
@@ -49,6 +50,21 @@ if TYPE_CHECKING:
 class QuantumExecutionResult(tuple[Quantum, QuantumReport | None]):
     """A result struct that captures information about a single quantum's
     execution.
+
+    Parameters
+    ----------
+    quantum : `lsst.daf.butler.Quantum`
+        Quantum that was executed.
+    report : `.quantum_reports.QuantumReport`
+        Report with basic information about the execution.
+    task_metadata : `TaskMetadata`, optional
+        Metadata saved by the task and executor during execution.
+    skipped_existing : `bool`, optional
+        If `True`, this quantum was not executed because it appeared to have
+        already been executed successfully.
+    adjusted_no_work : `bool`, optional
+        If `True`, this quantum was not executed because the
+        `PipelineTaskConnections.adjustQuanta` hook raised `NoWorkFound`.
 
     Notes
     -----
@@ -62,8 +78,28 @@ class QuantumExecutionResult(tuple[Quantum, QuantumReport | None]):
         cls,
         quantum: Quantum,
         report: QuantumReport | None,
+        *,
+        task_metadata: TaskMetadata | None = None,
+        skipped_existing: bool | None = None,
+        adjusted_no_work: bool | None = None,
     ) -> Self:
         return super().__new__(cls, (quantum, report))
+
+    # We need to define both __init__ and __new__ because tuple inheritance
+    # requires __new__ and numpydoc requires __init__.
+
+    def __init__(
+        self,
+        quantum: Quantum,
+        report: QuantumReport | None,
+        *,
+        task_metadata: TaskMetadata | None = None,
+        skipped_existing: bool | None = None,
+        adjusted_no_work: bool | None = None,
+    ):
+        self._task_metadata = task_metadata
+        self._skipped_existing = skipped_existing
+        self._adjusted_no_work = adjusted_no_work
 
     @property
     def quantum(self) -> Quantum:
@@ -77,6 +113,25 @@ class QuantumExecutionResult(tuple[Quantum, QuantumReport | None]):
         This is `None` if the implementation does not support this feature.
         """
         return self[1]
+
+    @property
+    def task_metadata(self) -> TaskMetadata | None:
+        """Metadata saved by the task and executor during execution."""
+        return self._task_metadata
+
+    @property
+    def skipped_existing(self) -> bool | None:
+        """If `True`, this quantum was not executed because it appeared to have
+        already been executed successfully.
+        """
+        return self._skipped_existing
+
+    @property
+    def adjusted_no_work(self) -> bool | None:
+        """If `True`, this quantum was not executed because the
+        `PipelineTaskConnections.adjustQuanta` hook raised `NoWorkFound`.
+        """
+        return self._adjusted_no_work
 
 
 class QuantumExecutor(ABC):

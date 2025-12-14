@@ -37,7 +37,6 @@ from typing import Any
 
 from lsst.daf.butler import (
     Butler,
-    ButlerMetrics,
     DatasetRef,
     DatasetType,
     LimitedButler,
@@ -167,14 +166,9 @@ class SingleQuantumExecutor(QuantumExecutor):
         log_records: ButlerLogRecords | None = None,
     ) -> QuantumExecutionResult:
         # Docstring inherited from QuantumExecutor.execute
-        assert quantum.dataId is not None, "Quantum DataId cannot be None"
-
         if self._butler is not None:
             self._butler.registry.refresh()
-
-        result = self._execute(task_node, quantum, quantum_id=quantum_id, log_records=log_records)
-        report = QuantumReport(quantumId=quantum_id, dataId=quantum.dataId, taskLabel=task_node.label)
-        return QuantumExecutionResult(result, report)
+        return self._execute(task_node, quantum, quantum_id=quantum_id, log_records=log_records)
 
     def _execute(
         self,
@@ -184,7 +178,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         quantum_id: uuid.UUID | None = None,
         *,
         log_records: ButlerLogRecords | None = None,
-    ) -> Quantum:
+    ) -> QuantumExecutionResult:
         """Execute the quantum.
 
         Internal implementation of `execute()`.
@@ -217,9 +211,10 @@ class SingleQuantumExecutor(QuantumExecutor):
         quantum_id: uuid.UUID | None = None,
         *,
         log_records: ButlerLogRecords | None = None,
-    ) -> Quantum:
+    ) -> QuantumExecutionResult:
         startTime = time.time()
-
+        assert quantum.dataId is not None, "Quantum DataId cannot be None"
+        report = QuantumReport(quantumId=quantum_id, dataId=quantum.dataId, taskLabel=task_node.label)
         if self._butler is not None:
             log_capture = LogCapture.from_full(self._butler)
         else:
@@ -243,7 +238,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                     task_node.label,
                     quantum.dataId,
                 )
-                return quantum
+                return QuantumExecutionResult(quantum, report, skipped_existing=True, adjusted_no_work=False)
             captureLog.store = True
 
             captureLog.extra.previous_process_quanta.extend(self._previous_process_quanta)
@@ -271,7 +266,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                 if self._job_metadata is not None:
                     fullMetadata["job"] = self._job_metadata
                 self._write_metadata(quantum, fullMetadata, task_node, limited_butler)
-                return quantum
+                return QuantumExecutionResult(quantum, report, skipped_existing=False, adjusted_no_work=True)
 
             # enable lsstDebug debugging
             if self._enable_lsst_debug:
@@ -294,9 +289,10 @@ class SingleQuantumExecutor(QuantumExecutor):
             task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
             logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
             try:
-                caveats, outputsPut, butler_metrics = self._run_quantum(
-                    task, quantum, task_node, limited_butler, quantum_id=quantum_id
-                )
+                with limited_butler.record_metrics() as butler_metrics:
+                    caveats, outputsPut = self._run_quantum(
+                        task, quantum, task_node, limited_butler, quantum_id=quantum_id
+                    )
             except Exception as e:
                 _LOG.error(
                     "Execution of task '%s' on quantum %s failed. Exception %s: %s",
@@ -332,7 +328,13 @@ class SingleQuantumExecutor(QuantumExecutor):
                 quantum.dataId,
                 stopTime - startTime,
             )
-        return quantum
+        return QuantumExecutionResult(
+            quantum,
+            report,
+            skipped_existing=False,
+            adjusted_no_work=False,
+            task_metadata=fullMetadata,
+        )
 
     def _check_existing_outputs(
         self,
@@ -535,7 +537,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         /,
         limited_butler: LimitedButler,
         quantum_id: uuid.UUID | None = None,
-    ) -> tuple[QuantumSuccessCaveats, list[uuid.UUID], ButlerMetrics]:
+    ) -> tuple[QuantumSuccessCaveats, list[uuid.UUID]]:
         """Execute task on a single quantum.
 
         Parameters
@@ -558,8 +560,6 @@ class SingleQuantumExecutor(QuantumExecutor):
         ids_put : list[ `uuid.UUID` ]
             Record of all the dataset IDs that were written by this quantum
             being executed.
-        metrics : `lsst.daf.butler.ButlerMetrics`
-            Butler metrics recorded for this quantum.
         """
         flags = QuantumSuccessCaveats.NO_CAVEATS
 
@@ -571,8 +571,7 @@ class SingleQuantumExecutor(QuantumExecutor):
 
         # Call task runQuantum() method.
         try:
-            with limited_butler.record_metrics() as butler_metrics:
-                task.runQuantum(butlerQC, inputRefs, outputRefs)
+            task.runQuantum(butlerQC, inputRefs, outputRefs)
         except NoWorkFound as err:
             # Not an error, just an early exit.
             _LOG.info(
@@ -615,7 +614,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         if not butlerQC.outputsPut == butlerQC.allOutputs:
             flags |= QuantumSuccessCaveats.ANY_OUTPUTS_MISSING
         ids_put = [output[2] for output in butlerQC.outputsPut]
-        return flags, ids_put, butler_metrics
+        return flags, ids_put
 
     def _write_metadata(
         self, quantum: Quantum, metadata: Any, task_node: TaskNode, /, limited_butler: LimitedButler
