@@ -27,21 +27,54 @@
 
 from __future__ import annotations
 
-__all__ = ["QuantumExecutor", "QuantumGraphExecutor"]
+__all__ = ["QuantumExecutionResult", "QuantumExecutor", "QuantumGraphExecutor"]
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
+
+from lsst.daf.butler import Quantum
 
 from .quantum_reports import QuantumReport, Report
 
 if TYPE_CHECKING:
     import uuid
 
-    from lsst.daf.butler import Quantum
-
     from .graph import QuantumGraph
     from .pipeline_graph import TaskNode
     from .quantum_graph import PredictedQuantumGraph
+
+
+class QuantumExecutionResult(tuple[Quantum, QuantumReport | None]):
+    """A result struct that captures information about a single quantum's
+    execution.
+
+    Notes
+    -----
+    For backwards compatibility, this class is a two-element tuple that allows
+    the ``quantum`` and ``report`` attributes to be unpacked.  Additional
+    regular attributes may be added by executors (but the tuple must remain
+    only two elements to enable the current unpacking interface).
+    """
+
+    def __new__(
+        cls,
+        quantum: Quantum,
+        report: QuantumReport | None,
+    ) -> Self:
+        return super().__new__(cls, (quantum, report))
+
+    @property
+    def quantum(self) -> Quantum:
+        """The quantum actually executed."""
+        return self[0]
+
+    @property
+    def report(self) -> QuantumReport | None:
+        """Structure describing the status of the execution of a quantum.
+
+        This is `None` if the implementation does not support this feature.
+        """
+        return self[1]
 
 
 class QuantumExecutor(ABC):
@@ -56,7 +89,7 @@ class QuantumExecutor(ABC):
     @abstractmethod
     def execute(
         self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
-    ) -> tuple[Quantum, QuantumReport | None]:
+    ) -> QuantumExecutionResult:
         """Execute single quantum.
 
         Parameters
@@ -70,12 +103,9 @@ class QuantumExecutor(ABC):
 
         Returns
         -------
-        quantum : `~lsst.daf.butler.Quantum`
-            The quantum actually executed.
-        report : `~.quantum_reports.QuantumReport`
-            Structure describing the status of the execution of a quantum.
-            `None` is returned if implementation does not support this
-            feature.
+        result : `QuantumExecutionResult`
+            Result struct.  May also be unpacked as a 2-tuple (see type
+            documentation).
 
         Notes
         -----

@@ -59,7 +59,7 @@ from .connections import AdjustQuantumHelper
 from .log_capture import LogCapture, _ExecutionLogRecordsExtra
 from .pipeline_graph import TaskNode
 from .pipelineTask import PipelineTask
-from .quantum_graph_executor import QuantumExecutor
+from .quantum_graph_executor import QuantumExecutionResult, QuantumExecutor
 from .quantum_reports import QuantumReport
 from .task import _TASK_FULL_METADATA_TYPE, _TASK_METADATA_TYPE
 from .taskFactory import TaskFactory
@@ -158,7 +158,7 @@ class SingleQuantumExecutor(QuantumExecutor):
 
     def execute(
         self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
-    ) -> tuple[Quantum, QuantumReport | None]:
+    ) -> QuantumExecutionResult:
         # Docstring inherited from QuantumExecutor.execute
         assert quantum.dataId is not None, "Quantum DataId cannot be None"
 
@@ -167,7 +167,7 @@ class SingleQuantumExecutor(QuantumExecutor):
 
         result = self._execute(task_node, quantum, quantum_id=quantum_id)
         report = QuantumReport(quantumId=quantum_id, dataId=quantum.dataId, taskLabel=task_node.label)
-        return result, report
+        return QuantumExecutionResult(result, report)
 
     def _execute(
         self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
