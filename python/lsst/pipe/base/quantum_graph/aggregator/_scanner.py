@@ -52,9 +52,15 @@ from .._predicted import (
     PredictedQuantumDatasetsModel,
     PredictedQuantumGraphReader,
 )
-from .._provenance import ProvenanceInitQuantumModel, ProvenanceQuantumAttemptModel, ProvenanceQuantumModel
+from .._provenance import (
+    ProvenanceInitQuantumModel,
+    ProvenanceQuantumAttemptModel,
+    ProvenanceQuantumModel,
+    ProvenanceQuantumScanData,
+    ProvenanceQuantumScanStatus,
+)
 from ._communicators import ScannerCommunicator
-from ._structs import IngestRequest, InProgressScan, ScanReport, ScanStatus, WriteRequest
+from ._structs import IngestRequest, InProgressScan, ScanReport
 
 
 @dataclasses.dataclass
@@ -211,7 +217,7 @@ class Scanner(AbstractContextManager):
             Scan result struct.
         """
         if (predicted_quantum := self.init_quanta.get(quantum_id)) is not None:
-            result = InProgressScan(predicted_quantum.quantum_id, status=ScanStatus.INIT)
+            result = InProgressScan(predicted_quantum.quantum_id, status=ProvenanceQuantumScanStatus.INIT)
             self.comms.log.debug("Created init scan for %s (%s)", quantum_id, predicted_quantum.task_label)
         else:
             self.reader.read_quantum_datasets([quantum_id])
@@ -222,7 +228,7 @@ class Scanner(AbstractContextManager):
                 predicted_quantum.task_label,
                 predicted_quantum.data_coordinate,
             )
-            result = InProgressScan(predicted_quantum.quantum_id, ScanStatus.INCOMPLETE)
+            result = InProgressScan(predicted_quantum.quantum_id, ProvenanceQuantumScanStatus.INCOMPLETE)
             del self.reader.components.quantum_datasets[quantum_id]
             last_attempt = ProvenanceQuantumAttemptModel()
             if not self._read_log(predicted_quantum, result, last_attempt):
@@ -239,15 +245,15 @@ class Scanner(AbstractContextManager):
                 return result
             last_attempt.attempt = len(result.attempts)
             result.attempts.append(last_attempt)
-        assert result.status is not ScanStatus.INCOMPLETE
-        assert result.status is not ScanStatus.ABANDONED
+        assert result.status is not ProvenanceQuantumScanStatus.INCOMPLETE
+        assert result.status is not ProvenanceQuantumScanStatus.ABANDONED
 
         if len(result.logs.attempts) < len(result.attempts):
             # Logs were not found for this attempt; must have been a hard error
             # that kept the `finally` block from running or otherwise
             # interrupted the writing of the logs.
             result.logs.attempts.append(None)
-            if result.status is ScanStatus.SUCCESSFUL:
+            if result.status is ProvenanceQuantumScanStatus.SUCCESSFUL:
                 # But we found the metadata!  Either that hard error happened
                 # at a very unlucky time (in between those two writes), or
                 # something even weirder happened.
@@ -330,7 +336,7 @@ class Scanner(AbstractContextManager):
 
     def _make_write_request(
         self, predicted_quantum: PredictedQuantumDatasetsModel, result: InProgressScan
-    ) -> WriteRequest:
+    ) -> ProvenanceQuantumScanData:
         """Make a write request from a quantum scan.
 
         Parameters
@@ -342,16 +348,16 @@ class Scanner(AbstractContextManager):
 
         Returns
         -------
-        write_request : `WriteRequest`
+        write_request : `ProvenanceQuantumScanData`
             A request to be sent to the writer.
         """
         quantum: ProvenanceInitQuantumModel | ProvenanceQuantumModel
-        if result.status is ScanStatus.INIT:
+        if result.status is ProvenanceQuantumScanStatus.INIT:
             quantum = ProvenanceInitQuantumModel.from_predicted(predicted_quantum)
         else:
             quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum)
             quantum.attempts = result.attempts
-        request = WriteRequest(
+        request = ProvenanceQuantumScanData(
             result.quantum_id,
             result.status,
             existing_outputs={
@@ -402,12 +408,12 @@ class Scanner(AbstractContextManager):
         except FileNotFoundError:
             result.outputs[ref.id] = False
             if self.comms.config.assume_complete:
-                result.status = ScanStatus.FAILED
+                result.status = ProvenanceQuantumScanStatus.FAILED
             else:
-                result.status = ScanStatus.ABANDONED
+                result.status = ProvenanceQuantumScanStatus.ABANDONED
                 return False
         else:
-            result.status = ScanStatus.SUCCESSFUL
+            result.status = ProvenanceQuantumScanStatus.SUCCESSFUL
             result.outputs[ref.id] = True
             last_attempt.status = QuantumAttemptStatus.SUCCESSFUL
             try:
@@ -461,9 +467,9 @@ class Scanner(AbstractContextManager):
         except FileNotFoundError:
             result.outputs[ref.id] = False
             if self.comms.config.assume_complete:
-                result.status = ScanStatus.FAILED
+                result.status = ProvenanceQuantumScanStatus.FAILED
             else:
-                result.status = ScanStatus.ABANDONED
+                result.status = ProvenanceQuantumScanStatus.ABANDONED
                 return False
         else:
             # Set the attempt's run status to FAILED, since the default is

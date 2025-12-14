@@ -42,6 +42,7 @@ from lsst.utils.usage import get_peak_mem_usage
 from ...graph_walker import GraphWalker
 from ...pipeline_graph import TaskImportMode
 from .._predicted import PredictedQuantumGraphComponents, PredictedQuantumGraphReader
+from .._provenance import ProvenanceQuantumScanData, ProvenanceQuantumScanStatus
 from ._communicators import (
     IngesterCommunicator,
     ScannerCommunicator,
@@ -54,7 +55,7 @@ from ._communicators import (
 from ._config import AggregatorConfig
 from ._ingester import Ingester
 from ._scanner import Scanner
-from ._structs import ScanReport, ScanStatus, WriteRequest
+from ._structs import ScanReport
 from ._writer import Writer
 
 
@@ -126,18 +127,22 @@ class Supervisor:
             Information about the scan.
         """
         match scan_report.status:
-            case ScanStatus.SUCCESSFUL | ScanStatus.INIT:
+            case ProvenanceQuantumScanStatus.SUCCESSFUL | ProvenanceQuantumScanStatus.INIT:
                 self.comms.log.debug("Scan complete for %s: quantum succeeded.", scan_report.quantum_id)
                 self.walker.finish(scan_report.quantum_id)
-            case ScanStatus.FAILED:
+            case ProvenanceQuantumScanStatus.FAILED:
                 self.comms.log.debug("Scan complete for %s: quantum failed.", scan_report.quantum_id)
                 blocked_quanta = self.walker.fail(scan_report.quantum_id)
                 for blocked_quantum_id in blocked_quanta:
                     if self.comms.config.output_path is not None:
-                        self.comms.request_write(WriteRequest(blocked_quantum_id, status=ScanStatus.BLOCKED))
+                        self.comms.request_write(
+                            ProvenanceQuantumScanData(
+                                blocked_quantum_id, status=ProvenanceQuantumScanStatus.BLOCKED
+                            )
+                        )
                     self.comms.progress.scans.update(1)
                 self.comms.progress.quantum_ingests.update(len(blocked_quanta))
-            case ScanStatus.ABANDONED:
+            case ProvenanceQuantumScanStatus.ABANDONED:
                 self.comms.log.debug("Abandoning scan for %s: quantum has not succeeded (yet).")
                 self.walker.fail(scan_report.quantum_id)
                 self.n_abandoned += 1

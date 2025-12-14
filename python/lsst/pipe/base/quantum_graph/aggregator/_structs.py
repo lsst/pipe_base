@@ -31,12 +31,9 @@ __all__ = (
     "InProgressScan",
     "IngestRequest",
     "ScanReport",
-    "ScanStatus",
-    "WriteRequest",
 )
 
 import dataclasses
-import enum
 import uuid
 
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
@@ -46,49 +43,9 @@ from .._predicted import PredictedDatasetModel
 from .._provenance import (
     ProvenanceLogRecordsModel,
     ProvenanceQuantumAttemptModel,
+    ProvenanceQuantumScanStatus,
     ProvenanceTaskMetadataModel,
 )
-
-
-class ScanStatus(enum.Enum):
-    """Status enum for quantum scanning.
-
-    Note that this records the status for the *scanning* which is distinct
-    from the status of the quantum's execution.
-    """
-
-    INCOMPLETE = enum.auto()
-    """The quantum is not necessarily done running, and cannot be scanned
-    conclusively yet.
-    """
-
-    ABANDONED = enum.auto()
-    """The quantum's execution appears to have failed but we cannot rule out
-    the possibility that it could be recovered, but we've also waited long
-    enough (according to `ScannerTimeConfigDict.retry_timeout`) that it's time
-    to stop trying for now.
-
-    This state means a later run with `ScannerConfig.assume_complete` is
-    required.
-    """
-
-    SUCCESSFUL = enum.auto()
-    """The quantum was conclusively scanned and was executed successfully,
-    unblocking scans for downstream quanta.
-    """
-
-    FAILED = enum.auto()
-    """The quantum was conclusively scanned and failed execution, blocking
-    scans for downstream quanta.
-    """
-
-    BLOCKED = enum.auto()
-    """A quantum upstream of this one failed."""
-
-    INIT = enum.auto()
-    """Init quanta need special handling, because they don't have logs and
-    metadata.
-    """
 
 
 @dataclasses.dataclass
@@ -98,7 +55,7 @@ class ScanReport:
     quantum_id: uuid.UUID
     """Unique ID of the quantum."""
 
-    status: ScanStatus
+    status: ProvenanceQuantumScanStatus
     """Combined status of the scan and the execution of the quantum."""
 
 
@@ -126,7 +83,7 @@ class InProgressScan:
     quantum_id: uuid.UUID
     """Unique ID for the quantum."""
 
-    status: ScanStatus
+    status: ProvenanceQuantumScanStatus
     """Combined status for the scan and the execution of the quantum."""
 
     attempts: list[ProvenanceQuantumAttemptModel] = dataclasses.field(default_factory=list)
@@ -143,35 +100,4 @@ class InProgressScan:
 
     logs: ProvenanceLogRecordsModel = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
     """Log records for each attempt.
-    """
-
-
-@dataclasses.dataclass
-class WriteRequest:
-    """A struct that represents a request to write provenance for a quantum."""
-
-    quantum_id: uuid.UUID
-    """Unique ID for the quantum."""
-
-    status: ScanStatus
-    """Combined status for the scan and the execution of the quantum."""
-
-    existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
-    """Unique IDs of the output datasets that were actually written."""
-
-    quantum: bytes = b""
-    """Serialized quantum provenance model.
-
-    This may be empty for quanta that had no attempts.
-    """
-
-    metadata: bytes = b""
-    """Serialized task metadata."""
-
-    logs: bytes = b""
-    """Serialized logs."""
-
-    is_compressed: bool = False
-    """Whether the `quantum`, `metadata`, and `log` attributes are
-    compressed.
     """

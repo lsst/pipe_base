@@ -35,19 +35,24 @@ __all__ = (
     "ProvenanceLogRecordsModel",
     "ProvenanceQuantumGraph",
     "ProvenanceQuantumGraphReader",
+    "ProvenanceQuantumGraphWriter",
     "ProvenanceQuantumInfo",
     "ProvenanceQuantumModel",
+    "ProvenanceQuantumScanData",
+    "ProvenanceQuantumScanStatus",
     "ProvenanceTaskMetadataModel",
 )
 
 
 import dataclasses
+import enum
+import itertools
 import sys
 import uuid
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, TypedDict
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import ExitStack, contextmanager
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, TypeVar
 
 import astropy.table
 import networkx
@@ -57,15 +62,19 @@ import pydantic
 from lsst.daf.butler import DataCoordinate
 from lsst.daf.butler.logging import ButlerLogRecord, ButlerLogRecords
 from lsst.resources import ResourcePathExpression
+from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.packages import Packages
 
+from .. import automatic_connection_constants as acc
 from .._status import ExceptionInfo, QuantumAttemptStatus, QuantumSuccessCaveats
 from .._task_metadata import TaskMetadata
+from ..log_on_close import LogOnClose
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
 from ..resource_usage import QuantumResourceUsage
 from ._common import (
     BaseQuantumGraph,
     BaseQuantumGraphReader,
+    BaseQuantumGraphWriter,
     ConnectionName,
     DataCoordinateValues,
     DatasetInfo,
@@ -74,8 +83,19 @@ from ._common import (
     QuantumInfo,
     TaskLabel,
 )
-from ._multiblock import MultiblockReader
-from ._predicted import PredictedDatasetModel, PredictedQuantumDatasetsModel
+from ._multiblock import Compressor, MultiblockReader, MultiblockWriter
+from ._predicted import (
+    PredictedDatasetModel,
+    PredictedQuantumDatasetsModel,
+    PredictedQuantumGraph,
+    PredictedQuantumGraphComponents,
+)
+
+_T = TypeVar("_T")
+
+LoopWrapper: TypeAlias = Callable[[Iterable[_T]], Iterable[_T]]
+
+_LOG = getLogger(__file__)
 
 DATASET_ADDRESS_INDEX = 0
 QUANTUM_ADDRESS_INDEX = 1
@@ -86,6 +106,10 @@ DATASET_MB_NAME = "datasets"
 QUANTUM_MB_NAME = "quanta"
 LOG_MB_NAME = "logs"
 METADATA_MB_NAME = "metadata"
+
+
+def pass_through(arg: _T) -> _T:
+    return arg
 
 
 class ProvenanceDatasetInfo(DatasetInfo):
@@ -1350,3 +1374,324 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
         """Fetch package version information."""
         data = self._read_single_block_raw("packages")
         return Packages.fromBytes(data, format="json")
+
+
+class ProvenanceQuantumGraphWriter:
+    """A struct of low-level writer objects for the main components of a
+    provenance quantum graph.
+
+    Parameters
+    ----------
+    output_path : `str`
+        Path to write the graph to.
+    exit_stack : `contextlib.ExitStack`
+        Object that can be used to manage multiple context managers.
+    log_on_close : `LogOnClose`
+        Factory for context managers that log when closed.
+    predicted : `.PredictedQuantumGraphComponents`
+        Components of the predicted graph.
+    zstd_level : `int`, optional
+        Compression level.
+    cdict_data : `bytes` or `None`, optional
+        Bytes representation of the compression dictionary used by the
+        compressor.
+    loop_wrapper : `~collections.abc.Callable`, optional
+        A callable that takes an iterable and returns an equivalent one, to be
+        used in all potentially-large loops.  This can be used to add progress
+        reporting or check for cancelation signals.
+    log : `LsstLogAdapter`, optional
+        Logger to use for debug messages.
+    """
+
+    def __init__(
+        self,
+        output_path: str,
+        *,
+        exit_stack: ExitStack,
+        log_on_close: LogOnClose,
+        predicted: PredictedQuantumGraphComponents | PredictedQuantumGraph,
+        zstd_level: int = 10,
+        cdict_data: bytes | None = None,
+        loop_wrapper: LoopWrapper = pass_through,
+        log: LsstLogAdapter | None = None,
+    ) -> None:
+        header = predicted.header.model_copy()
+        header.graph_type = "provenance"
+        if log is None:
+            log = _LOG
+        self.log = log
+        self._base_writer = exit_stack.enter_context(
+            log_on_close.wrap(
+                BaseQuantumGraphWriter.open(
+                    output_path,
+                    header,
+                    predicted.pipeline_graph,
+                    address_filename="nodes",
+                    zstd_level=zstd_level,
+                    cdict_data=cdict_data,
+                ),
+                "Finishing writing provenance quantum graph.",
+            )
+        )
+        self._base_writer.address_writer.addresses = [{}, {}, {}, {}]
+        self._log_writer = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self._base_writer.zf, LOG_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying logs into zip archive.",
+            ),
+        )
+        self._base_writer.address_writer.addresses[LOG_ADDRESS_INDEX] = self._log_writer.addresses
+        self._metadata_writer = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self._base_writer.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying metadata into zip archive.",
+            )
+        )
+        self._base_writer.address_writer.addresses[METADATA_ADDRESS_INDEX] = self._metadata_writer.addresses
+        self._dataset_writer = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self._base_writer.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying dataset provenance into zip archive.",
+            )
+        )
+        self._base_writer.address_writer.addresses[DATASET_ADDRESS_INDEX] = self._dataset_writer.addresses
+        self._quantum_writer = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self._base_writer.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying quantum provenance into zip archive.",
+            )
+        )
+        self._base_writer.address_writer.addresses[QUANTUM_ADDRESS_INDEX] = self._quantum_writer.addresses
+        self._init_predicted_quanta(predicted)
+        self._populate_xgraph_and_inputs(loop_wrapper)
+        self._existing_init_outputs: set[uuid.UUID] = set()
+
+    def _init_predicted_quanta(
+        self, predicted: PredictedQuantumGraph | PredictedQuantumGraphComponents
+    ) -> None:
+        self._predicted_init_quanta: list[PredictedQuantumDatasetsModel] = []
+        self._predicted_quanta: dict[uuid.UUID, PredictedQuantumDatasetsModel] = {}
+        if isinstance(predicted, PredictedQuantumGraph):
+            self._predicted_init_quanta.extend(predicted._init_quanta.values())
+            self._predicted_quanta.update(predicted._quantum_datasets)
+        else:
+            self._predicted_init_quanta.extend(predicted.init_quanta.root)
+            self._predicted_quanta.update(predicted.quantum_datasets)
+        self._predicted_quanta.update({q.quantum_id: q for q in self._predicted_init_quanta})
+
+    def _populate_xgraph_and_inputs(self, loop_wrapper: LoopWrapper = pass_through) -> None:
+        self._xgraph = networkx.DiGraph()
+        self._overall_inputs: dict[uuid.UUID, PredictedDatasetModel] = {}
+        output_dataset_ids: set[uuid.UUID] = set()
+        for predicted_quantum in loop_wrapper(self._predicted_quanta.values()):
+            if not predicted_quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
+            output_dataset_ids.update(predicted_quantum.iter_output_dataset_ids())
+        for predicted_quantum in loop_wrapper(self._predicted_quanta.values()):
+            if not predicted_quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
+            for predicted_input in itertools.chain.from_iterable(predicted_quantum.inputs.values()):
+                self._xgraph.add_edge(predicted_input.dataset_id, predicted_quantum.quantum_id)
+                if predicted_input.dataset_id not in output_dataset_ids:
+                    self._overall_inputs.setdefault(predicted_input.dataset_id, predicted_input)
+            for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+                self._xgraph.add_edge(predicted_quantum.quantum_id, predicted_output.dataset_id)
+
+    @property
+    def compressor(self) -> Compressor:
+        """Object that should be used to compress all JSON blocks."""
+        return self._base_writer.compressor
+
+    def write_packages(self) -> None:
+        """Write package version information to the provenance graph."""
+        packages = Packages.fromSystem(include_all=True)
+        data = packages.toBytes("json")
+        self._base_writer.write_single_block("packages", data)
+
+    def write_overall_inputs(self, loop_wrapper: LoopWrapper = pass_through) -> None:
+        """Write provenance for overall-input datasets.
+
+        Parameters
+        ----------
+        loop_wrapper : `~collections.abc.Callable`, optional
+            A callable that takes an iterable and returns an equivalent one, to
+            be used in all potentially-large loops.  This can be used to add
+            progress reporting or check for cancelation signals.
+        """
+        for predicted_input in loop_wrapper(self._overall_inputs.values()):
+            if predicted_input.dataset_id not in self._dataset_writer.addresses:
+                self._dataset_writer.write_model(
+                    predicted_input.dataset_id,
+                    ProvenanceDatasetModel.from_predicted(
+                        predicted_input,
+                        producer=None,
+                        consumers=self._xgraph.successors(predicted_input.dataset_id),
+                    ),
+                    self.compressor,
+                )
+        del self._overall_inputs
+
+    def write_init_outputs(self, assume_existence: bool = True) -> None:
+        """Write provenance for init-output datasets and init-quanta.
+
+        Parameters
+        ----------
+        assume_existence : `bool`, optional
+            If `True`, just assume all init-outputs exist.
+        """
+        init_quanta = ProvenanceInitQuantaModel()
+        for predicted_init_quantum in self._predicted_init_quanta:
+            if not predicted_init_quantum.task_label:
+                # Skip the 'packages' producer quantum.
+                continue
+            for predicted_output in itertools.chain.from_iterable(predicted_init_quantum.outputs.values()):
+                provenance_output = ProvenanceDatasetModel.from_predicted(
+                    predicted_output,
+                    producer=predicted_init_quantum.quantum_id,
+                    consumers=self._xgraph.successors(predicted_output.dataset_id),
+                )
+                provenance_output.produced = assume_existence or (
+                    provenance_output.dataset_id in self._existing_init_outputs
+                )
+                self._dataset_writer.write_model(
+                    provenance_output.dataset_id, provenance_output, self.compressor
+                )
+            init_quanta.root.append(ProvenanceInitQuantumModel.from_predicted(predicted_init_quantum))
+        self._base_writer.write_single_model("init_quanta", init_quanta)
+
+    def write_scan_data(self, scan_data: ProvenanceQuantumScanData) -> None:
+        """Write the output of a quantum provenance scan to disk.
+
+        Parameters
+        ----------
+        scan_data : `ProvenanceQuantumScanData`
+            Result of a quantum provenance scan.
+        """
+        if scan_data.status is ProvenanceQuantumScanStatus.INIT:
+            self.log.debug("Handling init-output scan for %s.", scan_data.quantum_id)
+            self._existing_init_outputs.update(scan_data.existing_outputs)
+            return
+        self.log.debug("Handling quantum scan for %s.", scan_data.quantum_id)
+        # We shouldn't need this predicted quantum after this method runs; pop
+        # from the dict it in the hopes that'll free up some memory when we're
+        # done.
+        predicted_quantum = self._predicted_quanta.pop(scan_data.quantum_id)
+        outputs: dict[uuid.UUID, bytes] = {}
+        for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+            provenance_output = ProvenanceDatasetModel.from_predicted(
+                predicted_output,
+                producer=predicted_quantum.quantum_id,
+                consumers=self._xgraph.successors(predicted_output.dataset_id),
+            )
+            provenance_output.produced = provenance_output.dataset_id in scan_data.existing_outputs
+            outputs[provenance_output.dataset_id] = self.compressor.compress(
+                provenance_output.model_dump_json().encode()
+            )
+        if not scan_data.quantum:
+            scan_data.quantum = (
+                ProvenanceQuantumModel.from_predicted(predicted_quantum).model_dump_json().encode()
+            )
+            if scan_data.is_compressed:
+                scan_data.quantum = self.compressor.compress(scan_data.quantum)
+        if not scan_data.is_compressed:
+            scan_data.quantum = self.compressor.compress(scan_data.quantum)
+            if scan_data.metadata:
+                scan_data.metadata = self.compressor.compress(scan_data.metadata)
+            if scan_data.logs:
+                scan_data.logs = self.compressor.compress(scan_data.logs)
+        self.log.debug("Writing quantum %s.", scan_data.quantum_id)
+        self._quantum_writer.write_bytes(scan_data.quantum_id, scan_data.quantum)
+        for dataset_id, dataset_data in outputs.items():
+            self._dataset_writer.write_bytes(dataset_id, dataset_data)
+        if scan_data.metadata:
+            (metadata_output,) = predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
+            address = self._metadata_writer.write_bytes(scan_data.quantum_id, scan_data.metadata)
+            self._metadata_writer.addresses[metadata_output.dataset_id] = address
+        if scan_data.logs:
+            (log_output,) = predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
+            address = self._log_writer.write_bytes(scan_data.quantum_id, scan_data.logs)
+            self._log_writer.addresses[log_output.dataset_id] = address
+
+
+class ProvenanceQuantumScanStatus(enum.Enum):
+    """Status enum for quantum scanning.
+
+    Note that this records the status for the *scanning* which is distinct
+    from the status of the quantum's execution.
+    """
+
+    INCOMPLETE = enum.auto()
+    """The quantum is not necessarily done running, and cannot be scanned
+    conclusively yet.
+    """
+
+    ABANDONED = enum.auto()
+    """The quantum's execution appears to have failed but we cannot rule out
+    the possibility that it could be recovered, but we've also waited long
+    enough (according to `ScannerTimeConfigDict.retry_timeout`) that it's time
+    to stop trying for now.
+
+    This state means a later run with `ScannerConfig.assume_complete` is
+    required.
+    """
+
+    SUCCESSFUL = enum.auto()
+    """The quantum was conclusively scanned and was executed successfully,
+    unblocking scans for downstream quanta.
+    """
+
+    FAILED = enum.auto()
+    """The quantum was conclusively scanned and failed execution, blocking
+    scans for downstream quanta.
+    """
+
+    BLOCKED = enum.auto()
+    """A quantum upstream of this one failed."""
+
+    INIT = enum.auto()
+    """Init quanta need special handling, because they don't have logs and
+    metadata.
+    """
+
+
+@dataclasses.dataclass
+class ProvenanceQuantumScanData:
+    """A struct that represents ready-for-serialization provenance information
+    for a single quantum.
+    """
+
+    quantum_id: uuid.UUID
+    """Unique ID for the quantum."""
+
+    status: ProvenanceQuantumScanStatus
+    """Combined status for the scan and the execution of the quantum."""
+
+    existing_outputs: set[uuid.UUID] = dataclasses.field(default_factory=set)
+    """Unique IDs of the output datasets that were actually written."""
+
+    quantum: bytes = b""
+    """Serialized quantum provenance model.
+
+    This may be empty for quanta that had no attempts.
+    """
+
+    metadata: bytes = b""
+    """Serialized task metadata."""
+
+    logs: bytes = b""
+    """Serialized logs."""
+
+    is_compressed: bool = False
+    """Whether the `quantum`, `metadata`, and `log` attributes are
+    compressed.
+    """
