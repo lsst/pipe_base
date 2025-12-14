@@ -39,6 +39,8 @@ from .quantum_reports import QuantumReport, Report
 if TYPE_CHECKING:
     import uuid
 
+    from lsst.daf.butler.logging import ButlerLogRecords
+
     from .graph import QuantumGraph
     from .pipeline_graph import TaskNode
     from .quantum_graph import PredictedQuantumGraph
@@ -88,7 +90,13 @@ class QuantumExecutor(ABC):
 
     @abstractmethod
     def execute(
-        self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
+        self,
+        task_node: TaskNode,
+        /,
+        quantum: Quantum,
+        quantum_id: uuid.UUID | None = None,
+        *,
+        log_records: ButlerLogRecords | None = None,
     ) -> QuantumExecutionResult:
         """Execute single quantum.
 
@@ -100,6 +108,12 @@ class QuantumExecutor(ABC):
             Quantum for this execution.
         quantum_id : `uuid.UUID` or `None`, optional
             The ID of the quantum to be executed.
+        log_records : `lsst.daf.butler.ButlerLogRecords`, optional
+            Container that should be used to store logs in memory before
+            writing them to the butler.  This disables streaming log (since
+            we'd have to store them in memory anyway), but it permits the
+            caller to prepend logs to be stored in the butler and allows task
+            logs to be inspected by the caller after execution is complete.
 
         Returns
         -------

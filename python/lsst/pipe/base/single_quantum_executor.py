@@ -44,6 +44,7 @@ from lsst.daf.butler import (
     NamedKeyDict,
     Quantum,
 )
+from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.utils.introspection import get_full_type_name
 from lsst.utils.timer import logInfo
 
@@ -157,7 +158,13 @@ class SingleQuantumExecutor(QuantumExecutor):
         self._previous_process_quanta: list[uuid.UUID] = []
 
     def execute(
-        self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
+        self,
+        task_node: TaskNode,
+        /,
+        quantum: Quantum,
+        quantum_id: uuid.UUID | None = None,
+        *,
+        log_records: ButlerLogRecords | None = None,
     ) -> QuantumExecutionResult:
         # Docstring inherited from QuantumExecutor.execute
         assert quantum.dataId is not None, "Quantum DataId cannot be None"
@@ -165,12 +172,18 @@ class SingleQuantumExecutor(QuantumExecutor):
         if self._butler is not None:
             self._butler.registry.refresh()
 
-        result = self._execute(task_node, quantum, quantum_id=quantum_id)
+        result = self._execute(task_node, quantum, quantum_id=quantum_id, log_records=log_records)
         report = QuantumReport(quantumId=quantum_id, dataId=quantum.dataId, taskLabel=task_node.label)
         return QuantumExecutionResult(result, report)
 
     def _execute(
-        self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
+        self,
+        task_node: TaskNode,
+        /,
+        quantum: Quantum,
+        quantum_id: uuid.UUID | None = None,
+        *,
+        log_records: ButlerLogRecords | None = None,
     ) -> Quantum:
         """Execute the quantum.
 
@@ -189,7 +202,7 @@ class SingleQuantumExecutor(QuantumExecutor):
 
         try:
             return self._execute_with_limited_butler(
-                task_node, limited_butler, quantum=quantum, quantum_id=quantum_id
+                task_node, limited_butler, quantum=quantum, quantum_id=quantum_id, log_records=log_records
             )
         finally:
             if used_butler_factory:
@@ -202,6 +215,8 @@ class SingleQuantumExecutor(QuantumExecutor):
         /,
         quantum: Quantum,
         quantum_id: uuid.UUID | None = None,
+        *,
+        log_records: ButlerLogRecords | None = None,
     ) -> Quantum:
         startTime = time.time()
 
@@ -209,7 +224,7 @@ class SingleQuantumExecutor(QuantumExecutor):
             log_capture = LogCapture.from_full(self._butler)
         else:
             log_capture = LogCapture.from_limited(limited_butler)
-        with log_capture.capture_logging(task_node, quantum) as captureLog:
+        with log_capture.capture_logging(task_node, quantum, records=log_records) as captureLog:
             # Save detailed resource usage before task start to metadata.
             quantumMetadata = _TASK_METADATA_TYPE()
             logInfo(None, "prep", metadata=quantumMetadata)  # type: ignore[arg-type]

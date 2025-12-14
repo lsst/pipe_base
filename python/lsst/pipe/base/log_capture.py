@@ -163,7 +163,9 @@ class LogCapture:
         return cls(butler, butler)
 
     @contextmanager
-    def capture_logging(self, task_node: TaskNode, /, quantum: Quantum) -> Iterator[_LogCaptureContext]:
+    def capture_logging(
+        self, task_node: TaskNode, /, quantum: Quantum, records: ButlerLogRecords | None = None
+    ) -> Iterator[_LogCaptureContext]:
         """Configure logging system to capture logs for execution of this task.
 
         Parameters
@@ -172,6 +174,9 @@ class LogCapture:
             The task definition.
         quantum : `~lsst.daf.butler.Quantum`
             Single Quantum instance.
+        records : `lsst.daf.butler.logging.ButlerLogRecords`, optional
+            Log record container to append to and save.  If provided, streaming
+            mode is disabled (since we'll be saving logs in memory anyway).
 
         Notes
         -----
@@ -213,7 +218,7 @@ class LogCapture:
                 ) from exc
             # Either accumulate into ButlerLogRecords or stream JSON records to
             # file and ingest that (ingest is possible only with full butler).
-            if self.stream_json_logs and self.full_butler is not None:
+            if self.stream_json_logs and self.full_butler is not None and records is None:
                 with TemporaryForIngest(self.full_butler, ref) as temporary:
                     log_handler_file = FileHandler(temporary.ospath)
                     log_handler_file.setFormatter(JsonLogFormatter())
@@ -236,7 +241,7 @@ class LogCapture:
                             temporary.ingest()
 
             else:
-                log_handler_memory = ButlerLogRecordHandler()
+                log_handler_memory = ButlerLogRecordHandler(records)
                 logging.getLogger().addHandler(log_handler_memory)
 
                 try:
@@ -255,7 +260,6 @@ class LogCapture:
                     logging.getLogger().removeHandler(log_handler_memory)
                     if ctx.store:
                         self._store_log_records(quantum, log_dataset_name, log_handler_memory)
-                    log_handler_memory.records.clear()
 
         else:
             with ButlerMDC.set_mdc(mdc):
