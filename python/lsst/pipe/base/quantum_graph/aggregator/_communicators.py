@@ -51,12 +51,12 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import AbstractContextManager, ExitStack, contextmanager
+from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
 
-from lsst.utils.logging import VERBOSE, LsstLogAdapter
+from lsst.utils.logging import LsstLogAdapter
 
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
@@ -621,6 +621,11 @@ class WorkerCommunicator:
         self._exit_stack.__exit__(exc_type, exc_value, traceback)
         return True
 
+    @property
+    def exit_stack(self) -> ExitStack:
+        """A `contextlib.ExitStack` tied to the communicator."""
+        return self._exit_stack
+
     def log_progress(self, level: int, message: str) -> None:
         """Send a high-level log message to the supervisor.
 
@@ -632,44 +637,6 @@ class WorkerCommunicator:
             Log message.
         """
         self._reports.put(_ProgressLog(message=message, level=level), block=False)
-
-    def enter(
-        self,
-        cm: AbstractContextManager[_T],
-        on_close: str | None = None,
-        level: int = VERBOSE,
-        is_progress_log: bool = False,
-    ) -> _T:
-        """Enter a context manager that will be exited when the communicator's
-        context is exited.
-
-        Parameters
-        ----------
-        cm : `contextlib.AbstractContextManager`
-            A context manager to enter.
-        on_close : `str`, optional
-            A log message to emit (on the worker's logger) just before the
-            given context manager is exited.  This can be used to indicate
-            what's going on when an ``__exit__`` implementation has a lot of
-            work to do (e.g. moving a large file into a zip archive).
-        level : `int`, optional
-            Level for the ``on_close`` log message.
-        is_progress_log : `bool`, optional
-            If `True`, send the ``on_close`` message to the supervisor via
-            `log_progress` as well as the worker's logger.
-        """
-        if on_close is None:
-            return self._exit_stack.enter_context(cm)
-
-        @contextmanager
-        def wrapper() -> Iterator[_T]:
-            with cm as result:
-                yield result
-                self.log.log(level, on_close)
-                if is_progress_log:
-                    self.log_progress(level, on_close)
-
-        return self._exit_stack.enter_context(wrapper())
 
     def check_for_cancel(self) -> None:
         """Check for a cancel signal from the supervisor and raise

@@ -94,7 +94,7 @@ class Scanner(AbstractContextManager):
         if self.comms.config.mock_storage_classes:
             import lsst.pipe.base.tests.mocks  # noqa: F401
         self.comms.log.verbose("Reading from predicted quantum graph.")
-        self.reader = self.comms.enter(
+        self.reader = self.comms.exit_stack.enter_context(
             PredictedQuantumGraphReader.open(self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT)
         )
         self.reader.read_dimension_data()

@@ -34,6 +34,7 @@ import itertools
 import logging
 import operator
 import uuid
+from contextlib import ExitStack
 from typing import TypeVar
 
 import networkx
@@ -42,6 +43,7 @@ import zstandard
 from lsst.utils.packages import Packages
 
 from ... import automatic_connection_constants as acc
+from ...log_on_close import LogOnClose
 from ...pipeline_graph import TaskImportMode
 from .._common import BaseQuantumGraphWriter
 from .._multiblock import Compressor, MultiblockWriter
@@ -71,8 +73,12 @@ class _DataWriters:
 
     Parameters
     ----------
-    comms : `WriterCommunicator`
-        Communicator helper object for the writer.
+    output_path : `str`
+        Path to write the graph to.
+    exit_stack : `contextlib.ExitStack`
+        Object that can be used to manage multiple context managers.
+    log_on_close : `LogOnClose`
+        Factory for context managers that log when closed.
     predicted : `.PredictedQuantumGraphComponents`
         Components of the predicted graph.
     indices : `dict` [ `uuid.UUID`, `int` ]
@@ -87,51 +93,63 @@ class _DataWriters:
 
     def __init__(
         self,
-        comms: WriterCommunicator,
+        output_path: str,
+        exit_stack: ExitStack,
+        log_on_close: LogOnClose,
         predicted: PredictedQuantumGraphComponents,
         indices: dict[uuid.UUID, int],
         compressor: Compressor,
         cdict_data: bytes | None = None,
     ) -> None:
-        assert comms.config.output_path is not None
         header = predicted.header.model_copy()
         header.graph_type = "provenance"
-        self.graph = comms.enter(
-            BaseQuantumGraphWriter.open(
-                comms.config.output_path,
-                header,
-                predicted.pipeline_graph,
-                indices,
-                address_filename="nodes",
-                compressor=compressor,
-                cdict_data=cdict_data,
-            ),
-            on_close="Finishing writing provenance quantum graph.",
-            is_progress_log=True,
+        self.graph = exit_stack.enter_context(
+            log_on_close.wrap(
+                BaseQuantumGraphWriter.open(
+                    output_path,
+                    header,
+                    predicted.pipeline_graph,
+                    indices,
+                    address_filename="nodes",
+                    compressor=compressor,
+                    cdict_data=cdict_data,
+                ),
+                "Finishing writing provenance quantum graph.",
+            )
         )
         self.graph.address_writer.addresses = [{}, {}, {}, {}]
-        self.logs = comms.enter(
-            MultiblockWriter.open_in_zip(self.graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True),
-            on_close="Copying logs into zip archive.",
-            is_progress_log=True,
+        self.logs = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(self.graph.zf, LOG_MB_NAME, header.int_size, use_tempfile=True),
+                "Copying logs into zip archive.",
+            ),
         )
         self.graph.address_writer.addresses[LOG_ADDRESS_INDEX] = self.logs.addresses
-        self.metadata = comms.enter(
-            MultiblockWriter.open_in_zip(self.graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True),
-            on_close="Copying metadata into zip archive.",
-            is_progress_log=True,
+        self.metadata = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self.graph.zf, METADATA_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying metadata into zip archive.",
+            )
         )
         self.graph.address_writer.addresses[METADATA_ADDRESS_INDEX] = self.metadata.addresses
-        self.datasets = comms.enter(
-            MultiblockWriter.open_in_zip(self.graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True),
-            on_close="Copying dataset provenance into zip archive.",
-            is_progress_log=True,
+        self.datasets = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self.graph.zf, DATASET_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying dataset provenance into zip archive.",
+            )
         )
         self.graph.address_writer.addresses[DATASET_ADDRESS_INDEX] = self.datasets.addresses
-        self.quanta = comms.enter(
-            MultiblockWriter.open_in_zip(self.graph.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True),
-            on_close="Copying quantum provenance into zip archive.",
-            is_progress_log=True,
+        self.quanta = exit_stack.enter_context(
+            log_on_close.wrap(
+                MultiblockWriter.open_in_zip(
+                    self.graph.zf, QUANTUM_MB_NAME, header.int_size, use_tempfile=True
+                ),
+                "Copying quantum provenance into zip archive.",
+            )
         )
         self.graph.address_writer.addresses[QUANTUM_ADDRESS_INDEX] = self.quanta.addresses
 
@@ -325,7 +343,9 @@ class Writer:
         assert self.comms.config.output_path is not None
         self.comms.log.info("Opening output files.")
         data_writers = _DataWriters(
-            self.comms,
+            self.comms.config.output_path,
+            self.comms.exit_stack,
+            LogOnClose(self.comms.log_progress),
             self.predicted,
             self.indices,
             compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
