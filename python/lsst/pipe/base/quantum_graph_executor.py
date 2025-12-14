@@ -202,7 +202,7 @@ class QuantumGraphExecutor(ABC):
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
+        graph : `.QuantumGraph` or `.quantum_graph.PredictedQuantumGraph`
             Execution graph.
         """
         raise NotImplementedError()
