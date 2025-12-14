@@ -269,8 +269,23 @@ class Scanner(AbstractContextManager):
             "the scanner."
         )
         # Scan for output dataset existence, skipping any the metadata reported
-        # on as well as and the metadata and logs themselves (since we just
-        # checked those).
+        # on as well the metadata and logs themselves (since we just checked
+        # those).
+        try:
+            outputs_put = result.metadata.attempts[-1]["quantum"].getArray("outputs")  # type: ignore[index]
+        except (
+            IndexError,  # metadata.attempts is empty
+            TypeError,  # metadata.attempts[-1] is None
+            LookupError,  # no 'quantum' entry in metadata or 'outputs' in that
+        ):
+            pass
+        else:
+            for id_str in ensure_iterable(outputs_put):
+                result.outputs[uuid.UUID(id_str)] = True
+            # If the metadata told us what it wrote, anything not in that
+            # list was not written.
+            for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+                result.outputs.setdefault(predicted_output.dataset_id, False)
         for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
             if predicted_output.dataset_id not in result.outputs:
                 result.outputs[predicted_output.dataset_id] = self.scan_dataset(predicted_output)
@@ -408,16 +423,6 @@ class Scanner(AbstractContextManager):
                 )
             except LookupError:
                 pass
-            try:
-                for id_str in ensure_iterable(metadata["quantum"].getArray("outputs")):
-                    result.outputs[uuid.UUID(id_str)]
-            except LookupError:
-                pass
-            else:
-                # If the metadata told us what it wrote, anything not in that
-                # list was not written.
-                for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
-                    result.outputs.setdefault(predicted_output.dataset_id, False)
             last_attempt.resource_usage = QuantumResourceUsage.from_task_metadata(metadata)
             result.metadata.attempts.append(metadata)
         return True
