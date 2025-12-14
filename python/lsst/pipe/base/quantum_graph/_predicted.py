@@ -1818,12 +1818,10 @@ class PredictedQuantumGraphComponents:
             else:
                 cdict_data = cdict.as_bytes()
         compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
-        indices = {quantum_id: n for n, quantum_id in enumerate(sorted(self.quantum_datasets.keys()))}
         with BaseQuantumGraphWriter.open(
             uri,
             header=self.header,
             pipeline_graph=self.pipeline_graph,
-            indices=indices,
             address_filename="quanta",
             compressor=compressor,
             cdict_data=cdict_data,

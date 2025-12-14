@@ -205,13 +205,6 @@ class AddressRow:
 class AddressWriter:
     """A helper object for writing address files for multi-block files."""
 
-    indices: dict[uuid.UUID, int] = dataclasses.field(default_factory=dict)
-    """Mapping from UUID to internal integer ID.
-
-    The internal integer ID must always correspond to the index into the
-    sorted list of all UUIDs, but this `dict` need not be sorted itself.
-    """
-
     addresses: list[dict[uuid.UUID, Address]] = dataclasses.field(default_factory=list)
     """Addresses to store with each UUID.
 
@@ -229,18 +222,15 @@ class AddressWriter:
         int_size : `int`
             Number of bytes to use for all integers.
         """
-        for n, address_map in enumerate(self.addresses):
-            if not self.indices.keys() >= address_map.keys():
-                raise AssertionError(
-                    f"Logic bug in quantum graph I/O: address map {n} of {len(self.addresses)} has IDs "
-                    f"{address_map.keys() - self.indices.keys()} not in the index map."
-                )
+        indices: set[uuid.UUID] = set()
+        for address_map in self.addresses:
+            indices.update(address_map.keys())
         stream.write(int_size.to_bytes(1))
-        stream.write(len(self.indices).to_bytes(int_size))
+        stream.write(len(indices).to_bytes(int_size))
         stream.write(len(self.addresses).to_bytes(int_size))
         empty_address = Address()
-        for key in sorted(self.indices.keys(), key=attrgetter("int")):
-            row = AddressRow(key, self.indices[key], [m.get(key, empty_address) for m in self.addresses])
+        for n, key in enumerate(sorted(indices, key=attrgetter("int"))):
+            row = AddressRow(key, n, [m.get(key, empty_address) for m in self.addresses])
             _LOG.debug("Wrote address %s.", row)
             row.write(stream, int_size)
 

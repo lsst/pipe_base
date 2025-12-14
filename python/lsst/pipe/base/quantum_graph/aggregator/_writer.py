@@ -32,7 +32,6 @@ __all__ = ("Writer",)
 import dataclasses
 import itertools
 import logging
-import operator
 import uuid
 from contextlib import ExitStack
 from typing import TypeVar
@@ -81,9 +80,6 @@ class _DataWriters:
         Factory for context managers that log when closed.
     predicted : `.PredictedQuantumGraphComponents`
         Components of the predicted graph.
-    indices : `dict` [ `uuid.UUID`, `int` ]
-        Mapping from UUID to internal integer ID, including both quanta and
-        datasets.
     compressor : `Compressor`
         Object that can compress `bytes`.
     cdict_data : `bytes` or `None`, optional
@@ -97,7 +93,6 @@ class _DataWriters:
         exit_stack: ExitStack,
         log_on_close: LogOnClose,
         predicted: PredictedQuantumGraphComponents,
-        indices: dict[uuid.UUID, int],
         compressor: Compressor,
         cdict_data: bytes | None = None,
     ) -> None:
@@ -109,7 +104,6 @@ class _DataWriters:
                     output_path,
                     header,
                     predicted.pipeline_graph,
-                    indices,
                     address_filename="nodes",
                     compressor=compressor,
                     cdict_data=cdict_data,
@@ -197,13 +191,6 @@ class Writer:
     the end.
     """
 
-    indices: dict[uuid.UUID, int] = dataclasses.field(default_factory=dict)
-    """Mapping from UUID to internal integer ID, including both quanta and
-    datasets.
-
-    This is fully initialized at construction.
-    """
-
     output_dataset_ids: set[uuid.UUID] = dataclasses.field(default_factory=set)
     """The IDs of all datasets that are produced by this graph.
 
@@ -242,7 +229,7 @@ class Writer:
             self.existing_init_outputs[predicted_init_quantum.quantum_id] = set()
         self.comms.check_for_cancel()
         self.comms.log.info("Generating integer indexes and identifying outputs.")
-        self._populate_indices_and_outputs()
+        self._populate_outputs()
         self.comms.check_for_cancel()
         self._populate_xgraph_and_inputs()
         self.comms.check_for_cancel()
@@ -253,8 +240,7 @@ class Writer:
             f"Graph has {len(self.output_dataset_ids) + 1} predicted output dataset(s).",
         )
 
-    def _populate_indices_and_outputs(self) -> None:
-        all_uuids = set(self.predicted.quantum_datasets.keys())
+    def _populate_outputs(self) -> None:
         for quantum in self.comms.periodically_check_for_cancel(
             itertools.chain(
                 self.predicted.init_quanta.root,
@@ -264,15 +250,7 @@ class Writer:
             if not quantum.task_label:
                 # Skip the 'packages' producer quantum.
                 continue
-            all_uuids.update(quantum.iter_input_dataset_ids())
             self.output_dataset_ids.update(quantum.iter_output_dataset_ids())
-        all_uuids.update(self.output_dataset_ids)
-        self.indices = {
-            node_id: node_index
-            for node_index, node_id in self.comms.periodically_check_for_cancel(
-                enumerate(sorted(all_uuids, key=operator.attrgetter("int")))
-            )
-        }
 
     def _populate_xgraph_and_inputs(self) -> None:
         for predicted_quantum in self.comms.periodically_check_for_cancel(
@@ -347,7 +325,6 @@ class Writer:
             self.comms.exit_stack,
             LogOnClose(self.comms.log_progress),
             self.predicted,
-            self.indices,
             compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
             cdict_data=cdict.as_bytes(),
         )

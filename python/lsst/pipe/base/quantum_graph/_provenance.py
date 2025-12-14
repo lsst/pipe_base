@@ -47,7 +47,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import astropy.table
 import networkx
@@ -86,8 +86,6 @@ DATASET_MB_NAME = "datasets"
 QUANTUM_MB_NAME = "quanta"
 LOG_MB_NAME = "logs"
 METADATA_MB_NAME = "metadata"
-
-_I = TypeVar("_I", bound=uuid.UUID | int)
 
 
 class ProvenanceDatasetInfo(DatasetInfo):
