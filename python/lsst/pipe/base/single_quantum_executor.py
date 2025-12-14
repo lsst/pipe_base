@@ -288,10 +288,11 @@ class SingleQuantumExecutor(QuantumExecutor):
             )
             task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
             logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
+            outputs_put: list[uuid.UUID] = []
             try:
                 with limited_butler.record_metrics() as butler_metrics:
-                    caveats, outputsPut = self._run_quantum(
-                        task, quantum, task_node, limited_butler, quantum_id=quantum_id
+                    caveats = self._run_quantum(
+                        task, quantum, task_node, limited_butler, quantum_id=quantum_id, ids_put=outputs_put
                     )
             except Exception as e:
                 _LOG.error(
@@ -312,10 +313,10 @@ class SingleQuantumExecutor(QuantumExecutor):
                 quantumMetadata["caveats"] = caveats.value
                 # Stringify the UUID for easier compatibility with
                 # PropertyList.
-                quantumMetadata["outputs"] = [str(output) for output in outputsPut]
             finally:
                 logInfo(None, "end", metadata=quantumMetadata)  # type: ignore[arg-type]
                 fullMetadata = task.getFullMetadata()
+                quantumMetadata["outputs"] = [str(output) for output in outputs_put]
                 fullMetadata["quantum"] = quantumMetadata
                 if self._job_metadata is not None:
                     fullMetadata["job"] = self._job_metadata
@@ -536,8 +537,9 @@ class SingleQuantumExecutor(QuantumExecutor):
         task_node: TaskNode,
         /,
         limited_butler: LimitedButler,
-        quantum_id: uuid.UUID | None = None,
-    ) -> tuple[QuantumSuccessCaveats, list[uuid.UUID]]:
+        quantum_id: uuid.UUID | None,
+        ids_put: list[uuid.UUID],
+    ) -> QuantumSuccessCaveats:
         """Execute task on a single quantum.
 
         Parameters
@@ -550,16 +552,17 @@ class SingleQuantumExecutor(QuantumExecutor):
             Task definition structure.
         limited_butler : `~lsst.daf.butler.LimitedButler`
             Butler to use for dataset I/O.
-        quantum_id : `uuid.UUID` or `None`, optional
+        quantum_id : `uuid.UUID` or `None`
             ID of the quantum being executed.
+        ids_put : list[ `uuid.UUID` ]
+            List to be populated with the dataset IDs that were written by this
+            quantum.  This is an output parameter in order to allow it to be
+            populated even when an exception is raised.
 
         Returns
         -------
         flags : `QuantumSuccessCaveats`
             Flags that describe qualified successes.
-        ids_put : list[ `uuid.UUID` ]
-            Record of all the dataset IDs that were written by this quantum
-            being executed.
         """
         flags = QuantumSuccessCaveats.NO_CAVEATS
 
@@ -609,12 +612,13 @@ class SingleQuantumExecutor(QuantumExecutor):
                 )
                 _LOG.error(error, exc_info=error)
                 flags |= caught.FLAGS
+        finally:
+            ids_put.extend(output[2] for output in butlerQC.outputsPut)
         if not butlerQC.outputsPut:
             flags |= QuantumSuccessCaveats.ALL_OUTPUTS_MISSING
         if not butlerQC.outputsPut == butlerQC.allOutputs:
             flags |= QuantumSuccessCaveats.ANY_OUTPUTS_MISSING
-        ids_put = [output[2] for output in butlerQC.outputsPut]
-        return flags, ids_put
+        return flags
 
     def _write_metadata(
         self, quantum: Quantum, metadata: Any, task_node: TaskNode, /, limited_butler: LimitedButler
