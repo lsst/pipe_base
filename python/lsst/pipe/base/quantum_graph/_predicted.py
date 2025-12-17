@@ -198,10 +198,10 @@ class _PredictedThinGraphModelV0(pydantic.BaseModel):
     def _upgraded(self, address_rows: Mapping[uuid.UUID, AddressRow]) -> PredictedThinGraphModel:
         """Convert to the v1+ model."""
         uuid_by_index = {v.index: k for k, v in address_rows.items()}
-        return PredictedThinGraphModel(
+        return PredictedThinGraphModel.model_construct(
             quanta={
                 task_label: [
-                    PredictedThinQuantumModel(
+                    PredictedThinQuantumModel.model_construct(
                         quantum_id=uuid_by_index[q.quantum_index], data_coordinate=q.data_coordinate
                     )
                     for q in quanta

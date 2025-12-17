@@ -1095,11 +1095,13 @@ class QuantumGraphBuilder(ABC):
         to `lsst.daf.butler.DatastoreRecordData`, as used by
         `lsst.daf.butler.Quantum`.
         """
+        self.log.info("Fetching and attaching datastore records for all overall inputs.")
         overall_inputs = skeleton.extract_overall_inputs()
         exported_records = self.butler._datastore.export_records(overall_inputs.values())
         for task_label in self._pipeline_graph.tasks:
             if not skeleton.has_task(task_label):
                 continue
+            self.log.verbose("Fetching and attaching datastore records for task %s.", task_label)
             task_init_key = skeleton.get_task_init_node(task_label)
             init_input_ids = {
                 ref.id
@@ -1152,12 +1154,14 @@ class QuantumGraphBuilder(ABC):
         """
         from .graph import QuantumGraph
 
+        self.log.info("Transforming graph skeleton into a QuantumGraph instance.")
         quanta: dict[TaskDef, set[Quantum]] = {}
         init_inputs: dict[TaskDef, Iterable[DatasetRef]] = {}
         init_outputs: dict[TaskDef, Iterable[DatasetRef]] = {}
         for task_def in self._pipeline_graph._iter_task_defs():
             if not skeleton.has_task(task_def.label):
                 continue
+            self.log.verbose("Transforming graph skeleton nodes for task %s.", task_def.label)
             task_node = self._pipeline_graph.tasks[task_def.label]
             task_init_key = skeleton.get_task_init_node(task_def.label)
             task_init_state = skeleton[task_init_key]
@@ -1198,7 +1202,8 @@ class QuantumGraphBuilder(ABC):
             ref = skeleton.get_dataset_ref(dataset_key)
             assert ref is not None, "Global init input refs should be resolved already."
             global_init_outputs.append(ref)
-        return QuantumGraph(
+        self.log.verbose("Invoking QuantumGraph class constructor.")
+        result = QuantumGraph(
             quanta,
             metadata=all_metadata,
             universe=self.universe,
@@ -1207,6 +1212,8 @@ class QuantumGraphBuilder(ABC):
             globalInitOutputs=global_init_outputs,
             registryDatasetTypes=registry_dataset_types,
         )
+        self.log.info("Graph build complete.")
+        return result
 
     @final
     @timeMethod
@@ -1243,6 +1250,7 @@ class QuantumGraphBuilder(ABC):
             PredictedQuantumGraphComponents,
         )
 
+        self.log.info("Transforming graph skeleton into PredictedQuantumGraph components.")
         components = PredictedQuantumGraphComponents(pipeline_graph=self._pipeline_graph)
         components.header.inputs = list(self.input_collections)
         components.header.output_run = self.output_run
@@ -1270,6 +1278,7 @@ class QuantumGraphBuilder(ABC):
         for task_node in self._pipeline_graph.tasks.values():
             if not skeleton.has_task(task_node.label):
                 continue
+            self.log.verbose("Transforming graph skeleton nodes for task %s.", task_node.label)
             task_init_key = TaskInitKey(task_node.label)
             init_quantum_datasets = PredictedQuantumDatasetsModel.model_construct(
                 quantum_id=generate_uuidv7(),
@@ -1315,8 +1324,10 @@ class QuantumGraphBuilder(ABC):
                     },
                 )
                 components.quantum_datasets[quantum_datasets.quantum_id] = quantum_datasets
+        self.log.verbose("Building the thin summary graph.")
         components.set_thin_graph()
         components.set_header_counts()
+        self.log.info("Graph build complete.")
         return components
 
     @staticmethod

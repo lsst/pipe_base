@@ -383,12 +383,6 @@ class QuantumGraphSkeleton:
             The dataset ref of the prerequisite.
         **attrs : `~typing.Any`
             Additional attributes for the node.
-
-        Notes
-        -----
-        This automatically sets the 'existing_input' ref attribute (see
-        `set_existing_input_ref`), since prerequisites are always overall
-        inputs.
         """
         key = PrerequisiteDatasetKey(ref.datasetType.name, ref.id.bytes)
         self._xgraph.add_node(key, data_id=ref.dataId, ref=ref, **attrs)
@@ -606,7 +600,7 @@ class QuantumGraphSkeleton:
 
     def set_output_in_the_way(self, ref: DatasetRef) -> None:
         """Associate a dataset node with a `DatasetRef` that represents an
-        existing output in the output RUN collectoin.
+        existing output in the output RUN collection.
 
         Parameters
         ----------
