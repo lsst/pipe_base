@@ -80,8 +80,8 @@ class _DataWriters:
         Factory for context managers that log when closed.
     predicted : `.PredictedQuantumGraphComponents`
         Components of the predicted graph.
-    compressor : `Compressor`
-        Object that can compress `bytes`.
+    zstd_level : `int`, optional
+        Compression level.
     cdict_data : `bytes` or `None`, optional
         Bytes representation of the compression dictionary used by the
         compressor.
@@ -93,7 +93,7 @@ class _DataWriters:
         exit_stack: ExitStack,
         log_on_close: LogOnClose,
         predicted: PredictedQuantumGraphComponents,
-        compressor: Compressor,
+        zstd_level: int = 10,
         cdict_data: bytes | None = None,
     ) -> None:
         header = predicted.header.model_copy()
@@ -105,7 +105,7 @@ class _DataWriters:
                     header,
                     predicted.pipeline_graph,
                     address_filename="nodes",
-                    compressor=compressor,
+                    zstd_level=zstd_level,
                     cdict_data=cdict_data,
                 ),
                 "Finishing writing provenance quantum graph.",
@@ -325,7 +325,7 @@ class Writer:
             self.comms.exit_stack,
             LogOnClose(self.comms.log_progress),
             self.predicted,
-            compressor=zstandard.ZstdCompressor(self.comms.config.zstd_level, cdict),
+            zstd_level=self.comms.config.zstd_level,
             cdict_data=cdict.as_bytes(),
         )
         self.comms.check_for_cancel()

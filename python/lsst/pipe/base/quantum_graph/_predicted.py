@@ -1793,7 +1793,6 @@ class PredictedQuantumGraphComponents:
                     f"Unsupported extension {ext!r} for quantum graph; "
                     "expected '.qg' (or '.qgraph' to force the old format)."
                 )
-        cdict: zstandard.ZstdCompressionDict | None = None
         cdict_data: bytes | None = None
         quantum_datasets_json: dict[uuid.UUID, bytes] = {}
         if len(self.quantum_datasets) < zstd_dict_n_inputs:
@@ -1807,24 +1806,20 @@ class PredictedQuantumGraphComponents:
                 for quantum_model in itertools.islice(self.quantum_datasets.values(), zstd_dict_n_inputs)
             }
             try:
-                cdict = zstandard.train_dictionary(
+                cdict_data = zstandard.train_dictionary(
                     zstd_dict_size,
                     list(quantum_datasets_json.values()),
                     level=zstd_level,
-                )
+                ).as_bytes()
             except zstandard.ZstdError as err:
                 warnings.warn(f"Not using a compression dictionary: {err}.")
-                cdict = None
-            else:
-                cdict_data = cdict.as_bytes()
-        compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
         with BaseQuantumGraphWriter.open(
             uri,
             header=self.header,
             pipeline_graph=self.pipeline_graph,
             address_filename="quanta",
-            compressor=compressor,
             cdict_data=cdict_data,
+            zstd_level=zstd_level,
         ) as writer:
             writer.write_single_model("thin_graph", self.thin_graph)
             if self.dimension_data is None:
