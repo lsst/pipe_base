@@ -39,6 +39,7 @@ __all__ = (
     "ProvenanceQuantumInfo",
     "ProvenanceQuantumModel",
     "ProvenanceQuantumScanData",
+    "ProvenanceQuantumScanModels",
     "ProvenanceQuantumScanStatus",
     "ProvenanceTaskMetadataModel",
 )
@@ -62,12 +63,14 @@ import pydantic
 from lsst.daf.butler import DataCoordinate
 from lsst.daf.butler.logging import ButlerLogRecord, ButlerLogRecords
 from lsst.resources import ResourcePathExpression
+from lsst.utils.iteration import ensure_iterable
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.packages import Packages
 
 from .. import automatic_connection_constants as acc
 from .._status import ExceptionInfo, QuantumAttemptStatus, QuantumSuccessCaveats
 from .._task_metadata import TaskMetadata
+from ..log_capture import _ExecutionLogRecordsExtra
 from ..log_on_close import LogOnClose
 from ..pipeline_graph import PipelineGraph, TaskImportMode, TaskInitNode
 from ..resource_usage import QuantumResourceUsage
@@ -1665,6 +1668,275 @@ class ProvenanceQuantumScanStatus(enum.Enum):
 
 
 @dataclasses.dataclass
+class ProvenanceQuantumScanModels:
+    """A struct that represents provenance information for a single quantum."""
+
+    quantum_id: uuid.UUID
+    """Unique ID for the quantum."""
+
+    status: ProvenanceQuantumScanStatus = ProvenanceQuantumScanStatus.INCOMPLETE
+    """Combined status for the scan and the execution of the quantum."""
+
+    attempts: list[ProvenanceQuantumAttemptModel] = dataclasses.field(default_factory=list)
+    """Provenance information about each attempt to run the quantum."""
+
+    output_existence: dict[uuid.UUID, bool] = dataclasses.field(default_factory=dict)
+    """Unique IDs of the output datasets mapped to whether they were actually
+    produced.
+    """
+
+    metadata: ProvenanceTaskMetadataModel = dataclasses.field(default_factory=ProvenanceTaskMetadataModel)
+    """Task metadata information for each attempt.
+    """
+
+    logs: ProvenanceLogRecordsModel = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
+    """Log records for each attempt.
+    """
+
+    @classmethod
+    def from_metadata_and_logs(
+        cls,
+        predicted: PredictedQuantumDatasetsModel,
+        metadata: TaskMetadata | None,
+        logs: ButlerLogRecords | None,
+        *,
+        assume_complete: bool = True,
+    ) -> ProvenanceQuantumScanModels:
+        """Construct provenance information from task metadata and logs.
+
+        Parameters
+        ----------
+        predicted : `PredictedQuantumDatasetsModel`
+            Information about the predicted quantum.
+        metadata : `..TaskMetadata` or `None`
+            Task metadata.
+        logs : `lsst.daf.butler.logging.ButlerLogRecords` or `None`
+            Task logs.
+        assume_complete : `bool`, optional
+            If `False`, treat execution failures as possibly-incomplete quanta
+            and do not fully process them; instead just set the status to
+            `ProvenanceQuantumScanStatus.ABANDONED` and return.
+
+        Returns
+        -------
+        scan_models : `ProvenanceQuantumScanModels`
+            Struct of models that describe quantum provenance.
+
+        Notes
+        -----
+        This method does not necessarily fully populate the `output_existence`
+        field; it does what it can given the information in the metadata and
+        logs, but the caller is responsible for filling in the existence status
+        for any predicted outputs that are not present at all in that `dict`.
+        """
+        self = ProvenanceQuantumScanModels(predicted.quantum_id)
+        last_attempt = ProvenanceQuantumAttemptModel()
+        self._process_logs(predicted, logs, last_attempt, assume_complete=assume_complete)
+        self._process_metadata(predicted, metadata, last_attempt, assume_complete=assume_complete)
+        if self.status is ProvenanceQuantumScanStatus.ABANDONED:
+            return self
+        self._reconcile_attempts(last_attempt)
+        self._extract_output_existence(predicted)
+        return self
+
+    def _process_logs(
+        self,
+        predicted: PredictedQuantumDatasetsModel,
+        logs: ButlerLogRecords | None,
+        last_attempt: ProvenanceQuantumAttemptModel,
+        *,
+        assume_complete: bool,
+    ) -> None:
+        (predicted_log_dataset,) = predicted.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
+        if logs is None:
+            self.output_existence[predicted_log_dataset.dataset_id] = False
+            if assume_complete:
+                self.status = ProvenanceQuantumScanStatus.FAILED
+            else:
+                self.status = ProvenanceQuantumScanStatus.ABANDONED
+        else:
+            # Set the attempt's run status to FAILED, since the default is
+            # UNKNOWN (i.e. logs *and* metadata are missing) and we now know
+            # the logs exist.  This will usually get replaced by SUCCESSFUL
+            # when we look for metadata next.
+            last_attempt.status = QuantumAttemptStatus.FAILED
+            self.output_existence[predicted_log_dataset.dataset_id] = True
+            if logs.extra:
+                log_extra = _ExecutionLogRecordsExtra.model_validate(logs.extra)
+                self._extract_from_log_extra(log_extra, last_attempt=last_attempt)
+            self.logs.attempts.append(list(logs))
+
+    def _extract_from_log_extra(
+        self,
+        log_extra: _ExecutionLogRecordsExtra,
+        last_attempt: ProvenanceQuantumAttemptModel | None,
+    ) -> None:
+        for previous_attempt_log_extra in log_extra.previous_attempts:
+            self._extract_from_log_extra(
+                previous_attempt_log_extra,
+                last_attempt=None,
+            )
+        quantum_attempt: ProvenanceQuantumAttemptModel
+        if last_attempt is None:
+            # This is not the last attempt, so it must be a failure.
+            quantum_attempt = ProvenanceQuantumAttemptModel(
+                attempt=len(self.attempts), status=QuantumAttemptStatus.FAILED
+            )
+            # We also need to get the logs from this extra provenance, since
+            # they won't be the main section of the log records.
+            self.logs.attempts.append(log_extra.logs)
+            # The special last attempt is only appended after we attempt to
+            # read metadata later, but we have to append this one now.
+            self.attempts.append(quantum_attempt)
+        else:
+            assert not log_extra.logs, "Logs for the last attempt should not be stored in the extra JSON."
+            quantum_attempt = last_attempt
+        if log_extra.exception is not None or log_extra.metadata is not None or last_attempt is None:
+            # We won't be getting a separate metadata dataset, so anything we
+            # might get from the metadata has to come from this extra
+            # provenance in the logs.
+            quantum_attempt.exception = log_extra.exception
+            if log_extra.metadata is not None:
+                quantum_attempt.resource_usage = QuantumResourceUsage.from_task_metadata(log_extra.metadata)
+                self.metadata.attempts.append(log_extra.metadata)
+            else:
+                self.metadata.attempts.append(None)
+        # Regardless of whether this is the last attempt or not, we can only
+        # get the previous_process_quanta from the log extra.
+        quantum_attempt.previous_process_quanta.extend(log_extra.previous_process_quanta)
+
+    def _process_metadata(
+        self,
+        predicted: PredictedQuantumDatasetsModel,
+        metadata: TaskMetadata | None,
+        last_attempt: ProvenanceQuantumAttemptModel,
+        *,
+        assume_complete: bool,
+    ) -> None:
+        (predicted_metadata_dataset,) = predicted.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
+        if metadata is None:
+            self.output_existence[predicted_metadata_dataset.dataset_id] = False
+            if assume_complete:
+                self.status = ProvenanceQuantumScanStatus.FAILED
+            else:
+                self.status = ProvenanceQuantumScanStatus.ABANDONED
+        else:
+            self.status = ProvenanceQuantumScanStatus.SUCCESSFUL
+            self.output_existence[predicted_metadata_dataset.dataset_id] = True
+            last_attempt.status = QuantumAttemptStatus.SUCCESSFUL
+            try:
+                # Int conversion guards against spurious conversion to
+                # float that can apparently sometimes happen in
+                # TaskMetadata.
+                last_attempt.caveats = QuantumSuccessCaveats(int(metadata["quantum"]["caveats"]))
+            except LookupError:
+                pass
+            try:
+                last_attempt.exception = ExceptionInfo._from_metadata(
+                    metadata[predicted.task_label]["failure"]
+                )
+            except LookupError:
+                pass
+            last_attempt.resource_usage = QuantumResourceUsage.from_task_metadata(metadata)
+            self.metadata.attempts.append(metadata)
+
+    def _reconcile_attempts(self, last_attempt: ProvenanceQuantumAttemptModel) -> None:
+        last_attempt.attempt = len(self.attempts)
+        self.attempts.append(last_attempt)
+        assert self.status is not ProvenanceQuantumScanStatus.INCOMPLETE
+        assert self.status is not ProvenanceQuantumScanStatus.ABANDONED
+        if len(self.logs.attempts) < len(self.attempts):
+            # Logs were not found for this attempt; must have been a hard error
+            # that kept the `finally` block from running or otherwise
+            # interrupted the writing of the logs.
+            self.logs.attempts.append(None)
+            if self.status is ProvenanceQuantumScanStatus.SUCCESSFUL:
+                # But we found the metadata!  Either that hard error happened
+                # at a very unlucky time (in between those two writes), or
+                # something even weirder happened.
+                self.attempts[-1].status = QuantumAttemptStatus.LOGS_MISSING
+            else:
+                self.attempts[-1].status = QuantumAttemptStatus.FAILED
+        if len(self.metadata.attempts) < len(self.attempts):
+            # Metadata missing usually just means a failure.  In any case, the
+            # status will already be correct, either because it was set to a
+            # failure when we read the logs, or left at UNKNOWN if there were
+            # no logs.  Note that scanners never process BLOCKED quanta at all.
+            self.metadata.attempts.append(None)
+        assert len(self.logs.attempts) == len(self.attempts) or len(self.metadata.attempts) == len(
+            self.attempts
+        ), (
+            "The only way we can add more than one quantum attempt is by "
+            "extracting info stored with the logs, and that always appends "
+            "a log attempt and a metadata attempt, so this must be a bug in "
+            "this class."
+        )
+
+    def _extract_output_existence(self, predicted: PredictedQuantumDatasetsModel) -> None:
+        try:
+            outputs_put = self.metadata.attempts[-1]["quantum"].getArray("outputs")  # type: ignore[index]
+        except (
+            IndexError,  # metadata.attempts is empty
+            TypeError,  # metadata.attempts[-1] is None
+            LookupError,  # no 'quantum' entry in metadata or 'outputs' in that
+        ):
+            pass
+        else:
+            for id_str in ensure_iterable(outputs_put):
+                self.output_existence[uuid.UUID(id_str)] = True
+            # If the metadata told us what it wrote, anything not in that
+            # list was not written.
+            for predicted_output in itertools.chain.from_iterable(predicted.outputs.values()):
+                self.output_existence.setdefault(predicted_output.dataset_id, False)
+
+    def to_scan_data(
+        self: ProvenanceQuantumScanModels,
+        predicted_quantum: PredictedQuantumDatasetsModel,
+        compressor: Compressor | None = None,
+    ) -> ProvenanceQuantumScanData:
+        """Convert these models to JSON data.
+
+        Parameters
+        ----------
+        predicted_quantum : `PredictedQuantumDatasetsModel`
+            Information about the predicted quantum.
+        compressor : `Compressor`
+            Object that can compress bytes.
+
+        Returns
+        -------
+        scan_data : `ProvenanceQuantumScanData`
+            Scan information ready for serialization.
+        """
+        quantum: ProvenanceInitQuantumModel | ProvenanceQuantumModel
+        if self.status is ProvenanceQuantumScanStatus.INIT:
+            quantum = ProvenanceInitQuantumModel.from_predicted(predicted_quantum)
+        else:
+            quantum = ProvenanceQuantumModel.from_predicted(predicted_quantum)
+            quantum.attempts = self.attempts
+        for predicted_output in itertools.chain.from_iterable(predicted_quantum.outputs.values()):
+            if predicted_output.dataset_id not in self.output_existence:
+                raise RuntimeError(
+                    "Logic bug in provenance gathering or execution invariants: "
+                    f"no existence information for output {predicted_output.dataset_id} "
+                    f"({predicted_output.dataset_type_name}@{predicted_output.data_coordinate})."
+                )
+        data = ProvenanceQuantumScanData(
+            self.quantum_id,
+            self.status,
+            existing_outputs={
+                dataset_id for dataset_id, was_produced in self.output_existence.items() if was_produced
+            },
+            quantum=quantum.model_dump_json().encode(),
+            logs=self.logs.model_dump_json().encode() if self.logs.attempts else b"",
+            metadata=self.metadata.model_dump_json().encode() if self.metadata.attempts else b"",
+        )
+        if compressor is not None:
+            data.compress(compressor)
+        return data
+
+
+@dataclasses.dataclass
 class ProvenanceQuantumScanData:
     """A struct that represents ready-for-serialization provenance information
     for a single quantum.
@@ -1695,3 +1967,18 @@ class ProvenanceQuantumScanData:
     """Whether the `quantum`, `metadata`, and `log` attributes are
     compressed.
     """
+
+    def compress(self, compressor: Compressor) -> None:
+        """Compress the data in this struct if it has not been compressed
+        already.
+
+        Parameters
+        ----------
+        compressor : `Compressor`
+            Object with a ``compress`` method that takes and returns `bytes`.
+        """
+        if not self.is_compressed:
+            self.quantum = compressor.compress(self.quantum)
+            self.logs = compressor.compress(self.logs) if self.logs else b""
+            self.metadata = compressor.compress(self.metadata) if self.metadata else b""
+            self.is_compressed = True

@@ -27,11 +27,7 @@
 
 from __future__ import annotations
 
-__all__ = (
-    "InProgressScan",
-    "IngestRequest",
-    "ScanReport",
-)
+__all__ = ("IngestRequest", "ScanReport")
 
 import dataclasses
 import uuid
@@ -40,12 +36,7 @@ from lsst.daf.butler.datastore.record_data import DatastoreRecordData
 
 from .._common import DatastoreName
 from .._predicted import PredictedDatasetModel
-from .._provenance import (
-    ProvenanceLogRecordsModel,
-    ProvenanceQuantumAttemptModel,
-    ProvenanceQuantumScanStatus,
-    ProvenanceTaskMetadataModel,
-)
+from .._provenance import ProvenanceQuantumScanStatus
 
 
 @dataclasses.dataclass
@@ -74,30 +65,3 @@ class IngestRequest:
 
     def __bool__(self) -> bool:
         return bool(self.datasets or self.records)
-
-
-@dataclasses.dataclass
-class InProgressScan:
-    """A struct that represents a quantum that is being scanned."""
-
-    quantum_id: uuid.UUID
-    """Unique ID for the quantum."""
-
-    status: ProvenanceQuantumScanStatus
-    """Combined status for the scan and the execution of the quantum."""
-
-    attempts: list[ProvenanceQuantumAttemptModel] = dataclasses.field(default_factory=list)
-    """Provenance information about each attempt to run the quantum."""
-
-    outputs: dict[uuid.UUID, bool] = dataclasses.field(default_factory=dict)
-    """Unique IDs of the output datasets mapped to whether they were actually
-    produced.
-    """
-
-    metadata: ProvenanceTaskMetadataModel = dataclasses.field(default_factory=ProvenanceTaskMetadataModel)
-    """Task metadata information for each attempt.
-    """
-
-    logs: ProvenanceLogRecordsModel = dataclasses.field(default_factory=ProvenanceLogRecordsModel)
-    """Log records for each attempt.
-    """
