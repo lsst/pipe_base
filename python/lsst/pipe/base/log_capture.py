@@ -214,7 +214,7 @@ class LogCapture:
             # Either accumulate into ButlerLogRecords or stream JSON records to
             # file and ingest that (ingest is possible only with full butler).
             if self.stream_json_logs and self.full_butler is not None:
-                with TemporaryForIngest(self.full_butler, ref, ingest_on_failure=True) as temporary:
+                with TemporaryForIngest(self.full_butler, ref) as temporary:
                     log_handler_file = FileHandler(temporary.ospath)
                     log_handler_file.setFormatter(JsonLogFormatter())
                     logging.getLogger().addHandler(log_handler_file)
@@ -232,9 +232,8 @@ class LogCapture:
                                     log_stream,
                                     ctx.extra.model_dump_json(exclude_unset=True, exclude_defaults=True),
                                 )
-                        if not ctx.store:
-                            temporary.ingest_on_failure = False
-                            temporary.ingest_on_success = False
+                        if ctx.store:
+                            temporary.ingest()
 
             else:
                 log_handler_memory = ButlerLogRecordHandler()
