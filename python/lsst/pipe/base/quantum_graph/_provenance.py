@@ -1572,6 +1572,27 @@ class ProvenanceQuantumGraphWriter:
             init_quanta.root.append(ProvenanceInitQuantumModel.from_predicted(predicted_init_quantum))
         self._base_writer.write_single_model("init_quanta", init_quanta)
 
+    def write_quantum_provenance(
+        self, quantum_id: uuid.UUID, metadata: TaskMetadata | None, logs: ButlerLogRecords | None
+    ) -> None:
+        """Gather and write provenance for a quantum.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
+        metadata : `..TaskMetadata` or `None`
+            Task metadata.
+        logs : `lsst.daf.butler.logging.ButlerLogRecords` or `None`
+            Task logs.
+        """
+        predicted_quantum = self._predicted_quanta[quantum_id]
+        provenance_models = ProvenanceQuantumScanModels.from_metadata_and_logs(
+            predicted_quantum, metadata, logs, assume_complete=True
+        )
+        scan_data = provenance_models.to_scan_data(predicted_quantum, compressor=self.compressor)
+        self.write_scan_data(scan_data)
+
     def write_scan_data(self, scan_data: ProvenanceQuantumScanData) -> None:
         """Write the output of a quantum provenance scan to disk.
 
