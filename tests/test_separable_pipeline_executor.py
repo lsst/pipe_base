@@ -35,12 +35,20 @@ import lsst.daf.butler.tests as butlerTests
 import lsst.pex.config
 import lsst.utils.tests
 from lsst.daf.butler.registry import RegistryDefaults
-from lsst.pipe.base import Instrument, Pipeline, PipelineGraph, QuantumGraph, TaskMetadata
+from lsst.pipe.base import (
+    Instrument,
+    Pipeline,
+    PipelineGraph,
+    QuantumAttemptStatus,
+    QuantumGraph,
+    TaskMetadata,
+)
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.pipe.base.automatic_connection_constants import PACKAGES_INIT_OUTPUT_NAME
 from lsst.pipe.base.quantum_graph_builder import OutputExistsError
 from lsst.pipe.base.separable_pipeline_executor import SeparablePipelineExecutor
 from lsst.resources import ResourcePath
+from lsst.utils.packages import Packages
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -76,12 +84,85 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         butlerTests.addDatasetType(self.butler, "a_log", set(), "ButlerLogRecords")
         butlerTests.addDatasetType(self.butler, "a_metadata", set(), "TaskMetadata")
         butlerTests.addDatasetType(self.butler, "a_config", set(), "Config")
+        provenance_dataset_type = butlerTests.addDatasetType(
+            self.butler, "run_provenance", set(), "ProvenanceQuantumGraph"
+        )
+        self.provenance_ref = lsst.daf.butler.DatasetRef(
+            provenance_dataset_type,
+            lsst.daf.butler.DataCoordinate.make_empty(self.butler.dimensions),
+            run=butler.run,
+        )
 
     def build_empty_quantum_graph(self) -> None:
         pipeline_graph = PipelineGraph(universe=self.butler.dimensions)
         pipeline_graph.resolve(self.butler.registry)
         builder = AllDimensionsQuantumGraphBuilder(pipeline_graph, self.butler)
         return builder.finish(attach_datastore_records=False).assemble()
+
+    def check_provenance_fullgraph(self):
+        provenance_qg = self.butler.get(self.provenance_ref)
+        empty_data_id = lsst.daf.butler.DataCoordinate.make_empty(self.butler.dimensions)
+        self.assertCountEqual(provenance_qg.quanta_by_task.keys(), {"a", "b"})
+        self.assertCountEqual(
+            provenance_qg.datasets_by_type.keys(),
+            {
+                "input",
+                "intermediate",
+                "output",
+                "a_config",
+                "b_config",
+                "a_metadata",
+                "b_metadata",
+                "a_log",
+                "b_log",
+            },
+        )
+        a_id = provenance_qg.quanta_by_task["a"][empty_data_id]
+        b_id = provenance_qg.quanta_by_task["b"][empty_data_id]
+        input_id = provenance_qg.datasets_by_type["input"][empty_data_id]
+        intermediate_id = provenance_qg.datasets_by_type["intermediate"][empty_data_id]
+        output_id = provenance_qg.datasets_by_type["output"][empty_data_id]
+        a_metadata_id = provenance_qg.datasets_by_type["a_metadata"][empty_data_id]
+        a_log_id = provenance_qg.datasets_by_type["a_log"][empty_data_id]
+        b_metadata_id = provenance_qg.datasets_by_type["b_metadata"][empty_data_id]
+        b_log_id = provenance_qg.datasets_by_type["b_log"][empty_data_id]
+        self.assertEqual(
+            provenance_qg.bipartite_xgraph.nodes[a_id]["status"], QuantumAttemptStatus.SUCCESSFUL
+        )
+        self.assertEqual(
+            provenance_qg.bipartite_xgraph.nodes[b_id]["status"], QuantumAttemptStatus.SUCCESSFUL
+        )
+        self.assertEqual(list(provenance_qg.bipartite_xgraph.predecessors(a_id)), [input_id])
+        self.assertEqual(
+            list(provenance_qg.bipartite_xgraph.successors(a_id)), [intermediate_id, a_metadata_id, a_log_id]
+        )
+        self.assertEqual(list(provenance_qg.bipartite_xgraph.predecessors(b_id)), [intermediate_id])
+        self.assertEqual(
+            list(provenance_qg.bipartite_xgraph.successors(b_id)), [output_id, b_metadata_id, b_log_id]
+        )
+        for datasets_by_data_id in provenance_qg.datasets_by_type.values():
+            for dataset_id in datasets_by_data_id.values():
+                self.assertTrue(provenance_qg.bipartite_xgraph.nodes[dataset_id]["produced"])
+        logs_pqg = self.butler.get(
+            self.provenance_ref.makeComponentRef("logs"),
+            parameters={"quanta": (a_id,), "datasets": (b_log_id,)},
+        )
+        self.assertEqual(list(logs_pqg[a_id][-1]), list(self.butler.get("a_log", empty_data_id)))
+        self.assertEqual(list(logs_pqg[b_log_id][-1]), list(self.butler.get("b_log", empty_data_id)))
+        metadata_pqg = self.butler.get(
+            self.provenance_ref.makeComponentRef("metadata"),
+            parameters={"quanta": (b_id,), "datasets": (a_metadata_id,)},
+        )
+        self.assertEqual(metadata_pqg[a_metadata_id][-1], self.butler.get("a_metadata", empty_data_id))
+        self.assertEqual(metadata_pqg[b_id][-1], self.butler.get("b_metadata", empty_data_id))
+        self.assertIsInstance(self.butler.get("run_provenance.packages"), Packages)
+
+    def check_provenance_emptygraph(self):
+        provenance_qg = self.butler.get(self.provenance_ref)
+        self.assertFalse(provenance_qg.bipartite_xgraph)
+        self.assertFalse(any(provenance_qg.quanta_by_task.values()))
+        self.assertFalse(any(provenance_qg.datasets_by_type.values()))
+        self.assertIsInstance(self.butler.get("run_provenance.packages"), Packages)
 
     def test_pre_execute_qgraph_old(self):
         # Too hard to make a quantum graph from scratch.
@@ -693,10 +774,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+        self.check_provenance_fullgraph()
 
     def test_run_pipeline_noskip_noclobber_fullgraph_old(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=False)
@@ -710,10 +792,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+        self.check_provenance_fullgraph()
 
     def test_run_pipeline_noskip_noclobber_emptygraph_old(self):
         old_repo_size = self.butler.registry.queryDatasets(...).count()
@@ -727,10 +810,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
-        # Empty graph execution should do nothing.
-        self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size)
+        # Empty graph execution should do nothing but write provenance.
+        self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size + 1)
+        self.check_provenance_emptygraph()
 
     def test_run_pipeline_noskip_noclobber_emptygraph(self):
         old_repo_size = self.butler.registry.queryDatasets(...).count()
@@ -744,10 +828,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
-        # Empty graph execution should do nothing.
-        self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size)
+        # Empty graph execution should do nothing but write provenance.
+        self.assertEqual(self.butler.registry.queryDatasets(...).count(), old_repo_size + 1)
+        self.check_provenance_emptygraph()
 
     def test_run_pipeline_skipnone_noclobber_old(self):
         executor = SeparablePipelineExecutor(
@@ -851,10 +936,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+        self.check_provenance_fullgraph()
 
     def test_run_pipeline_noskip_clobber_connected(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
@@ -868,10 +954,11 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         self.assertEqual(self.butler.get("output"), {"zero": 0, "one": 1, "two": 2})
+        self.check_provenance_fullgraph()
 
     def test_run_pipeline_noskip_clobber_unconnected_old(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
@@ -888,7 +975,7 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         # The value of output is undefined; it depends on which task ran first.
@@ -909,11 +996,12 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
             save_versions=False,
         )
 
-        executor.run_pipeline(graph)
+        executor.run_pipeline(graph, provenance_dataset_ref=self.provenance_ref)
         self.butler.registry.refresh()
         self.assertEqual(self.butler.get("intermediate"), {"zero": 0, "one": 1})
         # The value of output is undefined; it depends on which task ran first.
         self.assertTrue(self.butler.exists("output", {}))
+        self.check_provenance_fullgraph()
 
     def test_run_pipeline_skipnone_clobber_old(self):
         executor = SeparablePipelineExecutor(

@@ -40,7 +40,8 @@ from collections.abc import Iterable
 from typing import Any
 
 import lsst.resources
-from lsst.daf.butler import Butler
+from lsst.daf.butler import Butler, DatasetRef
+from lsst.daf.butler._rubin.temporary_for_ingest import TemporaryForIngest
 
 from ._quantumContext import ExecutionResources
 from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
@@ -362,6 +363,8 @@ class SeparablePipelineExecutor:
         fail_fast: bool = False,
         graph_executor: QuantumGraphExecutor | None = None,
         num_proc: int = 1,
+        *,
+        provenance_dataset_ref: DatasetRef | None = None,
     ) -> None:
         """Run a pipeline in the form of a prepared quantum graph.
 
@@ -384,6 +387,13 @@ class SeparablePipelineExecutor:
             The number of processes that can be used to run the pipeline. The
             default value ensures that no subprocess is created. Only used with
             the default graph executor.
+        provenance_dataset_ref : `lsst.daf.butler.DatasetRef`, optional
+            Dataset that should be used to save provenance.  Provenance is only
+            supported when running in a single process (at least for the
+            default quantum executor) and may not be complete if
+            ``skip_existing_in`` is not empty. The caller is responsible for
+            registering the dataset type and for ensuring that the dimensions
+            of this dataset do not lead to uniqueness conflicts.
         """
         if not graph_executor:
             quantum_executor = SingleQuantumExecutor(
@@ -404,4 +414,11 @@ class SeparablePipelineExecutor:
             # forked processes.
             self._butler.registry.resetConnectionPool()
 
-        graph_executor.execute(graph)
+        if provenance_dataset_ref is not None:
+            if self._skip_existing_in:
+                raise RuntimeError("Provenance writing is not compatible with skip_existing_in=True.")
+            with TemporaryForIngest(self._butler, provenance_dataset_ref) as temporary:
+                graph_executor.execute(graph, provenance_graph_file=temporary.ospath)
+                temporary.ingest()
+        else:
+            graph_executor.execute(graph)
