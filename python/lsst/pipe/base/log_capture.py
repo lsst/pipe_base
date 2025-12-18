@@ -31,17 +31,15 @@ __all__ = ["LogCapture"]
 
 import dataclasses
 import logging
-import os
-import shutil
-import tempfile
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from logging import FileHandler
 
 import pydantic
 
-from lsst.daf.butler import Butler, FileDataset, LimitedButler, Quantum
+from lsst.daf.butler import Butler, LimitedButler, Quantum
+from lsst.daf.butler._rubin.temporary_for_ingest import TemporaryForIngest
 from lsst.daf.butler.logging import (
     ButlerLogRecord,
     ButlerLogRecordHandler,
@@ -205,41 +203,37 @@ class LogCapture:
 
         # Add a handler to the root logger to capture execution log output.
         if log_dataset_name is not None:
+            try:
+                [ref] = quantum.outputs[log_dataset_name]
+            except LookupError as exc:
+                raise InvalidQuantumError(
+                    f"Quantum outputs is missing log output dataset type {log_dataset_name};"
+                    " this could happen due to inconsistent options between QuantumGraph generation"
+                    " and execution"
+                ) from exc
             # Either accumulate into ButlerLogRecords or stream JSON records to
             # file and ingest that (ingest is possible only with full butler).
             if self.stream_json_logs and self.full_butler is not None:
-                # Create the log file in a temporary directory rather than
-                # creating a temporary file. This is necessary because
-                # temporary files are created with restrictive permissions
-                # and during file ingest these permissions persist in the
-                # datastore. Using a temp directory allows us to create
-                # a file with umask default permissions.
-                tmpdir = tempfile.mkdtemp(prefix="butler-temp-logs-")
+                with TemporaryForIngest(self.full_butler, ref) as temporary:
+                    log_handler_file = FileHandler(temporary.ospath)
+                    log_handler_file.setFormatter(JsonLogFormatter())
+                    logging.getLogger().addHandler(log_handler_file)
 
-                # Construct a file to receive the log records and "touch" it.
-                log_file = os.path.join(tmpdir, f"butler-log-{task_node.label}.json")
-                with open(log_file, "w"):
-                    pass
-                log_handler_file = FileHandler(log_file)
-                log_handler_file.setFormatter(JsonLogFormatter())
-                logging.getLogger().addHandler(log_handler_file)
-
-                try:
-                    with ButlerMDC.set_mdc(mdc):
-                        yield ctx
-                finally:
-                    # Ensure that the logs are stored in butler.
-                    logging.getLogger().removeHandler(log_handler_file)
-                    log_handler_file.close()
-                    if ctx.extra:
-                        with open(log_file, "a") as log_stream:
-                            ButlerLogRecords.write_streaming_extra(
-                                log_stream,
-                                ctx.extra.model_dump_json(exclude_unset=True, exclude_defaults=True),
-                            )
-                    if ctx.store:
-                        self._ingest_log_records(quantum, log_dataset_name, log_file)
-                    shutil.rmtree(tmpdir, ignore_errors=True)
+                    try:
+                        with ButlerMDC.set_mdc(mdc):
+                            yield ctx
+                    finally:
+                        # Ensure that the logs are stored in butler.
+                        logging.getLogger().removeHandler(log_handler_file)
+                        log_handler_file.close()
+                        if ctx.extra:
+                            with open(temporary.ospath, "a") as log_stream:
+                                ButlerLogRecords.write_streaming_extra(
+                                    log_stream,
+                                    ctx.extra.model_dump_json(exclude_unset=True, exclude_defaults=True),
+                                )
+                        if ctx.store:
+                            temporary.ingest()
 
             else:
                 log_handler_memory = ButlerLogRecordHandler()
@@ -281,41 +275,3 @@ class LogCapture:
             ) from exc
 
         self.butler.put(log_handler.records, ref)
-
-    def _ingest_log_records(self, quantum: Quantum, dataset_type: str, filename: str) -> None:
-        # If we are logging to an external file we must always try to
-        # close it.
-        assert self.full_butler is not None, "Expected to have full butler for ingest"
-        ingested = False
-        try:
-            # DatasetRef has to be in the Quantum outputs, can lookup by name.
-            try:
-                [ref] = quantum.outputs[dataset_type]
-            except LookupError as exc:
-                raise InvalidQuantumError(
-                    f"Quantum outputs is missing log output dataset type {dataset_type};"
-                    " this could happen due to inconsistent options between QuantumGraph generation"
-                    " and execution"
-                ) from exc
-
-            # Need to ingest this file directly into butler.
-            dataset = FileDataset(path=filename, refs=ref)
-            try:
-                self.full_butler.ingest(dataset, transfer="move")
-                ingested = True
-            except NotImplementedError:
-                # Some datastores can't receive files (e.g. in-memory datastore
-                # when testing), we store empty list for those just to have a
-                # dataset. Alternative is to read the file as a
-                # ButlerLogRecords object and put it.
-                _LOG.info(
-                    "Log records could not be stored in this butler because the"
-                    " datastore can not ingest files, empty record list is stored instead."
-                )
-                records = ButlerLogRecords.from_records([])
-                self.full_butler.put(records, ref)
-        finally:
-            # remove file if it is not ingested
-            if not ingested:
-                with suppress(OSError):
-                    os.remove(filename)
