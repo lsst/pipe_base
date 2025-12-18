@@ -192,7 +192,9 @@ class QuantumGraphExecutor(ABC):
     """
 
     @abstractmethod
-    def execute(self, graph: QuantumGraph | PredictedQuantumGraph) -> None:
+    def execute(
+        self, graph: QuantumGraph | PredictedQuantumGraph, *, provenance_graph_file: str | None = None
+    ) -> None:
         """Execute whole graph.
 
         Implementation of this method depends on particular execution model
@@ -204,6 +206,8 @@ class QuantumGraphExecutor(ABC):
         ----------
         graph : `.QuantumGraph` or `.quantum_graph.PredictedQuantumGraph`
             Execution graph.
+        provenance_graph_file : `str`, optional
+            A filename to write provenance to.
         """
         raise NotImplementedError()
 

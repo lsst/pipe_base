@@ -39,20 +39,24 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from typing import Literal, cast
 
 import networkx
 
 from lsst.daf.butler import DataCoordinate, Quantum
 from lsst.daf.butler.cli.cliLog import CliLog
+from lsst.daf.butler.logging import ButlerLogRecords
 from lsst.utils.threads import disable_implicit_threading
 
 from ._status import InvalidQuantumError, RepeatableQuantumError
+from ._task_metadata import TaskMetadata
 from .execution_graph_fixup import ExecutionGraphFixup
 from .graph import QuantumGraph
 from .graph_walker import GraphWalker
+from .log_on_close import LogOnClose
 from .pipeline_graph import TaskNode
-from .quantum_graph import PredictedQuantumGraph, PredictedQuantumInfo
+from .quantum_graph import PredictedQuantumGraph, PredictedQuantumInfo, ProvenanceQuantumGraphWriter
 from .quantum_graph_executor import QuantumExecutor, QuantumGraphExecutor
 from .quantum_reports import ExecutionStatus, QuantumReport, Report
 
@@ -515,7 +519,9 @@ class MPGraphExecutor(QuantumGraphExecutor):
             start_method = "spawn"
         self._start_method = start_method
 
-    def execute(self, graph: QuantumGraph | PredictedQuantumGraph) -> None:
+    def execute(
+        self, graph: QuantumGraph | PredictedQuantumGraph, *, provenance_graph_file: str | None = None
+    ) -> None:
         # Docstring inherited from QuantumGraphExecutor.execute
         old_graph: QuantumGraph | None = None
         if isinstance(graph, QuantumGraph):
@@ -525,14 +531,31 @@ class MPGraphExecutor(QuantumGraphExecutor):
             new_graph = graph
         xgraph = self._make_xgraph(new_graph, old_graph)
         self._report = Report(qgraphSummary=new_graph._make_summary())
-        try:
-            if self._num_proc > 1:
-                self._execute_quanta_mp(xgraph, self._report)
-            else:
-                self._execute_quanta_in_process(xgraph, self._report)
-        except Exception as exc:
-            self._report.set_exception(exc)
-            raise
+        with ExitStack() as exit_stack:
+            provenance_writer: ProvenanceQuantumGraphWriter | None = None
+            if provenance_graph_file is not None:
+                if provenance_graph_file is not None and self._num_proc > 1:
+                    raise NotImplementedError(
+                        "Provenance writing is not implemented for multiprocess execution."
+                    )
+                provenance_writer = ProvenanceQuantumGraphWriter(
+                    provenance_graph_file,
+                    exit_stack=exit_stack,
+                    log_on_close=LogOnClose(_LOG.log),
+                    predicted=new_graph,
+                )
+            try:
+                if self._num_proc > 1:
+                    self._execute_quanta_mp(xgraph, self._report)
+                else:
+                    self._execute_quanta_in_process(xgraph, self._report, provenance_writer)
+            except Exception as exc:
+                self._report.set_exception(exc)
+                raise
+            if provenance_writer is not None:
+                provenance_writer.write_overall_inputs()
+                provenance_writer.write_packages()
+                provenance_writer.write_init_outputs(assume_existence=True)
 
     def _make_xgraph(
         self, new_graph: PredictedQuantumGraph, old_graph: QuantumGraph | None
@@ -576,7 +599,9 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 raise MPGraphExecutorError("Updated execution graph has dependency cycle.")
         return xgraph
 
-    def _execute_quanta_in_process(self, xgraph: networkx.DiGraph, report: Report) -> None:
+    def _execute_quanta_in_process(
+        self, xgraph: networkx.DiGraph, report: Report, provenance_writer: ProvenanceQuantumGraphWriter | None
+    ) -> None:
         """Execute all Quanta in current process.
 
         Parameters
@@ -589,6 +614,9 @@ class MPGraphExecutor(QuantumGraphExecutor):
             `.quantum_graph.PredictedQuantumGraph.quantum_only_xgraph`.
         report : `Report`
             Object for reporting execution status.
+        provenance_writer : `.quantum_graph.ProvenanceQuantumGraphWriter` or \
+                `None`
+            Object for recording provenance.
         """
 
         def tiebreaker_sort_key(quantum_id: uuid.UUID) -> tuple:
@@ -606,16 +634,19 @@ class MPGraphExecutor(QuantumGraphExecutor):
 
                 _LOG.debug("Executing %s (%s@%s)", quantum_id, task_node.label, data_id)
                 fail_exit_code: int | None = None
+                task_metadata: TaskMetadata | None = None
+                task_logs = ButlerLogRecords([])
                 try:
                     # For some exception types we want to exit immediately with
                     # exception-specific exit code, but we still want to start
                     # debugger before exiting if debugging is enabled.
                     try:
-                        _, quantum_report = self._quantum_executor.execute(
-                            task_node, quantum, quantum_id=quantum_id
+                        execution_result = self._quantum_executor.execute(
+                            task_node, quantum, quantum_id=quantum_id, log_records=task_logs
                         )
-                        if quantum_report:
-                            report.quantaReports.append(quantum_report)
+                        if execution_result.report:
+                            report.quantaReports.append(execution_result.report)
+                        task_metadata = execution_result.task_metadata
                         success_count += 1
                         walker.finish(quantum_id)
                     except RepeatableQuantumError as exc:
@@ -700,6 +731,11 @@ class MPGraphExecutor(QuantumGraphExecutor):
                             downstream_node_state["data_id"],
                         )
                         failed_count += 1
+
+                if provenance_writer is not None:
+                    provenance_writer.write_quantum_provenance(
+                        quantum_id, metadata=task_metadata, logs=task_logs
+                    )
 
                 _LOG.info(
                     "Executed %d quanta successfully, %d failed and %d remain out of total %d quanta.",
