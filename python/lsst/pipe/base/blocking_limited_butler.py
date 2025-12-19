@@ -38,7 +38,6 @@ from lsst.daf.butler import (
     ButlerMetrics,
     DatasetProvenance,
     DatasetRef,
-    DatasetType,
     DeferredDatasetHandle,
     DimensionUniverse,
     LimitedButler,
@@ -99,7 +98,7 @@ class BlockingLimitedButler(LimitedButler):
         parent_dataset_type_name = ref.datasetType.nameAndComponent()[0]
         timeout = self._timeouts.get(parent_dataset_type_name, 0.0)
         start = time.time()
-        warned = False
+        # warned = False
         while True:
             try:
                 return self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
@@ -109,11 +108,9 @@ class BlockingLimitedButler(LimitedButler):
                     if elapsed > timeout:
                         err.add_note(f"Timed out after {elapsed:03f}s.")
                         raise
-            if not warned:
-                _LOG.info(
-                    f"Dataset {ref.datasetType} not immediately available for {ref.id}, waiting {timeout}s"
-                )
-                warned = True
+            # if not warned:
+            _LOG.info(f"Dataset {ref.datasetType} not immediately available for {ref.id}, waiting {timeout}s")
+            # warned = True
             time.sleep(0.5)
 
     def getDeferred(
@@ -131,19 +128,20 @@ class BlockingLimitedButler(LimitedButler):
         start = time.time()
         result = self._wrapped.stored_many(refs)
         timeouts = {ref.id: self._timeouts.get(ref.datasetType.nameAndComponent()[0], 0.0) for ref in result}
-        warned: dict[DatasetType, bool] = {ref.datasetType: False for ref in result}
+        # warned: dict[DatasetType, bool] = {ref.datasetType: False for ref in
+        # result}
         while True:
             elapsed = time.time() - start
             remaining: list[DatasetRef] = []
             for ref, exists in result.items():
                 timeout = timeouts[ref.id]
                 if not exists and (timeout is None or elapsed <= timeout):
-                    if not warned[ref.datasetType]:
-                        _LOG.info(
-                            f"Dataset {ref.datasetType} not immediately available for {ref.id}, "
-                            f"waiting {timeout}s"
-                        )
-                        warned[ref.datasetType]
+                    # if not warned[ref.datasetType]:
+                    _LOG.info(
+                        f"Dataset {ref.datasetType} not immediately available for {ref.id}, "
+                        f"waiting {timeout}s"
+                    )
+                    # warned[ref.datasetType]
                     remaining.append(ref)
             if not remaining:
                 return result
