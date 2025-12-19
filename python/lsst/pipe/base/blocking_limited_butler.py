@@ -38,6 +38,7 @@ from lsst.daf.butler import (
     ButlerMetrics,
     DatasetProvenance,
     DatasetRef,
+    DatasetType,
     DeferredDatasetHandle,
     DimensionUniverse,
     LimitedButler,
@@ -109,7 +110,9 @@ class BlockingLimitedButler(LimitedButler):
                         err.add_note(f"Timed out after {elapsed:03f}s.")
                         raise
             if not warned:
-                _LOG.warning(f"Dataset {ref.datasetType} not immediately available for {ref.id}.")
+                _LOG.info(
+                    f"Dataset {ref.datasetType} not immediately available for {ref.id}, waiting {timeout}s"
+                )
                 warned = True
             time.sleep(0.5)
 
@@ -128,12 +131,19 @@ class BlockingLimitedButler(LimitedButler):
         start = time.time()
         result = self._wrapped.stored_many(refs)
         timeouts = {ref.id: self._timeouts.get(ref.datasetType.nameAndComponent()[0], 0.0) for ref in result}
+        warned: dict[DatasetType, bool] = {ref.datasetType: False for ref in result}
         while True:
             elapsed = time.time() - start
             remaining: list[DatasetRef] = []
             for ref, exists in result.items():
                 timeout = timeouts[ref.id]
                 if not exists and (timeout is None or elapsed <= timeout):
+                    if not warned[ref.datasetType]:
+                        _LOG.info(
+                            f"Dataset {ref.datasetType} not immediately available for {ref.id}, "
+                            f"waiting {timeout}s"
+                        )
+                        warned[ref.datasetType]
                     remaining.append(ref)
             if not remaining:
                 return result
