@@ -66,6 +66,7 @@ from lsst.daf.butler import (
     DimensionDataExtractor,
     DimensionGroup,
     DimensionRecordSetDeserializer,
+    DimensionUniverse,
     LimitedButler,
     Quantum,
     QuantumBackedButler,
@@ -877,6 +878,49 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             page_size=page_size,
         ).assemble()
 
+    @classmethod
+    def make_empty(
+        cls,
+        universe: DimensionUniverse,
+        *,
+        output_run: str,
+        inputs: Iterable[str] = (),
+        output: str | None = None,
+        add_packages: bool = True,
+    ) -> PredictedQuantumGraph:
+        """Make an empty quantum graph with no tasks.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions for all butler dimensions.
+        output_run : `str`
+            Output run collection.
+        inputs : `~collections.abc.Iterable` [`str`], optional
+            Iterable of input collection names.
+        output : `str` or `None`, optional
+            Output chained collection.
+        add_packages : `bool`, optional
+            Whether to add the special init quantum that writes the 'packages'
+            dataset.  The default (`True`) is consistent with
+            `~..quantum_graph_builder.QuantumGraphBuilder` behavior when there
+            are no regular quanta generated.
+
+        Returns
+        -------
+        quantum_graph : `PredictedQuantumGraph`
+            An empty quantum graph.
+        """
+        return cls(
+            PredictedQuantumGraphComponents.make_empty(
+                universe,
+                output_run=output_run,
+                inputs=inputs,
+                output=output,
+                add_packages=add_packages,
+            )
+        )
+
     @property
     def quanta_by_task(self) -> Mapping[str, Mapping[DataCoordinate, uuid.UUID]]:
         """A nested mapping of all quanta, keyed first by task name and then by
@@ -1540,6 +1584,63 @@ class PredictedQuantumGraphComponents:
 
     This does not include special "init" quanta.
     """
+
+    @classmethod
+    def make_empty(
+        cls,
+        universe: DimensionUniverse,
+        *,
+        output_run: str,
+        inputs: Iterable[str] = (),
+        output: str | None = None,
+        add_packages: bool = True,
+    ) -> PredictedQuantumGraphComponents:
+        """Make components for an empty quantum graph with no tasks.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions for all butler dimensions.
+        output_run : `str`
+            Output run collection.
+        inputs : `~collections.abc.Iterable` [`str`], optional
+            Iterable of input collection names.
+        output : `str` or `None`, optional
+            Output chained collection.
+        add_packages : `bool`, optional
+            Whether to add the special init quantum that writes the 'packages'
+            dataset.  The default (`True`) is consistent with
+            `~..quantum_graph_builder.QuantumGraphBuilder` behavior when there
+            are no regular quanta generated.
+
+        Returns
+        -------
+        components : `PredictedQuantumGraphComponents`
+            Components that can be used to build or write an empty quantum
+            graph.
+        """
+        components = cls(pipeline_graph=PipelineGraph(universe=universe))
+        components.header.inputs = list(inputs)
+        components.header.output_run = output_run
+        components.header.output = output
+        if add_packages:
+            components.init_quanta.root = [
+                PredictedQuantumDatasetsModel.model_construct(
+                    quantum_id=generate_uuidv7(),
+                    task_label="",
+                    outputs={
+                        acc.PACKAGES_INIT_OUTPUT_NAME: [
+                            PredictedDatasetModel(
+                                dataset_id=generate_uuidv7(),
+                                dataset_type_name=acc.PACKAGES_INIT_OUTPUT_NAME,
+                                data_coordinate=[],
+                                run=output_run,
+                            )
+                        ]
+                    },
+                )
+            ]
+        return components
 
     def make_dataset_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
         """Make a `lsst.daf.butler.DatasetRef` from information in the
