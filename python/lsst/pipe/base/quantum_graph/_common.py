@@ -448,14 +448,15 @@ class BaseQuantumGraphWriter:
         uri: ResourcePathExpression,
         header: HeaderModel,
         pipeline_graph: PipelineGraph,
-        indices: dict[uuid.UUID, int],
         *,
         address_filename: str,
-        compressor: Compressor,
         cdict_data: bytes | None = None,
+        zstd_level: int = 10,
     ) -> Iterator[Self]:
         uri = ResourcePath(uri)
-        address_writer = AddressWriter(indices)
+        address_writer = AddressWriter()
+        cdict = zstandard.ZstdCompressionDict(cdict_data) if cdict_data is not None else None
+        compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
         with uri.open(mode="wb") as stream:
             with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as zf:
                 self = cls(zf, compressor, address_writer, header.int_size)

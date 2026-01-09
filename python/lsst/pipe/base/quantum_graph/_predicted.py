@@ -66,6 +66,7 @@ from lsst.daf.butler import (
     DimensionDataExtractor,
     DimensionGroup,
     DimensionRecordSetDeserializer,
+    DimensionUniverse,
     LimitedButler,
     Quantum,
     QuantumBackedButler,
@@ -877,6 +878,49 @@ class PredictedQuantumGraph(BaseQuantumGraph):
             page_size=page_size,
         ).assemble()
 
+    @classmethod
+    def make_empty(
+        cls,
+        universe: DimensionUniverse,
+        *,
+        output_run: str,
+        inputs: Iterable[str] = (),
+        output: str | None = None,
+        add_packages: bool = True,
+    ) -> PredictedQuantumGraph:
+        """Make an empty quantum graph with no tasks.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions for all butler dimensions.
+        output_run : `str`
+            Output run collection.
+        inputs : `~collections.abc.Iterable` [`str`], optional
+            Iterable of input collection names.
+        output : `str` or `None`, optional
+            Output chained collection.
+        add_packages : `bool`, optional
+            Whether to add the special init quantum that writes the 'packages'
+            dataset.  The default (`True`) is consistent with
+            `~..quantum_graph_builder.QuantumGraphBuilder` behavior when there
+            are no regular quanta generated.
+
+        Returns
+        -------
+        quantum_graph : `PredictedQuantumGraph`
+            An empty quantum graph.
+        """
+        return cls(
+            PredictedQuantumGraphComponents.make_empty(
+                universe,
+                output_run=output_run,
+                inputs=inputs,
+                output=output,
+                add_packages=add_packages,
+            )
+        )
+
     @property
     def quanta_by_task(self) -> Mapping[str, Mapping[DataCoordinate, uuid.UUID]]:
         """A nested mapping of all quanta, keyed first by task name and then by
@@ -1541,6 +1585,63 @@ class PredictedQuantumGraphComponents:
     This does not include special "init" quanta.
     """
 
+    @classmethod
+    def make_empty(
+        cls,
+        universe: DimensionUniverse,
+        *,
+        output_run: str,
+        inputs: Iterable[str] = (),
+        output: str | None = None,
+        add_packages: bool = True,
+    ) -> PredictedQuantumGraphComponents:
+        """Make components for an empty quantum graph with no tasks.
+
+        Parameters
+        ----------
+        universe : `lsst.daf.butler.DimensionUniverse`
+            Definitions for all butler dimensions.
+        output_run : `str`
+            Output run collection.
+        inputs : `~collections.abc.Iterable` [`str`], optional
+            Iterable of input collection names.
+        output : `str` or `None`, optional
+            Output chained collection.
+        add_packages : `bool`, optional
+            Whether to add the special init quantum that writes the 'packages'
+            dataset.  The default (`True`) is consistent with
+            `~..quantum_graph_builder.QuantumGraphBuilder` behavior when there
+            are no regular quanta generated.
+
+        Returns
+        -------
+        components : `PredictedQuantumGraphComponents`
+            Components that can be used to build or write an empty quantum
+            graph.
+        """
+        components = cls(pipeline_graph=PipelineGraph(universe=universe))
+        components.header.inputs = list(inputs)
+        components.header.output_run = output_run
+        components.header.output = output
+        if add_packages:
+            components.init_quanta.root = [
+                PredictedQuantumDatasetsModel.model_construct(
+                    quantum_id=generate_uuidv7(),
+                    task_label="",
+                    outputs={
+                        acc.PACKAGES_INIT_OUTPUT_NAME: [
+                            PredictedDatasetModel(
+                                dataset_id=generate_uuidv7(),
+                                dataset_type_name=acc.PACKAGES_INIT_OUTPUT_NAME,
+                                data_coordinate=[],
+                                run=output_run,
+                            )
+                        ]
+                    },
+                )
+            ]
+        return components
+
     def make_dataset_ref(self, predicted: PredictedDatasetModel) -> DatasetRef:
         """Make a `lsst.daf.butler.DatasetRef` from information in the
         predicted quantum graph.
@@ -1793,7 +1894,6 @@ class PredictedQuantumGraphComponents:
                     f"Unsupported extension {ext!r} for quantum graph; "
                     "expected '.qg' (or '.qgraph' to force the old format)."
                 )
-        cdict: zstandard.ZstdCompressionDict | None = None
         cdict_data: bytes | None = None
         quantum_datasets_json: dict[uuid.UUID, bytes] = {}
         if len(self.quantum_datasets) < zstd_dict_n_inputs:
@@ -1807,26 +1907,20 @@ class PredictedQuantumGraphComponents:
                 for quantum_model in itertools.islice(self.quantum_datasets.values(), zstd_dict_n_inputs)
             }
             try:
-                cdict = zstandard.train_dictionary(
+                cdict_data = zstandard.train_dictionary(
                     zstd_dict_size,
                     list(quantum_datasets_json.values()),
                     level=zstd_level,
-                )
+                ).as_bytes()
             except zstandard.ZstdError as err:
                 warnings.warn(f"Not using a compression dictionary: {err}.")
-                cdict = None
-            else:
-                cdict_data = cdict.as_bytes()
-        compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
-        indices = {quantum_id: n for n, quantum_id in enumerate(sorted(self.quantum_datasets.keys()))}
         with BaseQuantumGraphWriter.open(
             uri,
             header=self.header,
             pipeline_graph=self.pipeline_graph,
-            indices=indices,
             address_filename="quanta",
-            compressor=compressor,
             cdict_data=cdict_data,
+            zstd_level=zstd_level,
         ) as writer:
             writer.write_single_model("thin_graph", self.thin_graph)
             if self.dimension_data is None:

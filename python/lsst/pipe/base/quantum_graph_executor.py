@@ -27,21 +27,111 @@
 
 from __future__ import annotations
 
-__all__ = ["QuantumExecutor", "QuantumGraphExecutor"]
+__all__ = ["QuantumExecutionResult", "QuantumExecutor", "QuantumGraphExecutor"]
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
+
+from lsst.daf.butler import Quantum
 
 from .quantum_reports import QuantumReport, Report
 
 if TYPE_CHECKING:
     import uuid
 
-    from lsst.daf.butler import Quantum
+    from lsst.daf.butler.logging import ButlerLogRecords
 
+    from ._task_metadata import TaskMetadata
     from .graph import QuantumGraph
     from .pipeline_graph import TaskNode
     from .quantum_graph import PredictedQuantumGraph
+
+
+class QuantumExecutionResult(tuple[Quantum, QuantumReport | None]):
+    """A result struct that captures information about a single quantum's
+    execution.
+
+    Parameters
+    ----------
+    quantum : `lsst.daf.butler.Quantum`
+        Quantum that was executed.
+    report : `.quantum_reports.QuantumReport`
+        Report with basic information about the execution.
+    task_metadata : `TaskMetadata`, optional
+        Metadata saved by the task and executor during execution.
+    skipped_existing : `bool`, optional
+        If `True`, this quantum was not executed because it appeared to have
+        already been executed successfully.
+    adjusted_no_work : `bool`, optional
+        If `True`, this quantum was not executed because the
+        `PipelineTaskConnections.adjustQuanta` hook raised `NoWorkFound`.
+
+    Notes
+    -----
+    For backwards compatibility, this class is a two-element tuple that allows
+    the ``quantum`` and ``report`` attributes to be unpacked.  Additional
+    regular attributes may be added by executors (but the tuple must remain
+    only two elements to enable the current unpacking interface).
+    """
+
+    def __new__(
+        cls,
+        quantum: Quantum,
+        report: QuantumReport | None,
+        *,
+        task_metadata: TaskMetadata | None = None,
+        skipped_existing: bool | None = None,
+        adjusted_no_work: bool | None = None,
+    ) -> Self:
+        return super().__new__(cls, (quantum, report))
+
+    # We need to define both __init__ and __new__ because tuple inheritance
+    # requires __new__ and numpydoc requires __init__.
+
+    def __init__(
+        self,
+        quantum: Quantum,
+        report: QuantumReport | None,
+        *,
+        task_metadata: TaskMetadata | None = None,
+        skipped_existing: bool | None = None,
+        adjusted_no_work: bool | None = None,
+    ):
+        self._task_metadata = task_metadata
+        self._skipped_existing = skipped_existing
+        self._adjusted_no_work = adjusted_no_work
+
+    @property
+    def quantum(self) -> Quantum:
+        """The quantum actually executed."""
+        return self[0]
+
+    @property
+    def report(self) -> QuantumReport | None:
+        """Structure describing the status of the execution of a quantum.
+
+        This is `None` if the implementation does not support this feature.
+        """
+        return self[1]
+
+    @property
+    def task_metadata(self) -> TaskMetadata | None:
+        """Metadata saved by the task and executor during execution."""
+        return self._task_metadata
+
+    @property
+    def skipped_existing(self) -> bool | None:
+        """If `True`, this quantum was not executed because it appeared to have
+        already been executed successfully.
+        """
+        return self._skipped_existing
+
+    @property
+    def adjusted_no_work(self) -> bool | None:
+        """If `True`, this quantum was not executed because the
+        `PipelineTaskConnections.adjustQuanta` hook raised `NoWorkFound`.
+        """
+        return self._adjusted_no_work
 
 
 class QuantumExecutor(ABC):
@@ -55,8 +145,14 @@ class QuantumExecutor(ABC):
 
     @abstractmethod
     def execute(
-        self, task_node: TaskNode, /, quantum: Quantum, quantum_id: uuid.UUID | None = None
-    ) -> tuple[Quantum, QuantumReport | None]:
+        self,
+        task_node: TaskNode,
+        /,
+        quantum: Quantum,
+        quantum_id: uuid.UUID | None = None,
+        *,
+        log_records: ButlerLogRecords | None = None,
+    ) -> QuantumExecutionResult:
         """Execute single quantum.
 
         Parameters
@@ -67,15 +163,18 @@ class QuantumExecutor(ABC):
             Quantum for this execution.
         quantum_id : `uuid.UUID` or `None`, optional
             The ID of the quantum to be executed.
+        log_records : `lsst.daf.butler.ButlerLogRecords`, optional
+            Container that should be used to store logs in memory before
+            writing them to the butler.  This disables streaming log (since
+            we'd have to store them in memory anyway), but it permits the
+            caller to prepend logs to be stored in the butler and allows task
+            logs to be inspected by the caller after execution is complete.
 
         Returns
         -------
-        quantum : `~lsst.daf.butler.Quantum`
-            The quantum actually executed.
-        report : `~.quantum_reports.QuantumReport`
-            Structure describing the status of the execution of a quantum.
-            `None` is returned if implementation does not support this
-            feature.
+        result : `QuantumExecutionResult`
+            Result struct.  May also be unpacked as a 2-tuple (see type
+            documentation).
 
         Notes
         -----
@@ -93,7 +192,9 @@ class QuantumGraphExecutor(ABC):
     """
 
     @abstractmethod
-    def execute(self, graph: QuantumGraph | PredictedQuantumGraph) -> None:
+    def execute(
+        self, graph: QuantumGraph | PredictedQuantumGraph, *, provenance_graph_file: str | None = None
+    ) -> None:
         """Execute whole graph.
 
         Implementation of this method depends on particular execution model
@@ -103,8 +204,10 @@ class QuantumGraphExecutor(ABC):
 
         Parameters
         ----------
-        graph : `.QuantumGraph`
+        graph : `.QuantumGraph` or `.quantum_graph.PredictedQuantumGraph`
             Execution graph.
+        provenance_graph_file : `str`, optional
+            A filename to write provenance to.
         """
         raise NotImplementedError()
 

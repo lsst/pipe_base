@@ -51,16 +51,17 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import AbstractContextManager, ExitStack, contextmanager
+from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
 
-from lsst.utils.logging import VERBOSE, LsstLogAdapter
+from lsst.utils.logging import LsstLogAdapter
 
+from .._provenance import ProvenanceQuantumScanData
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
-from ._structs import IngestRequest, ScanReport, WriteRequest
+from ._structs import IngestRequest, ScanReport
 
 _T = TypeVar("_T")
 
@@ -361,9 +362,9 @@ class SupervisorCommunicator:
         # scanner and the supervisor send one sentinal when done, and the
         # writer waits for (n_scanners + 1) sentinals to arrive before it
         # starts its shutdown.
-        self._write_requests: Queue[WriteRequest | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None = (
-            context.make_queue() if config.output_path is not None else None
-        )
+        self._write_requests: (
+            Queue[ProvenanceQuantumScanData | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None
+        ) = context.make_queue() if config.output_path is not None else None
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.
@@ -461,12 +462,12 @@ class SupervisorCommunicator:
         """
         self._scan_requests.put(_ScanRequest(quantum_id), block=False)
 
-    def request_write(self, request: WriteRequest) -> None:
+    def request_write(self, request: ProvenanceQuantumScanData) -> None:
         """Send a request to the writer to write provenance for the given scan.
 
         Parameters
         ----------
-        request : `WriteRequest`
+        request : `ProvenanceQuantumScanData`
             Information from scanning a quantum (or knowing you don't have to,
             in the case of blocked quanta).
         """
@@ -621,6 +622,11 @@ class WorkerCommunicator:
         self._exit_stack.__exit__(exc_type, exc_value, traceback)
         return True
 
+    @property
+    def exit_stack(self) -> ExitStack:
+        """A `contextlib.ExitStack` tied to the communicator."""
+        return self._exit_stack
+
     def log_progress(self, level: int, message: str) -> None:
         """Send a high-level log message to the supervisor.
 
@@ -632,44 +638,6 @@ class WorkerCommunicator:
             Log message.
         """
         self._reports.put(_ProgressLog(message=message, level=level), block=False)
-
-    def enter(
-        self,
-        cm: AbstractContextManager[_T],
-        on_close: str | None = None,
-        level: int = VERBOSE,
-        is_progress_log: bool = False,
-    ) -> _T:
-        """Enter a context manager that will be exited when the communicator's
-        context is exited.
-
-        Parameters
-        ----------
-        cm : `contextlib.AbstractContextManager`
-            A context manager to enter.
-        on_close : `str`, optional
-            A log message to emit (on the worker's logger) just before the
-            given context manager is exited.  This can be used to indicate
-            what's going on when an ``__exit__`` implementation has a lot of
-            work to do (e.g. moving a large file into a zip archive).
-        level : `int`, optional
-            Level for the ``on_close`` log message.
-        is_progress_log : `bool`, optional
-            If `True`, send the ``on_close`` message to the supervisor via
-            `log_progress` as well as the worker's logger.
-        """
-        if on_close is None:
-            return self._exit_stack.enter_context(cm)
-
-        @contextmanager
-        def wrapper() -> Iterator[_T]:
-            with cm as result:
-                yield result
-                self.log.log(level, on_close)
-                if is_progress_log:
-                    self.log_progress(level, on_close)
-
-        return self._exit_stack.enter_context(wrapper())
 
     def check_for_cancel(self) -> None:
         """Check for a cancel signal from the supervisor and raise
@@ -728,12 +696,12 @@ class ScannerCommunicator(WorkerCommunicator):
         else:
             self._reports.put(_IngestReport(1), block=False)
 
-    def request_write(self, request: WriteRequest) -> None:
+    def request_write(self, request: ProvenanceQuantumScanData) -> None:
         """Ask the writer to write provenance for a quantum.
 
         Parameters
         ----------
-        request : `WriteRequest`
+        request : `ProvenanceQuantumScanData`
             Result of scanning a quantum.
         """
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
@@ -913,12 +881,12 @@ class WriterCommunicator(WorkerCommunicator):
         self._reports.put(_Sentinel.WRITER_DONE, block=False)
         return result
 
-    def poll(self) -> Iterator[WriteRequest]:
+    def poll(self) -> Iterator[ProvenanceQuantumScanData]:
         """Poll for writer requests from the scanner workers and supervisor.
 
         Yields
         ------
-        request : `WriteRequest`
+        request : `ProvenanceQuantumScanData`
             The result of a quantum scan.
 
         Notes

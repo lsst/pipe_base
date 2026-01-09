@@ -27,41 +27,53 @@
 
 from __future__ import annotations
 
-__all__ = ("IngestRequest", "ScanReport")
+__all__ = ("LogOnClose",)
 
-import dataclasses
-import uuid
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
+from typing import TypeVar
 
-from lsst.daf.butler.datastore.record_data import DatastoreRecordData
+from lsst.utils.logging import VERBOSE
 
-from .._common import DatastoreName
-from .._predicted import PredictedDatasetModel
-from .._provenance import ProvenanceQuantumScanStatus
-
-
-@dataclasses.dataclass
-class ScanReport:
-    """Minimal information needed about a completed scan by the supervisor."""
-
-    quantum_id: uuid.UUID
-    """Unique ID of the quantum."""
-
-    status: ProvenanceQuantumScanStatus
-    """Combined status of the scan and the execution of the quantum."""
+_T = TypeVar("_T")
 
 
-@dataclasses.dataclass
-class IngestRequest:
-    """A request to ingest datasets produced by a single quantum."""
+class LogOnClose:
+    """A factory for context manager wrappers that emit a log message when
+    they are closed.
 
-    producer_id: uuid.UUID
-    """ID of the quantum that produced these datasets."""
+    Parameters
+    ----------
+    log_func : `~collections.abc.Callable` [ `int`, `str` ]
+        Callable that takes an integer log level and a string message and emits
+        a log message.  Note that placeholder formatting is not supported.
+    """
 
-    datasets: list[PredictedDatasetModel]
-    """Registry information about the datasets."""
+    def __init__(self, log_func: Callable[[int, str], None]):
+        self.log_func = log_func
 
-    records: dict[DatastoreName, DatastoreRecordData]
-    """Datastore information about the datasets."""
+    def wrap(
+        self,
+        cm: AbstractContextManager[_T],
+        msg: str,
+        level: int = VERBOSE,
+    ) -> AbstractContextManager[_T]:
+        """Wrap a context manager to log when it is exited.
 
-    def __bool__(self) -> bool:
-        return bool(self.datasets or self.records)
+        Parameters
+        ----------
+        cm : `contextlib.AbstractContextManager`
+            Context manager to wrap.
+        msg : `str`
+            Log message.
+        level : `int`, optional
+            Log level.
+        """
+
+        @contextmanager
+        def wrapper() -> Iterator[_T]:
+            with cm as result:
+                yield result
+                self.log_func(level, msg)
+
+        return wrapper()
