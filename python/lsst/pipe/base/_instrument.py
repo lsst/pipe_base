@@ -31,7 +31,6 @@ __all__ = ("Instrument",)
 
 import contextlib
 import datetime
-import os.path
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, cast, final
@@ -39,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Self, cast, final
 from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
 from lsst.daf.butler.registry import DataIdError
 from lsst.pex.config import Config, RegistryField
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils import doImportType
 from lsst.utils.introspection import get_full_type_name
 
@@ -65,7 +65,7 @@ class Instrument(metaclass=ABCMeta):
     the base class.
     """
 
-    configPaths: Sequence[str] = ()
+    configPaths: Sequence[ResourcePathExpression] = ()
     """Paths to config files to read for specific Tasks.
 
     The paths in this list should contain files of the form `task.py`, for
@@ -366,9 +366,10 @@ class Instrument(metaclass=ABCMeta):
             Config instance to which overrides should be applied.
         """
         for root in self.configPaths:
-            path = os.path.join(root, f"{name}.py")
-            if os.path.exists(path):
-                config.load(path)
+            resource = ResourcePath(root, forceDirectory=True, forceAbsolute=True)
+            uri = resource.join(f"{name}.py", forceDirectory=False)
+            if uri.exists():
+                config.load(uri)
 
     @staticmethod
     def formatCollectionTimestamp(timestamp: str | datetime.datetime) -> str:
