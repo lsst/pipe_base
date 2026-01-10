@@ -186,6 +186,12 @@ class ProvenanceQuantumInfo(QuantumInfo):
     failure.
     """
 
+    metadata_id: uuid.UUID
+    """ID of this quantum's metadata dataset."""
+
+    log_id: uuid.UUID
+    """ID of this quantum's log dataset."""
+
 
 class ProvenanceInitQuantumInfo(TypedDict):
     """A typed dictionary that annotates the attributes of the NetworkX graph
@@ -211,6 +217,9 @@ class ProvenanceInitQuantumInfo(TypedDict):
 
     pipeline_node: TaskInitNode
     """Node in the pipeline graph for this task's init-only step."""
+
+    config_id: uuid.UUID
+    """ID of this task's config dataset."""
 
 
 class ProvenanceDatasetModel(PredictedDatasetModel):
@@ -646,6 +655,8 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             resource_usage=last_attempt.resource_usage,
             attempts=self.attempts,
         )
+        graph._quanta_by_task_label[self.task_label][data_id] = self.quantum_id
+        graph._quantum_only_xgraph.add_node(self.quantum_id, **graph._bipartite_xgraph.nodes[self.quantum_id])
         for connection_name, dataset_ids in self.inputs.items():
             read_edge = task_node.get_input_edge(connection_name)
             for dataset_id in dataset_ids:
@@ -655,6 +666,30 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
                 ).append(read_edge)
         for connection_name, dataset_ids in self.outputs.items():
             write_edge = task_node.get_output_edge(connection_name)
+            if connection_name == acc.METADATA_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.add_node(
+                    dataset_ids[0],
+                    data_id=data_id,
+                    dataset_type_name=write_edge.dataset_type_name,
+                    pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                    run=graph.header.output_run,
+                    produced=last_attempt.status.has_metadata,
+                )
+                graph._datasets_by_type[write_edge.dataset_type_name][data_id] = dataset_ids[0]
+                graph._bipartite_xgraph.nodes[self.quantum_id]["metadata_id"] = dataset_ids[0]
+                graph._quantum_only_xgraph.nodes[self.quantum_id]["metadata_id"] = dataset_ids[0]
+            if connection_name == acc.LOG_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.add_node(
+                    dataset_ids[0],
+                    data_id=data_id,
+                    dataset_type_name=write_edge.dataset_type_name,
+                    pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                    run=graph.header.output_run,
+                    produced=last_attempt.status.has_log,
+                )
+                graph._datasets_by_type[write_edge.dataset_type_name][data_id] = dataset_ids[0]
+                graph._bipartite_xgraph.nodes[self.quantum_id]["log_id"] = dataset_ids[0]
+                graph._quantum_only_xgraph.nodes[self.quantum_id]["log_id"] = dataset_ids[0]
             for dataset_id in dataset_ids:
                 graph._bipartite_xgraph.add_edge(
                     self.quantum_id,
@@ -663,8 +698,6 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
                     # There can only be one pipeline edge for an output.
                     pipeline_edges=[write_edge],
                 )
-        graph._quanta_by_task_label[self.task_label][data_id] = self.quantum_id
-        graph._quantum_only_xgraph.add_node(self.quantum_id, **graph._bipartite_xgraph.nodes[self.quantum_id])
         for dataset_id in graph._bipartite_xgraph.predecessors(self.quantum_id):
             for upstream_quantum_id in graph._bipartite_xgraph.predecessors(dataset_id):
                 graph._quantum_only_xgraph.add_edge(upstream_quantum_id, self.quantum_id)
@@ -803,6 +836,15 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
             ).append(read_edge)
         for connection_name, dataset_id in self.outputs.items():
             write_edge = task_init_node.get_output_edge(connection_name)
+            graph._bipartite_xgraph.add_node(
+                dataset_id,
+                data_id=empty_data_id,
+                dataset_type_name=write_edge.dataset_type_name,
+                pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                run=graph.header.output_run,
+                produced=True,
+            )
+            graph._datasets_by_type[write_edge.dataset_type_name][empty_data_id] = dataset_id
             graph._bipartite_xgraph.add_edge(
                 self.quantum_id,
                 dataset_id,
@@ -810,6 +852,8 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
                 # There can only be one pipeline edge for an output.
                 pipeline_edges=[write_edge],
             )
+            if write_edge.connection_name == acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.nodes[self.quantum_id]["config_id"] = dataset_id
         graph._init_quanta[self.task_label] = self.quantum_id
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
@@ -994,6 +1038,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         types in the pipeline graph are included, even if none of their
         datasets were loaded (i.e. nested mappings may be empty).
 
+        Reading a quantum also populates its log and metadata datasets.
+
         The returned object may be an internal dictionary; as the type
         annotation indicates, it should not be modified in place.
         """
@@ -1032,7 +1078,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         `ProvenanceQuantumGraphReader.read_quanta`) or datasets (via
         `ProvenanceQuantumGraphReader.read_datasets`) will load those nodes
         with full attributes and edges to adjacent nodes with no attributes.
-        Loading quanta necessary to populate edge attributes.
+        Loading quanta is necessary to populate edge attributes.
+        Reading a quantum also populates its log and metadata datasets.
 
         Node attributes are described by the
         `ProvenanceQuantumInfo`, `ProvenanceInitQuantumInfo`, and
