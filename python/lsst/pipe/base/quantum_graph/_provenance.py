@@ -1875,7 +1875,7 @@ class ProvenanceQuantumScanModels:
                 # But we found the metadata!  Either that hard error happened
                 # at a very unlucky time (in between those two writes), or
                 # something even weirder happened.
-                self.attempts[-1].status = QuantumAttemptStatus.LOGS_MISSING
+                self.attempts[-1].status = QuantumAttemptStatus.ABORTED_SUCCESS
             else:
                 self.attempts[-1].status = QuantumAttemptStatus.FAILED
         if len(self.metadata.attempts) < len(self.attempts):
