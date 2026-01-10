@@ -1151,10 +1151,6 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         """Construct an `astropy.table.Table` with counts for each exception
         type raised by each task.
 
-        At present this only includes information from partial-outputs-error
-        successes, since exception information for failures is not tracked.
-        This may change in the future.
-
         Returns
         -------
         table : `astropy.table.Table`

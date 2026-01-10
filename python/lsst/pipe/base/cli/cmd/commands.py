@@ -161,7 +161,7 @@ _AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
 
 @click.command(short_help="Scan for the outputs of an active or completed quantum graph.", cls=ButlerCommand)
 @click.argument("predicted_graph", required=True)
-@repo_argument(required=True, help="Path to the central butler repository.")
+@repo_argument(required=True, help="Path or alias for the butler repository.")
 @click.option(
     "-o",
     "--output",
@@ -268,3 +268,33 @@ def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
         # When this exception is raised, we'll have already logged the relevant
         # traceback from a separate worker.
         raise click.ClickException(str(err)) from None
+
+
+@click.command(
+    short_help="Ingest a provenance quantum graph into a butler, finalizing a RUN collection.",
+    cls=ButlerCommand,
+)
+@repo_argument(required=True, help="Path or alias for the butler repository.")
+@click.argument("provenance_graph", required=False)
+@transfer_option(default="move")
+@click.option("--batch-size", default=10000, help="How many datasets to process in each transaction.")
+@click.option(
+    "--output-run",
+    default=None,
+    help=(
+        "Name of the output RUN collection.  Must be provided if the provenance graph is not"
+        " provided (so the graph can be found in the butler)."
+    ),
+)
+def ingest_graph(
+    *,
+    repo: str,
+    provenance_graph: str | None,
+    transfer: str | None,
+    batch_size: int,
+    output_run: str | None,
+) -> None:
+    """Ingest a provenance graph into a butler repository."""
+    from ...quantum_graph.ingest_graph import ingest_graph as ingest_graph_py
+
+    ingest_graph_py(repo, provenance_graph, transfer=transfer, batch_size=batch_size, output_run=output_run)

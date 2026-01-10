@@ -39,6 +39,7 @@ from click.testing import CliRunner, Result
 
 import lsst.utils.tests
 from lsst.daf.butler import Butler, ButlerLogRecords, QuantumBackedButler
+from lsst.pex.config import Config
 from lsst.pipe.base import (
     AlgorithmError,
     QuantumAttemptStatus,
@@ -56,10 +57,10 @@ from lsst.pipe.base.quantum_graph import (
     PredictedQuantumInfo,
     ProvenanceDatasetInfo,
     ProvenanceQuantumGraph,
-    ProvenanceQuantumGraphReader,
     ProvenanceQuantumInfo,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
+from lsst.pipe.base.quantum_graph.ingest_graph import ingest_graph
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
 from lsst.pipe.base.tests.mocks import (
@@ -228,7 +229,7 @@ class AggregatorTestCase(unittest.TestCase):
                     zstd_dict_n_inputs=16,
                 )
                 yield PrepInfo(
-                    butler=helper.butler,
+                    butler=helper.butler.clone(collections="out_chain"),
                     butler_path=root,
                     predicted=pqgc.assemble(),
                     predicted_path=predicted_path,
@@ -294,7 +295,6 @@ class AggregatorTestCase(unittest.TestCase):
     def check_provenance_graph(
         self,
         pred: PredictedQuantumGraph,
-        prov_reader: ProvenanceQuantumGraphReader,
         butler: Butler,
         expect_failure: bool,
         start_time: float,
@@ -327,10 +327,7 @@ class AggregatorTestCase(unittest.TestCase):
         prov : `ProvenanceQuantumGraph`
             The full provenance quantum graph.
         """
-        prov_reader.read_full_graph()
-        prov = prov_reader.graph
-        checked_some_metadata = False
-        checked_some_log = False
+        prov: ProvenanceQuantumGraph = butler.get("run_provenance")
         self.maxDiff = None
         self.assertEqual(prov.header.version, FORMAT_VERSION)
         self.assertEqual(
@@ -478,23 +475,29 @@ class AggregatorTestCase(unittest.TestCase):
                         self._expect_all_exist(existence[connection_name], msg=msg)
                     self._expect_successful(prov_qinfo, existence, msg=msg)
                     self.assertEqual(len(prov_qinfo["attempts"]), 1)
-            if not checked_some_metadata and prov_qinfo["status"] is QuantumAttemptStatus.SUCCESSFUL:
-                self.check_metadata(quantum_id, prov_reader, butler)
-                checked_some_metadata = True
-            if not checked_some_log and prov_qinfo["status"] in (
-                QuantumAttemptStatus.SUCCESSFUL,
-                QuantumAttemptStatus.FAILED,
-            ):
-                self.check_log(quantum_id, prov_reader, butler)
-                checked_some_log = True
-        self.assertTrue(checked_some_metadata)
-        self.assertTrue(checked_some_log)
-        self.check_resource_usage_table(
-            prov_reader.graph, expect_failure=expect_failure, start_time=start_time
-        )
-        self.check_packages(prov_reader, butler)
-        self.check_quantum_table(prov_reader.graph, expect_failure=expect_failure)
-        self.check_exception_table(prov_reader.graph, expect_failure=expect_failure)
+            self.check_metadata(
+                quantum_id,
+                prov,
+                butler,
+                expect_ingested=(prov_qinfo["status"] is QuantumAttemptStatus.SUCCESSFUL),
+            )
+            self.check_log(
+                quantum_id,
+                prov,
+                butler,
+                expect_ingested=(
+                    prov_qinfo["status"]
+                    in (
+                        QuantumAttemptStatus.SUCCESSFUL,
+                        QuantumAttemptStatus.FAILED,
+                    )
+                ),
+            )
+        self.check_resource_usage_table(prov, expect_failure=expect_failure, start_time=start_time)
+        self.check_packages(butler)
+        self.check_configs(butler, prov)
+        self.check_quantum_table(prov, expect_failure=expect_failure)
+        self.check_exception_table(prov, expect_failure=expect_failure)
         return prov
 
     def _expect_all_exist(self, existence: list[bool], msg: str) -> None:
@@ -604,100 +607,93 @@ class AggregatorTestCase(unittest.TestCase):
         return exists
 
     def check_metadata(
-        self, quantum_id: uuid.UUID, provenance_reader: ProvenanceQuantumGraphReader, butler: Butler
+        self, quantum_id: uuid.UUID, prov: ProvenanceQuantumGraph, butler: Butler, expect_ingested: bool
     ) -> None:
-        """Check reading a metadata dataset from the provenance reader,
-        and check that the original metadata file has been deleted.
+        """Check reading a metadata dataset from the butler, and check that the
+        original metadata file has been deleted.
 
         Parameters
         ----------
         quantum_id : `uuid.UUID`
             Unique ID for the quantum this metadata belongs to.
-        provenance_reader : \
-                `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraphReader`
-            Reader for the provenance quantum graph.
+        prov : `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph`
+            Provenance quantum graph.
         butler : `lsst.daf.butler.Butler`
             Client for the data repository.
+        expect_ingested : `bool`
+            Whether the metadata dataset should have been ingested.
         """
-        # Try reading metadata through the quantum ID.
-        ((metadata1,),) = provenance_reader.fetch_metadata([quantum_id]).values()
-        self.assertIsInstance(metadata1, TaskMetadata)
-        for _, dataset_id, pipeline_edges in provenance_reader.graph.bipartite_xgraph.out_edges(
-            quantum_id, data="pipeline_edges"
-        ):
-            if pipeline_edges[0].connection_name == acc.METADATA_OUTPUT_CONNECTION_NAME:
-                # Also try reading metadata through the dataset ID.
-                ((metadata2,),) = provenance_reader.fetch_metadata([dataset_id]).values()
-                break
-        else:
-            raise AssertionError("No metadata connection found.")
-        self.assertEqual(metadata1, metadata2)
-        # Also get the metadata from the butler.
+        dataset_id = prov.bipartite_xgraph.nodes[quantum_id]["metadata_id"]
         ref = butler.get_dataset(dataset_id)
-        self.assertEqual(butler.get(ref), metadata1)
+        if not expect_ingested:
+            self.assertIsNone(ref)
+            return
+        metadata = butler.get(ref)
+        self.assertIsInstance(metadata, TaskMetadata)
+        graph_path = butler.getURI("run_provenance")
+        self.assertEqual(butler.getURI(ref), graph_path)
+        # We now delete the metadata dataset, in order let us get the original
+        # location from the butler and check that there's nothing there.  Note
+        # that this doesn't actually delete the file because the butler knows
+        # it's shared with other datasets.
+        butler.pruneDatasets([ref], disassociate=True, unstore=True, purge=True)
+        original_path = butler.getURI(ref, predict=True)
+        self.assertTrue(graph_path.exists())
+        self.assertNotEqual(graph_path, original_path)
+        self.assertFalse(original_path.exists())
 
     def check_log(
-        self, quantum_id: uuid.UUID, provenance_reader: ProvenanceQuantumGraphReader, butler: Butler
+        self, quantum_id: uuid.UUID, prov: ProvenanceQuantumGraph, butler: Butler, expect_ingested: bool
     ) -> None:
-        """Check reading a log dataset from the provenance reader,
-        and check that the original log file has been deleted.
+        """Check reading a log dataset from the butler, and check that the
+        original log file has been deleted.
 
         Parameters
         ----------
         quantum_id : `uuid.UUID`
             Unique ID for the quantum this log belongs to.
-        provenance_reader : \
-                `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraphReader`
-            Reader for the provenance quantum graph.
+        prov : `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph`
+            Provenance quantum graph.
         butler : `lsst.daf.butler.Butler`
             Client for the data repository.
+        expect_ingested : `bool`
+            Whether the metadata dataset should have been ingested.
         """
-        # Try reading log through the quantum ID.
-        ((log1,),) = provenance_reader.fetch_logs([quantum_id]).values()
-        self.assertIsInstance(log1, ButlerLogRecords)
-        for _, dataset_id, pipeline_edges in provenance_reader.graph.bipartite_xgraph.out_edges(
-            quantum_id, data="pipeline_edges"
-        ):
-            if pipeline_edges[0].connection_name == acc.LOG_OUTPUT_CONNECTION_NAME:
-                # Also try reading log through the dataset ID.
-                ((log2,),) = provenance_reader.fetch_logs([dataset_id]).values()
-                break
-        else:
-            raise AssertionError("No log connection found.")
-        self.assertEqual(log1, log2)
-        # Also get the logs from the butler.
+        dataset_id = prov.bipartite_xgraph.nodes[quantum_id]["log_id"]
         ref = butler.get_dataset(dataset_id)
-        # We have to compare the logs are lists because the 'extra' data is
-        # different, for now; when the logs are backed by the provenance QG
-        # this will change (but then we might stop ingesting logs at all).
-        self.assertEqual(list(butler.get(ref)), list(log1))
+        if not expect_ingested:
+            self.assertIsNone(ref)
+            return
+        log = butler.get(ref)
+        self.assertIsInstance(log, ButlerLogRecords)
+        graph_path = butler.getURI("run_provenance")
+        self.assertEqual(butler.getURI(ref), graph_path)
+        # We now delete the log dataset, in order let us get the original
+        # location from the butler and check that there's nothing there.  Note
+        # that this doesn't actually delete the file because the butler knows
+        # it's shared with other datasets.
+        butler.pruneDatasets([ref], disassociate=True, unstore=True, purge=True)
+        original_path = butler.getURI(ref, predict=True)
+        self.assertTrue(graph_path.exists())
+        self.assertNotEqual(graph_path, original_path)
+        self.assertFalse(original_path.exists())
 
-    def check_packages(self, provenance_reader: ProvenanceQuantumGraphReader, butler: Butler) -> None:
+    def check_configs(self, butler: Butler, prov: ProvenanceQuantumGraph) -> None:
+        for task_node in prov.pipeline_graph.tasks.values():
+            config = butler.get(task_node.init.config_output.dataset_type_name)
+            self.assertIsInstance(config, Config)
+
+    def check_packages(self, butler: Butler) -> None:
         """Check fetching package versions from the provenance graph.
 
         Parameters
         ----------
-        provenance_reader : \
-                `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraphReader`
-            Reader for the provenance quantum graph.
         butler : `lsst.daf.butler.Butler`
             Client for the data repository.
         """
-        packages = provenance_reader.fetch_packages()
+        packages = butler.get("run_provenance.packages")
         self.assertIsInstance(packages, Packages)
         self.assertIn("pipe_base", packages)
-        # Also check that the packages are available from the butler. They are
-        # unfortunately not easy to compare because one passes include_all=True
-        # and the other passes include_all=False, and latter adds non-portable
-        # EUPS tag information to the versions.
-        butler_packages = butler.get("packages", collections=[provenance_reader.header.output_run])
-        self.assertFalse(
-            [
-                name
-                for name, (ver1, ver2) in packages.difference(butler_packages).items()
-                if not ver1.startswith(ver2)
-            ]
-        )
 
     def check_resource_usage_table(
         self, prov: ProvenanceQuantumGraph, expect_failure: bool, start_time: float
@@ -814,14 +810,13 @@ class AggregatorTestCase(unittest.TestCase):
             )
             self.assertCountEqual(attempted_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                prov = self.check_provenance_graph(
-                    prep.predicted,
-                    reader,
-                    prep.butler,
-                    expect_failure=False,
-                    start_time=start_time,
-                )
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=False,
+                start_time=start_time,
+            )
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -848,15 +843,13 @@ class AggregatorTestCase(unittest.TestCase):
             # Scan again, and write the provenance QG.
             prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            # Run the scanner again.
-            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                prov = self.check_provenance_graph(
-                    prep.predicted,
-                    reader,
-                    prep.butler,
-                    expect_failure=False,
-                    start_time=start_time,
-                )
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=False,
+                start_time=start_time,
+            )
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -872,14 +865,13 @@ class AggregatorTestCase(unittest.TestCase):
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
             )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                prov = self.check_provenance_graph(
-                    prep.predicted,
-                    reader,
-                    prep.butler,
-                    expect_failure=True,
-                    start_time=start_time,
-                )
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=True,
+                start_time=start_time,
+            )
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -898,17 +890,16 @@ class AggregatorTestCase(unittest.TestCase):
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                prov = self.check_provenance_graph(
-                    prep.predicted,
-                    reader,
-                    prep.butler,
-                    expect_failure=True,
-                    start_time=start_time,
-                )
-                for i, quantum_id in enumerate(attempted_quanta):
-                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
-                    self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=True,
+                start_time=start_time,
+            )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
 
     def test_retry(self) -> None:
         """Test running a full graph with some failures, rerunning the quanta
@@ -926,31 +917,30 @@ class AggregatorTestCase(unittest.TestCase):
                 )
             )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            with ProvenanceQuantumGraphReader.open(prep.config.output_path) as reader:
-                prov = self.check_provenance_graph(
-                    prep.predicted,
-                    reader,
-                    prep.butler,
-                    expect_failure=False,
-                    start_time=start_time,
-                    expect_failures_retried=True,
-                )
-                for i, quantum_id in enumerate(attempted_quanta_1):
-                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
-                    self.assertEqual(qinfo["attempts"][0].previous_process_quanta, attempted_quanta_1[:i])
-                expected: list[uuid.UUID] = []
-                for quantum_id in attempted_quanta_2:
-                    qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
-                    if (
-                        quantum_id in attempted_quanta_1
-                        and qinfo["attempts"][0].status is QuantumAttemptStatus.SUCCESSFUL
-                    ):
-                        # These weren't actually attempted twice, since they
-                        # were already successful in the first round.
-                        self.assertEqual(len(qinfo["attempts"]), 1)
-                    else:
-                        self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, expected)
-                        expected.append(quantum_id)
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=False,
+                start_time=start_time,
+                expect_failures_retried=True,
+            )
+            for i, quantum_id in enumerate(attempted_quanta_1):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][0].previous_process_quanta, attempted_quanta_1[:i])
+            expected: list[uuid.UUID] = []
+            for quantum_id in attempted_quanta_2:
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                if (
+                    quantum_id in attempted_quanta_1
+                    and qinfo["attempts"][0].status is QuantumAttemptStatus.SUCCESSFUL
+                ):
+                    # These weren't actually attempted twice, since they
+                    # were already successful in the first round.
+                    self.assertEqual(len(qinfo["attempts"]), 1)
+                else:
+                    self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, expected)
+                    expected.append(quantum_id)
 
     def test_worker_failures(self) -> None:
         """Test that if failures occur on (multiple) workers we shut down
