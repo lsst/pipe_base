@@ -275,15 +275,23 @@ class ExceptionInfo(pydantic.BaseModel):
 class QuantumAttemptStatus(enum.Enum):
     """Enum summarizing an attempt to run a quantum."""
 
+    ABORTED = -4
+    """The quantum failed with a hard error that prevented both logs and
+    metadata from being written.
+
+    This state is only set if information from higher-level tooling (e.g. BPS)
+    is available to distinguish it from ``UNKNOWN``.
+    """
+
     UNKNOWN = -3
     """The status of this attempt is unknown.
 
-    This usually means no logs or metadata were written, and it at least could
-    not be determined whether the quantum was blocked by an upstream failure
-    (if it was definitely blocked, `BLOCKED` is set instead).
+    This means no logs or metadata were written, and it at least could not be
+    determined whether the quantum was blocked by an upstream failure (if it
+    was definitely blocked, `BLOCKED` is set instead).
     """
 
-    LOGS_MISSING = -2
+    ABORTED_SUCCESS = -2
     """Task metadata was written for this attempt but logs were not.
 
     This is a rare condition that requires a hard failure (i.e. the kind that
@@ -292,20 +300,21 @@ class QuantumAttemptStatus(enum.Enum):
     """
 
     FAILED = -1
-    """Execution of the quantum failed.
+    """Execution of the quantum failed gracefully.
 
     This is always set if the task metadata dataset was not written but logs
     were, as is the case when a Python exception is caught and handled by the
-    execution system.  It may also be set in cases where logs were not written
-    either, but other information was available (e.g. from higher-level
-    orchestration tooling) to mark it as a failure.
+    execution system.
+
+    This status guarantees that the task log dataset was produced but the
+    metadata dataset was not.
     """
 
     BLOCKED = 0
     """This quantum was not executed because an upstream quantum failed.
 
-    Upstream quanta with status `UNKNOWN` or `FAILED` are considered blockers;
-    `LOGS_MISSING` is not.
+    Upstream quanta with status `UNKNOWN`, `FAILED`, or `ABORTED` are
+    considered blockers; `ABORTED_SUCCESS` is not.
     """
 
     SUCCESSFUL = 1
@@ -318,6 +327,16 @@ class QuantumAttemptStatus(enum.Enum):
     exception as a non-failure.  See `QuantumSuccessCaveats` for details on how
     these "successes with caveats" are reported.
     """
+
+    @property
+    def has_metadata(self) -> bool:
+        """Whether the task metadata dataset was produced."""
+        return self is self.SUCCESSFUL or self is self.ABORTED_SUCCESS
+
+    @property
+    def has_log(self) -> bool:
+        """Whether the log dataset was produced."""
+        return self is self.SUCCESSFUL or self is self.FAILED
 
 
 class GetSetDictMetadataHolder(Protocol):
