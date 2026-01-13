@@ -318,6 +318,12 @@ Report: TypeAlias = (
 )
 
 
+def _disable_resources_parallelism() -> None:
+    os.environ["LSST_RESOURCES_NUM_WORKERS"] = "1"
+    os.environ.pop("LSST_RESOURCES_EXECUTOR", None)
+    os.environ["LSST_S3_USE_THREADS"] = "False"
+
+
 class SupervisorCommunicator:
     """A helper object that lets the supervisor direct the other workers.
 
@@ -433,6 +439,7 @@ class SupervisorCommunicator:
         self._expect_empty_queue(self._compression_dict)
 
     def __enter__(self) -> Self:
+        _disable_resources_parallelism()
         self.progress.__enter__()
         # We make the low-level logger in __enter__ instead of __init__ only
         # because that's the pattern used by true workers (where it matters).
@@ -581,6 +588,7 @@ class WorkerCommunicator:
         self._cancel_event = supervisor._cancel_event
 
     def __enter__(self) -> Self:
+        _disable_resources_parallelism()
         self.log = make_worker_log(self.name, self.config)
         self.log.verbose("%s has PID %s (parent is %s).", self.name, os.getpid(), os.getppid())
         self._exit_stack = ExitStack().__enter__()
