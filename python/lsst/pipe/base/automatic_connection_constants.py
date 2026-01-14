@@ -26,7 +26,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Constants used to define the connections automatically added for each
-PipelineTask by the execution system.
+PipelineTask by the execution system, as well as other special dataset types.
 """
 
 from __future__ import annotations
@@ -43,6 +43,8 @@ __all__ = (
     "METADATA_OUTPUT_TEMPLATE",
     "PACKAGES_INIT_OUTPUT_NAME",
     "PACKAGES_INIT_OUTPUT_STORAGE_CLASS",
+    "PROVENANCE_DATASET_TYPE_NAME",
+    "PROVENANCE_STORAGE_CLASS",
 )
 
 
@@ -91,3 +93,9 @@ type names.
 METADATA_OUTPUT_STORAGE_CLASS: str = "TaskMetadata"
 """Name of the storage class for task metadata output datasets.
 """
+
+PROVENANCE_DATASET_TYPE_NAME: str = "run_provenance"
+"""Name of the dataset used to store per-RUN provenance."""
+
+PROVENANCE_STORAGE_CLASS: str = "ProvenanceQuantumGraph"
+"""Name of the storage class used to store provenance."""
