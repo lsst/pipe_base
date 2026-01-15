@@ -45,6 +45,8 @@ __all__ = (
     "PACKAGES_INIT_OUTPUT_STORAGE_CLASS",
     "PROVENANCE_DATASET_TYPE_NAME",
     "PROVENANCE_STORAGE_CLASS",
+    "RESOURCE_USAGE_STORAGE_CLASS",
+    "RESOURCE_USAGE_TEMPLATE",
 )
 
 
@@ -99,3 +101,12 @@ PROVENANCE_DATASET_TYPE_NAME: str = "run_provenance"
 
 PROVENANCE_STORAGE_CLASS: str = "ProvenanceQuantumGraph"
 """Name of the storage class used to store provenance."""
+
+RESOURCE_USAGE_TEMPLATE: str = "{label}_resource_usage"
+"""String template used to form the name of the resource usage dataset type for
+a task.
+"""
+
+RESOURCE_USAGE_STORAGE_CLASS: str = "ArrowAstropy"
+"""Storage class of the resource usage dataset type for a task.
+"""

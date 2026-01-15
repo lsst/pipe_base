@@ -123,8 +123,9 @@ def ingest_graph(
 
     Notes
     -----
-    After this operation, no further processing may be done in the
-    `~lsst.daf.butler.CollectionType.RUN` collection.
+    After this operation, any further processing done in the
+    `~lsst.daf.butler.CollectionType.RUN` collection will not be included in
+    the provenance.
 
     If this process is interrupted, it can pick up where it left off if run
     again (at the cost of some duplicate work to figure out how much progress

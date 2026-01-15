@@ -38,12 +38,13 @@ __all__ = (
     "ProvenanceQuantumGraphWriter",
     "ProvenanceQuantumInfo",
     "ProvenanceQuantumModel",
+    "ProvenanceQuantumReport",
     "ProvenanceQuantumScanData",
     "ProvenanceQuantumScanModels",
     "ProvenanceQuantumScanStatus",
+    "ProvenanceReport",
     "ProvenanceTaskMetadataModel",
 )
-
 
 import dataclasses
 import enum
@@ -60,9 +61,9 @@ import networkx
 import numpy as np
 import pydantic
 
-from lsst.daf.butler import DataCoordinate
+from lsst.daf.butler import Butler, DataCoordinate
 from lsst.daf.butler.logging import ButlerLogRecord, ButlerLogRecords
-from lsst.resources import ResourcePathExpression
+from lsst.resources import ResourcePath, ResourcePathExpression
 from lsst.utils.iteration import ensure_iterable
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.packages import Packages
@@ -559,6 +560,131 @@ class ProvenanceTaskMetadataModel(pydantic.BaseModel):
             return super().model_validate_strings(*args, **kwargs)
 
 
+class ProvenanceQuantumReport(pydantic.BaseModel):
+    """A Pydantic model that used to report information about a single
+    (generally problematic) quantum.
+    """
+
+    quantum_id: uuid.UUID
+    data_id: dict[str, int | str]
+    attempts: list[ProvenanceQuantumAttemptModel]
+
+    @classmethod
+    def from_info(cls, quantum_id: uuid.UUID, quantum_info: ProvenanceQuantumInfo) -> ProvenanceQuantumReport:
+        """Construct from a provenance quantum graph node.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
+        quantum_info : `ProvenanceQuantumInfo`
+            Node attributes for this quantum.
+        """
+        return cls(
+            quantum_id=quantum_id,
+            data_id=dict(quantum_info["data_id"].mapping),
+            attempts=quantum_info["attempts"],
+        )
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
+class ProvenanceReport(pydantic.RootModel):
+    """A Pydantic model that groups quantum information by task label, then
+    status (as a string), and then exception type.
+    """
+
+    root: dict[TaskLabel, dict[str, dict[str | None, list[ProvenanceQuantumReport]]]] = {}
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
+
+
 class ProvenanceQuantumModel(pydantic.BaseModel):
     """Data model for the quanta in a provenance quantum graph file."""
 
@@ -1005,6 +1131,83 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
             dataset_type_name: {} for dataset_type_name in self.pipeline_graph.dataset_types.keys()
         }
 
+    @classmethod
+    @contextmanager
+    def from_args(
+        cls,
+        repo_or_filename: str,
+        /,
+        collection: str | None = None,
+        *,
+        quanta: Iterable[uuid.UUID] | None = None,
+        datasets: Iterable[uuid.UUID] | None = None,
+        writeable: bool = False,
+    ) -> Iterator[tuple[ProvenanceQuantumGraph, Butler | None]]:
+        """Construct a `ProvenanceQuantumGraph` fron CLI-friendly arguments for
+        a file or butler-ingested graph dataset.
+
+        Parameters
+        ----------
+        repo_or_filename : `str`
+            Either a provenance quantum graph filename or a butler repository
+            path or alias.
+        collections : `~collections.abc.Iterable` [ `str` ], optional
+            Collections to search; presence indicates that the first argument
+            is a butler repository, not a filename.
+        quanta : `~collections.abc.Iterable` [ `str` ] or `None`, optional
+            IDs of the quanta to load, or `None` to load all.
+        datasets : `~collections.abc.Iterable` [ `str` ], optional
+            IDs of the datasets to load, or `None` to load all.
+        writeable : `bool`, optional
+            Whether the butler should be constructed with write support.
+
+        Returns
+        -------
+        context : `contextlib.AbstractContextManager`
+            A context manager that yields a tuple of
+
+            - the `ProvenanceQuantumGraph`
+            - the `Butler` constructed (or `None`)
+
+            when entered.
+        """
+        exit_stack = ExitStack()
+        if collection is not None:
+            try:
+                butler = exit_stack.enter_context(
+                    Butler.from_config(repo_or_filename, collections=[collection], writeable=writeable)
+                )
+            except Exception as err:
+                err.add_note(
+                    f"Expected {repo_or_filename!r} to be a butler repository path or alias because a "
+                    f"collection ({collection}) was provided."
+                )
+                raise
+            with exit_stack:
+                graph = butler.get(
+                    acc.PROVENANCE_DATASET_TYPE_NAME, parameters={"quanta": quanta, "datasets": datasets}
+                )
+                yield graph, butler
+        else:
+            try:
+                reader = exit_stack.enter_context(ProvenanceQuantumGraphReader.open(repo_or_filename))
+            except Exception as err:
+                err.add_note(
+                    f"Expected a {repo_or_filename} to be a provenance quantum graph filename "
+                    f"because no collection was provided."
+                )
+                raise
+            with exit_stack:
+                if quanta is None:
+                    reader.read_quanta()
+                elif not quanta:
+                    reader.read_quanta(quanta)
+                if datasets is None:
+                    reader.read_datasets()
+                elif not datasets:
+                    reader.read_datasets(datasets)
+                yield reader.graph, None
+
     @property
     def init_quanta(self) -> Mapping[TaskLabel, uuid.UUID]:
         """A mapping from task label to the ID of the special init quantum for
@@ -1237,6 +1440,171 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                 rows.append(row)
         array = np.array(rows, dtype=row_dtype)
         return astropy.table.Table(array, units=QuantumResourceUsage.get_units())
+
+    def make_status_report(
+        self,
+        states: Iterable[QuantumAttemptStatus] = (
+            QuantumAttemptStatus.FAILED,
+            QuantumAttemptStatus.ABORTED,
+            QuantumAttemptStatus.ABORTED_SUCCESS,
+        ),
+        *,
+        also: QuantumAttemptStatus | Iterable[QuantumAttemptStatus] = (),
+        with_caveats: QuantumSuccessCaveats | None = QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR,
+        data_id_table_dir: ResourcePathExpression | None = None,
+    ) -> ProvenanceReport:
+        """Make a JSON- or YAML-friendly report of all quanta with the given
+        states.
+
+        Parameters
+        ----------
+        states : `~collections.abc.Iterable` [`..QuantumAttemptStatus`] or \
+                `..QuantumAttemptStatus`, optional
+            A quantum is included if it has any of these states.  Defaults to
+            states that clearly represent problems.
+        also : `~collections.abc.Iterable` [`..QuantumAttemptStatus`] or \
+                `..QuantumAttemptStatus`, optional
+            Additional states to consider; unioned with ``states``.  This is
+            provided so users can easily request additional states while also
+            getting the defaults.
+        with_caveats : `..QuantumSuccessCaveats` or `None`, optional
+            If `..QuantumAttemptStatus.SUCCESSFUL` is in ``states``, only
+            include quanta with these caveat flags.  May be set to `None`
+            to report on all successful quanta.
+        data_id_table_dir :  convertible to `~lsst.resources.ResourcePath`, \
+                optional
+            If provided, a directory to write data ID tables (in ECSV format)
+            with all of the data IDs with the given states, for use with the
+            ``--data-id-tables`` argument to the quantum graph builder.
+            Subdirectories for each task and status will created within this
+            directory, with one file for each exception type (or ``UNKNOWN``
+            when there is no exception).
+
+        Returns
+        -------
+        report : `ProvenanceModel`
+            A Pydantic model that groups quanta by task label and exception
+            type.
+        """
+        states = set(ensure_iterable(states))
+        states.update(ensure_iterable(also))
+        result = ProvenanceReport(root={})
+        if data_id_table_dir is not None:
+            data_id_table_dir = ResourcePath(data_id_table_dir)
+        for task_label, quanta_for_task in self.quanta_by_task.items():
+            reports_for_task: dict[str, dict[str | None, list[ProvenanceQuantumReport]]] = {}
+            table_rows_for_task: dict[str, dict[str | None, list[tuple[int | str, ...]]]] = {}
+            for quantum_id in quanta_for_task.values():
+                quantum_info: ProvenanceQuantumInfo = self._quantum_only_xgraph.nodes[quantum_id]
+                quantum_status = quantum_info["status"]
+                if quantum_status not in states:
+                    continue
+                if (
+                    quantum_status is QuantumAttemptStatus.SUCCESSFUL
+                    and with_caveats is not None
+                    and (quantum_info["caveats"] is None or not (quantum_info["caveats"] & with_caveats))
+                ):
+                    continue
+                key1 = quantum_status.name
+                exc_info = quantum_info["exception"]
+                key2 = exc_info.type_name if exc_info is not None else None
+                reports_for_task.setdefault(key1, {}).setdefault(key2, []).append(
+                    ProvenanceQuantumReport.from_info(quantum_id, quantum_info)
+                )
+                if data_id_table_dir:
+                    table_rows_for_task.setdefault(key1, {}).setdefault(key2, []).append(
+                        quantum_info["data_id"].required_values
+                    )
+            if reports_for_task:
+                result.root[task_label] = reports_for_task
+            if table_rows_for_task:
+                assert data_id_table_dir is not None, "table_rows_for_task should be empty"
+                for status_name, table_rows_for_status in table_rows_for_task.items():
+                    dir_for_task_and_status = data_id_table_dir.join(task_label, forceDirectory=True).join(
+                        status_name, forceDirectory=True
+                    )
+                    if dir_for_task_and_status.isLocal:
+                        dir_for_task_and_status.mkdir()
+                    for exc_name, data_id_rows in table_rows_for_status.items():
+                        table = astropy.table.Table(
+                            rows=data_id_rows,
+                            names=list(self.pipeline_graph.tasks[task_label].dimensions.required),
+                        )
+                        filename = f"{exc_name}.ecsv" if exc_name is not None else "UNKNOWN.ecsv"
+                        with dir_for_task_and_status.join(filename).open("w") as stream:
+                            table.write(stream, format="ecsv")
+        return result
+
+    def make_many_reports(
+        self,
+        states: Iterable[QuantumAttemptStatus] = (
+            QuantumAttemptStatus.FAILED,
+            QuantumAttemptStatus.ABORTED,
+            QuantumAttemptStatus.ABORTED_SUCCESS,
+        ),
+        *,
+        status_report_file: ResourcePathExpression | None = None,
+        print_quantum_table: bool = False,
+        print_exception_table: bool = False,
+        also: QuantumAttemptStatus | Iterable[QuantumAttemptStatus] = (),
+        with_caveats: QuantumSuccessCaveats | None = None,
+        data_id_table_dir: ResourcePathExpression | None = None,
+    ) -> None:
+        """Write multiple reports.
+
+        Parameters
+        ----------
+        states : `~collections.abc.Iterable` [`..QuantumAttemptStatus`] or \
+                `..QuantumAttemptStatus`, optional
+            A quantum is included in the status report and data ID tables if it
+            has any of these states.  Defaults to states that clearly represent
+            problems.
+        status_report_file : convertible to `~lsst.resources.ResourcePath`,
+                optional
+            Filename for the JSON status report (see `make_status_report`).
+        print_quantum_table : `bool`, optional
+            If `True`, print a quantum summary table (counts only) to STDOUT.
+        print_exception_table : `bool`, optional
+            If `True`, print an exception-type summary table (counts only) to
+            STDOUT.
+        also : `~collections.abc.Iterable` [`..QuantumAttemptStatus`] or \
+                `..QuantumAttemptStatus`, optional
+            Additional states to consider in the status report and data ID
+            tables; unioned with ``states``.  This is provided so users can
+            easily request additional states while also getting the defaults.
+        with_caveats : `..QuantumSuccessCaveats` or `None`, optional
+            Only include quanta with these caveat flags in the status report
+            and data ID tables.  May be set to `None` to report on all
+            successful quanta (an empty sequence reports on only quanta with no
+            caveats).  If provided, `QuantumAttemptStatus.SUCCESSFUL` is
+            automatically included in ``states``.
+        data_id_table_dir : convertible to `~lsst.resources.ResourcePath`, \
+                optional
+            If provided, a directory to write data ID tables (in ECSV format)
+            with all of the data IDs with the given states, for use with the
+            ``--data-id-tables`` argument to the quantum graph builder.
+            Subdirectories for each task and status will created within this
+            directory, with one file for each exception type (or ``UNKNOWN``
+            when there is no exception).
+        """
+        if status_report_file is not None or data_id_table_dir is not None:
+            status_report = self.make_status_report(
+                states, also=also, with_caveats=with_caveats, data_id_table_dir=data_id_table_dir
+            )
+            if status_report_file is not None:
+                status_report_file = ResourcePath(status_report_file)
+                if status_report_file.isLocal:
+                    status_report_file.dirname().mkdir()
+                with ResourcePath(status_report_file).open("w") as stream:
+                    stream.write(status_report.model_dump_json(indent=2))
+        if print_quantum_table:
+            quantum_table = self.make_quantum_table()
+            quantum_table.pprint_all()
+            print("")
+        if print_exception_table:
+            exception_table = self.make_exception_table()
+            exception_table.pprint_all()
+            print("")
 
 
 @dataclasses.dataclass
