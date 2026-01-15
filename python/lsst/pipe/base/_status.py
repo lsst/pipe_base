@@ -338,6 +338,20 @@ class QuantumAttemptStatus(enum.Enum):
         """Whether the log dataset was produced."""
         return self is self.SUCCESSFUL or self is self.FAILED
 
+    @property
+    def title(self) -> str:
+        """A version of this status' name suitable for use as a title in a plot
+        or table.
+        """
+        return self.name.capitalize().replace("_", " ")
+
+    @property
+    def is_rare(self) -> bool:
+        """Whether this status is rare enough that it should only be listed
+        when it actually occurs.
+        """
+        return self in (self.ABORTED, self.ABORTED_SUCCESS, self.UNKNOWN)
+
 
 class GetSetDictMetadataHolder(Protocol):
     """Protocol for objects that have a ``metadata`` attribute that satisfies

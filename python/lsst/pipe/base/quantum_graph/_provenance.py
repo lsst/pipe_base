@@ -1101,9 +1101,15 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         """
         return self._bipartite_xgraph.copy(as_view=True)
 
-    def make_quantum_table(self) -> astropy.table.Table:
+    def make_quantum_table(self, drop_unused_columns: bool = True) -> astropy.table.Table:
         """Construct an `astropy.table.Table` with a tabular summary of the
         quanta.
+
+        Parameters
+        ----------
+        drop_unused_columns : `bool`, optional
+            Whether to drop columns for rare states that did not actually
+            occur in this run.
 
         Returns
         -------
@@ -1140,19 +1146,25 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                 caveats = f"{code.concise()}({count})"  # type: ignore[union-attr]
             else:
                 caveats = ""
-            rows.append(
+            row: dict[str, Any] = {
+                "Task": task_label,
+                "Caveats": caveats,
+            }
+            for status in QuantumAttemptStatus:
+                row[status.title] = status_counts.get(status, 0)
+            row.update(
                 {
-                    "Task": task_label,
-                    "Unknown": status_counts.get(QuantumAttemptStatus.UNKNOWN, 0),
-                    "Successful": status_counts.get(QuantumAttemptStatus.SUCCESSFUL, 0),
-                    "Caveats": caveats,
-                    "Blocked": status_counts.get(QuantumAttemptStatus.BLOCKED, 0),
-                    "Failed": status_counts.get(QuantumAttemptStatus.FAILED, 0),
                     "TOTAL": len(quanta_for_task),
                     "EXPECTED": self.header.n_task_quanta[task_label],
                 }
             )
-        return astropy.table.Table(rows)
+            rows.append(row)
+        table = astropy.table.Table(rows)
+        if drop_unused_columns:
+            for status in QuantumAttemptStatus:
+                if status.is_rare and not table[status.title].any():
+                    del table[status.title]
+        return table
 
     def make_exception_table(self) -> astropy.table.Table:
         """Construct an `astropy.table.Table` with counts for each exception
@@ -1165,13 +1177,25 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         """
         rows = []
         for task_label, quanta_for_task in self.quanta_by_task.items():
-            counts_by_type = Counter(
-                exc_info.type_name
-                for q in quanta_for_task.values()
-                if (exc_info := self._quantum_only_xgraph.nodes[q]["exception"]) is not None
-            )
-            for type_name, count in counts_by_type.items():
-                rows.append({"Task": task_label, "Exception": type_name, "Count": count})
+            success_counts = Counter[str]()
+            failed_counts = Counter[str]()
+            for quantum_id in quanta_for_task.values():
+                quantum_info: ProvenanceQuantumInfo = self._quantum_only_xgraph.nodes[quantum_id]
+                exc_info = quantum_info["exception"]
+                if exc_info is not None:
+                    if quantum_info["status"] is QuantumAttemptStatus.SUCCESSFUL:
+                        success_counts[exc_info.type_name] += 1
+                    else:
+                        failed_counts[exc_info.type_name] += 1
+            for type_name in sorted(success_counts.keys() | failed_counts.keys()):
+                rows.append(
+                    {
+                        "Task": task_label,
+                        "Exception": type_name,
+                        "Successes": success_counts.get(type_name, 0),
+                        "Failures": failed_counts.get(type_name, 0),
+                    }
+                )
         return astropy.table.Table(rows)
 
     def make_task_resource_usage_table(

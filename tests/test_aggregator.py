@@ -742,7 +742,6 @@ class AggregatorTestCase(unittest.TestCase):
             succeed without writing anything (`False`).
         """
         t = prov.make_quantum_table()
-        self.assertTrue(np.all(t["Unknown"] == 0))
         self.assertEqual(list(t["Task"]), ["calibrate", "consolidate", "resample", "coadd"])
         self.assertEqual(t["TOTAL"][0], 8)
         self.assertEqual(t["EXPECTED"][0], 8)
@@ -796,7 +795,8 @@ class AggregatorTestCase(unittest.TestCase):
         t = prov.make_exception_table()
         self.assertEqual(list(t["Task"]), ["calibrate"])
         self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
-        self.assertEqual(list(t["Count"]), [1])
+        self.assertEqual(list(t["Successes"]), [int(not expect_failure)])
+        self.assertEqual(list(t["Failures"]), [int(expect_failure)])
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the
