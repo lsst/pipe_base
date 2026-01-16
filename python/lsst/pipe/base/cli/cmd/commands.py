@@ -249,6 +249,14 @@ _AGGREGATOR_DEFAULTS = aggregator.AggregatorConfig()
     default=_AGGREGATOR_DEFAULTS.mock_storage_classes,
     help="Enable support for storage classes created by the lsst.pipe.base.tests.mocks package.",
 )
+@click.option(
+    "--promise-ingest-graph/--no-promise-ingest-graph",
+    default=_AGGREGATOR_DEFAULTS.promise_ingest_graph,
+    help=(
+        "Promise to run 'butler ingest-graph' later, allowing aggregate-graph "
+        "to skip metadata/log/config ingestion for now."
+    ),
+)
 def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
     """Scan for quantum graph's outputs to gather provenance, ingest datasets
     into the central butler repository, and delete datasets that are no

@@ -139,6 +139,20 @@ class AggregatorConfig(pydantic.BaseModel):
     lsst.pipe.base.tests.mocks package.
     """
 
+    promise_ingest_graph: bool = False
+    """If `True`, the aggregator will assume that `~.ingest_graph.ingest_graph`
+    will be run later to ingest metadata/log/config datasets, and will not
+    ingest them itself.  This means that if `~.ingest_graph.ingest_graph` is
+    not run, those files will be abandoned in the butler storage root without
+    being present in the butler database, but it will speed up both processes.
+
+    It is *usually* safe to build a quantum graph for downstream processing
+    before or while running `~.ingest_graph.ingest_graph`, because
+    metadata/log/config datasets are rarely used as inputs.  To check, use
+    ``pipetask build ... --show inputs`` to show the overall-inputs to the
+    graph and scan for these dataset types.
+    """
+
     @property
     def is_writing_provenance(self) -> bool:
         """Whether the aggregator is configured to write the provenance quantum

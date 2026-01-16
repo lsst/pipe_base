@@ -262,8 +262,18 @@ class Scanner(AbstractContextManager):
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
         to_ingest_refs: list[DatasetRef] = []
+        to_ignore: set[uuid.UUID] = set()
+        if self.comms.config.promise_ingest_graph:
+            if result.status is ProvenanceQuantumScanStatus.INIT:
+                if predicted_quantum.task_label:  # i.e. not the 'packages' producer
+                    to_ignore.add(
+                        predicted_quantum.outputs[acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME][0].dataset_id
+                    )
+            else:
+                to_ignore.add(predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME][0].dataset_id)
+                to_ignore.add(predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME][0].dataset_id)
         for dataset_id, was_produced in result.output_existence.items():
-            if was_produced:
+            if was_produced and dataset_id not in to_ignore:
                 predicted_output = predicted_outputs_by_id[dataset_id]
                 to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)

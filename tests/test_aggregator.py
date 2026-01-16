@@ -942,6 +942,30 @@ class AggregatorTestCase(unittest.TestCase):
                     self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, expected)
                     expected.append(quantum_id)
 
+    def test_promise_ingest_graph(self) -> None:
+        """Test running with promise_ingest_graph=True."""
+        with self.make_test_repo() as prep:
+            prep.config.incomplete = False
+            prep.config.promise_ingest_graph = True
+            start_time = time.time()
+            attempted_quanta = list(
+                self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
+            )
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            self.assertFalse(prep.butler.query_datasets("calibrate_metadata", explain=False))
+            self.assertFalse(prep.butler.query_datasets("consolidate_log", explain=False))
+            self.assertFalse(prep.butler.query_datasets("resample_config", explain=False))
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            prov = self.check_provenance_graph(
+                prep.predicted,
+                prep.butler,
+                expect_failure=True,
+                start_time=start_time,
+            )
+            for i, quantum_id in enumerate(attempted_quanta):
+                qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
+                self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
+
     def test_worker_failures(self) -> None:
         """Test that if failures occur on (multiple) workers we shut down
         gracefully instead of hanging.
