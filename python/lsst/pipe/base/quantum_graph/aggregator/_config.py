@@ -97,11 +97,10 @@ class AggregatorConfig(pydantic.BaseModel):
     """
 
     dry_run: bool = False
-    """If `True`, do not actually perform any deletions or central butler
-    ingests.
+    """If `True`, do not actually perform any central butler ingests.
 
-    Most log messages concerning deletions and ingests will still be emitted in
-    order to provide a better emulation of a real run.
+    Most log messages concerning ingests will still be emitted in order to
+    provide a better emulation of a real run.
     """
 
     interactive_status: bool = False
