@@ -1,3 +1,69 @@
+lsst-pipe-base v30.0.0 (2026-01-16)
+===================================
+
+New Features
+------------
+
+- Added support for healpix (and other non-database dimensions) in quantum graph builder. (`DM-51176 <https://rubinobs.atlassian.net/browse/DM-51176>`_)
+- Added filtering out dataset refs that the destination butler already knows in ``transfer_from_graph`` as well as dividing the transfer into smaller chunks to speed up restarts. (`DM-51273 <https://rubinobs.atlassian.net/browse/DM-51273>`_)
+- Added handling of ``PrerequisiteInput`` in ``QuantaAdjuster``, with a corresponding unit test. (`DM-51509 <https://rubinobs.atlassian.net/browse/DM-51509>`_)
+- Added ``PredictedQuantumGraph``, a replacement for the ``QuantumGraph`` class with more efficient I/O (via a new file format and more partial-read flexibility).
+
+  The new ``PredictedQuantumGraph`` is now the default in most tooling, and the new format can be opted into via the ``.qg`` (instead of ``.qgraph``) file extension.
+  New files can be read with the old class and vice versa.
+
+  The ``QuantumGraph`` class will eventually be deprecated along with much of the current provenance reporting tooling, but only when the new provenance ecosystem is fully in place. (`DM-51850 <https://rubinobs.atlassian.net/browse/DM-51850>`_)
+- Added a ``rename`` dict in ``ImportIR`` to support renaming task labels, with corresponding unit tests. (`DM-52168 <https://rubinobs.atlassian.net/browse/DM-52168>`_)
+- Added the new ``ProvenanceQuantumGraph`` class and the ``aggregate-graph`` tool (a replacement for ``transfer-from-graph``) that writes it at the end of batch runs. (`DM-52360 <https://rubinobs.atlassian.net/browse/DM-52360>`_)
+- Improved provenance tracking for failed quanta and retries.
+
+  By storing extra information in the log datasets written during execution,
+  we can record caught exceptions, track which other quanta have
+  already executed in the same process, and keep track of previous attempts to
+  run the same quantum. (`DM-53019 <https://rubinobs.atlassian.net/browse/DM-53019>`_)
+- Added provenance writing support to ``MPGraphExecutor`` and ``SeparablePipelineExecutor``. (`DM-53622 <https://rubinobs.atlassian.net/browse/DM-53622>`_)
+
+
+API Changes
+-----------
+
+- Moved pipeline executors and their support code here, from ``lsst.ctrl.mpexec``.
+
+  This included minor API changes for ``SingleQuantumExecutor`` as well: consistent snake-case naming, keyword-only arguments for construction, and a switch to private instance attributes. (`DM-48980 <https://rubinobs.atlassian.net/browse/DM-48980>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed ``transfer-from-graph`` to update chain when asked and output run collection exists even if didn't transfer any datasets. (`DM-51821 <https://rubinobs.atlassian.net/browse/DM-51821>`_)
+- Fixed bug in ``transfer_from_graph`` where the input collections were not flattened before adding to a new output chain. (`DM-52004 <https://rubinobs.atlassian.net/browse/DM-52004>`_)
+- Fixed bug where the log's ``MDC.RUN`` was the empty string when using a quantum-backed butler. (`DM-52676 <https://rubinobs.atlassian.net/browse/DM-52676>`_)
+- Fixed a bug that caused ``PipelineGraph`` objects to be marked as unresolved when loaded from disk. (`DM-52787 <https://rubinobs.atlassian.net/browse/DM-52787>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- The ``Instrument.configPaths`` property can now refer to ``lsst.resources.ResourcePath`` URIs as well as strings (paths or URI strings). (`DM-33226 <https://rubinobs.atlassian.net/browse/DM-33226>`_)
+- Updated pipe_base code to use the constants defined in ``automatic_connection_constants.py``. (`DM-52676 <https://rubinobs.atlassian.net/browse/DM-52676>`_)
+- Uses UUIDs instead of internal integer IDs in new quantum graph storage.
+
+  This includes backwards compatibility read support for predicted quantum graphs, but not provenance quantum graphs, because those are still experimental anyway.
+
+  This increases the size of the files by ~6%, but it simplifies the codebase and will make consolidating multiple small provenance quantum graphs (as we
+  currently anticipate doing for prompt processing) much more efficient. (`DM-53174 <https://rubinobs.atlassian.net/browse/DM-53174>`_)
+- Used context managers to ensure that database resources are freed. (`DM-53370 <https://rubinobs.atlassian.net/browse/DM-53370>`_)
+- Added more logging for the later steps of QG building. (`DM-53636 <https://rubinobs.atlassian.net/browse/DM-53636>`_)
+
+
+An API Removal or Deprecation
+-----------------------------
+
+- Removes the ``buildExecutionButler`` function and all supporting code.
+
+  Execution butlers (read-only SQLite databases used for batch execution) have been fully superseded by ``lsst.daf.butler.QuantumBackedButler``. (`DM-52044 <https://rubinobs.atlassian.net/browse/DM-52044>`_)
+
+
 lsst-pipe-base v29.1.0 (2025-06-13)
 ===================================
 
