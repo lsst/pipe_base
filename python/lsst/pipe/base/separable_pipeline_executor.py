@@ -390,10 +390,11 @@ class SeparablePipelineExecutor:
         provenance_dataset_ref : `lsst.daf.butler.DatasetRef`, optional
             Dataset that should be used to save provenance.  Provenance is only
             supported when running in a single process (at least for the
-            default quantum executor) and may not be complete if
-            ``skip_existing_in`` is not empty. The caller is responsible for
-            registering the dataset type and for ensuring that the dimensions
-            of this dataset do not lead to uniqueness conflicts.
+            default quantum executor), and should not be used with
+            ``skip_existing_in=[output_run]`` when retrying a previous
+            execution attempt. The caller is responsible for registering the
+            dataset type and for ensuring that the dimensions of this dataset
+            do not lead to uniqueness conflicts.
         """
         if not graph_executor:
             quantum_executor = SingleQuantumExecutor(
@@ -415,8 +416,6 @@ class SeparablePipelineExecutor:
             self._butler.registry.resetConnectionPool()
 
         if provenance_dataset_ref is not None:
-            if self._skip_existing_in:
-                raise RuntimeError("Provenance writing is not compatible with skip_existing_in=True.")
             with TemporaryForIngest(self._butler, provenance_dataset_ref) as temporary:
                 graph_executor.execute(graph, provenance_graph_file=temporary.ospath)
                 temporary.ingest()
