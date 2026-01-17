@@ -659,13 +659,25 @@ class ReadEdge(Edge):
                     # compatible), since neither connection should take
                     # precedence.
                     if dataset_type != current:
-                        raise MissingDatasetTypeError(
-                            f"Definitions differ for input dataset type {self.parent_dataset_type_name!r}; "
-                            f"task {self.task_label!r} has {dataset_type}, but the definition "
-                            f"from {report_current_origin()} is {current}.  If the storage classes are "
-                            "compatible but different, registering the dataset type in the data repository "
-                            "in advance will avoid this error."
-                        )
+                        if visualization_only and dataset_type.dimensions == current.dimensions:
+                            # Make a visualization-only ambiguous storage class
+                            # "name".
+                            all_storage_classes = set(current.storageClass_name.split("/"))
+                            all_storage_classes.update(dataset_type.storageClass_name.split("/"))
+                            current = DatasetType(
+                                current.name,
+                                current.dimensions,
+                                "/".join(sorted(all_storage_classes)),
+                            )
+                        else:
+                            raise MissingDatasetTypeError(
+                                f"Definitions differ for input dataset type "
+                                f"{self.parent_dataset_type_name!r}; task {self.task_label!r} has "
+                                f"{dataset_type}, but the definition from {report_current_origin()} is "
+                                f"{current}.  If the storage classes are compatible but different, "
+                                "registering the dataset type in the data repository in advance will avoid "
+                                "this error."
+                            )
                 elif not visualization_only and not dataset_type.is_compatible_with(current):
                     raise IncompatibleDatasetTypeError(
                         f"Incompatible definition for input dataset type {self.parent_dataset_type_name!r}; "
