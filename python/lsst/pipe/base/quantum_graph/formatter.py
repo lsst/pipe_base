@@ -88,7 +88,7 @@ class ProvenanceFormatter(FormatterV2):
 
     def read_from_uri(self, uri: ResourcePath, component: str | None = None, expected_size: int = -1) -> Any:
         match self._dataset_ref.datasetType.storageClass_name:
-            case "TaskMetadata":
+            case "TaskMetadata" | "PropertySet":
                 return self._read_metadata(uri)
             case "ButlerLogRecords":
                 return self._read_log(uri)
