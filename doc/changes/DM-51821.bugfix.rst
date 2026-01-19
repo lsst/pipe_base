@@ -1,1 +1,0 @@
-Fixed transfer-from-graph to update chain when asked and output run collection exists even if didn't transfer any datasets.

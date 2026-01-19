@@ -1,1 +1,0 @@
-Updated pipe_base code to use the constants defined in automatic_connection_constants.py.
