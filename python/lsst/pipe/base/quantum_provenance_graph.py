@@ -79,6 +79,7 @@ from .automatic_connection_constants import (
     METADATA_OUTPUT_CONNECTION_NAME,
     METADATA_OUTPUT_STORAGE_CLASS,
     METADATA_OUTPUT_TEMPLATE,
+    PROVENANCE_DATASET_TYPE_NAME,
 )
 from .graph import QuantumGraph, QuantumNode
 
@@ -1513,8 +1514,22 @@ class QuantumProvenanceGraph:
                     len(self._datasets.keys()),
                 )
         if use_qbb:
-            _LOG.verbose("Using quantum-backed butler for metadata loads.")
-            self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_qbb(butler, qgraph)
+            provenance_graph_ref: DatasetRef | None = None
+            try:
+                provenance_graph_ref = butler.find_dataset(
+                    PROVENANCE_DATASET_TYPE_NAME, collections=output_run
+                )
+            except MissingDatasetTypeError:
+                pass
+            if provenance_graph_ref is not None:
+                _LOG.warning(
+                    "Cannot use QBB for metadata/log reads after provenance has been ingested; "
+                    "falling back to full butler."
+                )
+                self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_full(butler)
+            else:
+                _LOG.verbose("Using quantum-backed butler for metadata loads.")
+                self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_qbb(butler, qgraph)
         else:
             _LOG.verbose("Using full butler for metadata loads.")
             self._butler_wrappers[output_run] = _ThreadLocalButlerWrapper.wrap_full(butler)
