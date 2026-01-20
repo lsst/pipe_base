@@ -810,7 +810,7 @@ class AggregatorTestCase(unittest.TestCase):
             )
             self.assertCountEqual(attempted_quanta, prep.predicted.quantum_only_xgraph.nodes.keys())
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
@@ -843,7 +843,7 @@ class AggregatorTestCase(unittest.TestCase):
             # Scan again, and write the provenance QG.
             prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
@@ -865,7 +865,7 @@ class AggregatorTestCase(unittest.TestCase):
                 self.iter_graph_execution(prep.butler_path, prep.predicted, raise_on_partial_outputs=True)
             )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
@@ -890,7 +890,7 @@ class AggregatorTestCase(unittest.TestCase):
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
             prep.config.incomplete = False
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
@@ -917,7 +917,7 @@ class AggregatorTestCase(unittest.TestCase):
                 )
             )
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
@@ -955,7 +955,7 @@ class AggregatorTestCase(unittest.TestCase):
             self.assertFalse(prep.butler.query_datasets("calibrate_metadata", explain=False))
             self.assertFalse(prep.butler.query_datasets("consolidate_log", explain=False))
             self.assertFalse(prep.butler.query_datasets("resample_config", explain=False))
-            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move")
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
             prov = self.check_provenance_graph(
                 prep.predicted,
                 prep.butler,
