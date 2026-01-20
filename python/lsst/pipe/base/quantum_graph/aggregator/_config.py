@@ -29,6 +29,8 @@ from __future__ import annotations
 
 __all__ = ("AggregatorConfig",)
 
+import sys
+from typing import TYPE_CHECKING, Any
 
 import pydantic
 
@@ -159,3 +161,48 @@ class AggregatorConfig(pydantic.BaseModel):
         graph.
         """
         return self.output_path is not None and not self.incomplete
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)
