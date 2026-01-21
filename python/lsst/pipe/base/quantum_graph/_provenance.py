@@ -94,6 +94,13 @@ from ._predicted import (
     PredictedQuantumGraphComponents,
 )
 
+# Sphinx needs imports for type annotations of base class members.
+if "sphinx" in sys.modules:
+    import zipfile  # noqa: F401
+
+    from ._multiblock import AddressReader, Decompressor  # noqa: F401
+
+
 _T = TypeVar("_T")
 
 LoopWrapper: TypeAlias = Callable[[Iterable[_T]], Iterable[_T]]

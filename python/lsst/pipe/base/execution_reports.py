@@ -299,11 +299,6 @@ class QuantumGraphExecutionReport:
     produced DatasetTypes for each task. This report can be output as a
     dictionary or a yaml file.
 
-    Attributes
-    ----------
-    tasks : `dict`
-        A dictionary of TaskExecutionReports by task label.
-
     See Also
     --------
     TaskExecutionReport : A task report.

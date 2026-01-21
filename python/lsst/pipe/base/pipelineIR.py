@@ -220,12 +220,6 @@ class LabeledSubset:
 class ParametersIR:
     """Intermediate representation of parameters that are global to a pipeline.
 
-    Attributes
-    ----------
-    mapping : `dict` [`str`, `str`]
-        A mutable mapping of identifiers as keys, and shared configuration
-        as values.
-
     Notes
     -----
     These parameters are specified under a top level key named ``parameters``

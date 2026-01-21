@@ -145,7 +145,7 @@ Use the ``__init__`` method (task constructor) to do the following:
 
 - Call the parent task's ``__init__`` method
 - Make subtasks by calling ``self.makeSubtask(name)``, where ``name`` is the name of a field of type `lsst.pex.config.ConfigurableField` in your :ref:`task's configuration <creating-a-task-configuration>`.
-- Make a schema if your task uses an :ref:`lsst.afw.table`.
+- Make a schema if your task uses an `lsst.afw.table`.
   For an example of such a task `lsst.pipe.tasks.calibrate.CalibrateTask`.
 - Initialize any other instance variables your task needs.
 

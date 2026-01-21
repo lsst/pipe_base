@@ -495,15 +495,12 @@ class DeferredDatasetRef:
     """A wrapper class for `~lsst.daf.butler.DatasetRef` that indicates that a
     `PipelineTask` should receive a `~lsst.daf.butler.DeferredDatasetHandle`
     instead of an in-memory dataset.
-
-    Attributes
-    ----------
-    datasetRef : `lsst.daf.butler.DatasetRef`
-        The `lsst.daf.butler.DatasetRef` that will be eventually used to
-        resolve a dataset.
     """
 
     datasetRef: DatasetRef
+    """The `lsst.daf.butler.DatasetRef` that will be eventually used to
+    resolve a dataset.
+    """
 
     def __getattr__(self, name: str) -> Any:
         # make sure reduce is called on DeferredDatasetRef and not on

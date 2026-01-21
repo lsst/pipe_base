@@ -150,12 +150,12 @@ associated with ``class`` keyword instead of the label directly. The
 the configuration appropriate for this `Pipeline` specified as an additional
 yaml mapping.
 
-The complete complexity of :ref:`lsst.pex.config` can't be represented with simple
+The complete complexity of `lsst.pex.config` can't be represented with simple
 yaml mapping syntax. To account for this, ``config`` blocks in `Pipeline`\ s
 support two special fields: ``file`` and ``python``.
 
 The ``file`` key may be associated with either a single value pointing to a
-filesystem path where a :ref:`lsst.pex.config` file can be found, or a yaml list
+filesystem path where a `lsst.pex.config` file can be found, or a yaml list
 of such paths. The file paths can contain environment variables that will be
 expanded prior to loading the file(s). These files will then be applied to
 the task during configuration time to override any default values.
@@ -477,7 +477,7 @@ desired camera, or can serve as a base for further `Pipeline`\ s to import.
 Command line options for running Pipelines
 ------------------------------------------
 This section is not intended to serve as a tutorial for processing data from
-the command line, for that refer to :ref:`lsst.ctrl.mpexec` or :ref:`lsst.ctrl.bps`.
+the command line, for that refer to `lsst.ctrl.mpexec` or `lsst.ctrl.bps`.
 However, both of these tools accept URI pointers to a `Pipeline`.  These URIs
 can be altered with a specific syntax which will control how the `Pipeline`
 is loaded.
