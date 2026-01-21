@@ -453,7 +453,7 @@ class BaseQuantumGraphWriter:
         cdict_data: bytes | None = None,
         zstd_level: int = 10,
     ) -> Iterator[Self]:
-        uri = ResourcePath(uri)
+        uri = ResourcePath(uri, forceDirectory=False)
         address_writer = AddressWriter()
         if uri.isLocal:
             os.makedirs(uri.dirname().ospath, exist_ok=True)
