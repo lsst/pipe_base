@@ -8,9 +8,9 @@ Recording Provenance
 
 The `PredictedQuantumGraph` that is used to predict and control processing also contains a wealth of provenance information, including task configuration and the complete input-output relationships between all datasets.
 Instead of storing these graphs directly in a `~lsst.daf.butler.Butler` repository, however, it is better to first augment them with additional provenance information that is only available after execution has completed, producing a `ProvenanceQuantumGraph` that is ingested instead.
-By convention, we store provenance in a ``run_provenance`` dataset type with empty dimensions, which means there is exactly one for each `~lsst.daf.butler.CollectionType.RUN` collection.
+We store provenance in a ``run_provenance`` dataset type with empty dimensions, which means there is exactly one for each `~lsst.daf.butler.CollectionType.RUN` collection.
 In addition to the input-output graph itself and full configuration for all tasks, `ProvenanceQuantumGraph` stores status information for each attempt to run a quantum, including exception information and caveats on any successes.
-It can also store the full logs and task metadata for each quantum and back distinct per-quantum datasets for those, allowing repositories to store many fewer small files.
+It can also store the full logs and task metadata for each quantum, allowing repositories to store many fewer small files (it is possible to continue to have per-quantum butler datasets for these, all backed by the same file).
 
 The pipeline system has many different execution contexts, and provenance recording is not supported in all of them at this time.
 
@@ -20,14 +20,15 @@ Batch Execution / Quantum-Backed Butler
 Provenance recording is fully supported in batch workflows that use the `~lsst.daf.butler.QuantumBackedButler` class (e.g. ``pipetask run-qbb``, as run by the ``bps`` tool) to avoid database writes during execution.
 This involves the following steps:
 
-- A `PredictedQuantumGraph` is generated as usual (e.g. via ``pipetask qgraph``, as run by ``bps report``) and saved to a known location.
+- A `PredictedQuantumGraph` is generated as usual (e.g. via ``pipetask qgraph``, as run by ``bps submit``) and saved to a known location.
 - All quanta are executed via ``pipetask run-qbb``, writing their outputs to butler-managed storage without updating the butler database.
 - When all quanta have been attempted, the ``butler aggregate-graph`` tool is run (e.g. in the BPS ``finalJob``) to ingest output datasets into the butler database, and the ``--output`` option is used to save a `ProvenanceQuantumGraph` to a known location.
-  This step and the previous one may be run multiple times (e.g. via ``bps restart``) to retry some failures, and it is only necessary to pass ``--output`` the last time (though usually the user does not know when attempt will be the last one).
+  This step and the previous one may be run multiple times (e.g. via ``bps restart``) to retry some failures, and it is only necessary to pass ``--output`` the last time (though usually the user does not know which attempt will be the last one).
 - When all processing attempts are complete, the ``butler ingest-graph`` tool is used to ingest the graph into the butler database and rewrite all metadata, log, and config datasets to also be backed by the same graph file (deleting the original files).
+  This step should not be included in the BPS ``finalJob`` (see below).
 
 All of the above happens in a single `~lsst.daf.butler.CollectionType.RUN` collection.
-Reference documentation for ``butler aggregate-graph`` and ``butler ingest-graph`` can be found in the `aggregator` and `ingest_graph` modules implement them (respectively); in both cases there are Python interfaces that closely mirror the command-line ones.
+Reference documentation for ``butler aggregate-graph`` and ``butler ingest-graph`` can be found in the `aggregator` and `ingest_graph` modules that implement them (respectively); in both cases there are Python interfaces that closely mirror the command-line ones.
 
 Parallelization
 ---------------
@@ -45,13 +46,12 @@ As with other butler bulk-delete operations, the default parallelism is usually 
 .. note::
 
   Earlier versions of the `aggregator` would run catastrophically slowly when ``LSST_RESOURCES_EXECUTOR=process``, as this made each scanner process spawn multiple subprocesses constantly.
-  In recent versions all parallelism environment variables are ignored by the
-  aggregator so this should not occur.
+  In recent versions all parallelism environment variables are ignored by the aggregator so this should not occur.
 
 Ingesting Outputs Early
 -----------------------
 
-The `aggregator` may be run with `~aggregate.AggregatorConfig.incomplete` set to `True` (``--incomplete`` on the command line) to allow it to be safely run before the graph has finished executing.
+The `aggregator` may be run with `~aggregator.AggregatorConfig.incomplete` set to `True` (``--incomplete`` on the command line) to allow it to be safely run before the graph has finished executing.
 Note that while ingestion always picks up where it left off, scanning always has to start at the beginning, and provenance graph writing is disabled when running in ``incomplete`` mode, so while this allows output datasets be be available via the `~lsst.daf.butler.Butler` sooner, it does not generally make the final complete `aggregator` call substantially faster.
 
 Promising Graph Ingestion
@@ -59,16 +59,16 @@ Promising Graph Ingestion
 
 By default, the `aggregator` ingests all metadata, log, and config outputs into the butler database in the usual way, i.e. backed by their original individual files.
 The `ingest_graph` tool then has to delete these datasets from the butler database before it can ingest new ones and delete the original files.
-When it is known in advance that `ingest_graph` will be run later, the `~aggregate.AggregatorConfig.promise_ingest_graph` (`--promise-ingest-graph`) option can be used to tell the `aggregator` *not* to ingest these, saving time for both commands.
+When it is known in advance that `ingest_graph` will be run later, the `~aggregator.AggregatorConfig.promise_ingest_graph` (``--promise-ingest-graph``) option can be used to tell the `aggregator` *not* to ingest these, saving time for both commands.
 This option must be used with care, however: if `ingest_graph` isn't run later, the original files will be orphaned in a butler-managed location without any record in the database, which generally means they'll quietly take up space.
-In addition, because the metadata datasets are used by the middleware system as the indicator of a quantum's success, their absence will make any downstream quantum graph builds using ``--skip-existing-in`` to be incorrect.
-And of course any downstream processing that actually uses those datasets as input (only metadata should be) will not see them as available.
+In addition, because the metadata datasets are used by the middleware system as the indicator of a quantum's success, their absence will make any downstream quantum graphs built using ``--skip-existing-in`` incorrect.
+And of course any downstream quantum graph builds that actually use those datasets as input (only metadata should be) will not see them as available.
 
 Deferring Graph Ingestion
 -------------------------
 
-Ingesting the provenance graph is not generally necessary to kick off downstream processing by building new quantum graphs for later pipeline steps, and it is always safe to build downstream quantum graphs if `~aggregate.AggregatorConfig.promise_ingest_graph` is left `False`.
-It can also be done safely if `~aggregate.AggregatorConfig.promise_ingest_graph` is `True` and:
+Ingesting the provenance graph is not generally necessary to kick off downstream processing by building new quantum graphs for later pipeline steps, and it is always safe to build downstream quantum graphs if `~aggregator.AggregatorConfig.promise_ingest_graph` is left `False`.
+It can also be done safely if `~aggregator.AggregatorConfig.promise_ingest_graph` is `True` and:
 
  - ``--skip-existing-in`` is not used;
  - the downstream processing does not use metadata, log, or config datasets as an overall input (``pipetask build ... --show inputs`` can be used to check for this).
@@ -77,7 +77,7 @@ These conditions also must be met in order for `ingest_graph` to be safely run *
 Both of these conditions are *usually* met, and deferring and promising graph ingest each provide significant wall-clock savings, so we recommend the following approach for very large BPS campaigns:
 
 - Submit ``step(N)`` to BPS with ``--promise-ingest-graph`` in the ``finalJob`` invocation of ``aggregate-graph``.
-- When ready to move on to ``step(N+1)``, run ``pipetask build ... --show inputs`` to scan for metadata, log, and config inputs that may be from the previous step.
+- When ready to move on to ``step(N+1)``, run ``pipetask build ... --show inputs`` (on ``step(N+1)``) to scan for metadata, log, and config inputs that may be needed from the previous step.
 - If there are no such inputs, immediately submit that step to BPS, and run `ingest_graph` on ``step(N)`` as soon as the quantum graph for ``step(N+1)`` is built (it could be built at the same time, but waiting a bit may help spread out database load).
 - If there are metadata, log, or config inputs, run `ingest_graph` on ``step(N)`` and wait for it to finish before submitting ``step(N+1)``.
 
@@ -98,10 +98,11 @@ To guarantee this it always modifies the repository in the following order:
 
 This means we can use the existence of ``run_provenance`` and any particular metadata/log/config dataset in the butler database to infer the status of the original files.
 
-In fact, if `ingest_graph` is interrupted at any point, it *must* be tried again until it succeeds, since not doing so will can leave metadata/log/config files orphaned, just like when `~aggregate.AggregatorConfig.promise_ingest_graph` is `True`.
+In fact, if `ingest_graph` is interrupted at any point, it *must* be tried again until it succeeds, since not doing so can leave metadata/log/config files orphaned, just like when `~aggregator.AggregatorConfig.promise_ingest_graph` is `True`.
 
 .. note::
+
   After the ``run_provenance`` dataset is ingested, it is *not* safe to run the `aggregator`: the `aggregator` reads the original metadata and log files to gather provenance information, and will infer the wrong states for quanta if those are missing because `ingest_graph` has deleted them.
 
   This is why it is not safe to run ``bps restart`` after `ingest_graph`, and why we do not recommend adding `ingest_graph` to the BPS ``finalJob``, even if the user is willing to forgo using ``bps restart``: by default, the ``finalJob`` will be retried on failure, causing the `aggregator` to run again when it may not be safe to do so.
-  And if ``finalJob`` retries are disabled, is too easy for the repository to end up in a state that would require manual `ingest_graph` runs to prevent orphan datasets.
+  And if ``finalJob`` retries are disabled, it is too easy for the repository to end up in a state that would require manual `ingest_graph` runs to prevent orphan datasets.
