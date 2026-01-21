@@ -54,13 +54,12 @@ from lsst.utils.introspection import get_full_type_name
 
 from . import automatic_connection_constants as acc
 from . import pipeline_graph, pipelineIR
-from ._instrument import Instrument as PipeBaseInstrument
+from ._instrument import Instrument as Instrument
 from .config import PipelineTaskConfig
 from .connections import PipelineTaskConnections
 from .pipelineTask import PipelineTask
 
 if TYPE_CHECKING:  # Imports needed only for type annotations; may be circular.
-    from lsst.obs.base import Instrument
     from lsst.pex.config import Config
 
 # ----------------------------------
@@ -702,7 +701,7 @@ class Pipeline:
         """
         instrument_class_name = self._pipelineIR.instrument
         if instrument_class_name is not None:
-            instrument_class = cast(PipeBaseInstrument, doImportType(instrument_class_name))
+            instrument_class = cast(Instrument, doImportType(instrument_class_name))
             if instrument_class is not None:
                 return DataCoordinate.standardize(instrument=instrument_class.getName(), universe=universe)
         return DataCoordinate.make_empty(universe)
@@ -893,7 +892,7 @@ class Pipeline:
             raise NameError(f"Label {label} does not appear in this pipeline")
         taskClass: type[PipelineTask] = doImportType(taskIR.klass)
         config = taskClass.ConfigClass()
-        instrument: PipeBaseInstrument | None = None
+        instrument: Instrument | None = None
         if (instrumentName := self._pipelineIR.instrument) is not None:
             instrument_cls: type = doImportType(instrumentName)
             instrument = instrument_cls()
