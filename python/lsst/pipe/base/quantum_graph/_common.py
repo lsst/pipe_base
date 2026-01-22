@@ -453,8 +453,10 @@ class BaseQuantumGraphWriter:
         cdict_data: bytes | None = None,
         zstd_level: int = 10,
     ) -> Iterator[Self]:
-        uri = ResourcePath(uri)
+        uri = ResourcePath(uri, forceDirectory=False)
         address_writer = AddressWriter()
+        if uri.isLocal:
+            os.makedirs(uri.dirname().ospath, exist_ok=True)
         cdict = zstandard.ZstdCompressionDict(cdict_data) if cdict_data is not None else None
         compressor = zstandard.ZstdCompressor(level=zstd_level, dict_data=cdict)
         with uri.open(mode="wb") as stream:

@@ -142,7 +142,7 @@ not tied to the exact band passes of an individual telescope filter).
 
 Next, take a look at the fields defined on your new connection class. These
 are defined in a similar way as defining a configuration class, but instead
-of using `~lsst.pex.config.Field` types from :ref:`lsst.pex.config`,
+of using `~lsst.pex.config.Field` types from `lsst.pex.config`,
 connection classes make use of connection types defined in
 :py:mod:`lsst.pipe.base.connectionTypes`. These connections define the inputs and outputs that
 a |PipelineTask| will expect to make use of. Each of these connections documents

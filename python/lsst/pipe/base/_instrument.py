@@ -109,6 +109,10 @@ class Instrument(metaclass=ABCMeta):
             If `True` (`False` is default), update existing records if they
             differ from the new ones.
 
+        Returns
+        -------
+        None
+
         Raises
         ------
         lsst.daf.butler.registry.ConflictingDefinitionError
@@ -127,13 +131,6 @@ class Instrument(metaclass=ABCMeta):
         the level of individual dimension entries; new detectors and filters
         should be added, but changes to any existing record should not be.
         This can generally be achieved via a block like
-
-        .. code-block:: python
-
-            with registry.transaction():
-                registry.syncDimensionData("instrument", ...)
-                registry.syncDimensionData("detector", ...)
-                self.registerFilters(registry)
         """
         raise NotImplementedError()
 

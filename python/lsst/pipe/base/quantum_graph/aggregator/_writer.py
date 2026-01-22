@@ -61,7 +61,7 @@ class Writer:
     """
 
     def __post_init__(self) -> None:
-        assert self.comms.config.output_path is not None, "Writer should not be used if writing is disabled."
+        assert self.comms.config.is_writing_provenance, "Writer should not be used if writing is disabled."
         self.comms.log.info("Reading predicted quantum graph.")
         with PredictedQuantumGraphReader.open(
             self.predicted_path, import_mode=TaskImportMode.DO_NOT_IMPORT
@@ -123,7 +123,7 @@ class Writer:
         """
         cdict = self.make_compression_dictionary()
         self.comms.send_compression_dict(cdict.as_bytes())
-        assert self.comms.config.output_path is not None
+        assert self.comms.config.is_writing_provenance and self.comms.config.output_path is not None
         self.comms.log.info("Opening output files and processing predicted graph.")
         qg_writer = ProvenanceQuantumGraphWriter(
             self.comms.config.output_path,

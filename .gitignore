@@ -14,7 +14,7 @@ doc/html
 doc/doxygen.conf
 doc/xml
 doc/_build
-doc/py-api/
+doc/api
 python/lsst/pipe/base/version.py
 tests/.tests
 ups/*.cfgc

@@ -45,6 +45,7 @@ pipe_base = "lsst.pipe.base.cli:get_cli_subcommands"
 
 [project.urls]
 "Homepage" = "https://github.com/lsst/pipe_base"
+"Source" = "https://github.com/lsst/pipe_base"
 
 [project.optional-dependencies]
 test = ["pytest >= 3.2"]

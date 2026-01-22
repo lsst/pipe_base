@@ -29,6 +29,8 @@ from __future__ import annotations
 
 __all__ = ("AggregatorConfig",)
 
+import sys
+from typing import TYPE_CHECKING, Any
 
 import pydantic
 
@@ -60,11 +62,13 @@ class AggregatorConfig(pydantic.BaseModel):
     n_processes: int = 1
     """Number of processes the scanner should use."""
 
-    assume_complete: bool = True
-    """If `True`, the aggregator can assume all quanta have run to completion
-    (including any automatic retries).  If `False`, only successes can be
-    considered final, and quanta that appear to have failed or to have not been
-    executed are ignored.
+    incomplete: bool = False
+    """If `True`, do not expect the graph to have been executed to completion
+    yet, and only ingest the outputs of successful quanta.
+
+    This disables writing the provenance quantum graph, since this is likely to
+    be wasted effort that just complicates a follow-up run with
+    ``incomplete=False`` later.
     """
 
     defensive_ingest: bool = False
@@ -95,11 +99,10 @@ class AggregatorConfig(pydantic.BaseModel):
     """
 
     dry_run: bool = False
-    """If `True`, do not actually perform any deletions or central butler
-    ingests.
+    """If `True`, do not actually perform any central butler ingests.
 
-    Most log messages concerning deletions and ingests will still be emitted in
-    order to provide a better emulation of a real run.
+    Most log messages concerning ingests will still be emitted in order to
+    provide a better emulation of a real run.
     """
 
     interactive_status: bool = False
@@ -137,3 +140,69 @@ class AggregatorConfig(pydantic.BaseModel):
     """Enable support for storage classes by created by the
     lsst.pipe.base.tests.mocks package.
     """
+
+    promise_ingest_graph: bool = False
+    """If `True`, the aggregator will assume that `~.ingest_graph.ingest_graph`
+    will be run later to ingest metadata/log/config datasets, and will not
+    ingest them itself.  This means that if `~.ingest_graph.ingest_graph` is
+    not run, those files will be abandoned in the butler storage root without
+    being present in the butler database, but it will speed up both processes.
+
+    It is *usually* safe to build a quantum graph for downstream processing
+    before or while running `~.ingest_graph.ingest_graph`, because
+    metadata/log/config datasets are rarely used as inputs.  To check, use
+    ``pipetask build ... --show inputs`` to show the overall-inputs to the
+    graph and scan for these dataset types.
+    """
+
+    @property
+    def is_writing_provenance(self) -> bool:
+        """Whether the aggregator is configured to write the provenance quantum
+        graph.
+        """
+        return self.output_path is not None and not self.incomplete
+
+    # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
+    # when we inherit those docstrings in our public classes.
+    if "sphinx" in sys.modules and not TYPE_CHECKING:
+
+        def copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.copy`."""
+            return super().copy(*args, **kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_dump_json(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_dump_json`."""
+            return super().model_dump(*args, **kwargs)
+
+        def model_copy(self, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_copy`."""
+            return super().model_copy(*args, **kwargs)
+
+        @classmethod
+        def model_construct(cls, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc, override]
+            """See `pydantic.BaseModel.model_construct`."""
+            return super().model_construct(*args, **kwargs)
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_json_schema`."""
+            return super().model_json_schema(*args, **kwargs)
+
+        @classmethod
+        def model_validate(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate`."""
+            return super().model_validate(*args, **kwargs)
+
+        @classmethod
+        def model_validate_json(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_json`."""
+            return super().model_validate_json(*args, **kwargs)
+
+        @classmethod
+        def model_validate_strings(cls, *args: Any, **kwargs: Any) -> Any:
+            """See `pydantic.BaseModel.model_validate_strings`."""
+            return super().model_validate_strings(*args, **kwargs)

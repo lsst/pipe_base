@@ -94,6 +94,13 @@ from ._predicted import (
     PredictedQuantumGraphComponents,
 )
 
+# Sphinx needs imports for type annotations of base class members.
+if "sphinx" in sys.modules:
+    import zipfile  # noqa: F401
+
+    from ._multiblock import AddressReader, Decompressor  # noqa: F401
+
+
 _T = TypeVar("_T")
 
 LoopWrapper: TypeAlias = Callable[[Iterable[_T]], Iterable[_T]]
@@ -186,6 +193,12 @@ class ProvenanceQuantumInfo(QuantumInfo):
     failure.
     """
 
+    metadata_id: uuid.UUID
+    """ID of this quantum's metadata dataset."""
+
+    log_id: uuid.UUID
+    """ID of this quantum's log dataset."""
+
 
 class ProvenanceInitQuantumInfo(TypedDict):
     """A typed dictionary that annotates the attributes of the NetworkX graph
@@ -211,6 +224,9 @@ class ProvenanceInitQuantumInfo(TypedDict):
 
     pipeline_node: TaskInitNode
     """Node in the pipeline graph for this task's init-only step."""
+
+    config_id: uuid.UUID
+    """ID of this task's config dataset."""
 
 
 class ProvenanceDatasetModel(PredictedDatasetModel):
@@ -646,6 +662,8 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
             resource_usage=last_attempt.resource_usage,
             attempts=self.attempts,
         )
+        graph._quanta_by_task_label[self.task_label][data_id] = self.quantum_id
+        graph._quantum_only_xgraph.add_node(self.quantum_id, **graph._bipartite_xgraph.nodes[self.quantum_id])
         for connection_name, dataset_ids in self.inputs.items():
             read_edge = task_node.get_input_edge(connection_name)
             for dataset_id in dataset_ids:
@@ -655,6 +673,30 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
                 ).append(read_edge)
         for connection_name, dataset_ids in self.outputs.items():
             write_edge = task_node.get_output_edge(connection_name)
+            if connection_name == acc.METADATA_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.add_node(
+                    dataset_ids[0],
+                    data_id=data_id,
+                    dataset_type_name=write_edge.dataset_type_name,
+                    pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                    run=graph.header.output_run,
+                    produced=last_attempt.status.has_metadata,
+                )
+                graph._datasets_by_type[write_edge.dataset_type_name][data_id] = dataset_ids[0]
+                graph._bipartite_xgraph.nodes[self.quantum_id]["metadata_id"] = dataset_ids[0]
+                graph._quantum_only_xgraph.nodes[self.quantum_id]["metadata_id"] = dataset_ids[0]
+            if connection_name == acc.LOG_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.add_node(
+                    dataset_ids[0],
+                    data_id=data_id,
+                    dataset_type_name=write_edge.dataset_type_name,
+                    pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                    run=graph.header.output_run,
+                    produced=last_attempt.status.has_log,
+                )
+                graph._datasets_by_type[write_edge.dataset_type_name][data_id] = dataset_ids[0]
+                graph._bipartite_xgraph.nodes[self.quantum_id]["log_id"] = dataset_ids[0]
+                graph._quantum_only_xgraph.nodes[self.quantum_id]["log_id"] = dataset_ids[0]
             for dataset_id in dataset_ids:
                 graph._bipartite_xgraph.add_edge(
                     self.quantum_id,
@@ -663,8 +705,6 @@ class ProvenanceQuantumModel(pydantic.BaseModel):
                     # There can only be one pipeline edge for an output.
                     pipeline_edges=[write_edge],
                 )
-        graph._quanta_by_task_label[self.task_label][data_id] = self.quantum_id
-        graph._quantum_only_xgraph.add_node(self.quantum_id, **graph._bipartite_xgraph.nodes[self.quantum_id])
         for dataset_id in graph._bipartite_xgraph.predecessors(self.quantum_id):
             for upstream_quantum_id in graph._bipartite_xgraph.predecessors(dataset_id):
                 graph._quantum_only_xgraph.add_edge(upstream_quantum_id, self.quantum_id)
@@ -803,6 +843,15 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
             ).append(read_edge)
         for connection_name, dataset_id in self.outputs.items():
             write_edge = task_init_node.get_output_edge(connection_name)
+            graph._bipartite_xgraph.add_node(
+                dataset_id,
+                data_id=empty_data_id,
+                dataset_type_name=write_edge.dataset_type_name,
+                pipeline_node=graph.pipeline_graph.dataset_types[write_edge.dataset_type_name],
+                run=graph.header.output_run,
+                produced=True,
+            )
+            graph._datasets_by_type[write_edge.dataset_type_name][empty_data_id] = dataset_id
             graph._bipartite_xgraph.add_edge(
                 self.quantum_id,
                 dataset_id,
@@ -810,6 +859,8 @@ class ProvenanceInitQuantumModel(pydantic.BaseModel):
                 # There can only be one pipeline edge for an output.
                 pipeline_edges=[write_edge],
             )
+            if write_edge.connection_name == acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME:
+                graph._bipartite_xgraph.nodes[self.quantum_id]["config_id"] = dataset_id
         graph._init_quanta[self.task_label] = self.quantum_id
 
     # Work around the fact that Sphinx chokes on Pydantic docstring formatting,
@@ -994,6 +1045,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         types in the pipeline graph are included, even if none of their
         datasets were loaded (i.e. nested mappings may be empty).
 
+        Reading a quantum also populates its log and metadata datasets.
+
         The returned object may be an internal dictionary; as the type
         annotation indicates, it should not be modified in place.
         """
@@ -1032,7 +1085,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         `ProvenanceQuantumGraphReader.read_quanta`) or datasets (via
         `ProvenanceQuantumGraphReader.read_datasets`) will load those nodes
         with full attributes and edges to adjacent nodes with no attributes.
-        Loading quanta necessary to populate edge attributes.
+        Loading quanta is necessary to populate edge attributes.
+        Reading a quantum also populates its log and metadata datasets.
 
         Node attributes are described by the
         `ProvenanceQuantumInfo`, `ProvenanceInitQuantumInfo`, and
@@ -1103,10 +1157,6 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
     def make_exception_table(self) -> astropy.table.Table:
         """Construct an `astropy.table.Table` with counts for each exception
         type raised by each task.
-
-        At present this only includes information from partial-outputs-error
-        successes, since exception information for failures is not tracked.
-        This may change in the future.
 
         Returns
         -------
@@ -1294,19 +1344,19 @@ class ProvenanceQuantumGraphReader(BaseQuantumGraphReader):
                     # also have other outstanding reference holders).
                     continue
                 node._add_to_graph(self.graph)
-            return
-        with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
-            for node_id_or_index in nodes:
-                address_row = self.address_reader.find(node_id_or_index)
-                if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(address_row.key, {}):
-                    # Use the old node to reduce memory usage (since it might
-                    # also have other outstanding reference holders).
-                    continue
-                node = mb_reader.read_model(
-                    address_row.addresses[address_index], model_type, self.decompressor
-                )
-                if node is not None:
-                    node._add_to_graph(self.graph)
+        else:
+            with MultiblockReader.open_in_zip(self.zf, mb_name, int_size=self.header.int_size) as mb_reader:
+                for node_id_or_index in nodes:
+                    address_row = self.address_reader.find(node_id_or_index)
+                    if "pipeline_node" in self.graph._bipartite_xgraph.nodes.get(address_row.key, {}):
+                        # Use the old node to reduce memory usage (since it
+                        # might also have other outstanding reference holders).
+                        continue
+                    node = mb_reader.read_model(
+                        address_row.addresses[address_index], model_type, self.decompressor
+                    )
+                    if node is not None:
+                        node._add_to_graph(self.graph)
 
     def fetch_logs(self, nodes: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[ButlerLogRecords | None]]:
         """Fetch log datasets.
@@ -1588,7 +1638,7 @@ class ProvenanceQuantumGraphWriter:
         """
         predicted_quantum = self._predicted_quanta[quantum_id]
         provenance_models = ProvenanceQuantumScanModels.from_metadata_and_logs(
-            predicted_quantum, metadata, logs, assume_complete=True
+            predicted_quantum, metadata, logs, incomplete=False
         )
         scan_data = provenance_models.to_scan_data(predicted_quantum, compressor=self.compressor)
         self.write_scan_data(scan_data)
@@ -1665,8 +1715,8 @@ class ProvenanceQuantumScanStatus(enum.Enum):
     enough (according to `ScannerTimeConfigDict.retry_timeout`) that it's time
     to stop trying for now.
 
-    This state means a later run with `ScannerConfig.assume_complete` is
-    required.
+    This state means `ProvenanceQuantumScanModels.from_metadata_and_logs` must
+    be run again with ``incomplete=False``.
     """
 
     SUCCESSFUL = enum.auto()
@@ -1721,7 +1771,7 @@ class ProvenanceQuantumScanModels:
         metadata: TaskMetadata | None,
         logs: ButlerLogRecords | None,
         *,
-        assume_complete: bool = True,
+        incomplete: bool = False,
     ) -> ProvenanceQuantumScanModels:
         """Construct provenance information from task metadata and logs.
 
@@ -1733,8 +1783,8 @@ class ProvenanceQuantumScanModels:
             Task metadata.
         logs : `lsst.daf.butler.logging.ButlerLogRecords` or `None`
             Task logs.
-        assume_complete : `bool`, optional
-            If `False`, treat execution failures as possibly-incomplete quanta
+        incomplete : `bool`, optional
+            If `True`, treat execution failures as possibly-incomplete quanta
             and do not fully process them; instead just set the status to
             `ProvenanceQuantumScanStatus.ABANDONED` and return.
 
@@ -1752,8 +1802,8 @@ class ProvenanceQuantumScanModels:
         """
         self = ProvenanceQuantumScanModels(predicted.quantum_id)
         last_attempt = ProvenanceQuantumAttemptModel()
-        self._process_logs(predicted, logs, last_attempt, assume_complete=assume_complete)
-        self._process_metadata(predicted, metadata, last_attempt, assume_complete=assume_complete)
+        self._process_logs(predicted, logs, last_attempt, incomplete=incomplete)
+        self._process_metadata(predicted, metadata, last_attempt, incomplete=incomplete)
         if self.status is ProvenanceQuantumScanStatus.ABANDONED:
             return self
         self._reconcile_attempts(last_attempt)
@@ -1766,15 +1816,15 @@ class ProvenanceQuantumScanModels:
         logs: ButlerLogRecords | None,
         last_attempt: ProvenanceQuantumAttemptModel,
         *,
-        assume_complete: bool,
+        incomplete: bool,
     ) -> None:
         (predicted_log_dataset,) = predicted.outputs[acc.LOG_OUTPUT_CONNECTION_NAME]
         if logs is None:
             self.output_existence[predicted_log_dataset.dataset_id] = False
-            if assume_complete:
-                self.status = ProvenanceQuantumScanStatus.FAILED
-            else:
+            if incomplete:
                 self.status = ProvenanceQuantumScanStatus.ABANDONED
+            else:
+                self.status = ProvenanceQuantumScanStatus.FAILED
         else:
             # Set the attempt's run status to FAILED, since the default is
             # UNKNOWN (i.e. logs *and* metadata are missing) and we now know
@@ -1832,15 +1882,15 @@ class ProvenanceQuantumScanModels:
         metadata: TaskMetadata | None,
         last_attempt: ProvenanceQuantumAttemptModel,
         *,
-        assume_complete: bool,
+        incomplete: bool,
     ) -> None:
         (predicted_metadata_dataset,) = predicted.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME]
         if metadata is None:
             self.output_existence[predicted_metadata_dataset.dataset_id] = False
-            if assume_complete:
-                self.status = ProvenanceQuantumScanStatus.FAILED
-            else:
+            if incomplete:
                 self.status = ProvenanceQuantumScanStatus.ABANDONED
+            else:
+                self.status = ProvenanceQuantumScanStatus.FAILED
         else:
             self.status = ProvenanceQuantumScanStatus.SUCCESSFUL
             self.output_existence[predicted_metadata_dataset.dataset_id] = True
@@ -1875,7 +1925,7 @@ class ProvenanceQuantumScanModels:
                 # But we found the metadata!  Either that hard error happened
                 # at a very unlucky time (in between those two writes), or
                 # something even weirder happened.
-                self.attempts[-1].status = QuantumAttemptStatus.LOGS_MISSING
+                self.attempts[-1].status = QuantumAttemptStatus.ABORTED_SUCCESS
             else:
                 self.attempts[-1].status = QuantumAttemptStatus.FAILED
         if len(self.metadata.attempts) < len(self.attempts):

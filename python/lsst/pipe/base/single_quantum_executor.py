@@ -78,12 +78,12 @@ class SingleQuantumExecutor(QuantumExecutor):
         Instance of a task factory.  Defaults to a new instance of
         `lsst.pipe.base.TaskFactory`.
     skip_existing_in : `str` or `~collections.abc.Iterable` [ `str` ]
-        Expressions representing the collections to search for existing output
-        datasets. See :ref:`daf_butler_ordered_collection_searches` for allowed
-        types. This class only checks for the presence of butler output run in
-        the list of collections. If the output run is present in the list then
-        the quanta whose complete outputs exist in the output run will be
-        skipped. `None` or empty string/sequence disables skipping.
+        A collection name or list of collections to search for the existing
+        outputs of quanta, which indicates that those quanta should be skipped.
+        This class only checks for the presence of butler output run in the
+        list of collections. If the output run is present in the list then the
+        quanta whose complete outputs exist in the output run will be skipped.
+        `None` or empty string/sequence disables skipping.
     clobber_outputs : `bool`, optional
         If `True`, then outputs from a quantum that exist in output run
         collection will be removed prior to executing a quantum. If

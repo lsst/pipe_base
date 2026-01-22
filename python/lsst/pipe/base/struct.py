@@ -116,6 +116,10 @@ class Struct(SimpleNamespace):
         *nameList : `str`
             All remaining arguments are names of items to copy.
 
+        Returns
+        -------
+        None
+
         Raises
         ------
         RuntimeError

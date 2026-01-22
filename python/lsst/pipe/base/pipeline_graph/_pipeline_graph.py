@@ -897,6 +897,10 @@ class PipelineGraph:
             New config objects or overrides to apply to copies of the current
             config objects, with task labels as the keywords.
 
+        Returns
+        -------
+        None
+
         Raises
         ------
         ValueError
@@ -1754,6 +1758,10 @@ class PipelineGraph:
             software versions (this is not associated with a task and hence is
             not considered part of the pipeline graph in other respects, but it
             does get written with other provenance datasets).
+
+        Returns
+        -------
+        None
 
         Raises
         ------

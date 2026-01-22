@@ -25,6 +25,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["register_instrument", "transfer_from_graph", "zip_from_graph", "retrieve_artifacts_for_quanta", "aggregate_graph"]
+__all__ = [
+    "register_instrument",
+    "transfer_from_graph",
+    "zip_from_graph",
+    "retrieve_artifacts_for_quanta",
+    "aggregate_graph",
+    "ingest_graph",
+]
 
-from .commands import (register_instrument, retrieve_artifacts_for_quanta, transfer_from_graph, zip_from_graph, aggregate_graph)
+from .commands import (
+    register_instrument,
+    retrieve_artifacts_for_quanta,
+    transfer_from_graph,
+    zip_from_graph,
+    aggregate_graph,
+    ingest_graph,
+)

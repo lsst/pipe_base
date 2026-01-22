@@ -61,6 +61,14 @@ Developing Pipelines
    testing-pipelines-with-mocks.rst
    working-with-pipeline-graphs.rst
 
+Running Pipelines
+-----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   recording-provenance.rst
+
 .. _lsst.pipe.base-contributing:
 
 Contributing
@@ -101,6 +109,10 @@ Python API reference
 .. automodapi:: lsst.pipe.base.separable_pipeline_executor
 
 .. automodapi:: lsst.pipe.base.quantum_graph
+
+.. automodapi:: lsst.pipe.base.quantum_graph.aggregator
+
+.. automodapi:: lsst.pipe.base.quantum_graph.ingest_graph
 
 .. automodapi:: lsst.pipe.base.quantum_graph.visualization
 

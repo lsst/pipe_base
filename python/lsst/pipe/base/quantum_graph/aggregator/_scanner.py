@@ -223,7 +223,7 @@ class Scanner(AbstractContextManager):
             logs = self._read_log(predicted_quantum)
             metadata = self._read_metadata(predicted_quantum)
             result = ProvenanceQuantumScanModels.from_metadata_and_logs(
-                predicted_quantum, metadata, logs, assume_complete=self.comms.config.assume_complete
+                predicted_quantum, metadata, logs, incomplete=self.comms.config.incomplete
             )
             if result.status is ProvenanceQuantumScanStatus.ABANDONED:
                 self.comms.log.debug("Abandoning scan for failed quantum %s.", quantum_id)
@@ -233,7 +233,7 @@ class Scanner(AbstractContextManager):
             if predicted_output.dataset_id not in result.output_existence:
                 result.output_existence[predicted_output.dataset_id] = self.scan_dataset(predicted_output)
         to_ingest = self._make_ingest_request(predicted_quantum, result)
-        if self.comms.config.output_path is not None:
+        if self.comms.config.is_writing_provenance:
             to_write = result.to_scan_data(predicted_quantum, compressor=self.compressor)
             self.comms.request_write(to_write)
         self.comms.request_ingest(to_ingest)
@@ -261,15 +261,23 @@ class Scanner(AbstractContextManager):
         predicted_outputs_by_id = {
             d.dataset_id: d for d in itertools.chain.from_iterable(predicted_quantum.outputs.values())
         }
-        to_ingest_predicted: list[PredictedDatasetModel] = []
         to_ingest_refs: list[DatasetRef] = []
+        to_ignore: set[uuid.UUID] = set()
+        if self.comms.config.promise_ingest_graph:
+            if result.status is ProvenanceQuantumScanStatus.INIT:
+                if predicted_quantum.task_label:  # i.e. not the 'packages' producer
+                    to_ignore.add(
+                        predicted_quantum.outputs[acc.CONFIG_INIT_OUTPUT_CONNECTION_NAME][0].dataset_id
+                    )
+            else:
+                to_ignore.add(predicted_quantum.outputs[acc.METADATA_OUTPUT_CONNECTION_NAME][0].dataset_id)
+                to_ignore.add(predicted_quantum.outputs[acc.LOG_OUTPUT_CONNECTION_NAME][0].dataset_id)
         for dataset_id, was_produced in result.output_existence.items():
-            if was_produced:
+            if was_produced and dataset_id not in to_ignore:
                 predicted_output = predicted_outputs_by_id[dataset_id]
-                to_ingest_predicted.append(predicted_output)
                 to_ingest_refs.append(self.reader.components.make_dataset_ref(predicted_output))
         to_ingest_records = self.qbb._datastore.export_predicted_records(to_ingest_refs)
-        return IngestRequest(result.quantum_id, to_ingest_predicted, to_ingest_records)
+        return IngestRequest(result.quantum_id, to_ingest_refs, to_ingest_records)
 
     def _read_metadata(self, predicted_quantum: PredictedQuantumDatasetsModel) -> TaskMetadata | None:
         """Attempt to read the metadata dataset for a quantum.

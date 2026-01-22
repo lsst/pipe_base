@@ -35,9 +35,13 @@ from typing import Any, ClassVar
 import pydantic
 
 from lsst.daf.butler import FormatterV2
+from lsst.daf.butler.logging import ButlerLogRecords
+from lsst.pex.config import Config
 from lsst.resources import ResourcePath
 from lsst.utils.logging import getLogger
+from lsst.utils.packages import Packages
 
+from .._task_metadata import TaskMetadata
 from ..pipeline_graph import TaskImportMode
 from ._provenance import ProvenanceQuantumGraphReader
 
@@ -83,6 +87,17 @@ class ProvenanceFormatter(FormatterV2):
     can_read_from_uri: ClassVar[bool] = True
 
     def read_from_uri(self, uri: ResourcePath, component: str | None = None, expected_size: int = -1) -> Any:
+        match self._dataset_ref.datasetType.storageClass_name:
+            case "TaskMetadata" | "PropertySet":
+                return self._read_metadata(uri)
+            case "ButlerLogRecords":
+                return self._read_log(uri)
+            case "Config":
+                return self._read_config(uri)
+            case "ProvenanceQuantumGraph":
+                pass
+            case unexpected:
+                raise ValueError(f"Unsupported storage class {unexpected!r} for ProvenanceFormatter.")
         parameters = _ProvenanceFormatterParameters.model_validate(self.file_descriptor.parameters or {})
         with ProvenanceQuantumGraphReader.open(uri, import_mode=parameters.import_mode) as reader:
             match component:
@@ -99,3 +114,58 @@ class ProvenanceFormatter(FormatterV2):
                 case "packages":
                     return reader.fetch_packages()
         raise AssertionError(f"Unexpected component {component!r}.")
+
+    def _read_metadata(self, uri: ResourcePath) -> TaskMetadata:
+        with ProvenanceQuantumGraphReader.open(uri, import_mode=TaskImportMode.DO_NOT_IMPORT) as reader:
+            try:
+                attempts = reader.fetch_metadata([self._dataset_ref.id])[self._dataset_ref.id]
+            except LookupError:
+                raise FileNotFoundError(
+                    f"No dataset with ID {self._dataset_ref.id} present in this graph."
+                ) from None
+        if not attempts:
+            raise FileNotFoundError(
+                f"No metadata dataset {self._dataset_ref} stored in this graph "
+                "(no attempts for this quantum)."
+            )
+        if attempts[-1] is None:
+            raise FileNotFoundError(
+                f"No metadata dataset {self._dataset_ref} stored in this graph "
+                "(most recent attempt failed and did not write metadata)."
+            )
+        return attempts[-1]
+
+    def _read_log(self, uri: ResourcePath) -> ButlerLogRecords:
+        with ProvenanceQuantumGraphReader.open(uri, import_mode=TaskImportMode.DO_NOT_IMPORT) as reader:
+            try:
+                attempts = reader.fetch_logs([self._dataset_ref.id])[self._dataset_ref.id]
+            except LookupError:
+                raise FileNotFoundError(
+                    f"No dataset with ID {self._dataset_ref.id} present in this graph."
+                ) from None
+        if not attempts:
+            raise FileNotFoundError(
+                f"No log dataset {self._dataset_ref} stored in this graph (no attempts for this quantum)."
+            )
+        if attempts[-1] is None:
+            raise FileNotFoundError(
+                f"No log dataset {self._dataset_ref} stored in this graph "
+                "(most recent attempt failed and did not write logs)."
+            )
+        return attempts[-1]
+
+    def _read_packages(self, uri: ResourcePath) -> Packages:
+        with ProvenanceQuantumGraphReader.open(uri, import_mode=TaskImportMode.DO_NOT_IMPORT) as reader:
+            return reader.fetch_packages()
+
+    def _read_config(self, uri: ResourcePath) -> Config:
+        task_label = self._dataset_ref.datasetType.name.removesuffix("_config")
+        with ProvenanceQuantumGraphReader.open(
+            uri, import_mode=TaskImportMode.ASSUME_CONSISTENT_EDGES
+        ) as reader:
+            try:
+                return reader.pipeline_graph.tasks[task_label].config.copy()
+            except KeyError:
+                raise FileNotFoundError(
+                    f"No task with label {task_label!r} found in the pipeline graph."
+                ) from None

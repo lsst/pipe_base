@@ -55,7 +55,7 @@ class PipelineTask(Task):
     resulting data is also stored in a data butler.
 
     PipelineTask inherits from a `~lsst.pipe.base.Task` and uses the same
-    configuration mechanism based on :ref:`lsst.pex.config`. `PipelineTask`
+    configuration mechanism based on `lsst.pex.config`. `PipelineTask`
     classes also have a `PipelineTaskConnections` class associated with their
     config which defines all of the IO a `PipelineTask` will need to do.
     PipelineTask sub-class typically implements `run()` method which receives
@@ -74,12 +74,6 @@ class PipelineTask(Task):
     Subclasses must be constructable with exactly the arguments taken by the
     PipelineTask base class constructor, but may support other signatures as
     well.
-
-    Attributes
-    ----------
-    canMultiprocess : bool, True by default (class attribute)
-        This class attribute is checked by execution framework, sub-classes
-        can set it to ``False`` in case task does not support multiprocessing.
 
     Parameters
     ----------
@@ -102,7 +96,11 @@ class PipelineTask(Task):
     """
 
     ConfigClass: ClassVar[type[PipelineTaskConfig]]
+
     canMultiprocess: ClassVar[bool] = True
+    """Whether this task can be run by an executor that uses subprocesses for
+    parallelism.
+    """
 
     def __init__(
         self,
