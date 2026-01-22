@@ -311,7 +311,7 @@ class Instrument(metaclass=ABCMeta):
         return instrument_cls(collection_prefix=collection_prefix)
 
     @staticmethod
-    def importAll(registry: Registry) -> None:
+    def importAll(registry: Registry) -> dict[str, type[Instrument]]:
         """Import all the instruments known to this registry.
 
         This will ensure that all metadata translators have been registered.
@@ -321,17 +321,28 @@ class Instrument(metaclass=ABCMeta):
         registry : `lsst.daf.butler.Registry`
             Butler registry to query to find the information.
 
+        Returns
+        -------
+        imported : `dict` [`str`, `type` [`Instrument`]]
+            A mapping containing all the instrument classes that were loaded
+            successfully, keyed by their butler names.
+
         Notes
         -----
         It is allowed for a particular instrument class to fail on import.
         This might simply indicate that a particular obs package has
         not been setup.
         """
+        imported: dict[str, type[Instrument]] = {}
         records = list(registry.queryDimensionRecords("instrument"))
         for record in records:
             cls = record.class_name
+            instrument_name: str = cast(str, record.name)
             with contextlib.suppress(Exception):
-                doImportType(cls)
+                instr = doImportType(cls)
+                assert issubclass(instr, Instrument)
+                imported[instrument_name] = instr
+        return imported
 
     @abstractmethod
     def getRawFormatter(self, dataId: DataId) -> type[Formatter]:
