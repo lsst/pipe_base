@@ -34,6 +34,7 @@ __all__ = (
     "SpawnProcessContext",
     "SupervisorCommunicator",
     "ThreadingContext",
+    "WorkerCommunicationError",
     "WorkerContext",
 )
 
@@ -54,9 +55,12 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
-from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
+from typing import Any, Literal, Self, TypeAlias, TypeVar, Union, overload
+
+import astropy.units as u
 
 from lsst.utils.logging import LsstLogAdapter
+from lsst.utils.usage import get_peak_mem_usage
 
 from .._provenance import ProvenanceQuantumScanData
 from ._config import AggregatorConfig
@@ -120,6 +124,32 @@ class WorkerContext(ABC):
         """
         raise NotImplementedError()
 
+    def destroy_queue(self, queue: Queue[Any]) -> None:
+        """Prepare a queue for a hard shutdown.
+
+        Parameters
+        ----------
+        queue : `Queue`
+            Queue to prepare for a hard shutdown.
+        """
+        while _get_from_queue(queue, block=False) is not None:
+            pass
+
+    def kill(self, worker: Worker, wait_until: float) -> None:
+        """Terminate a worker.
+
+        Parameters
+        ----------
+        worker : `Worker`
+            Worker to kill.
+        wait_until : `float`
+            POSIX time to wait for the worker to join before giving up.
+            (After we give up on a process, we kill it; after we give up
+            on a thread we do nothing).
+        """
+        timeout = max(wait_until - time.time(), 0.0)
+        worker.join(timeout=timeout)
+
 
 class ThreadingContext(WorkerContext):
     """An implementation of `WorkerContext` backed by the `threading`
@@ -157,6 +187,14 @@ class SpawnProcessContext(WorkerContext):
     ) -> Worker:
         return self._ctx.Process(target=target, args=args, name=name)
 
+    def destroy_queue(self, queue: Queue[Any]) -> None:
+        queue.cancel_join_thread()  # type: ignore
+
+    def kill(self, worker: Worker, wait_until: float) -> None:
+        super().kill(worker, wait_until)
+        if worker.is_alive():
+            worker.kill()  # type: ignore
+
 
 def _get_from_queue(q: Queue[_T], block: bool = False, timeout: float | None = None) -> _T | None:
     """Get an object from a queue and return `None` if it is empty.
@@ -185,6 +223,12 @@ class FatalWorkerError(BaseException):
     """An exception raised by communicators when one worker (including the
     supervisor) has caught an exception in order to signal the others to shut
     down.
+    """
+
+
+class WorkerCommunicationError(Exception):
+    """An exception raised by communicators when a worker has died unexpectedly
+    or become unresponsive.
     """
 
 
@@ -349,6 +393,7 @@ class SupervisorCommunicator:
         self.config = config
         self.progress = ProgressManager(log, config)
         self.n_scanners = n_scanners
+        self._context = context
         # The supervisor sends scan requests to scanners on this queue.
         # When complete, the supervisor sends n_scanners sentinals and each
         # scanner is careful to only take one before it starts its shutdown.
@@ -396,8 +441,11 @@ class SupervisorCommunicator:
         self._n_scanners_done = 0
         self._ingester_done = False
         self._writer_done = self._write_requests is None
+        self.scanners: list[Worker] = []
+        self.writer: Worker | None = None
+        self.ingester: Worker | None = None
 
-    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+    def _wait_for_workers_to_finish(self, already_failing: bool = False) -> bool:
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
                 self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS, block=False)
@@ -406,9 +454,19 @@ class SupervisorCommunicator:
             self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
         while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
-            match self._handle_progress_reports(
-                self._reports.get(block=True), already_failing=already_failing
-            ):
+            try:
+                report = self._handle_progress_reports(self._get_report(block=True))
+            except WorkerCommunicationError:
+                self.progress.log.exception(
+                    "Error communicating with workers; killing them instead of waiting."
+                )
+                self._terminate()
+                return False
+            except FatalWorkerError:
+                self.progress.log.fatal("Killing all remaining workers.")
+                self._terminate()
+                return False
+            match report:
                 case None | ScanReport() | _IngestReport():
                     pass
                 case _Sentinel.INGESTER_DONE:
@@ -431,12 +489,25 @@ class SupervisorCommunicator:
         while _get_from_queue(self._compression_dict) is not None:
             self.log.verbose("Flushing compression dict queue.")
         self.log.verbose("Checking that all queues are empty.")
-        self._expect_empty_queue(self._scan_requests)
-        self._expect_empty_queue(self._ingest_requests)
+        if not self._expect_empty_queue(self._scan_requests):
+            return False
+        if not self._expect_empty_queue(self._ingest_requests):
+            return False
         if self._write_requests is not None:
-            self._expect_empty_queue(self._write_requests)
-        self._expect_empty_queue(self._reports)
-        self._expect_empty_queue(self._compression_dict)
+            if not self._expect_empty_queue(self._write_requests):
+                return False
+        if not self._expect_empty_queue(self._reports):
+            return False
+        if not self._expect_empty_queue(self._compression_dict):
+            return False
+        for w in self.scanners:
+            w.join()
+        if self.ingester is not None:
+            self.ingester.join()
+        if self.writer is not None:
+            self.log.info("Waiting for writer process to close (garbage collecting can be very slow).")
+            self.writer.join()
+        return True
 
     def __enter__(self) -> Self:
         _disable_resources_parallelism()
@@ -453,10 +524,25 @@ class SupervisorCommunicator:
         traceback: TracebackType | None,
     ) -> None:
         if exc_type is not None:
-            if exc_type is not FatalWorkerError:
-                self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
-            self._cancel_event.set()
-        self.wait_for_workers_to_finish(already_failing=exc_type is not None)
+            self.progress.log.critical(f"Caught {exc_type.__name__}; shutting down.")
+            self._terminate()
+        else:
+            if self._wait_for_workers_to_finish():
+                # We can't get memory usage for children until they've joined.
+                parent_mem, child_mem = get_peak_mem_usage()
+                # This is actually an upper bound on the peak (since the peaks
+                # could be at different times), but since we expect memory
+                # usage to be more smooth than spiky that's fine.
+                total_mem: u.Quantity = parent_mem + child_mem
+                self.progress.log.info(
+                    "All aggregation tasks complete after %0.1fs; peak memory usage ≤ %0.1f MB.",
+                    self.progress.elapsed_time,
+                    total_mem.to(u.MB).value,
+                )
+            else:
+                self.progress.log.error(
+                    "Aggregator failed during shutdown; work may or may not have been completed."
+                )
         self.progress.__exit__(exc_type, exc_value, traceback)
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
@@ -495,9 +581,8 @@ class SupervisorCommunicator:
         it continues until the report queue is empty.
         """
         block = True
-        msg = _get_from_queue(self._reports, block=block)
-        while msg is not None:
-            match self._handle_progress_reports(msg):
+        while report := self._get_report(block=block):
+            match self._handle_progress_reports(report):
                 case ScanReport() as scan_report:
                     block = False
                     yield scan_report
@@ -505,10 +590,36 @@ class SupervisorCommunicator:
                     pass
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
-            msg = _get_from_queue(self._reports, block=block)
+
+    @overload
+    def _get_report(self, block: Literal[True]) -> Report: ...
+
+    @overload
+    def _get_report(self, block: bool) -> Report | None: ...
+
+    def _get_report(self, block: bool) -> Report | None:
+        """Get a report from the reports queue, with timeout guards on
+        blocking requests.
+        """
+        start_time = time.time()
+        report = _get_from_queue(self._reports, block=block, timeout=self.config.worker_check_timeout)
+        while report is None and block:
+            # We hit the timeout; make sure all of the workers
+            # that should be alive actually are.
+            self._check_for_dead_subprocesses()
+            # If none of them are dead, they might still be stuck.
+            time_waited = time.time() - start_time
+            if time_waited > self.config.worker_hang_timeout:
+                raise WorkerCommunicationError(
+                    f"No progress after {time_waited}s > {self.config.worker_hang_timeout}s."
+                )
+            # If nothing is dead and we didn't hit the hang timeout, keep
+            # trying.
+            report = _get_from_queue(self._reports, block=block, timeout=self.config.worker_check_timeout)
+        return report
 
     def _handle_progress_reports(
-        self, report: Report, already_failing: bool = False
+        self, report: Report
     ) -> (
         ScanReport
         | Literal[
@@ -535,8 +646,7 @@ class SupervisorCommunicator:
         match report:
             case _WorkerErrorMessage(traceback=traceback, worker=worker):
                 self.progress.log.fatal("Exception raised on %s: \n%s", worker, traceback)
-                if not already_failing:
-                    raise FatalWorkerError()
+                raise FatalWorkerError()
             case _IngestReport(n_producers=n_producers):
                 self.progress.quantum_ingests.update(n_producers)
             case _Sentinel.WRITE_REPORT:
@@ -547,11 +657,39 @@ class SupervisorCommunicator:
                 return report
         return None
 
-    @staticmethod
-    def _expect_empty_queue(queue: Queue[Any]) -> None:
+    def _expect_empty_queue(self, queue: Queue[Any]) -> bool:
         """Assert that the given queue is empty."""
         if (msg := _get_from_queue(queue, block=False, timeout=0)) is not None:
-            raise AssertionError(f"Queue is not empty; found {msg!r}.")
+            self.progress.log.error("Queue is not empty at shutdown; found %r.", msg)
+            self._terminate()
+            return False
+        return True
+
+    def _check_for_dead_subprocesses(self) -> None:
+        if not self._ingester_done and self.ingester is not None and not self.ingester.is_alive():
+            raise WorkerCommunicationError("Ingester unexpectedly died.")
+        if not self._writer_done and self.writer is not None and not self.writer.is_alive():
+            raise WorkerCommunicationError("Writer unexpectedly died.")
+        if self._n_scanners_done != self.n_scanners:
+            dead_scanners = [s for s in self.scanners if not s.is_alive()]
+            if len(dead_scanners) > self._n_scanners_done:
+                raise WorkerCommunicationError("One or more scanners unexpectedly died.")
+
+    def _terminate(self) -> None:
+        self._cancel_event.set()
+        wait_until = time.time() + self.config.worker_shutdown_timeout
+        for w in self.scanners:
+            self._context.kill(w, wait_until)
+        if self.ingester is not None:
+            self._context.kill(self.ingester, wait_until)
+        if self.writer is not None:
+            self._context.kill(self.writer, wait_until)
+        self._context.destroy_queue(self._scan_requests)
+        self._context.destroy_queue(self._ingest_requests)
+        if self._write_requests is not None:
+            self._context.destroy_queue(self._write_requests)
+        self._context.destroy_queue(self._reports)
+        self._context.destroy_queue(self._compression_dict)
 
 
 class WorkerCommunicator:
