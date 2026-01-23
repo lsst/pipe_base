@@ -1263,6 +1263,7 @@ class QuantumProvenanceGraph:
         do_store_logs : `bool`
             Store the logs in the summary dictionary.
         n_cores : `int`, optional
+            Number of cores to use.
 
         Returns
         -------
@@ -2010,7 +2011,7 @@ class _ThreadLocalButlerWrapper:
         full_butler : `~lsst.daf.butler.Butler`
             Full butler to draw datastore and dimension configuration from.
         qg : `QuantumGraph`
-            Quantum graph,
+            Quantum graph.
 
         Returns
         -------
