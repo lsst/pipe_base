@@ -380,8 +380,8 @@ class QuantumContext:
             if dataset is directly a `list` of `~lsst.daf.butler.DatasetRef`
             or a single `~lsst.daf.butler.DatasetRef`. If ``values.NAME`` is
             None, no output is written.
-        dataset : `OutputQuantizedConnection` or `list`[`DatasetRef`] \
-                or `DatasetRef`
+        dataset : `OutputQuantizedConnection` or `list` \
+                [`lsst.daf.butler.DatasetRef`] or `lsst.daf.butler.DatasetRef`
             This argument may either be an `InputQuantizedConnection` which
             describes all the inputs of a quantum, a list of
             `lsst.daf.butler.DatasetRef`, or a single
@@ -460,7 +460,7 @@ class QuantumContext:
 
         Parameters
         ----------
-        ref : `DatasetRef`
+        ref : `lsst.daf.butler.DatasetRef`
             The dataset to attach provenance to. This dataset must have been
             retrieved by this quantum context.
         extra : `dict` [ `str`, `int` | `float` | `str` | `bool` ]

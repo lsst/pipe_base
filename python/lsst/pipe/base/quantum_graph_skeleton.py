@@ -571,12 +571,13 @@ class QuantumGraphSkeleton:
     def set_dataset_ref(
         self, ref: DatasetRef, key: DatasetKey | PrerequisiteDatasetKey | None = None
     ) -> None:
-        """Associate a dataset node with a `DatasetRef` instance.
+        """Associate a dataset node with a `~lsst.daf.butler.DatasetRef`
+        instance.
 
         Parameters
         ----------
-        ref : `DatasetRef`
-            `DatasetRef` to associate with the node.
+        ref : `~lsst.daf.butler.DatasetRef`
+            `~lsst.daf.butler.DatasetRef` to associate with the node.
         key : `DatasetKey` or `PrerequisiteDatasetKey`, optional
             Identifier for the graph node.  If not provided, a `DatasetKey`
             is constructed from the dataset type name and data ID of ``ref``.
@@ -586,32 +587,33 @@ class QuantumGraphSkeleton:
         self._xgraph.nodes[key]["ref"] = ref
 
     def set_output_for_skip(self, ref: DatasetRef) -> None:
-        """Associate a dataset node with a `DatasetRef` that represents an
-        existing output in a collection where such outputs can cause a quantum
-        to be skipped.
+        """Associate a dataset node with a `~lsst.daf.butler.DatasetRef` that
+        represents an existing output in a collection where such outputs can
+        cause a quantum to be skipped.
 
         Parameters
         ----------
-        ref : `DatasetRef`
-            `DatasetRef` to associate with the node.
+        ref : `~lsst.daf.butler.DatasetRef`
+            `~lsst.daf.butler.DatasetRef` to associate with the node.
         """
         key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
         self._xgraph.nodes[key]["output_for_skip"] = ref
 
     def set_output_in_the_way(self, ref: DatasetRef) -> None:
-        """Associate a dataset node with a `DatasetRef` that represents an
-        existing output in the output RUN collection.
+        """Associate a dataset node with a `~lsst.daf.butler.DatasetRef` that
+        represents an existing output in the output RUN collection.
 
         Parameters
         ----------
-        ref : `DatasetRef`
-            `DatasetRef` to associate with the node.
+        ref : `~lsst.daf.butler.DatasetRef`
+            `~lsst.daf.butler.DatasetRef` to associate with the node.
         """
         key = DatasetKey(ref.datasetType.name, ref.dataId.required_values)
         self._xgraph.nodes[key]["output_in_the_way"] = ref
 
     def get_dataset_ref(self, key: DatasetKey | PrerequisiteDatasetKey) -> DatasetRef | None:
-        """Return the `DatasetRef` associated with the given node.
+        """Return the `~lsst.daf.butler.DatasetRef` associated with the given
+        node.
 
         This does not return "output for skip" and "output in the way"
         datasets.
@@ -623,14 +625,14 @@ class QuantumGraphSkeleton:
 
         Returns
         -------
-        ref : `DatasetRef` or `None`
+        ref : `~lsst.daf.butler.DatasetRef` or `None`
             Dataset reference associated with the node.
         """
         return self._xgraph.nodes[key].get("ref")
 
     def get_output_for_skip(self, key: DatasetKey) -> DatasetRef | None:
-        """Return the `DatasetRef` associated with the given node in a
-        collection where it could lead to a quantum being skipped.
+        """Return the `~lsst.daf.butler.DatasetRef` associated with the given
+        node in a collection where it could lead to a quantum being skipped.
 
         Parameters
         ----------
@@ -639,14 +641,14 @@ class QuantumGraphSkeleton:
 
         Returns
         -------
-        ref : `DatasetRef` or `None`
+        ref : `~lsst.daf.butler.DatasetRef` or `None`
             Dataset reference associated with the node.
         """
         return self._xgraph.nodes[key].get("output_for_skip")
 
     def get_output_in_the_way(self, key: DatasetKey) -> DatasetRef | None:
-        """Return the `DatasetRef` associated with the given node in the
-        output RUN collection.
+        """Return the `~lsst.daf.butler.DatasetRef` associated with the given
+        node in the output RUN collection.
 
         Parameters
         ----------
@@ -655,16 +657,16 @@ class QuantumGraphSkeleton:
 
         Returns
         -------
-        ref : `DatasetRef` or `None`
+        ref : `~lsst.daf.butler.DatasetRef` or `None`
             Dataset reference associated with the node.
         """
         return self._xgraph.nodes[key].get("output_in_the_way")
 
     def discard_output_in_the_way(self, key: DatasetKey) -> None:
-        """Drop any `DatasetRef` associated with this node in the output RUN
-        collection.
+        """Drop any `~lsst.daf.butler.DatasetRef` associated with this node in
+        the output RUN collection.
 
-        Does nothing if there is no such `DatasetRef`.
+        Does nothing if there is no such `~lsst.daf.butler.DatasetRef`.
 
         Parameters
         ----------
@@ -676,8 +678,8 @@ class QuantumGraphSkeleton:
     def set_data_id(self, key: Key, data_id: DataCoordinate) -> None:
         """Set the data ID associated with a node.
 
-        This updates the data ID in any `DatasetRef` objects associated with
-        the node via `set_ref`, `set_output_for_skip`, or
+        This updates the data ID in any `~lsst.daf.butler.DatasetRef` objects
+        associated with the node via `set_ref`, `set_output_for_skip`, or
         `set_output_in_the_way` as well, assuming it is an expanded version
         of the original data ID.
 
@@ -685,7 +687,7 @@ class QuantumGraphSkeleton:
         ----------
         key : `Key`
             Identifier for the graph node.
-        data_id : `DataCoordinate`
+        data_id : `~lsst.daf.butler.DataCoordinate`
             Data ID for the node.
         """
         state: MutableMapping[str, Any] = self._xgraph.nodes[key]
@@ -710,7 +712,7 @@ class QuantumGraphSkeleton:
 
         Returns
         -------
-        data_id : `DataCoordinate`
+        data_id : `~lsst.daf.butler.DataCoordinate`
             Expanded data ID for the node, if one is available.
 
         Raises

@@ -106,8 +106,8 @@ class DatasetTypeNode:
             The internal networkx graph.
         get_registered : `~collections.abc.Callable` or `None`
             Callable that takes a dataset type name and returns the
-            `DatasetType` registered in the data repository, or `None` if it is
-            not registered.
+            `~lsst.daf.butler.DatasetType` registered in the data repository,
+            or `None` if it is not registered.
         dimensions : `lsst.daf.butler.DimensionUniverse`
             Definitions of all dimensions.
         previous : `DatasetTypeNode` or `None`

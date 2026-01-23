@@ -605,7 +605,7 @@ class Pipeline:
 
     @property
     def subsets(self) -> MappingProxyType[str, set]:
-        """Returns a `MappingProxyType` where the keys are the labels of
+        """Returns a `types.MappingProxyType` where the keys are the labels of
         labeled subsets in the `Pipeline` and the values are the set of task
         labels contained within that subset.
         """

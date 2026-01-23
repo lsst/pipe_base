@@ -587,8 +587,8 @@ class TaskSummary(pydantic.BaseModel):
 
         Unpack the `QuantumInfo` object, sorting quanta of each status into
         the correct place in the `TaskSummary`. If looking for error messages
-        in the `Butler` logs is desired, take special care to catch issues
-        with missing logs.
+        in the `lsst.daf.butler.Butler` logs is desired, take special care to
+        catch issues with missing logs.
 
         Parameters
         ----------
@@ -867,7 +867,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
 class Summary(pydantic.BaseModel):
     """A summary of the contents of the QuantumProvenanceGraph, including
     all information on the quanta for each task and the datasets of each
-    `DatasetType`.
+    `~lsst.daf.butler.DatasetType`.
     """
 
     tasks: dict[str, TaskSummary] = pydantic.Field(default_factory=dict)
@@ -886,7 +886,7 @@ class Summary(pydantic.BaseModel):
 
         Parameters
         ----------
-        summaries : `Sequence[Summary]`
+        summaries : `~collections.abc.Sequence` [`Summary`]
             Sequence of all `Summary` objects to aggregate.
         """
         result = cls()
@@ -1246,8 +1246,8 @@ class QuantumProvenanceGraph:
         Returns
         -------
         dataset_info : `DatasetInfo`
-            The `TypedDict` with information about the `DatasetType`-dataID
-            pair across all runs.
+            The `TypedDict` with information about the
+            `~lsst.daf.butler.DatasetType`-dataID pair across all runs.
         """
         return self._xgraph.nodes[key]
 

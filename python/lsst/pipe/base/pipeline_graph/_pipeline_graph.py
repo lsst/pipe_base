@@ -1636,7 +1636,7 @@ class PipelineGraph:
 
         Returns
         -------
-        subgraphs : `Iterable` [ `PipelineGraph` ]
+        subgraphs : `~collections.abc.Iterable` [ `PipelineGraph` ]
             An iterable over component subgraphs that could be run
             independently (they have only overall inputs in common).  May be a
             lazy iterator.
@@ -2236,7 +2236,7 @@ class PipelineGraph:
 
         Parameters
         ----------
-        updates : `Mapping` [ `str`, `TaskNode` ]
+        updates : `~collections.abc.Mapping` [ `str`, `TaskNode` ]
             New task nodes with task label keys.  All keys must be task labels
             that are already present in the graph.
         check_edges_unchanged : `bool`, optional

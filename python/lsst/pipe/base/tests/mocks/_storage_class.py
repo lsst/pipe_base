@@ -381,7 +381,8 @@ MockDataset.model_rebuild()
 
 
 class MockStorageClassDelegate(StorageClassDelegate):
-    """Implementation of the StorageClassDelegate interface for mock datasets.
+    """Implementation of the `~lsst.daf.butler.StorageClassDelegate` interface
+    for mock datasets.
 
     This class does not implement assembly and disassembly just because it's
     not needed right now.  That could be added in the future with some

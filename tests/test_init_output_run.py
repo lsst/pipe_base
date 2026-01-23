@@ -131,7 +131,7 @@ class InitOutputRunTestCase(unittest.TestCase):
         ----------
         pipeline_graph : `PipelineGraph`
             Pipeline graph.
-        butler : `Butler`
+        butler : `lsst.daf.butler.Butler`
             Full butler client.
 
         Returns

@@ -480,11 +480,11 @@ class ReadEdge(Edge):
         Parameters
         ----------
         current : `lsst.daf.butler.DatasetType` or `None`
-            The current graph-wide `DatasetType`, or `None`.  This will always
-            be the registry's definition of the parent dataset type, if one
-            exists.  If not, it will be the dataset type definition from the
-            task in the graph that writes it, if there is one.  If there is no
-            such task, this will be `None`.
+            The current graph-wide `~lsst.daf.butler.DatasetType`, or `None`.
+            This will always be the registry's definition of the parent dataset
+            type, if one exists.  If not, it will be the dataset type
+            definition from the task in the graph that writes it, if there is
+            one.  If there is no such task, this will be `None`.
         is_initial_query_constraint : `bool`
             Whether this dataset type is currently marked as a constraint on
             the initial data ID query in QuantumGraph generation.
@@ -496,7 +496,7 @@ class ReadEdge(Edge):
         producer : `str` or `None`
             The label of the task that produces this dataset type in the
             pipeline, or `None` if it is an overall input.
-        consumers : `Sequence` [ `str` ]
+        consumers : `~collections.abc.Sequence` [ `str` ]
             Labels for other consuming tasks that have already participated in
             this dataset type's resolution.
         is_registered : `bool`
@@ -512,7 +512,7 @@ class ReadEdge(Edge):
 
         Returns
         -------
-        dataset_type : `DatasetType`
+        dataset_type : `~lsst.daf.butler.DatasetType`
             The updated graph-wide dataset type.  If ``current`` was provided,
             this must be equal to it.
         is_initial_query_constraint : `bool`
@@ -800,15 +800,15 @@ class WriteEdge(Edge):
         Parameters
         ----------
         current : `lsst.daf.butler.DatasetType` or `None`
-            The current graph-wide `DatasetType`, or `None`.  This will always
-            be the registry's definition of the parent dataset type, if one
-            exists.
+            The current graph-wide `~lsst.daf.butler.DatasetType`, or `None`.
+            This will always be the registry's definition of the parent dataset
+            type, if one exists.
         universe : `lsst.daf.butler.DimensionUniverse`
             Object that holds all dimension definitions.
 
         Returns
         -------
-        dataset_type : `DatasetType`
+        dataset_type : `~lsst.daf.butler.DatasetType`
             A dataset type compatible with this edge.  If ``current`` was
             provided, this must be equal to it.
 

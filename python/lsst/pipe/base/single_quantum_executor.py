@@ -92,7 +92,7 @@ class SingleQuantumExecutor(QuantumExecutor):
         `None`.
     enable_lsst_debug : `bool`, optional
         Enable debugging with ``lsstDebug`` facility for a task.
-    limited_butler_factory : `Callable`, optional
+    limited_butler_factory : `~collections.abc.Callable`, optional
         A method that creates a `~lsst.daf.butler.LimitedButler` instance for a
         given Quantum. This parameter must be defined if ``butler`` is `None`.
         If ``butler`` is not `None` then this parameter is ignored.

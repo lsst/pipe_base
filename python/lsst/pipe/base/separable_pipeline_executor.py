@@ -79,7 +79,7 @@ class SeparablePipelineExecutor:
     clobber_output : `bool`, optional
         If set, the pipeline execution overwrites existing output files.
         Otherwise, any conflict between existing and new outputs is an error.
-    skip_existing_in : iterable [`str`], optional
+    skip_existing_in : `~collections.abc.Iterable` [`str`], optional
         If not empty, the pipeline execution searches the listed collections
         for existing outputs, and skips any quanta that have run to completion
         (or have no work to do). Otherwise, all tasks are attempted (subject to

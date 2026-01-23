@@ -252,7 +252,8 @@ class PrerequisiteFinder:
             Sequence of collections to search, in order.
         data_id : `lsst.daf.butler.DataCoordinate`
             Data ID for the quantum.
-        skypix_bounds : `Mapping` [ `str`, `lsst.sphgeom.RangeSet` ]
+        skypix_bounds : `~collections.abc.Mapping` \
+              [ `str`, `lsst.sphgeom.RangeSet` ]
             The spatial bounds of this quantum in various skypix dimensions.
             Keys are skypix dimension names (a superset of those in
             `dataset_skypix`) and values are sets of integer pixel ID ranges.

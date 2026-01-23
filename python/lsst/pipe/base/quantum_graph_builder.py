@@ -1137,7 +1137,7 @@ class QuantumGraphBuilder(ABC):
             "outputs" attributes on all quantum nodes, as added by
             `_resolve_task_quanta`, as well as a "datastore_records" attribute
             as added by `_attach_datastore_records`.
-        metadata : `Mapping`
+        metadata : `~collections.abc.Mapping`
             Flexible metadata to add to the graph.
 
         Returns

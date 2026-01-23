@@ -471,9 +471,9 @@ connection had never existed.
 Run-time optional inputs
 ------------------------
 
-A separate mechanism exists that allows an `Input` connection to be made
+A separate mechanism exists that allows an ``Input`` connection to be made
 run-time optional.
-If the `Input.minimum` attribute is initialized to zero for a connection,
+If the ``Input.minimum`` attribute is initialized to zero for a connection,
 graph-building will still generate a quantum, and the `PipelineTask` will
 be run, even if no dataset for that input can be found.
 

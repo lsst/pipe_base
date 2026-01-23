@@ -103,7 +103,7 @@ class _ExecutionLogRecordsExtra(pydantic.BaseModel):
 
         Parameters
         ----------
-        log_records : `ButlerLogRecords`
+        log_records : `lsst.daf.butler.ButlerLogRecords`
             Logs from a past attempt to run a quantum.
         """
         previous = self.model_validate(log_records.extra)
