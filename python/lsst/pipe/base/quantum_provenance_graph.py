@@ -1792,9 +1792,10 @@ class QuantumProvenanceGraph:
             successes. If "exhaustive", all metadata files will be read.  If
             "lazy", only metadata files where at least one predicted output is
             missing will be read.
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report. This should match the Butler
-            used for the run associated with the executed quantum graph.
+        executor : `concurrent.futures.Executor`
+            The futures executor to use.
+        futures : `list` [ `concurrent.futures.Future` ]
+            Current list of futures. Will be modified.
         """
         if read_caveats == "lazy" and all(
             self.get_dataset_info(dataset_key)["runs"][output_run].produced

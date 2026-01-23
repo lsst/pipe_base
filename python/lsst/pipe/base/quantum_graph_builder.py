@@ -380,8 +380,6 @@ class QuantumGraphBuilder(ABC):
 
         Parameters
         ----------
-        metadata : `~collections.abc.Mapping`, optional
-            Flexible metadata to add to the quantum graph.
         attach_datastore_records : `bool`, optional
             Whether to include datastore records in the graph.  Required for
             `lsst.daf.butler.QuantumBackedButler` execution.
@@ -887,11 +885,6 @@ class QuantumGraphBuilder(ABC):
             Identifier for this quantum in the graph.
         skeleton : `.quantum_graph_skeleton.QuantumGraphSkeleton`
             Preliminary quantum graph, to be modified in-place.
-        skypix_bounds_builder : `~prerequisite_helpers.SkyPixBoundsBuilder`
-            An object that accumulates the appropriate spatial bounds for a
-            quantum.
-        timespan_builder : `~prerequisite_helpers.TimespanBuilder`
-            An object that accumulates the appropriate timespan for a quantum.
 
         Returns
         -------

@@ -1438,7 +1438,7 @@ class QuantumGraph:
         Returns
         -------
         summary : `QgraphSummary`
-           Summary of QuantumGraph.
+            Summary of QuantumGraph.
         """
         inCollection = self.metadata.get("input", None)
         if isinstance(inCollection, str):

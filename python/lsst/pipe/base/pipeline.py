@@ -495,7 +495,7 @@ class Pipeline:
         Returns
         -------
         pipeline: `Pipeline`
-           The new pipeline.
+            The new pipeline.
         """
         return cls.fromIR(copy.deepcopy(pipeline._pipelineIR))
 
