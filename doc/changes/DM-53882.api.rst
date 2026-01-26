@@ -1,0 +1,1 @@
+Modified ``Instrument.importAll`` so that it now returns information on the instrument classes that were loaded successfully.
