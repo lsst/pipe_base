@@ -35,7 +35,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, cast, final
 
-from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter
+from lsst.daf.butler import DataCoordinate, DataId, DimensionPacker, DimensionRecord, Formatter, FormatterV2
 from lsst.daf.butler.registry import DataIdError
 from lsst.pex.config import Config, RegistryField
 from lsst.resources import ResourcePath, ResourcePathExpression
@@ -345,7 +345,7 @@ class Instrument(metaclass=ABCMeta):
         return imported
 
     @abstractmethod
-    def getRawFormatter(self, dataId: DataId) -> type[Formatter]:
+    def getRawFormatter(self, dataId: DataId) -> type[Formatter | FormatterV2]:
         """Return the Formatter class that should be used to read a particular
         raw file.
 
@@ -356,7 +356,8 @@ class Instrument(metaclass=ABCMeta):
 
         Returns
         -------
-        formatter : `lsst.daf.butler.Formatter` class
+        formatter : `type` \
+                [`lsst.daf.butler.Formatter` | `lsst.daf.butler.FormatterV2` ]
             Class to be used that reads the file into the correct
             Python object for the raw data.
         """
