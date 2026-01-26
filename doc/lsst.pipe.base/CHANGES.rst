@@ -131,7 +131,7 @@ New Features
   Exceptions that lead to task failures are not yet tracked, because we do not write task metadata for failures and hence have nowhere to put the information. (`DM-48536 <https://rubinobs.atlassian.net/browse/DM-48536>`_)
 - Swapped to the new butler query system in ``QuantumGraph`` generation.
 
-  This change should be mostly transparent to users, aside from small changes in speed (typically faster, but not always). (`DM-45896 <https://rubinobs.atlassian.net/browse/DM-45896>`)
+  This change should be mostly transparent to users, aside from small changes in speed (typically faster, but not always). (`DM-45896 <https://rubinobs.atlassian.net/browse/DM-45896>`_)
 
 Bug Fixes
 ---------
@@ -175,7 +175,7 @@ New Features
   For each graph/attempt, the status of each quantum and dataset is recorded in ``QuantumProvenanceGraph.add_new_graph`` and outcomes of quanta over multiple runs are resolved in ``QuantumProvenanceGraph.resolve_duplicates``.
   At the end of this process, we can combine all attempts into a summary.
   This serves to answer the question "What happened to this data ID?" in a holistic sense. (`DM-41711 <https://rubinobs.atlassian.net/browse/DM-41711>`_)
-- Included the number of expected instances in ``pipetask report`` task-level summary for the `QuantumGraphExecutionReport`. (`DM-44368 <https://rubinobs.atlassian.net/browse/DM-44368>`_)
+- Included the number of expected instances in ``pipetask report`` task-level summary for the ``QuantumGraphExecutionReport``. (`DM-44368 <https://rubinobs.atlassian.net/browse/DM-44368>`_)
 - Added mocking support for tasks that write regular datasets with config, log, or metadata storage classes. (`DM-44583 <https://rubinobs.atlassian.net/browse/DM-44583>`_)
 - Added new ``show_dot`` functionality.
 
@@ -251,7 +251,7 @@ New Features
   This interface is available through YAML pipeline specification by specifying the ``labeledSubsetModifyMode`` key when writing YAML import defectives.
 
   New Python interfaces were added for manipulating labeled subsets in a pipeline.
-  These include; ``Pipeline.subsets`` which is a property returning a `dict`` of subset labels to sets of task labels, ``Pipeline.addLabeledSubset`` to add a new labeled subset to a ``Pipeline``, and ``Pipeline.removeLabeledSubset`` to remove a labeled subset from a pipeline. (`DM-41203 <https://rubinobs.atlassian.net/browse/DM-41203>`_)
+  These include; ``Pipeline.subsets`` which is a property returning a `dict` of subset labels to sets of task labels, ``Pipeline.addLabeledSubset`` to add a new labeled subset to a ``Pipeline``, and ``Pipeline.removeLabeledSubset`` to remove a labeled subset from a pipeline. (`DM-41203 <https://rubinobs.atlassian.net/browse/DM-41203>`_)
 - Added ``QuantumGraph`` summary. (`DM-41542 <https://rubinobs.atlassian.net/browse/DM-41542>`_)
 - Added human-readable option to report summary dictionaries. (`DM-41606 <https://rubinobs.atlassian.net/browse/DM-41606>`_)
 - Added a section to pipelines which allows the explicit declaration of which susbsets correspond to steps and the dimensions the step's quanta can be sharded with. (`DM-41650 <https://rubinobs.atlassian.net/browse/DM-41650>`_)

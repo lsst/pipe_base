@@ -66,7 +66,7 @@ def show_dot(
     ----------
     pipeline_graph : `PipelineGraph`
         Pipeline graph to show.
-    stream : `TextIO`, optional
+    stream : `io.TextIO`, optional
         Stream to write the DOT representation to.
     label_edge_connections : `bool`, optional
         If `True`, label edges with their connection names.
@@ -167,21 +167,22 @@ def _render_dataset_type_node(
 
     Parameters
     ----------
-    node_key : NodeKey
-        The key for the node
-    node_data : Mapping[str, Any]
-        The data associated with the node
-    options : NodeAttributeOptions
-        Options for rendering the node
-    stream : TextIO
-        The stream to write the node to
+    node_key : `NodeKey`
+        The key for the node.
+    node_data : `~collections.abc.Mapping` [`str`, `typing.Any`]
+        The data associated with the node.
+    options : `NodeAttributeOptions`
+        Options for rendering the node.
+    stream : `io.TextIO`
+        The stream to write the node to.
+    overflow_ref : `int`, optional
 
     Returns
     -------
     overflow_ref : int
-        The reference number for the next overflow node
+        The reference number for the next overflow node.
     overflow_ids : str | None
-        The ID of the overflow node, if any
+        The ID of the overflow node, if any.
     """
     labels, label_extras, common_prefix = _format_label(str(node_key), _LABEL_MAX_LINES_SOFT)
     if len(labels) + len(label_extras) <= _LABEL_MAX_LINES_HARD:
@@ -271,7 +272,7 @@ def _render_edge(from_node_id: str, to_node_id: str, stream: TextIO, **kwargs: A
         The unique ID of the node the edge is going to
     stream : TextIO
         The stream to write the edge to
-    kwargs : Any
+    **kwargs : Any
         Additional keyword arguments to pass to the edge
     """
     if kwargs:

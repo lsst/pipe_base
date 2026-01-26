@@ -107,10 +107,13 @@ def ingest_graph(
     butler_config : `str`
         Path or alias for the butler repository, or a butler repository config
         object.
-    uri : convertible to `lsst.resources.ResourcePath` or `None`, optional
+    uri : `lsst.resources.ResourcePathExpression` or `None`, optional
         Location of the provenance quantum graph to ingest.  `None` indicates
         that the quantum graph has already been ingested, but other ingests
         and/or deletions failed and need to be resumed.
+    transfer : `str` or `None`, optional
+        Transfer mode to use when ingesting graph. Matches those supported
+        by `lsst.resources.ResourcePath.transfer_from`.
     batch_size : `int`, optional
         Number of datasets to process in each transaction.
     output_run : `str`, optional

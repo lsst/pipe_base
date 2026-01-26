@@ -136,13 +136,14 @@ class QuantumGraph:
         Maps tasks to their InitOutput dataset refs. Dataset refs can be either
         resolved or non-resolved. For intermediate resolved refs their dataset
         ID must match ``initInputs`` and Quantum ``initInputs``.
-    globalInitOutputs : iterable [ `~lsst.daf.butler.DatasetRef` ], optional
+    globalInitOutputs : `~collections.abc.Iterable` \
+            [ `~lsst.daf.butler.DatasetRef` ], optional
         Dataset refs for some global objects produced by pipeline. These
         objects include task configurations and package versions. Typically
         they have an empty DataId, but there is no real restriction on what
         can appear here.
-    registryDatasetTypes : iterable [ `~lsst.daf.butler.DatasetType` ], \
-            optional
+    registryDatasetTypes : `~collections.abc.Iterable` \
+            [ `~lsst.daf.butler.DatasetType` ],  optional
         Dataset types which are used by this graph, their definitions must
         match registry. If registry does not define dataset type yet, then
         it should match one that will be created later.
@@ -488,7 +489,7 @@ class QuantumGraph:
 
         Returns
         -------
-        tasks : iterable of `TaskDef`
+        tasks : `~collections.abc.Iterable` [ `TaskDef` ]
             `TaskDef` objects that have the specified `DatasetTypeName` as an
             input, list will be empty if no tasks use specified
             `DatasetTypeName` as an input.
@@ -537,7 +538,7 @@ class QuantumGraph:
 
         Returns
         -------
-        result : iterable of `TaskDef`
+        result : `~collections.abc.Iterable` [`TaskDef`]
             `TaskDef` objects that are associated with the specified
             `DatasetTypeName`.
 
@@ -935,7 +936,7 @@ class QuantumGraph:
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of [ `uuid.UUID` | `str` ] or `None`
+        nodes : `~collections.abc.Iterable` [ `uuid.UUID` | `str` ] or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
@@ -1220,7 +1221,7 @@ class QuantumGraph:
             saved structure. If supplied, the
             `~lsst.daf.butler.DimensionUniverse` from the loaded `QuantumGraph`
             will be validated against the supplied argument for compatibility.
-        nodes : iterable of `uuid.UUID` or `None`
+        nodes : `~collections.abc.Iterable` [`uuid.UUID`] or `None`
             UUIDs that correspond to nodes in the graph. If specified, only
             these nodes will be loaded. Defaults to None, in which case all
             nodes will be loaded.
@@ -1438,7 +1439,7 @@ class QuantumGraph:
         Returns
         -------
         summary : `QgraphSummary`
-           Summary of QuantumGraph.
+            Summary of QuantumGraph.
         """
         inCollection = self.metadata.get("input", None)
         if isinstance(inCollection, str):

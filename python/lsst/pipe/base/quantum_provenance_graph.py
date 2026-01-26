@@ -587,8 +587,8 @@ class TaskSummary(pydantic.BaseModel):
 
         Unpack the `QuantumInfo` object, sorting quanta of each status into
         the correct place in the `TaskSummary`. If looking for error messages
-        in the `Butler` logs is desired, take special care to catch issues
-        with missing logs.
+        in the `lsst.daf.butler.Butler` logs is desired, take special care to
+        catch issues with missing logs.
 
         Parameters
         ----------
@@ -867,7 +867,7 @@ class DatasetTypeSummary(pydantic.BaseModel):
 class Summary(pydantic.BaseModel):
     """A summary of the contents of the QuantumProvenanceGraph, including
     all information on the quanta for each task and the datasets of each
-    `DatasetType`.
+    `~lsst.daf.butler.DatasetType`.
     """
 
     tasks: dict[str, TaskSummary] = pydantic.Field(default_factory=dict)
@@ -886,7 +886,7 @@ class Summary(pydantic.BaseModel):
 
         Parameters
         ----------
-        summaries : `Sequence[Summary]`
+        summaries : `~collections.abc.Sequence` [`Summary`]
             Sequence of all `Summary` objects to aggregate.
         """
         result = cls()
@@ -1246,8 +1246,8 @@ class QuantumProvenanceGraph:
         Returns
         -------
         dataset_info : `DatasetInfo`
-            The `TypedDict` with information about the `DatasetType`-dataID
-            pair across all runs.
+            The `TypedDict` with information about the
+            `~lsst.daf.butler.DatasetType`-dataID pair across all runs.
         """
         return self._xgraph.nodes[key]
 
@@ -1263,6 +1263,7 @@ class QuantumProvenanceGraph:
         do_store_logs : `bool`
             Store the logs in the summary dictionary.
         n_cores : `int`, optional
+            Number of cores to use.
 
         Returns
         -------
@@ -1792,9 +1793,10 @@ class QuantumProvenanceGraph:
             successes. If "exhaustive", all metadata files will be read.  If
             "lazy", only metadata files where at least one predicted output is
             missing will be read.
-        butler : `lsst.daf.butler.Butler`
-            The Butler used for this report. This should match the Butler
-            used for the run associated with the executed quantum graph.
+        executor : `concurrent.futures.Executor`
+            The futures executor to use.
+        futures : `list` [ `concurrent.futures.Future` ]
+            Current list of futures. Will be modified.
         """
         if read_caveats == "lazy" and all(
             self.get_dataset_info(dataset_key)["runs"][output_run].produced
@@ -2009,7 +2011,7 @@ class _ThreadLocalButlerWrapper:
         full_butler : `~lsst.daf.butler.Butler`
             Full butler to draw datastore and dimension configuration from.
         qg : `QuantumGraph`
-            Quantum graph,
+            Quantum graph.
 
         Returns
         -------

@@ -200,6 +200,13 @@ class QuantumGraphExecutionStatusAnnotator:
     """Annotates a networkx graph with task and dataset status information from
     a quantum graph execution summary, implementing the StatusAnnotator
     protocol to update the graph with status data.
+
+    Parameters
+    ----------
+    *args : `typing.Any`
+        Arbitrary arguments.
+    **kwargs : `typing.Any`
+        Arbitrary keyword arguments.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

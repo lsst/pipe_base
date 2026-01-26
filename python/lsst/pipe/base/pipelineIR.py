@@ -700,7 +700,7 @@ class PipelineIR:
 
         Parameters
         ----------
-        loaded_yaml: `dict`
+        loaded_yaml : `dict`
             A dictionary which matches the structure that would be produced
             by a yaml reader which parses a pipeline definition document
         """

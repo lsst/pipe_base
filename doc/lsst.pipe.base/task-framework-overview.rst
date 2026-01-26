@@ -25,14 +25,14 @@ A common use for this is to provide a camera-specific variant of a particular ta
 Tasks may process multiple items of data in parallel, using the ``ctrl_mpexec`` package and its ``pipetask`` command.
 
 Most tasks have a ``run`` method that performs the primary data processing.
-Each task's `run` method should return a `~lsst.pipe.base.Struct`.
+Each task's `~lsst.pipe.base.Task.run` method should return a `~lsst.pipe.base.Struct`.
 This allows named access to returned data, which provides safer evolution than relying on the order of returned values.
 All task methods that return more than one or two items of data should return the data in a `~lsst.pipe.base.Struct`.
 
 Many tasks are found in the ``pipe_tasks`` package, especially tasks that use many different packages and don't seem to belong in any one of them.
-Tasks that are associated with a particular package should be in that package; for example the instrument signature removal task ``ip.isr.isrTask.IsrTask`` is in the ``ip_isr`` package.
+Tasks that are associated with a particular package should be in that package; for example the instrument signature removal task ``lsst.ip.isr.isrTask.IsrTask`` is in the ``ip_isr`` package.
 
-`pipe_base` is written purely in Python. The most important contents are:
+``pipe_base`` is written purely in Python. The most important contents are:
 
 - `~lsst.pipe.base.PipelineTask`: base class for pipeline tasks that can be run from pipelines.
 - `~lsst.pipe.base.Task`: base class for subtasks that are not meant to be run from the
