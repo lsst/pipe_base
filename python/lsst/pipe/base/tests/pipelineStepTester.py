@@ -35,6 +35,7 @@ import warnings
 
 from lsst.daf.butler import Butler, DatasetType
 from lsst.pipe.base import Pipeline, PipelineGraph
+from lsst.resources import ResourcePath, ResourcePathExpression
 
 
 @dataclasses.dataclass
@@ -57,8 +58,8 @@ class PipelineStepTester:
 
     Attributes
     ----------
-    filename : `str`
-        The full path to the pipeline YAML.
+    filename : `lsst.resources.ResourcePathExpression`
+        The full path or URI to the pipeline YAML.
     step_suffixes : `list` [`str`]
         A list, in the order of data reduction, of the step subsets to check.
         Must include any initial "#".
@@ -78,7 +79,7 @@ class PipelineStepTester:
         "task:subtask.field".
     """
 
-    filename: str
+    filename: ResourcePathExpression
     step_suffixes: list[str]
     initial_dataset_types: list[tuple[str, set[str], str, bool]]
     expected_inputs: set[str]
@@ -130,8 +131,10 @@ class PipelineStepTester:
         all_outputs: dict[str, DatasetType] = dict()
         pure_inputs: dict[str, str] = dict()
 
+        file_uri = ResourcePath(self.filename, forceDirectory=False)
         for suffix in self.step_suffixes:
-            step_graph = self.load_pipeline_graph(self.filename + suffix)
+            step_uri = file_uri.replace(fragment=suffix.removeprefix("#"))
+            step_graph = self.load_pipeline_graph(step_uri)
             step_graph.resolve(butler.registry)
 
             for name, _ in step_graph.iter_overall_inputs():
@@ -160,7 +163,7 @@ class PipelineStepTester:
             missing = list(self.expected_outputs - all_outputs.keys())
             raise AssertionError(f"Missing expected_outputs: {missing}")
 
-    def load_pipeline_graph(self, uri: str) -> PipelineGraph:
+    def load_pipeline_graph(self, uri: ResourcePathExpression) -> PipelineGraph:
         pipeline = Pipeline.from_uri(uri)
         for fullkey, value in self.pipeline_patches.items():
             label, key = fullkey.split(":", maxsplit=1)
