@@ -340,7 +340,7 @@ class _GraphIngester:
         if not to_process:
             return 0
         _LOG.verbose(
-            "Deleting and deleting a %d-dataset batch; %d/%d complete.",
+            "Deleting and re-ingesting a %d-dataset batch; %d/%d complete.",
             len(to_process),
             n_current,
             self.n_datasets,
