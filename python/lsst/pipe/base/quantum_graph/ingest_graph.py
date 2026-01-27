@@ -62,6 +62,7 @@ __all__ = ("ingest_graph",)
 
 import dataclasses
 import itertools
+import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -138,6 +139,32 @@ def ingest_graph(
             helper.forget_ingested_datasets(batch_size=batch_size)
             helper.ingest_graph_dataset(uri, transfer=transfer)
         helper.clean_and_reingest_datasets(batch_size=batch_size)
+        if helper.directories_to_delete:
+            _LOG.info(
+                "Deleting %d directories after checking that they are empty.",
+                len(helper.directories_to_delete),
+            )
+            n_deleted: int = 0
+            for top in sorted(helper.directories_to_delete):
+                nonempty: set[str] = set()
+                for root, dirnames, filenames in os.walk(top, topdown=False):
+                    if filenames:
+                        nonempty.add(root)
+                    for dirname in dirnames:
+                        dirpath = os.path.join(root, dirname)
+                        if dirpath in nonempty:
+                            nonempty.add(root)
+                        else:
+                            os.rmdir(dirpath)
+                if nonempty:
+                    _LOG.warning(
+                        "Directory %r was not deleted because it unexpectedly still had files in it.",
+                        top,
+                    )
+                else:
+                    os.rmdir(root)
+                    n_deleted += 1
+            _LOG.info("Deleted %d directories.", n_deleted)
 
 
 @dataclasses.dataclass
@@ -148,6 +175,7 @@ class _GraphIngester:
     graph_already_ingested: bool
     n_datasets: int
     datasets_already_ingested: set[uuid.UUID] = dataclasses.field(default_factory=set)
+    directories_to_delete: set[str] = dataclasses.field(default_factory=set)
 
     @property
     def output_run(self) -> str:
@@ -335,6 +363,20 @@ class _GraphIngester:
                 raise status.exception
         file_dataset = FileDataset(refs=expanded_refs, path=direct_uri, formatter=ProvenanceFormatter)
         self.butler.ingest(file_dataset, transfer=None)
+        if len(original_uris) == len(expanded_refs):
+            for uri, ref in zip(original_uris, expanded_refs):
+                if uri.isLocal:
+                    if (
+                        parent_dir := self.find_dataset_type_directory(uri.ospath, ref.datasetType.name)
+                    ) is not None:
+                        self.directories_to_delete.add(parent_dir)
+        elif any(uri.isLocal for uri in original_uris):
+            _LOG.warning(
+                "Not attempting to delete empty metadata/log/config directories because the number "
+                "of paths (%s) did not match the number of datasets (%s).",
+                len(original_uris),
+                len(expanded_refs),
+            )
         n = len(to_process)
         to_process.clear()
         return n
@@ -358,3 +400,14 @@ class _GraphIngester:
             datastore_records={},
             dataset_types=dataset_types,
         )
+
+    def find_dataset_type_directory(self, ospath: str, dataset_type: str) -> str | None:
+        dir_components: list[str] = []
+        for component in os.path.dirname(ospath).split(os.path.sep):
+            dir_components.append(component)
+            # If the full dataset type name is in a single directory path
+            # component, we guess that directory can only have datasets of
+            # that type.
+            if dataset_type in component:
+                return os.path.sep.join(dir_components)
+        return None

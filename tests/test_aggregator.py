@@ -877,6 +877,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=False,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -932,6 +933,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=True,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -1022,6 +1024,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=True,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -1139,6 +1142,15 @@ class AggregatorTestCase(unittest.TestCase):
                 ),
             ],
         )
+
+    def check_no_original_dirs(self, butler_path: str, output_run: str) -> None:
+        """Check that there are no config/log/metadata directories in
+        the butler's directory for this output run.
+        """
+        root = os.path.join(butler_path, output_run)
+        for subdir in os.listdir(root):
+            if subdir.endswith("_config") or subdir.endswith("_metadata") or subdir.endswith("_log"):
+                raise AssertionError(f"Directory {os.path.join(root, subdir)} still exists.")
 
     def test_provenance_report_content(self) -> None:
         """Test the provenance-report CLI command."""
