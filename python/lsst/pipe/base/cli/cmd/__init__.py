@@ -32,6 +32,7 @@ __all__ = [
     "retrieve_artifacts_for_quanta",
     "aggregate_graph",
     "ingest_graph",
+    "provenance_report",
 ]
 
 from .commands import (
@@ -41,4 +42,5 @@ from .commands import (
     zip_from_graph,
     aggregate_graph,
     ingest_graph,
+    provenance_report,
 )

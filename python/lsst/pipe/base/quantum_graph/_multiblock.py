@@ -43,17 +43,14 @@ import dataclasses
 import logging
 import tempfile
 import uuid
-from collections.abc import Iterator
+import zipfile
+from collections.abc import Iterator, Set
 from contextlib import contextmanager
 from io import BufferedReader, BytesIO
 from operator import attrgetter
-from typing import IO, TYPE_CHECKING, Protocol, TypeAlias, TypeVar
+from typing import IO, Protocol, TypeAlias, TypeVar
 
 import pydantic
-
-if TYPE_CHECKING:
-    import zipfile
-
 
 _LOG = logging.getLogger(__name__)
 
@@ -212,7 +209,7 @@ class AddressWriter:
     The converse is not true.
     """
 
-    def write(self, stream: IO[bytes], int_size: int) -> None:
+    def write(self, stream: IO[bytes], int_size: int, all_ids: Set[uuid.UUID] | None = None) -> None:
         """Write all addresses to a file-like object.
 
         Parameters
@@ -221,15 +218,17 @@ class AddressWriter:
             Binary file-like object.
         int_size : `int`
             Number of bytes to use for all integers.
+        all_ids : `~collections.abc.Set` [`uuid.UUID`], optional
+            Set of the union of all UUIDs in any dictionary from a call to
+            `get_all_ids`.
         """
-        indices: set[uuid.UUID] = set()
-        for address_map in self.addresses:
-            indices.update(address_map.keys())
+        if all_ids is None:
+            all_ids = self.get_all_ids()
         stream.write(int_size.to_bytes(1))
-        stream.write(len(indices).to_bytes(int_size))
+        stream.write(len(all_ids).to_bytes(int_size))
         stream.write(len(self.addresses).to_bytes(int_size))
         empty_address = Address()
-        for n, key in enumerate(sorted(indices, key=attrgetter("int"))):
+        for n, key in enumerate(sorted(all_ids, key=attrgetter("int"))):
             row = AddressRow(key, n, [m.get(key, empty_address) for m in self.addresses])
             _LOG.debug("Wrote address %s.", row)
             row.write(stream, int_size)
@@ -246,8 +245,25 @@ class AddressWriter:
         int_size : `int`
             Number of bytes to use for all integers.
         """
-        with zf.open(f"{name}.addr", mode="w") as stream:
+        all_ids = self.get_all_ids()
+        zip_info = zipfile.ZipInfo(f"{name}.addr")
+        row_size = AddressReader.compute_row_size(int_size, len(self.addresses))
+        zip_info.file_size = AddressReader.compute_header_size(int_size) + len(all_ids) * row_size
+        with zf.open(zip_info, mode="w") as stream:
             self.write(stream, int_size=int_size)
+
+    def get_all_ids(self) -> Set[uuid.UUID]:
+        """Return all IDs used by any address dictionary.
+
+        Returns
+        -------
+        all_ids : `~collections.abc.Set` [`uuid.UUID`]
+            Set of all IDs.
+        """
+        all_ids: set[uuid.UUID] = set()
+        for address_map in self.addresses:
+            all_ids.update(address_map.keys())
+        return all_ids
 
 
 @dataclasses.dataclass
