@@ -43,7 +43,32 @@ type Queue[T] = "queue.Queue[T]" | "multiprocessing.Queue[T]"
 
 type Event = threading.Event | multiprocessing.synchronize.Event
 
-type Worker = threading.Thread | multiprocessing.context.SpawnProcess
+
+class Worker(ABC):
+    """A thin abstraction over threading.Thread and multiprocessing.Process."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Name of the worker, as assigned at creation."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def join(self, timeout: float | None = None) -> None:
+        """Wait for the worker to finish.
+
+        Parameters
+        ----------
+        timeout : `float`, optional
+            How long to wait in seconds.  If the timeout is exceeded,
+            `is_alive` can be used to see whether the worker finished or not.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def is_alive(self) -> bool:
+        """Return whether the worker is still running."""
+        raise NotImplementedError()
 
 
 class WorkerFactory(ABC):
@@ -82,11 +107,28 @@ class WorkerFactory(ABC):
 
         Returns
         -------
-        worker : `threading.Thread` or `multiprocessing.Process`
-            Process or thread.  Will need to have its ``start`` method called
-            to actually begin.
+        worker : `Worker`
+            Process or thread that is already running the given callable.
         """
         raise NotImplementedError()
+
+
+class _ThreadWorker(Worker):
+    """An implementation of `Worker` backed by the `threading` module."""
+
+    def __init__(self, thread: threading.Thread):
+        super().__init__()
+        self._thread = thread
+
+    @property
+    def name(self) -> str:
+        return self._thread.name
+
+    def join(self, timeout: float | None = None) -> None:
+        self._thread.join(timeout=timeout)
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
 
 
 class ThreadWorkerFactory(WorkerFactory):
@@ -103,7 +145,27 @@ class ThreadWorkerFactory(WorkerFactory):
     def make_worker(
         self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
     ) -> Worker:
-        return threading.Thread(target=target, args=args, name=name)
+        thread = threading.Thread(target=target, args=args, name=name)
+        thread.start()
+        return _ThreadWorker(thread)
+
+
+class _ProcessWorker(Worker):
+    """An implementation of `Worker` backed by the `multiprocessing` module."""
+
+    def __init__(self, process: multiprocessing.context.SpawnProcess):
+        super().__init__()
+        self._process = process
+
+    @property
+    def name(self) -> str:
+        return self._process.name
+
+    def join(self, timeout: float | None = None) -> None:
+        self._process.join(timeout=timeout)
+
+    def is_alive(self) -> bool:
+        return self._process.is_alive()
 
 
 class SpawnWorkerFactory(WorkerFactory):
@@ -123,4 +185,6 @@ class SpawnWorkerFactory(WorkerFactory):
     def make_worker(
         self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
     ) -> Worker:
-        return self._ctx.Process(target=target, args=args, name=name)
+        process = self._ctx.Process(target=target, args=args, name=name)
+        process.start()
+        return _ProcessWorker(process)

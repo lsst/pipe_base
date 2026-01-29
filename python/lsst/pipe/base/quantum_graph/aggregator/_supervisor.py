@@ -185,7 +185,6 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
                 args=(predicted_path, writer_comms),
                 name=writer_comms.name,
             )
-            comms.writer.start()
         for scanner_id in range(config.n_processes):
             scanner_comms = ScannerCommunicator(comms, scanner_id)
             worker = worker_factory.make_worker(
@@ -193,7 +192,6 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
                 args=(predicted_path, butler_path, scanner_comms),
                 name=scanner_comms.name,
             )
-            worker.start()
             comms.scanners.append(worker)
         ingester_comms = IngesterCommunicator(comms)
         comms.ingester = worker_factory.make_worker(
@@ -201,7 +199,6 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
             args=(predicted_path, butler_path, ingester_comms),
             name=ingester_comms.name,
         )
-        comms.ingester.start()
         supervisor = Supervisor(predicted_path, comms)
         supervisor.loop()
     # We can't get memory usage for children until they've joined.
