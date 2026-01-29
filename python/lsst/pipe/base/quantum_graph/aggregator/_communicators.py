@@ -208,11 +208,6 @@ class _Sentinel(enum.Enum):
     quantum's provenance was written.
     """
 
-    SCANNER_DONE = enum.auto()
-    """Sentinel sent from scanners to the supervisor to report that they are
-    done and shutting down.
-    """
-
     INGESTER_DONE = enum.auto()
     """Sentinel sent from the ingester to the supervisor to report that it is
     done and shutting down.
@@ -273,6 +268,16 @@ class _IngestReport:
 
 
 @dataclasses.dataclass
+class _ScannerDone:
+    """An internal struct passed from a scanner to the supervisor when it has
+    successfully completed all work.
+    """
+
+    scanner_id: int
+    """ID of the scanner reporting completion."""
+
+
+@dataclasses.dataclass
 class _ProgressLog:
     """A high-level log message sent from a worker to the supervisor.
 
@@ -303,9 +308,9 @@ type Report = (
     | _IngestReport
     | _WorkerErrorMessage
     | _ProgressLog
+    | _ScannerDone
     | Literal[
         _Sentinel.WRITE_REPORT,
-        _Sentinel.SCANNER_DONE,
         _Sentinel.INGESTER_DONE,
         _Sentinel.WRITER_DONE,
     ]
@@ -411,7 +416,7 @@ class SupervisorCommunicator:
                 case _Sentinel.INGESTER_DONE:
                     self._ingester_done = True
                     self.progress.quantum_ingests.close()
-                case _Sentinel.SCANNER_DONE:
+                case _ScannerDone():
                     self._n_scanners_done += 1
                     self.progress.scans.close()
                 case _Sentinel.WRITER_DONE:
@@ -517,8 +522,8 @@ class SupervisorCommunicator:
         self, report: Report, already_failing: bool = False
     ) -> (
         ScanReport
+        | _ScannerDone
         | Literal[
-            _Sentinel.SCANNER_DONE,
             _Sentinel.INGESTER_DONE,
             _Sentinel.WRITER_DONE,
         ]
@@ -561,7 +566,7 @@ class SupervisorCommunicator:
 
 
 class WorkerCommunicator:
-    """A base class for non-supervisor workers.
+    """A base class for non-supervisor worker communicators.
 
     Parameters
     ----------
@@ -573,8 +578,8 @@ class WorkerCommunicator:
     Notes
     -----
     Each worker communicator is constructed in the main process and entered as
-    a context manager on the actual worker process, so attributes that cannot
-    be pickled are constructed in ``__enter__`` instead of ``__init__``.
+    a context manager *only* on the actual worker process, so attributes that
+    cannot be pickled are constructed in ``__enter__`` instead of ``__init__``.
 
     Worker communicators provide access to an `AggregatorConfig` and a logger
     to their workers.  As context managers, they handle exceptions and ensure
@@ -781,7 +786,7 @@ class ScannerCommunicator(WorkerCommunicator):
         # We let the supervisor clear out the compression dict queue, because
         # a single scanner can't know if it ever got sent out or not.
         self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.SCANNER_DONE, block=False)
+        self._reports.put(_ScannerDone(self.scanner_id), block=False)
         return result
 
 
