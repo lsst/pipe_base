@@ -31,26 +31,19 @@ __all__ = (
     "FatalWorkerError",
     "IngesterCommunicator",
     "ScannerCommunicator",
-    "SpawnWorkerFactory",
     "SupervisorCommunicator",
-    "ThreadWorkerFactory",
-    "WorkerFactory",
 )
 
 import cProfile
 import dataclasses
 import enum
 import logging
-import multiprocessing.context
-import multiprocessing.synchronize
 import os
 import queue
 import signal
-import threading
 import time
 import uuid
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
@@ -62,94 +55,9 @@ from .._provenance import ProvenanceQuantumScanData
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
 from ._structs import IngestRequest, ScanReport
+from ._workers import Event, Queue, Worker, WorkerFactory
 
 _TINY_TIMEOUT = 0.01
-
-type Queue[T] = "queue.Queue[T]" | "multiprocessing.Queue[T]"
-
-type Event = threading.Event | multiprocessing.synchronize.Event
-
-type Worker = threading.Thread | multiprocessing.context.SpawnProcess
-
-
-class WorkerFactory(ABC):
-    """A simple abstract interface that can be implemented by both threading
-    and multiprocessing.
-    """
-
-    @abstractmethod
-    def make_queue(self) -> Queue[Any]:
-        """Make an empty queue that can be used to pass objects between
-        workers created by this factory.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def make_event(self) -> Event:
-        """Make an event that can be used to communicate a boolean state change
-        to workers created by this factory.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        """Make a worker that runs the given callable.
-
-        Parameters
-        ----------
-        target : `~collections.abc.Callable`
-            A callable to invoke on the worker.
-        args : `tuple`
-            Positional arguments to pass to the callable.
-        name : `str`, optional
-            Human-readable name for the worker.
-
-        Returns
-        -------
-        worker : `threading.Thread` or `multiprocessing.Process`
-            Process or thread.  Will need to have its ``start`` method called
-            to actually begin.
-        """
-        raise NotImplementedError()
-
-
-class ThreadWorkerFactory(WorkerFactory):
-    """An implementation of `WorkerFactory` backed by the `threading`
-    module.
-    """
-
-    def make_queue(self) -> Queue[Any]:
-        return queue.Queue()
-
-    def make_event(self) -> Event:
-        return threading.Event()
-
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        return threading.Thread(target=target, args=args, name=name)
-
-
-class SpawnWorkerFactory(WorkerFactory):
-    """An implementation of `WorkerFactory` backed by the `multiprocessing`
-    module, with new processes started by spawning.
-    """
-
-    def __init__(self) -> None:
-        self._ctx = multiprocessing.get_context("spawn")
-
-    def make_queue(self) -> Queue[Any]:
-        return self._ctx.Queue()
-
-    def make_event(self) -> Event:
-        return self._ctx.Event()
-
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        return self._ctx.Process(target=target, args=args, name=name)
 
 
 def _get_from_queue[T](q: Queue[T], block: bool = False, timeout: float | None = None) -> T | None:
