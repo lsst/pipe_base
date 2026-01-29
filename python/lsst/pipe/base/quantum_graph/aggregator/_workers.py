@@ -45,7 +45,13 @@ type Event = threading.Event | multiprocessing.synchronize.Event
 
 
 class Worker(ABC):
-    """A thin abstraction over threading.Thread and multiprocessing.Process."""
+    """A thin abstraction over threading.Thread and multiprocessing.Process
+    that also provides a variable to track whether it reported successful
+    completion.
+    """
+
+    def __init__(self) -> None:
+        self.successful = False
 
     @property
     @abstractmethod

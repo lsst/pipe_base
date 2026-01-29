@@ -116,16 +116,6 @@ class _Sentinel(enum.Enum):
     quantum's provenance was written.
     """
 
-    INGESTER_DONE = enum.auto()
-    """Sentinel sent from the ingester to the supervisor to report that it is
-    done and shutting down.
-    """
-
-    WRITER_DONE = enum.auto()
-    """Sentinel sent from the writer to the supervisor to report that it is
-    done and shutting down.
-    """
-
 
 @dataclasses.dataclass
 class _WorkerErrorMessage:
@@ -176,13 +166,13 @@ class _IngestReport:
 
 
 @dataclasses.dataclass
-class _ScannerDone:
-    """An internal struct passed from a scanner to the supervisor when it has
+class _WorkerDone:
+    """An internal struct passed from a worker to the supervisor when it has
     successfully completed all work.
     """
 
-    scanner_id: int
-    """ID of the scanner reporting completion."""
+    name: str
+    """Name of the worker reporting completion."""
 
 
 @dataclasses.dataclass
@@ -216,12 +206,8 @@ type Report = (
     | _IngestReport
     | _WorkerErrorMessage
     | _ProgressLog
-    | _ScannerDone
-    | Literal[
-        _Sentinel.WRITE_REPORT,
-        _Sentinel.INGESTER_DONE,
-        _Sentinel.WRITER_DONE,
-    ]
+    | _WorkerDone
+    | Literal[_Sentinel.WRITE_REPORT]
 )
 
 
@@ -301,11 +287,7 @@ class SupervisorCommunicator:
         self._sent_no_more_scan_requests = False
         self._sent_no_more_write_requests = False
         self._n_scanners_done = 0
-        self._ingester_done = False
-        self._writer_done = self._write_requests is None
-        self.scanners: list[Worker] = []
-        self.writer: Worker | None = None
-        self.ingester: Worker | None = None
+        self.workers: dict[str, Worker] = {}
 
     def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
         if not self._sent_no_more_scan_requests:
@@ -315,28 +297,27 @@ class SupervisorCommunicator:
         if not self._sent_no_more_write_requests and self._write_requests is not None:
             self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
             self._sent_no_more_write_requests = True
-        while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
+        while not all(w.successful for w in self.workers.values()):
             match self._handle_progress_reports(
                 self._reports.get(block=True), already_failing=already_failing
             ):
-                case None | ScanReport() | _IngestReport():
+                case None | ScanReport():
                     pass
-                case _Sentinel.INGESTER_DONE:
-                    self._ingester_done = True
-                    self.progress.quantum_ingests.close()
-                case _ScannerDone():
-                    self._n_scanners_done += 1
-                    self.progress.scans.close()
-                case _Sentinel.WRITER_DONE:
-                    self._writer_done = True
-                    self.progress.writes.close()
+                case _WorkerDone(name=worker_name):
+                    self.workers[worker_name].successful = True
+                    if worker_name == IngesterCommunicator.get_worker_name():
+                        self.progress.quantum_ingests.close()
+                    elif worker_name == WriterCommunicator.get_worker_name():
+                        self.progress.writes.close()
+                    else:
+                        self._n_scanners_done += 1
+                        if self._n_scanners_done == self.n_scanners:
+                            self.progress.scans.close()
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
             self.log.verbose(
-                "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
-                self._ingester_done,
-                self._writer_done,
-                self._n_scanners_done,
+                "Waiting for workers [%s] to report successful completion.",
+                ", ".join(w.name for w in self.workers.values() if not w.successful),
             )
         while _get_from_queue(self._compression_dict) is not None:
             self.log.verbose("Flushing compression dict queue.")
@@ -347,15 +328,9 @@ class SupervisorCommunicator:
             self._expect_empty_queue(self._write_requests)
         self._expect_empty_queue(self._reports)
         self._expect_empty_queue(self._compression_dict)
-        for w in self.scanners:
-            w.join()
-        if self.ingester is not None:
-            self.ingester.join()
-        if self.writer is not None and self.writer.is_alive():
-            self.progress.log.info(
-                "Waiting for writer process to close (garbage collecting can be very slow)."
-            )
-            self.writer.join()
+        for worker in self.workers.values():
+            self.progress.log.verbose("Waiting for %s to shut down.", worker.name)
+            worker.join()
 
     def __enter__(self) -> Self:
         _disable_resources_parallelism()
@@ -428,15 +403,7 @@ class SupervisorCommunicator:
 
     def _handle_progress_reports(
         self, report: Report, already_failing: bool = False
-    ) -> (
-        ScanReport
-        | _ScannerDone
-        | Literal[
-            _Sentinel.INGESTER_DONE,
-            _Sentinel.WRITER_DONE,
-        ]
-        | None
-    ):
+    ) -> ScanReport | _WorkerDone | None:
         """Handle reports to the supervisor that can appear at any time, and
         are typically just updates to the progress we've made.
 
@@ -586,7 +553,7 @@ class ScannerCommunicator(WorkerCommunicator):
     """
 
     def __init__(self, supervisor: SupervisorCommunicator, scanner_id: int):
-        super().__init__(supervisor, f"scanner-{scanner_id:03d}")
+        super().__init__(supervisor, self.get_worker_name(scanner_id))
         self.scanner_id = scanner_id
         self._scan_requests = supervisor._scan_requests
         self._ingest_requests = supervisor._ingest_requests
@@ -594,6 +561,10 @@ class ScannerCommunicator(WorkerCommunicator):
         self._compression_dict = supervisor._compression_dict
         self._got_no_more_scan_requests: bool = False
         self._sent_no_more_ingest_requests: bool = False
+
+    @staticmethod
+    def get_worker_name(scanner_id: int) -> str:
+        return f"scanner-{scanner_id:03d}"
 
     def report_scan(self, msg: ScanReport) -> None:
         """Report a completed scan to the supervisor.
@@ -693,8 +664,8 @@ class ScannerCommunicator(WorkerCommunicator):
                 self._got_no_more_scan_requests = True
         # We let the supervisor clear out the compression dict queue, because
         # a single scanner can't know if it ever got sent out or not.
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_ScannerDone(self.scanner_id), block=False)
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name), block=False)
         return result
 
 
@@ -708,10 +679,14 @@ class IngesterCommunicator(WorkerCommunicator):
     """
 
     def __init__(self, supervisor: SupervisorCommunicator):
-        super().__init__(supervisor, "ingester")
+        super().__init__(supervisor, self.get_worker_name())
         self.n_scanners = supervisor.n_scanners
         self._ingest_requests = supervisor._ingest_requests
         self._n_requesters_done = 0
+
+    @staticmethod
+    def get_worker_name() -> str:
+        return "ingester"
 
     def __exit__(
         self,
@@ -728,8 +703,8 @@ class IngesterCommunicator(WorkerCommunicator):
             )
             if self._ingest_requests.get(block=True) is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.INGESTER_DONE, block=False)
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name), block=False)
         return result
 
     def report_ingest(self, n_producers: int) -> None:
@@ -779,13 +754,17 @@ class WriterCommunicator(WorkerCommunicator):
 
     def __init__(self, supervisor: SupervisorCommunicator):
         assert supervisor._write_requests is not None
-        super().__init__(supervisor, "writer")
+        super().__init__(supervisor, self.get_worker_name())
         self.n_scanners = supervisor.n_scanners
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
         self._n_requesters = supervisor.n_scanners + 1
         self._n_requesters_done = 0
         self._sent_compression_dict = False
+
+    @staticmethod
+    def get_worker_name() -> str:
+        return "writer"
 
     def __exit__(
         self,
@@ -804,8 +783,8 @@ class WriterCommunicator(WorkerCommunicator):
             )
             if self._write_requests.get(block=True) is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._n_requesters_done += 1
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.WRITER_DONE, block=False)
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name), block=False)
         return result
 
     def poll(self) -> Iterator[ProvenanceQuantumScanData]:
