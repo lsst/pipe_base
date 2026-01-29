@@ -25,6 +25,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import functools
+import operator
+from collections.abc import Iterable
 from typing import Any
 
 import click
@@ -40,6 +43,7 @@ from lsst.daf.butler.cli.opt import (
 from lsst.daf.butler.cli.utils import ButlerCommand, split_commas, unwrap
 
 from ... import script
+from ..._status import QuantumAttemptStatus, QuantumSuccessCaveats
 from ...quantum_graph import aggregator
 from ..opt import instrument_argument, update_output_chain_option
 
@@ -279,7 +283,7 @@ def aggregate_graph(predicted_graph: str, repo: str, **kwargs: Any) -> None:
 
 
 @click.command(
-    short_help="Ingest a provenance quantum graph into a butler, finalizing a RUN collection.",
+    short_help="Ingest a provenance quantum graph into a butler.",
     cls=ButlerCommand,
 )
 @repo_argument(required=True, help="Path or alias for the butler repository.")
@@ -306,3 +310,106 @@ def ingest_graph(
     from ...quantum_graph.ingest_graph import ingest_graph as ingest_graph_py
 
     ingest_graph_py(repo, provenance_graph, transfer=transfer, batch_size=batch_size, output_run=output_run)
+
+
+@click.command(
+    short_help="Print and write provenance reports.",
+    cls=ButlerCommand,
+)
+@click.argument("repo_or_qg")
+@click.argument("collection", required=False, default=None)
+@click.option(
+    "--state",
+    multiple=True,
+    type=click.Choice(QuantumAttemptStatus),
+    help=(
+        "Additional quantum state to include in the status report and data ID tables "
+        "(FAILED, ABORTED, and ABORTED_SUCCESS are included by default)."
+    ),
+)
+@click.option(
+    "--no-state",
+    multiple=True,
+    type=str,
+    metavar="STATE",
+    help="Quantum state to drop from in status report and data ID tables (same options as --state).",
+)
+@click.option(
+    "--status-report",
+    default=None,
+    metavar="URI",
+    help="File or URI (.json) for a detailed report (with data IDs) on quanta with certain states.",
+)
+@click.option(
+    "--quantum-table/--no-quantum-table",
+    default=True,
+    help="Whether to print summary of quantum status counts to STDOUT.",
+)
+@click.option(
+    "--exception-table/--no-exception-table",
+    default=True,
+    help="Whether to print summary of exception type counts STDOUT.",
+)
+@click.option(
+    "--caveat",
+    multiple=True,
+    type=click.Choice(QuantumSuccessCaveats),
+    help=(
+        "Include successful quanta in the status report if they have this caveat. "
+        "May be passed multiple times; any matching caveat is included. "
+        "Passing this option implicitly adds '--state SUCCESSFUL'."
+    ),
+)
+@click.option(
+    "--data-id-table-dir",
+    default=None,
+    metavar="URI",
+    help=(
+        "Directory (may be a URI) for a tree of data ID tables for each "
+        "task label, status, and exception type combination in the status report."
+    ),
+)
+def provenance_report(
+    *,
+    repo_or_qg: str,
+    collection: str | None,
+    state: Iterable[QuantumAttemptStatus],
+    no_state: Iterable[str],
+    status_report: str | None,
+    quantum_table: bool = False,
+    exception_table: bool = False,
+    caveat: Iterable[QuantumSuccessCaveats],
+    data_id_table_dir: str | None,
+) -> None:
+    """Read a provenance quantum graph from a butler or file and use it to
+    generate reports.
+
+    REPO_OR_QG is a path or alias for the butler repository (if reading an
+    ingested graph, as indicated by passing COLLECTION), or the path to a
+    provenance quantum graph file.
+    """
+    from ...quantum_graph import ProvenanceQuantumGraph
+
+    states = set(state)
+    states.add(QuantumAttemptStatus.FAILED)
+    states.add(QuantumAttemptStatus.ABORTED)
+    states.add(QuantumAttemptStatus.ABORTED_SUCCESS)
+    for state_name in no_state:
+        states.discard(QuantumAttemptStatus.__members__[state_name])
+    with_caveats: QuantumSuccessCaveats | None = None
+    if caveat:
+        states.add(QuantumAttemptStatus.SUCCESSFUL)
+        with_caveats = functools.reduce(
+            operator.__or__,
+            caveat,
+            QuantumSuccessCaveats.NO_CAVEATS,
+        )
+    with ProvenanceQuantumGraph.from_args(repo_or_qg, collection=collection, datasets=()) as (graph, _):
+        graph.make_many_reports(
+            status_report_file=status_report,
+            states=states,
+            print_quantum_table=quantum_table,
+            print_exception_table=exception_table,
+            with_caveats=with_caveats,
+            data_id_table_dir=data_id_table_dir,
+        )

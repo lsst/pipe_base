@@ -60,13 +60,13 @@ class _ProvenanceFormatterParameters(pydantic.BaseModel):
 
     @pydantic.field_validator("quanta", mode="before")
     @classmethod
-    def quanta_to_list(cls, v: Any) -> list[uuid.UUID]:
-        return list(v)
+    def quanta_to_list(cls, v: Any) -> list[uuid.UUID] | None:
+        return list(v) if v is not None else None
 
     @pydantic.field_validator("datasets", mode="before")
     @classmethod
-    def datasets_to_list(cls, v: Any) -> list[uuid.UUID]:
-        return list(v)
+    def datasets_to_list(cls, v: Any) -> list[uuid.UUID] | None:
+        return list(v) if v is not None else None
 
     @property
     def nodes(self) -> list[uuid.UUID]:

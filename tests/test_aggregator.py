@@ -25,16 +25,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 import dataclasses
 import itertools
 import os
+import tempfile
 import time
 import unittest.mock
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any, cast
 
+import astropy.table
+import click.testing
 import numpy as np
+import pydantic
 from click.testing import CliRunner, Result
 
 import lsst.utils.tests
@@ -47,7 +54,12 @@ from lsst.pipe.base import (
     TaskMetadata,
 )
 from lsst.pipe.base import automatic_connection_constants as acc
-from lsst.pipe.base.cli.cmd.commands import aggregate_graph as aggregate_graph_cli
+from lsst.pipe.base.cli.cmd.commands import (
+    aggregate_graph as aggregate_graph_cli,
+)
+from lsst.pipe.base.cli.cmd.commands import (
+    provenance_report as provenance_report_cli,
+)
 from lsst.pipe.base.graph_walker import GraphWalker
 from lsst.pipe.base.pipeline_graph import Edge
 from lsst.pipe.base.quantum_graph import (
@@ -58,6 +70,8 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceDatasetInfo,
     ProvenanceQuantumGraph,
     ProvenanceQuantumInfo,
+    ProvenanceQuantumReport,
+    ProvenanceReport,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
 from lsst.pipe.base.quantum_graph.ingest_graph import ingest_graph
@@ -69,7 +83,6 @@ from lsst.pipe.base.tests.mocks import (
     DynamicTestPipelineTaskConfig,
 )
 from lsst.pipe.base.tests.util import patch_deterministic_uuid4
-from lsst.resources import ResourcePath
 from lsst.utils.packages import Packages
 
 
@@ -238,7 +251,7 @@ class AggregatorTestCase(unittest.TestCase):
 
     def iter_graph_execution(
         self,
-        repo: ResourcePath,
+        repo: str,
         qg: PredictedQuantumGraph,
         raise_on_partial_outputs: bool,
         is_retry: bool = False,
@@ -247,8 +260,8 @@ class AggregatorTestCase(unittest.TestCase):
 
         Parameters
         ----------
-        repo : `lsst.resources.ResourcePath`
-            Butler repository path.
+        repo : `str`
+            Butler repository path or alias.
         qg : `lsst.pipe.base.quantum_graph.PredictedQuantumGraph`
             Predicted quantum graph.  Must have datastore records attached,
             since execution uses a quantum-backed butler.
@@ -498,6 +511,7 @@ class AggregatorTestCase(unittest.TestCase):
         self.check_configs(butler, prov)
         self.check_quantum_table(prov, expect_failure=expect_failure)
         self.check_exception_table(prov, expect_failure=expect_failure)
+        self.check_report(prov, expect_failure=expect_failure)
         return prov
 
     def _expect_all_exist(self, existence: list[bool], msg: str) -> None:
@@ -628,6 +642,7 @@ class AggregatorTestCase(unittest.TestCase):
         if not expect_ingested:
             self.assertIsNone(ref)
             return
+        assert ref is not None
         metadata = butler.get(ref)
         self.assertIsInstance(metadata, TaskMetadata)
         graph_path = butler.getURI("run_provenance")
@@ -664,6 +679,7 @@ class AggregatorTestCase(unittest.TestCase):
         if not expect_ingested:
             self.assertIsNone(ref)
             return
+        assert ref is not None
         log = butler.get(ref)
         self.assertIsInstance(log, ButlerLogRecords)
         graph_path = butler.getURI("run_provenance")
@@ -742,7 +758,6 @@ class AggregatorTestCase(unittest.TestCase):
             succeed without writing anything (`False`).
         """
         t = prov.make_quantum_table()
-        self.assertTrue(np.all(t["Unknown"] == 0))
         self.assertEqual(list(t["Task"]), ["calibrate", "consolidate", "resample", "coadd"])
         self.assertEqual(t["TOTAL"][0], 8)
         self.assertEqual(t["EXPECTED"][0], 8)
@@ -796,7 +811,52 @@ class AggregatorTestCase(unittest.TestCase):
         t = prov.make_exception_table()
         self.assertEqual(list(t["Task"]), ["calibrate"])
         self.assertEqual(list(t["Exception"]), ["lsst.pipe.base.tests.mocks.MockAlgorithmError"])
-        self.assertEqual(list(t["Count"]), [1])
+        self.assertEqual(list(t["Successes"]), [int(not expect_failure)])
+        self.assertEqual(list(t["Failures"]), [int(expect_failure)])
+
+    def check_report(self, prov: ProvenanceQuantumGraph, expect_failure: bool) -> None:
+        """Check `ProvenanceQuantumGraph.make_report`.
+
+        Parameters
+        ----------
+        prov : `lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph`
+            Reader for the provenance quantum graph.
+        expect_failure : `bool`
+            Whether to expect one quantum of 'calibrate' to fail (`True`) or
+            succeed without writing anything (`False`).
+        """
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data_id_table_dir:
+            report = prov.make_status_report(
+                also=QuantumAttemptStatus.SUCCESSFUL, data_id_table_dir=data_id_table_dir
+            )
+            task_label = "calibrate"
+            status_name = "FAILED" if expect_failure else "SUCCESSFUL"
+            exc_type = "lsst.pipe.base.tests.mocks.MockAlgorithmError"
+            self.assertEqual(report.root.keys(), {task_label})
+            self.assertEqual(report.root[task_label].keys(), {status_name})
+            self.assertEqual(report.root[task_label][status_name].keys(), {exc_type})
+            self.assertEqual(len(report.root[task_label][status_name][exc_type]), 1)
+            qr = report.root[task_label][status_name][exc_type][0]
+            self.assertIsInstance(qr, ProvenanceQuantumReport)
+            self.assertEqual(
+                qr.data_id,
+                {
+                    "instrument": "Cam1",
+                    "visit": 2,
+                    "detector": 2,
+                    "band": "r",
+                    "day_obs": 20210909,
+                    "physical_filter": "Cam1-R1",
+                },
+            )
+            tbl = astropy.table.Table.read(
+                os.path.join(data_id_table_dir, task_label, status_name, f"{exc_type}.ecsv")
+            )
+            self.assertCountEqual(tbl.colnames, ["instrument", "visit", "detector"])
+            self.assertEqual(len(tbl), 1)
+            self.assertEqual(list(tbl["instrument"]), ["Cam1"])
+            self.assertEqual(list(tbl["detector"]), [2])
+            self.assertEqual(list(tbl["visit"]), [2])
 
     def test_all_successful(self) -> None:
         """Test running a full graph with no failures, and then scanning the
@@ -817,6 +877,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=False,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -837,7 +898,7 @@ class AggregatorTestCase(unittest.TestCase):
             # QG.
             prep.config.incomplete = True
             aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
-            self.assertFalse(os.path.exists(prep.config.output_path))
+            self.assertFalse(os.path.exists(cast(str, prep.config.output_path)))
             # Finish executing the quanta.
             attempted_quanta.extend(execution_iter)
             # Scan again, and write the provenance QG.
@@ -872,6 +933,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=True,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -962,6 +1024,7 @@ class AggregatorTestCase(unittest.TestCase):
                 expect_failure=True,
                 start_time=start_time,
             )
+            self.check_no_original_dirs(prep.butler_path, prov.header.output_run)
             for i, quantum_id in enumerate(attempted_quanta):
                 qinfo: ProvenanceQuantumInfo = prov.quantum_only_xgraph.nodes[quantum_id]
                 self.assertEqual(qinfo["attempts"][-1].previous_process_quanta, attempted_quanta[:i])
@@ -974,7 +1037,7 @@ class AggregatorTestCase(unittest.TestCase):
             with self.assertRaises(FatalWorkerError):
                 aggregate_graph(prep.predicted_path, "nonexistent", prep.config)
 
-    def test_cli_overrides(self) -> None:
+    def test_aggregate_graph_cli_overrides(self) -> None:
         """Test that command-line options override config attributes as
         expected.
         """
@@ -982,7 +1045,7 @@ class AggregatorTestCase(unittest.TestCase):
         def mock_run(predicted_path: str, butler_path: str, config: AggregatorConfig) -> None:
             print(config.model_dump_json(indent=2))
 
-        def check(result: Result, **kwargs: object) -> None:
+        def check(result: Result, **kwargs: Any) -> None:
             self.assertEqual(result.exit_code, 0, msg=result.output)
             self.assertEqual(
                 result.output.strip(), AggregatorConfig(**kwargs).model_dump_json(indent=2).strip()
@@ -1038,6 +1101,233 @@ class AggregatorTestCase(unittest.TestCase):
             check(
                 runner.invoke(aggregate_graph_cli, ("pg", "repo", "--mock-storage-classes")),
                 mock_storage_classes=True,
+            )
+
+    def check_provenance_report(self, result: click.testing.Result, root: str) -> None:
+        self.maxDiff = None
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        self.assertEqual(
+            result.output,
+            "    Task    Caveats Failed Blocked Successful TOTAL EXPECTED\n"
+            "----------- ------- ------ ------- ---------- ----- --------\n"
+            "  calibrate              1       0          7     8        8\n"
+            "consolidate              0       1          1     2        2\n"
+            "   resample              0       4          6    10       10\n"
+            "      coadd              0       4          6    10       10\n"
+            "\n"
+            "   Task                     Exception                   Successes Failures\n"
+            "--------- --------------------------------------------- --------- --------\n"
+            "calibrate lsst.pipe.base.tests.mocks.MockAlgorithmError         0        1\n"
+            "\n",
+        )
+        with open(os.path.join(root, "report.json")) as report_file:
+            report = ProvenanceReport.model_validate_json(report_file.read())
+            self.assertEqual(report.root.keys(), {"calibrate"})
+        self.assertEqual(report.root["calibrate"].keys(), {"FAILED"})
+        self.assertEqual(
+            report.root["calibrate"]["FAILED"].keys(), {"lsst.pipe.base.tests.mocks.MockAlgorithmError"}
+        )
+        self.assertEqual(
+            len(report.root["calibrate"]["FAILED"]["lsst.pipe.base.tests.mocks.MockAlgorithmError"]), 1
+        )
+        self.assertEqual(
+            list(os.walk(os.path.join(root, "data_ids"))),
+            [
+                (os.path.join(root, "data_ids"), ["calibrate"], []),
+                (os.path.join(root, "data_ids", "calibrate"), ["FAILED"], []),
+                (
+                    os.path.join(root, "data_ids", "calibrate", "FAILED"),
+                    [],
+                    ["lsst.pipe.base.tests.mocks.MockAlgorithmError.ecsv"],
+                ),
+            ],
+        )
+
+    def check_no_original_dirs(self, butler_path: str, output_run: str) -> None:
+        """Check that there are no config/log/metadata directories in
+        the butler's directory for this output run.
+        """
+        root = os.path.join(butler_path, output_run)
+        for subdir in os.listdir(root):
+            if subdir.endswith("_config") or subdir.endswith("_metadata") or subdir.endswith("_log"):
+                raise AssertionError(f"Directory {os.path.join(root, subdir)} still exists.")
+
+    def test_provenance_report_content(self) -> None:
+        """Test the provenance-report CLI command."""
+        with self.make_test_repo() as prep:
+            prep.config.incomplete = False
+            prep.config.promise_ingest_graph = True
+            for _ in self.iter_graph_execution(
+                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
+            ):
+                pass
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            self.assertFalse(prep.butler.query_datasets("calibrate_metadata", explain=False))
+            self.assertFalse(prep.butler.query_datasets("consolidate_log", explain=False))
+            self.assertFalse(prep.butler.query_datasets("resample_config", explain=False))
+
+            # First test on a provenance graph file that has not been ingested.
+            runner = CliRunner()
+            report_root = os.path.join(prep.butler_path, "uningested")
+            result = runner.invoke(
+                provenance_report_cli,
+                (
+                    cast(str, prep.config.output_path),
+                    "--status-report",
+                    os.path.join(report_root, "report.json"),
+                    "--data-id-table-dir",
+                    os.path.join(report_root, "data_ids"),
+                ),
+            )
+            self.check_provenance_report(result, report_root)
+
+            ingest_graph(prep.butler_path, prep.config.output_path, transfer="move", batch_size=10)
+
+            runner = CliRunner()
+            report_root = os.path.join(prep.butler_path, "ingested")
+            result = runner.invoke(
+                provenance_report_cli,
+                (
+                    prep.butler_path,
+                    *prep.butler.collections.defaults,
+                    "--status-report",
+                    os.path.join(report_root, "report.json"),
+                    "--data-id-table-dir",
+                    os.path.join(report_root, "data_ids"),
+                ),
+            )
+            self.check_provenance_report(result, os.path.join(report_root))
+
+    def test_provenance_report_cli_overrides(self) -> None:
+        """Test the provenance-report CLI command with a mocked
+        implementation.
+        """
+
+        class MakeManyReportsArgs(pydantic.BaseModel):
+            status_report_file: str | None = None
+            print_quantum_table: bool = True
+            print_exception_table: bool = True
+            states: list[QuantumAttemptStatus] = pydantic.Field(
+                default_factory=lambda: [
+                    QuantumAttemptStatus.FAILED,
+                    QuantumAttemptStatus.ABORTED,
+                    QuantumAttemptStatus.ABORTED_SUCCESS,
+                ]
+            )
+            with_caveats: QuantumSuccessCaveats | None = None
+            data_id_table_dir: str | None = None
+
+            @pydantic.model_validator(mode="after")
+            def _sort_states(self) -> MakeManyReportsArgs:
+                self.states.sort(key=lambda e: e.value)
+                return self
+
+        class MockProvenanceQuantumGraph(pydantic.BaseModel):
+            repo_or_filename: str
+            collection: str | None
+            quanta: list[uuid.UUID] | None = None
+            datasets: list[uuid.UUID] | None = None
+            writeable: bool = False
+            make_many_reports_args: MakeManyReportsArgs | None = None
+
+            @classmethod
+            @contextmanager
+            def from_args(
+                cls, repo_or_filename: str, /, **kwargs: Any
+            ) -> Iterator[tuple[MockProvenanceQuantumGraph, None]]:
+                yield cls(repo_or_filename=repo_or_filename, **kwargs), None
+
+            def make_many_reports(self, **kwargs: Any) -> None:
+                self.make_many_reports_args = MakeManyReportsArgs(**kwargs)
+                print(self.model_dump_json(indent=2))
+
+        def check(
+            result: Result, repo_or_filename: str, collection: str | None = None, **kwargs: Any
+        ) -> None:
+            self.assertEqual(result.exit_code, 0, msg=result.output)
+            self.assertEqual(
+                result.output.strip(),
+                MockProvenanceQuantumGraph(
+                    repo_or_filename=repo_or_filename,
+                    collection=collection,
+                    datasets=[],
+                    writeable=False,
+                    make_many_reports_args=MakeManyReportsArgs(**kwargs),
+                ).model_dump_json(indent=2),
+            )
+
+        self.maxDiff = None
+        runner = CliRunner()
+        with unittest.mock.patch(
+            "lsst.pipe.base.quantum_graph.ProvenanceQuantumGraph", MockProvenanceQuantumGraph
+        ):
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1")),
+                repo_or_filename="repo",
+                collection="collection1",
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("filename1",)),
+                repo_or_filename="filename1",
+                collection=None,
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--no-quantum-table")),
+                repo_or_filename="repo",
+                collection="collection1",
+                print_quantum_table=False,
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--no-exception-table")),
+                repo_or_filename="repo",
+                collection="collection1",
+                print_exception_table=False,
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--status-report", "filename2")),
+                repo_or_filename="repo",
+                collection="collection1",
+                status_report_file="filename2",
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--state", "SUCCESSFUL")),
+                repo_or_filename="repo",
+                collection="collection1",
+                states=[
+                    QuantumAttemptStatus.SUCCESSFUL,
+                    QuantumAttemptStatus.FAILED,
+                    QuantumAttemptStatus.ABORTED,
+                    QuantumAttemptStatus.ABORTED_SUCCESS,
+                ],
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--no-state", "FAILED")),
+                repo_or_filename="repo",
+                collection="collection1",
+                states=[
+                    QuantumAttemptStatus.ABORTED,
+                    QuantumAttemptStatus.ABORTED_SUCCESS,
+                ],
+            )
+            check(
+                runner.invoke(
+                    provenance_report_cli, ("repo", "collection1", "--caveat", "PARTIAL_OUTPUTS_ERROR")
+                ),
+                repo_or_filename="repo",
+                collection="collection1",
+                with_caveats=QuantumSuccessCaveats.PARTIAL_OUTPUTS_ERROR,
+                states=[
+                    QuantumAttemptStatus.SUCCESSFUL,
+                    QuantumAttemptStatus.FAILED,
+                    QuantumAttemptStatus.ABORTED,
+                    QuantumAttemptStatus.ABORTED_SUCCESS,
+                ],
+            )
+            check(
+                runner.invoke(provenance_report_cli, ("repo", "collection1", "--data-id-table-dir", "dir1")),
+                repo_or_filename="repo",
+                collection="collection1",
+                data_id_table_dir="dir1",
             )
 
 
