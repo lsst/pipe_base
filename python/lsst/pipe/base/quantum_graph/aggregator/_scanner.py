@@ -161,7 +161,7 @@ class Scanner(AbstractContextManager):
         Notes
         -----
         This method is designed to run as the ``target`` in
-        `WorkerContext.make_worker`.
+        `WorkerFactory.make_worker`.
         """
         with comms, Scanner(predicted_path, butler_path, comms) as scanner:
             scanner.loop()

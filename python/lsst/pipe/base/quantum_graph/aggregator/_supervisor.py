@@ -46,9 +46,9 @@ from .._provenance import ProvenanceQuantumScanData, ProvenanceQuantumScanStatus
 from ._communicators import (
     IngesterCommunicator,
     ScannerCommunicator,
-    SpawnProcessContext,
+    SpawnWorkerFactory,
     SupervisorCommunicator,
-    ThreadingContext,
+    ThreadWorkerFactory,
     WriterCommunicator,
 )
 from ._config import AggregatorConfig
@@ -176,12 +176,12 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         Configuration for the aggregator.
     """
     log = getLogger("lsst.pipe.base.quantum_graph.aggregator")
-    ctx = ThreadingContext() if config.n_processes == 1 else SpawnProcessContext()
-    with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
+    worker_factory = ThreadWorkerFactory() if config.n_processes == 1 else SpawnWorkerFactory()
+    with SupervisorCommunicator(log, config.n_processes, worker_factory, config) as comms:
         comms.progress.log.verbose("Starting workers.")
         if config.is_writing_provenance:
             writer_comms = WriterCommunicator(comms)
-            comms.writer = ctx.make_worker(
+            comms.writer = worker_factory.make_worker(
                 target=Writer.run,
                 args=(predicted_path, writer_comms),
                 name=writer_comms.name,
@@ -189,7 +189,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
             comms.writer.start()
         for scanner_id in range(config.n_processes):
             scanner_comms = ScannerCommunicator(comms, scanner_id)
-            worker = ctx.make_worker(
+            worker = worker_factory.make_worker(
                 target=Scanner.run,
                 args=(predicted_path, butler_path, scanner_comms),
                 name=scanner_comms.name,
@@ -197,7 +197,7 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
             worker.start()
             comms.scanners.append(worker)
         ingester_comms = IngesterCommunicator(comms)
-        comms.ingester = ctx.make_worker(
+        comms.ingester = worker_factory.make_worker(
             target=Ingester.run,
             args=(predicted_path, butler_path, ingester_comms),
             name=ingester_comms.name,

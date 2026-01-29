@@ -140,7 +140,7 @@ class Ingester(AbstractContextManager):
         Notes
         -----
         This method is designed to run as the ``target`` in
-        `WorkerContext.make_worker`.
+        `WorkerFactory.make_worker`.
         """
         with comms, Ingester(predicted_path, butler_path, comms) as ingester:
             ingester.loop()
