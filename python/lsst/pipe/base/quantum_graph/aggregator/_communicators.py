@@ -390,6 +390,9 @@ class SupervisorCommunicator:
         self._n_scanners_done = 0
         self._ingester_done = False
         self._writer_done = self._write_requests is None
+        self.scanners: list[Worker] = []
+        self.writer: Worker | None = None
+        self.ingester: Worker | None = None
 
     def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
         if not self._sent_no_more_scan_requests:
@@ -431,6 +434,15 @@ class SupervisorCommunicator:
             self._expect_empty_queue(self._write_requests)
         self._expect_empty_queue(self._reports)
         self._expect_empty_queue(self._compression_dict)
+        for w in self.scanners:
+            w.join()
+        if self.ingester is not None:
+            self.ingester.join()
+        if self.writer is not None and self.writer.is_alive():
+            self.progress.log.info(
+                "Waiting for writer process to close (garbage collecting can be very slow)."
+            )
+            self.writer.join()
 
     def __enter__(self) -> Self:
         _disable_resources_parallelism()
