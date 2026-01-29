@@ -46,15 +46,14 @@ from .._provenance import ProvenanceQuantumScanData, ProvenanceQuantumScanStatus
 from ._communicators import (
     IngesterCommunicator,
     ScannerCommunicator,
-    SpawnWorkerFactory,
     SupervisorCommunicator,
-    ThreadWorkerFactory,
     WriterCommunicator,
 )
 from ._config import AggregatorConfig
 from ._ingester import Ingester
 from ._scanner import Scanner
 from ._structs import ScanReport
+from ._workers import SpawnWorkerFactory, ThreadWorkerFactory
 from ._writer import Writer
 
 
