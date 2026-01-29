@@ -180,21 +180,20 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
         comms.progress.log.verbose("Starting workers.")
         if config.is_writing_provenance:
             writer_comms = WriterCommunicator(comms)
-            comms.writer = worker_factory.make_worker(
+            comms.workers[writer_comms.name] = worker_factory.make_worker(
                 target=Writer.run,
                 args=(predicted_path, writer_comms),
                 name=writer_comms.name,
             )
         for scanner_id in range(config.n_processes):
             scanner_comms = ScannerCommunicator(comms, scanner_id)
-            worker = worker_factory.make_worker(
+            comms.workers[scanner_comms.name] = worker_factory.make_worker(
                 target=Scanner.run,
                 args=(predicted_path, butler_path, scanner_comms),
                 name=scanner_comms.name,
             )
-            comms.scanners.append(worker)
         ingester_comms = IngesterCommunicator(comms)
-        comms.ingester = worker_factory.make_worker(
+        comms.workers[ingester_comms.name] = worker_factory.make_worker(
             target=Ingester.run,
             args=(predicted_path, butler_path, ingester_comms),
             name=ingester_comms.name,
