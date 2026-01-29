@@ -49,7 +49,6 @@ from ._communicators import (
     SpawnProcessContext,
     SupervisorCommunicator,
     ThreadingContext,
-    Worker,
     WriterCommunicator,
 )
 from ._config import AggregatorConfig
@@ -128,7 +127,6 @@ class Supervisor:
             "Scanning complete after %0.1fs; waiting for workers to finish.",
             self.comms.progress.elapsed_time,
         )
-        self.comms.wait_for_workers_to_finish()
 
     def handle_report(self, scan_report: ScanReport) -> None:
         """Handle a report from a scanner.
@@ -179,19 +177,16 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
     """
     log = getLogger("lsst.pipe.base.quantum_graph.aggregator")
     ctx = ThreadingContext() if config.n_processes == 1 else SpawnProcessContext()
-    scanners: list[Worker] = []
-    ingester: Worker
-    writer: Worker | None = None
     with SupervisorCommunicator(log, config.n_processes, ctx, config) as comms:
         comms.progress.log.verbose("Starting workers.")
         if config.is_writing_provenance:
             writer_comms = WriterCommunicator(comms)
-            writer = ctx.make_worker(
+            comms.writer = ctx.make_worker(
                 target=Writer.run,
                 args=(predicted_path, writer_comms),
                 name=writer_comms.name,
             )
-            writer.start()
+            comms.writer.start()
         for scanner_id in range(config.n_processes):
             scanner_comms = ScannerCommunicator(comms, scanner_id)
             worker = ctx.make_worker(
@@ -200,22 +195,16 @@ def aggregate_graph(predicted_path: str, butler_path: str, config: AggregatorCon
                 name=scanner_comms.name,
             )
             worker.start()
-            scanners.append(worker)
+            comms.scanners.append(worker)
         ingester_comms = IngesterCommunicator(comms)
-        ingester = ctx.make_worker(
+        comms.ingester = ctx.make_worker(
             target=Ingester.run,
             args=(predicted_path, butler_path, ingester_comms),
             name=ingester_comms.name,
         )
-        ingester.start()
+        comms.ingester.start()
         supervisor = Supervisor(predicted_path, comms)
         supervisor.loop()
-    for w in scanners:
-        w.join()
-    ingester.join()
-    if writer is not None and writer.is_alive():
-        log.info("Waiting for writer process to close (garbage collecting can be very slow).")
-        writer.join()
     # We can't get memory usage for children until they've joined.
     parent_mem, child_mem = get_peak_mem_usage()
     # This is actually an upper bound on the peak (since the peaks could be
