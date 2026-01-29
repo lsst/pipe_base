@@ -31,10 +31,10 @@ __all__ = (
     "FatalWorkerError",
     "IngesterCommunicator",
     "ScannerCommunicator",
-    "SpawnProcessContext",
+    "SpawnWorkerFactory",
     "SupervisorCommunicator",
-    "ThreadingContext",
-    "WorkerContext",
+    "ThreadWorkerFactory",
+    "WorkerFactory",
 )
 
 import cProfile
@@ -72,7 +72,7 @@ type Event = threading.Event | multiprocessing.synchronize.Event
 type Worker = threading.Thread | multiprocessing.context.SpawnProcess
 
 
-class WorkerContext(ABC):
+class WorkerFactory(ABC):
     """A simple abstract interface that can be implemented by both threading
     and multiprocessing.
     """
@@ -80,14 +80,14 @@ class WorkerContext(ABC):
     @abstractmethod
     def make_queue(self) -> Queue[Any]:
         """Make an empty queue that can be used to pass objects between
-        workers in this context.
+        workers created by this factory.
         """
         raise NotImplementedError()
 
     @abstractmethod
     def make_event(self) -> Event:
         """Make an event that can be used to communicate a boolean state change
-        to workers in this context.
+        to workers created by this factory.
         """
         raise NotImplementedError()
 
@@ -115,8 +115,8 @@ class WorkerContext(ABC):
         raise NotImplementedError()
 
 
-class ThreadingContext(WorkerContext):
-    """An implementation of `WorkerContext` backed by the `threading`
+class ThreadWorkerFactory(WorkerFactory):
+    """An implementation of `WorkerFactory` backed by the `threading`
     module.
     """
 
@@ -132,8 +132,8 @@ class ThreadingContext(WorkerContext):
         return threading.Thread(target=target, args=args, name=name)
 
 
-class SpawnProcessContext(WorkerContext):
-    """An implementation of `WorkerContext` backed by the `multiprocessing`
+class SpawnWorkerFactory(WorkerFactory):
+    """An implementation of `WorkerFactory` backed by the `multiprocessing`
     module, with new processes started by spawning.
     """
 
@@ -332,7 +332,7 @@ class SupervisorCommunicator:
         LSST-customized logger.
     n_scanners : `int`
         Number of scanner workers.
-    context : `WorkerContext`
+    worker_factory : `WorkerFactory`
         Abstraction over threading vs. multiprocessing.
     config : `AggregatorConfig`
         Configuration for the aggregator.
@@ -342,7 +342,7 @@ class SupervisorCommunicator:
         self,
         log: LsstLogAdapter,
         n_scanners: int,
-        context: WorkerContext,
+        worker_factory: WorkerFactory,
         config: AggregatorConfig,
     ) -> None:
         self.config = config
@@ -352,14 +352,14 @@ class SupervisorCommunicator:
         # When complete, the supervisor sends n_scanners sentinals and each
         # scanner is careful to only take one before it starts its shutdown.
         self._scan_requests: Queue[_ScanRequest | Literal[_Sentinel.NO_MORE_SCAN_REQUESTS]] = (
-            context.make_queue()
+            worker_factory.make_queue()
         )
         # The scanners send ingest requests to the ingester on this queue. Each
         # scanner sends one sentinal when it is done, and the ingester is
         # careful to wait for n_scanners sentinals to arrive before it starts
         # its shutdown.
         self._ingest_requests: Queue[IngestRequest | Literal[_Sentinel.NO_MORE_INGEST_REQUESTS]] = (
-            context.make_queue()
+            worker_factory.make_queue()
         )
         # The scanners send write requests to the writer on this queue (which
         # will be `None` if we're not writing).  The supervisor also sends
@@ -369,22 +369,22 @@ class SupervisorCommunicator:
         # starts its shutdown.
         self._write_requests: (
             Queue[ProvenanceQuantumScanData | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None
-        ) = context.make_queue() if config.is_writing_provenance else None
+        ) = worker_factory.make_queue() if config.is_writing_provenance else None
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.
-        self._reports: Queue[Report] = context.make_queue()
+        self._reports: Queue[Report] = worker_factory.make_queue()
         # The writer sends the compression dictionary to the scanners on this
         # queue.  It puts n_scanners copies on the queue, and each scanner only
         # takes one.  The compression_dict queue has no sentinal because it is
         # only used at most once; the supervisor takes responsibility for
         # clearing it out shutting down.
-        self._compression_dict: Queue[_CompressionDictionary] = context.make_queue()
+        self._compression_dict: Queue[_CompressionDictionary] = worker_factory.make_queue()
         # The supervisor sets this event when it receives an interrupt request
         # from an exception in the main process (usually KeyboardInterrupt).
         # Worker communicators check this in their polling loops and raise
         # FatalWorkerError when they see it set.
-        self._cancel_event: Event = context.make_event()
+        self._cancel_event: Event = worker_factory.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
         # we can't rely on a non-exception __exit__ to do any shutdown work
