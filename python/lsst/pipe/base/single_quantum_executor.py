@@ -254,6 +254,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                     str(exc),
                 )
                 quantumMetadata["caveats"] = QuantumSuccessCaveats.from_adjust_quantum_no_work().value
+                quantumMetadata["outputs"] = []
                 # Make empty metadata that looks something like what a
                 # do-nothing task would write (but we don't bother with empty
                 # nested PropertySets for subtasks).  This is slightly
@@ -266,7 +267,13 @@ class SingleQuantumExecutor(QuantumExecutor):
                 if self._job_metadata is not None:
                     fullMetadata["job"] = self._job_metadata
                 self._write_metadata(quantum, fullMetadata, task_node, limited_butler)
-                return QuantumExecutionResult(quantum, report, skipped_existing=False, adjusted_no_work=True)
+                return QuantumExecutionResult(
+                    quantum,
+                    report,
+                    skipped_existing=False,
+                    adjusted_no_work=True,
+                    task_metadata=fullMetadata,
+                )
 
             # enable lsstDebug debugging
             if self._enable_lsst_debug:
