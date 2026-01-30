@@ -46,7 +46,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
-from typing import Literal, Self
+from typing import Literal, Self, overload
 
 from lsst.utils.logging import LsstLogAdapter
 
@@ -63,6 +63,12 @@ class FatalWorkerError(BaseException):
     """An exception raised by communicators when one worker (including the
     supervisor) has caught an exception in order to signal the others to shut
     down.
+    """
+
+
+class _WorkerCommunicationError(Exception):
+    """An exception raised by communicators when a worker has died unexpectedly
+    or become unresponsive.
     """
 
 
@@ -265,7 +271,9 @@ class SupervisorCommunicator:
         self._n_scanners_done = 0
         self.workers: dict[str, Worker] = {}
 
-    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+    def _wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+        # Orderly shutdown, including exceptions: let workers clear out the
+        # queues they're responsible for reading from.
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
                 self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS)
@@ -275,7 +283,7 @@ class SupervisorCommunicator:
             self._sent_no_more_write_requests = True
         while not all(w.successful for w in self.workers.values()):
             match self._handle_progress_reports(
-                self._reports.get(block=True), already_failing=already_failing
+                self._get_report(block=True), already_failing=already_failing
             ):
                 case None | ScanReport():
                     pass
@@ -312,8 +320,23 @@ class SupervisorCommunicator:
             self.progress.log.warning("Compression dictionary queue was not empty at shutdown.")
             self._compression_dict.kill()
         for worker in self.workers.values():
-            self.progress.log.verbose("Waiting for %s to shut down.", worker.name)
+            self.log.verbose("Waiting for %s to shut down.", worker.name)
             worker.join()
+
+    def _terminate(self) -> None:
+        # Disorderly shutdown: we cannot assume any of the
+        # multiprocessing.Queue object work, and in fact they may hang
+        # if we try to do anything with them.
+        self._scan_requests.kill()
+        self._ingest_requests.kill()
+        if self._write_requests is not None:
+            self._write_requests.kill()
+        self._compression_dict.kill()
+        self._reports.kill()
+        for name, worker in self.workers.items():
+            if worker.is_alive():
+                self.progress.log.critical("Terminating worker %r.", name)
+                worker.kill()
 
     def __enter__(self) -> Self:
         _disable_resources_parallelism()
@@ -330,11 +353,23 @@ class SupervisorCommunicator:
         traceback: TracebackType | None,
     ) -> None:
         if exc_type is not None:
-            if exc_type is not FatalWorkerError:
-                self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
             self._cancel_event.set()
-        self.wait_for_workers_to_finish(already_failing=exc_type is not None)
+            if exc_type is _WorkerCommunicationError:
+                self.progress.log.critical("Worker '%s' was terminated before it could finish.", exc_value)
+                self._terminate()
+                return None
+            if exc_type is not FatalWorkerError:
+                self.progress.log.critical("Caught %s; attempting to shut down cleanly.", exc_type)
+        try:
+            self._wait_for_workers_to_finish(already_failing=exc_type is not None)
+        except _WorkerCommunicationError as err:
+            self.progress.log.critical(
+                "Worker '%s' was terminated before it could finish (after scanning).", err
+            )
+            self._terminate()
+            raise
         self.progress.__exit__(exc_type, exc_value, traceback)
+        return None
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
         """Send a request to the scanners to scan the given quantum.
@@ -372,9 +407,8 @@ class SupervisorCommunicator:
         it continues until the report queue is empty.
         """
         block = True
-        msg = self._reports.get(block=block)
-        while msg is not None:
-            match self._handle_progress_reports(msg):
+        while report := self._get_report(block=block):
+            match self._handle_progress_reports(report):
                 case ScanReport() as scan_report:
                     block = False
                     yield scan_report
@@ -382,7 +416,36 @@ class SupervisorCommunicator:
                     pass
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
-            msg = self._reports.get(block=block)
+
+    @overload
+    def _get_report(self, block: Literal[True]) -> Report: ...
+
+    @overload
+    def _get_report(self, block: bool) -> Report | None: ...
+
+    def _get_report(self, block: bool) -> Report | None:
+        """Get a report from the reports queue, with timeout guards on
+        blocking requests.
+
+        This method may *return* WorkerCommunicatorError (rather than raise it)
+        when a serious error occurred communicating with a subprocess.  This
+        is to avoid raising an exception in an __exit__ method (which calls
+        method).
+        """
+        report = self._reports.get(block=block, timeout=self.config.worker_check_timeout)
+        while report is None and block:
+            # We hit the timeout; make sure all of the workers
+            # that should be alive actually are.
+            for name, worker in self.workers.items():
+                if not worker.successful and not worker.is_alive():
+                    # Delete this worker from the list of workers so we don't
+                    # hit this condition again when we try to handle the
+                    # exception we raise.
+                    raise _WorkerCommunicationError(name)
+            # If nothing is dead and we didn't hit the hang timeout, keep
+            # trying.
+            report = self._reports.get(block=block, timeout=self.config.worker_check_timeout)
+        return report
 
     def _handle_progress_reports(
         self, report: Report, already_failing: bool = False
