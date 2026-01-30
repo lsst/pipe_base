@@ -46,7 +46,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Literal, Self
 
 from lsst.utils.logging import LsstLogAdapter
 
@@ -296,12 +296,16 @@ class SupervisorCommunicator:
                 ", ".join(w.name for w in self.workers.values() if not w.successful),
             )
         self.log.verbose("Checking that all queues are empty.")
-        self._expect_empty_queue(self._scan_requests)
-        self._expect_empty_queue(self._ingest_requests)
-        if self._write_requests is not None:
-            self._expect_empty_queue(self._write_requests)
-        self._expect_empty_queue(self._reports)
-        self._expect_empty_queue(self._compression_dict)
+        if self._scan_requests.clear():
+            self.progress.log.warning("Scan request queue was not empty at shutdown.")
+        if self._ingest_requests.clear():
+            self.progress.log.warning("Ingest request queue was not empty at shutdown.")
+        if self._write_requests is not None and self._write_requests.clear():
+            self.progress.log.warning("Write request queue was not empty at shutdown.")
+        if self._reports.clear():
+            self.progress.log.warning("Reports queue was not empty at shutdown.")
+        if self._compression_dict.clear():
+            self.progress.log.warning("Compression dictionary queue was not empty at shutdown.")
         for worker in self.workers.values():
             self.progress.log.verbose("Waiting for %s to shut down.", worker.name)
             worker.join()
@@ -406,12 +410,6 @@ class SupervisorCommunicator:
             case _:
                 return report
         return None
-
-    @staticmethod
-    def _expect_empty_queue(queue: Queue[Any]) -> None:
-        """Assert that the given queue is empty."""
-        if (msg := queue.get(block=False)) is not None:
-            raise AssertionError(f"Queue is not empty; found {msg!r}.")
 
 
 class WorkerCommunicator:
