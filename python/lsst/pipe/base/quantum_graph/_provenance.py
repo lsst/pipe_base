@@ -1151,8 +1151,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         repo_or_filename : `str`
             Either a provenance quantum graph filename or a butler repository
             path or alias.
-        collections : `~collections.abc.Iterable` [ `str` ], optional
-            Collections to search; presence indicates that the first argument
+        collection : `str`, optional
+            Collection to search; presence indicates that the first argument
             is a butler repository, not a filename.
         quanta : `~collections.abc.Iterable` [ `str` ] or `None`, optional
             IDs of the quanta to load, or `None` to load all.
