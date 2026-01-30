@@ -74,6 +74,9 @@ class Worker(ABC):
         """Return whether the worker is still running."""
         raise NotImplementedError()
 
+    def kill(self) -> None:
+        """Kill the worker, if possible."""
+
 
 class Queue[T](ABC):
     """A thin abstraction over `queue.Queue` and `multiprocessing.Queue` that
@@ -248,6 +251,10 @@ class _ProcessWorker(Worker):
 
     def is_alive(self) -> bool:
         return self._process.is_alive()
+
+    def kill(self) -> None:
+        """Kill the worker, if possible."""
+        self._process.kill()
 
 
 class _ProcessQueue[T](Queue[T]):
