@@ -30,7 +30,7 @@ __all__ = ("Edge", "ReadEdge", "WriteEdge")
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, ClassVar, Self, TypeVar
+from typing import Any, ClassVar, Self
 
 from lsst.daf.butler import DatasetRef, DatasetType, DimensionUniverse, StorageClassFactory
 from lsst.daf.butler.registry import MissingDatasetTypeError
@@ -39,8 +39,6 @@ from lsst.utils.classes import immutable
 from ..connectionTypes import BaseConnection
 from ._exceptions import ConnectionTypeConsistencyError, IncompatibleDatasetTypeError
 from ._nodes import NodeKey, NodeType
-
-_S = TypeVar("_S", bound="Edge")
 
 
 @immutable
@@ -172,7 +170,7 @@ class Edge(ABC):
         """
         return self.parent_dataset_type_name
 
-    def diff(self: _S, other: _S, connection_type: str = "connection") -> list[str]:
+    def diff[S: Edge](self: S, other: S, connection_type: str = "connection") -> list[str]:
         """Compare this edge to another one from a possibly-different
         configuration of the same task label.
 

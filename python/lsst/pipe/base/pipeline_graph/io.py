@@ -33,11 +33,10 @@ __all__ = (
     "SerializedTaskInitNode",
     "SerializedTaskNode",
     "SerializedTaskSubset",
-    "expect_not_none",
 )
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 import networkx
 import pydantic
@@ -53,14 +52,12 @@ from ._pipeline_graph import PipelineGraph
 from ._task_subsets import StepDefinitions, TaskSubset
 from ._tasks import TaskImportMode, TaskInitNode, TaskNode
 
-_U = TypeVar("_U")
-
 _IO_VERSION_INFO = (0, 0, 1)
 """Version tuple embedded in saved PipelineGraphs.
 """
 
 
-def expect_not_none(value: _U | None, msg: str) -> _U:
+def _expect_not_none[U](value: U | None, msg: str) -> U:
     """Check that a value is not `None` and return it.
 
     Parameters
@@ -418,7 +415,7 @@ class SerializedTaskNode(pydantic.BaseModel):
         init = self.init.deserialize(
             init_key,
             task_class_name=self.task_class,
-            config_str=expect_not_none(
+            config_str=_expect_not_none(
                 self.config_str, f"No serialized config file for task with label {key.name!r}."
             ),
             dataset_type_keys=dataset_type_keys,
@@ -547,16 +544,16 @@ class SerializedDatasetTypeNode(pydantic.BaseModel):
         if self.dimensions is not None:
             dataset_type = DatasetType(
                 key.name,
-                expect_not_none(
+                _expect_not_none(
                     self.dimensions,
                     f"Serialized dataset type {key.name!r} has no dimensions.",
                 ),
-                storageClass=expect_not_none(
+                storageClass=_expect_not_none(
                     self.storage_class,
                     f"Serialized dataset type {key.name!r} has no storage class.",
                 ),
                 isCalibration=self.is_calibration,
-                universe=expect_not_none(
+                universe=_expect_not_none(
                     universe,
                     f"Serialized dataset type {key.name!r} has dimensions, "
                     "but no dimension universe was stored.",
@@ -747,7 +744,7 @@ class SerializedPipelineGraph(pydantic.BaseModel):
         if self.dimensions is not None:
             universe = DimensionUniverse(
                 config=DimensionConfig(
-                    expect_not_none(
+                    _expect_not_none(
                         self.dimensions,
                         "Serialized pipeline graph has not been resolved; "
                         "load it is a MutablePipelineGraph instead.",

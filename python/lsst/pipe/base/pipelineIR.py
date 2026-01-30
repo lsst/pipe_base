@@ -337,7 +337,7 @@ class ConfigIR:
                 )
         return new_config
 
-    def maybe_merge(self, other_config: ConfigIR) -> Generator[ConfigIR, None, None]:
+    def maybe_merge(self, other_config: ConfigIR) -> Generator[ConfigIR]:
         """Merge another instance of a `ConfigIR` into this instance if
         possible. This function returns a generator that is either self
         if the configs were merged, or self, and other_config if that could

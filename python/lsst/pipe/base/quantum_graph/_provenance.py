@@ -54,7 +54,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import astropy.table
 import networkx
@@ -102,9 +102,7 @@ if "sphinx" in sys.modules:
     from ._multiblock import AddressReader, Decompressor  # noqa: F401
 
 
-_T = TypeVar("_T")
-
-LoopWrapper: TypeAlias = Callable[[Iterable[_T]], Iterable[_T]]
+type LoopWrapper[T] = Callable[[Iterable[T]], Iterable[T]]
 
 _LOG = getLogger(__file__)
 
@@ -119,7 +117,7 @@ LOG_MB_NAME = "logs"
 METADATA_MB_NAME = "metadata"
 
 
-def pass_through(arg: _T) -> _T:
+def pass_through[T](arg: T) -> T:
     return arg
 
 
@@ -1151,8 +1149,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         repo_or_filename : `str`
             Either a provenance quantum graph filename or a butler repository
             path or alias.
-        collections : `~collections.abc.Iterable` [ `str` ], optional
-            Collections to search; presence indicates that the first argument
+        collection : `str`, optional
+            Collection to search; presence indicates that the first argument
             is a butler repository, not a filename.
         quanta : `~collections.abc.Iterable` [ `str` ] or `None`, optional
             IDs of the quanta to load, or `None` to load all.

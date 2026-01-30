@@ -42,7 +42,7 @@ __all__ = (
 import dataclasses
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, MutableMapping, Set
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import networkx
 
@@ -145,7 +145,7 @@ class PrerequisiteDatasetKey:
     is_prerequisite: ClassVar[Literal[True]] = True
 
 
-Key: TypeAlias = QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
+type Key = QuantumKey | TaskInitKey | DatasetKey | PrerequisiteDatasetKey
 
 
 class QuantumGraphSkeleton:

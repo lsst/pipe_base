@@ -31,11 +31,8 @@ __all__ = ("LogOnClose",)
 
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
-from typing import TypeVar
 
 from lsst.utils.logging import VERBOSE
-
-_T = TypeVar("_T")
 
 
 class LogOnClose:
@@ -52,12 +49,12 @@ class LogOnClose:
     def __init__(self, log_func: Callable[[int, str], None]):
         self.log_func = log_func
 
-    def wrap(
+    def wrap[T](
         self,
-        cm: AbstractContextManager[_T],
+        cm: AbstractContextManager[T],
         msg: str,
         level: int = VERBOSE,
-    ) -> AbstractContextManager[_T]:
+    ) -> AbstractContextManager[T]:
         """Wrap a context manager to log when it is exited.
 
         Parameters
@@ -71,7 +68,7 @@ class LogOnClose:
         """
 
         @contextmanager
-        def wrapper() -> Iterator[_T]:
+        def wrapper() -> Iterator[T]:
             with cm as result:
                 yield result
                 self.log_func(level, msg)

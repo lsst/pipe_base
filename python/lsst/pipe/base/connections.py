@@ -461,7 +461,7 @@ class QuantizedConnection(SimpleNamespace):
 
     def __iter__(
         self,
-    ) -> Generator[tuple[str, DatasetRef | list[DatasetRef]], None, None]:
+    ) -> Generator[tuple[str, DatasetRef | list[DatasetRef]]]:
         """Make an iterator for this `QuantizedConnection`.
 
         Iterating over a `QuantizedConnection` will yield a tuple with the name
@@ -471,7 +471,7 @@ class QuantizedConnection(SimpleNamespace):
         """
         yield from ((name, getattr(self, name)) for name in self._attributes)
 
-    def keys(self) -> Generator[str, None, None]:
+    def keys(self) -> Generator[str]:
         """Return an iterator over all the attributes added to a
         `QuantizedConnection` class.
         """
@@ -1041,7 +1041,7 @@ class PipelineTaskConnections(metaclass=PipelineTaskConnectionsMetaclass):
 
 def iterConnections(
     connections: PipelineTaskConnections, connectionType: str | Iterable[str]
-) -> Generator[BaseConnection, None, None]:
+) -> Generator[BaseConnection]:
     """Create an iterator over the selected connections type which yields
     all the defined connections of that type.
 

@@ -43,7 +43,7 @@ __all__ = (
 
 import dataclasses
 import functools
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal
 
 from lsst.daf.butler.queries.expressions.parser.ply import lex, yacc
 
@@ -268,4 +268,4 @@ def parse(expression: str) -> Node:
     return _ParserYacc().parse(expression)
 
 
-Node: TypeAlias = IdentifierNode | DirectionNode | NotNode | UnionNode | IntersectionNode
+type Node = IdentifierNode | DirectionNode | NotNode | UnionNode | IntersectionNode

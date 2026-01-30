@@ -27,7 +27,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from typing import Any, ClassVar, TypeVar, cast, overload
+from typing import Any, ClassVar, cast, overload
 
 import networkx
 
@@ -36,11 +36,8 @@ from ._exceptions import UnresolvedGraphError
 from ._nodes import NodeKey, NodeType
 from ._tasks import TaskInitNode, TaskNode
 
-_N = TypeVar("_N", covariant=True)
-_T = TypeVar("_T")
 
-
-class MappingView(Mapping[str, _N]):
+class MappingView[N](Mapping[str, N]):
     """Base class for mapping views into nodes of certain types in a
     `PipelineGraph`.
 
@@ -74,7 +71,7 @@ class MappingView(Mapping[str, _N]):
             self._keys = self._make_keys(self._parent_xgraph)
         return iter(self._keys)
 
-    def __getitem__(self, key: str) -> _N:
+    def __getitem__(self, key: str) -> N:
         return self._parent_xgraph.nodes[NodeKey(self._NODE_TYPE, key)]["instance"]
 
     def __len__(self) -> int:
@@ -230,7 +227,7 @@ class DatasetTypeMappingView(MappingView[DatasetTypeNode]):
     def get_if_resolved(self, key: str) -> DatasetTypeNode | None: ...  # pragma: nocover
 
     @overload
-    def get_if_resolved(self, key: str, default: _T) -> DatasetTypeNode | _T: ...  # pragma: nocover
+    def get_if_resolved[T](self, key: str, default: T) -> DatasetTypeNode | T: ...  # pragma: nocover
 
     def get_if_resolved(self, key: str, default: Any = None) -> DatasetTypeNode | Any:
         """Get a node or return a default if it has not been resolved.

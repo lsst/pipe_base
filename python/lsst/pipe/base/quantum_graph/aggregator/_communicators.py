@@ -54,7 +54,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
-from typing import Any, Literal, Self, TypeAlias, TypeVar, Union
+from typing import Any, Literal, Self
 
 from lsst.utils.logging import LsstLogAdapter
 
@@ -63,19 +63,13 @@ from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
 from ._structs import IngestRequest, ScanReport
 
-_T = TypeVar("_T")
-
 _TINY_TIMEOUT = 0.01
 
-# multiprocessing.Queue is a type according to the standard library type stubs,
-# but it's really a function at runtime.  But since the Python <= 3.11 type
-# alias syntax uses the real runtime things we need to use strings, and hence
-# we need to use Union.  With Python 3.12's 'type' statement this gets cleaner.
-Queue: TypeAlias = Union["queue.Queue[_T]", "multiprocessing.Queue[_T]"]
+type Queue[T] = "queue.Queue[T]" | "multiprocessing.Queue[T]"
 
-Event: TypeAlias = threading.Event | multiprocessing.synchronize.Event
+type Event = threading.Event | multiprocessing.synchronize.Event
 
-Worker: TypeAlias = threading.Thread | multiprocessing.context.SpawnProcess
+type Worker = threading.Thread | multiprocessing.context.SpawnProcess
 
 
 class WorkerContext(ABC):
@@ -158,7 +152,7 @@ class SpawnProcessContext(WorkerContext):
         return self._ctx.Process(target=target, args=args, name=name)
 
 
-def _get_from_queue(q: Queue[_T], block: bool = False, timeout: float | None = None) -> _T | None:
+def _get_from_queue[T](q: Queue[T], block: bool = False, timeout: float | None = None) -> T | None:
     """Get an object from a queue and return `None` if it is empty.
 
     Parameters
@@ -304,7 +298,7 @@ class _CompressionDictionary:
     """
 
 
-Report: TypeAlias = (
+type Report = (
     ScanReport
     | _IngestReport
     | _WorkerErrorMessage
@@ -933,7 +927,7 @@ class WriterCommunicator(WorkerCommunicator):
         """
         self._reports.put(_Sentinel.WRITE_REPORT, block=False)
 
-    def periodically_check_for_cancel(self, iterable: Iterable[_T], n: int = 100) -> Iterator[_T]:
+    def periodically_check_for_cancel[T](self, iterable: Iterable[T], n: int = 100) -> Iterator[T]:
         """Iterate while checking for a cancellation signal every ``n``
         iterations.
 

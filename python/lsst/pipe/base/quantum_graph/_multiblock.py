@@ -48,7 +48,7 @@ from collections.abc import Iterator, Set
 from contextlib import contextmanager
 from io import BufferedReader, BytesIO
 from operator import attrgetter
-from typing import IO, Protocol, TypeAlias, TypeVar
+from typing import IO, Protocol, TypeVar
 
 import pydantic
 
@@ -58,7 +58,7 @@ _LOG = logging.getLogger(__name__)
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
-UUID_int: TypeAlias = int
+type UUID_int = int
 
 MAX_UUID_INT: UUID_int = 2**128
 
