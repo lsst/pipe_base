@@ -295,8 +295,6 @@ class SupervisorCommunicator:
                 "Waiting for workers [%s] to report successful completion.",
                 ", ".join(w.name for w in self.workers.values() if not w.successful),
             )
-        if self._compression_dict.clear():
-            self.log.verbose("Cleared out compression dictionary queue.")
         self.log.verbose("Checking that all queues are empty.")
         self._expect_empty_queue(self._scan_requests)
         self._expect_empty_queue(self._ingest_requests)
@@ -636,8 +634,7 @@ class ScannerCommunicator(WorkerCommunicator):
                 and self._scan_requests.get(block=True) is _Sentinel.NO_MORE_SCAN_REQUESTS
             ):
                 self._got_no_more_scan_requests = True
-        # We let the supervisor clear out the compression dict queue, because
-        # a single scanner can't know if it ever got sent out or not.
+        # We let the writer clear out the compression dict queue.
         self.log.verbose("Sending completion message.")
         self._reports.put(_WorkerDone(self.name))
         return result
@@ -757,6 +754,10 @@ class WriterCommunicator(WorkerCommunicator):
             )
             if self._write_requests.get(block=True) is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._n_requesters_done += 1
+        if self._compression_dict.clear():
+            self.log.verbose("Cleared out compression dictionary queue.")
+        else:
+            self.log.verbose("Compression dictionary queue was already empty.")
         self.log.verbose("Sending completion message.")
         self._reports.put(_WorkerDone(self.name))
         return result
