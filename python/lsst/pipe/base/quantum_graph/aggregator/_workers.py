@@ -35,17 +35,15 @@ import queue
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal, overload
 
 _TINY_TIMEOUT = 0.01
-
-type Queue[T] = "queue.Queue[T]" | "multiprocessing.Queue[T]"
 
 type Event = threading.Event | multiprocessing.synchronize.Event
 
 
 class Worker(ABC):
-    """A thin abstraction over threading.Thread and multiprocessing.Process
+    """A thin abstraction over `threading.Thread` and `multiprocessing.Process`
     that also provides a variable to track whether it reported successful
     completion.
     """
@@ -75,6 +73,64 @@ class Worker(ABC):
     def is_alive(self) -> bool:
         """Return whether the worker is still running."""
         raise NotImplementedError()
+
+
+class Queue[T](ABC):
+    """A thin abstraction over `queue.Queue` and `multiprocessing.Queue` that
+    provides better control over disorderly shutdowns.
+    """
+
+    @overload
+    def get(self, *, block: Literal[True]) -> T: ...
+
+    @overload
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None: ...
+
+    @abstractmethod
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None:
+        """Get an object or return `None` if the queue is empty.
+
+        Parameters
+        ----------
+        timeout : `float` or `None`, optional
+            Maximum number of seconds to wait while blocking.
+        block : `bool`, optional
+            Whether to block until an object is available.
+
+        Returns
+        -------
+        obj : `object` or `None`
+            Object from the queue, or `None` if it was empty.  Note that this
+            is different from the behavior of the built-in Python queues,
+            which raise `queue.Empty` instead.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def put(self, item: T) -> None:
+        """Add an object to the queue.
+
+        Parameters
+        ----------
+        item : `object`
+            Item to add.
+        """
+        raise NotImplementedError()
+
+    def clear(self) -> bool:
+        """Clear out all objects currently on the queue.
+
+        This does not guarantee that more objects will not be added later.
+        """
+        found_anything: bool = False
+        while self.get() is not None:
+            found_anything = True
+        return found_anything
+
+    def kill(self) -> None:
+        """Prepare a queue for a disorderly shutdown, without assuming that
+        any other workers using it are still alive and functioning.
+        """
 
 
 class WorkerFactory(ABC):
@@ -137,13 +193,33 @@ class _ThreadWorker(Worker):
         return self._thread.is_alive()
 
 
+class _ThreadQueue[T](Queue[T]):
+    def __init__(self) -> None:
+        self._impl = queue.Queue[T]()
+
+    @overload
+    def get(self, *, block: Literal[True]) -> T: ...
+
+    @overload
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None: ...
+
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None:
+        try:
+            return self._impl.get(block=block, timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def put(self, item: T) -> None:
+        self._impl.put(item, block=False)
+
+
 class ThreadWorkerFactory(WorkerFactory):
     """An implementation of `WorkerFactory` backed by the `threading`
     module.
     """
 
     def make_queue(self) -> Queue[Any]:
-        return queue.Queue()
+        return _ThreadQueue()
 
     def make_event(self) -> Event:
         return threading.Event()
@@ -174,6 +250,30 @@ class _ProcessWorker(Worker):
         return self._process.is_alive()
 
 
+class _ProcessQueue[T](Queue[T]):
+    def __init__(self, impl: multiprocessing.Queue):
+        self._impl = impl
+
+    @overload
+    def get(self, *, block: Literal[True]) -> T: ...
+
+    @overload
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None: ...
+
+    def get(self, *, timeout: float | None = None, block: bool = False) -> T | None:
+        try:
+            return self._impl.get(block=block, timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def put(self, item: T) -> None:
+        self._impl.put(item, block=False)
+
+    def kill(self) -> None:
+        self._impl.cancel_join_thread()
+        self._impl.close()
+
+
 class SpawnWorkerFactory(WorkerFactory):
     """An implementation of `WorkerFactory` backed by the `multiprocessing`
     module, with new processes started by spawning.
@@ -183,7 +283,7 @@ class SpawnWorkerFactory(WorkerFactory):
         self._ctx = multiprocessing.get_context("spawn")
 
     def make_queue(self) -> Queue[Any]:
-        return self._ctx.Queue()
+        return _ProcessQueue(self._ctx.Queue())
 
     def make_event(self) -> Event:
         return self._ctx.Event()
