@@ -38,7 +38,7 @@ import hashlib
 from collections import defaultdict
 from collections.abc import Iterable
 from functools import cached_property
-from typing import Any, TypeVar
+from typing import Any
 
 import networkx
 import networkx.algorithms.dag
@@ -48,9 +48,6 @@ from lsst.daf.butler import DimensionGroup
 
 from .._nodes import NodeKey, NodeType
 from ._options import NodeAttributeOptions
-
-_P = TypeVar("_P")
-_C = TypeVar("_C")
 
 
 class MergedNodeKey(frozenset[NodeKey]):
@@ -225,11 +222,11 @@ class _MergeKey:
     """
 
     @classmethod
-    def from_node_state(
+    def from_node_state[P, C](
         cls,
         state: dict[str, Any],
-        parents: Iterable[_P],
-        children: Iterable[_C],
+        parents: Iterable[P],
+        children: Iterable[C],
         options: NodeAttributeOptions,
     ) -> _MergeKey:
         """Construct from a NetworkX node attribute state dictionary.

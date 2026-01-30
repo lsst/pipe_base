@@ -1257,7 +1257,7 @@ class QuantumGraph:
             raise TypeError(f"QuantumGraph file contains unexpected object type: {type(qgraph)}")
         return qgraph
 
-    def iterTaskGraph(self) -> Generator[TaskDef, None, None]:
+    def iterTaskGraph(self) -> Generator[TaskDef]:
         """Iterate over the `taskGraph` attribute in topological order.
 
         Yields
@@ -1375,7 +1375,7 @@ class QuantumGraph:
         """
         return self._universe
 
-    def __iter__(self) -> Generator[QuantumNode, None, None]:
+    def __iter__(self) -> Generator[QuantumNode]:
         yield from nx.topological_sort(self._connectedQuanta)
 
     def __len__(self) -> int:

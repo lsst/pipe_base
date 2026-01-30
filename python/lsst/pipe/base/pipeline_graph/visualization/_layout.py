@@ -30,7 +30,7 @@ __all__ = ("ColumnSelector", "Layout", "LayoutRow")
 
 import dataclasses
 from collections.abc import Iterable, Iterator, Mapping, Set
-from typing import Generic, TextIO, TypeVar
+from typing import TextIO
 
 import networkx
 import networkx.algorithms.components
@@ -38,10 +38,8 @@ import networkx.algorithms.dag
 import networkx.algorithms.shortest_paths
 import networkx.algorithms.traversal
 
-_K = TypeVar("_K")
 
-
-class Layout(Generic[_K]):
+class Layout[K]:
     """A class that positions nodes and edges in text-art graph visualizations.
 
     Parameters
@@ -73,9 +71,9 @@ class Layout(Generic[_K]):
         # to be close to that text when possible (or maybe it's historical, and
         # it's just a lot of work to re-invert the algorithm now that it's
         # written).
-        self._active_columns: dict[int, set[_K]] = {}
+        self._active_columns: dict[int, set[K]] = {}
         # Mapping from node key to its column.
-        self._locations: dict[_K, int] = {}
+        self._locations: dict[K, int] = {}
         # Minimum and maximum column (may go negative; will be shifted as
         # needed before actual display).
         self._x_min = 0
@@ -116,7 +114,7 @@ class Layout(Generic[_K]):
         for component_xgraph, component_order in component_xgraphs_and_orders:
             self._add_connected_graph(component_xgraph, component_order)
 
-    def _add_single_node(self, node: _K) -> None:
+    def _add_single_node(self, node: K) -> None:
         """Add a single node to the layout."""
         assert node not in self._locations
         if not self._locations:
@@ -184,7 +182,7 @@ class Layout(Generic[_K]):
         return x + 1
 
     def _add_connected_graph(
-        self, xgraph: networkx.DiGraph | networkx.MultiDiGraph, order: list[_K] | None = None
+        self, xgraph: networkx.DiGraph | networkx.MultiDiGraph, order: list[K] | None = None
     ) -> None:
         """Add a subgraph whose nodes are connected.
 
@@ -202,7 +200,7 @@ class Layout(Generic[_K]):
         # "backbone" of our layout; we'll step through this path and add
         # recurse via calls to `_add_graph` on the nodes that we think should
         # go between the backbone nodes.
-        backbone: list[_K] = networkx.algorithms.dag.dag_longest_path(xgraph, topo_order=order)
+        backbone: list[K] = networkx.algorithms.dag.dag_longest_path(xgraph, topo_order=order)
         # Add the first backbone node and any ancestors according to the full
         # graph (it can't have ancestors in this _subgraph_ because they'd have
         # been part of the longest path themselves, but the subgraph doesn't
@@ -237,7 +235,7 @@ class Layout(Generic[_K]):
         remaining.remove_nodes_from(self._locations.keys())
         self._add_graph(remaining)
 
-    def _add_blockers_of(self, node: _K) -> None:
+    def _add_blockers_of(self, node: K) -> None:
         """Add all nodes that are ancestors of the given node according to the
         full graph.
         """
@@ -251,7 +249,7 @@ class Layout(Generic[_K]):
         return (self._x_max - self._x_min) // 2
 
     @property
-    def nodes(self) -> Iterable[_K]:
+    def nodes(self) -> Iterable[K]:
         """The graph nodes in the order they appear in the layout."""
         return self._locations.keys()
 
@@ -277,7 +275,7 @@ class Layout(Generic[_K]):
         return (self._x_max - x) // 2
 
     def __iter__(self) -> Iterator[LayoutRow]:
-        active_edges: dict[_K, set[_K]] = {}
+        active_edges: dict[K, set[K]] = {}
         for node, node_x in self._locations.items():
             row = LayoutRow(node, self._external_location(node_x))
             for origin, destinations in active_edges.items():
@@ -295,20 +293,20 @@ class Layout(Generic[_K]):
 
 
 @dataclasses.dataclass
-class LayoutRow(Generic[_K]):
+class LayoutRow[K]:
     """Information about a single text-art row in a graph."""
 
-    node: _K
+    node: K
     """Key for the node in the exported NetworkX graph."""
 
     x: int
     """Column of the node's symbol and its outgoing edges."""
 
-    connecting: list[tuple[int, _K]] = dataclasses.field(default_factory=list)
+    connecting: list[tuple[int, K]] = dataclasses.field(default_factory=list)
     """The columns and node keys of edges that terminate at this row.
     """
 
-    continuing: list[tuple[int, _K, frozenset[_K]]] = dataclasses.field(default_factory=list)
+    continuing: list[tuple[int, K, frozenset[K]]] = dataclasses.field(default_factory=list)
     """The columns and node keys of edges that continue through this row.
     """
 
@@ -337,11 +335,11 @@ class ColumnSelector:
     out in that case because it's applied to all candidate columns.
     """
 
-    def __call__(
+    def __call__[K](
         self,
         connecting_x: list[int],
         node_x: int,
-        active_columns: Mapping[int, Set[_K]],
+        active_columns: Mapping[int, Set[K]],
         x_min: int,
         x_max: int,
     ) -> int:

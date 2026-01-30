@@ -49,7 +49,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx
 import networkx.algorithms.bipartite
@@ -118,9 +118,6 @@ if "sphinx" in sys.modules:
 
 
 _LOG = logging.getLogger(__name__)
-
-
-_T = TypeVar("_T", bound=pydantic.BaseModel)
 
 
 class _PredictedThinQuantumModelV0(pydantic.BaseModel):

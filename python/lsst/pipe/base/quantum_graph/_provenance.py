@@ -54,7 +54,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import astropy.table
 import networkx
@@ -102,9 +102,7 @@ if "sphinx" in sys.modules:
     from ._multiblock import AddressReader, Decompressor  # noqa: F401
 
 
-_T = TypeVar("_T")
-
-LoopWrapper: TypeAlias = Callable[[Iterable[_T]], Iterable[_T]]
+type LoopWrapper[T] = Callable[[Iterable[T]], Iterable[T]]
 
 _LOG = getLogger(__file__)
 
@@ -119,7 +117,7 @@ LOG_MB_NAME = "logs"
 METADATA_MB_NAME = "metadata"
 
 
-def pass_through(arg: _T) -> _T:
+def pass_through[T](arg: T) -> T:
     return arg
 
 

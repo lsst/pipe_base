@@ -33,7 +33,7 @@ import itertools
 import json
 import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
-from typing import TYPE_CHECKING, Any, BinaryIO, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Literal, cast
 
 import networkx
 import networkx.algorithms.bipartite
@@ -78,9 +78,6 @@ if TYPE_CHECKING:
     from ..connections import PipelineTaskConnections
     from ..pipeline import TaskDef
     from ..pipelineTask import PipelineTask
-
-
-_G = TypeVar("_G", bound=networkx.DiGraph | networkx.MultiDiGraph)
 
 _LOG = logging.getLogger("lsst.pipe.base.pipeline_graph")
 
@@ -2187,7 +2184,9 @@ class PipelineGraph:
         ]
         return networkx.algorithms.bipartite.projected_graph(networkx.DiGraph(bipartite_xgraph), task_keys)
 
-    def _transform_xgraph_state(self, xgraph: _G, skip_edges: bool) -> _G:
+    def _transform_xgraph_state[G: networkx.DiGraph | networkx.MultiDiGraph](
+        self, xgraph: G, skip_edges: bool
+    ) -> G:
         """Transform networkx graph attributes in-place from the internal
         "instance" attributes to the documented exported attributes.
 

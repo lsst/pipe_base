@@ -50,9 +50,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Self,
-    TypeAlias,
     TypedDict,
-    TypeVar,
 )
 
 import networkx
@@ -81,17 +79,15 @@ if TYPE_CHECKING:
 # These aliases make it a lot easier how the various pydantic models are
 # structured, but they're too verbose to be worth exporting to code outside the
 # quantum_graph subpackage.
-TaskLabel: TypeAlias = str
-DatasetTypeName: TypeAlias = str
-ConnectionName: TypeAlias = str
-DatasetIndex: TypeAlias = int
-QuantumIndex: TypeAlias = int
-DatastoreName: TypeAlias = str
-DimensionElementName: TypeAlias = str
-DataCoordinateValues: TypeAlias = list[DataIdValue]
+type TaskLabel = str
+type DatasetTypeName = str
+type ConnectionName = str
+type DatasetIndex = int
+type QuantumIndex = int
+type DatastoreName = str
+type DimensionElementName = str
+type DataCoordinateValues = list[DataIdValue]
 
-
-_T = TypeVar("_T", bound=pydantic.BaseModel)
 
 FORMAT_VERSION: int = 1
 """
@@ -597,9 +593,9 @@ class BaseQuantumGraphReader:
                     )
 
     @staticmethod
-    def _read_single_block_static(
-        name: str, model_type: type[_T], zf: zipfile.ZipFile, decompressor: Decompressor
-    ) -> _T:
+    def _read_single_block_static[T: pydantic.BaseModel](
+        name: str, model_type: type[T], zf: zipfile.ZipFile, decompressor: Decompressor
+    ) -> T:
         """Read a single compressed JSON block from a 'file' in a zip archive.
 
         Parameters
@@ -622,7 +618,7 @@ class BaseQuantumGraphReader:
         json_data = decompressor.decompress(compressed_data)
         return model_type.model_validate_json(json_data)
 
-    def _read_single_block(self, name: str, model_type: type[_T]) -> _T:
+    def _read_single_block[T: pydantic.BaseModel](self, name: str, model_type: type[T]) -> T:
         """Read a single compressed JSON block from a 'file' in a zip archive.
 
         Parameters

@@ -37,7 +37,7 @@ __all__ = (
 )
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 import networkx
 import pydantic
@@ -53,14 +53,12 @@ from ._pipeline_graph import PipelineGraph
 from ._task_subsets import StepDefinitions, TaskSubset
 from ._tasks import TaskImportMode, TaskInitNode, TaskNode
 
-_U = TypeVar("_U")
-
 _IO_VERSION_INFO = (0, 0, 1)
 """Version tuple embedded in saved PipelineGraphs.
 """
 
 
-def expect_not_none(value: _U | None, msg: str) -> _U:
+def expect_not_none[U](value: U | None, msg: str) -> U:
     """Check that a value is not `None` and return it.
 
     Parameters

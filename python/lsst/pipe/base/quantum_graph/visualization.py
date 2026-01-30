@@ -37,12 +37,16 @@ from typing import IO, ClassVar, Generic, TypeVar
 from ..pipeline_graph import NodeType
 from ._common import BaseQuantumGraph, BipartiteEdgeInfo, DatasetInfo, QuantumInfo
 
+# We use the old generic syntax in this module because for some reason the new
+# one confused Sphinx (or one of its plugins), even though it seems fine with
+# it in other places.  We can try again when we're ready to remove types from
+# the docstrings of annotated functions, in case that matters.
 _G = TypeVar("_G", bound=BaseQuantumGraph, contravariant=True)
 _Q = TypeVar("_Q", bound=QuantumInfo, contravariant=True)
 _D = TypeVar("_D", bound=DatasetInfo, contravariant=True)
 
 
-class QuantumGraphVisualizer(Generic[_G, _Q, _D]):
+class QuantumGraphVisualizer(Generic[_G, _Q, _D]):  # noqa: UP046
     """A base class for exporting quantum graphs to graph-visualization
     languages.
 

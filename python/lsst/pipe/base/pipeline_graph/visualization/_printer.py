@@ -30,9 +30,9 @@ __all__ = ("Printer", "make_colorama_printer", "make_default_printer", "make_sim
 
 import sys
 from collections.abc import Callable, Sequence
-from typing import Generic, TextIO
+from typing import TextIO
 
-from ._layout import _K, Layout, LayoutRow
+from ._layout import Layout, LayoutRow
 
 _CHAR_DECOMPOSITION = {
     # This mapping provides the "logic" for how to decompose the relevant
@@ -170,7 +170,7 @@ class PrintRow:
         return "".join(self._cells)
 
 
-def _default_get_text(node: _K, x: int, style: tuple[str, str]) -> str:
+def _default_get_text[K](node: K, x: int, style: tuple[str, str]) -> str:
     """Return the default text to associate with a node.
 
     This function is the default value for the ``get_text`` argument to
@@ -179,7 +179,7 @@ def _default_get_text(node: _K, x: int, style: tuple[str, str]) -> str:
     return str(node)
 
 
-def _default_get_symbol(node: _K, x: int) -> str:
+def _default_get_symbol[K](node: K, x: int) -> str:
     """Return the default symbol for a node.
 
     This function is the default value for the ``get_symbol`` argument to
@@ -188,7 +188,7 @@ def _default_get_symbol(node: _K, x: int) -> str:
     return "⬤"
 
 
-def _default_get_style(node: _K, x: int) -> tuple[str, str]:
+def _default_get_style[K](node: K, x: int) -> tuple[str, str]:
     """Get the default styling suffix/prefix strings.
 
     This function is the default value for the ``get_style`` argument to
@@ -197,7 +197,7 @@ def _default_get_style(node: _K, x: int) -> tuple[str, str]:
     return "", ""
 
 
-class Printer(Generic[_K]):
+class Printer[K]:
     """High-level tool for drawing a text-based DAG visualization.
 
     Parameters
@@ -231,9 +231,9 @@ class Printer(Generic[_K]):
         *,
         pad: str = " ",
         make_blank_row: Callable[[int, str], PrintRow] = PrintRow,
-        get_text: Callable[[_K, int, tuple[str, str]], str] = _default_get_text,
-        get_symbol: Callable[[_K, int], str] = _default_get_symbol,
-        get_style: Callable[[_K, int], tuple[str, str]] = _default_get_style,
+        get_text: Callable[[K, int, tuple[str, str]], str] = _default_get_text,
+        get_symbol: Callable[[K, int], str] = _default_get_symbol,
+        get_style: Callable[[K, int], tuple[str, str]] = _default_get_style,
     ):
         self.width = layout_width * 2 + 1
         self.pad = pad
@@ -245,7 +245,7 @@ class Printer(Generic[_K]):
     def print_row(
         self,
         stream: TextIO,
-        layout_row: LayoutRow[_K],
+        layout_row: LayoutRow[K],
     ) -> None:
         """Print a single row of the DAG visualization to a file-like object.
 

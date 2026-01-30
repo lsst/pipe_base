@@ -37,7 +37,7 @@ import itertools
 import numbers
 import sys
 from collections.abc import Collection, Iterator, Mapping, Sequence
-from typing import Any, Protocol, TypeAlias, Union
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
@@ -47,7 +47,7 @@ _ALLOWED_PRIMITIVE_TYPES = (str, float, int, bool)
 
 # Note that '|' syntax for unions doesn't work when we have to use a string
 # literal (and we do since it's recursive and not an annotation).
-NestedMetadataDict: TypeAlias = Mapping[str, Union[str, float, int, bool, "NestedMetadataDict"]]
+type NestedMetadataDict = Mapping[str, str | float | int | bool | "NestedMetadataDict"]
 
 
 class PropertySetLike(Protocol):

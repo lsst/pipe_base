@@ -29,14 +29,12 @@ from __future__ import annotations
 
 __all__ = ("GraphWalker",)
 
-from typing import Generic, Self, TypeVar
+from typing import Self
 
 import networkx
 
-_T = TypeVar("_T")
 
-
-class GraphWalker(Generic[_T]):
+class GraphWalker[T]:
     """A helper for traversing directed acyclic graphs.
 
     Parameters
@@ -59,14 +57,14 @@ class GraphWalker(Generic[_T]):
 
     def __init__(self, xgraph: networkx.DiGraph | networkx.MultiDiGraph):
         self._xgraph = xgraph
-        self._ready: set[_T] = set(next(iter(networkx.dag.topological_generations(self._xgraph)), []))
-        self._active: set[_T] = set()
-        self._incomplete: set[_T] = set(self._xgraph)
+        self._ready: set[T] = set(next(iter(networkx.dag.topological_generations(self._xgraph)), []))
+        self._active: set[T] = set()
+        self._incomplete: set[T] = set(self._xgraph)
 
     def __iter__(self) -> Self:
         return self
 
-    def __next__(self) -> frozenset[_T]:
+    def __next__(self) -> frozenset[T]:
         if not self._incomplete:
             raise StopIteration()
         new_active = frozenset(self._ready)
@@ -74,7 +72,7 @@ class GraphWalker(Generic[_T]):
         self._ready.clear()
         return new_active
 
-    def finish(self, key: _T) -> None:
+    def finish(self, key: T) -> None:
         """Mark a node as successfully processed, unblocking (at least in part)
         iteration over successor nodes.
 
@@ -97,7 +95,7 @@ class GraphWalker(Generic[_T]):
             ):
                 self._ready.add(successor)
 
-    def fail(self, key: _T) -> list[_T]:
+    def fail(self, key: T) -> list[T]:
         """Mark a node as unsuccessfully processed, permanently blocking all
         recursive descendants.
 
