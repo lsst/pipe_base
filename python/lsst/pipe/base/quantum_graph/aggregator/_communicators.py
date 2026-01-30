@@ -298,14 +298,19 @@ class SupervisorCommunicator:
         self.log.verbose("Checking that all queues are empty.")
         if self._scan_requests.clear():
             self.progress.log.warning("Scan request queue was not empty at shutdown.")
+            self._scan_requests.kill()
         if self._ingest_requests.clear():
             self.progress.log.warning("Ingest request queue was not empty at shutdown.")
+            self._ingest_requests.kill()
         if self._write_requests is not None and self._write_requests.clear():
             self.progress.log.warning("Write request queue was not empty at shutdown.")
+            self._write_requests.kill()
         if self._reports.clear():
             self.progress.log.warning("Reports queue was not empty at shutdown.")
+            self._reports.kill()
         if self._compression_dict.clear():
             self.progress.log.warning("Compression dictionary queue was not empty at shutdown.")
+            self._compression_dict.kill()
         for worker in self.workers.values():
             self.progress.log.verbose("Waiting for %s to shut down.", worker.name)
             worker.join()
