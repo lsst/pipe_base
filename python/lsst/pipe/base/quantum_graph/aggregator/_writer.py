@@ -86,7 +86,7 @@ class Writer:
         Notes
         -----
         This method is designed to run as the ``target`` in
-        `WorkerContext.make_worker`.
+        `WorkerFactory.make_worker`.
         """
         with comms:
             writer = Writer(predicted_path, comms)
