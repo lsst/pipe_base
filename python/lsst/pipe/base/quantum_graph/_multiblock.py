@@ -250,7 +250,7 @@ class AddressWriter:
         row_size = AddressReader.compute_row_size(int_size, len(self.addresses))
         zip_info.file_size = AddressReader.compute_header_size(int_size) + len(all_ids) * row_size
         with zf.open(zip_info, mode="w") as stream:
-            self.write(stream, int_size=int_size)
+            self.write(stream, int_size=int_size, all_ids=all_ids)
 
     def get_all_ids(self) -> Set[uuid.UUID]:
         """Return all IDs used by any address dictionary.
