@@ -101,15 +101,6 @@ version = { attr = "lsst_versions.get_lsst_version" }
         name = "An API Removal or Deprecation"
         showcontent = true
 
-[tool.black]
-line-length = 110
-target-version = ["py311"]
-
-[tool.isort]
-profile = "black"
-line_length = 110
-known_first_party = ["lsst"]
-
 [tool.lsst_versions]
 write_to = "python/lsst/pipe/base/version.py"
 
