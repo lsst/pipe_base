@@ -834,6 +834,11 @@ class _DimensionGroupTree:
                         remainder,
                     )
                 self.dataset_constraint.intersection_update(inputs)
+                if not self.dataset_constraint:
+                    raise QuantumGraphBuilderError(
+                        "An explicit dataset query constraint was provided, but it does not include any "
+                        f"inputs to the pipeline subset with tasks {list(self.subgraph.tasks.keys())}."
+                    )
             case _:
                 raise QuantumGraphBuilderError(
                     f"Unable to handle type {requested} given as dataset query constraint."

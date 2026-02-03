@@ -678,6 +678,26 @@ class QuantumGraphBuilder(ABC):
                 "Dropping task %s because no quanta remain%s.", task_node.label, message_parenthetical
             )
             skeleton.remove_task(task_node.label)
+        if len(no_work_quanta) > len(remaining_quanta):
+            only_overall_inputs = self._get_task_inputs_if_overall_only(task_node)
+            self.log.warning(
+                "More than half of %s quanta had no work to do given available inputs.\n"
+                "A query constraint on one of %s may yield a much faster build.",
+                task_node.label,
+                only_overall_inputs,
+            )
+
+    def _get_task_inputs_if_overall_only(self, task_node: TaskNode) -> list[str] | None:
+        """If the given task consumes only overall-inputs, return their names.
+        Otherwise return `None`.
+        """
+        result: list[str] = []
+        for read_edge in task_node.inputs.values():
+            if self._pipeline_graph.producer_of(read_edge.parent_dataset_type_name) is None:
+                result.append(read_edge.parent_dataset_type_name)
+            else:
+                return None
+        return result
 
     def _skip_quantum_if_metadata_exists(
         self, task_node: TaskNode, quantum_key: QuantumKey, skeleton: QuantumGraphSkeleton
