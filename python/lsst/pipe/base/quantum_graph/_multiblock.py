@@ -74,7 +74,7 @@ individual quanta (especially for execution).
 
 
 class Compressor(Protocol):
-    """A protocol for objects with a `compress` method that takes and returns
+    """A protocol for objects with a ``compress`` method that takes and returns
     `bytes`.
     """
 
@@ -205,7 +205,7 @@ class AddressWriter:
     addresses: list[dict[uuid.UUID, Address]] = dataclasses.field(default_factory=list)
     """Addresses to store with each UUID.
 
-    Every key in one of these dictionaries must have an entry in `indices`.
+    Every key in one of these dictionaries must have an entry in ``indices``.
     The converse is not true.
     """
 
@@ -662,7 +662,7 @@ class MultiblockWriter:
         model : `pydantic.BaseModel`
             Model to convert to JSON and compress.
         compressor : `Compressor`
-            Object with a `compress` method that takes and returns `bytes`.
+            Object with a ``compress`` method that takes and returns `bytes`.
 
         Returns
         -------
@@ -759,7 +759,7 @@ class MultiblockReader:
         model_type : `type` [ `pydantic.BaseModel` ]
             Pydantic model to validate JSON with.
         decompressor : `Decompressor`
-            Object with a `decompress` method that takes and returns `bytes`.
+            Object with a ``decompress`` method that takes and returns `bytes`.
         int_size : `int`
             Number of bytes to use for all integers.
         page_size : `int`
@@ -809,7 +809,7 @@ class MultiblockReader:
         model_type : `type` [ `pydantic.BaseModel` ]
             Pydantic model to validate JSON with.
         decompressor : `Decompressor`
-            Object with a `decompress` method that takes and returns `bytes`.
+            Object with a ``decompress`` method that takes and returns `bytes`.
 
         Returns
         -------
