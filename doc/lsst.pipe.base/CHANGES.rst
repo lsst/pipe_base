@@ -1,3 +1,42 @@
+lsst-pipe-base v30.0.1 (2026-02-03)
+===================================
+
+Dropped support for Python 3.11.
+Tested on Python 3.14.
+
+New Features
+------------
+
+- Added the ``butler ingest-provenance`` command to ingest the provenance quantum graphs written by ``butler aggregate-graph``. (`DM-52738 <https://rubinobs.atlassian.net/browse/DM-52738>`_)
+- Add report tooling (similar to ``pipetask report``, but faster) to the ``ProvenanceQuantumGraph`` class and the ``butler`` command line (as the new ``provenance-report`` subcommand).
+
+  Updatec ``butler ingest-graph`` to delete now-empty config/metadata/log directories.
+
+  Fix a bug that causes provenance quantum graphs to fail to be written if the address file grew to larger than 2G. (`DM-53851 <https://rubinobs.atlassian.net/browse/DM-53851>`_)
+
+
+API Changes
+-----------
+
+- Modified ``Instrument.importAll`` so that it now returns information on the instrument classes that were loaded successfully. (`DM-53882 <https://rubinobs.atlassian.net/browse/DM-53882>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed ``aggregator-graph`` handling of killed subprocesses to avoid hangs.
+
+  Fixed a race condition in ``aggregate-graph`` that could cause hanging at shutdown on small graphs. (`DM-53913 <https://rubinobs.atlassian.net/browse/DM-53913>`_)
+- Fixed a bug that caused provenance recording to fail in ``SeparablePipelineExecutor`` when ``NoWorkFound`` chaining occurs. (`DM-53977 <https://rubinobs.atlassian.net/browse/DM-53977>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Now guard against quantum graph builds in which the initial query produces many more result rows than end up in the final graph, which can lead to catastrophically large dimension data storage in the QG file. (`DM-53773 <https://rubinobs.atlassian.net/browse/DM-53773>`_)
+- Bumped minimum Python version to 3.12. (`DM-53998 <https://rubinobs.atlassian.net/browse/DM-53998>`_)
+
+
 lsst-pipe-base v30.0.0 (2026-01-16)
 ===================================
 
