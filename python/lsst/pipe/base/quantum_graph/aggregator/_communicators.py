@@ -31,30 +31,22 @@ __all__ = (
     "FatalWorkerError",
     "IngesterCommunicator",
     "ScannerCommunicator",
-    "SpawnProcessContext",
     "SupervisorCommunicator",
-    "ThreadingContext",
-    "WorkerContext",
 )
 
 import cProfile
 import dataclasses
 import enum
 import logging
-import multiprocessing.context
-import multiprocessing.synchronize
 import os
-import queue
 import signal
-import threading
 import time
 import uuid
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
 from traceback import format_exception
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Literal, Self, overload
 
 from lsst.utils.logging import LsstLogAdapter
 
@@ -62,123 +54,21 @@ from .._provenance import ProvenanceQuantumScanData
 from ._config import AggregatorConfig
 from ._progress import ProgressManager, make_worker_log
 from ._structs import IngestRequest, ScanReport
+from ._workers import Event, Queue, Worker, WorkerFactory
 
 _TINY_TIMEOUT = 0.01
-
-type Queue[T] = "queue.Queue[T]" | "multiprocessing.Queue[T]"
-
-type Event = threading.Event | multiprocessing.synchronize.Event
-
-type Worker = threading.Thread | multiprocessing.context.SpawnProcess
-
-
-class WorkerContext(ABC):
-    """A simple abstract interface that can be implemented by both threading
-    and multiprocessing.
-    """
-
-    @abstractmethod
-    def make_queue(self) -> Queue[Any]:
-        """Make an empty queue that can be used to pass objects between
-        workers in this context.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def make_event(self) -> Event:
-        """Make an event that can be used to communicate a boolean state change
-        to workers in this context.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        """Make a worker that runs the given callable.
-
-        Parameters
-        ----------
-        target : `~collections.abc.Callable`
-            A callable to invoke on the worker.
-        args : `tuple`
-            Positional arguments to pass to the callable.
-        name : `str`, optional
-            Human-readable name for the worker.
-
-        Returns
-        -------
-        worker : `threading.Thread` or `multiprocessing.Process`
-            Process or thread.  Will need to have its ``start`` method called
-            to actually begin.
-        """
-        raise NotImplementedError()
-
-
-class ThreadingContext(WorkerContext):
-    """An implementation of `WorkerContext` backed by the `threading`
-    module.
-    """
-
-    def make_queue(self) -> Queue[Any]:
-        return queue.Queue()
-
-    def make_event(self) -> Event:
-        return threading.Event()
-
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        return threading.Thread(target=target, args=args, name=name)
-
-
-class SpawnProcessContext(WorkerContext):
-    """An implementation of `WorkerContext` backed by the `multiprocessing`
-    module, with new processes started by spawning.
-    """
-
-    def __init__(self) -> None:
-        self._ctx = multiprocessing.get_context("spawn")
-
-    def make_queue(self) -> Queue[Any]:
-        return self._ctx.Queue()
-
-    def make_event(self) -> Event:
-        return self._ctx.Event()
-
-    def make_worker(
-        self, target: Callable[..., None], args: tuple[Any, ...], name: str | None = None
-    ) -> Worker:
-        return self._ctx.Process(target=target, args=args, name=name)
-
-
-def _get_from_queue[T](q: Queue[T], block: bool = False, timeout: float | None = None) -> T | None:
-    """Get an object from a queue and return `None` if it is empty.
-
-    Parameters
-    ----------
-    q : `Queue`
-        Queue to get an object from.
-    block : `bool`
-        Whether to block until an object is available.
-    timeout : `float` or `None`, optional
-        Maximum number of seconds to wait while blocking.
-
-    Returns
-    -------
-    obj : `object` or `None`
-        Object from the queue, or `None` if it was empty.
-    """
-    try:
-        return q.get(block=block, timeout=timeout)
-    except queue.Empty:
-        return None
 
 
 class FatalWorkerError(BaseException):
     """An exception raised by communicators when one worker (including the
     supervisor) has caught an exception in order to signal the others to shut
     down.
+    """
+
+
+class _WorkerCommunicationError(Exception):
+    """An exception raised by communicators when a worker has died unexpectedly
+    or become unresponsive.
     """
 
 
@@ -206,21 +96,6 @@ class _Sentinel(enum.Enum):
     WRITE_REPORT = enum.auto()
     """Sentinel sent from the writer to the supervisor to report that a
     quantum's provenance was written.
-    """
-
-    SCANNER_DONE = enum.auto()
-    """Sentinel sent from scanners to the supervisor to report that they are
-    done and shutting down.
-    """
-
-    INGESTER_DONE = enum.auto()
-    """Sentinel sent from the ingester to the supervisor to report that it is
-    done and shutting down.
-    """
-
-    WRITER_DONE = enum.auto()
-    """Sentinel sent from the writer to the supervisor to report that it is
-    done and shutting down.
     """
 
 
@@ -273,6 +148,16 @@ class _IngestReport:
 
 
 @dataclasses.dataclass
+class _WorkerDone:
+    """An internal struct passed from a worker to the supervisor when it has
+    successfully completed all work.
+    """
+
+    name: str
+    """Name of the worker reporting completion."""
+
+
+@dataclasses.dataclass
 class _ProgressLog:
     """A high-level log message sent from a worker to the supervisor.
 
@@ -303,12 +188,8 @@ type Report = (
     | _IngestReport
     | _WorkerErrorMessage
     | _ProgressLog
-    | Literal[
-        _Sentinel.WRITE_REPORT,
-        _Sentinel.SCANNER_DONE,
-        _Sentinel.INGESTER_DONE,
-        _Sentinel.WRITER_DONE,
-    ]
+    | _WorkerDone
+    | Literal[_Sentinel.WRITE_REPORT]
 )
 
 
@@ -327,7 +208,7 @@ class SupervisorCommunicator:
         LSST-customized logger.
     n_scanners : `int`
         Number of scanner workers.
-    context : `WorkerContext`
+    worker_factory : `WorkerFactory`
         Abstraction over threading vs. multiprocessing.
     config : `AggregatorConfig`
         Configuration for the aggregator.
@@ -337,7 +218,7 @@ class SupervisorCommunicator:
         self,
         log: LsstLogAdapter,
         n_scanners: int,
-        context: WorkerContext,
+        worker_factory: WorkerFactory,
         config: AggregatorConfig,
     ) -> None:
         self.config = config
@@ -347,14 +228,14 @@ class SupervisorCommunicator:
         # When complete, the supervisor sends n_scanners sentinals and each
         # scanner is careful to only take one before it starts its shutdown.
         self._scan_requests: Queue[_ScanRequest | Literal[_Sentinel.NO_MORE_SCAN_REQUESTS]] = (
-            context.make_queue()
+            worker_factory.make_queue()
         )
         # The scanners send ingest requests to the ingester on this queue. Each
         # scanner sends one sentinal when it is done, and the ingester is
         # careful to wait for n_scanners sentinals to arrive before it starts
         # its shutdown.
         self._ingest_requests: Queue[IngestRequest | Literal[_Sentinel.NO_MORE_INGEST_REQUESTS]] = (
-            context.make_queue()
+            worker_factory.make_queue()
         )
         # The scanners send write requests to the writer on this queue (which
         # will be `None` if we're not writing).  The supervisor also sends
@@ -364,22 +245,22 @@ class SupervisorCommunicator:
         # starts its shutdown.
         self._write_requests: (
             Queue[ProvenanceQuantumScanData | Literal[_Sentinel.NO_MORE_WRITE_REQUESTS]] | None
-        ) = context.make_queue() if config.is_writing_provenance else None
+        ) = worker_factory.make_queue() if config.is_writing_provenance else None
         # All other workers use this queue to send many different kinds of
         # reports the supervisor.  The supervisor waits for a _DONE sentinal
         # from each worker before it finishes its shutdown.
-        self._reports: Queue[Report] = context.make_queue()
+        self._reports: Queue[Report] = worker_factory.make_queue()
         # The writer sends the compression dictionary to the scanners on this
         # queue.  It puts n_scanners copies on the queue, and each scanner only
         # takes one.  The compression_dict queue has no sentinal because it is
         # only used at most once; the supervisor takes responsibility for
         # clearing it out shutting down.
-        self._compression_dict: Queue[_CompressionDictionary] = context.make_queue()
+        self._compression_dict: Queue[_CompressionDictionary] = worker_factory.make_queue()
         # The supervisor sets this event when it receives an interrupt request
         # from an exception in the main process (usually KeyboardInterrupt).
         # Worker communicators check this in their polling loops and raise
         # FatalWorkerError when they see it set.
-        self._cancel_event: Event = context.make_event()
+        self._cancel_event: Event = worker_factory.make_event()
         # Track what state we are in closing down, so we can start at the right
         # point if we're interrupted and __exit__ needs to clean up.  Note that
         # we can't rely on a non-exception __exit__ to do any shutdown work
@@ -388,49 +269,74 @@ class SupervisorCommunicator:
         self._sent_no_more_scan_requests = False
         self._sent_no_more_write_requests = False
         self._n_scanners_done = 0
-        self._ingester_done = False
-        self._writer_done = self._write_requests is None
+        self.workers: dict[str, Worker] = {}
 
-    def wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+    def _wait_for_workers_to_finish(self, already_failing: bool = False) -> None:
+        # Orderly shutdown, including exceptions: let workers clear out the
+        # queues they're responsible for reading from.
         if not self._sent_no_more_scan_requests:
             for _ in range(self.n_scanners):
-                self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS, block=False)
+                self._scan_requests.put(_Sentinel.NO_MORE_SCAN_REQUESTS)
             self._sent_no_more_scan_requests = True
         if not self._sent_no_more_write_requests and self._write_requests is not None:
-            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
+            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS)
             self._sent_no_more_write_requests = True
-        while not (self._ingester_done and self._writer_done and self._n_scanners_done == self.n_scanners):
+        while not all(w.successful for w in self.workers.values()):
             match self._handle_progress_reports(
-                self._reports.get(block=True), already_failing=already_failing
+                self._get_report(block=True), already_failing=already_failing
             ):
-                case None | ScanReport() | _IngestReport():
+                case None | ScanReport():
                     pass
-                case _Sentinel.INGESTER_DONE:
-                    self._ingester_done = True
-                    self.progress.quantum_ingests.close()
-                case _Sentinel.SCANNER_DONE:
-                    self._n_scanners_done += 1
-                    self.progress.scans.close()
-                case _Sentinel.WRITER_DONE:
-                    self._writer_done = True
-                    self.progress.writes.close()
+                case _WorkerDone(name=worker_name):
+                    self.workers[worker_name].successful = True
+                    if worker_name == IngesterCommunicator.get_worker_name():
+                        self.progress.quantum_ingests.close()
+                    elif worker_name == WriterCommunicator.get_worker_name():
+                        self.progress.writes.close()
+                    else:
+                        self._n_scanners_done += 1
+                        if self._n_scanners_done == self.n_scanners:
+                            self.progress.scans.close()
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
             self.log.verbose(
-                "Blocking on reports queue: ingester_done=%s, writer_done=%s, n_scanners_done=%s.",
-                self._ingester_done,
-                self._writer_done,
-                self._n_scanners_done,
+                "Waiting for workers [%s] to report successful completion.",
+                ", ".join(w.name for w in self.workers.values() if not w.successful),
             )
-        while _get_from_queue(self._compression_dict) is not None:
-            self.log.verbose("Flushing compression dict queue.")
         self.log.verbose("Checking that all queues are empty.")
-        self._expect_empty_queue(self._scan_requests)
-        self._expect_empty_queue(self._ingest_requests)
+        if self._scan_requests.clear():
+            self.progress.log.warning("Scan request queue was not empty at shutdown.")
+            self._scan_requests.kill()
+        if self._ingest_requests.clear():
+            self.progress.log.warning("Ingest request queue was not empty at shutdown.")
+            self._ingest_requests.kill()
+        if self._write_requests is not None and self._write_requests.clear():
+            self.progress.log.warning("Write request queue was not empty at shutdown.")
+            self._write_requests.kill()
+        if self._reports.clear():
+            self.progress.log.warning("Reports queue was not empty at shutdown.")
+            self._reports.kill()
+        if self._compression_dict.clear():
+            self.progress.log.warning("Compression dictionary queue was not empty at shutdown.")
+            self._compression_dict.kill()
+        for worker in self.workers.values():
+            self.log.verbose("Waiting for %s to shut down.", worker.name)
+            worker.join()
+
+    def _terminate(self) -> None:
+        # Disorderly shutdown: we cannot assume any of the
+        # multiprocessing.Queue object work, and in fact they may hang
+        # if we try to do anything with them.
+        self._scan_requests.kill()
+        self._ingest_requests.kill()
         if self._write_requests is not None:
-            self._expect_empty_queue(self._write_requests)
-        self._expect_empty_queue(self._reports)
-        self._expect_empty_queue(self._compression_dict)
+            self._write_requests.kill()
+        self._compression_dict.kill()
+        self._reports.kill()
+        for name, worker in self.workers.items():
+            if worker.is_alive():
+                self.progress.log.critical("Terminating worker %r.", name)
+                worker.kill()
 
     def __enter__(self) -> Self:
         _disable_resources_parallelism()
@@ -447,11 +353,23 @@ class SupervisorCommunicator:
         traceback: TracebackType | None,
     ) -> None:
         if exc_type is not None:
-            if exc_type is not FatalWorkerError:
-                self.progress.log.critical(f"Caught {exc_type.__name__}; attempting to shut down cleanly.")
             self._cancel_event.set()
-        self.wait_for_workers_to_finish(already_failing=exc_type is not None)
+            if exc_type is _WorkerCommunicationError:
+                self.progress.log.critical("Worker '%s' was terminated before it could finish.", exc_value)
+                self._terminate()
+                return None
+            if exc_type is not FatalWorkerError:
+                self.progress.log.critical("Caught %s; attempting to shut down cleanly.", exc_type)
+        try:
+            self._wait_for_workers_to_finish(already_failing=exc_type is not None)
+        except _WorkerCommunicationError as err:
+            self.progress.log.critical(
+                "Worker '%s' was terminated before it could finish (after scanning).", err
+            )
+            self._terminate()
+            raise
         self.progress.__exit__(exc_type, exc_value, traceback)
+        return None
 
     def request_scan(self, quantum_id: uuid.UUID) -> None:
         """Send a request to the scanners to scan the given quantum.
@@ -461,7 +379,7 @@ class SupervisorCommunicator:
         quantum_id : `uuid.UUID`
             ID of the quantum to scan.
         """
-        self._scan_requests.put(_ScanRequest(quantum_id), block=False)
+        self._scan_requests.put(_ScanRequest(quantum_id))
 
     def request_write(self, request: ProvenanceQuantumScanData) -> None:
         """Send a request to the writer to write provenance for the given scan.
@@ -473,7 +391,7 @@ class SupervisorCommunicator:
             in the case of blocked quanta).
         """
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(request, block=False)
+        self._write_requests.put(request)
 
     def poll(self) -> Iterator[ScanReport]:
         """Poll for reports from workers while sending scan requests.
@@ -489,9 +407,8 @@ class SupervisorCommunicator:
         it continues until the report queue is empty.
         """
         block = True
-        msg = _get_from_queue(self._reports, block=block)
-        while msg is not None:
-            match self._handle_progress_reports(msg):
+        while report := self._get_report(block=block):
+            match self._handle_progress_reports(report):
                 case ScanReport() as scan_report:
                     block = False
                     yield scan_report
@@ -499,19 +416,40 @@ class SupervisorCommunicator:
                     pass
                 case unexpected:
                     raise AssertionError(f"Unexpected message {unexpected!r} to supervisor.")
-            msg = _get_from_queue(self._reports, block=block)
+
+    @overload
+    def _get_report(self, block: Literal[True]) -> Report: ...
+
+    @overload
+    def _get_report(self, block: bool) -> Report | None: ...
+
+    def _get_report(self, block: bool) -> Report | None:
+        """Get a report from the reports queue, with timeout guards on
+        blocking requests.
+
+        This method may *return* WorkerCommunicatorError (rather than raise it)
+        when a serious error occurred communicating with a subprocess.  This
+        is to avoid raising an exception in an __exit__ method (which calls
+        method).
+        """
+        report = self._reports.get(block=block, timeout=self.config.worker_check_timeout)
+        while report is None and block:
+            # We hit the timeout; make sure all of the workers
+            # that should be alive actually are.
+            for name, worker in self.workers.items():
+                if not worker.successful and not worker.is_alive():
+                    # Delete this worker from the list of workers so we don't
+                    # hit this condition again when we try to handle the
+                    # exception we raise.
+                    raise _WorkerCommunicationError(name)
+            # If nothing is dead and we didn't hit the hang timeout, keep
+            # trying.
+            report = self._reports.get(block=block, timeout=self.config.worker_check_timeout)
+        return report
 
     def _handle_progress_reports(
         self, report: Report, already_failing: bool = False
-    ) -> (
-        ScanReport
-        | Literal[
-            _Sentinel.SCANNER_DONE,
-            _Sentinel.INGESTER_DONE,
-            _Sentinel.WRITER_DONE,
-        ]
-        | None
-    ):
+    ) -> ScanReport | _WorkerDone | None:
         """Handle reports to the supervisor that can appear at any time, and
         are typically just updates to the progress we've made.
 
@@ -541,15 +479,9 @@ class SupervisorCommunicator:
                 return report
         return None
 
-    @staticmethod
-    def _expect_empty_queue(queue: Queue[Any]) -> None:
-        """Assert that the given queue is empty."""
-        if (msg := _get_from_queue(queue, block=False, timeout=0)) is not None:
-            raise AssertionError(f"Queue is not empty; found {msg!r}.")
-
 
 class WorkerCommunicator:
-    """A base class for non-supervisor workers.
+    """A base class for non-supervisor worker communicators.
 
     Parameters
     ----------
@@ -561,8 +493,8 @@ class WorkerCommunicator:
     Notes
     -----
     Each worker communicator is constructed in the main process and entered as
-    a context manager on the actual worker process, so attributes that cannot
-    be pickled are constructed in ``__enter__`` instead of ``__init__``.
+    a context manager *only* on the actual worker process, so attributes that
+    cannot be pickled are constructed in ``__enter__`` instead of ``__init__``.
 
     Worker communicators provide access to an `AggregatorConfig` and a logger
     to their workers.  As context managers, they handle exceptions and ensure
@@ -615,8 +547,7 @@ class WorkerCommunicator:
                     _WorkerErrorMessage(
                         self.name,
                         "".join(format_exception(exc_type, exc_value, traceback)),
-                    ),
-                    block=False,
+                    )
                 )
                 self.log.debug("Error message sent to supervisor.")
             else:
@@ -639,7 +570,7 @@ class WorkerCommunicator:
         message : `str`
             Log message.
         """
-        self._reports.put(_ProgressLog(message=message, level=level), block=False)
+        self._reports.put(_ProgressLog(message=message, level=level))
 
     def check_for_cancel(self) -> None:
         """Check for a cancel signal from the supervisor and raise
@@ -661,7 +592,7 @@ class ScannerCommunicator(WorkerCommunicator):
     """
 
     def __init__(self, supervisor: SupervisorCommunicator, scanner_id: int):
-        super().__init__(supervisor, f"scanner-{scanner_id:03d}")
+        super().__init__(supervisor, self.get_worker_name(scanner_id))
         self.scanner_id = scanner_id
         self._scan_requests = supervisor._scan_requests
         self._ingest_requests = supervisor._ingest_requests
@@ -669,6 +600,10 @@ class ScannerCommunicator(WorkerCommunicator):
         self._compression_dict = supervisor._compression_dict
         self._got_no_more_scan_requests: bool = False
         self._sent_no_more_ingest_requests: bool = False
+
+    @staticmethod
+    def get_worker_name(scanner_id: int) -> str:
+        return f"scanner-{scanner_id:03d}"
 
     def report_scan(self, msg: ScanReport) -> None:
         """Report a completed scan to the supervisor.
@@ -678,7 +613,7 @@ class ScannerCommunicator(WorkerCommunicator):
         msg : `ScanReport`
             Report to send.
         """
-        self._reports.put(msg, block=False)
+        self._reports.put(msg)
 
     def request_ingest(self, request: IngestRequest) -> None:
         """Ask the ingester to ingest a quantum's outputs.
@@ -694,9 +629,9 @@ class ScannerCommunicator(WorkerCommunicator):
         as complete to the supervisor instead of sending it to the ingester.
         """
         if request:
-            self._ingest_requests.put(request, block=False)
+            self._ingest_requests.put(request)
         else:
-            self._reports.put(_IngestReport(1), block=False)
+            self._reports.put(_IngestReport(1))
 
     def request_write(self, request: ProvenanceQuantumScanData) -> None:
         """Ask the writer to write provenance for a quantum.
@@ -707,7 +642,7 @@ class ScannerCommunicator(WorkerCommunicator):
             Result of scanning a quantum.
         """
         assert self._write_requests is not None, "Writer should not be used if writing is disabled."
-        self._write_requests.put(request, block=False)
+        self._write_requests.put(request)
 
     def get_compression_dict(self) -> bytes | None:
         """Attempt to get the compression dict from the writer.
@@ -723,7 +658,7 @@ class ScannerCommunicator(WorkerCommunicator):
         A scanner should only call this method before it actually has the
         compression dict.
         """
-        if (cdict := _get_from_queue(self._compression_dict)) is not None:
+        if (cdict := self._compression_dict.get()) is not None:
             return cdict.data
         return None
 
@@ -742,7 +677,7 @@ class ScannerCommunicator(WorkerCommunicator):
         """
         while True:
             self.check_for_cancel()
-            scan_request = _get_from_queue(self._scan_requests, block=True, timeout=self.config.worker_sleep)
+            scan_request = self._scan_requests.get(block=True, timeout=self.config.worker_sleep)
             if scan_request is _Sentinel.NO_MORE_SCAN_REQUESTS:
                 self._got_no_more_scan_requests = True
                 return
@@ -756,20 +691,18 @@ class ScannerCommunicator(WorkerCommunicator):
         traceback: TracebackType | None,
     ) -> bool | None:
         result = super().__exit__(exc_type, exc_value, traceback)
-        self._ingest_requests.put(_Sentinel.NO_MORE_INGEST_REQUESTS, block=False)
+        self._ingest_requests.put(_Sentinel.NO_MORE_INGEST_REQUESTS)
         if self._write_requests is not None:
-            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS, block=False)
+            self._write_requests.put(_Sentinel.NO_MORE_WRITE_REQUESTS)
         while not self._got_no_more_scan_requests:
-            self.log.debug("Clearing scan request queue (~%d remaining)", self._scan_requests.qsize())
             if (
                 not self._got_no_more_scan_requests
-                and self._scan_requests.get() is _Sentinel.NO_MORE_SCAN_REQUESTS
+                and self._scan_requests.get(block=True) is _Sentinel.NO_MORE_SCAN_REQUESTS
             ):
                 self._got_no_more_scan_requests = True
-        # We let the supervisor clear out the compression dict queue, because
-        # a single scanner can't know if it ever got sent out or not.
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.SCANNER_DONE, block=False)
+        # We let the writer clear out the compression dict queue.
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name))
         return result
 
 
@@ -783,10 +716,14 @@ class IngesterCommunicator(WorkerCommunicator):
     """
 
     def __init__(self, supervisor: SupervisorCommunicator):
-        super().__init__(supervisor, "ingester")
+        super().__init__(supervisor, self.get_worker_name())
         self.n_scanners = supervisor.n_scanners
         self._ingest_requests = supervisor._ingest_requests
         self._n_requesters_done = 0
+
+    @staticmethod
+    def get_worker_name() -> str:
+        return "ingester"
 
     def __exit__(
         self,
@@ -803,8 +740,8 @@ class IngesterCommunicator(WorkerCommunicator):
             )
             if self._ingest_requests.get(block=True) is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.INGESTER_DONE, block=False)
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name))
         return result
 
     def report_ingest(self, n_producers: int) -> None:
@@ -815,7 +752,7 @@ class IngesterCommunicator(WorkerCommunicator):
         n_producers : `int`
             Number of producing quanta whose datasets were ingested.
         """
-        self._reports.put(_IngestReport(n_producers), block=False)
+        self._reports.put(_IngestReport(n_producers))
 
     def poll(self) -> Iterator[IngestRequest]:
         """Poll for ingest requests from the scanner workers.
@@ -832,7 +769,7 @@ class IngesterCommunicator(WorkerCommunicator):
         """
         while True:
             self.check_for_cancel()
-            ingest_request = _get_from_queue(self._ingest_requests, block=True, timeout=_TINY_TIMEOUT)
+            ingest_request = self._ingest_requests.get(block=True, timeout=_TINY_TIMEOUT)
             if ingest_request is _Sentinel.NO_MORE_INGEST_REQUESTS:
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self.n_scanners:
@@ -854,13 +791,17 @@ class WriterCommunicator(WorkerCommunicator):
 
     def __init__(self, supervisor: SupervisorCommunicator):
         assert supervisor._write_requests is not None
-        super().__init__(supervisor, "writer")
+        super().__init__(supervisor, self.get_worker_name())
         self.n_scanners = supervisor.n_scanners
         self._write_requests = supervisor._write_requests
         self._compression_dict = supervisor._compression_dict
         self._n_requesters = supervisor.n_scanners + 1
         self._n_requesters_done = 0
         self._sent_compression_dict = False
+
+    @staticmethod
+    def get_worker_name() -> str:
+        return "writer"
 
     def __exit__(
         self,
@@ -879,8 +820,12 @@ class WriterCommunicator(WorkerCommunicator):
             )
             if self._write_requests.get(block=True) is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._n_requesters_done += 1
-        self.log.verbose("Sending done sentinal.")
-        self._reports.put(_Sentinel.WRITER_DONE, block=False)
+        if self._compression_dict.clear():
+            self.log.verbose("Cleared out compression dictionary queue.")
+        else:
+            self.log.verbose("Compression dictionary queue was already empty.")
+        self.log.verbose("Sending completion message.")
+        self._reports.put(_WorkerDone(self.name))
         return result
 
     def poll(self) -> Iterator[ProvenanceQuantumScanData]:
@@ -898,7 +843,7 @@ class WriterCommunicator(WorkerCommunicator):
         """
         while True:
             self.check_for_cancel()
-            write_request = _get_from_queue(self._write_requests, block=True, timeout=_TINY_TIMEOUT)
+            write_request = self._write_requests.get(block=True, timeout=_TINY_TIMEOUT)
             if write_request is _Sentinel.NO_MORE_WRITE_REQUESTS:
                 self._n_requesters_done += 1
                 if self._n_requesters_done == self._n_requesters:
@@ -918,14 +863,14 @@ class WriterCommunicator(WorkerCommunicator):
         """
         self.log.debug("Sending compression dictionary.")
         for _ in range(self.n_scanners):
-            self._compression_dict.put(_CompressionDictionary(cdict_data), block=False)
+            self._compression_dict.put(_CompressionDictionary(cdict_data))
         self._sent_compression_dict = True
 
     def report_write(self) -> None:
         """Report to the supervisor that provenance for a quantum was written
         to the graph.
         """
-        self._reports.put(_Sentinel.WRITE_REPORT, block=False)
+        self._reports.put(_Sentinel.WRITE_REPORT)
 
     def periodically_check_for_cancel[T](self, iterable: Iterable[T], n: int = 100) -> Iterator[T]:
         """Iterate while checking for a cancellation signal every ``n``

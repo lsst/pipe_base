@@ -155,6 +155,15 @@ class AggregatorConfig(pydantic.BaseModel):
     graph and scan for these dataset types.
     """
 
+    worker_check_timeout: float = 5.0
+    """Time to wait (s) for reports from subprocesses before running
+    process-alive checks.
+
+    These checks are designed to kill the main aggregator process when a
+    subprocess has been unexpectedly killed (e.g. for for using too much
+    memory).
+    """
+
     @property
     def is_writing_provenance(self) -> bool:
         """Whether the aggregator is configured to write the provenance quantum
