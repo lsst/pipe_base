@@ -54,7 +54,7 @@ def _hashDsRef(ref: DatasetRef) -> int:
 
 @dataclass(frozen=True, eq=True)
 class NodeId:
-    """Deprecated, this class is used with QuantumGraph save formats of
+    r"""Deprecated, this class is used with QuantumGraph save formats of
     1 and 2 when unpicking objects and must be retained until those formats
     are considered unloadable.
 
@@ -66,9 +66,9 @@ class NodeId:
     A `NodeId` will not be the same if a new graph is built containing the same
     information in a `QuantumNode`, or even built from exactly the same inputs.
 
-    `NodeId`s do not play any role in deciding the equality or identity (hash)
-    of a `QuantumNode`, and are mainly useful in debugging or working with
-    various subsets of the same graph.
+    `NodeId`\ s do not play any role in deciding the equality or identity
+    (hash) of a `QuantumNode`, and are mainly useful in debugging or working
+    with various subsets of the same graph.
 
     This interface is a convenance only, and no guarantees on long term
     stability are made. New implementations might change the `NodeId`, or

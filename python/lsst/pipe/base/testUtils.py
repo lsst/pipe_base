@@ -341,7 +341,7 @@ def _assertAttributeMatchesConnection(obj: Any, attrName: str, connection: BaseC
 
     Raises
     ------
-    AssertionError:
+    AssertionError
         Raised if ``obj.attrName`` does not match what's expected
         from ``connection``.
     """
@@ -379,7 +379,7 @@ def assertValidOutput(task: PipelineTask, result: Struct) -> None:
 
     Raises
     ------
-    AssertionError:
+    AssertionError
         Raised if ``result`` does not match what's expected from ``task's``
         connections.
     """
@@ -402,7 +402,7 @@ def assertValidInitOutput(task: PipelineTask) -> None:
 
     Raises
     ------
-    AssertionError:
+    AssertionError
         Raised if ``task`` does not have the state expected from ``task's``
         connections.
     """

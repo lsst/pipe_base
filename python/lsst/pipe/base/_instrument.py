@@ -68,7 +68,7 @@ class Instrument(metaclass=ABCMeta):
     configPaths: Sequence[ResourcePathExpression] = ()
     """Paths to config files to read for specific Tasks.
 
-    The paths in this list should contain files of the form `task.py`, for
+    The paths in this list should contain files of the form ``task.py``, for
     each of the Tasks that requires special configuration.
     """
 
@@ -99,7 +99,8 @@ class Instrument(metaclass=ABCMeta):
 
     @abstractmethod
     def register(self, registry: Registry, *, update: bool = False) -> None:
-        """Insert instrument, and other relevant records into `Registry`.
+        """Insert instrument, and other relevant records into a butler
+        registry.
 
         Parameters
         ----------
@@ -351,7 +352,7 @@ class Instrument(metaclass=ABCMeta):
 
         Parameters
         ----------
-        dataId : `DataId`
+        dataId : `lsst.daf.butler.DataId`
             Dimension-based ID for the raw file or files being ingested.
 
         Returns

@@ -574,7 +574,7 @@ class _DimensionGroupBranch:
 
         Parameters
         ----------
-        log : `lsst.logging.LsstLogAdapter`
+        log : `lsst.utils.logging.LsstLogAdapter`
             Logger to use for status reporting.
         log_indent : `str`, optional
             Indentation to prefix the log message.  This is used when recursing
@@ -739,7 +739,7 @@ class _DimensionGroupTree:
             Query constraint specified by the user.
         data_id_tables : `~collections.abc.Iterable` [ `astropy.table.Table` ]
             Data ID tables being joined into the query.
-        log : `lsst.log.LsstLogAdapter`
+        log : `lsst.utils.logging.LsstLogAdapter`
             Logger that supports ``verbose`` output.
         """
         universe = self.all_dimensions.universe
@@ -805,7 +805,7 @@ class _DimensionGroupTree:
         ----------
         requested : `DatasetQueryConstraintVariant`
             Query constraint specified by the user.
-        log : `lsst.log.LsstLogAdapter`
+        log : `lsst.utils.logging.LsstLogAdapter`
             Logger that supports ``verbose`` output.
         """
         overall_inputs: dict[str, DatasetTypeNode] = {

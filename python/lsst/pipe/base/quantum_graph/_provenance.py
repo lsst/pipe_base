@@ -2425,7 +2425,7 @@ class ProvenanceQuantumScanData:
     """Serialized logs."""
 
     is_compressed: bool = False
-    """Whether the `quantum`, `metadata`, and `log` attributes are
+    """Whether the ``quantum``, ``metadata``, and ``log`` attributes are
     compressed.
     """
 
