@@ -1,0 +1,114 @@
+{
+  "attempts": [
+    {
+      "scalars": {},
+      "arrays": {},
+      "metadata": {
+        "calibrateImage": {
+          "scalars": {
+            "__version__": 1,
+            "nodeName": "sdfmilan185"
+          },
+          "arrays": {},
+          "metadata": {}
+        },
+        "calibrateImage:psf_measure_psf": {
+          "scalars": {
+            "__version__": 1,
+            "nodeName": "sdfmilan185",
+            "spatialFitChi2": null,
+            "numAvailStars": 300,
+            "numGoodStars": 268,
+            "avgX": 1983.4188094399349,
+            "avgY": 2164.4395513319205
+          },
+          "arrays": {},
+          "metadata": {}
+        },
+        "quantum": {
+          "scalars": {
+            "__version__": 1,
+            "nodeName": "sdfmilan185",
+            "caveats": 0
+          },
+          "arrays": {
+            "prepUtc": ["2026-02-05T17:52:57.668196+00:00"],
+            "prepCpuTime": [146.985167419],
+            "prepUserTime": [142.67557299999999],
+            "prepSystemTime": [4.309589],
+            "prepMaxResidentSetSize": [3160428544],
+            "prepMinorPageFaults": [1056116],
+            "prepMajorPageFaults": [305],
+            "prepBlockInputs": [1210784],
+            "prepBlockOutputs": [667896],
+            "prepVoluntaryContextSwitches": [31863],
+            "prepInvoluntaryContextSwitches": [421],
+            "initUtc": ["2026-02-05T17:52:57.691501+00:00"],
+            "initCpuTime": [146.999102404],
+            "initUserTime": [142.68556],
+            "initSystemTime": [4.313538],
+            "initMaxResidentSetSize": [3160428544],
+            "initMinorPageFaults": [1056940],
+            "initMajorPageFaults": [305],
+            "initBlockInputs": [1210784],
+            "initBlockOutputs": [667904],
+            "initVoluntaryContextSwitches": [31974],
+            "initInvoluntaryContextSwitches": [421],
+            "startUtc": ["2026-02-05T17:52:57.697625+00:00"],
+            "startCpuTime": [147.00516647],
+            "startUserTime": [142.69162],
+            "startSystemTime": [4.313542],
+            "startMaxResidentSetSize": [3160428544],
+            "startMinorPageFaults": [1057474],
+            "startMajorPageFaults": [305],
+            "startBlockInputs": [1210784],
+            "startBlockOutputs": [667904],
+            "startVoluntaryContextSwitches": [31974],
+            "startInvoluntaryContextSwitches": [421],
+            "endUtc": ["2026-02-05T17:54:36.235890+00:00"],
+            "endCpuTime": [244.109828766],
+            "endUserTime": [238.41773],
+            "endSystemTime": [5.692091],
+            "endMaxResidentSetSize": [3160428544],
+            "endMinorPageFaults": [1498257],
+            "endMajorPageFaults": [305],
+            "endBlockInputs": [1393576],
+            "endBlockOutputs": [882504],
+            "endVoluntaryContextSwitches": [32434],
+            "endInvoluntaryContextSwitches": [582],
+            "outputs": [
+              "019c2ec7-90d0-72d0-8112-ff971c62524e",
+              "019c2ec7-90d0-770e-86c3-7dd2e93d155b",
+              "019c2ec7-90d0-7500-ab1f-ec6311246eff",
+              "019c2ec7-90d0-7a8b-9df7-3e5d04b6fcad",
+              "019c2ec7-90d0-77eb-9308-78373e7c5fc5",
+              "019c2ec7-90d0-7536-895b-0402634a3f8d",
+              "019c2ec7-90d0-798e-a38d-ad622cadeb7f",
+              "019c2ec7-90d0-78c7-b7fe-c3a75883b17b",
+              "019c2ec7-90d0-71ab-883e-e36fa8ce9913"
+            ]
+          },
+          "metadata": {
+            "butler_metrics": {
+              "scalars": {
+                "time_in_put": 3.5570390224456787,
+                "time_in_get": 1.2412796020507812,
+                "time_in_ingest": 0.0,
+                "n_get": 8,
+                "n_put": 9,
+                "n_ingest": 0
+              },
+              "arrays": {},
+              "metadata": {}
+            }
+          }
+        },
+        "job": {
+          "scalars": { "qg_read_time": 4.202885150909424, "qg_size": 6 },
+          "arrays": {},
+          "metadata": {}
+        }
+      }
+    }
+  ]
+}

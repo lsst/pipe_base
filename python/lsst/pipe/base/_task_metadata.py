@@ -37,9 +37,18 @@ import itertools
 import numbers
 import sys
 from collections.abc import Collection, Iterator, Mapping, Sequence
-from typing import Any, Protocol
+from typing import Annotated, Any, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+)
 
 # The types allowed in a Task metadata field are restricted
 # to allow predictable serialization.
@@ -110,6 +119,20 @@ class GetSetDictMetadata(SetDictMetadata, GetDictMetadata, Protocol):
     """
 
 
+# Some TaskMetadata JSON representations have been written (provenance files
+# for the DP2 production) with NaNs converted to JSON null rather than a
+# constant "inf" or "nan", since the Pydantic model_config ser_json_inf_nan
+# doesn't automatically get picked up by parent models. This before-validator
+# turns those nulls back into NaNs, making the metadata readable again.
+def _convert_null_to_nan(value: Any) -> float:
+    if value is None:
+        return float("nan")
+    return float(value)
+
+
+type _NullToNanFloat = Annotated[StrictFloat, BeforeValidator(_convert_null_to_nan)]
+
+
 class TaskMetadata(BaseModel):
     """Dict-like object for storing task metadata.
 
@@ -124,11 +147,12 @@ class TaskMetadata(BaseModel):
     """
 
     # Pipelines regularly generate NaN and Inf so these need to be
-    # supported even though that's a JSON extension.
+    # supported even though that's a JSON extension.  Note that any parent
+    # models that might hold a TaskMetadata also need to set this explicitly!
     model_config = ConfigDict(ser_json_inf_nan="constants")
 
-    scalars: dict[str, StrictFloat | StrictInt | StrictBool | StrictStr] = Field(default_factory=dict)
-    arrays: dict[str, list[StrictFloat] | list[StrictInt] | list[StrictBool] | list[StrictStr]] = Field(
+    scalars: dict[str, _NullToNanFloat | StrictInt | StrictBool | StrictStr] = Field(default_factory=dict)
+    arrays: dict[str, list[_NullToNanFloat] | list[StrictInt] | list[StrictBool] | list[StrictStr]] = Field(
         default_factory=dict
     )
     metadata: dict[str, "TaskMetadata"] = Field(default_factory=dict)

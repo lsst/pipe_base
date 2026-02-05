@@ -72,6 +72,7 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceQuantumInfo,
     ProvenanceQuantumReport,
     ProvenanceReport,
+    ProvenanceTaskMetadataModel,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
 from lsst.pipe.base.quantum_graph.ingest_graph import ingest_graph
@@ -1329,6 +1330,15 @@ class AggregatorTestCase(unittest.TestCase):
                 collection="collection1",
                 data_id_table_dir="dir1",
             )
+
+    def test_bad_metadata_readable(self) -> None:
+        """Test that consolidated metadata accidentally written with floats
+        transformed to JSON null are now readable.
+        """
+        with open(os.path.join(os.path.dirname(__file__), "data", "DM-54057.json")) as stream:
+            data = stream.read()
+        prov_md = ProvenanceTaskMetadataModel.model_validate_json(data)
+        self.assertTrue(np.isnan(prov_md.attempts[0]["calibrateImage:psf_measure_psf"]["spatialFitChi2"]))
 
 
 if __name__ == "__main__":
