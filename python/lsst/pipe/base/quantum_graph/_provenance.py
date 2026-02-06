@@ -507,6 +507,11 @@ class ProvenanceTaskMetadataModel(pydantic.BaseModel):
     file.
     """
 
+    # We want to convert infs and nans to constants, not null. Unfortunately
+    # the fact that TaskMetadata _also_ sets this is ignored when that model
+    # is nested here.
+    model_config = pydantic.ConfigDict(ser_json_inf_nan="constants")
+
     attempts: list[TaskMetadata | None] = pydantic.Field(default_factory=list)
     """Metadata from attempts to run this task, ordered chronologically from
     first to last.
