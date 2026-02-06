@@ -1,3 +1,12 @@
+lsst-pipe-base v30.0.2 (2026-02-06)
+===================================
+
+Bug Fixes
+---------
+
+- Fixed a Pydantic validation error reading ``TaskMetadata`` from provenance files, caused by incorrect JSON handling of NaN/inf. (`DM-54057 <https://rubinobs.atlassian.net/browse/DM-54057>`_)
+
+
 lsst-pipe-base v30.0.1 (2026-02-03)
 ===================================
 
