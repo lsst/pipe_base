@@ -1602,12 +1602,14 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                     stream.write(status_report.model_dump_json(indent=2))
         if print_quantum_table:
             quantum_table = self.make_quantum_table()
-            quantum_table.pprint_all()
-            print("")
+            if quantum_table:
+                quantum_table.pprint_all()
+                print("")
         if print_exception_table:
             exception_table = self.make_exception_table()
-            exception_table.pprint_all()
-            print("")
+            if exception_table:
+                exception_table.pprint_all()
+                print("")
 
 
 @dataclasses.dataclass
