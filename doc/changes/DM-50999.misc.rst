@@ -1,0 +1,1 @@
+Modified ``PipelineStepTester`` class to allow it to take ``ResourcePath`` URIs as well as file paths.
