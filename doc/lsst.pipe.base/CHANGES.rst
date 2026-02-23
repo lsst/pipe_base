@@ -1,3 +1,18 @@
+lsst-pipe-base v30.0.4 (2026-02-23)
+===================================
+
+Bug Fixes
+---------
+
+- Fixed a bug in ``butler provenance-report`` that caused an exception to be raised when trying to print an empty table. (`DM-54084 <https://rubinobs.atlassian.net/browse/DM-54084>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Modified ``PipelineStepTester`` class to allow it to take ``ResourcePath`` URIs as well as file paths. (`DM-50999 <https://rubinobs.atlassian.net/browse/DM-50999>`_)
+
+
 lsst-pipe-base v30.0.2 (2026-02-06)
 ===================================
 
