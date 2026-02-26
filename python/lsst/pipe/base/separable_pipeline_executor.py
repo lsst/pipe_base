@@ -46,7 +46,7 @@ from lsst.daf.butler._rubin.temporary_for_ingest import TemporaryForIngest
 from ._quantumContext import ExecutionResources
 from .all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from .graph import QuantumGraph
-from .mp_graph_executor import MPGraphExecutor
+from .mp_graph_executor import MPGraphExecutor, MPGraphExecutorError
 from .pipeline import Pipeline
 from .quantum_graph import PredictedQuantumGraph
 from .quantum_graph_builder import QuantumGraphBuilder
@@ -390,11 +390,12 @@ class SeparablePipelineExecutor:
         provenance_dataset_ref : `lsst.daf.butler.DatasetRef`, optional
             Dataset that should be used to save provenance.  Provenance is only
             supported when running in a single process (at least for the
-            default quantum executor), and should not be used with
-            ``skip_existing_in=[output_run]`` when retrying a previous
-            execution attempt. The caller is responsible for registering the
-            dataset type and for ensuring that the dimensions of this dataset
-            do not lead to uniqueness conflicts.
+            default quantum executor), and should not be enabled in contexts
+            where a quantum might be executed more than once (i.e. retried)
+            within the same `~lsst.daf.butler.CollectionType.RUN` collection.
+            The caller is responsible for registering the dataset type and for
+            ensuring that the dimensions of this dataset do not lead to
+            uniqueness conflicts.
         """
         if not graph_executor:
             quantum_executor = SingleQuantumExecutor(
@@ -417,7 +418,16 @@ class SeparablePipelineExecutor:
 
         if provenance_dataset_ref is not None:
             with TemporaryForIngest(self._butler, provenance_dataset_ref) as temporary:
-                graph_executor.execute(graph, provenance_graph_file=temporary.ospath)
-                temporary.ingest()
+                try:
+                    graph_executor.execute(graph, provenance_graph_file=temporary.ospath)
+                    temporary.ingest()
+                except MPGraphExecutorError:
+                    # If the graph executor itself raised, it will have
+                    # finished the provenance rewrite.  In other cases the
+                    # temporary file might be incomplete or corrupted and we
+                    # can't roll the dice on ingesting it.
+                    temporary.ingest()
+                    raise
+
         else:
             graph_executor.execute(graph)

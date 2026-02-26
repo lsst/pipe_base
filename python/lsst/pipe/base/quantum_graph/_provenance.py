@@ -2040,6 +2040,17 @@ class ProvenanceQuantumGraphWriter:
         scan_data = provenance_models.to_scan_data(predicted_quantum, compressor=self.compressor)
         self.write_scan_data(scan_data)
 
+    def write_blocked_quantum_provenance(self, quantum_id: uuid.UUID) -> None:
+        """Gather and write provenance for a quantum that was blocked by an
+        upstream failure.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID for the quantum.
+        """
+        self.write_scan_data(ProvenanceQuantumScanData.make_blocked(quantum_id))
+
     def write_scan_data(self, scan_data: ProvenanceQuantumScanData) -> None:
         """Write the output of a quantum provenance scan to disk.
 
@@ -2435,6 +2446,27 @@ class ProvenanceQuantumScanData:
     """Whether the ``quantum``, ``metadata``, and ``log`` attributes are
     compressed.
     """
+
+    @classmethod
+    def make_blocked(cls, quantum_id: uuid.UUID) -> ProvenanceQuantumScanData:
+        """Construct provenance information for a quantum blocked by an
+        upstream failure.
+
+        Parameters
+        ----------
+        quantum_id : `uuid.UUID`
+            Unique ID of the quantum
+
+        Returns
+        -------
+        scan_data : `ProvenanceQuantumScanData`
+            Struct with ready-to-write provenance data.
+        """
+        return ProvenanceQuantumScanData(
+            quantum_id,
+            status=ProvenanceQuantumScanStatus.BLOCKED,
+            is_compressed=True,  # nothing to compress
+        )
 
     def compress(self, compressor: Compressor) -> None:
         """Compress the data in this struct if it has not been compressed

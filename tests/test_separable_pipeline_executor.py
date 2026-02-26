@@ -50,6 +50,8 @@ from lsst.pipe.base.automatic_connection_constants import (
     PROVENANCE_DATASET_TYPE_NAME,
     PROVENANCE_STORAGE_CLASS,
 )
+from lsst.pipe.base.mp_graph_executor import MPGraphExecutorError
+from lsst.pipe.base.quantum_graph import ProvenanceQuantumGraph
 from lsst.pipe.base.quantum_graph_builder import OutputExistsError
 from lsst.pipe.base.separable_pipeline_executor import SeparablePipelineExecutor
 from lsst.pipe.base.tests.mocks import (
@@ -1153,60 +1155,106 @@ class SeparablePipelineExecutorMockTests(lsst.utils.tests.TestCase):
     the lsst.pipe.base.tests.mocks system to define complex pipelines.
     """
 
+    def setUp(self):
+        # 'base.yaml' adds an instrument, 'Cam1', with four detectors and
+        # two physical filters.
+        self.helper, _ = self.enterContext(DirectButlerRepo.make_temporary("base.yaml"))
+
+    def run_base_test(
+        self, b_config: DynamicTestPipelineTaskConfig, expected_error: type[Exception] | None
+    ) -> ProvenanceQuantumGraph:
+        """Build and run a quantum graph with three tasks and four data IDs,
+        with customization of the middle task.
+        """
+        self.helper.add_task("a", dimensions=["detector"])
+        self.helper.add_task("b", dimensions=["detector"], config=b_config)
+        self.helper.add_task("c", dimensions=["detector"])
+        qg = self.helper.make_quantum_graph()
+        self.helper.butler.collections.register(qg.header.output_run)
+        qg.init_output_run(self.helper.butler, existing=False)
+        executor = SeparablePipelineExecutor(
+            self.helper.butler.clone(collections=qg.header.inputs, run=qg.header.output_run)
+        )
+        provenance_type = lsst.daf.butler.DatasetType(
+            PROVENANCE_DATASET_TYPE_NAME,
+            self.helper.butler.dimensions.empty,
+            PROVENANCE_STORAGE_CLASS,
+        )
+        self.helper.butler.registry.registerDatasetType(provenance_type)
+        provenance_ref = lsst.daf.butler.DatasetRef(
+            provenance_type,
+            lsst.daf.butler.DataCoordinate.make_empty(self.helper.butler.dimensions),
+            run=qg.header.output_run,
+        )
+        if expected_error is None:
+            executor.run_pipeline(qg, provenance_dataset_ref=provenance_ref)
+        else:
+            with self.assertRaises(expected_error):
+                executor.run_pipeline(qg, provenance_dataset_ref=provenance_ref)
+        provenance_graph = self.helper.butler.get(provenance_ref)
+        self.assertEqual(len(provenance_graph.quanta_by_task), 3)
+        self.assertEqual(len(provenance_graph.quanta_by_task["a"]), 4)
+        self.assertEqual(len(provenance_graph.quanta_by_task["b"]), 4)
+        self.assertEqual(len(provenance_graph.quanta_by_task["c"]), 4)
+        return provenance_graph
+
     def test_no_work_chain_provenance(self):
         """Test provenance recording when a NoWorkFound error chains to
         downstream tasks during execution.
         """
+        b_config = DynamicTestPipelineTaskConfig()
+        b_config.fail_exception = "lsst.pipe.base.NoWorkFound"
+        b_config.fail_condition = "detector=2"
+        provenance_graph = self.run_base_test(b_config, expected_error=None)
+        xgraph = provenance_graph.quantum_only_xgraph
+        for quantum_id in provenance_graph.quanta_by_task["a"].values():
+            self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
+            self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
+        for data_id, quantum_id in provenance_graph.quanta_by_task["b"].items():
+            self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
+            if data_id["detector"] == 2:
+                self.assertTrue(xgraph.nodes[quantum_id]["caveats"] & QuantumSuccessCaveats.NO_WORK)
+            else:
+                self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
+        for data_id, quantum_id in provenance_graph.quanta_by_task["c"].items():
+            self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
+            if data_id["detector"] == 2:
+                self.assertTrue(
+                    xgraph.nodes[quantum_id]["caveats"] & QuantumSuccessCaveats.ADJUST_QUANTUM_RAISED
+                )
+            else:
+                self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
+
+    def test_failure_block_provenance(self):
+        """Test provenance recording when an exception blocks one branch of a
+        QG but not another.
+        """
         # 'base.yaml' adds an instrument, 'Cam1', with four detectors and
         # two physical filters.
-        with DirectButlerRepo.make_temporary("base.yaml") as (helper, _):
-            helper.add_task("a", dimensions=["detector"])
-            b_config = DynamicTestPipelineTaskConfig()
-            b_config.fail_exception = "lsst.pipe.base.NoWorkFound"
-            b_config.fail_condition = "detector=2"
-            helper.add_task("b", dimensions=["detector"], config=b_config)
-            helper.add_task("c", dimensions=["detector"])
-            qg = helper.make_quantum_graph()
-            helper.butler.collections.register(qg.header.output_run)
-            qg.init_output_run(helper.butler, existing=False)
-            provenance_type = lsst.daf.butler.DatasetType(
-                PROVENANCE_DATASET_TYPE_NAME,
-                helper.butler.dimensions.empty,
-                PROVENANCE_STORAGE_CLASS,
-            )
-            helper.butler.registry.registerDatasetType(provenance_type)
-            provenance_ref = lsst.daf.butler.DatasetRef(
-                provenance_type,
-                lsst.daf.butler.DataCoordinate.make_empty(helper.butler.dimensions),
-                run=qg.header.output_run,
-            )
-            executor = SeparablePipelineExecutor(
-                helper.butler.clone(collections=qg.header.inputs, run=qg.header.output_run)
-            )
-            executor.run_pipeline(qg, provenance_dataset_ref=provenance_ref)
-            provenance_graph = helper.butler.get(provenance_ref)
-            self.assertEqual(len(provenance_graph.quanta_by_task), 3)
-            self.assertEqual(len(provenance_graph.quanta_by_task["a"]), 4)
-            self.assertEqual(len(provenance_graph.quanta_by_task["b"]), 4)
-            self.assertEqual(len(provenance_graph.quanta_by_task["c"]), 4)
-            xgraph = provenance_graph.quantum_only_xgraph
-            for quantum_id in provenance_graph.quanta_by_task["a"].values():
+        b_config = DynamicTestPipelineTaskConfig()
+        b_config.fail_exception = "builtins.RuntimeError"
+        b_config.fail_condition = "detector=2"
+        provenance_graph = self.run_base_test(b_config, MPGraphExecutorError)
+        self.assertEqual(len(provenance_graph.quanta_by_task), 3)
+        self.assertEqual(len(provenance_graph.quanta_by_task["a"]), 4)
+        self.assertEqual(len(provenance_graph.quanta_by_task["b"]), 4)
+        self.assertEqual(len(provenance_graph.quanta_by_task["c"]), 4)
+        xgraph = provenance_graph.quantum_only_xgraph
+        for quantum_id in provenance_graph.quanta_by_task["a"].values():
+            self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
+            self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
+        for data_id, quantum_id in provenance_graph.quanta_by_task["b"].items():
+            if data_id["detector"] == 2:
+                self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.FAILED)
+            else:
                 self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
                 self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
-            for data_id, quantum_id in provenance_graph.quanta_by_task["b"].items():
+        for data_id, quantum_id in provenance_graph.quanta_by_task["c"].items():
+            if data_id["detector"] == 2:
+                self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.BLOCKED)
+            else:
                 self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
-                if data_id["detector"] == 2:
-                    self.assertTrue(xgraph.nodes[quantum_id]["caveats"] & QuantumSuccessCaveats.NO_WORK)
-                else:
-                    self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
-            for data_id, quantum_id in provenance_graph.quanta_by_task["c"].items():
-                self.assertEqual(xgraph.nodes[quantum_id]["status"], QuantumAttemptStatus.SUCCESSFUL)
-                if data_id["detector"] == 2:
-                    self.assertTrue(
-                        xgraph.nodes[quantum_id]["caveats"] & QuantumSuccessCaveats.ADJUST_QUANTUM_RAISED
-                    )
-                else:
-                    self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
+                self.assertEqual(xgraph.nodes[quantum_id]["caveats"], QuantumSuccessCaveats.NO_CAVEATS)
 
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):
