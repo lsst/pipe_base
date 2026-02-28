@@ -531,6 +531,7 @@ class MPGraphExecutor(QuantumGraphExecutor):
             new_graph = graph
         xgraph = self._make_xgraph(new_graph, old_graph)
         self._report = Report(qgraphSummary=new_graph._make_summary())
+        err: MPGraphExecutorError | None = None
         with ExitStack() as exit_stack:
             provenance_writer: ProvenanceQuantumGraphWriter | None = None
             if provenance_graph_file is not None:
@@ -549,6 +550,12 @@ class MPGraphExecutor(QuantumGraphExecutor):
                     self._execute_quanta_mp(xgraph, self._report)
                 else:
                     self._execute_quanta_in_process(xgraph, self._report, provenance_writer)
+            except MPGraphExecutorError as exc:
+                self._report.set_exception(exc)
+                err = exc
+                # Defer re-raising this exception only to let provenance writes
+                # finish as the ExitStack closes. The original traceback for
+                # this exception isn't useful anyway.
             except Exception as exc:
                 self._report.set_exception(exc)
                 raise
@@ -556,6 +563,8 @@ class MPGraphExecutor(QuantumGraphExecutor):
                 provenance_writer.write_overall_inputs()
                 provenance_writer.write_packages()
                 provenance_writer.write_init_outputs(assume_existence=True)
+        if err is not None:
+            raise err
 
     def _make_xgraph(
         self, new_graph: PredictedQuantumGraph, old_graph: QuantumGraph | None
@@ -724,6 +733,8 @@ class MPGraphExecutor(QuantumGraphExecutor):
                             taskLabel=downstream_node_state["task_label"],
                         )
                         report.quantaReports.append(failed_quantum_report)
+                        if provenance_writer is not None:
+                            provenance_writer.write_blocked_quantum_provenance(downstream_quantum_id)
                         _LOG.error(
                             "Upstream job failed for task %s (%s@%s), skipping this quantum.",
                             downstream_quantum_id,

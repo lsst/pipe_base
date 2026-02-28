@@ -293,10 +293,10 @@ class SingleQuantumExecutor(QuantumExecutor):
                 task_node.label,
                 quantum.dataId,
             )
-            task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
-            logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
-            outputs_put: list[uuid.UUID] = []
             try:
+                task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
+                logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
+                outputs_put: list[uuid.UUID] = []
                 with limited_butler.record_metrics() as butler_metrics:
                     caveats = self._run_quantum(
                         task, quantum, task_node, limited_butler, quantum_id=quantum_id, ids_put=outputs_put
