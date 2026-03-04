@@ -84,7 +84,7 @@ class _ParserLex:
 
     # Identifiers are alphanumeric, and may have a T:, D:, or S: prefix.
     def t_IDENTIFIER(self, t: LexToken) -> LexToken:
-        r"""([TDS]:)?\w+"""
+        r"""([TDS]:)?[\w-]+"""
         t.type = "IDENTIFIER"
         return t
 
