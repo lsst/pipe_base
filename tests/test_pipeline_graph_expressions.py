@@ -44,7 +44,7 @@ class PipelineGraphExpressionParserTestCase(unittest.TestCase):
         self.assertEqual(pge.parse("D:c_4"), pge.IdentifierNode(qualifier="D", label="c_4"))
         self.assertEqual(pge.parse("S:d_5"), pge.IdentifierNode(qualifier="S", label="d_5"))
         with self.assertRaises(InvalidExpressionError):
-            pge.parse("a-3")
+            pge.parse("a+3")
         with self.assertRaises(InvalidExpressionError):
             pge.parse("G:d1")
 
