@@ -25,10 +25,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""The standard, general-purpose implementation of the QuantumGraph-generation
-algorithm.
-"""
-
 from __future__ import annotations
 
 __all__ = "TrivialQuantumGraphBuilder"
@@ -48,6 +44,42 @@ if TYPE_CHECKING:
 
 @final
 class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
+    """An optimized quantum-graph builder for pipelines that operate on only
+    a single data ID or a closely related set of data IDs.
+
+    Parameters
+    ----------
+    pipeline_graph
+        Pipeline to build a quantum graph from, as a graph.  Will be resolved
+        in-place with the given butler (any existing resolution is ignored).
+    butler
+        Client for the data repository.  Should be read-only.
+    data_ids
+        Mapping from dimension group to the data ID to use for that dimension
+        group.  This is intended to allow the pipeline to switch between
+        effectively-equivalent dimensions (e.g. ``group``, ``visit``
+        ``exposure``).
+    input_refs
+        References for input datasets, keyed by task label and then connection
+        name.  This should include all regular overall-input datasets whose
+        data IDs are not included in ``data_ids``.  It may (but need not)
+        include prerequisite inputs.  Existing intermediate datasets should
+        also be provided when they need to be clobbered or used in skip logic.
+    dataset_id_modes
+        Mapping from dataset type name to the ID generation mode for that
+        dataset type.  They default is to generate random UUIDs.
+    **kwargs
+        Forwarded to the base `.quantum_graph_builder.QuantumGraphBuilder`.
+
+    Notes
+    -----
+    If ``dataset_id_modes`` is provided, ``clobber=True`` will be passed to
+    the base builder's constructor, as is this is necessary to avoid spurious
+    errors about the affected datasets already existing.  The only effect of
+    this to silence *other* errors about datasets in the output run existing
+    unexpectedly.
+    """
+
     def __init__(
         self,
         pipeline_graph: PipelineGraph,
@@ -59,6 +91,8 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         **kwargs: Any,
     ) -> None:
         super().__init__(pipeline_graph, butler, **kwargs)
+        if dataset_id_modes:
+            self.clobber = True
         self.data_ids = dict(data_ids)
         self.data_ids[self.empty_data_id.dimensions] = self.empty_data_id
         self.input_refs = input_refs or {}
