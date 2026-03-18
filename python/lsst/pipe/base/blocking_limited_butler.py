@@ -98,7 +98,6 @@ class BlockingLimitedButler(LimitedButler):
         parent_dataset_type_name = ref.datasetType.nameAndComponent()[0]
         timeout = self._timeouts.get(parent_dataset_type_name, 0.0)
         start = time.time()
-        # warned = False
         while True:
             try:
                 return self._wrapped.get(ref, parameters=parameters, storageClass=storageClass)
@@ -108,9 +107,7 @@ class BlockingLimitedButler(LimitedButler):
                     if elapsed > timeout:
                         err.add_note(f"Timed out after {elapsed:03f}s.")
                         raise
-            # if not warned:
             _LOG.info(f"Dataset {ref.datasetType} not immediately available for {ref.id}, waiting {timeout}s")
-            # warned = True
             time.sleep(0.5)
 
     def getDeferred(
@@ -121,27 +118,23 @@ class BlockingLimitedButler(LimitedButler):
         parameters: dict[str, Any] | None = None,
         storageClass: str | StorageClass | None = None,
     ) -> DeferredDatasetHandle:
-        # note that this does not use the cache at all
+        # note that this does not use the block at all
         return self._wrapped.getDeferred(ref, parameters=parameters, storageClass=storageClass)
 
     def stored_many(self, refs: Iterable[DatasetRef]) -> dict[DatasetRef, bool]:
         start = time.time()
         result = self._wrapped.stored_many(refs)
         timeouts = {ref.id: self._timeouts.get(ref.datasetType.nameAndComponent()[0], 0.0) for ref in result}
-        # warned: dict[DatasetType, bool] = {ref.datasetType: False for ref in
-        # result}
         while True:
             elapsed = time.time() - start
             remaining: list[DatasetRef] = []
             for ref, exists in result.items():
                 timeout = timeouts[ref.id]
                 if not exists and (timeout is None or elapsed <= timeout):
-                    # if not warned[ref.datasetType]:
                     _LOG.info(
                         f"Dataset {ref.datasetType} not immediately available for {ref.id}, "
                         f"waiting {timeout}s"
                     )
-                    # warned[ref.datasetType]
                     remaining.append(ref)
             if not remaining:
                 return result
