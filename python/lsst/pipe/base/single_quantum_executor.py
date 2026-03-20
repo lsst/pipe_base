@@ -72,8 +72,9 @@ class SingleQuantumExecutor(QuantumExecutor):
 
     Parameters
     ----------
-    butler : `~lsst.daf.butler.Butler` or `None`, optional
-        Data butler, `None` means that a limited butler should be used instead.
+    butler : `~lsst.daf.butler.LimitedButler` or `None`, optional
+        Data butler; `None` means that ``limited_butler_factory`` should be
+        used instead.
     task_factory : `.TaskFactory`, optional
         Instance of a task factory.  Defaults to a new instance of
         `lsst.pipe.base.TaskFactory`.
@@ -92,16 +93,10 @@ class SingleQuantumExecutor(QuantumExecutor):
         `None`.
     enable_lsst_debug : `bool`, optional
         Enable debugging with ``lsstDebug`` facility for a task.
-    limited_butler : `~lsst.daf.butler.LimitedButler` or `None`, optional
-        A `~lsst.daf.butler.LimitedButler` instance to use for executing
-        quanta. This parameter or ``limited_butler_factory`` must be defined if
-        ``butler`` is `None`. If one is supplied the other must not be. If
-        ``butler`` is not `None` then this parameter is ignored.
     limited_butler_factory : `~collections.abc.Callable`, optional
         A method that creates a `~lsst.daf.butler.LimitedButler` instance for a
-        given Quantum. This parameter or ``limited_butler`` must be defined if
-        ``butler`` is `None`. If ``butler`` is not `None` then this parameter
-        is ignored.
+        given Quantum. This parameter must be provided if ``butler`` is
+        `None`. If ``butler`` is not `None` then this parameter is ignored.
     resources : `.ExecutionResources`, optional
         The resources available to this quantum when executing.
     skip_existing : `bool`, optional
@@ -134,7 +129,6 @@ class SingleQuantumExecutor(QuantumExecutor):
         skip_existing_in: Any = None,
         clobber_outputs: bool = False,
         enable_lsst_debug: bool = False,
-        limited_butler: LimitedButler | None = None,
         limited_butler_factory: Callable[[Quantum], LimitedButler] | None = None,
         resources: ExecutionResources | None = None,
         skip_existing: bool = False,
@@ -142,26 +136,25 @@ class SingleQuantumExecutor(QuantumExecutor):
         raise_on_partial_outputs: bool = True,
         job_metadata: Mapping[str, int | str | float] | None = None,
     ):
-        self._butler = butler
+        self._butler: Butler | None = None
+        self._limited_butler: LimitedButler | None = None
+        match butler:
+            case Butler():
+                self._butler = butler
+                self._limited_butler = butler
+            case LimitedButler():
+                self._limited_butler = butler
+            case None:
+                if limited_butler_factory is None:
+                    raise ValueError("limited_butler_factory is needed when butler is None")
         self._task_factory = task_factory if task_factory is not None else TaskFactory()
         self._clobber_outputs = clobber_outputs
         self._enable_lsst_debug = enable_lsst_debug
-        self._limited_butler = limited_butler
         self._limited_butler_factory = limited_butler_factory
         self._resources = resources
         self._assume_no_existing_outputs = assume_no_existing_outputs
         self._raise_on_partial_outputs = raise_on_partial_outputs
         self._job_metadata = job_metadata
-
-        if self._limited_butler and self._limited_butler_factory:
-            raise ValueError("Cannot specify both a limited_butler and a limited_butler_factory")
-
-        if self._butler is None:
-            if limited_butler_factory is None and limited_butler is None:
-                raise ValueError(
-                    "Either limited_butler_factory or limited_butler is needed when butler is None"
-                )
-
         # Find whether output run is in skip_existing_in.
         self._skip_existing = skip_existing
         if self._butler is not None and skip_existing_in and not self._skip_existing:
