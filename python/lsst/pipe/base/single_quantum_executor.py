@@ -124,7 +124,7 @@ class SingleQuantumExecutor(QuantumExecutor):
     def __init__(
         self,
         *,
-        butler: Butler | None = None,
+        butler: LimitedButler | None = None,
         task_factory: TaskFactory | None = None,
         skip_existing_in: Any = None,
         clobber_outputs: bool = False,
