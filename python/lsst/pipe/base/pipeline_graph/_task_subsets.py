@@ -157,7 +157,7 @@ class TaskSubset(MutableSet[str]):
             self._members.discard(value)
 
     @classmethod
-    def _from_iterable(cls, iterable: Iterable[str]) -> set[str]:
+    def _from_iterable[S](cls, iterable: Iterable[S]) -> set[S]:
         # This is the hook used by collections.abc.Set when implementing
         # operators that return new sets.  In this case, we want those to be
         # regular `set` (builtin) objects, not `TaskSubset` instances.
