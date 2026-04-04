@@ -72,8 +72,9 @@ class SingleQuantumExecutor(QuantumExecutor):
 
     Parameters
     ----------
-    butler : `~lsst.daf.butler.Butler` or `None`, optional
-        Data butler, `None` means that a limited butler should be used instead.
+    butler : `~lsst.daf.butler.LimitedButler` or `None`, optional
+        Data butler; `None` means that ``limited_butler_factory`` should be
+        used instead.
     task_factory : `.TaskFactory`, optional
         Instance of a task factory.  Defaults to a new instance of
         `lsst.pipe.base.TaskFactory`.
@@ -94,8 +95,8 @@ class SingleQuantumExecutor(QuantumExecutor):
         Enable debugging with ``lsstDebug`` facility for a task.
     limited_butler_factory : `~collections.abc.Callable`, optional
         A method that creates a `~lsst.daf.butler.LimitedButler` instance for a
-        given Quantum. This parameter must be defined if ``butler`` is `None`.
-        If ``butler`` is not `None` then this parameter is ignored.
+        given Quantum. This parameter must be provided if ``butler`` is
+        `None`. If ``butler`` is not `None` then this parameter is ignored.
     resources : `.ExecutionResources`, optional
         The resources available to this quantum when executing.
     skip_existing : `bool`, optional
@@ -115,15 +116,15 @@ class SingleQuantumExecutor(QuantumExecutor):
         continuing to run downstream tasks.
     job_metadata : `~collections.abc.Mapping`
         Mapping with extra metadata to embed within the quantum metadata under
-        the "job" key.  This is intended to correspond to information common
-        to all quanta being executed in a single process, such as the time
-        taken to load the quantum graph in a BPS job.
+        the "job" key.  This is intended to correspond to information common to
+        all quanta being executed in a single process, such as the time taken
+        to load the quantum graph in a BPS job.
     """
 
     def __init__(
         self,
         *,
-        butler: Butler | None = None,
+        butler: LimitedButler | None = None,
         task_factory: TaskFactory | None = None,
         skip_existing_in: Any = None,
         clobber_outputs: bool = False,
@@ -135,7 +136,17 @@ class SingleQuantumExecutor(QuantumExecutor):
         raise_on_partial_outputs: bool = True,
         job_metadata: Mapping[str, int | str | float] | None = None,
     ):
-        self._butler = butler
+        self._butler: Butler | None = None
+        self._limited_butler: LimitedButler | None = None
+        match butler:
+            case Butler():
+                self._butler = butler
+                self._limited_butler = butler
+            case LimitedButler():
+                self._limited_butler = butler
+            case None:
+                if limited_butler_factory is None:
+                    raise ValueError("limited_butler_factory is needed when butler is None")
         self._task_factory = task_factory if task_factory is not None else TaskFactory()
         self._clobber_outputs = clobber_outputs
         self._enable_lsst_debug = enable_lsst_debug
@@ -144,10 +155,6 @@ class SingleQuantumExecutor(QuantumExecutor):
         self._assume_no_existing_outputs = assume_no_existing_outputs
         self._raise_on_partial_outputs = raise_on_partial_outputs
         self._job_metadata = job_metadata
-
-        if self._butler is None:
-            assert limited_butler_factory is not None, "limited_butler_factory is needed when butler is None"
-
         # Find whether output run is in skip_existing_in.
         self._skip_existing = skip_existing
         if self._butler is not None and skip_existing_in and not self._skip_existing:
@@ -190,9 +197,12 @@ class SingleQuantumExecutor(QuantumExecutor):
             limited_butler = self._butler
         else:
             # We check this in constructor, but mypy needs this check here.
-            assert self._limited_butler_factory is not None
-            limited_butler = self._limited_butler_factory(quantum)
-            used_butler_factory = True
+            if self._limited_butler is not None:
+                limited_butler = self._limited_butler
+            else:
+                assert self._limited_butler_factory is not None
+                limited_butler = self._limited_butler_factory(quantum)
+                used_butler_factory = True
 
         try:
             return self._execute_with_limited_butler(
