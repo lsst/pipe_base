@@ -1,3 +1,20 @@
+lsst-pipe-base v30.0.6 (2026-04-06)
+===================================
+
+New Features
+------------
+
+- Modified provenance writing such that provenance gathered from in-process execution (i.e. ``SeparablePipelineExecutor`` and ``MPGraphExecutor``) is still written when a task raises an exception and the executor successfully catches it and continues with other tasks.
+
+  This also includes task construction in the quantum executor's error-handling logic, so exceptions raised at that point do not break provenance writing or require any other special-casing at higher levels. (`DM-54162 <https://rubinobs.atlassian.net/browse/DM-54162>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed "-" not being able to be in a name specified in ``PipelineGraph`` select. (`DM-54319 <https://rubinobs.atlassian.net/browse/DM-54319>`_)
+
+
 lsst-pipe-base v30.0.4 (2026-02-23)
 ===================================
 
