@@ -29,7 +29,6 @@ from __future__ import annotations
 
 __all__ = ("SimplePipelineExecutor",)
 
-import os
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
@@ -507,7 +506,7 @@ class SimplePipelineExecutor:
         quantum graph or their original `~lsst.daf.butler.CollectionType.RUN`
         collections.
         """
-        if not os.path.exists(root):
+        if not Butler.has_repo_config(root):
             Butler.makeRepo(root)
         out_butler = Butler.from_config(root, writeable=True)
 
