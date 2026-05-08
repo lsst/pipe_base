@@ -29,12 +29,15 @@
 
 import io
 import logging
+import tempfile
 import unittest
+
+import numpy
 
 import lsst.utils.tests
 from lsst.daf.butler import Butler, DatasetType
 from lsst.daf.butler.registry import UserExpressionError
-from lsst.pipe.base import PipelineGraph, QuantumGraph
+from lsst.pipe.base import PipelineGraph, QuantumGraph, TaskMetadata
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
     AllDimensionsQuantumGraphBuilder,
     DatasetQueryConstraintVariant,
@@ -226,6 +229,76 @@ class GraphBuilderTestCase(unittest.TestCase):
                         )
                     else:
                         self.assertEqual(quantum.datastore_records, {})
+
+
+class SkipExistingInTestCase(unittest.TestCase):
+    """Tests for the skip_existing_in behavior of QuantumGraphBuilder."""
+
+    def setUp(self):
+        repodir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempfile.TemporaryDirectory.cleanup, repodir)
+        pipeline = simpleQGraph.makeSimplePipeline(nQuanta=1)
+        butler, _ = simpleQGraph.makeSimpleQGraph(root=repodir.name, pipeline=pipeline, nQuanta=1)
+        self.enterContext(butler)
+        self.butler = butler
+        self.pipeline_graph = pipeline.to_graph()
+        self.butler.registry.registerRun("run")
+
+    def test_not_skipped_without_skip_existing_in(self):
+        """Without skip_existing_in, a quantum is never skipped even if
+        metadata exists in an input collection.
+        """
+        self.butler.put(
+            TaskMetadata(),
+            "task0_metadata",
+            run="run",
+            instrument="INSTR",
+            detector=0,
+        )
+
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph, self.butler, input_collections=["test"], output_run="new_run"
+        ).build()
+        self.assertEqual(len(qgraph), 1)
+
+    def test_skipped_when_metadata_exists(self):
+        """With skip_existing_in, a quantum is skipped when its metadata
+        dataset is present in the specified collections.
+        """
+        self.butler.put(
+            TaskMetadata(),
+            "task0_metadata",
+            run="run",
+            instrument="INSTR",
+            detector=0,
+        )
+        # Init-outputs required, otherwise InitInputMissingError.
+        self.butler.put(numpy.array([0.0]), "add_init_output1", run="run")
+        self.butler.put(simpleQGraph.AddTaskConfig(), "task0_config", run="run")
+
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph,
+            self.butler,
+            skip_existing_in=["run"],
+            input_collections=["test"],
+            output_run="new_run",
+        ).build()
+        self.assertEqual(len(qgraph), 0)
+
+    def test_not_skipped_when_metadata_absent(self):
+        """With skip_existing_in, a quantum is not skipped when its metadata
+        dataset is absent from the specified collections.
+        """
+        # No metadata put — run exists but is empty.
+
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph,
+            self.butler,
+            skip_existing_in=["run"],
+            input_collections=["test"],
+            output_run="new_run",
+        ).build()
+        self.assertEqual(len(qgraph), 1)
 
 
 if __name__ == "__main__":
