@@ -84,6 +84,11 @@ class SeparablePipelineExecutor:
         for existing outputs, and skips any quanta that have run to completion
         (or have no work to do). Otherwise, all tasks are attempted (subject to
         ``clobber_output``).
+    ignore_metadata_for : `~collections.abc.Iterable` [`str`], optional
+        Task labels for which the completion signal used by
+        ``skip_existing_in`` is changed from task metadata to all
+        non-metadata, non-log outputs existing. Has no effect without
+        ``skip_existing_in``.
     task_factory : `.TaskFactory`, optional
         A custom task factory for use in pre-execution and execution. By
         default, a new instance of `.TaskFactory` is used.
@@ -101,6 +106,7 @@ class SeparablePipelineExecutor:
         butler: Butler,
         clobber_output: bool = False,
         skip_existing_in: Iterable[str] | None = None,
+        ignore_metadata_for: Iterable[str] | None = None,
         task_factory: TaskFactory | None = None,
         resources: ExecutionResources | None = None,
         raise_on_partial_outputs: bool = True,
@@ -115,6 +121,7 @@ class SeparablePipelineExecutor:
 
         self._clobber_output = clobber_output
         self._skip_existing_in = list(skip_existing_in) if skip_existing_in else []
+        self._ignore_metadata_for = list(ignore_metadata_for) if ignore_metadata_for else []
 
         self._task_factory = task_factory if task_factory else TaskFactory()
         self.resources = resources
@@ -216,6 +223,7 @@ class SeparablePipelineExecutor:
             pipeline.to_graph(),
             self._butler,
             skip_existing_in=self._skip_existing_in,
+            ignore_metadata_for=self._ignore_metadata_for,
             clobber=self._clobber_output,
             **kwargs,
         )
@@ -276,6 +284,7 @@ class SeparablePipelineExecutor:
             "output_run": self._butler.run,
             "skip_existing_in": self._skip_existing_in,
             "skip_existing": bool(self._skip_existing_in),
+            "ignore_metadata_for": self._ignore_metadata_for,
             "data_query": where,
             "user": getpass.getuser(),
             "time": str(datetime.datetime.now()),
@@ -344,6 +353,7 @@ class SeparablePipelineExecutor:
         metadata = {
             "skip_existing_in": self._skip_existing_in,
             "skip_existing": bool(self._skip_existing_in),
+            "ignore_metadata_for": self._ignore_metadata_for,
             "data_query": where,
         }
         qg_builder = self.make_quantum_graph_builder(pipeline, where, builder_class=builder_class, **kwargs)

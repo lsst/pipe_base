@@ -588,6 +588,74 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         with self.assertRaises(OutputExistsError):
             executor.build_quantum_graph(pipeline)
 
+    def test_make_quantum_graph_nowhere_ignoremeta_not_skipped(self):
+        """With ignore_metadata_for, a task is not skipped when its science
+        output is absent, even if metadata is present.
+        """
+        prior_run = "prior_run"
+        self.butler.registry.registerCollection(prior_run, lsst.daf.butler.CollectionType.RUN)
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[prior_run],
+            ignore_metadata_for=["a"],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+        # Metadata present in prior run but intermediate absent.
+        self.butler.put(TaskMetadata(), "a_metadata", run=prior_run)
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
+    def test_make_quantum_graph_nowhere_ignoremeta_skipped(self):
+        """With ignore_metadata_for, a task is skipped when its science output
+        is present, even if metadata and log are absent.
+        """
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            ignore_metadata_for=["a"],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+        # Science output present; metadata and log intentionally absent.
+        self.butler.put({"zero": 0}, "intermediate")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 1)
+        self.assertEqual(graph.header.n_task_quanta["a"], 0)
+        self.assertEqual(graph.header.n_task_quanta["b"], 1)
+
+    def test_make_quantum_graph_nowhere_ignoremeta_metainway_noclobber(self):
+        """With ignore_metadata_for, OutputExistsError is raised when metadata
+        is already in the output run and the task is not skipped.
+
+        The task is not skipped because the science output is absent.  Metadata
+        already in the output run is then "in the way" for the task that is
+        about to run.
+        """
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            ignore_metadata_for=["a"],
+            clobber_output=False,
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        self.butler.put({"zero": 0}, "input")
+        # Metadata in output run, intermediate absent → task not skipped →
+        # a_metadata "in the way".
+        self.butler.put(TaskMetadata(), "a_metadata")
+
+        with self.assertRaises(OutputExistsError):
+            executor.build_quantum_graph(pipeline)
+
     def test_build_quantum_graph_nowhere_noskip_clobber(self):
         executor = SeparablePipelineExecutor(self.butler, skip_existing_in=None, clobber_output=True)
         pipeline = Pipeline.fromFile(self.pipeline_file)
