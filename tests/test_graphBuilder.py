@@ -32,7 +32,7 @@ import logging
 import unittest
 
 import lsst.utils.tests
-from lsst.daf.butler import Butler, DatasetType
+from lsst.daf.butler import Butler, DataCoordinate, DatasetType
 from lsst.daf.butler.registry import UserExpressionError
 from lsst.pipe.base import PipelineGraph, QuantumGraph
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
@@ -44,6 +44,7 @@ from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
     DynamicTestPipelineTask,
     DynamicTestPipelineTaskConfig,
+    InMemoryRepo,
     MockDataset,
     MockStorageClass,
 )
@@ -226,6 +227,60 @@ class GraphBuilderTestCase(unittest.TestCase):
                         )
                     else:
                         self.assertEqual(quantum.datastore_records, {})
+
+
+class SkipExistingInTestCase(unittest.TestCase):
+    """Tests for the skip_existing_in behavior of QuantumGraphBuilder."""
+
+    def setUp(self):
+        self.helper = InMemoryRepo()
+        self.enterContext(self.helper)
+        self.helper.add_task()
+        self.helper.make_quantum_graph_builder(output_run="new_run")
+        self.helper.butler.collections.register("prior_run")
+        self._task_node = self.helper.pipeline_graph.tasks["task_auto1"]
+        self._empty_data_id = DataCoordinate.make_empty(self.helper.butler.dimensions)
+
+    def _insert(self, *names, run="prior_run"):
+        """Register datasets with empty data IDs into a run collection."""
+        for name in names:
+            dt = self.helper.pipeline_graph.dataset_types[name].dataset_type
+            self.helper.butler.registry.insertDatasets(dt, [self._empty_data_id], run=run)
+
+    def _build(self, *, output_run="new_run", **kwargs):
+        return AllDimensionsQuantumGraphBuilder(
+            self.helper.pipeline_graph,
+            self.helper.butler,
+            input_collections=[self.helper.input_chain],
+            output_run=output_run,
+            **kwargs,
+        ).build(attach_datastore_records=False)
+
+    def test_not_skipped_without_skip_existing_in(self):
+        """Without skip_existing_in, a quantum is never skipped even if
+        metadata exists in an input collection.
+        """
+        self._insert(self._task_node.metadata_output.parent_dataset_type_name)
+        qgraph = self._build()
+        self.assertEqual(len(qgraph), 1)
+
+    def test_skipped_when_metadata_exists(self):
+        """With skip_existing_in, a quantum is skipped when its metadata
+        dataset is present in the specified collections.
+        """
+        self._insert(self._task_node.metadata_output.parent_dataset_type_name)
+        # Init-outputs required, otherwise InitInputMissingError.
+        for edge in self._task_node.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        qgraph = self._build(skip_existing_in=["prior_run"])
+        self.assertEqual(len(qgraph), 0)
+
+    def test_not_skipped_when_metadata_absent(self):
+        """With skip_existing_in, a quantum is not skipped when its metadata
+        dataset is absent from the specified collections.
+        """
+        qgraph = self._build(skip_existing_in=["prior_run"])
+        self.assertEqual(len(qgraph), 1)
 
 
 if __name__ == "__main__":
