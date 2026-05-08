@@ -715,6 +715,68 @@ class SeparablePipelineExecutorTests(lsst.utils.tests.TestCase):
         self.assertEqual(len(graph), 2)
         self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
 
+    def test_make_quantum_graph_nowhere_retained_forces_upstream_rerun(self):
+        """When task b must run and 'intermediate' is not retained,
+        retained_dataset_types forces task a to rerun to regenerate the
+        missing intermediate.
+        """
+        prior_run = "prior_run"
+        self.butler.registry.registerCollection(prior_run, lsst.daf.butler.CollectionType.RUN)
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[prior_run],
+            # Only metadata types are retained; 'intermediate' is not retained.
+            retained_dataset_types=["*_metadata"],
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        # Task a metadata present in prior run but 'intermediate' was not
+        # retained.
+        self.butler.put(TaskMetadata(), "a_metadata", run=prior_run)
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 2)
+        self.assertEqual(graph.quanta_by_task.keys(), {"a", "b"})
+
+    def test_make_quantum_graph_nowhere_retained_metainway(self):
+        """When an ancestor is forced to rerun but its metadata is already in
+        the output run, OutputExistsError is raised without clobber_output.
+        """
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            retained_dataset_types=["*_metadata"],
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+        self.butler.put({"zero": 0}, "input")
+        self.butler.put(TaskMetadata(), "a_metadata")
+        # a_metadata in output run, task b must run (no b_metadata), and
+        # 'intermediate' is not retained -> force task a to run
+        # no clobber -> error.
+        with self.assertRaises(OutputExistsError):
+            executor.build_quantum_graph(pipeline)
+
+    def test_make_quantum_graph_nowhere_retained_both_skipped(self):
+        """Both tasks are skipped when both have metadata, regardless of which
+        outputs are not retained.
+        """
+        executor = SeparablePipelineExecutor(
+            self.butler,
+            skip_existing_in=[self.butler.run],
+            retained_dataset_types=["*_metadata"],
+        )
+        pipeline = Pipeline.fromFile(self.pipeline_file)
+
+        butlerTests.addDatasetType(self.butler, "b_metadata", set(), "TaskMetadata")
+        butlerTests.addDatasetType(self.butler, "b_config", set(), "Config")
+
+        self.butler.put(TaskMetadata(), "a_metadata")
+        self.butler.put(lsst.pex.config.Config(), "a_config")
+        self.butler.put(TaskMetadata(), "b_metadata")
+        self.butler.put(lsst.pex.config.Config(), "b_config")
+
+        graph = executor.build_quantum_graph(pipeline)
+        self.assertEqual(len(graph), 0)
+
     def test_make_quantum_graph_noinput(self):
         executor = SeparablePipelineExecutor(self.butler)
         pipeline = Pipeline.fromFile(self.pipeline_file)
