@@ -128,6 +128,15 @@ class QuantumGraphBuilder(ABC):
     skip_existing_in : `~collections.abc.Sequence` [ `str` ], optional
         Collections to search for outputs that already exist for the purpose of
         skipping quanta that have already been run.
+    ignore_metadata_for : `~collections.abc.Iterable` [ `str` ], optional
+        Task labels for which the task metadata dataset is not used as the
+        completion signal when ``skip_existing_in`` is provided.  For these
+        tasks a quantum is skipped only when all of its non-metadata outputs
+        are present in ``skip_existing_in``; it is not skipped when any
+        non-metadata output is absent.  This is useful for pipelines
+        where some upstream tasks do not retain all of their outputs, so that
+        those tasks can be re-run to regenerate the missing intermediate
+        datasets.
     clobber : `bool`, optional
         Whether to raise if predicted outputs already exist in ``output_run``
         (not including those quanta that would be skipped because they've
@@ -171,6 +180,7 @@ class QuantumGraphBuilder(ABC):
         input_collections: Sequence[str] | None = None,
         output_run: str | None = None,
         skip_existing_in: Sequence[str] = (),
+        ignore_metadata_for: Iterable[str] = (),
         clobber: bool = False,
     ):
         self.log = getLogger(__name__)
@@ -188,6 +198,7 @@ class QuantumGraphBuilder(ABC):
         self.butler = butler.clone(collections=input_collections)
         self.output_run = output_run
         self.skip_existing_in = skip_existing_in
+        self._ignore_metadata_for: frozenset[str] = frozenset(ignore_metadata_for)
         self.empty_data_id = DataCoordinate.make_empty(butler.dimensions)
         self.clobber = clobber
         # See whether the output run already exists.
@@ -703,7 +714,7 @@ class QuantumGraphBuilder(ABC):
         self, task_node: TaskNode, quantum_key: QuantumKey, skeleton: QuantumGraphSkeleton
     ) -> bool:
         """Identify and drop quanta that should be skipped because their
-        metadata datasets already exist.
+        metadata or output datasets already exist in ``skip_existing_in``.
 
         Parameters
         ----------
@@ -722,41 +733,64 @@ class QuantumGraphBuilder(ABC):
 
         Notes
         -----
-        If the metadata dataset for this quantum exists in the
-        `skip_existing_in` collections, the quantum will be skipped. This
-        causes the quantum node to be removed from the graph.  Dataset nodes
+        For tasks not listed in `_ignore_metadata_for`, a quantum is skipped
+        when its metadata dataset exists in ``skip_existing_in``.
+
+        For tasks listed in `_ignore_metadata_for`, the metadata dataset is
+        not used as the completion signal.  Instead, a quantum is skipped only
+        when all of its science outputs are present in ``skip_existing_in``.
+        If any such output is absent the quantum is not skipped, so the task
+        can regenerate the missing outputs.  This supports pipelines where
+        upstream tasks do not retain all of their outputs.
+
+        The skipped quantum node is to be removed from the graph. Dataset nodes
         that were previously the outputs of this quantum will be associated
         with `lsst.daf.butler.DatasetRef` objects that were found in
         ``skip_existing_in``, or will be removed if there is no such dataset
         there.  Any output dataset in `output_run` will be removed from the
         "output in the way" category.
         """
-        metadata_dataset_key = DatasetKey(
-            task_node.metadata_output.parent_dataset_type_name, quantum_key.data_id_values
-        )
-        if skeleton.get_output_for_skip(metadata_dataset_key):
-            # This quantum's metadata is already present in the the
-            # skip_existing_in collections; we'll skip it.  But the presence of
-            # the metadata dataset doesn't guarantee that all of the other
-            # outputs we predicted are present; we have to check.
-            for output_dataset_key in list(skeleton.iter_outputs_of(quantum_key)):
-                # If this dataset was "in the way" (i.e. already in the
-                # output run), it isn't anymore.
-                skeleton.discard_output_in_the_way(output_dataset_key)
-                if (output_ref := skeleton.get_output_for_skip(output_dataset_key)) is not None:
-                    # Populate the skeleton graph's node attributes
-                    # with the existing DatasetRef, just like a
-                    # predicted output of a non-skipped quantum.
-                    skeleton.set_dataset_ref(output_ref, output_dataset_key)
-                else:
-                    # Remove this dataset from the skeleton graph,
-                    # because the quantum that would have produced it
-                    # is being skipped and it doesn't already exist.
-                    skeleton.remove_dataset_nodes([output_dataset_key])
-            # Removing the quantum node from the graph will happen outside this
-            # function.
-            return True
-        return False
+        metadata_name = task_node.metadata_output.parent_dataset_type_name
+        metadata_dataset_key = DatasetKey(metadata_name, quantum_key.data_id_values)
+
+        if task_node.label in self._ignore_metadata_for:
+            # For this task, use actual output datasets as the completion
+            # signal rather than metadata.  Skip only if all science
+            # outputs are present in skip_existing_in; do not skip if
+            # any are absent so they can be regenerated.
+            science_output_keys = [
+                k
+                for k in skeleton.iter_outputs_of(quantum_key)
+                if k.parent_dataset_type_name != metadata_name
+            ]
+            if not science_output_keys or any(
+                skeleton.get_output_for_skip(k) is None for k in science_output_keys
+            ):
+                return False
+            # All non-metadata outputs are present; fall through to skip.
+        elif not skeleton.get_output_for_skip(metadata_dataset_key):
+            # metadata absent: do not skip.
+            return False
+
+        # We will skip the quantum. But it doesn't guarantee that all of the
+        # other outputs we predicted are present; we have to check.
+        for output_dataset_key in list(skeleton.iter_outputs_of(quantum_key)):
+            # If this dataset was "in the way" (i.e. already in the
+            # output run), it isn't anymore.
+            skeleton.discard_output_in_the_way(output_dataset_key)
+            if (output_ref := skeleton.get_output_for_skip(output_dataset_key)) is not None:
+                # Populate the skeleton graph's node attributes
+                # with the existing DatasetRef, just like a
+                # predicted output of a non-skipped quantum.
+                skeleton.set_dataset_ref(output_ref, output_dataset_key)
+            else:
+                # Remove this dataset from the skeleton graph,
+                # because the quantum that would have produced it
+                # is being skipped and it doesn't already exist.
+                skeleton.remove_dataset_nodes([output_dataset_key])
+        # Removing the quantum node from the graph will happen outside this
+        # function.
+        return True
 
     @final
     def _update_quantum_for_adjust(

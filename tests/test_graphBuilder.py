@@ -35,13 +35,14 @@ import unittest
 import numpy
 
 import lsst.utils.tests
-from lsst.daf.butler import Butler, DatasetType
+from lsst.daf.butler import Butler, DatasetType, ButlerLogRecords
 from lsst.daf.butler.registry import UserExpressionError
 from lsst.pipe.base import PipelineGraph, QuantumGraph, TaskMetadata
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
     AllDimensionsQuantumGraphBuilder,
     DatasetQueryConstraintVariant,
 )
+from lsst.pipe.base.quantum_graph_builder import OutputExistsError
 from lsst.pipe.base.tests import simpleQGraph
 from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
@@ -297,6 +298,109 @@ class SkipExistingInTestCase(unittest.TestCase):
             skip_existing_in=["run"],
             input_collections=["test"],
             output_run="new_run",
+        ).build()
+        self.assertEqual(len(qgraph), 1)
+
+
+class IgnoreMetadataForTestCase(unittest.TestCase):
+    """Tests for QuantumGraphBuilder.ignore_metadata_for."""
+
+    def setUp(self):
+        repodir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempfile.TemporaryDirectory.cleanup, repodir)
+        pipeline = simpleQGraph.makeSimplePipeline(nQuanta=1)
+        butler, _ = simpleQGraph.makeSimpleQGraph(root=repodir.name, pipeline=pipeline, nQuanta=1)
+        self.enterContext(butler)
+        self.butler = butler
+        self.pipeline_graph = pipeline.to_graph()
+        # Simulate a prior run and put a metadata.
+        self.butler.registry.registerRun("run")
+        self.butler.put(
+            TaskMetadata(),
+            "task0_metadata",
+            run="run",
+            instrument="INSTR",
+            detector=0,
+        )
+
+    def test_not_skipped_when_outputs_missing(self):
+        """With ignore_metadata_for, quantum is not skipped when science
+        outputs are absent from skip_existing_in, even if metadata is present.
+
+        A scenario is that an upstream pipeline ran and wrote
+        metadata but did not retain output datasets.
+        """
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph,
+            self.butler,
+            skip_existing_in=["run"],
+            ignore_metadata_for=["task0"],
+            input_collections=["test"],
+            output_run="new_run",
+        ).build()
+        # Outputs are missing so the quantum is not skipped.
+        self.assertEqual(len(qgraph), 1)
+
+    def test_skips_when_all_outputs_present(self):
+        """With ignore_metadata_for, quantum is skipped when all science
+        outputs are present in skip_existing_in.
+        """
+        self.butler.put(numpy.array([0.0]), "add_dataset1", run="run", instrument="INSTR", detector=0)
+        self.butler.put(numpy.array([0.0]), "add2_dataset1", run="run", instrument="INSTR", detector=0)
+        self.butler.put(ButlerLogRecords.from_records([]), "task0_log", run="run", instrument="INSTR", detector=0)
+        # Init-outputs required when all quanta are skipped.
+        self.butler.put(numpy.array([0.0]), "add_init_output1", run="run")
+        self.butler.put(simpleQGraph.AddTaskConfig(), "task0_config", run="run")
+
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph,
+            self.butler,
+            skip_existing_in=["run"],
+            ignore_metadata_for=["task0"],
+            input_collections=["test"],
+            output_run="new_run",
+        ).build()
+        # All outputs found, so quantum should be skipped.
+        self.assertEqual(len(qgraph), 0)
+
+    def test_output_exists_error_when_partial_outputs(self):
+        """With ignore_metadata_for, OutputExistsError is raised when some but
+        not all science outputs exist in the output run and clobber is off.
+
+        Because not all outputs are present, the task is not skipped.  The
+        partial output already in the run is then "in the way" when the builder
+        tries to plan writing it again.
+        """
+        self.butler.put(numpy.array([0.0]), "add_dataset1", run="run", instrument="INSTR", detector=0)
+        # add2_dataset1 absent → not all outputs present → task not skipped
+
+        with self.assertRaises(OutputExistsError):
+            AllDimensionsQuantumGraphBuilder(
+                self.pipeline_graph,
+                self.butler,
+                skip_existing_in=["run"],
+                ignore_metadata_for=["task0"],
+                input_collections=["test"],
+                # Use the same run so that partial output is in the way.
+                output_run="run",
+            ).build()
+
+    def test_partial_outputs_clobber(self):
+        """With ignore_metadata_for and clobber=True, partial outputs in the
+        output run are discarded and the task re-runs normally.
+        """
+        self.butler.put(numpy.array([0.0]), "add_dataset1", run="run", instrument="INSTR", detector=0)
+        # add2_dataset1 absent → not all outputs present → task not skipped
+        # clobber=True → add_dataset1 discarded from graph, task re-runs
+
+        qgraph = AllDimensionsQuantumGraphBuilder(
+            self.pipeline_graph,
+            self.butler,
+            skip_existing_in=["run"],
+            ignore_metadata_for=["task0"],
+            input_collections=["test"],
+            output_run="run",
+            clobber=True,
         ).build()
         self.assertEqual(len(qgraph), 1)
 
