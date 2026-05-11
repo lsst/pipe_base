@@ -752,6 +752,11 @@ class QuantumGraphBuilder(ABC):
         """
         metadata_name = task_node.metadata_output.parent_dataset_type_name
         metadata_dataset_key = DatasetKey(metadata_name, quantum_key.data_id_values)
+        log_name = (
+            task_node.log_output.parent_dataset_type_name
+            if task_node.log_output is not None
+            else None
+        )
 
         if task_node.label in self._ignore_metadata_for:
             # For this task, use actual output datasets as the completion
@@ -762,6 +767,7 @@ class QuantumGraphBuilder(ABC):
                 k
                 for k in skeleton.iter_outputs_of(quantum_key)
                 if k.parent_dataset_type_name != metadata_name
+                and k.parent_dataset_type_name != log_name
             ]
             if not science_output_keys or any(
                 skeleton.get_output_for_skip(k) is None for k in science_output_keys

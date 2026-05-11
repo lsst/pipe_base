@@ -35,7 +35,7 @@ import unittest
 import numpy
 
 import lsst.utils.tests
-from lsst.daf.butler import Butler, DatasetType, ButlerLogRecords
+from lsst.daf.butler import Butler, DatasetType
 from lsst.daf.butler.registry import UserExpressionError
 from lsst.pipe.base import PipelineGraph, QuantumGraph, TaskMetadata
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import (
@@ -347,7 +347,6 @@ class IgnoreMetadataForTestCase(unittest.TestCase):
         """
         self.butler.put(numpy.array([0.0]), "add_dataset1", run="run", instrument="INSTR", detector=0)
         self.butler.put(numpy.array([0.0]), "add2_dataset1", run="run", instrument="INSTR", detector=0)
-        self.butler.put(ButlerLogRecords.from_records([]), "task0_log", run="run", instrument="INSTR", detector=0)
         # Init-outputs required when all quanta are skipped.
         self.butler.put(numpy.array([0.0]), "add_init_output1", run="run")
         self.butler.put(simpleQGraph.AddTaskConfig(), "task0_config", run="run")
