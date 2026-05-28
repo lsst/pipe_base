@@ -32,6 +32,7 @@ import time
 import unittest
 
 import lsst.pipe.base.automatic_connection_constants as acc
+from lsst.pipe.base.gc_metrics import GcMetrics
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
 from lsst.pipe.base.tests.mocks import InMemoryRepo
@@ -70,6 +71,18 @@ class SingleQuantumExecutorTestCase(unittest.TestCase):
         self.assertGreater(ru.run_time_cpu, 0)
         self.assertGreater(ru.total_time, 0)
         self.assertLess(ru.total_time, t2 - t1)
+
+        # Check that GC metrics are filled.
+        gc_metrics = GcMetrics.from_task_metadata(md)
+        self.assertIsNotNone(gc_metrics)
+        self.assertTrue(gc_metrics.start_isenabled)
+        self.assertTrue(gc_metrics.end_isenabled)
+        self.assertEqual(len(gc_metrics.start_threshold), 3)
+        self.assertEqual(len(gc_metrics.end_threshold), 3)
+        self.assertEqual(len(gc_metrics.start_count), 3)
+        self.assertEqual(len(gc_metrics.end_count), 3)
+        self.assertEqual(set(gc_metrics.start_stats), {"collections", "collected", "uncollectable"})
+        self.assertEqual(set(gc_metrics.end_stats), {"collections", "collected", "uncollectable"})
 
     def test_skip_existing_execute(self) -> None:
         """Run execute() method twice, with skip_existing_in."""

@@ -56,6 +56,7 @@ from ._status import (
     QuantumSuccessCaveats,
 )
 from .connections import AdjustQuantumHelper
+from .gc_metrics import GcMetrics
 from .log_capture import LogCapture, _ExecutionLogRecordsExtra
 from .pipeline_graph import TaskNode
 from .pipelineTask import PipelineTask
@@ -307,7 +308,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                 task = self._task_factory.makeTask(task_node, limited_butler, init_input_refs)
                 logInfo(None, "start", metadata=quantumMetadata)  # type: ignore[arg-type]
                 outputs_put: list[uuid.UUID] = []
-                with limited_butler.record_metrics() as butler_metrics:
+                with limited_butler.record_metrics() as butler_metrics, GcMetrics() as gc_metrics:
                     caveats = self._run_quantum(
                         task, quantum, task_node, limited_butler, quantum_id=quantum_id, ids_put=outputs_put
                     )
@@ -327,6 +328,7 @@ class SingleQuantumExecutor(QuantumExecutor):
                 raise
             else:
                 quantumMetadata["butler_metrics"] = butler_metrics.model_dump()
+                quantumMetadata["gc_metrics"] = gc_metrics.model_dump()
                 quantumMetadata["caveats"] = caveats.value
                 # Stringify the UUID for easier compatibility with
                 # PropertyList.
