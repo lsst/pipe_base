@@ -54,32 +54,34 @@ class GcMetrics(pydantic.BaseModel):
     """
 
     start_isenabled: bool | None = None
-    """Whether GC is enabled on entering context."""
+    """Whether GC is enabled on entering context (`bool` or `None`)."""
 
     end_isenabled: bool | None = None
-    """Whether GC is enabled on exiting context."""
+    """Whether GC is enabled on exiting context (`bool` or `None`)."""
 
     start_threshold: list[int] | None = None
-    """GC thresholds on entering context."""
+    """GC thresholds on entering context (`list`[`int`] or `None`)."""
 
     end_threshold: list[int] | None = None
-    """GC thresholds on exiting context."""
+    """GC thresholds on exiting context (`list`[`int`] or `None`)."""
 
     start_count: list[int] | None = None
-    """GC collection counts on entering context."""
+    """GC collection counts on entering context (`list`[`int`] or `None`)."""
 
     end_count: list[int] | None = None
-    """GC collection counts on exiting context."""
+    """GC collection counts on exiting context (`list`[`int`] or `None`)."""
 
     start_stats: dict[str, list[int]] | None = None
-    """GC stats on entering context.
+    """GC stats on entering context (`dict`[`str`, `list`[`int`]] or `None`).
 
     These are the same values as returned from `gc.get_stats` but rearranged
     to be indexed by string key first and generation second.
     """
 
     end_stats: dict[str, list[int]] | None = None
-    """GC stats on exiting context, same format as `start_stats`."""
+    """GC stats on exiting context, same format as `start_stats`
+    (`dict`[`str`, `list`[`int`]] or `None`).
+    """
 
     def __enter__(self) -> Self:
         self.start_isenabled = gc.isenabled()
@@ -124,16 +126,4 @@ class GcMetrics(pydantic.BaseModel):
         except KeyError:
             return None
 
-        try:
-            return GcMetrics(
-                start_isenabled=gc_metadata["start_isenabled"],
-                end_isenabled=gc_metadata["end_isenabled"],
-                start_threshold=gc_metadata.getArray("start_threshold"),
-                end_threshold=gc_metadata.getArray("end_threshold"),
-                start_count=gc_metadata.getArray("start_count"),
-                end_count=gc_metadata.getArray("end_count"),
-                start_stats=gc_metadata["start_stats"].to_dict(),
-                end_stats=gc_metadata["end_stats"].to_dict(),
-            )
-        except KeyError:
-            return None
+        return GcMetrics(**gc_metadata.to_dict())
