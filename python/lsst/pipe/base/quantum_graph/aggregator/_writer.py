@@ -30,6 +30,7 @@ from __future__ import annotations
 __all__ = ("Writer",)
 
 import dataclasses
+from collections.abc import ByteString
 
 import zstandard
 
@@ -163,7 +164,7 @@ class Writer:
             self.comms.log.info("Making compressor with no dictionary.")
             return zstandard.ZstdCompressionDict(b"")
         self.comms.log.info("Training compression dictionary.")
-        training_inputs: list[bytes] = []
+        training_inputs: list[ByteString] = []
         # We start the dictionary training with *predicted* quantum dataset
         # models, since those have almost all of the same attributes as the
         # provenance quantum and dataset models, and we can get a nice random
