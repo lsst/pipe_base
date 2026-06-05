@@ -308,6 +308,22 @@ class QuantumGraphSkeleton:
         """
         return self._xgraph.predecessors(quantum_key)
 
+    def get_producer_of(self, dataset_key: DatasetKey) -> QuantumKey | TaskInitKey | None:
+        """Return the quantum that produces the given dataset, or ``None``.
+
+        Parameters
+        ----------
+        dataset_key : `DatasetKey`
+            Dataset to look up the producer for.
+
+        Returns
+        -------
+        producer : `QuantumKey`, `TaskInitKey`, or `None`
+            The quantum or init task that produces the dataset, or ``None``
+            if the dataset has no producer in this graph (an external input).
+        """
+        return next(iter(self._xgraph.predecessors(dataset_key)), None)
+
     def update(self, other: QuantumGraphSkeleton) -> None:
         """Copy all nodes from ``other`` to ``self``.
 
